@@ -1,0 +1,411 @@
+# ============================================================================
+# Codemagic CI/CD Configuration for CalyCompta Mobile
+# ============================================================================
+#
+# Project: CalyCompta Mobile - Expense Tracker for Calypso Diving Club
+# Version: 1.0.0
+# Last Updated: 2025-11-12
+#
+# Documentation: See CODEMAGIC_SETUP.md for complete setup guide
+#
+# Workflows:
+#   - ios-production: iOS App Store deployment
+#   - android-production: Google Play deployment
+#   - ios-beta: iOS TestFlight beta builds
+#   - android-beta: Android Internal Testing builds
+#
+# ============================================================================
+
+workflows:
+  # ==========================================================================
+  # iOS PRODUCTION WORKFLOW - App Store Release
+  # ==========================================================================
+  # DISABLED: Requires iOS code signing setup (App Store Connect API key)
+  # Enable after configuring iOS signing in Codemagic Team Settings
+  # See CODEMAGIC_SETUP.md for iOS setup instructions
+  #
+  # ios-production:
+  #   name: iOS Production Build
+  #   max_build_duration: 60
+  #   instance_type: mac_mini_m2
+  #
+  #   environment:
+  #     # iOS Code Signing
+  #     ios_signing:
+  #       distribution_type: app_store  # For App Store submission
+  #       bundle_identifier: be.calypso.calycompta
+  #
+  #     # Environment Variables
+  #     vars:
+  #       XCODE_WORKSPACE: "Runner.xcworkspace"
+  #       XCODE_SCHEME: "Runner"
+  #       BUNDLE_ID: "be.calypso.calycompta"
+  #
+  #     # Flutter & Xcode Versions
+  #     flutter: stable  # Or specify exact version: "3.24.5"
+  #     xcode: latest    # Or specify: "15.1"
+  #     cocoapods: default
+  #
+  #   # Trigger on push to main branch
+  #   triggering:
+  #     events:
+  #       - push
+  #     branch_patterns:
+  #       - pattern: 'main'
+  #         include: true
+  #         source: true
+  #
+  #   scripts:
+  #     - name: Set up environment
+  #       script: |
+  #         echo "🚀 Starting iOS production build"
+  #         echo "Flutter version:"
+  #         flutter --version
+  #         echo "Xcode version:"
+  #         xcodebuild -version
+  #
+  #     - name: Load Firebase configuration
+  #       script: |
+  #         echo "🔧 Loading Firebase configs from environment variables"
+  #         if [ -z "$IOS_FIREBASE_PLIST" ]; then
+  #           echo "❌ ERROR: IOS_FIREBASE_PLIST environment variable not set!"
+  #           exit 1
+  #         fi
+  #         echo $IOS_FIREBASE_PLIST | base64 --decode > $CM_BUILD_DIR/ios/Runner/GoogleService-Info.plist
+  #         echo "✅ GoogleService-Info.plist created"
+  #         ls -la $CM_BUILD_DIR/ios/Runner/GoogleService-Info.plist
+  #
+  #     - name: Get Flutter packages
+  #       script: |
+  #         echo "📦 Getting Flutter packages"
+  #         flutter pub get
+  #
+  #     - name: Install CocoaPods dependencies
+  #       script: |
+  #         echo "📦 Installing iOS dependencies"
+  #         cd ios
+  #         pod install
+  #         cd ..
+  #
+  #     - name: Build iOS IPA
+  #       script: |
+  #         echo "🏗️ Building iOS IPA (release mode)"
+  #         flutter build ipa --release \
+  #           --export-options-plist=/Users/builder/export_options.plist
+  #
+  #     - name: Verify build output
+  #       script: |
+  #         echo "✅ Build completed!"
+  #         ls -lh build/ios/ipa/*.ipa
+  #
+  #   artifacts:
+  #     - build/ios/ipa/*.ipa
+  #     - build/ios/archive/*.xcarchive
+  #     - flutter_drive.log
+  #
+  #   publishing:
+  #     email:
+  #       recipients:
+  #         - jan.andriessens@gmail.com
+  #       notify:
+  #         success: true
+  #         failure: true
+  #
+  #     app_store_connect:
+  #       auth: integration  # Uses App Store Connect API key from Team Settings
+  #
+  #       # Submit to TestFlight automatically
+  #       submit_to_testflight: true
+  #       beta_groups:
+  #         - Internal Testers
+  #
+  #       # Don't auto-submit to App Store (manual review recommended)
+  #       submit_to_app_store: false
+
+  # ==========================================================================
+  # ANDROID PRODUCTION WORKFLOW - Google Play Release
+  # ==========================================================================
+  android-production:
+    name: Android Production Build
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+
+    environment:
+      # Android Code Signing
+      android_signing:
+        - calycompta_keystore  # Name of keystore uploaded in Team Settings
+
+      # Environment Variables
+      vars:
+        PACKAGE_NAME: "com.example.calycompta_mobile"  # Update with your actual package name
+        GOOGLE_PLAY_TRACK: "production"  # or "internal", "alpha", "beta"
+
+      # Flutter Version
+      flutter: stable
+
+    # Trigger on push to main branch
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: 'main'
+          include: true
+          source: true
+
+    scripts:
+      - name: Set up environment
+        script: |
+          echo "🚀 Starting Android production build"
+          echo "Flutter version:"
+          flutter --version
+
+      - name: Load Firebase configuration
+        script: |
+          echo "🔧 Loading Firebase configs from environment variables"
+          if [ -z "$ANDROID_FIREBASE_JSON" ]; then
+            echo "❌ ERROR: ANDROID_FIREBASE_JSON environment variable not set!"
+            exit 1
+          fi
+          echo $ANDROID_FIREBASE_JSON | base64 --decode > $CM_BUILD_DIR/android/app/google-services.json
+          echo "✅ google-services.json created"
+          ls -la $CM_BUILD_DIR/android/app/google-services.json
+
+      - name: Get Flutter packages
+        script: |
+          echo "📦 Getting Flutter packages"
+          flutter pub get
+
+      - name: Build Android App Bundle
+        script: |
+          echo "🏗️ Building Android App Bundle (release mode)"
+          flutter build appbundle --release
+
+      - name: Verify build output
+        script: |
+          echo "✅ Build completed!"
+          ls -lh build/app/outputs/bundle/release/*.aab
+
+    artifacts:
+      - build/app/outputs/**/*.aab
+      - build/app/outputs/**/*.apk
+      - flutter_drive.log
+
+    publishing:
+      email:
+        recipients:
+          - jan.andriessens@gmail.com
+        notify:
+          success: true
+          failure: true
+
+      google_play:
+        credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS  # JSON key from Team Settings
+        track: $GOOGLE_PLAY_TRACK
+        in_app_update_priority: 0
+
+  # ==========================================================================
+  # iOS BETA WORKFLOW - TestFlight Beta Builds
+  # ==========================================================================
+  # DISABLED: Requires iOS code signing setup (App Store Connect API key)
+  #
+  # ios-beta:
+  #   name: iOS Beta Build (TestFlight)
+  #   max_build_duration: 60
+  #   instance_type: mac_mini_m2
+  #
+  #   environment:
+  #     ios_signing:
+  #       distribution_type: app_store
+  #       bundle_identifier: be.calypso.calycompta
+  #
+  #     vars:
+  #       XCODE_WORKSPACE: "Runner.xcworkspace"
+  #       XCODE_SCHEME: "Runner"
+  #
+  #     flutter: stable
+  #     xcode: latest
+  #     cocoapods: default
+  #
+  #   # Trigger on push to develop branch
+  #   triggering:
+  #     events:
+  #       - push
+  #     branch_patterns:
+  #       - pattern: 'develop'
+  #         include: true
+  #         source: true
+  #
+  #   scripts:
+  #     - name: Set up environment
+  #       script: |
+  #         echo "🧪 Starting iOS beta build"
+  #         flutter --version
+  #
+  #     - name: Load Firebase configuration
+  #       script: |
+  #         echo $IOS_FIREBASE_PLIST | base64 --decode > $CM_BUILD_DIR/ios/Runner/GoogleService-Info.plist
+  #
+  #     - name: Get Flutter packages
+  #       script: flutter pub get
+  #
+  #     - name: Install CocoaPods
+  #       script: |
+  #         cd ios && pod install && cd ..
+  #
+  #     - name: Build iOS IPA
+  #       script: |
+  #         flutter build ipa --release \
+  #           --export-options-plist=/Users/builder/export_options.plist
+  #
+  #   artifacts:
+  #     - build/ios/ipa/*.ipa
+  #
+  #   publishing:
+  #     email:
+  #       recipients:
+  #         - jan.andriessens@gmail.com
+  #       notify:
+  #         success: true
+  #         failure: true
+  #
+  #     app_store_connect:
+  #       auth: integration
+  #       submit_to_testflight: true
+  #       beta_groups:
+  #         - Beta Testers
+
+  # ==========================================================================
+  # ANDROID BETA WORKFLOW - Internal Testing
+  # ==========================================================================
+  android-beta:
+    name: Android Beta Build (Internal Testing)
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+
+    environment:
+      android_signing:
+        - calycompta_keystore
+
+      vars:
+        PACKAGE_NAME: "com.example.calycompta_mobile"
+        GOOGLE_PLAY_TRACK: "internal"  # Internal testing track
+
+      flutter: stable
+
+    # Trigger on push to develop branch
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: 'develop'
+          include: true
+          source: true
+
+    scripts:
+      - name: Set up environment
+        script: |
+          echo "🧪 Starting Android beta build"
+          flutter --version
+
+      - name: Load Firebase configuration
+        script: |
+          echo $ANDROID_FIREBASE_JSON | base64 --decode > $CM_BUILD_DIR/android/app/google-services.json
+
+      - name: Get Flutter packages
+        script: flutter pub get
+
+      - name: Build Android App Bundle
+        script: flutter build appbundle --release
+
+    artifacts:
+      - build/app/outputs/bundle/release/*.aab
+
+    publishing:
+      email:
+        recipients:
+          - jan.andriessens@gmail.com
+        notify:
+          success: true
+          failure: true
+
+      google_play:
+        credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
+        track: internal
+
+  # ==========================================================================
+  # MANUAL TRIGGER WORKFLOW - On-Demand Builds
+  # ==========================================================================
+  manual-build:
+    name: Manual Build (iOS + Android)
+    max_build_duration: 90
+    instance_type: mac_mini_m2
+
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: be.calypso.calycompta
+
+      android_signing:
+        - calycompta_keystore
+
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+
+    # Manual trigger only (no automatic triggers)
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: '*'
+          include: false
+
+    scripts:
+      - name: Load Firebase configs
+        script: |
+          echo $IOS_FIREBASE_PLIST | base64 --decode > $CM_BUILD_DIR/ios/Runner/GoogleService-Info.plist
+          echo $ANDROID_FIREBASE_JSON | base64 --decode > $CM_BUILD_DIR/android/app/google-services.json
+
+      - name: Get Flutter packages
+        script: flutter pub get
+
+      - name: Build iOS
+        script: |
+          cd ios && pod install && cd ..
+          flutter build ipa --release
+
+      - name: Build Android
+        script: flutter build appbundle --release
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - build/app/outputs/bundle/release/*.aab
+
+    publishing:
+      email:
+        recipients:
+          - jan.andriessens@gmail.com
+        notify:
+          success: true
+          failure: true
+
+# ============================================================================
+# END OF CONFIGURATION
+# ============================================================================
+#
+# Next Steps:
+#   1. Commit this file to Git: git add codemagic.yaml && git commit -m "Add Codemagic CI/CD config"
+#   2. Push to GitHub: git push origin main
+#   3. Connect repo in Codemagic: https://codemagic.io
+#   4. Configure environment variables in Codemagic Team Settings:
+#      - IOS_FIREBASE_PLIST (base64 encoded)
+#      - ANDROID_FIREBASE_JSON (base64 encoded)
+#   5. Upload code signing materials:
+#      - iOS: App Store Connect API key
+#      - Android: Keystore file
+#   6. Trigger first build manually to test
+#
+# Documentation: CODEMAGIC_SETUP.md
+# Support: https://docs.codemagic.io
+#
+# ============================================================================
