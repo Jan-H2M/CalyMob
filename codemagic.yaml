@@ -353,7 +353,7 @@ workflows:
       #   bundle_identifier: be.calypso.calycompta
 
       android_signing:
-        - calymob_keystore
+        - calycompta_keystore
 
       flutter: stable
 
