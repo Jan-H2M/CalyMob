@@ -57,3 +57,10 @@ ios/Runner/GoogleService-Info.plist
 # Codemagic credentials (PRIVÉ!)
 CODEMAGIC_CREDENTIALS.md
 CODEMAGIC_SETUP_STATUS.md
+
+# Android signing
+android/key.properties
+android/*.keystore
+
+# Keystore info (CONFIDENTIAL)
+KEYSTORE_INFO.md

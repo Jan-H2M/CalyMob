@@ -78,6 +78,6 @@ class DefaultFirebaseOptions {
     projectId: 'calycompta',
     authDomain: 'calycompta.firebaseapp.com',
     storageBucket: 'calycompta.firebasestorage.app',
-    iosBundleId: 'com.calycompta.mobile',
+    iosBundleId: 'be.calypsodc.calymob',
   );
 }

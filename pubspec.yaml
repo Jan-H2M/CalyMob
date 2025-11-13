@@ -1,4 +1,4 @@
-name: calycompta_mobile
+name: calymob
 description: CalyMob - Application de gestion pour club de plongée Calypso DC
 publish_to: 'none'
 version: 1.0.4+6
@@ -40,10 +40,9 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
-  # Assets (commented out - using icons instead for now)
-  # assets:
-  #   - assets/images/logo-vertical.png
-  #   - assets/images/logo-horizontal.jpg
+  assets:
+    - assets/images/logo-vertical.png
+    - assets/images/logo-horizontal.jpg
 
 # Configuration de l'icône de l'application
 flutter_launcher_icons:

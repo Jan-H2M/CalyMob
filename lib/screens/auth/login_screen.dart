@@ -68,11 +68,10 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Logo Calypso (temporary icon - waiting for logo files)
-                  const Icon(
-                    Icons.scuba_diving,
-                    size: 120,
-                    color: Color(0xFF1976D2),
+                  // Logo Calypso
+                  Image.asset(
+                    'assets/images/logo-vertical.png',
+                    height: 120,
                   ),
 
                   const SizedBox(height: 32),

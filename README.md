@@ -1,6 +1,6 @@
 # CalyMob - Mobile App
 
-Flutter mobile application for CalyCompta diving club management system.
+Flutter mobile application for Calypso Diving Club management system.
 
 ## Related Project
 

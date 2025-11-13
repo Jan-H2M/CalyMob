@@ -69,13 +69,12 @@ class LandingScreen extends StatelessWidget {
           padding: const EdgeInsets.all(20),
           child: Column(
             children: [
-              // Logo Calypso (temporary icon - waiting for logo files)
+              // Logo Calypso
               Container(
                 padding: const EdgeInsets.symmetric(vertical: 20),
-                child: const Icon(
-                  Icons.scuba_diving,
-                  size: 120,
-                  color: Color(0xFF1976D2),
+                child: Image.asset(
+                  'assets/images/logo-vertical.png',
+                  height: 120,
                 ),
               ),
 

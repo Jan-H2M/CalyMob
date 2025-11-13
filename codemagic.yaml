@@ -141,7 +141,7 @@ workflows:
   #
   #     # Environment Variables
   #     vars:
-  #       PACKAGE_NAME: "com.example.calycompta_mobile"  # Update with your actual package name
+  #       PACKAGE_NAME: "be.calypsodc.calymob"
   #       GOOGLE_PLAY_TRACK: "production"  # or "internal", "alpha", "beta"
   #
   #     # Flutter Version
