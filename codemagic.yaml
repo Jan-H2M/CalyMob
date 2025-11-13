@@ -125,83 +125,87 @@ workflows:
   # ==========================================================================
   # ANDROID PRODUCTION WORKFLOW - Google Play Release
   # ==========================================================================
-  android-production:
-    name: Android Production Build
-    max_build_duration: 60
-    instance_type: mac_mini_m2
-
-    environment:
-      # Android Code Signing
-      android_signing:
-        - calycompta_keystore  # Name of keystore uploaded in Team Settings
-
-      # Environment Variables
-      vars:
-        PACKAGE_NAME: "com.example.calycompta_mobile"  # Update with your actual package name
-        GOOGLE_PLAY_TRACK: "production"  # or "internal", "alpha", "beta"
-
-      # Flutter Version
-      flutter: stable
-
-    # Trigger on push to main branch
-    triggering:
-      events:
-        - push
-      branch_patterns:
-        - pattern: 'main'
-          include: true
-          source: true
-
-    scripts:
-      - name: Set up environment
-        script: |
-          echo "🚀 Starting Android production build"
-          echo "Flutter version:"
-          flutter --version
-
-      - name: Load Firebase configuration
-        script: |
-          echo "🔧 Loading Firebase configs from environment variables"
-          if [ -z "$ANDROID_FIREBASE_JSON" ]; then
-            echo "❌ ERROR: ANDROID_FIREBASE_JSON environment variable not set!"
-            exit 1
-          fi
-          echo $ANDROID_FIREBASE_JSON | base64 --decode > $CM_BUILD_DIR/android/app/google-services.json
-          echo "✅ google-services.json created"
-          ls -la $CM_BUILD_DIR/android/app/google-services.json
-
-      - name: Get Flutter packages
-        script: |
-          echo "📦 Getting Flutter packages"
-          flutter pub get
-
-      - name: Build Android App Bundle
-        script: |
-          echo "🏗️ Building Android App Bundle (release mode)"
-          flutter build appbundle --release
-
-      - name: Verify build output
-        script: |
-          echo "✅ Build completed!"
-          ls -lh build/app/outputs/bundle/release/*.aab
-
-    artifacts:
-      - build/app/outputs/**/*.aab
-      - build/app/outputs/**/*.apk
-      - flutter_drive.log
-
-    publishing:
-      email:
-        recipients:
-          - jan.andriessens@gmail.com
-        notify:
-          success: true
-          failure: true
-
-      google_play:
-        credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS  # JSON key from Team Settings
-        track: $GOOGLE_PLAY_TRACK
-        in_app_update_priority: 0
+  # DISABLED: Requires Google Play Service Account credentials
+  # Enable after configuring GCLOUD_SERVICE_ACCOUNT_CREDENTIALS in environment variables
+  # See CODEMAGIC_SETUP.md for Google Play setup instructions
+  #
+  # android-production:
+  #   name: Android Production Build
+  #   max_build_duration: 60
+  #   instance_type: mac_mini_m2
+  #
+  #   environment:
+  #     # Android Code Signing
+  #     android_signing:
+  #       - calycompta_keystore  # Name of keystore uploaded in Team Settings
+  #
+  #     # Environment Variables
+  #     vars:
+  #       PACKAGE_NAME: "com.example.calycompta_mobile"  # Update with your actual package name
+  #       GOOGLE_PLAY_TRACK: "production"  # or "internal", "alpha", "beta"
+  #
+  #     # Flutter Version
+  #     flutter: stable
+  #
+  #   # Trigger on push to main branch
+  #   triggering:
+  #     events:
+  #       - push
+  #     branch_patterns:
+  #       - pattern: 'main'
+  #         include: true
+  #         source: true
+  #
+  #   scripts:
+  #     - name: Set up environment
+  #       script: |
+  #         echo "🚀 Starting Android production build"
+  #         echo "Flutter version:"
+  #         flutter --version
+  #
+  #     - name: Load Firebase configuration
+  #       script: |
+  #         echo "🔧 Loading Firebase configs from environment variables"
+  #         if [ -z "$ANDROID_FIREBASE_JSON" ]; then
+  #           echo "❌ ERROR: ANDROID_FIREBASE_JSON environment variable not set!"
+  #           exit 1
+  #         fi
+  #         echo $ANDROID_FIREBASE_JSON | base64 --decode > $CM_BUILD_DIR/android/app/google-services.json
+  #         echo "✅ google-services.json created"
+  #         ls -la $CM_BUILD_DIR/android/app/google-services.json
+  #
+  #     - name: Get Flutter packages
+  #       script: |
+  #         echo "📦 Getting Flutter packages"
+  #         flutter pub get
+  #
+  #     - name: Build Android App Bundle
+  #       script: |
+  #         echo "🏗️ Building Android App Bundle (release mode)"
+  #         flutter build appbundle --release
+  #
+  #     - name: Verify build output
+  #       script: |
+  #         echo "✅ Build completed!"
+  #         ls -lh build/app/outputs/bundle/release/*.aab
+  #
+  #   artifacts:
+  #     - build/app/outputs/**/*.aab
+  #     - build/app/outputs/**/*.apk
+  #     - flutter_drive.log
+  #
+  #   publishing:
+  #     email:
+  #       recipients:
+  #         - jan.andriessens@gmail.com
+  #       notify:
+  #         success: true
+  #         failure: true
+  #
+  #     google_play:
+  #       credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS  # JSON key from Team Settings
+  #       track: $GOOGLE_PLAY_TRACK
+  #       in_app_update_priority: 0
 
   # ==========================================================================
   # iOS BETA WORKFLOW - TestFlight Beta Builds
@@ -277,60 +281,62 @@ workflows:
   # ==========================================================================
   # ANDROID BETA WORKFLOW - Internal Testing
   # ==========================================================================
-  android-beta:
-    name: Android Beta Build (Internal Testing)
-    max_build_duration: 60
-    instance_type: mac_mini_m2
-
-    environment:
-      android_signing:
-        - calycompta_keystore
-
-      vars:
-        PACKAGE_NAME: "com.example.calycompta_mobile"
-        GOOGLE_PLAY_TRACK: "internal"  # Internal testing track
-
-      flutter: stable
-
-    # Trigger on push to develop branch
-    triggering:
-      events:
-        - push
-      branch_patterns:
-        - pattern: 'develop'
-          include: true
-          source: true
-
-    scripts:
-      - name: Set up environment
-        script: |
-          echo "🧪 Starting Android beta build"
-          flutter --version
-
-      - name: Load Firebase configuration
-        script: |
-          echo $ANDROID_FIREBASE_JSON | base64 --decode > $CM_BUILD_DIR/android/app/google-services.json
-
-      - name: Get Flutter packages
-        script: flutter pub get
-
-      - name: Build Android App Bundle
-        script: flutter build appbundle --release
-
-    artifacts:
-      - build/app/outputs/bundle/release/*.aab
-
-    publishing:
-      email:
-        recipients:
-          - jan.andriessens@gmail.com
-        notify:
-          success: true
-          failure: true
-
-      google_play:
-        credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
-        track: internal
+  # DISABLED: Requires Google Play Service Account credentials
+  #
+  # android-beta:
+  #   name: Android Beta Build (Internal Testing)
+  #   max_build_duration: 60
+  #   instance_type: mac_mini_m2
+  #
+  #   environment:
+  #     android_signing:
+  #       - calycompta_keystore
+  #
+  #     vars:
+  #       PACKAGE_NAME: "com.example.calycompta_mobile"
+  #       GOOGLE_PLAY_TRACK: "internal"  # Internal testing track
+  #
+  #     flutter: stable
+  #
+  #   # Trigger on push to develop branch
+  #   triggering:
+  #     events:
+  #       - push
+  #     branch_patterns:
+  #       - pattern: 'develop'
+  #         include: true
+  #         source: true
+  #
+  #   scripts:
+  #     - name: Set up environment
+  #       script: |
+  #         echo "🧪 Starting Android beta build"
+  #         flutter --version
+  #
+  #     - name: Load Firebase configuration
+  #       script: |
+  #         echo $ANDROID_FIREBASE_JSON | base64 --decode > $CM_BUILD_DIR/android/app/google-services.json
+  #
+  #     - name: Get Flutter packages
+  #       script: flutter pub get
+  #
+  #     - name: Build Android App Bundle
+  #       script: flutter build appbundle --release
+  #
+  #   artifacts:
+  #     - build/app/outputs/bundle/release/*.aab
+  #
+  #   publishing:
+  #     email:
+  #       recipients:
+  #         - jan.andriessens@gmail.com
+  #       notify:
+  #         success: true
+  #         failure: true
+  #
+  #     google_play:
+  #       credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
+  #       track: internal
 
   # ==========================================================================
   # MANUAL TRIGGER WORKFLOW - On-Demand Builds
