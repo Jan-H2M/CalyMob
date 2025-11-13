@@ -353,7 +353,7 @@ workflows:
       #   bundle_identifier: be.calypso.calycompta
 
       android_signing:
-        - calycompta_keystore
+        - calymob_keystore
 
       flutter: stable
 
@@ -382,8 +382,15 @@ workflows:
         script: |
           echo "🏗️ Building Android APK (release mode)"
           flutter build apk --release
-          echo "✅ Build completed!"
+          echo "✅ APK Build completed!"
           ls -lh build/app/outputs/flutter-apk/*.apk
+
+      - name: Build Android App Bundle
+        script: |
+          echo "📦 Building Android App Bundle (release mode)"
+          flutter build appbundle --release
+          echo "✅ App Bundle build completed!"
+          ls -lh build/app/outputs/bundle/release/*.aab
 
     artifacts:
       - build/app/outputs/flutter-apk/*.apk
