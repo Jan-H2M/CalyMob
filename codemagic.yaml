@@ -485,7 +485,8 @@ workflows:
       - name: Build iOS IPA
         script: |
           echo "🏗️ Building iOS IPA (release mode)"
-          flutter build ipa --release
+          # Build using xcodebuild with explicit export options
+          flutter build ipa --release --export-options-plist=$HOME/export_options.plist
           echo "✅ iOS build completed!"
           ls -lh build/ios/ipa/*.ipa
 
