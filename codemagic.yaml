@@ -416,10 +416,8 @@ workflows:
       app_store_connect: Codemagic CI/CD
 
     environment:
-      # iOS Code Signing - Automatic via App Store Connect API
+      # iOS Code Signing - Using explicit profile references
       ios_signing:
-        distribution_type: app_store
-        bundle_identifier: be.calypsodc.calymob
         provisioning_profiles:
           - CalyMob App Store
         certificates:
