@@ -422,6 +422,11 @@ workflows:
         distribution_type: app_store
         bundle_identifier: be.calypsodc.calymob
 
+      # Environment variables for Xcode
+      vars:
+        XCODE_WORKSPACE: "Runner.xcworkspace"
+        XCODE_SCHEME: "Runner"
+
       # Flutter Version
       flutter: stable
       xcode: latest
@@ -443,6 +448,12 @@ workflows:
           flutter --version
           echo "Xcode version:"
           xcodebuild -version
+
+      - name: Initialize Xcode project
+        script: |
+          echo "🔧 Initializing Xcode project for code signing"
+          # This will help Codemagic fetch and create necessary provisioning profiles
+          xcode-project use-profiles
 
       - name: Verify Firebase configuration
         script: |
