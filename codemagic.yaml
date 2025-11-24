@@ -369,9 +369,19 @@ workflows:
       - name: Load Firebase config (Android)
         script: |
           echo "Loading Android Firebase configuration..."
-          echo $ANDROID_FIREBASE_JSON | base64 --decode > $CM_BUILD_DIR/android/app/google-services.json
-          echo "✅ google-services.json created"
-          ls -la $CM_BUILD_DIR/android/app/google-services.json
+          cd $CM_BUILD_DIR
+          if [ -z "$ANDROID_FIREBASE_JSON" ]; then
+            echo "⚠️ WARNING: ANDROID_FIREBASE_JSON not set, checking for existing file"
+            if [ -f "android/app/google-services.json" ]; then
+              echo "✅ Using existing google-services.json"
+            else
+              echo "❌ ERROR: No Firebase config found!"
+              exit 1
+            fi
+          else
+            echo "$ANDROID_FIREBASE_JSON" | base64 --decode > android/app/google-services.json
+            echo "✅ google-services.json created from environment variable"
+          fi
 
       - name: Get Flutter packages
         script: |
