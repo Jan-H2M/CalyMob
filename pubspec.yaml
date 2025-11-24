@@ -1,0 +1,57 @@
+name: calymob
+description: Calypso DC Mobile Application
+publish_to: 'none'
+version: 1.0.4+6
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Firebase
+  firebase_core: ^3.8.0
+  firebase_auth: ^5.3.3
+  cloud_firestore: ^5.5.1
+  firebase_storage: ^12.3.7
+  firebase_analytics: ^11.3.6
+  firebase_crashlytics: ^4.2.0
+  firebase_messaging: ^15.1.5
+
+  # State Management
+  provider: ^6.1.2
+
+  # UI
+  cupertino_icons: ^1.0.6
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.19.0
+
+  # Utilities
+  url_launcher: ^6.3.1
+  shared_preferences: ^2.3.3
+  path_provider: ^2.1.5
+  image_picker: ^1.2.0
+
+  # Payments (if needed)
+  # stripe_payment: ^1.1.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/
+    - assets/images/
+
+  fonts:
+    - family: Roboto
+      fonts:
+        - asset: fonts/Roboto-Regular.ttf
+        - asset: fonts/Roboto-Bold.ttf
+          weight: 700
