@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../auth/login_screen.dart';
-import '../operations/operations_list_screen.dart';
 import '../expenses/expense_list_screen.dart';
 import '../expenses/approval_list_screen.dart';
+import '../profile/profile_screen.dart';
+import '../profile/who_is_who_screen.dart';
+import '../messages/messages_screen.dart';
+import 'home_screen.dart';
 
 /// Landing page avec logo Calypso et navigation par grandes cartes
 class LandingScreen extends StatelessWidget {
@@ -102,8 +105,87 @@ class LandingScreen extends StatelessWidget {
 
               const SizedBox(height: 40),
 
-              // Navigation Cards - Grid 2x2
-              // Première ligne: Mes demandes + Approbation
+              // Navigation Cards - Grid 2 colonnes
+              Row(
+                children: [
+                  Expanded(
+                    child: _NavigationTile(
+                      title: 'Mon Profil',
+                      icon: Icons.person,
+                      color: const Color(0xFF7B1FA2), // Purple
+                      isEnabled: true,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const ProfileScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _NavigationTile(
+                      title: 'Who\'s Who',
+                      icon: Icons.people,
+                      color: const Color(0xFF2196F3), // Blue
+                      isEnabled: true,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const WhoIsWhoScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 16),
+
+              Row(
+                children: [
+                  Expanded(
+                    child: _NavigationTile(
+                      title: 'Événements',
+                      icon: Icons.event,
+                      color: const Color(0xFF1976D2), // Calypso blue
+                      isEnabled: true,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const HomeScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _NavigationTile(
+                      title: 'Messages',
+                      icon: Icons.chat,
+                      color: Colors.teal,
+                      isEnabled: true,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const MessagesScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 16),
+
               Row(
                 children: [
                   Expanded(
@@ -111,6 +193,7 @@ class LandingScreen extends StatelessWidget {
                       title: 'Mes demandes',
                       icon: Icons.receipt_long,
                       color: const Color(0xFFFF6F00), // Orange
+                      isEnabled: true,
                       onTap: () {
                         Navigator.push(
                           context,
@@ -127,6 +210,7 @@ class LandingScreen extends StatelessWidget {
                       title: 'Approbation',
                       icon: Icons.check_circle_outline,
                       color: const Color(0xFF4CAF50), // Green
+                      isEnabled: true,
                       onTap: () {
                         Navigator.push(
                           context,
@@ -135,33 +219,6 @@ class LandingScreen extends StatelessWidget {
                           ),
                         );
                       },
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 16),
-
-              // Deuxième ligne: Événements + Profil
-              Row(
-                children: [
-                  Expanded(
-                    child: _NavigationTile(
-                      title: 'Événements',
-                      icon: Icons.event,
-                      color: Colors.grey, // Disabled
-                      isEnabled: false,
-                      onTap: () {},
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: _NavigationTile(
-                      title: 'Profil',
-                      icon: Icons.person,
-                      color: Colors.grey, // Disabled
-                      isEnabled: false,
-                      onTap: () {},
                     ),
                   ),
                 ],
@@ -214,7 +271,7 @@ class _NavigationTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           child: Container(
             height: 140,
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
               gradient: LinearGradient(
@@ -247,6 +304,8 @@ class _NavigationTile extends StatelessWidget {
                     color: Colors.white,
                   ),
                   textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),

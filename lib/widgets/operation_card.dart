@@ -146,10 +146,11 @@ class OperationCard extends StatelessWidget {
   /// Ligne d'info avec icône
   Widget _buildInfoRow(IconData icon, String text, String? subtitle) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, size: 16, color: Colors.grey[600]),
         const SizedBox(width: 8),
-        Expanded(
+        Flexible(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

@@ -1,4 +1,4 @@
-package be.calypsodc.calymob
+package com.example.calycompta_mobile
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -27,9 +27,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>CalyMob heeft camera toegang nodig om foto's van bonnetjes te maken</string>
+	<string>CalyMob a besoin d'accès à la caméra pour prendre votre photo de profil et photos de reçus</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>CalyMob heeft toegang tot je fotobibliotheek nodig om bonnetjes toe te voegen</string>
+	<string>CalyMob a besoin d'accès à votre bibliothèque de photos pour ajouter des reçus</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

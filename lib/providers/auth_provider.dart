@@ -139,4 +139,21 @@ class AuthProvider with ChangeNotifier {
       debugPrint('⚠️ Erreur refresh token: $e');
     }
   }
+
+  /// Envoyer un email de réinitialisation de mot de passe
+  Future<void> sendPasswordResetEmail() async {
+    if (_currentUser?.email == null) {
+      throw Exception('Aucun utilisateur connecté');
+    }
+
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(
+        email: _currentUser!.email!,
+      );
+      debugPrint('✅ Email de réinitialisation envoyé à ${_currentUser!.email}');
+    } catch (e) {
+      debugPrint('❌ Erreur envoi email réinitialisation: $e');
+      rethrow;
+    }
+  }
 }

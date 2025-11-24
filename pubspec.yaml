@@ -15,6 +15,7 @@ dependencies:
   firebase_auth: ^6.1.1
   cloud_firestore: ^6.0.3
   firebase_storage: ^13.0.3
+  firebase_messaging: ^16.0.3  # Push notifications
 
   # State Management
   provider: ^6.1.0
@@ -25,11 +26,18 @@ dependencies:
 
   # Médias
   image_picker: ^1.0.7  # Sélection photos camera/galerie
+  camera: ^0.11.0  # Contrôle avancé de la caméra
+  google_mlkit_face_detection: ^0.12.0  # Détection de visages
+  path_provider: ^2.1.0  # Accès aux dossiers temporaires
   url_launcher: ^6.2.4  # Ouverture PDFs/URLs dans apps externes
   pdfrx: ^1.0.90  # Visualisation PDF in-app
 
   # Utilitaires
   uuid: ^4.2.0  # Génération IDs uniques (deviceId)
+
+  # Paiements
+  dio: ^5.4.0  # Client HTTP pour intégration API Noda
+  cloud_functions: ^6.0.3  # Appels Cloud Functions Firebase
 
 dev_dependencies:
   flutter_test:

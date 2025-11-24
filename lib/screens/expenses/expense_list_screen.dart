@@ -47,6 +47,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
       ),
       body: _buildBody(expenseProvider, expenses),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'expense_fab',
         onPressed: () {
           Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateExpenseScreen()));
         },

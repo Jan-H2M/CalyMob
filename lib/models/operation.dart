@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'tariff.dart';
 
 /// Model Operation - Événements, cotisations, dons, etc.
 class Operation {
@@ -13,9 +14,15 @@ class Operation {
   final DateTime? dateDebut;
   final DateTime? dateFin;
   final String? lieu;
+  final String? lieuId; // Référence au lieu de plongée
   final int? capaciteMax;
+
+  // Tarifs (ancien système - DEPRECATED mais conservé pour compatibilité)
   final double? prixMembre;
   final double? prixNonMembre;
+
+  // Tarifs flexibles (nouveau système CalyCompta)
+  final List<Tariff>? eventTariffs;
 
   // Organisateur
   final String? organisateurId;
@@ -35,9 +42,11 @@ class Operation {
     this.dateDebut,
     this.dateFin,
     this.lieu,
+    this.lieuId,
     this.capaciteMax,
     this.prixMembre,
     this.prixNonMembre,
+    this.eventTariffs,
     this.organisateurId,
     this.organisateurNom,
     required this.createdAt,
@@ -47,6 +56,15 @@ class Operation {
   /// Convertir depuis Firestore DocumentSnapshot
   factory Operation.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
+
+    // Charger les tarifs flexibles si présents
+    List<Tariff>? tariffs;
+    if (data['event_tariffs'] != null) {
+      final tariffsData = data['event_tariffs'] as List<dynamic>;
+      tariffs = tariffsData
+          .map((t) => Tariff.fromMap(t as Map<String, dynamic>))
+          .toList();
+    }
 
     return Operation(
       id: doc.id,
@@ -58,13 +76,15 @@ class Operation {
       dateDebut: (data['date_debut'] as Timestamp?)?.toDate(),
       dateFin: (data['date_fin'] as Timestamp?)?.toDate(),
       lieu: data['lieu'],
+      lieuId: data['lieu_id'],
       capaciteMax: data['capacite_max'],
       prixMembre: (data['prix_membre'] as num?)?.toDouble(),
       prixNonMembre: (data['prix_non_membre'] as num?)?.toDouble(),
+      eventTariffs: tariffs,
       organisateurId: data['organisateur_id'],
       organisateurNom: data['organisateur_nom'],
-      createdAt: (data['created_at'] as Timestamp).toDate(),
-      updatedAt: (data['updated_at'] as Timestamp).toDate(),
+      createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      updatedAt: (data['updated_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
 

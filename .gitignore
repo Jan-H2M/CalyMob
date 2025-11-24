@@ -64,3 +64,16 @@ android/*.keystore
 
 # Keystore info (CONFIDENTIAL)
 KEYSTORE_INFO.md
+
+# Codemagic builds and credentials (NEVER COMMIT!)
+codemagic builds/
+*.p8
+*.p12
+*.mobileprovision
+*.cer
+
+# Duplicate/backup files
+*" 2"*
+*" 3"*
+*" 4"*
+build 2/

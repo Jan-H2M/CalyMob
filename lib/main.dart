@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -7,10 +8,15 @@ import 'package:intl/date_symbol_data_local.dart';
 // Firebase options
 import 'firebase_options.dart';
 
+// Services
+import 'services/notification_service.dart';
+
 // Providers
 import 'providers/auth_provider.dart';
 import 'providers/operation_provider.dart';
 import 'providers/expense_provider.dart';
+import 'providers/announcement_provider.dart';
+import 'providers/event_message_provider.dart';
 
 // Screens
 import 'screens/auth/login_screen.dart';
@@ -34,6 +40,14 @@ void main() async {
     await initializeDateFormatting('fr_FR', null);
     Intl.defaultLocale = 'fr_FR';
     debugPrint('✅ Locale initialisée (fr_FR)');
+
+    // Initialiser le service de notifications
+    // Note: Le handler en arrière-plan doit être enregistré avant runApp
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
+    final notificationService = NotificationService();
+    await notificationService.initialize();
+    debugPrint('✅ Notifications initialisées');
   } catch (e) {
     debugPrint('❌ Erreur initialisation: $e');
     debugPrint('Stack trace: ${StackTrace.current}');
@@ -52,6 +66,8 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => OperationProvider()),
         ChangeNotifierProvider(create: (_) => ExpenseProvider()),
+        ChangeNotifierProvider(create: (_) => AnnouncementProvider()),
+        ChangeNotifierProvider(create: (_) => EventMessageProvider()),
       ],
       child: MaterialApp(
         title: 'CalyMob',

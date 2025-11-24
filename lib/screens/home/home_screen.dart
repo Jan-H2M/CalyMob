@@ -7,7 +7,9 @@ import '../../widgets/operation_card.dart';
 import '../../widgets/loading_widget.dart';
 import '../../widgets/empty_state_widget.dart';
 import '../operations/operation_detail_screen.dart';
+import '../operations/my_events_screen.dart';
 import '../expenses/expense_list_screen.dart';
+import '../announcements/announcements_screen.dart';
 import '../auth/login_screen.dart';
 
 /// Écran d'accueil avec navigation tabs (événements + demandes)
@@ -75,13 +77,17 @@ class _HomeScreenState extends State<HomeScreen> {
     final authProvider = context.watch<AuthProvider>();
     final operationProvider = context.watch<OperationProvider>();
 
+    // Titres et couleurs selon l'onglet
+    final titles = ['Événements', 'Mes demandes', 'Mes événements', 'Annonces'];
+    final colors = [Colors.blue, Colors.orange, const Color(0xFF7B1FA2), Colors.teal]; // Teal pour annonces
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          _currentIndex == 0 ? 'Événements' : 'Mes demandes',
+          titles[_currentIndex],
           style: const TextStyle(color: Colors.white),
         ),
-        backgroundColor: _currentIndex == 0 ? Colors.blue : Colors.orange,
+        backgroundColor: colors[_currentIndex],
         actions: [
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.white),
@@ -90,12 +96,22 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: _currentIndex == 0
-          ? RefreshIndicator(
-              onRefresh: _refreshOperations,
-              child: _buildBody(operationProvider, authProvider),
-            )
-          : const ExpenseListScreen(),
+      body: IndexedStack(
+        index: _currentIndex,
+        children: [
+          // Tab 0: Événements disponibles
+          RefreshIndicator(
+            onRefresh: _refreshOperations,
+            child: _buildBody(operationProvider, authProvider),
+          ),
+          // Tab 1: Mes demandes
+          const ExpenseListScreen(),
+          // Tab 2: Mes événements (mes inscriptions)
+          const MyEventsScreen(),
+          // Tab 3: Annonces du club
+          const AnnouncementsScreen(),
+        ],
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) {
@@ -112,8 +128,16 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.receipt_long),
             label: 'Demandes',
           ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person),
+            label: 'Mes événements',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.campaign),
+            label: 'Annonces',
+          ),
         ],
-        selectedItemColor: _currentIndex == 0 ? Colors.blue : Colors.orange,
+        selectedItemColor: colors[_currentIndex],
         unselectedItemColor: Colors.grey,
       ),
     );

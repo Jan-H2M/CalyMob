@@ -1,0 +1,46 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Profile photos
+    match /clubs/{clubId}/members/{userId}/profile.jpg {
+      // Read: Only allow if user has granted internal consent in Firestore
+      // Exception: User can always access their own photo
+      allow read: if request.auth != null && (
+        request.auth.uid == userId ||
+        firestore.get(/databases/(default)/documents/clubs/$(clubId)/members/$(userId)).data.consent_internal_photo == true
+      );
+
+      // Write: Only the user can upload/update/delete their own photo
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Expense receipts
+    match /clubs/{clubId}/expenses/{expenseId}/{filename} {
+      // Read: Only expense owner or approvers
+      allow read: if request.auth != null && (
+        firestore.get(/databases/(default)/documents/clubs/$(clubId)/expenses/$(expenseId)).data.user_id == request.auth.uid ||
+        firestore.get(/databases/(default)/documents/clubs/$(clubId)/members/$(request.auth.uid)).data.role in ['Comité', 'Président', 'Trésorier']
+      );
+
+      // Write: Only expense owner can upload receipts
+      allow write: if request.auth != null &&
+                      firestore.get(/databases/(default)/documents/clubs/$(clubId)/expenses/$(expenseId)).data.user_id == request.auth.uid;
+    }
+
+    // Operation documents/photos (if needed in future)
+    match /clubs/{clubId}/operations/{operationId}/{filename} {
+      // Read: All authenticated members
+      allow read: if request.auth != null;
+
+      // Write: Only committee members
+      allow write: if request.auth != null &&
+                      firestore.get(/databases/(default)/documents/clubs/$(clubId)/members/$(request.auth.uid)).data.role in ['Comité', 'Président'];
+    }
+
+    // Deny all other paths
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
