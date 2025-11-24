@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Create User Document</title>
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
+    import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
+    import { getFirestore, doc, setDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+
+    // Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyDEe31T_qH3r6jK0ONYBPuZ8wlvGkfr_kM",
+      authDomain: "calycompta.firebaseapp.com",
+      projectId: "calycompta",
+      storageBucket: "calycompta.firebasestorage.app",
+      messagingSenderId: "690832972018",
+      appId: "1:690832972018:web:e6b7784b7dfab3e9a4b0f3",
+      measurementId: "G-NTXR0PT9QX"
+    };
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    const log = (msg, type = 'info') => {
+      const logDiv = document.getElementById('log');
+      const p = document.createElement('p');
+      p.style.color = type === 'error' ? 'red' : type === 'success' ? 'green' : 'black';
+      p.textContent = msg;
+      logDiv.appendChild(p);
+      console.log(msg);
+    };
+
+    onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        log(`✅ Logged in as: ${user.email}`);
+        log(`🔍 User UID: ${user.uid}`);
+
+        const clubId = 'calypso';
+        const userDocPath = `clubs/${clubId}/members/${user.uid}`;
+        log(`📝 Will create document at: ${userDocPath}`);
+
+        try {
+          const userDoc = {
+            email: user.email,
+            nom: "Demo",
+            prenom: "User",
+            role: "superadmin",
+            actif: true,
+            isActive: true,
+            status: "active",
+            created_at: Timestamp.now(),
+            updated_at: Timestamp.now()
+          };
+
+          log('🔄 Creating/updating user document...');
+          await setDoc(doc(db, userDocPath), userDoc, { merge: true });
+          log('✅ SUCCESS! User document created/updated', 'success');
+          log('🔄 Please reload your app (F5) to see the changes', 'success');
+
+        } catch (error) {
+          log(`❌ Error: ${error.message}`, 'error');
+        }
+      } else {
+        log('⚠️ Not logged in! Please log into your app first, then run this script.', 'error');
+      }
+    });
+  </script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    h1 {
+      color: #333;
+    }
+    #log {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    p {
+      margin: 10px 0;
+      font-family: 'Courier New', monospace;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔧 Create Firestore User Document</h1>
+  <div id="log">
+    <p>⏳ Loading...</p>
+  </div>
+</body>
+</html>

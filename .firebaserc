@@ -1,5 +1,15 @@
 {
   "projects": {
     "default": "calycompta"
-  }
+  },
+  "targets": {
+    "calycompta": {
+      "storage": {
+        "main": [
+          "calycompta.firebasestorage.app"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

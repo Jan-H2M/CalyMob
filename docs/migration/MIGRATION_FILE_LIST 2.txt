@@ -1,0 +1,303 @@
+COMPLETE FILE LISTING FOR MIGRATION
+====================================
+
+PART 1: FILES TO MOVE FROM calycompta-app/ TO ROOT
+===================================================
+
+DIRECTORIES TO MOVE:
+- src/              (React components, services, utilities)
+- public/           (Static assets: logos, images)
+- api/              (Vercel serverless functions)
+- functions/        (Firebase Cloud Functions)
+- scripts/          (Deployment and setup scripts)
+- dist/             (Build output - can be deleted, will rebuild)
+
+CONFIGURATION FILES TO MOVE:
+- .env              (Environment variables - SENSITIVE)
+- .env.local        (Vercel/Firebase variables - SENSITIVE)
+- .env.example      (Template for environment variables)
+- .firebaserc       (Firebase project configuration)
+- .gitignore        (Git ignore rules - must merge with root)
+- firebase.json     (Firebase hosting, functions, firestore config)
+- firestore.indexes.json    (Firestore index configuration)
+- firestore.rules   (Firestore security rules)
+- index.html        (Entry HTML file)
+- jest.config.js    (Jest testing configuration)
+- package.json      (NPM dependencies and scripts)
+- package-lock.json (NPM lock file)
+- postcss.config.js (PostCSS configuration)
+- tailwind.config.js (Tailwind CSS configuration)
+- tsconfig.json     (TypeScript configuration)
+- tsconfig.node.json (TypeScript Vite config)
+- vercel.json       (Vercel deployment configuration)
+- vite.config.ts    (Vite build configuration)
+
+OTHER FILES TO MOVE:
+- check-patterns.js          (Pattern checking script)
+- check-patterns.mjs         (Pattern checking script alternative)
+- check-transactions.mjs     (Transaction checking script)
+- cors.json                  (CORS configuration)
+- GOOGLE_MAIL_SETUP.md      (Email setup documentation)
+- VERCEL_SETUP.md           (Vercel deployment guide)
+
+
+PART 2: DOCUMENTATION FILES REQUIRING UPDATES
+==============================================
+
+ROOT-LEVEL DOCUMENTATION:
+Location: /Users/jan/Documents/GitHub/CalyCompta/
+
+1. README.md
+   - Line ~17: "cd calycompta-app" → remove or change
+   - Line ~35: "calycompta-app/api/" → change to "api/"
+   - Lines 40-49: Update project structure section
+
+2. COMPLETE_OVERZICHT.md
+   - "cp ../calycompta-app/public/logo-*.{png,jpg}" → "cp ./public/logo-*.{png,jpg}"
+   - "cp ../calycompta-app/public/logo-vertical.png" → "cp ./public/logo-vertical.png"
+   - "cp ../calycompta-app/public/logo-horizontal.jpg" → "cp ./public/logo-horizontal.jpg"
+
+3. CONSOLIDATION_COMPLETE.md
+   - Check for deployment path references
+   - Update any verification instructions
+
+4. .claude/context.md
+   - "CalyCompta/calycompta-app/src/components/depenses/types.ts" → update path
+   - "CalyCompta/calycompta-app/src/services/operationService.ts" → update path
+
+CALYCOMPTA-APP DOCUMENTATION:
+Location: /Users/jan/Documents/GitHub/CalyCompta/calycompta-app/
+
+1. VERCEL_SETUP.md
+   - 10+ instances of "cd calycompta-app" → remove or change to "cd ."
+
+2. GOOGLE_MAIL_SETUP.md
+   - Check OAuth redirect URIs (likely OK, absolute paths)
+
+3. scripts/README.md
+   - 15+ instances of "cd calycompta-app" → remove or change to "cd ."
+   - "calycompta-app/output/" → change to "output/"
+   - "calycompta-app/" references in paths
+
+4. scripts/README-BACKUP.md
+   - 10+ instances of "cd calycompta-app" → remove or change to "cd ."
+   - "/calycompta-app/firebase-admin-key.json" → change path
+
+5. scripts/README-CUSTOM-CLAIMS.md
+   - 5+ instances of "cd calycompta-app" → remove or change to "cd ."
+
+
+PART 3: CONFIGURATION FILES REQUIRING UPDATES (Content Changes)
+===============================================================
+
+Most configuration files DON'T need content changes:
+
+NO CHANGES NEEDED:
+- vite.config.ts (uses __dirname and relative paths)
+- tsconfig.json (uses relative src/ paths)
+- tsconfig.node.json (uses relative paths)
+- jest.config.js (uses <rootDir> which auto-adapts)
+- tailwind.config.js (uses relative paths)
+- postcss.config.js (simple plugin config)
+- firebase.json (uses relative paths)
+- .firebaserc (project references only)
+- vercel.json (uses relative paths)
+
+POTENTIALLY NEED VERIFICATION:
+- package.json (verify all dependencies are correct for root level)
+- .gitignore (must merge with root .gitignore)
+
+
+PART 4: SCRIPTS REQUIRING UPDATES
+=================================
+
+Location: /Users/jan/Documents/GitHub/CalyCompta/calycompta-app/scripts/
+
+1. deploy-functions.sh
+   - "cd calycompta-app" → remove or change to "cd ."
+
+2. deploy-functions 2.sh
+   - Same as above
+
+3. activate-user.cjs
+   - Error message: "Place your Firebase service account key at: calycompta-app/serviceAccountKey.json"
+   - Change to: "serviceAccountKey.json"
+
+4. generate-inventory-test-data.cjs
+   - Error message: "Placez votre clé de service Firebase dans calycompta-app/serviceAccountKey.json"
+   - Change to: "serviceAccountKey.json"
+
+5. cleanup-inventory-test-data.cjs
+   - Same as generate-inventory-test-data.cjs
+
+6. backup-firestore-unified.cjs
+   - Check for embedded paths: "calycompta-app/firebase-admin-key.json"
+   - Change if found
+
+7. test-migration.cjs
+   - Check for path references
+
+8. migrate-to-operations.js
+   - Check for path references
+
+
+PART 5: DUPLICATE/BACKUP FILES TO DELETE (Before Migration)
+===========================================================
+
+These are backup files with " 2", " 3" suffixes that should be deleted:
+
+ENVIRONMENT FILES:
+- .env 2.example
+- .env 2.example (duplicate)
+
+FIREBASE CONFIG:
+- .firebaserc 2
+- .firebaserc 3
+
+GITIGNORE FILES:
+- .gitignore 2
+- .gitignore 2.web
+- .gitignore.web
+- .gitignore 3
+
+DOCUMENTATION:
+- VERCEL_SETUP 2.md
+- VERCEL_SETUP 3.md
+- GOOGLE_MAIL_SETUP 2.md
+- scripts/README 2.md
+- scripts/README-BACKUP 2.md
+- scripts/README-CUSTOM-CLAIMS 2.md
+
+SCRIPTS:
+- activate-user 2.cjs (if exists)
+- backup-firestore-unified 2.cjs
+- check-patterns 2.js
+- check-patterns 2.mjs
+- check-transactions 2.mjs
+- cleanup-inventory-test-data 2.cjs
+- cors 2.json
+- deploy-functions 2.sh
+- firebase 2.json
+- firestore 2.rules
+- firestore.indexes 2.json
+- generate-inventory-test-data 2.cjs
+- init-security-settings 2.mjs
+- jest.config 2.js
+- migrate-to-operations 2.js
+- package 2.json
+- postcss.config 2.js
+- test-migration 2.cjs
+- (And 3.* versions of above)
+
+TOTAL: ~35+ backup files to delete
+
+
+PART 6: VERCEL AND FIREBASE CLEANUP
+===================================
+
+VERCEL:
+1. Keep: /Users/jan/Documents/GitHub/CalyCompta/.vercel/project.json
+   (This is the main Vercel project config - correct one)
+
+2. Delete: /Users/jan/Documents/GitHub/CalyCompta/calycompta-app/.vercel/
+   (Duplicate, same project ID)
+
+FIREBASE:
+1. Keep: All firebase.json, .firebaserc, firestore.* files
+   (These will be at root after migration)
+
+2. No special cleanup needed
+
+
+PART 7: NODE_MODULES MANAGEMENT
+===============================
+
+1. Keep: /Users/jan/Documents/GitHub/CalyCompta/node_modules/
+   (Root-level npm dependencies)
+
+2. Delete: /Users/jan/Documents/GitHub/CalyCompta/calycompta-app/node_modules/
+   (Will be consolidated to root)
+
+3. Keep: /Users/jan/Documents/GitHub/CalyCompta/functions/node_modules/
+   (Functions has its own dependencies, keep separate)
+
+After migration:
+- Run: npm install (from root)
+- This will ensure all dependencies are correct
+
+
+PART 8: CONFLICT RESOLUTION
+===========================
+
+FILES IN BOTH LOCATIONS (need merge strategy):
+
+1. .gitignore
+   Current root: Contains basic ignores
+   Current calycompta-app: Contains app-specific ignores
+   Action: Merge both into single root .gitignore
+           Delete calycompta-app/.gitignore
+
+2. node_modules/
+   Current root: All npm packages
+   Current calycompta-app: Duplicate npm packages
+   Action: Keep root node_modules only
+           Delete calycompta-app/node_modules after verification
+
+3. .vercel/
+   Current root: Correct project config
+   Current calycompta-app: Same project ID (duplicate)
+   Action: Keep root .vercel/ only
+           Delete calycompta-app/.vercel/
+
+
+PART 9: ENVIRONMENT VARIABLES SUMMARY
+====================================
+
+Files containing environment variables:
+- .env (current location: calycompta-app/)
+- .env.local (current location: calycompta-app/)
+- .env.example (current location: calycompta-app/)
+
+Variables to preserve:
+- CRON_SECRET
+- FIREBASE_CLIENT_EMAIL
+- FIREBASE_PROJECT_ID
+- FIREBASE_SERVICE_ACCOUNT
+- FIREBASE_SERVICE_ACCOUNT_KEY
+- VERCEL_OIDC_TOKEN
+- VITE_FIREBASE_API_KEY
+- VITE_FIREBASE_AUTH_DOMAIN
+- etc. (all VITE_* and FIREBASE_* variables)
+
+Action:
+- Copy .env files to root
+- Do NOT commit .env to git (add to .gitignore)
+- Do NOT commit .env.local to git (add to .gitignore)
+- Keep .env.example in git (template)
+
+
+SUMMARY OF ACTIONS:
+==================
+
+MOVE THESE (63+ items):
+- 6 directories (src, public, api, functions, scripts, dist)
+- 18 configuration files
+- 5 environment files
+- 8 documentation files
+- 26+ utility/script files
+
+UPDATE THESE (44+ items):
+- 22 configuration files
+- 15+ documentation files
+- 5+ script files
+
+DELETE THESE (~35 items):
+- Duplicate/backup files with " 2", " 3" suffixes
+
+MERGE THESE (3 items):
+- .gitignore (merge root + app)
+- node_modules (consolidate to root)
+- .vercel (keep root only)
+
+TOTAL EFFORT: 3-4 hours
+SUCCESS RATE: 95% with proper testing

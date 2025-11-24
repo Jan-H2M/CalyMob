@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Gmail API - Detailed</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .config {
+            background: #f0f0f0;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        .success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        .error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test Gmail API - Logs détaillés</h1>
+
+    <div class="config">
+        <h3>Configuration:</h3>
+        <p><strong>Client ID:</strong> 878211582312-k6jd2i3eikcrf4deui0vri6i3nvr66i50.apps.googleusercontent.com</p>
+        <p><strong>From Email:</strong> calycompta@gmail.com</p>
+        <p><strong>From Name:</strong> Calypso Diving Club</p>
+    </div>
+
+    <button onclick="sendTestEmail()">Envoyer email de test</button>
+
+    <div id="result"></div>
+
+    <script type="module">
+        import { auth, db } from '/src/lib/firebase.js';
+        import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+        async function sendTestEmail() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.textContent = 'Chargement de la configuration...';
+            resultDiv.className = '';
+
+            try {
+                // Load config from Firestore
+                const clubId = 'calypso_diving_club';
+                const configDoc = await getDoc(doc(db, 'clubs', clubId, 'settings', 'googleMail'));
+
+                if (!configDoc.exists()) {
+                    throw new Error('Configuration Gmail non trouvée dans Firestore');
+                }
+
+                const config = configDoc.data();
+
+                resultDiv.textContent = 'Envoi de l\'email...';
+
+                const response = await fetch('/api/send-gmail', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        clientId: config.clientId,
+                        clientSecret: config.clientSecret,
+                        refreshToken: config.refreshToken,
+                        fromEmail: config.fromEmail || 'calycompta@gmail.com',
+                        fromName: config.fromName || 'Calypso Diving Club',
+                        to: 'jan.m.h.delplancke@gmail.com',
+                        subject: '🧪 Test Gmail API - Logs détaillés',
+                        htmlBody: '<h1>Test réussi!</h1><p>Cet email a été envoyé via l\'API Gmail avec logging détaillé.</p>',
+                    }),
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    resultDiv.className = 'success';
+                    resultDiv.textContent = `✅ SUCCESS!\n\n${JSON.stringify(data, null, 2)}`;
+                } else {
+                    resultDiv.className = 'error';
+                    resultDiv.textContent = `❌ ERROR!\n\nStatus: ${response.status}\n\n${JSON.stringify(data, null, 2)}`;
+                }
+            } catch (error) {
+                resultDiv.className = 'error';
+                resultDiv.textContent = `❌ EXCEPTION!\n\n${error.message}\n\n${error.stack}`;
+            }
+        }
+
+        window.sendTestEmail = sendTestEmail;
+    </script>
+</body>
+</html>

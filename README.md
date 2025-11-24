@@ -1,97 +1,137 @@
-# CalyMob - Mobile App
+# CalyCompta
 
-Flutter mobile application for Calypso Diving Club management system.
-
-## Related Project
-
-This mobile app works with the [CalyCompta Web Application](../CalyCompta) and shares the same Firebase backend.
+Web application for Calypso Diving Club financial management and member administration.
 
 ## Tech Stack
 
-- **Framework**: Flutter (Dart)
-- **Backend**: Firebase (Firestore, Auth, Storage)
-- **Platforms**: iOS, Android
-- **CI/CD**: Codemagic
+- **Framework**: React with TypeScript
+- **Build Tool**: Vite
+- **Backend**: Firebase (Firestore, Auth, Storage, Functions)
+- **Hosting**: Vercel
+- **Styling**: Tailwind CSS
 
 ## Quick Start
 
 ```bash
+# Navigate to the web app directory
+cd calycompta-app
+
 # Install dependencies
-flutter pub get
+npm install
 
-# Run on iOS simulator
-flutter run -d ios
+# Run development server
+npm run dev
 
-# Run on Android emulator
-flutter run -d android
-
-# Run on web (for testing)
-flutter run -d chrome
+# Build for production
+npm run build
 ```
-
-## Firebase Setup
-
-See [FIREBASE_SETUP.md](FIREBASE_SETUP.md) for detailed Firebase configuration instructions.
 
 ## Deployment
 
-- **iOS**: See [IOS_DEPLOYMENT_GUIDE.md](IOS_DEPLOYMENT_GUIDE.md)
-- **Android**: See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)
-- **CI/CD**: Configured via [codemagic.yaml](codemagic.yaml)
+The application is automatically deployed to Vercel on push to the main branch.
+
+- **Production URL**: https://calycompta.vercel.app
+- **Deployment Platform**: Vercel
+- **API Functions**: Located in `calycompta-app/api/`
 
 ## Project Structure
 
 ```
-lib/
-├── config/          # Firebase and app configuration
-├── models/          # Data models (Expense, Operation, User)
-├── services/        # Firebase services (Auth, Firestore)
-├── providers/       # State management (Provider pattern)
-├── screens/         # UI screens
-├── widgets/         # Reusable widgets
-└── utils/           # Utility functions
+calycompta-app/
+├── src/
+│   ├── components/      # React components
+│   ├── contexts/        # React contexts
+│   ├── services/        # Firebase and business logic services
+│   ├── utils/          # Utility functions
+│   └── config/         # Configuration files
+├── api/                # Vercel serverless functions
+├── public/             # Static assets
+└── dist/              # Build output
 ```
 
-## Shared Firebase Project
+## Firebase Configuration
 
 - **Project ID**: calycompta
-- **Firestore Database**: Shared with web app
-- **Storage**: Shared photo storage
-- **Authentication**: Shared user accounts
+- **Auth Providers**: Email/Password
+- **Database**: Firestore
+- **Storage**: For expense receipts and documents
+- **Functions**: User activation and automated tasks
 
 ## Features
 
-- Expense claim submission with photos
-- Operation tracking
-- Real-time sync with web app
-- Offline support
-- Photo gallery with fullscreen viewer
-- French UI localization
-
-## Documentation
-
-- [Complete Overview](COMPLETE_OVERZICHT.md) - Full project documentation (Dutch)
-- [Firebase Setup](FIREBASE_SETUP.md) - Firebase configuration guide
-- [iOS Deployment](IOS_DEPLOYMENT_GUIDE.md) - App Store deployment
-- [Codemagic Setup](CODEMAGIC_SETUP.md) - CI/CD configuration
+- Member management and user administration
+- Expense tracking and reimbursement requests
+- Banking transaction management
+- Financial reporting and analytics
+- Document storage and management
+- Email communication system
+- Automated expense matching
+- Fiscal year management
 
 ## Development
 
 ```bash
-# Run tests
-flutter test
+# Start development server
+npm run dev
 
-# Generate app icons
-flutter pub run flutter_launcher_icons:main
-
-# Clean build
-flutter clean && flutter pub get
+# Run type checking
+npm run type-check
 
 # Build for production
-flutter build ios
-flutter build appbundle  # Android
+npm run build
+
+# Preview production build
+npm run preview
 ```
+
+## Environment Variables
+
+Required environment variables for deployment:
+
+- `VITE_FIREBASE_API_KEY`
+- `VITE_FIREBASE_AUTH_DOMAIN`
+- `VITE_FIREBASE_PROJECT_ID`
+- `VITE_FIREBASE_STORAGE_BUCKET`
+- `VITE_FIREBASE_MESSAGING_SENDER_ID`
+- `VITE_FIREBASE_APP_ID`
+- `FIREBASE_SERVICE_ACCOUNT_KEY` (for API functions)
+
+## Maintenance & Troubleshooting
+
+### Transaction Reconciliation Scripts
+
+Located in `scripts/`, these tools help maintain data integrity:
+
+- **`recalculate-balance.mjs`** - **Recalculate balance using app logic (reference method)**
+- **`complete-reconciliation.mjs`** - Compare CSV vs Firestore balances
+- **`analyze-ventilated-transactions.mjs`** - Check parent/child consistency
+- **`compare-amounts-csv-firestore.mjs`** - Transaction-by-transaction comparison
+- **`fix-all-discrepancies.mjs`** - Automated fix with full backup/rollback
+
+**Quick Check:** To verify current balance and detect issues:
+```bash
+node scripts/recalculate-balance.mjs
+```
+
+**Important:** Before running any fix script:
+1. Always run in DRY_RUN mode first
+2. Review the backup files created
+3. Keep the rollback script for emergency recovery
+
+See [ETAT_ACTUEL.md](ETAT_ACTUEL.md) for current status or [docs/FIX_TRANSACTIONS_2025-11-16.md](docs/FIX_TRANSACTIONS_2025-11-16.md) for detailed documentation of past reconciliation.
+
+### Known Issues & Solutions
+
+**Problem: Orphan child transactions**
+- Cause: Parent transaction deleted without cleaning up children
+- Solution: Run `analyze-ventilated-transactions.mjs` to detect, then use fix script
+- Prevention: Always use application's delete function, not manual Firestore deletion
+
+**Problem: Balance discrepancy with bank**
+- Cause: Import errors, duplicate transactions, or ventilation issues
+- Solution: Run `complete-reconciliation.mjs` for full diagnosis
+- Documentation: All fixes are logged in `scripts/fix-log-*.json`
 
 ## Contact
 
-For questions about the mobile app or integration with the web application, see the main CalyCompta documentation.
+For questions about the application, please contact the Calypso Diving Club administration.

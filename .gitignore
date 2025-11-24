@@ -1,79 +1,97 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
+# OS Files
 .DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
+Thumbs.db
 
-# IntelliJ related
-*.iml
-*.ipr
-*.iws
+# IDE
 .idea/
+.vscode/
+*.swp
+*.swo
+*~
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
-
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
-.dart_tool/
-.flutter-plugins
-.flutter-plugins-dependencies
-.packages
-.pub-cache/
-.pub/
-/build/
-
-# Symbolication related
-app.*.symbols
-
-# Obfuscation related
-app.*.map.json
-
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
-
-# Firebase config files (IMPORTANT: Ne pas commiter ces fichiers!)
-android/app/google-services.json
-ios/Runner/GoogleService-Info.plist
+# Dependencies
+node_modules/
 
 # Environment variables
 .env
 .env.local
 .env.production
 
-# Codemagic credentials (PRIVÉ!)
-CODEMAGIC_CREDENTIALS.md
-CODEMAGIC_SETUP_STATUS.md
+# Build outputs
+dist/
+build/
 
-# Android signing
-android/key.properties
-android/*.keystore
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# Keystore info (CONFIDENTIAL)
-KEYSTORE_INFO.md
+# Testing
+coverage/
 
-# Codemagic builds and credentials (NEVER COMMIT!)
-codemagic builds/
-*.p8
-*.p12
-*.mobileprovision
-*.cer
+# Vercel
+.vercel
 
-# Duplicate/backup files
-*" 2"*
-*" 3"*
-*" 4"*
-build 2/
+# Firebase
+firebase-debug.log
+.firebase/
+*.cache
+*firebase-adminsdk*.json
+
+# Misc
+*.bak
+*.tmp
+.temp/# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Firebase
+.firebase
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+firebase-export-*
+
+# Testing
+coverage
+.nyc_output
+
+# Production
+build
+
+# Misc
+.DS_Store
+Thumbs.db
+.vercel
+*.json
+.env*.local
+serviceAccountKey.json

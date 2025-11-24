@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Find Multi-Linked Transactions</title>
+  <style>
+    body {
+      font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+      padding: 20px;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    h1 {
+      color: #4ec9b0;
+      border-bottom: 2px solid #4ec9b0;
+      padding-bottom: 10px;
+    }
+    button {
+      background: #0e639c;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      margin: 10px 5px;
+      cursor: pointer;
+      font-size: 14px;
+      border-radius: 4px;
+    }
+    button:hover {
+      background: #1177bb;
+    }
+    button.danger {
+      background: #d16969;
+    }
+    button.danger:hover {
+      background: #e07070;
+    }
+    button:disabled {
+      background: #555;
+      cursor: not-allowed;
+    }
+    #output {
+      background: #252526;
+      padding: 15px;
+      border-radius: 4px;
+      margin-top: 20px;
+      white-space: pre-wrap;
+      font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+      font-size: 12px;
+      max-height: 600px;
+      overflow-y: auto;
+    }
+    .stats {
+      background: #264f78;
+      padding: 15px;
+      border-radius: 4px;
+      margin: 15px 0;
+    }
+    .warning {
+      color: #d7ba7d;
+    }
+    .error {
+      color: #f48771;
+    }
+    .success {
+      color: #4ec9b0;
+    }
+    .duplicate {
+      color: #ce9178;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 Find Multi-Linked Transactions</h1>
+
+    <div id="loginSection" class="stats">
+      <div><strong>🔐 Login vereist:</strong></div>
+      <div style="margin-top: 10px;">
+        <input type="email" id="emailInput" placeholder="Email" style="padding: 8px; width: 300px; margin-right: 10px; background: #3c3c3c; border: 1px solid #555; color: #d4d4d4; border-radius: 4px;">
+        <input type="password" id="passwordInput" placeholder="Password" style="padding: 8px; width: 300px; margin-right: 10px; background: #3c3c3c; border: 1px solid #555; color: #d4d4d4; border-radius: 4px;">
+        <button onclick="login()" id="loginBtn">Login</button>
+      </div>
+      <div id="loginStatus" style="margin-top: 10px;"></div>
+    </div>
+
+    <div class="stats" id="stats" style="display:none;">
+      <div><strong>📊 Statistieken:</strong></div>
+      <div id="statsContent"></div>
+    </div>
+
+    <div>
+      <button onclick="analyze()" id="analyzeBtn" disabled>📋 Analyze (Dry-Run)</button>
+      <button onclick="fix()" id="fixBtn" class="danger" disabled>🔧 Fix Duplicates</button>
+      <button onclick="exportJSON()" id="exportBtn" disabled>💾 Export JSON</button>
+    </div>
+
+    <div id="output"></div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+    import { getFirestore, collection, getDocs, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+    import { getAuth, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+
+    const CLUB_ID = 'calypso';
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCmU-7GABqko2N-2saQNcNNSIyW_BbVCtU",
+      authDomain: "calycompta.firebaseapp.com",
+      projectId: "calycompta",
+      storageBucket: "calycompta.firebasestorage.app",
+      messagingSenderId: "328464166969",
+      appId: "1:328464166969:web:ee7f4452f92b1b338f5de8"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+
+    let analysisResults = null;
+
+    function log(message, className = '') {
+      const output = document.getElementById('output');
+      const line = document.createElement('div');
+      line.textContent = message;
+      if (className) line.className = className;
+      output.appendChild(line);
+      output.scrollTop = output.scrollHeight;
+    }
+
+    function clearLog() {
+      document.getElementById('output').innerHTML = '';
+    }
+
+    function findDuplicateLinks(matchedEntities) {
+      const seen = new Map();
+      const duplicates = [];
+
+      matchedEntities.forEach((entity, index) => {
+        const key = `${entity.entity_type}:${entity.entity_id}`;
+        if (seen.has(key)) {
+          seen.get(key).push(index);
+        } else {
+          seen.set(key, [index]);
+        }
+      });
+
+      seen.forEach((indices, key) => {
+        if (indices.length > 1) {
+          duplicates.push({ key, indices, count: indices.length });
+        }
+      });
+
+      return duplicates;
+    }
+
+    function removeDuplicateLinks(matchedEntities) {
+      const seen = new Set();
+      const cleaned = [];
+
+      matchedEntities.forEach(entity => {
+        const key = `${entity.entity_type}:${entity.entity_id}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          cleaned.push(entity);
+        }
+      });
+
+      return cleaned;
+    }
+
+    window.login = async function() {
+      const email = document.getElementById('emailInput').value;
+      const password = document.getElementById('passwordInput').value;
+      const loginStatus = document.getElementById('loginStatus');
+
+      if (!email || !password) {
+        loginStatus.innerHTML = '<span class="error">❌ Email en password verplicht</span>';
+        return;
+      }
+
+      document.getElementById('loginBtn').disabled = true;
+      loginStatus.innerHTML = 'Logging in...';
+
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+        loginStatus.innerHTML = `<span class="success">✅ Ingelogd als: ${auth.currentUser.email}</span>`;
+
+        // Hide login section, enable analyze button
+        document.getElementById('loginSection').style.display = 'none';
+        document.getElementById('analyzeBtn').disabled = false;
+
+        log(`✅ Ingelogd als: ${auth.currentUser.email}`, 'success');
+        log('Klik op "Analyze" om te beginnen.', 'success');
+      } catch (error) {
+        loginStatus.innerHTML = `<span class="error">❌ Login failed: ${error.message}</span>`;
+        document.getElementById('loginBtn').disabled = false;
+      }
+    };
+
+    // Allow Enter key to login
+    document.addEventListener('DOMContentLoaded', () => {
+      const passwordInput = document.getElementById('passwordInput');
+      if (passwordInput) {
+        passwordInput.addEventListener('keypress', (e) => {
+          if (e.key === 'Enter') login();
+        });
+      }
+    });
+
+    window.analyze = async function() {
+      if (!auth.currentUser) {
+        alert('Je moet eerst inloggen!');
+        return;
+      }
+
+      clearLog();
+      document.getElementById('analyzeBtn').disabled = true;
+
+      try {
+
+        log('🔍 Analyzing transactions...');
+
+        const transactionsRef = collection(db, 'clubs', CLUB_ID, 'bank_transactions');
+        const snapshot = await getDocs(transactionsRef);
+
+        const multiLinked = [];
+        const withDuplicates = [];
+        let totalTransactions = 0;
+        let transactionsWithLinks = 0;
+
+        snapshot.forEach(docSnap => {
+          totalTransactions++;
+          const data = docSnap.data();
+          const matchedEntities = data.matched_entities || [];
+
+          if (matchedEntities.length > 0) {
+            transactionsWithLinks++;
+          }
+
+          if (matchedEntities.length > 1) {
+            const duplicates = findDuplicateLinks(matchedEntities);
+            const hasDuplicates = duplicates.length > 0;
+
+            multiLinked.push({
+              id: docSnap.id,
+              docRef: docSnap.ref,
+              numeroSequence: data.numero_sequence,
+              montant: data.montant,
+              dateExecution: data.date_execution?.toDate?.() || data.date_execution,
+              contrepartieName: data.contrepartie_nom,
+              communication: data.communication,
+              matchedCount: matchedEntities.length,
+              matchedEntities: matchedEntities,
+              duplicates: duplicates,
+              hasDuplicates: hasDuplicates
+            });
+
+            if (hasDuplicates) {
+              withDuplicates.push(multiLinked[multiLinked.length - 1]);
+            }
+          }
+        });
+
+        analysisResults = { multiLinked, withDuplicates, totalTransactions, transactionsWithLinks };
+
+        // Show stats
+        const statsDiv = document.getElementById('stats');
+        const statsContent = document.getElementById('statsContent');
+        statsDiv.style.display = 'block';
+        statsContent.innerHTML = `
+          <div>Total transacties: ${totalTransactions}</div>
+          <div>Transacties met links: ${transactionsWithLinks}</div>
+          <div>Transacties met >1 link: ${multiLinked.length}</div>
+          <div class="duplicate">Transacties met duplicaten: ${withDuplicates.length}</div>
+        `;
+
+        log('');
+        log('📊 STATISTIEKEN:', 'success');
+        log(`   Total transacties:               ${totalTransactions}`);
+        log(`   Transacties met links:           ${transactionsWithLinks}`);
+        log(`   Transacties met >1 link:         ${multiLinked.length}`);
+        log(`   Transacties met duplicaten:      ${withDuplicates.length}`, 'duplicate');
+        log('');
+
+        if (multiLinked.length === 0) {
+          log('✅ Geen transacties met meerdere links gevonden.', 'success');
+          return;
+        }
+
+        // Sort
+        multiLinked.sort((a, b) => {
+          if (a.hasDuplicates !== b.hasDuplicates) return a.hasDuplicates ? -1 : 1;
+          return b.matchedCount - a.matchedCount;
+        });
+
+        // Display results
+        log('🔗 TRANSACTIES MET MEERDERE LINKS:');
+        log('='.repeat(100));
+
+        multiLinked.forEach((tx, index) => {
+          const duplicateFlag = tx.hasDuplicates ? ' ⚠️ DUPLICATEN' : '';
+          log('');
+          log(`[${index + 1}] ${tx.numeroSequence}${duplicateFlag}`, tx.hasDuplicates ? 'warning' : '');
+          log(`    Montant: ${tx.montant}€ | Datum: ${tx.dateExecution}`);
+          log(`    Contrepartie: ${tx.contrepartieName || '(geen)'}`);
+          log(`    Aantal links: ${tx.matchedCount}`);
+
+          if (tx.hasDuplicates) {
+            log(`    ⚠️  DUPLICATEN:`, 'duplicate');
+            tx.duplicates.forEach(dup => {
+              log(`        - ${dup.key} verschijnt ${dup.count}x`, 'duplicate');
+            });
+          }
+
+          log(`    Links:`);
+          tx.matchedEntities.forEach((entity, idx) => {
+            log(`       [${idx + 1}] ${entity.entity_type} | ${entity.entity_id} | ${entity.entity_name || '(geen)'}`);
+          });
+          log('-'.repeat(100));
+        });
+
+        log('');
+        log('✅ Analyse compleet!', 'success');
+
+        // Enable buttons
+        document.getElementById('fixBtn').disabled = withDuplicates.length === 0;
+        document.getElementById('exportBtn').disabled = false;
+
+      } catch (error) {
+        log(`❌ Error: ${error.message}`, 'error');
+        console.error(error);
+      } finally {
+        document.getElementById('analyzeBtn').disabled = false;
+      }
+    };
+
+    window.fix = async function() {
+      if (!analysisResults || !analysisResults.withDuplicates.length) {
+        alert('Geen duplicaten om te fixen!');
+        return;
+      }
+
+      if (!confirm(`Je gaat ${analysisResults.withDuplicates.length} transacties fixen. Doorgaan?`)) {
+        return;
+      }
+
+      document.getElementById('fixBtn').disabled = true;
+      log('');
+      log(`🔧 FIXING ${analysisResults.withDuplicates.length} transacties...`, 'warning');
+      log('');
+
+      let fixedCount = 0;
+
+      for (const tx of analysisResults.withDuplicates) {
+        const cleanedEntities = removeDuplicateLinks(tx.matchedEntities);
+        const removedCount = tx.matchedEntities.length - cleanedEntities.length;
+
+        log(`   ✓ ${tx.numeroSequence}: ${tx.matchedEntities.length} → ${cleanedEntities.length} links (${removedCount} verwijderd)`, 'success');
+
+        await updateDoc(tx.docRef, {
+          matched_entities: cleanedEntities
+        });
+
+        fixedCount++;
+      }
+
+      log('');
+      log(`✅ ${fixedCount} transacties gefixed!`, 'success');
+
+      // Refresh analysis
+      setTimeout(() => analyze(), 1000);
+    };
+
+    window.exportJSON = function() {
+      if (!analysisResults) return;
+
+      const exportData = analysisResults.multiLinked.map(tx => {
+        const { docRef, ...rest } = tx;
+        return rest;
+      });
+
+      const data = {
+        generatedAt: new Date().toISOString(),
+        statistics: {
+          totalTransactions: analysisResults.totalTransactions,
+          transactionsWithLinks: analysisResults.transactionsWithLinks,
+          multiLinked: analysisResults.multiLinked.length,
+          withDuplicates: analysisResults.withDuplicates.length
+        },
+        transactions: exportData
+      };
+
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'multi-linked-transactions.json';
+      a.click();
+      URL.revokeObjectURL(url);
+
+      log('');
+      log('💾 JSON geëxporteerd!', 'success');
+    };
+  </script>
+</body>
+</html>

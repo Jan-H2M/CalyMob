@@ -1,0 +1,330 @@
+/**
+ * Script de correction complète avec traçabilité
+ *
+ * IMPORTANT: Ce script sauvegarde toutes les données avant modification
+ * et crée un fichier de rollback pour annuler si nécessaire
+ */
+
+import { initializeApp, cert } from 'firebase-admin/app';
+import { getFirestore, Timestamp, FieldValue } from 'firebase-admin/firestore';
+import { readFileSync, writeFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const serviceAccount = JSON.parse(
+  readFileSync(join(__dirname, '../serviceAccountKey.json'), 'utf8')
+);
+initializeApp({ credential: cert(serviceAccount) });
+
+const db = getFirestore();
+const CLUB_ID = 'calypso';
+
+// CONFIGURATION
+const DRY_RUN = false;  // Mettre à false pour exécuter réellement
+
+async function fixAllDiscrepancies() {
+  console.log('🔧 === CORRECTION COMPLÈTE AVEC TRAÇABILITÉ ===\n');
+  console.log(`Mode: ${DRY_RUN ? '⚠️  DRY RUN (simulation)' : '🚀 EXECUTION RÉELLE'}\n`);
+
+  const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
+  const backupFile = join(__dirname, `backup-${timestamp}.json`);
+  const logFile = join(__dirname, `fix-log-${timestamp}.json`);
+
+  // Structure pour tracer toutes les opérations
+  const operations = {
+    timestamp,
+    dryRun: DRY_RUN,
+    backup: [],
+    deletions: [],
+    updates: [],
+    summary: {}
+  };
+
+  try {
+    // 1. Charger toutes les transactions
+    console.log('📊 Analyse des transactions...\n');
+    const txRef = db.collection('clubs').doc(CLUB_ID).collection('transactions_bancaires');
+    const snapshot = await txRef
+      .where('date_execution', '>=', Timestamp.fromDate(new Date('2025-01-01')))
+      .where('date_execution', '<=', Timestamp.fromDate(new Date('2025-12-31')))
+      .get();
+
+    const normalizedCurrentAccount = 'BE26210016070629';
+
+    // Identifier les parents valides
+    const validParentIds = new Set();
+    snapshot.docs.forEach(doc => {
+      if (doc.data().is_parent) {
+        validParentIds.add(doc.id);
+      }
+    });
+
+    // Catégoriser les transactions
+    const toDelete = [];
+    const toUpdate = [];
+    const parents = [];
+
+    snapshot.docs.forEach(doc => {
+      const data = doc.data();
+      const compte = data.numero_compte?.replace(/\s/g, '') || '';
+
+      if (compte !== normalizedCurrentAccount) return;
+
+      // Sauvegarder dans backup
+      operations.backup.push({
+        id: doc.id,
+        data: { ...data }
+      });
+
+      // Cas 1: Enfant (valide ou orphelin) -> À SUPPRIMER
+      if (data.parent_transaction_id) {
+        const isOrphan = !validParentIds.has(data.parent_transaction_id);
+        toDelete.push({
+          id: doc.id,
+          sequence: data.numero_sequence,
+          montant: data.montant,
+          type: isOrphan ? 'orphan' : 'valid_child',
+          reason: isOrphan
+            ? `Enfant orphelin (parent ${data.parent_transaction_id} n'existe plus)`
+            : 'Enfant dont le parent existe dans CSV (ventilation à annuler)',
+          data: { ...data }
+        });
+      }
+
+      // Cas 2: Parent -> À CONVERTIR en transaction normale
+      if (data.is_parent) {
+        parents.push({
+          id: doc.id,
+          sequence: data.numero_sequence,
+          montant: data.montant,
+          data: { ...data }
+        });
+        toUpdate.push({
+          id: doc.id,
+          sequence: data.numero_sequence,
+          montant: data.montant,
+          reason: 'Convertir parent en transaction normale (existe dans CSV)',
+          changes: {
+            is_parent: false,
+            child_count: FieldValue.delete(),
+            updated_at: new Date(),
+            fix_applied_at: new Date(),
+            fix_reason: 'Annulation ventilation - transaction simple dans CSV'
+          },
+          oldData: { ...data }
+        });
+      }
+    });
+
+    // Résumé
+    operations.summary = {
+      totalTransactions: snapshot.size,
+      toDelete: toDelete.length,
+      toUpdate: toUpdate.length,
+      orphans: toDelete.filter(t => t.type === 'orphan').length,
+      validChildren: toDelete.filter(t => t.type === 'valid_child').length,
+      parents: toUpdate.length
+    };
+
+    console.log('=== RÉSUMÉ DES OPÉRATIONS ===\n');
+    console.log(`Total transactions analysées: ${operations.summary.totalTransactions}`);
+    console.log(`\nÀ SUPPRIMER: ${operations.summary.toDelete}`);
+    console.log(`  - Enfants orphelins: ${operations.summary.orphans}`);
+    console.log(`  - Enfants valides: ${operations.summary.validChildren}`);
+    console.log(`\nÀ CONVERTIR: ${operations.summary.toUpdate}`);
+    console.log(`  - Parents à réinitialiser: ${operations.summary.parents}\n`);
+
+    // Afficher les détails
+    if (toDelete.length > 0) {
+      console.log('=== TRANSACTIONS À SUPPRIMER ===\n');
+      let totalImpact = 0;
+      toDelete.forEach((tx, i) => {
+        console.log(`${i + 1}. ${tx.sequence} | ${tx.montant} € | ${tx.type}`);
+        console.log(`   Raison: ${tx.reason}`);
+        console.log(`   ID: ${tx.id}`);
+        totalImpact += tx.montant;
+      });
+      console.log(`\nImpact total: -${totalImpact.toFixed(2)} € sur le solde\n`);
+    }
+
+    if (toUpdate.length > 0) {
+      console.log('=== TRANSACTIONS À CONVERTIR ===\n');
+      let totalImpact = 0;
+      toUpdate.forEach((tx, i) => {
+        console.log(`${i + 1}. ${tx.sequence} | ${tx.montant} €`);
+        console.log(`   Raison: ${tx.reason}`);
+        console.log(`   ID: ${tx.id}`);
+        totalImpact += tx.montant;
+      });
+      console.log(`\nImpact total: +${totalImpact.toFixed(2)} € sur le solde\n`);
+    }
+
+    // Sauvegarder le backup
+    console.log(`💾 Sauvegarde dans ${backupFile}...\n`);
+    writeFileSync(backupFile, JSON.stringify(operations.backup, null, 2));
+
+    // Exécution
+    if (!DRY_RUN) {
+      console.log('🚀 EXÉCUTION DES MODIFICATIONS...\n');
+
+      const batch = db.batch();
+      let batchCount = 0;
+
+      // Supprimer les enfants
+      for (const tx of toDelete) {
+        batch.delete(txRef.doc(tx.id));
+        operations.deletions.push({
+          id: tx.id,
+          sequence: tx.sequence,
+          montant: tx.montant,
+          type: tx.type,
+          timestamp: new Date()
+        });
+        batchCount++;
+
+        if (batchCount % 500 === 0) {
+          await batch.commit();
+          console.log(`   ✓ Batch de ${batchCount} transactions validé`);
+        }
+      }
+
+      // Mettre à jour les parents
+      for (const tx of toUpdate) {
+        batch.update(txRef.doc(tx.id), tx.changes);
+        operations.updates.push({
+          id: tx.id,
+          sequence: tx.sequence,
+          changes: tx.changes,
+          timestamp: new Date()
+        });
+        batchCount++;
+
+        if (batchCount % 500 === 0) {
+          await batch.commit();
+          console.log(`   ✓ Batch de ${batchCount} transactions validé`);
+        }
+      }
+
+      if (batchCount % 500 !== 0) {
+        await batch.commit();
+        console.log(`   ✓ Batch final de ${batchCount} transactions validé`);
+      }
+
+      console.log(`\n✅ ${operations.deletions.length} suppressions effectuées`);
+      console.log(`✅ ${operations.updates.length} mises à jour effectuées\n`);
+
+    } else {
+      console.log('ℹ️  MODE DRY RUN - Aucune modification effectuée\n');
+      console.log('Pour exécuter réellement:');
+      console.log('1. Vérifiez le backup: ' + backupFile);
+      console.log('2. Ouvrez ce script');
+      console.log('3. Changez DRY_RUN = false');
+      console.log('4. Relancez le script\n');
+    }
+
+    // Sauvegarder le log
+    console.log(`📝 Log sauvegardé dans ${logFile}\n`);
+    writeFileSync(logFile, JSON.stringify(operations, null, 2));
+
+    // Créer le script de rollback
+    if (!DRY_RUN) {
+      const rollbackScript = `
+/**
+ * Script de ROLLBACK - Généré automatiquement le ${timestamp}
+ *
+ * ATTENTION: Ce script restaure les transactions à leur état avant correction
+ */
+
+import { initializeApp, cert } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const serviceAccount = JSON.parse(
+  readFileSync(join(__dirname, '../serviceAccountKey.json'), 'utf8')
+);
+initializeApp({ credential: cert(serviceAccount) });
+
+const db = getFirestore();
+const CLUB_ID = 'calypso';
+
+async function rollback() {
+  console.log('🔄 ROLLBACK - Restauration des données...\\n');
+
+  const backup = JSON.parse(readFileSync('${backupFile}', 'utf8'));
+  const log = JSON.parse(readFileSync('${logFile}', 'utf8'));
+
+  const txRef = db.collection('clubs').doc(CLUB_ID).collection('transactions_bancaires');
+  const batch = db.batch();
+  let count = 0;
+
+  // Restaurer les transactions supprimées
+  for (const deletion of log.deletions) {
+    const originalData = backup.find(b => b.id === deletion.id);
+    if (originalData) {
+      batch.set(txRef.doc(deletion.id), originalData.data);
+      count++;
+      console.log(\`Restauration: \${deletion.sequence}\`);
+    }
+  }
+
+  // Restaurer les transactions modifiées
+  for (const update of log.updates) {
+    const originalData = backup.find(b => b.id === update.id);
+    if (originalData) {
+      batch.set(txRef.doc(update.id), originalData.data);
+      count++;
+      console.log(\`Restauration: \${update.sequence}\`);
+    }
+  }
+
+  await batch.commit();
+  console.log(\`\\n✅ \${count} transactions restaurées\`);
+}
+
+rollback()
+  .then(() => process.exit(0))
+  .catch(error => {
+    console.error('Erreur:', error);
+    process.exit(1);
+  });
+`;
+
+      const rollbackFile = join(__dirname, `rollback-${timestamp}.mjs`);
+      writeFileSync(rollbackFile, rollbackScript);
+      console.log(`🔄 Script de rollback créé: ${rollbackFile}\n`);
+    }
+
+    // Résumé final
+    console.log('=== RÉSUMÉ FINAL ===\n');
+    console.log(`✅ Backup sauvegardé: ${backupFile}`);
+    console.log(`✅ Log sauvegardé: ${logFile}`);
+    if (!DRY_RUN) {
+      console.log(`✅ Script de rollback créé: rollback-${timestamp}.mjs`);
+    }
+    console.log(`\nPour annuler ces modifications plus tard:`);
+    console.log(`  node scripts/rollback-${timestamp}.mjs\n`);
+
+  } catch (error) {
+    console.error('❌ ERREUR:', error);
+    console.error('\nLe backup a été sauvegardé avant l\'erreur');
+    throw error;
+  }
+}
+
+fixAllDiscrepancies()
+  .then(() => {
+    console.log('✅ Script terminé avec succès');
+    process.exit(0);
+  })
+  .catch(error => {
+    console.error('\n❌ Erreur fatale:', error);
+    process.exit(1);
+  });

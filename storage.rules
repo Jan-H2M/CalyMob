@@ -1,46 +1,127 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-
-    // Profile photos
-    match /clubs/{clubId}/members/{userId}/profile.jpg {
-      // Read: Only allow if user has granted internal consent in Firestore
-      // Exception: User can always access their own photo
-      allow read: if request.auth != null && (
-        request.auth.uid == userId ||
-        firestore.get(/databases/(default)/documents/clubs/$(clubId)/members/$(userId)).data.consent_internal_photo == true
-      );
-
-      // Write: Only the user can upload/update/delete their own photo
-      allow write: if request.auth != null && request.auth.uid == userId;
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
     }
 
-    // Expense receipts
-    match /clubs/{clubId}/expenses/{expenseId}/{filename} {
-      // Read: Only expense owner or approvers
-      allow read: if request.auth != null && (
-        firestore.get(/databases/(default)/documents/clubs/$(clubId)/expenses/$(expenseId)).data.user_id == request.auth.uid ||
-        firestore.get(/databases/(default)/documents/clubs/$(clubId)/members/$(request.auth.uid)).data.role in ['Comité', 'Président', 'Trésorier']
-      );
-
-      // Write: Only expense owner can upload receipts
-      allow write: if request.auth != null &&
-                      firestore.get(/databases/(default)/documents/clubs/$(clubId)/expenses/$(expenseId)).data.user_id == request.auth.uid;
+    function isClubMember(clubId) {
+      return isAuthenticated() &&
+        firestore.exists(/databases/(default)/documents/clubs/$(clubId)/members/$(request.auth.uid));
     }
 
-    // Operation documents/photos (if needed in future)
-    match /clubs/{clubId}/operations/{operationId}/{filename} {
-      // Read: All authenticated members
-      allow read: if request.auth != null;
-
-      // Write: Only committee members
-      allow write: if request.auth != null &&
-                      firestore.get(/databases/(default)/documents/clubs/$(clubId)/members/$(request.auth.uid)).data.role in ['Comité', 'Président'];
+    function hasRole(clubId, roles) {
+      return isClubMember(clubId) &&
+        firestore.get(/databases/(default)/documents/clubs/$(clubId)/members/$(request.auth.uid)).data.role in roles;
     }
 
-    // Deny all other paths
-    match /{allPaths=**} {
-      allow read, write: if false;
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // File size limits
+    function isValidImageSize() {
+      return request.resource.size < 5 * 1024 * 1024; // 5MB
+    }
+
+    function isValidDocumentSize() {
+      return request.resource.size < 10 * 1024 * 1024; // 10MB
+    }
+
+    function isValidFileType(types) {
+      return request.resource.contentType.matches(types);
+    }
+
+    // ============================================
+    // PUBLIC: Club logos (for email templates)
+    // ============================================
+    match /clubs/{clubId}/logo/{fileName} {
+      allow read: if true;  // Public read access for email display
+      allow write: if hasRole(clubId, ['admin', 'superadmin']) &&
+                     isValidImageSize() &&
+                     isValidFileType('image/.*');
+    }
+
+    // Club documents and receipts
+    match /clubs/{clubId}/documents/{allPaths=**} {
+      allow read: if isClubMember(clubId);
+      allow create: if isClubMember(clubId) &&
+                      isValidDocumentSize() &&
+                      isValidFileType('(application/pdf|image/.*)');
+      allow update: if hasRole(clubId, ['admin', 'validateur']);
+      allow delete: if hasRole(clubId, ['admin']);
+    }
+
+    // Justificatifs (receipts/invoices) - simplified for emulators
+    match /clubs/{clubId}/justificatifs/{document} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+                      isValidDocumentSize() &&
+                      isValidFileType('(application/pdf|image/.*)');
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated();
+    }
+
+    // Expense claim documents (legacy path)
+    match /clubs/{clubId}/demandes/{demandeId}/{document} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+                      isValidDocumentSize() &&
+                      isValidFileType('(application/pdf|image/.*)');
+      allow update, delete: if isAuthenticated();
+    }
+
+    // Expense documents (new simplified path for all expense-related documents)
+    match /clubs/{clubId}/expense_documents/{document} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+                      isValidDocumentSize() &&
+                      isValidFileType('(application/pdf|image/.*)');
+      allow update, delete: if hasRole(clubId, ['admin', 'validateur']);
+    }
+
+    // Operation documents (événements, cotisations, dons, ventes, subventions)
+    match /clubs/{clubId}/operations/{operationId}/{document} {
+      allow read: if isClubMember(clubId);
+      allow create, update: if isClubMember(clubId) &&
+                              isValidDocumentSize();
+      allow delete: if hasRole(clubId, ['superadmin', 'admin', 'validateur']);
+    }
+
+    // LEGACY: Event documents - Gardé pour compatibilité migration
+    match /clubs/{clubId}/evenements/{eventId}/{document} {
+      allow read: if isClubMember(clubId);
+      allow create, update: if hasRole(clubId, ['admin', 'validateur', 'organisateur']) &&
+                              isValidDocumentSize();
+      allow delete: if hasRole(clubId, ['admin']);
+    }
+
+    // User profile pictures
+    match /users/{userId}/profile/{fileName} {
+      allow read: if isAuthenticated();
+      allow create, update: if isOwner(userId) &&
+                              isValidImageSize() &&
+                              isValidFileType('image/.*');
+      allow delete: if isOwner(userId) || request.auth.token.admin == true;
+    }
+
+    // VP Dive imports (Excel files)
+    match /clubs/{clubId}/imports/vpdive/{fileName} {
+      allow read: if hasRole(clubId, ['admin', 'validateur']);
+      allow create: if hasRole(clubId, ['admin', 'validateur']) &&
+                      request.resource.size < 50 * 1024 * 1024 && // 50MB for Excel files
+                      isValidFileType('(application/vnd.*|text/csv)');
+      allow delete: if hasRole(clubId, ['admin']);
+    }
+
+    // Bank statement imports
+    match /clubs/{clubId}/imports/bank/{fileName} {
+      allow read: if hasRole(clubId, ['admin', 'validateur']);
+      allow create: if hasRole(clubId, ['admin', 'validateur']) &&
+                      request.resource.size < 10 * 1024 * 1024 && // 10MB
+                      isValidFileType('(text/csv|application/.*csv.*)');
+      allow delete: if hasRole(clubId, ['admin']);
     }
   }
 }

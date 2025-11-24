@@ -90,14 +90,11 @@ service cloud.firestore {
         // - permissions: needed to determine user capabilities during auth
         // - ai_api_keys: loaded during auth context initialization
         // Other API Keys - RESTRICTED to admin/superadmin with valid session
-        // automated_jobs - admin/superadmin only
         allow read: if settingId in ['security', 'permissions', 'ai_api_keys']
           ? (settingId == 'security' || settingId == 'permissions' ? isAuthenticated() : isAdmin(clubId))
           : settingId == 'google_mail'
             ? (isAdmin(clubId) && hasValidSession(clubId))
-            : settingId == 'automated_jobs'
-              ? (isAdmin(clubId) && hasValidSession(clubId))
-              : isAuthenticated();
+            : isAuthenticated();
 
         // Only admins can write, and they need a valid session
         allow write: if isAdmin(clubId) && hasValidSession(clubId);
@@ -123,22 +120,8 @@ service cloud.firestore {
         allow update, delete: if false; // Logs are immutable
       }
 
-      // Automated jobs logs - read-only for authenticated members
-      match /automated_jobs_logs/{logId} {
-        allow read: if isAuthenticated()
-          && exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
-        allow create: if false; // Only Cloud Functions/Vercel API can create logs
-        allow update, delete: if false; // Logs are immutable
-      }
-
       // Dive locations (event settings) - admin management only
       match /dive_locations/{locationId} {
-        allow read: if isAuthenticated() && hasValidSession(clubId);
-        allow write: if isAdmin(clubId) && hasValidSession(clubId);
-      }
-
-      // LIFRAS exercises - can be read by all, written by admins only
-      match /exercices_lifras/{exerciceId} {
         allow read: if isAuthenticated() && hasValidSession(clubId);
         allow write: if isAdmin(clubId) && hasValidSession(clubId);
       }
@@ -259,51 +242,19 @@ service cloud.firestore {
             getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
             (getUserData(clubId).app_role == 'user' && resource.data.organisateur_id == request.auth.uid)
           );
-
-        // Inscriptions subcollection (web app compatibility)
-        match /inscriptions/{inscriptionId} {
-          allow read: if isAuthenticated();
-
-          // Create: Users can register themselves (mobile app compatibility)
-          allow create: if isAuthenticated()
-            && request.resource.data.membre_id == request.auth.uid;
-
-          // Delete: Users can unregister themselves (mobile app compatibility)
-          allow delete: if isAuthenticated()
-            && resource.data.membre_id == request.auth.uid;
-
-          // Update: Requires session (web app) OR user owns the document (mobile app)
-          allow update: if isAuthenticated()
-            && (request.auth.uid == resource.data.membre_id || hasValidSession(clubId));
-        }
       }
 
       // Operation participants (inscriptions, cotisations payées, etc.)
       match /operation_participants/{participantId} {
         allow read: if isAuthenticated();
-
-        // Create: Users can register themselves (mobile app compatibility - no session required)
-        allow create: if isAuthenticated()
-          && request.resource.data.membre_id == request.auth.uid;
-
-        // Delete: Users can unregister themselves (mobile app compatibility)
-        allow delete: if isAuthenticated()
-          && resource.data.membre_id == request.auth.uid;
-
-        // Update: Requires session (web app) OR user owns the document (mobile app)
-        allow update: if isAuthenticated()
+        allow write: if isAuthenticated()
+          && hasValidSession(clubId)
           && (
-            request.auth.uid == resource.data.membre_id
-            || (
-              hasValidSession(clubId)
-              && (
-                // Check fiscal year via parent operation
-                !('operation_id' in request.resource.data) ||
-                canModifyFiscalYearData(
-                  clubId,
-                  get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(request.resource.data.operation_id)).data.fiscal_year_id
-                )
-              )
+            // Check fiscal year via parent operation
+            !('operation_id' in request.resource.data) ||
+            canModifyFiscalYearData(
+              clubId,
+              get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(request.resource.data.operation_id)).data.fiscal_year_id
             )
           );
       }
@@ -326,92 +277,21 @@ service cloud.firestore {
         allow write: if isAuthenticated() && hasValidSession(clubId);
       }
 
-      // ========== COMMUNICATION SYSTEM ==========
-
-      // Announcements - Club-wide broadcast messages (admin-only write, all read)
-      match /announcements/{announcementId} {
-        // Read: All authenticated members can read announcements
-        allow read: if isAuthenticated();
-
-        // Create/Update: Only admins (CA members) can create/edit announcements
-        // Mobile app compatibility: no session required (users checked via clubStatuten)
-        allow create, update: if isAuthenticated()
-          && exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid))
-          && getUserData(clubId).clubStatuten != null
-          && 'CA' in getUserData(clubId).clubStatuten;
-
-        // Delete: Only admins can delete announcements
-        allow delete: if isAuthenticated()
-          && exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid))
-          && getUserData(clubId).clubStatuten != null
-          && 'CA' in getUserData(clubId).clubStatuten;
-      }
-
-      // Event Messages - Per-event discussion (participant-only write, all read)
-      match /operations/{operationId}/messages/{messageId} {
-        // Read: All authenticated members can read event messages
-        allow read: if isAuthenticated();
-
-        // Create: Only participants registered to the event can post messages
-        // Mobile app compatibility: no session required
-        allow create: if isAuthenticated()
-          && exists(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)/inscriptions/$(request.auth.uid))
-          && request.resource.data.sender_id == request.auth.uid;
-
-        // Delete: Users can delete their own messages, admins can delete any message
-        allow delete: if isAuthenticated() && (
-          resource.data.sender_id == request.auth.uid ||
-          (exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid))
-            && getUserData(clubId).clubStatuten != null
-            && 'CA' in getUserData(clubId).clubStatuten)
-        );
-
-        // Update: Not allowed (messages are immutable once posted)
-        allow update: if false;
-      }
-
-      // ========== MEMBERS COLLECTION WITH PHOTO CONSENT ENFORCEMENT ==========
       // Members - allow reading own member document without session check (needed for login)
       match /members/{memberId} {
-        // Read: Authenticated users can read profiles
-        // PHOTO CONSENT ENFORCEMENT: Photo URL visibility controlled by consent_internal_photo
-        allow read: if isAuthenticated() && (
-          // User can always see their own full profile (including photo_url regardless of consent)
-          request.auth.uid == memberId ||
-          // Other users can only see profiles if internal consent is granted
-          // This hides photo_url field when consent_internal_photo is false
-          (resource.data.consent_internal_photo == true || !('photo_url' in resource.data))
-        );
+        // Allow reading own member document during login (no session check)
+        // Allow reading all members if authenticated (for mobile app compatibility)
+        allow read: if isAuthenticated();
 
-        // Allow users to update their own profile fields
-        // MOBILE APP: Users can update photo consent, phone, preferences without session
-        // WEB APP: Protected fields (email, role, app_role) require admin access
-        allow update: if isAuthenticated() && request.auth.uid == memberId && (
-          // Allow updating lastLogin during login (before session exists)
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastLogin', 'updatedAt']) ||
-          // Allow updating photo consent fields from mobile app (no session required)
-          (request.resource.data.diff(resource.data).affectedKeys().hasAny([
-            'consent_internal_photo',
-            'consent_external_photo',
-            'consent_internal_photo_date',
-            'consent_external_photo_date',
-            'photo_url',
-            'photo_uploaded_at',
-            'phone_number',
-            'share_email',
-            'share_phone',
-            'notifications_enabled',
-            'fcm_token',
-            'updated_at'
-          ]) &&
-          // Prevent users from changing protected fields (email, role, app_role)
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['email', 'role', 'app_role']))
-        );
+        // Allow users to update their own lastLogin timestamp (needed during login, before session exists)
+        allow update: if isAuthenticated()
+          && request.auth.uid == memberId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastLogin', 'updatedAt']);
 
         // Admins can create new members (for user management UI)
         allow create: if isAdmin(clubId) && hasValidSession(clubId);
 
-        // Admins can update and delete members (full access with session)
+        // Admins can update and delete members
         allow update, delete: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
@@ -459,6 +339,10 @@ service cloud.firestore {
           && (!('fiscal_year_id' in request.resource.data) || canModifyFiscalYearData(clubId, request.resource.data.fiscal_year_id));
         allow delete: if isSuperAdmin(clubId) && hasValidSession(clubId);
       }
+
+      // ⚠️ REMOVED: inventory_members collection (2025-10-31)
+      // After unification, all members are now in /clubs/{clubId}/members
+      // Collection inventory_members was empty and has been migrated
 
       // Inventory loans (prêts de matériel) - full name used by services
       match /inventory_loans/{loanId} {
