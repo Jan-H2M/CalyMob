@@ -170,13 +170,15 @@ service cloud.firestore {
         );
 
         // Create: User can create their own demands
-        // Simplified for mobile app testing - session check removed
+        // Mobile app: session check enabled - app creates session on login
         allow create: if isAuthenticated()
+          && hasValidSession(clubId)
           && request.resource.data.demandeur_id == request.auth.uid;
 
         // Update: User can update their own demands (if not yet approved), admin+ can update all
-        // Simplified for mobile app testing - session check removed
+        // Mobile app: session check enabled
         allow update: if isAuthenticated()
+          && hasValidSession(clubId)
           && (
             getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
             (
@@ -194,14 +196,30 @@ service cloud.firestore {
 
       // Expense claims (English collection name) - same rules as demandes_remboursement
       match /expense_claims/{claimId} {
-        allow read: if isAuthenticated();
-        // Simplified for mobile app testing - session check removed
-        // Original: hasValidSession(clubId) && canModifyFiscalYearData(clubId, request.resource.data.fiscal_year_id)
+        // Read: User can only see their own, admin+ can see all
+        allow read: if isAuthenticated() && (
+          getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
+          (getUserData(clubId).app_role == 'user' && resource.data.demandeur_id == request.auth.uid)
+        );
+        // Create: User can create their own claims with valid session
         allow create: if isAuthenticated()
-          && request.resource.data.demandeur_id == request.auth.uid;
-        allow update, delete: if isAuthenticated()
           && hasValidSession(clubId)
-          && canModifyFiscalYearData(clubId, request.resource.data.fiscal_year_id);
+          && request.resource.data.demandeur_id == request.auth.uid;
+        // Update: User can update own (if draft/submitted), admin+ can update all
+        allow update: if isAuthenticated()
+          && hasValidSession(clubId)
+          && (
+            getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
+            (
+              getUserData(clubId).app_role == 'user' &&
+              resource.data.demandeur_id == request.auth.uid &&
+              resource.data.statut in ['brouillon', 'soumis']
+            )
+          );
+        // Delete: Admin only with fiscal year check
+        allow delete: if isAdmin(clubId)
+          && hasValidSession(clubId)
+          && canModifyFiscalYearData(clubId, resource.data.fiscal_year_id);
       }
 
       // Operations (événements, cotisations, dons, ventes, subventions) - USER ISOLATION

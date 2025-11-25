@@ -1,0 +1,13 @@
+iOS Firebase Configuration
+==========================
+
+To enable iOS builds, you need to:
+
+1. Go to Firebase Console: https://console.firebase.google.com/project/calycompta
+2. Click on iOS app (or add one if not exists)
+3. Download GoogleService-Info.plist
+4. Place it in this directory: ios/Runner/GoogleService-Info.plist
+
+Bundle ID should be: com.calypsodc.calymob (or your chosen bundle identifier)
+
+Without this file, iOS builds will fail with Firebase initialization errors.
