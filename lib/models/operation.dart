@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'tariff.dart';
 
 /// Model Operation - Événements, cotisations, dons, etc.
 class Operation {
@@ -14,8 +15,9 @@ class Operation {
   final DateTime? dateFin;
   final String? lieu;
   final int? capaciteMax;
-  final double? prixMembre;
-  final double? prixNonMembre;
+  final double? prixMembre; // Legacy: prix pour membres
+  final double? prixNonMembre; // Legacy: prix pour non-membres
+  final List<Tariff> eventTariffs; // Nouveau: tarifs flexibles par fonction
 
   // Organisateur
   final String? organisateurId;
@@ -38,6 +40,7 @@ class Operation {
     this.capaciteMax,
     this.prixMembre,
     this.prixNonMembre,
+    this.eventTariffs = const [],
     this.organisateurId,
     this.organisateurNom,
     required this.createdAt,
@@ -61,10 +64,14 @@ class Operation {
       capaciteMax: data['capacite_max'],
       prixMembre: (data['prix_membre'] as num?)?.toDouble(),
       prixNonMembre: (data['prix_non_membre'] as num?)?.toDouble(),
+      eventTariffs: (data['event_tariffs'] as List<dynamic>?)
+              ?.map((t) => Tariff.fromMap(t as Map<String, dynamic>))
+              .toList() ??
+          [],
       organisateurId: data['organisateur_id'],
       organisateurNom: data['organisateur_nom'],
-      createdAt: (data['created_at'] as Timestamp).toDate(),
-      updatedAt: (data['updated_at'] as Timestamp).toDate(),
+      createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      updatedAt: (data['updated_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
 

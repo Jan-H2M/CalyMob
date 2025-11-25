@@ -34,6 +34,7 @@ dependencies:
   path_provider: ^2.1.1
   image_picker: ^1.0.4
   pdfrx: ^1.0.0
+  cached_network_image: ^3.3.1
 
   # Payments (if needed)
   # stripe_payment: ^1.1.1
@@ -45,3 +46,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    - assets/images/

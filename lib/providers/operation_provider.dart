@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/operation.dart';
+import '../models/member_profile.dart';
 import '../models/participant_operation.dart';
 import '../services/operation_service.dart';
 
@@ -15,12 +16,14 @@ class OperationProvider with ChangeNotifier {
   Operation? _selectedOperation;
   Map<String, int> _participantCounts = {}; // Cache compteur participants
   Map<String, bool> _userRegistrations = {}; // Cache inscriptions utilisateur
+  List<ParticipantOperation> _selectedOperationParticipants = []; // Liste participants
   bool _isLoading = false;
   String? _errorMessage;
 
   // Getters
   List<Operation> get operations => _operations;
   Operation? get selectedOperation => _selectedOperation;
+  List<ParticipantOperation> get selectedOperationParticipants => _selectedOperationParticipants;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
 
@@ -84,7 +87,8 @@ class OperationProvider with ChangeNotifier {
   Future<void> selectOperation(String clubId, String operationId, String userId) async {
     try {
       _isLoading = true;
-      notifyListeners();
+      // Use Future.microtask to delay notification until after the build phase
+      await Future.microtask(() => notifyListeners());
 
       // Charger l'opération
       _selectedOperation = await _operationService.getOperationById(clubId, operationId);
@@ -93,6 +97,9 @@ class OperationProvider with ChangeNotifier {
       if (_selectedOperation != null) {
         final count = await _operationService.countParticipants(clubId, operationId);
         _participantCounts[operationId] = count;
+
+        // Charger la liste des participants
+        _selectedOperationParticipants = await _operationService.getParticipants(clubId, operationId);
 
         // Vérifier si utilisateur inscrit
         final isRegistered = await _operationService.isUserRegistered(
@@ -120,6 +127,7 @@ class OperationProvider with ChangeNotifier {
     required String operationId,
     required String userId,
     required String userName,
+    MemberProfile? memberProfile,
   }) async {
     try {
       _isLoading = true;
@@ -133,6 +141,7 @@ class OperationProvider with ChangeNotifier {
         userId: userId,
         userName: userName,
         operation: operation,
+        memberProfile: memberProfile,
       );
 
       // Mettre à jour cache

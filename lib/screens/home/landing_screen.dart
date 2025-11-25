@@ -5,6 +5,9 @@ import '../auth/login_screen.dart';
 import '../operations/operations_list_screen.dart';
 import '../expenses/expense_list_screen.dart';
 import '../expenses/approval_list_screen.dart';
+import '../profile/profile_screen.dart';
+import '../profile/who_is_who_screen.dart';
+import '../announcements/announcements_screen.dart';
 
 /// Landing page avec logo Calypso et navigation par grandes cartes
 class LandingScreen extends StatelessWidget {
@@ -69,13 +72,13 @@ class LandingScreen extends StatelessWidget {
           padding: const EdgeInsets.all(20),
           child: Column(
             children: [
-              // Logo Calypso (temporary icon - waiting for logo files)
+              // Logo Calypso
               Container(
                 padding: const EdgeInsets.symmetric(vertical: 20),
-                child: const Icon(
-                  Icons.scuba_diving,
-                  size: 120,
-                  color: Color(0xFF1976D2),
+                child: Image.asset(
+                  'assets/images/logo-vertical.png',
+                  height: 120,
+                  fit: BoxFit.contain,
                 ),
               ),
 
@@ -143,16 +146,61 @@ class LandingScreen extends StatelessWidget {
 
               const SizedBox(height: 16),
 
-              // Deuxième ligne: Événements + Profil
+              // Deuxième ligne: Événements + Communication
               Row(
                 children: [
                   Expanded(
                     child: _NavigationTile(
                       title: 'Événements',
                       icon: Icons.event,
-                      color: Colors.grey, // Disabled
-                      isEnabled: false,
-                      onTap: () {},
+                      color: const Color(0xFF2196F3), // Blue
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const OperationsListScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _NavigationTile(
+                      title: 'Communication',
+                      icon: Icons.campaign,
+                      color: const Color(0xFFE91E63), // Pink
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const AnnouncementsScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 16),
+
+              // Troisième ligne: Who is Who + Profil
+              Row(
+                children: [
+                  Expanded(
+                    child: _NavigationTile(
+                      title: 'Who is Who',
+                      icon: Icons.people,
+                      color: const Color(0xFF00BCD4), // Cyan
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const WhoIsWhoScreen(),
+                          ),
+                        );
+                      },
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -160,9 +208,15 @@ class LandingScreen extends StatelessWidget {
                     child: _NavigationTile(
                       title: 'Profil',
                       icon: Icons.person,
-                      color: Colors.grey, // Disabled
-                      isEnabled: false,
-                      onTap: () {},
+                      color: const Color(0xFF9C27B0), // Purple
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const ProfileScreen(),
+                          ),
+                        );
+                      },
                     ),
                   ),
                 ],
@@ -172,7 +226,7 @@ class LandingScreen extends StatelessWidget {
 
               // Footer
               Text(
-                'Version 1.0.0',
+                'Version 1.0.4',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Colors.grey[400],
                     ),

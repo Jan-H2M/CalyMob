@@ -1,7 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../models/operation.dart';
+import '../models/member_profile.dart';
 import '../models/participant_operation.dart';
+import '../utils/tariff_utils.dart';
 
 /// Service de gestion des opérations (événements)
 class OperationService {
@@ -46,11 +48,11 @@ class OperationService {
   }
 
   /// Compter le nombre de participants à une opération
+  /// Uses subcollection: clubs/{clubId}/operations/{operationId}/inscriptions
   Future<int> countParticipants(String clubId, String operationId) async {
     try {
       final snapshot = await _firestore
-          .collection('clubs/$clubId/operation_participants')
-          .where('operation_id', isEqualTo: operationId)
+          .collection('clubs/$clubId/operations/$operationId/inscriptions')
           .get();
 
       debugPrint('👥 ${snapshot.size} participants pour opération $operationId');
@@ -62,6 +64,7 @@ class OperationService {
   }
 
   /// Vérifier si l'utilisateur est déjà inscrit
+  /// Uses subcollection: clubs/{clubId}/operations/{operationId}/inscriptions
   Future<bool> isUserRegistered(
     String clubId,
     String operationId,
@@ -69,8 +72,7 @@ class OperationService {
   ) async {
     try {
       final snapshot = await _firestore
-          .collection('clubs/$clubId/operation_participants')
-          .where('operation_id', isEqualTo: operationId)
+          .collection('clubs/$clubId/operations/$operationId/inscriptions')
           .where('membre_id', isEqualTo: userId)
           .get();
 
@@ -87,12 +89,14 @@ class OperationService {
   }
 
   /// S'inscrire à une opération
+  /// Uses subcollection: clubs/{clubId}/operations/{operationId}/inscriptions
   Future<void> registerToOperation({
     required String clubId,
     required String operationId,
     required String userId,
     required String userName,
     required Operation operation,
+    MemberProfile? memberProfile,
   }) async {
     try {
       // Vérifier si déjà inscrit
@@ -107,6 +111,19 @@ class OperationService {
         throw Exception('Événement complet (${operation.capaciteMax} places)');
       }
 
+      // Calculer le prix basé sur la fonction du membre
+      double prix;
+      if (memberProfile != null) {
+        prix = TariffUtils.computeRegistrationPrice(
+          operation: operation,
+          profile: memberProfile,
+        );
+        debugPrint('💰 Prix calculé: $prix€ pour fonction ${TariffUtils.getFunctionLabel(memberProfile)}');
+      } else {
+        // Fallback si pas de profil
+        prix = operation.prixMembre ?? 0.0;
+      }
+
       // Créer participant
       final participant = ParticipantOperation(
         id: '', // Firestore génère l'ID
@@ -114,14 +131,15 @@ class OperationService {
         operationTitre: operation.titre,
         membreId: userId,
         membreNom: userName,
-        prix: operation.prixMembre ?? 0.0,
+        membrePrenom: memberProfile?.prenom,
+        prix: prix,
         paye: false,
         dateInscription: DateTime.now(),
       );
 
-      // Sauvegarder dans Firestore
+      // Sauvegarder dans Firestore (subcollection under operation)
       await _firestore
-          .collection('clubs/$clubId/operation_participants')
+          .collection('clubs/$clubId/operations/$operationId/inscriptions')
           .add(participant.toFirestore());
 
       debugPrint('✅ Inscription réussie: $userName → ${operation.titre}');
@@ -132,6 +150,7 @@ class OperationService {
   }
 
   /// Se désinscrire d'une opération
+  /// Uses subcollection: clubs/{clubId}/operations/{operationId}/inscriptions
   Future<void> unregisterFromOperation({
     required String clubId,
     required String operationId,
@@ -140,8 +159,7 @@ class OperationService {
     try {
       // Trouver le participant
       final snapshot = await _firestore
-          .collection('clubs/$clubId/operation_participants')
-          .where('operation_id', isEqualTo: operationId)
+          .collection('clubs/$clubId/operations/$operationId/inscriptions')
           .where('membre_id', isEqualTo: userId)
           .get();
 
@@ -160,26 +178,84 @@ class OperationService {
   }
 
   /// Obtenir les participants d'une opération
+  /// Uses subcollection: clubs/{clubId}/operations/{operationId}/inscriptions
   Future<List<ParticipantOperation>> getParticipants(
     String clubId,
     String operationId,
   ) async {
     try {
+      debugPrint('🔍 Recherche participants dans subcollection inscriptions pour operation_id: $operationId');
+
       final snapshot = await _firestore
-          .collection('clubs/$clubId/operation_participants')
-          .where('operation_id', isEqualTo: operationId)
-          .orderBy('date_inscription', descending: false)
+          .collection('clubs/$clubId/operations/$operationId/inscriptions')
           .get();
 
       final participants = snapshot.docs
           .map((doc) => ParticipantOperation.fromFirestore(doc))
           .toList();
 
-      debugPrint('👥 ${participants.length} participants chargés');
+      // Sort by date locally instead of in query (avoids needing composite index)
+      participants.sort((a, b) => a.dateInscription.compareTo(b.dateInscription));
+
+      debugPrint('👥 ${participants.length} participants chargés pour $operationId');
       return participants;
     } catch (e) {
       debugPrint('❌ Erreur chargement participants: $e');
       return [];
+    }
+  }
+
+  /// Mettre à jour les exercices sélectionnés pour une inscription
+  Future<void> updateExercices({
+    required String clubId,
+    required String operationId,
+    required String userId,
+    required List<String> exercices,
+  }) async {
+    try {
+      // Trouver l'inscription
+      final snapshot = await _firestore
+          .collection('clubs/$clubId/operations/$operationId/inscriptions')
+          .where('membre_id', isEqualTo: userId)
+          .get();
+
+      if (snapshot.docs.isEmpty) {
+        throw Exception('Inscription non trouvée');
+      }
+
+      // Mettre à jour les exercices
+      await snapshot.docs.first.reference.update({
+        'exercices': exercices,
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      debugPrint('✅ Exercices mis à jour: ${exercices.length} exercices');
+    } catch (e) {
+      debugPrint('❌ Erreur mise à jour exercices: $e');
+      rethrow;
+    }
+  }
+
+  /// Obtenir l'inscription d'un utilisateur
+  Future<ParticipantOperation?> getUserInscription({
+    required String clubId,
+    required String operationId,
+    required String userId,
+  }) async {
+    try {
+      final snapshot = await _firestore
+          .collection('clubs/$clubId/operations/$operationId/inscriptions')
+          .where('membre_id', isEqualTo: userId)
+          .get();
+
+      if (snapshot.docs.isEmpty) {
+        return null;
+      }
+
+      return ParticipantOperation.fromFirestore(snapshot.docs.first);
+    } catch (e) {
+      debugPrint('❌ Erreur récupération inscription: $e');
+      return null;
     }
   }
 }

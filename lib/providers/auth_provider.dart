@@ -150,4 +150,19 @@ class AuthProvider with ChangeNotifier {
       debugPrint('⚠️ Erreur refresh token: $e');
     }
   }
+
+  /// Send password reset email to current user
+  Future<void> sendPasswordResetEmail() async {
+    try {
+      final email = _currentUser?.email;
+      if (email == null) {
+        throw Exception('Aucun email trouvé pour cet utilisateur');
+      }
+      await _authService.sendPasswordResetEmail(email);
+      debugPrint('✅ Email de réinitialisation envoyé à: $email');
+    } catch (e) {
+      debugPrint('❌ Erreur envoi email reset: $e');
+      rethrow;
+    }
+  }
 }
