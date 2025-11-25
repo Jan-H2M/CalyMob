@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
 import '../home/landing_screen.dart';
 
@@ -15,7 +16,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final String _clubId = 'calypso'; // ID du club par défaut
+  final String _clubId = FirebaseConfig.defaultClubId;
   bool _obscurePassword = true;
 
   @override

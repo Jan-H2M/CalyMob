@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/operation_provider.dart';
 import '../../widgets/operation_card.dart';
@@ -16,7 +17,7 @@ class OperationsListScreen extends StatefulWidget {
 }
 
 class _OperationsListScreenState extends State<OperationsListScreen> {
-  final String _clubId = 'calypso';
+  final String _clubId = FirebaseConfig.defaultClubId;
 
   @override
   void initState() {

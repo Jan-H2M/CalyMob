@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/operation.dart';
 import '../models/participant_operation.dart';
@@ -6,6 +7,9 @@ import '../services/operation_service.dart';
 /// Provider pour l'état des opérations
 class OperationProvider with ChangeNotifier {
   final OperationService _operationService = OperationService();
+
+  // Stream subscription for memory management
+  StreamSubscription<List<Operation>>? _operationsSubscription;
 
   List<Operation> _operations = [];
   Operation? _selectedOperation;
@@ -20,6 +24,12 @@ class OperationProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
 
+  @override
+  void dispose() {
+    _operationsSubscription?.cancel();
+    super.dispose();
+  }
+
   /// Obtenir le nombre de participants pour une opération
   int getParticipantCount(String operationId) {
     return _participantCounts[operationId] ?? 0;
@@ -32,16 +42,18 @@ class OperationProvider with ChangeNotifier {
 
   /// Charger les événements ouverts (stream)
   void listenToOpenEvents(String clubId) {
-    _operationService.getOpenEventsStream(clubId).listen(
+    // Cancel any existing subscription to prevent memory leaks
+    _operationsSubscription?.cancel();
+
+    _operationsSubscription = _operationService.getOpenEventsStream(clubId).listen(
       (operations) {
         _operations = operations;
         _isLoading = false;
         notifyListeners();
 
         // Charger compteurs participants pour chaque opération
-        for (var op in operations) {
-          _loadParticipantCount(clubId, op.id);
-        }
+        // Use Future.wait to batch notifications
+        _loadAllParticipantCounts(clubId, operations);
       },
       onError: (error) {
         _errorMessage = error.toString();
@@ -49,6 +61,16 @@ class OperationProvider with ChangeNotifier {
         notifyListeners();
       },
     );
+  }
+
+  /// Load participant counts for all operations (batched)
+  Future<void> _loadAllParticipantCounts(String clubId, List<Operation> operations) async {
+    for (var op in operations) {
+      final count = await _operationService.countParticipants(clubId, op.id);
+      _participantCounts[op.id] = count;
+    }
+    // Single notification after all counts loaded
+    notifyListeners();
   }
 
   /// Charger le compteur de participants pour une opération

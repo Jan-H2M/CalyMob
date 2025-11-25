@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../models/expense_claim.dart';
@@ -18,7 +19,7 @@ class ApprovalListScreen extends StatefulWidget {
 }
 
 class _ApprovalListScreenState extends State<ApprovalListScreen> {
-  final String _clubId = 'calypso';
+  final String _clubId = FirebaseConfig.defaultClubId;
 
   @override
   void initState() {

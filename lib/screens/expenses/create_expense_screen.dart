@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../config/account_codes.dart';
+import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../utils/date_formatter.dart';
@@ -143,7 +144,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
     try {
       final authProvider = context.read<AuthProvider>();
       final expenseProvider = context.read<ExpenseProvider>();
-      final clubId = 'calypso';
+      final clubId = FirebaseConfig.defaultClubId;
       final userId = authProvider.currentUser?.uid ?? '';
       final userName = authProvider.currentUser?.displayName ?? authProvider.currentUser?.email ?? 'Utilisateur';
 

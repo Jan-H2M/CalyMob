@@ -1,14 +1,19 @@
+import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../services/auth_service.dart';
 import '../services/session_service.dart';
+import '../config/firebase_config.dart';
 
 /// Provider pour l'état d'authentification
 class AuthProvider with ChangeNotifier {
   final AuthService _authService = AuthService();
   final SessionService _sessionService = SessionService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  // Stream subscription for memory management
+  StreamSubscription<User?>? _authStateSubscription;
 
   User? _currentUser;
   String? _displayName;
@@ -24,7 +29,7 @@ class AuthProvider with ChangeNotifier {
 
   AuthProvider() {
     // Écouter les changements d'état d'authentification
-    _authService.authStateChanges.listen((user) {
+    _authStateSubscription = _authService.authStateChanges.listen((user) {
       _currentUser = user;
       if (user != null) {
         _loadUserDisplayName(user.uid);
@@ -35,12 +40,18 @@ class AuthProvider with ChangeNotifier {
     });
   }
 
+  @override
+  void dispose() {
+    _authStateSubscription?.cancel();
+    super.dispose();
+  }
+
   /// Charger le nom d'affichage depuis Firestore
   Future<void> _loadUserDisplayName(String userId) async {
     try {
       final doc = await _firestore
           .collection('clubs')
-          .doc('calypso')
+          .doc(FirebaseConfig.defaultClubId)
           .collection('members')
           .doc(userId)
           .get();

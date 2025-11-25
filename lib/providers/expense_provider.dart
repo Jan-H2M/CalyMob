@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../models/expense_claim.dart';
@@ -6,6 +7,10 @@ import '../services/expense_service.dart';
 /// Provider pour l'état des demandes de remboursement
 class ExpenseProvider with ChangeNotifier {
   final ExpenseService _expenseService = ExpenseService();
+
+  // Stream subscriptions for memory management
+  StreamSubscription<List<ExpenseClaim>>? _userExpensesSubscription;
+  StreamSubscription<List<ExpenseClaim>>? _pendingApprovalsSubscription;
 
   List<ExpenseClaim> _expenses = [];
   bool _isLoading = false;
@@ -16,10 +21,20 @@ class ExpenseProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
 
+  @override
+  void dispose() {
+    _userExpensesSubscription?.cancel();
+    _pendingApprovalsSubscription?.cancel();
+    super.dispose();
+  }
+
   /// Écouter les demandes de l'utilisateur (stream)
   void listenToUserExpenses(String clubId, String userId) {
+    // Cancel any existing subscription to prevent memory leaks
+    _userExpensesSubscription?.cancel();
+
     debugPrint('🎧 Starting expense stream for user: $userId');
-    _expenseService.getUserExpensesStream(clubId, userId).listen(
+    _userExpensesSubscription = _expenseService.getUserExpensesStream(clubId, userId).listen(
       (expenses) {
         debugPrint('📦 Stream received ${expenses.length} expenses');
         if (expenses.isNotEmpty) {
@@ -41,8 +56,11 @@ class ExpenseProvider with ChangeNotifier {
 
   /// Écouter les demandes en attente d'approbation (stream)
   void listenToPendingApprovals(String clubId, String currentUserId) {
+    // Cancel any existing subscription to prevent memory leaks
+    _pendingApprovalsSubscription?.cancel();
+
     debugPrint('🎧 Starting pending approvals stream (excluding user: $currentUserId)');
-    _expenseService.getPendingApprovalsStream(clubId, currentUserId).listen(
+    _pendingApprovalsSubscription = _expenseService.getPendingApprovalsStream(clubId, currentUserId).listen(
       (expenses) {
         debugPrint('📦 Stream received ${expenses.length} pending approvals');
         if (expenses.isNotEmpty) {
@@ -235,12 +253,16 @@ class ExpenseProvider with ChangeNotifier {
   }
 
   /// Obtenir statistiques
+  /// Uses a local copy to prevent race conditions with stream updates
   Map<String, dynamic> getStats() {
-    final total = _expenses.length;
-    final enAttente = _expenses.where((e) => e.statut == 'soumis' || e.statut == 'en_attente_validation').length;
-    final approuves = _expenses.where((e) => e.statut == 'approuve' || e.statut == 'rembourse').length;
-    final refuses = _expenses.where((e) => e.statut == 'refuse').length;
-    final montantTotal = _expenses.fold<double>(0, (sum, e) => sum + e.montant);
+    // Create a local copy to avoid race conditions during iteration
+    final expensesCopy = List<ExpenseClaim>.from(_expenses);
+
+    final total = expensesCopy.length;
+    final enAttente = expensesCopy.where((e) => e.statut == 'soumis' || e.statut == 'en_attente_validation').length;
+    final approuves = expensesCopy.where((e) => e.statut == 'approuve' || e.statut == 'rembourse').length;
+    final refuses = expensesCopy.where((e) => e.statut == 'refuse').length;
+    final montantTotal = expensesCopy.fold<double>(0, (sum, e) => sum + e.montant);
 
     return {
       'total': total,
