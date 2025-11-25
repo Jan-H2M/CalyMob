@@ -355,7 +355,7 @@ workflows:
       android_signing:
         - calycompta_keystore
 
-      flutter: 3.13.9
+      flutter: 3.19.6
 
     # Manual trigger only (no automatic triggers)
     triggering:
@@ -436,7 +436,7 @@ workflows:
         XCODE_SCHEME: "Runner"
 
       # Flutter Version
-      flutter: 3.13.9
+      flutter: 3.19.6
       xcode: latest
       cocoapods: default
 
