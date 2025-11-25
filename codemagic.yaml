@@ -387,21 +387,13 @@ workflows:
 
       - name: Build Android APK
         script: |
-          echo "🏗️ Building Android APK (release mode)"
-          flutter build apk --release
-          echo "✅ APK Build completed!"
+          echo "🏗️ Building Android APK (debug mode - no signing required)"
+          flutter build apk --debug
+          echo "✅ Debug APK Build completed!"
           ls -lh build/app/outputs/flutter-apk/*.apk
-
-      - name: Build Android App Bundle
-        script: |
-          echo "📦 Building Android App Bundle (release mode)"
-          flutter build appbundle --release
-          echo "✅ App Bundle build completed!"
-          ls -lh build/app/outputs/bundle/release/*.aab
 
     artifacts:
       - build/app/outputs/flutter-apk/*.apk
-      - build/app/outputs/bundle/release/*.aab
 
     publishing:
       email:
