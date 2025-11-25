@@ -24,7 +24,7 @@ if (flutterVersionName == null) {
 
 android {
     namespace 'be.calypsodc.calymob'
-    compileSdk 34
+    compileSdk 36
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_11
@@ -37,7 +37,7 @@ android {
 
     defaultConfig {
         applicationId "be.calypsodc.calymob"
-        minSdk 21
+        minSdkVersion flutter.minSdkVersion
         targetSdk 34
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName

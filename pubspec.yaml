@@ -26,13 +26,14 @@ dependencies:
   cupertino_icons: ^1.0.6
   flutter_localizations:
     sdk: flutter
-  intl: ^0.18.1
+  intl: ^0.20.2
 
   # Utilities
   url_launcher: ^6.1.14
   shared_preferences: ^2.2.2
   path_provider: ^2.1.1
   image_picker: ^1.0.4
+  pdfrx: ^1.0.0
 
   # Payments (if needed)
   # stripe_payment: ^1.1.1
