@@ -5,6 +5,7 @@ import 'tariff.dart';
 class Operation {
   final String id;
   final String type; // 'evenement', 'cotisation', 'don', etc.
+  final String? categorie; // 'plongee' ou 'sortie' pour les événements
   final String titre;
   final String? description;
   final double montantPrevu;
@@ -23,6 +24,9 @@ class Operation {
   final String? organisateurId;
   final String? organisateurNom;
 
+  // Communication
+  final String? communication; // Message de l'organisateur aux participants
+
   // Métadonnées
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -30,6 +34,7 @@ class Operation {
   Operation({
     required this.id,
     required this.type,
+    this.categorie,
     required this.titre,
     this.description,
     required this.montantPrevu,
@@ -43,6 +48,7 @@ class Operation {
     this.eventTariffs = const [],
     this.organisateurId,
     this.organisateurNom,
+    this.communication,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -54,6 +60,7 @@ class Operation {
     return Operation(
       id: doc.id,
       type: data['type'] ?? 'evenement',
+      categorie: data['event_category'],
       titre: data['titre'] ?? '',
       description: data['description'],
       montantPrevu: (data['montant_prevu'] ?? 0).toDouble(),
@@ -70,6 +77,7 @@ class Operation {
           [],
       organisateurId: data['organisateur_id'],
       organisateurNom: data['organisateur_nom'],
+      communication: data['communication'],
       createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (data['updated_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );

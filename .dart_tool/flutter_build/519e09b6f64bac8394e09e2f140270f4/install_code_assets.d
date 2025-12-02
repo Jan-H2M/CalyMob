@@ -1,0 +1,1 @@
+ /Users/jan/Documents/GitHub/CalyMob/.dart_tool/flutter_build/519e09b6f64bac8394e09e2f140270f4/native_assets.json: 

@@ -4,6 +4,9 @@ class PermissionHelper {
   static const List<String> adminStatutes = [
     'admin',
     'administrateur',
+    'super admin',
+    'super-admin',
+    'superadmin',
     'president',
     'président',
     'secretaire',

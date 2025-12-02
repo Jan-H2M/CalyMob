@@ -58,9 +58,6 @@ class ExpenseService {
     required double montant,
     required String description,
     required DateTime dateDepense,
-    String? categorie,
-    String? codeComptable,
-    String? codeComptableLabel,
     String? operationId,
     List<File>? photoFiles,
   }) async {
@@ -79,9 +76,6 @@ class ExpenseService {
         'demandeur_nom': userName,
         'montant': montant,
         'description': description,
-        'categorie': categorie ?? 'Autre',
-        'code_comptable': codeComptable,
-        'code_comptable_label': codeComptableLabel,
         'statut': 'soumis',
         'date_depense': Timestamp.fromDate(dateDepense),
         'date_demande': Timestamp.now(),
@@ -244,9 +238,6 @@ class ExpenseService {
     required double montant,
     required String description,
     required DateTime dateDepense,
-    String? categorie,
-    String? codeComptable,
-    String? codeComptableLabel,
   }) async {
     try {
       debugPrint('💸 Mise à jour demande: $expenseId');
@@ -278,9 +269,6 @@ class ExpenseService {
         'montant': montant,
         'description': description,
         'date_depense': Timestamp.fromDate(dateDepense),
-        'categorie': categorie ?? 'Autre',
-        'code_comptable': codeComptable,
-        'code_comptable_label': codeComptableLabel,
         'fiscal_year_id': fiscalYearId,
         'updated_at': FieldValue.serverTimestamp(),
       });

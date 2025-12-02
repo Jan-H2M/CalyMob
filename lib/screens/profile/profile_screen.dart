@@ -1,16 +1,18 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/member_profile.dart';
 import '../../services/profile_service.dart';
+import '../../services/member_service.dart';
+import '../../utils/permission_helper.dart';
 import '../../widgets/photo_consent_dialog.dart';
 // Conditional import for camera screen
 import 'face_camera_screen.dart' if (dart.library.html) 'face_camera_screen_stub.dart';
 import 'settings_screen.dart';
 import '../auth/login_screen.dart';
+import '../exercises/member_exercises_screen.dart';
 
 /// Écran du profil utilisateur
 class ProfileScreen extends StatefulWidget {
@@ -23,8 +25,32 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final String _clubId = 'calypso';
   final ProfileService _profileService = ProfileService();
+  final MemberService _memberService = MemberService();
 
   bool _isLoading = false;
+  bool _canManageExercises = false; // Monitor, admin, or super admin
+
+  @override
+  void initState() {
+    super.initState();
+    _checkPermissions();
+  }
+
+  Future<void> _checkPermissions() async {
+    final userId = context.read<AuthProvider>().currentUser?.uid ?? '';
+    if (userId.isNotEmpty) {
+      // Check if user is a monitor
+      final isMonitor = await _memberService.isMonitor(_clubId, userId);
+
+      // Check if user is admin based on clubStatuten
+      final profile = await _profileService.getProfile(_clubId, userId);
+      final isAdmin = profile != null && PermissionHelper.isAdmin(profile.clubStatuten);
+
+      if (mounted) {
+        setState(() => _canManageExercises = isMonitor || isAdmin);
+      }
+    }
+  }
 
   Future<void> _addOrChangePhoto() async {
     try {
@@ -217,6 +243,70 @@ class _ProfileScreenState extends State<ProfileScreen> {
           MaterialPageRoute(builder: (_) => const LoginScreen()),
           (route) => false,
         );
+      }
+    }
+  }
+
+  Future<void> _editPhoneNumber(MemberProfile profile) async {
+    final controller = TextEditingController(text: profile.phoneNumber ?? '');
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Numéro de téléphone'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: '+32 XXX XX XX XX',
+            prefixIcon: Icon(Icons.phone),
+            border: OutlineInputBorder(),
+          ),
+          keyboardType: TextInputType.phone,
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Enregistrer'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null && mounted) {
+      try {
+        setState(() => _isLoading = true);
+
+        final userId = context.read<AuthProvider>().currentUser?.uid ?? '';
+        await _profileService.updatePhoneNumber(
+          _clubId,
+          userId,
+          result.isEmpty ? null : result,
+        );
+
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Numéro de téléphone mis à jour'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ Erreur: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     }
   }
@@ -455,6 +545,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 contentPadding: EdgeInsets.zero,
               ),
             ],
+
+            const SizedBox(height: 8),
+
+            // Téléphone (éditable)
+            ListTile(
+              leading: const Icon(Icons.phone, color: Colors.purple),
+              title: const Text('Téléphone', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              subtitle: Text(
+                profile.phoneNumber ?? 'Non renseigné',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontStyle: profile.phoneNumber == null ? FontStyle.italic : FontStyle.normal,
+                  color: profile.phoneNumber == null ? Colors.grey : null,
+                ),
+              ),
+              trailing: IconButton(
+                icon: const Icon(Icons.edit, size: 20),
+                onPressed: () => _editPhoneNumber(profile),
+                tooltip: 'Modifier le téléphone',
+              ),
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              onTap: () => _editPhoneNumber(profile),
+            ),
           ],
         ),
       ),
@@ -523,11 +637,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildActionsSection() {
+    final userId = context.watch<AuthProvider>().currentUser?.uid ?? '';
+
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Column(
         children: [
+          // Mes exercices validés
+          ListTile(
+            leading: const Icon(Icons.assignment_turned_in, color: Colors.teal),
+            title: const Text('Mes exercices validés'),
+            subtitle: const Text('Formation LIFRAS'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              final profile = await _profileService.getProfile(_clubId, userId);
+              if (mounted && profile != null) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => MemberExercisesScreen(
+                      memberId: userId,
+                      memberName: profile.fullName,
+                      isMonitor: _canManageExercises,
+                      isOwnProfile: true,
+                    ),
+                  ),
+                );
+              }
+            },
+          ),
+          const Divider(height: 1),
           ListTile(
             leading: const Icon(Icons.settings, color: Color(0xFF607D8B)),
             title: const Text('Paramètres'),

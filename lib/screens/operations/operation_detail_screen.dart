@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/operation_provider.dart';
+import '../../providers/payment_provider.dart';
+import '../../providers/event_message_provider.dart';
 import '../../widgets/loading_widget.dart';
 import '../../utils/date_formatter.dart';
 import '../../utils/currency_formatter.dart';
@@ -12,6 +15,9 @@ import '../../services/operation_service.dart';
 import '../../models/member_profile.dart';
 import '../../models/exercice_lifras.dart';
 import '../../models/participant_operation.dart';
+import '../../models/payment_response.dart';
+import '../../models/event_message.dart';
+import 'package:intl/intl.dart';
 
 /// Écran de détail d'une opération avec bouton inscription
 class OperationDetailScreen extends StatefulWidget {
@@ -38,6 +44,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
   List<String> _selectedExercices = [];
   bool _isLoadingExercices = false;
   ParticipantOperation? _userInscription;
+  bool _isPaymentProcessing = false;
 
   @override
   void initState() {
@@ -265,6 +272,159 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
     }
   }
 
+  /// Handle payment button press
+  Future<void> _handlePayment(double amount) async {
+    if (_userInscription == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Inscription non trouvée'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final operationProvider = context.read<OperationProvider>();
+    final paymentProvider = context.read<PaymentProvider>();
+    final operation = operationProvider.selectedOperation;
+
+    if (operation == null) return;
+
+    setState(() {
+      _isPaymentProcessing = true;
+    });
+
+    try {
+      // Create payment request via Ponto
+      final paymentUrl = await paymentProvider.createPayment(
+        clubId: widget.clubId,
+        operationId: widget.operationId,
+        participantId: _userInscription!.id,
+        amount: amount,
+        description: 'Inscription: ${operation.titre}',
+      );
+
+      if (paymentUrl != null && paymentUrl.isNotEmpty) {
+        // Open Ponto payment page in browser
+        final uri = Uri.parse(paymentUrl);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+
+          // Show dialog to start polling after user returns
+          if (mounted) {
+            _showPaymentStatusDialog(paymentProvider.currentPaymentId!);
+          }
+        } else {
+          throw Exception('Impossible d\'ouvrir la page de paiement');
+        }
+      } else {
+        // No payment URL - show error
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(paymentProvider.errorMessage ?? 'Erreur lors de la création du paiement'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPaymentProcessing = false;
+        });
+      }
+    }
+  }
+
+  /// Show dialog to check payment status after user returns from payment page
+  void _showPaymentStatusDialog(String paymentId) {
+    final paymentProvider = context.read<PaymentProvider>();
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Vérification du paiement'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            const Text('Vérification du statut de votre paiement...'),
+            const SizedBox(height: 8),
+            Text(
+              'Cela peut prendre quelques instants.',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              paymentProvider.stopPaymentStatusPolling();
+              Navigator.pop(dialogContext);
+            },
+            child: const Text('Annuler'),
+          ),
+        ],
+      ),
+    );
+
+    // Start polling for payment status
+    paymentProvider.startPaymentStatusPolling(
+      clubId: widget.clubId,
+      operationId: widget.operationId,
+      participantId: _userInscription!.id,
+      paymentId: paymentId,
+      onStatusUpdate: (PaymentStatus status) {
+        if (status.isCompleted || status.paye) {
+          // Payment successful!
+          Navigator.pop(context); // Close dialog
+          _onPaymentSuccess();
+        } else if (status.isFailed || status.isCancelled) {
+          // Payment failed
+          Navigator.pop(context); // Close dialog
+          _onPaymentFailed(status.failureReason);
+        }
+        // If still pending, continue polling
+      },
+    );
+  }
+
+  void _onPaymentSuccess() {
+    // Reload inscription to get updated payment status
+    _loadUserInscription();
+    _loadOperation();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Paiement réussi ! Merci.'),
+        backgroundColor: Colors.green,
+        duration: Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _onPaymentFailed(String? reason) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(reason ?? 'Le paiement a échoué. Veuillez réessayer.'),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -349,18 +509,24 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
                         const SizedBox(height: 16),
                       ],
 
-                      // Course selection (only if registered)
-                      if (isRegistered) ...[
-                        const Divider(),
-                        const SizedBox(height: 8),
-                        _buildCourseSelection(),
+                      // 1. Communication accordion (message de l'organisateur)
+                      if (operation.communication != null && operation.communication!.isNotEmpty) ...[
+                        _buildCommunicationAccordion(operation),
+                        const SizedBox(height: 12),
                       ],
 
-                      const Divider(),
-                      const SizedBox(height: 8),
+                      // 2. Discussion accordion (chat entre participants)
+                      _buildDiscussionAccordion(isRegistered),
+                      const SizedBox(height: 12),
 
-                      // Liste des participants inscrits avec accordion
-                      _buildParticipantsListWithAccordion(operationProvider),
+                      // 3. Inscribed members accordion (closed by default)
+                      _buildInscribedMembersAccordion(operationProvider),
+                      const SizedBox(height: 12),
+
+                      // 4. Course selection (only if registered) - exercises last
+                      if (isRegistered) ...[
+                        _buildCourseSelection(),
+                      ],
                     ],
                   ),
                 ),
@@ -497,6 +663,383 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
     );
   }
 
+  /// Communication accordion
+  Widget _buildCommunicationAccordion(operation) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.orange.shade200),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: ExpansionTile(
+          initiallyExpanded: true, // Open by default
+          backgroundColor: Colors.orange.shade50,
+          collapsedBackgroundColor: Colors.white,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          leading: Icon(Icons.campaign, color: Colors.orange[700]),
+          title: Text(
+            'Communication',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[800],
+            ),
+          ),
+          subtitle: Text(
+            'Message de l\'organisateur',
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.grey[600],
+            ),
+          ),
+          children: [
+            Container(
+              width: double.infinity,
+              color: Colors.white,
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                operation.communication ?? '',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[800],
+                  height: 1.5,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Discussion accordion (chat entre participants)
+  Widget _buildDiscussionAccordion(bool isRegistered) {
+    final messageProvider = context.watch<EventMessageProvider>();
+    final authProvider = context.read<AuthProvider>();
+    final currentUserId = authProvider.currentUser?.uid ?? '';
+    final displayName = authProvider.displayName ?? 'Membre';
+
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.purple.shade200),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: ExpansionTile(
+          initiallyExpanded: false,
+          backgroundColor: Colors.purple.shade50,
+          collapsedBackgroundColor: Colors.white,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          leading: Icon(Icons.chat, color: Colors.purple[700]),
+          title: Text(
+            'Discussion',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[800],
+            ),
+          ),
+          subtitle: Text(
+            isRegistered ? 'Discutez avec les participants' : 'Inscrivez-vous pour participer',
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.purple[700],
+            ),
+          ),
+          children: [
+            Container(
+              color: Colors.white,
+              height: 300, // Fixed height for chat
+              child: StreamBuilder<List<EventMessage>>(
+                stream: messageProvider.watchMessages(widget.clubId, widget.operationId),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Text('Erreur: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
+                    );
+                  }
+
+                  final messages = snapshot.data ?? [];
+
+                  return Column(
+                    children: [
+                      // Messages list
+                      Expanded(
+                        child: messages.isEmpty
+                            ? Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.chat_bubble_outline, size: 48, color: Colors.grey[400]),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Aucun message',
+                                      style: TextStyle(color: Colors.grey[600]),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : ListView.builder(
+                                padding: const EdgeInsets.all(12),
+                                itemCount: messages.length,
+                                itemBuilder: (context, index) {
+                                  final message = messages[index];
+                                  final isOwnMessage = message.senderId == currentUserId;
+                                  return _buildMessageBubble(message, isOwnMessage);
+                                },
+                              ),
+                      ),
+
+                      // Input field (only if registered)
+                      if (isRegistered)
+                        _buildMessageInputField(messageProvider, currentUserId, displayName)
+                      else
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[100],
+                            border: Border(top: BorderSide(color: Colors.grey[300]!)),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.info_outline, color: Colors.grey[600], size: 18),
+                              const SizedBox(width: 8),
+                              const Expanded(
+                                child: Text(
+                                  'Inscrivez-vous pour participer à la discussion',
+                                  style: TextStyle(fontSize: 13, color: Colors.grey),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Message bubble for chat
+  Widget _buildMessageBubble(EventMessage message, bool isOwnMessage) {
+    final dateFormat = DateFormat('HH:mm');
+
+    return Align(
+      alignment: isOwnMessage ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.65),
+        decoration: BoxDecoration(
+          color: isOwnMessage ? Colors.purple[100] : Colors.grey[200],
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (!isOwnMessage)
+              Text(
+                message.senderName,
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+              ),
+            Text(message.message, style: const TextStyle(fontSize: 14)),
+            const SizedBox(height: 2),
+            Text(
+              dateFormat.format(message.createdAt),
+              style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Message input field
+  Widget _buildMessageInputField(EventMessageProvider messageProvider, String userId, String displayName) {
+    final controller = TextEditingController();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Colors.grey[300]!)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: controller,
+              decoration: InputDecoration(
+                hintText: 'Votre message...',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  borderSide: BorderSide(color: Colors.grey[300]!),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                isDense: true,
+              ),
+              textInputAction: TextInputAction.send,
+              onSubmitted: (text) async {
+                if (text.trim().isNotEmpty) {
+                  await messageProvider.sendMessage(
+                    clubId: widget.clubId,
+                    operationId: widget.operationId,
+                    senderId: userId,
+                    senderName: displayName,
+                    message: text.trim(),
+                  );
+                  controller.clear();
+                }
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            onPressed: () async {
+              final text = controller.text.trim();
+              if (text.isNotEmpty) {
+                await messageProvider.sendMessage(
+                  clubId: widget.clubId,
+                  operationId: widget.operationId,
+                  senderId: userId,
+                  senderName: displayName,
+                  message: text,
+                );
+                controller.clear();
+              }
+            },
+            icon: const Icon(Icons.send),
+            color: Colors.purple,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Inscribed members accordion (closed by default)
+  Widget _buildInscribedMembersAccordion(OperationProvider operationProvider) {
+    final participants = operationProvider.selectedOperationParticipants;
+    final authProvider = context.read<AuthProvider>();
+    final currentUserId = authProvider.currentUser?.uid ?? '';
+
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.blue.shade200),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: ExpansionTile(
+          initiallyExpanded: false, // Closed by default
+          backgroundColor: Colors.blue.shade50,
+          collapsedBackgroundColor: Colors.white,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          leading: Icon(Icons.group, color: Colors.blue[700]),
+          title: Text(
+            'Membres inscrits',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[800],
+            ),
+          ),
+          subtitle: Text(
+            '${participants.length} inscrit(s)',
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.blue[700],
+            ),
+          ),
+          children: [
+            Container(
+              color: Colors.white,
+              child: participants.isEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline, color: Colors.grey[400]),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Aucun inscrit pour le moment',
+                            style: TextStyle(color: Colors.grey[500]),
+                          ),
+                        ],
+                      ),
+                    )
+                  : Column(
+                      children: participants.map((participant) {
+                        final prenom = participant.membrePrenom ?? '';
+                        final nom = participant.membreNom ?? '';
+                        final displayName = prenom.isNotEmpty
+                            ? '$prenom $nom'.trim()
+                            : (nom.isNotEmpty ? nom : 'Anonyme');
+                        final isCurrentUser = participant.membreId == currentUserId;
+
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: isCurrentUser ? Colors.green.shade100 : Colors.blue.shade100,
+                            radius: 18,
+                            child: Text(
+                              prenom.isNotEmpty ? prenom[0].toUpperCase() : (nom.isNotEmpty ? nom[0].toUpperCase() : '?'),
+                              style: TextStyle(
+                                color: isCurrentUser ? Colors.green.shade700 : Colors.blue.shade700,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                          title: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  displayName,
+                                  style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (isCurrentUser) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.shade100,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    'vous',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.green.shade700,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          trailing: _buildPaymentBadge(participant.paye),
+                          dense: true,
+                        );
+                      }).toList(),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Bottom buttons: Payment (if not paid) + Register/Unregister
   Widget _buildBottomButtons({
     required operation,
@@ -523,31 +1066,37 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Payment button - show if registered AND not paid yet
-            if (isRegistered && !isPaid) ...[
+            // Payment button - show if registered AND not paid yet AND price > 0
+            if (isRegistered && !isPaid && inscriptionPrice > 0) ...[
               SizedBox(
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton.icon(
-                  onPressed: null, // Disabled for now
-                  icon: const Icon(Icons.payment),
+                  onPressed: _isPaymentProcessing
+                      ? null
+                      : () => _handlePayment(inscriptionPrice),
+                  icon: _isPaymentProcessing
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.payment, color: Colors.white),
                   label: Text(
-                    inscriptionPrice > 0
-                        ? 'Payer ${CurrencyFormatter.format(inscriptionPrice)}'
-                        : 'Payer',
-                    style: const TextStyle(fontSize: 16),
+                    _isPaymentProcessing
+                        ? 'Traitement...'
+                        : 'Payer ${CurrencyFormatter.format(inscriptionPrice)}',
+                    style: const TextStyle(fontSize: 16, color: Colors.white),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.grey[300],
-                    foregroundColor: Colors.grey[600],
+                    backgroundColor: Colors.blue,
+                    disabledBackgroundColor: Colors.blue.shade300,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Paiement bientôt disponible',
-                style: TextStyle(fontSize: 12, color: Colors.grey[500]),
               ),
               const SizedBox(height: 12),
             ],
@@ -803,133 +1352,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
     );
   }
 
-  /// Participants list with accordion to show selected exercises
-  Widget _buildParticipantsListWithAccordion(OperationProvider operationProvider) {
-    final participants = operationProvider.selectedOperationParticipants;
-    final authProvider = context.read<AuthProvider>();
-    final currentUserId = authProvider.currentUser?.uid ?? '';
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Icon(Icons.group, color: Colors.blue),
-            const SizedBox(width: 8),
-            Text(
-              'Inscrits (${participants.length})',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        if (participants.isEmpty)
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.info_outline, color: Colors.grey),
-                SizedBox(width: 8),
-                Text(
-                  'Aucun inscrit pour le moment',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              ],
-            ),
-          )
-        else
-          Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey.shade300),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: ExpansionPanelList.radio(
-                elevation: 0,
-                expandedHeaderPadding: EdgeInsets.zero,
-                children: participants.asMap().entries.map((entry) {
-                  final index = entry.key;
-                  final participant = entry.value;
-                  // Display firstname + family name
-                  final prenom = participant.membrePrenom ?? '';
-                  final nom = participant.membreNom ?? '';
-                  final displayName = prenom.isNotEmpty
-                      ? '$prenom $nom'.trim()
-                      : (nom.isNotEmpty ? nom : 'Anonyme');
-                  final isCurrentUser = participant.membreId == currentUserId;
-                  final hasExercices = participant.exercices.isNotEmpty;
-
-                  return ExpansionPanelRadio(
-                    value: index,
-                    canTapOnHeader: true,
-                    headerBuilder: (context, isExpanded) {
-                      return ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: isCurrentUser ? Colors.green.shade100 : Colors.blue.shade100,
-                          child: Text(
-                            prenom.isNotEmpty ? prenom[0].toUpperCase() : (nom.isNotEmpty ? nom[0].toUpperCase() : '?'),
-                            style: TextStyle(
-                              color: isCurrentUser ? Colors.green.shade700 : Colors.blue.shade700,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        title: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                displayName,
-                                style: const TextStyle(fontWeight: FontWeight.w500),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            if (isCurrentUser) ...[
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.blue.shade100,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  'vous',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.blue.shade700,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                        subtitle: hasExercices
-                            ? Text(
-                                '${participant.exercices.length} exercice(s)',
-                                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                              )
-                            : null,
-                        trailing: _buildPaymentBadge(participant.paye),
-                      );
-                    },
-                    body: _buildParticipantExercicesList(participant),
-                  );
-                }).toList(),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
   Widget _buildPaymentBadge(bool paye) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -956,79 +1378,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildParticipantExercicesList(ParticipantOperation participant) {
-    if (participant.exercices.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        child: Text(
-          'Aucun exercice sélectionné',
-          style: TextStyle(
-            color: Colors.grey[500],
-            fontStyle: FontStyle.italic,
-          ),
-        ),
-      );
-    }
-
-    return FutureBuilder<List<ExerciceLIFRAS>>(
-      future: _lifrasService.getExercicesByIds(widget.clubId, participant.exercices),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.all(16),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-          );
-        }
-
-        final exercices = snapshot.data ?? [];
-
-        if (exercices.isEmpty) {
-          return Container(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              '${participant.exercices.length} exercice(s)',
-              style: TextStyle(color: Colors.grey[600]),
-            ),
-          );
-        }
-
-        return Container(
-          padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: exercices.map((ex) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.check, size: 16, color: Colors.green[600]),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            ex.code,
-                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                          ),
-                          Text(
-                            ex.description,
-                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
-          ),
-        );
-      },
     );
   }
 }

@@ -38,7 +38,7 @@ android {
     defaultConfig {
         applicationId "be.calypsodc.calymob"
         minSdkVersion flutter.minSdkVersion
-        targetSdk 34
+        targetSdk 35
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
         multiDexEnabled true

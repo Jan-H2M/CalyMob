@@ -3,10 +3,10 @@ import 'package:flutter/foundation.dart';
 import '../models/payment_response.dart';
 import '../services/payment_service.dart';
 
-/// Provider pour gérer l'état des paiements
+/// Provider for managing payment state
 ///
-/// Gère la création de paiements, le suivi du statut,
-/// et la communication avec le service de paiement Noda.
+/// Handles payment creation, status tracking, and communication
+/// with the Ponto Connect payment service.
 class PaymentProvider with ChangeNotifier {
   final PaymentService _paymentService = PaymentService();
 
@@ -16,14 +16,19 @@ class PaymentProvider with ChangeNotifier {
   String? _errorMessage;
   Timer? _statusCheckTimer;
 
+  // Current payment context for status polling
+  String? _currentClubId;
+  String? _currentOperationId;
+  String? _currentParticipantId;
+
   bool get isProcessing => _isProcessing;
   String? get currentPaymentId => _currentPaymentId;
   String? get currentPaymentUrl => _currentPaymentUrl;
   String? get errorMessage => _errorMessage;
 
-  /// Crée un nouveau paiement
+  /// Creates a new payment request
   ///
-  /// Retourne l'URL de paiement Noda si succès, null si erreur
+  /// Returns the Ponto payment URL on success, null on error
   Future<String?> createPayment({
     required String clubId,
     required String operationId,
@@ -33,6 +38,12 @@ class PaymentProvider with ChangeNotifier {
   }) async {
     _isProcessing = true;
     _errorMessage = null;
+
+    // Store context for status polling
+    _currentClubId = clubId;
+    _currentOperationId = operationId;
+    _currentParticipantId = participantId;
+
     notifyListeners();
 
     try {
@@ -49,6 +60,7 @@ class PaymentProvider with ChangeNotifier {
       _isProcessing = false;
       notifyListeners();
 
+      debugPrint('💳 Payment URL: $_currentPaymentUrl');
       return response.paymentUrl;
     } on PaymentException catch (e) {
       _errorMessage = e.message;
@@ -63,12 +75,22 @@ class PaymentProvider with ChangeNotifier {
     }
   }
 
-  /// Vérifie le statut d'un paiement
+  /// Checks payment status
   ///
-  /// Retourne le statut actuel ou null si erreur
-  Future<PaymentStatus?> checkPaymentStatus(String paymentId) async {
+  /// Returns current status or null on error
+  Future<PaymentStatus?> checkPaymentStatus({
+    required String clubId,
+    required String operationId,
+    required String participantId,
+    required String paymentId,
+  }) async {
     try {
-      return await _paymentService.checkPaymentStatus(paymentId);
+      return await _paymentService.checkPaymentStatus(
+        clubId: clubId,
+        operationId: operationId,
+        participantId: participantId,
+        paymentId: paymentId,
+      );
     } on PaymentException catch (e) {
       _errorMessage = e.message;
       notifyListeners();
@@ -80,58 +102,71 @@ class PaymentProvider with ChangeNotifier {
     }
   }
 
-  /// Démarre la vérification périodique du statut de paiement
+  /// Starts periodic payment status polling
   ///
-  /// Vérifie le statut toutes les 3 secondes pendant max 5 minutes
-  /// Arrête automatiquement quand le paiement est complété/échoué
-  void startPaymentStatusPolling(
-    String paymentId,
-    Function(PaymentStatus) onStatusUpdate,
-  ) {
-    stopPaymentStatusPolling(); // Arrête un éventuel polling en cours
+  /// Checks status every 3 seconds for max 5 minutes
+  /// Automatically stops when payment is completed/failed
+  void startPaymentStatusPolling({
+    required String clubId,
+    required String operationId,
+    required String participantId,
+    required String paymentId,
+    required Function(PaymentStatus) onStatusUpdate,
+  }) {
+    stopPaymentStatusPolling(); // Stop any existing polling
 
     int tickCount = 0;
-    const maxTicks = 100; // 5 minutes (100 * 3 secondes)
+    const maxTicks = 100; // 5 minutes (100 * 3 seconds)
+
+    debugPrint('🔄 Starting payment status polling for: $paymentId');
 
     _statusCheckTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
       tickCount++;
 
-      // Arrêter après 5 minutes
+      // Stop after 5 minutes
       if (tickCount > maxTicks) {
-        debugPrint('Payment status polling timeout');
+        debugPrint('⏰ Payment status polling timeout');
         stopPaymentStatusPolling();
         return;
       }
 
       try {
-        final status = await _paymentService.checkPaymentStatus(paymentId);
+        final status = await _paymentService.checkPaymentStatus(
+          clubId: clubId,
+          operationId: operationId,
+          participantId: participantId,
+          paymentId: paymentId,
+        );
         onStatusUpdate(status);
 
-        // Arrêter si le paiement est terminé (succès ou échec)
+        // Stop if payment is final (success or failure)
         if (status.isCompleted || status.isFailed || status.isCancelled) {
-          debugPrint('Payment status final: ${status.status}');
+          debugPrint('✅ Payment status final: ${status.status}, paye: ${status.paye}');
           stopPaymentStatusPolling();
         }
       } catch (e) {
-        debugPrint('Error checking payment status: $e');
-        // Continue à vérifier malgré les erreurs
+        debugPrint('❌ Error checking payment status: $e');
+        // Continue polling despite errors
       }
     });
   }
 
-  /// Arrête la vérification périodique du statut
+  /// Stops periodic status polling
   void stopPaymentStatusPolling() {
     _statusCheckTimer?.cancel();
     _statusCheckTimer = null;
   }
 
-  /// Réinitialise l'état du provider
+  /// Resets provider state
   void reset() {
     stopPaymentStatusPolling();
     _isProcessing = false;
     _currentPaymentId = null;
     _currentPaymentUrl = null;
     _errorMessage = null;
+    _currentClubId = null;
+    _currentOperationId = null;
+    _currentParticipantId = null;
     notifyListeners();
   }
 

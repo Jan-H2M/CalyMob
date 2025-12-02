@@ -17,6 +17,7 @@ class AnnouncementsScreen extends StatefulWidget {
 
 class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   List<String>? _clubStatuten;
+  String? _appRole;
 
   @override
   void initState() {
@@ -41,13 +42,36 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
 
       if (doc.exists && mounted) {
         final data = doc.data();
+        debugPrint('📋 Member data keys: ${data?.keys.toList()}');
+        debugPrint('📋 app_role: ${data?['app_role']}');
+        debugPrint('📋 role: ${data?['role']}');
+        debugPrint('📋 clubStatuten: ${data?['clubStatuten']}');
         setState(() {
           _clubStatuten = (data?['clubStatuten'] as List<dynamic>?)?.cast<String>();
+          // Essayer app_role, sinon role
+          _appRole = data?['app_role'] as String? ?? data?['role'] as String?;
         });
       }
     } catch (e) {
       debugPrint('❌ Erreur chargement member info: $e');
     }
+  }
+
+  /// Vérifie si l'utilisateur est admin (via clubStatuten OU app_role)
+  bool _isUserAdmin() {
+    debugPrint('🔐 Checking admin: app_role=$_appRole, clubStatuten=$_clubStatuten');
+    // Vérifier app_role d'abord (superadmin, admin)
+    if (_appRole != null) {
+      final role = _appRole!.toLowerCase();
+      if (role == 'superadmin' || role == 'admin') {
+        debugPrint('✅ User IS admin via app_role');
+        return true;
+      }
+    }
+    // Sinon vérifier clubStatuten
+    final result = PermissionHelper.isAdmin(_clubStatuten ?? []);
+    debugPrint('🔐 Admin via clubStatuten: $result');
+    return result;
   }
 
   void _loadAnnouncements() {
@@ -176,7 +200,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
     final announcementProvider = Provider.of<AnnouncementProvider>(context);
     final currentUser = authProvider.currentUser;
 
-    final isAdmin = PermissionHelper.isAdmin(_clubStatuten ?? []);
+    final isAdmin = _isUserAdmin();
     const clubId = 'calypso';
 
     if (currentUser == null) {

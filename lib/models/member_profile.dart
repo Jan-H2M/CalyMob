@@ -31,6 +31,9 @@ class MemberProfile {
   final bool notificationsEnabled; // Notifications push activées
   final String? fcmToken; // Token FCM pour les notifications
 
+  // Statut membre
+  final String? memberStatus; // "active", "inactive", "deleted"
+
   // Métadonnées
   final DateTime? createdAt;
   final DateTime? updatedAt;
@@ -56,6 +59,7 @@ class MemberProfile {
     this.phoneNumber,
     this.notificationsEnabled = true, // Par défaut, notifications activées
     this.fcmToken,
+    this.memberStatus,
     this.createdAt,
     this.updatedAt,
   });
@@ -85,6 +89,7 @@ class MemberProfile {
       phoneNumber: data['phone_number'],
       notificationsEnabled: data['notifications_enabled'] ?? true,
       fcmToken: data['fcm_token'],
+      memberStatus: data['member_status'] ?? data['status'],
       createdAt: (data['created_at'] as Timestamp?)?.toDate(),
       updatedAt: (data['updated_at'] as Timestamp?)?.toDate(),
     );
@@ -172,4 +177,7 @@ class MemberProfile {
 
   /// Vérifie si le profil est complet (photo + consentements)
   bool get isComplete => hasPhoto && consentInternalPhoto;
+
+  /// Vérifie si le membre est actif
+  bool get isActive => memberStatus == 'active' || memberStatus == null;
 }

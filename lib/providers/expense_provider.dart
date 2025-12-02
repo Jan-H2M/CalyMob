@@ -88,9 +88,6 @@ class ExpenseProvider with ChangeNotifier {
     required double montant,
     required String description,
     required DateTime dateDepense,
-    String? categorie,
-    String? codeComptable,
-    String? codeComptableLabel,
     String? operationId,
     List<File>? photoFiles,
   }) async {
@@ -105,9 +102,6 @@ class ExpenseProvider with ChangeNotifier {
         montant: montant,
         description: description,
         dateDepense: dateDepense,
-        categorie: categorie,
-        codeComptable: codeComptable,
-        codeComptableLabel: codeComptableLabel,
         operationId: operationId,
         photoFiles: photoFiles,
       );
@@ -212,9 +206,6 @@ class ExpenseProvider with ChangeNotifier {
     required double montant,
     required String description,
     required DateTime dateDepense,
-    String? categorie,
-    String? codeComptable,
-    String? codeComptableLabel,
   }) async {
     try {
       _isLoading = true;
@@ -227,9 +218,6 @@ class ExpenseProvider with ChangeNotifier {
         montant: montant,
         description: description,
         dateDepense: dateDepense,
-        categorie: categorie,
-        codeComptable: codeComptable,
-        codeComptableLabel: codeComptableLabel,
       );
 
       _isLoading = false;

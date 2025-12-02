@@ -3,7 +3,9 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../config/account_codes.dart';
+import 'package:cunning_document_scanner/cunning_document_scanner.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/expense_provider.dart';
@@ -24,7 +26,6 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   final _imagePicker = ImagePicker();
 
   DateTime _selectedDate = DateTime.now();
-  AccountCode? _selectedAccountCode;
   List<File> _selectedPhotos = [];
   bool _isSubmitting = false;
 
@@ -90,6 +91,64 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
     setState(() {
       _selectedPhotos.removeAt(index);
     });
+  }
+
+  /// Compresse une image pour réduire sa taille
+  Future<File?> _compressImage(File file) async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final targetPath = '${dir.path}/compressed_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+      final result = await FlutterImageCompress.compressAndGetFile(
+        file.absolute.path,
+        targetPath,
+        quality: 70,
+        minWidth: 1200,
+        minHeight: 1600,
+      );
+
+      if (result != null) {
+        return File(result.path);
+      }
+      return file; // Retourne l'original si la compression échoue
+    } catch (e) {
+      debugPrint('Erreur compression: $e');
+      return file; // Retourne l'original en cas d'erreur
+    }
+  }
+
+  Future<void> _scanDocument() async {
+    try {
+      final List<String>? scannedPaths = await CunningDocumentScanner.getPictures(
+        noOfPages: 5,
+        isGalleryImportAllowed: true,
+      );
+
+      if (scannedPaths != null && scannedPaths.isNotEmpty) {
+        // Compresser chaque image scannée
+        final List<File> compressedFiles = [];
+        for (final path in scannedPaths) {
+          final originalFile = File(path);
+          final compressedFile = await _compressImage(originalFile);
+          if (compressedFile != null) {
+            compressedFiles.add(compressedFile);
+          }
+        }
+
+        setState(() {
+          _selectedPhotos.addAll(compressedFiles);
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur lors du scan: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _selectDate() async {
@@ -158,9 +217,6 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
         montant: montant,
         description: description,
         dateDepense: _selectedDate,
-        categorie: _selectedAccountCode?.category,
-        codeComptable: _selectedAccountCode?.code,
-        codeComptableLabel: _selectedAccountCode?.label,
         photoFiles: _selectedPhotos,
       );
 
@@ -269,43 +325,6 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                 ),
               ),
 
-              const SizedBox(height: 16),
-
-              // Code comptable
-              DropdownButtonFormField<AccountCode>(
-                value: _selectedAccountCode,
-                decoration: const InputDecoration(
-                  labelText: 'Code comptable',
-                  prefixIcon: Icon(Icons.account_balance, color: Colors.orange),
-                  border: OutlineInputBorder(),
-                ),
-                items: getSortedExpenseAccountCodes().map((code) {
-                  return DropdownMenuItem(
-                    value: code,
-                    child: Text(
-                      code.isFavorite
-                          ? '⭐ ${code.code} - ${code.label}'
-                          : '${code.code} - ${code.label}',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: code.isFavorite ? FontWeight.bold : FontWeight.normal,
-                      ),
-                    ),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  setState(() {
-                    _selectedAccountCode = value;
-                  });
-                },
-                validator: (value) {
-                  if (value == null) {
-                    return 'Le code comptable est requis';
-                  }
-                  return null;
-                },
-              ),
-
               const SizedBox(height: 24),
 
               // Section Justificatifs
@@ -318,28 +337,54 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
               ),
               const SizedBox(height: 8),
 
-              // Boutons photo
+              // Bouton Scanner (principal, mobile uniquement)
+              if (!kIsWeb) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _isSubmitting ? null : _scanDocument,
+                    icon: const Icon(Icons.document_scanner, color: Colors.white),
+                    label: const Text('Scanner un justificatif', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Conseil : Scannez un seul justificatif par demande pour faciliter le traitement.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+
+              // Boutons secondaires (Photo et Galerie)
               Row(
                 children: [
                   Expanded(
-                    child: ElevatedButton.icon(
+                    child: OutlinedButton.icon(
                       onPressed: _isSubmitting ? null : _pickImageFromCamera,
-                      icon: const Icon(Icons.camera_alt, color: Colors.white),
-                      label: const Text('Appareil photo', style: TextStyle(color: Colors.white)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
+                      icon: const Icon(Icons.camera_alt, color: Colors.orange),
+                      label: const Text('Photo', style: TextStyle(color: Colors.orange)),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.orange),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: ElevatedButton.icon(
+                    child: OutlinedButton.icon(
                       onPressed: _isSubmitting ? null : _pickImageFromGallery,
-                      icon: const Icon(Icons.photo_library, color: Colors.white),
-                      label: const Text('Galerie', style: TextStyle(color: Colors.white)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
+                      icon: const Icon(Icons.photo_library, color: Colors.orange),
+                      label: const Text('Galerie', style: TextStyle(color: Colors.orange)),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.orange),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
                     ),

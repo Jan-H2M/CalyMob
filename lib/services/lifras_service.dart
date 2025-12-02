@@ -26,8 +26,8 @@ class LifrasService {
     }
   }
 
-  /// Récupérer les exercices d'un niveau spécifique
-  /// Règle: UNIQUEMENT les exercices au niveau exact du membre (pas en dessous)
+  /// Récupérer les exercices d'un niveau spécifique + exercices "Tous Niveaux" (TN)
+  /// Règle: exercices au niveau exact du membre + tous les exercices TN
   Future<List<ExerciceLIFRAS>> getExercicesByNiveau(
     String clubId,
     NiveauLIFRAS niveau,
@@ -35,31 +35,48 @@ class LifrasService {
     try {
       debugPrint('🔍 Recherche exercices pour niveau: ${niveau.code} (${niveau.label})');
 
-      // First try with standard code (P4)
-      var snapshot = await _firestore
+      final exercices = <ExerciceLIFRAS>[];
+
+      // 1. Get TN (Tous Niveaux) exercises - accessible to everyone
+      final tnSnapshot = await _firestore
           .collection('clubs/$clubId/exercices_lifras')
-          .where('niveau', isEqualTo: niveau.code)
+          .where('niveau', isEqualTo: 'TN')
           .orderBy('code')
           .get();
 
-      // If no results, try with just the number (e.g., "4" instead of "P4")
-      if (snapshot.docs.isEmpty) {
-        final numericCode = niveau.code.replaceAll(RegExp(r'[^0-9]'), '');
-        if (numericCode.isNotEmpty) {
-          debugPrint('🔍 Essai avec code numérique: $numericCode');
-          snapshot = await _firestore
-              .collection('clubs/$clubId/exercices_lifras')
-              .where('niveau', isEqualTo: numericCode)
-              .orderBy('code')
-              .get();
+      exercices.addAll(
+        tnSnapshot.docs.map((doc) => ExerciceLIFRAS.fromFirestore(doc)),
+      );
+      debugPrint('📚 ${tnSnapshot.docs.length} exercices TN (Tous Niveaux) trouvés');
+
+      // 2. Get exercises for the specific niveau (if not TN)
+      if (niveau != NiveauLIFRAS.tn) {
+        // First try with standard code (P4)
+        var snapshot = await _firestore
+            .collection('clubs/$clubId/exercices_lifras')
+            .where('niveau', isEqualTo: niveau.code)
+            .orderBy('code')
+            .get();
+
+        // If no results, try with just the number (e.g., "4" instead of "P4")
+        if (snapshot.docs.isEmpty) {
+          final numericCode = niveau.code.replaceAll(RegExp(r'[^0-9]'), '');
+          if (numericCode.isNotEmpty) {
+            debugPrint('🔍 Essai avec code numérique: $numericCode');
+            snapshot = await _firestore
+                .collection('clubs/$clubId/exercices_lifras')
+                .where('niveau', isEqualTo: numericCode)
+                .orderBy('code')
+                .get();
+          }
         }
+
+        exercices.addAll(
+          snapshot.docs.map((doc) => ExerciceLIFRAS.fromFirestore(doc)),
+        );
       }
 
-      final exercices = snapshot.docs
-          .map((doc) => ExerciceLIFRAS.fromFirestore(doc))
-          .toList();
-
-      debugPrint('📚 ${exercices.length} exercices LIFRAS pour niveau ${niveau.label}');
+      debugPrint('📚 ${exercices.length} exercices LIFRAS total pour niveau ${niveau.label}');
       return exercices;
     } catch (e) {
       debugPrint('❌ Erreur chargement exercices par niveau: $e');

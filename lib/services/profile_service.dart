@@ -90,22 +90,28 @@ class ProfileService {
       // 1. Upload la photo
       final photoUrl = await uploadProfilePhoto(clubId, userId, photoFile);
 
-      // 2. Mettre à jour Firestore
-      await _firestore.collection('clubs/$clubId/members').doc(userId).update({
+      // 2. Mettre à jour Firestore (utilise set avec merge pour créer si n'existe pas)
+      final updateData = <String, dynamic>{
         'photo_url': photoUrl,
         'photo_uploaded_at': FieldValue.serverTimestamp(),
         'consent_internal_photo': consentInternalPhoto,
         'consent_internal_photo_date': consentInternalPhoto
             ? FieldValue.serverTimestamp()
             : null,
-        if (consentExternalPhoto != null) ...{
-          'consent_external_photo': consentExternalPhoto,
-          'consent_external_photo_date': consentExternalPhoto
-              ? FieldValue.serverTimestamp()
-              : null,
-        },
         'updated_at': FieldValue.serverTimestamp(),
-      });
+      };
+
+      if (consentExternalPhoto != null) {
+        updateData['consent_external_photo'] = consentExternalPhoto;
+        updateData['consent_external_photo_date'] = consentExternalPhoto
+            ? FieldValue.serverTimestamp()
+            : null;
+      }
+
+      await _firestore.collection('clubs/$clubId/members').doc(userId).set(
+        updateData,
+        SetOptions(merge: true),
+      );
 
       debugPrint('✅ Profil photo mis à jour');
     } catch (e) {

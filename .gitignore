@@ -95,3 +95,6 @@ Thumbs.db
 *.json
 .env*.local
 serviceAccountKey.json
+
+# Ibanity certificates (sensitive)
+functions/certs/

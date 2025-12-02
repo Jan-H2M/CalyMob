@@ -2,26 +2,25 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import '../models/payment_response.dart';
 
-/// Service pour gérer les paiements via Noda (Open Banking)
+/// Service for managing payments via Ponto Connect (Ibanity)
 ///
-/// Ce service communique avec Firebase Cloud Functions qui
-/// interagissent de manière sécurisée avec l'API Noda.
-/// Les clés API sont stockées côté serveur pour la sécurité.
+/// Communicates with Firebase Cloud Functions that securely interact
+/// with the Ponto Connect API. API credentials are stored server-side.
 class PaymentService {
   final FirebaseFunctions _functions = FirebaseFunctions.instance;
 
-  /// Crée un paiement pour une inscription à une opération
+  /// Creates a payment request for an event registration
   ///
-  /// Paramètres:
-  /// - [clubId]: ID du club
-  /// - [operationId]: ID de l'opération (événement)
-  /// - [participantId]: ID du participant dans la collection operation_participants
-  /// - [amount]: Montant à payer en euros
-  /// - [description]: Description du paiement (titre de l'opération)
+  /// Parameters:
+  /// - [clubId]: Club ID
+  /// - [operationId]: Operation (event) ID
+  /// - [participantId]: Participant ID in inscriptions collection
+  /// - [amount]: Amount to pay in EUR
+  /// - [description]: Payment description (event title)
   ///
-  /// Retourne un [PaymentResponse] avec l'URL de paiement Noda
+  /// Returns a [PaymentResponse] with the Ponto payment URL
   ///
-  /// Lance [PaymentException] en cas d'erreur
+  /// Throws [PaymentException] on error
   Future<PaymentResponse> createPayment({
     required String clubId,
     required String operationId,
@@ -30,29 +29,28 @@ class PaymentService {
     required String description,
   }) async {
     try {
-      debugPrint('Creating payment: amount=$amount, operationId=$operationId');
+      debugPrint('💳 Creating Ponto payment: amount=$amount, operationId=$operationId');
 
-      final result = await _functions.httpsCallable('createNodaPayment').call({
+      final result = await _functions.httpsCallable('pontoCreatePayment').call({
         'clubId': clubId,
         'operationId': operationId,
         'participantId': participantId,
         'amount': amount,
-        'currency': 'EUR',
         'description': description,
       });
 
-      debugPrint('Payment created successfully: ${result.data}');
+      debugPrint('✅ Payment created successfully: ${result.data}');
 
       return PaymentResponse.fromJson(Map<String, dynamic>.from(result.data));
     } on FirebaseFunctionsException catch (e) {
-      debugPrint('Firebase Functions error: ${e.code} - ${e.message}');
+      debugPrint('❌ Firebase Functions error: ${e.code} - ${e.message}');
       throw PaymentException(
         _getFriendlyErrorMessage(e.code),
         code: e.code,
         details: e.details,
       );
     } catch (e) {
-      debugPrint('Error creating payment: $e');
+      debugPrint('❌ Error creating payment: $e');
       throw PaymentException(
         'Erreur lors de la création du paiement. Veuillez réessayer.',
         details: e,
@@ -60,33 +58,47 @@ class PaymentService {
     }
   }
 
-  /// Vérifie le statut d'un paiement
+  /// Checks payment status
   ///
-  /// Paramètres:
-  /// - [paymentId]: ID du paiement Noda
+  /// Parameters:
+  /// - [clubId]: Club ID
+  /// - [operationId]: Operation ID
+  /// - [participantId]: Participant ID
+  /// - [paymentId]: Ponto payment request ID
   ///
-  /// Retourne un [PaymentStatus] avec l'état actuel du paiement
+  /// Returns a [PaymentStatus] with current payment state
   ///
-  /// Lance [PaymentException] en cas d'erreur
-  Future<PaymentStatus> checkPaymentStatus(String paymentId) async {
+  /// Throws [PaymentException] on error
+  Future<PaymentStatus> checkPaymentStatus({
+    required String clubId,
+    required String operationId,
+    required String participantId,
+    required String paymentId,
+  }) async {
     try {
-      debugPrint('Checking payment status: $paymentId');
+      debugPrint('🔍 Checking Ponto payment status: $paymentId');
 
       final result =
-          await _functions.httpsCallable('checkNodaPaymentStatus').call({
+          await _functions.httpsCallable('pontoCheckStatus').call({
+        'clubId': clubId,
+        'operationId': operationId,
+        'participantId': participantId,
         'paymentId': paymentId,
       });
 
-      return PaymentStatus.fromJson(Map<String, dynamic>.from(result.data));
+      final status = PaymentStatus.fromJson(Map<String, dynamic>.from(result.data));
+      debugPrint('📊 Payment status: ${status.status}, paye: ${status.paye}');
+
+      return status;
     } on FirebaseFunctionsException catch (e) {
-      debugPrint('Firebase Functions error: ${e.code} - ${e.message}');
+      debugPrint('❌ Firebase Functions error: ${e.code} - ${e.message}');
       throw PaymentException(
         'Impossible de vérifier le statut du paiement',
         code: e.code,
         details: e.details,
       );
     } catch (e) {
-      debugPrint('Error checking payment status: $e');
+      debugPrint('❌ Error checking payment status: $e');
       throw PaymentException(
         'Erreur lors de la vérification du paiement',
         details: e,
@@ -94,7 +106,7 @@ class PaymentService {
     }
   }
 
-  /// Convertit les codes d'erreur Firebase en messages conviviaux
+  /// Converts Firebase error codes to user-friendly messages
   String _getFriendlyErrorMessage(String code) {
     switch (code) {
       case 'unauthenticated':
@@ -104,7 +116,9 @@ class PaymentService {
       case 'invalid-argument':
         return 'Données de paiement invalides';
       case 'not-found':
-        return 'Paiement introuvable';
+        return 'Inscription non trouvée';
+      case 'already-exists':
+        return 'Ce paiement a déjà été effectué';
       case 'deadline-exceeded':
       case 'unavailable':
         return 'Le service de paiement est temporairement indisponible. Veuillez réessayer.';

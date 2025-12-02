@@ -222,13 +222,11 @@ service cloud.firestore {
           && canModifyFiscalYearData(clubId, resource.data.fiscal_year_id);
       }
 
-      // Operations (événements, cotisations, dons, ventes, subventions) - USER ISOLATION
+      // Operations (événements, cotisations, dons, ventes, subventions)
       match /operations/{operationId} {
-        // Read: User role can only see their own operations (via organisateur_id)
-        allow read: if isAuthenticated() && (
-          getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
-          (getUserData(clubId).app_role == 'user' && resource.data.organisateur_id == request.auth.uid)
-        );
+        // Read: Tous les membres authentifiés peuvent voir les événements
+        // (nécessaire pour s'inscrire aux événements créés par d'autres)
+        allow read: if isAuthenticated();
 
         // Create: User can create their own operations (only type 'evenement')
         allow create: if isAuthenticated()
@@ -260,9 +258,42 @@ service cloud.firestore {
             getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
             (getUserData(clubId).app_role == 'user' && resource.data.organisateur_id == request.auth.uid)
           );
+
+        // Inscriptions subcollection (pour s'inscrire aux événements)
+        match /inscriptions/{inscriptionId} {
+          // Tous les membres authentifiés peuvent lire les inscriptions
+          allow read: if isAuthenticated();
+          // Membres authentifiés avec session peuvent créer/modifier/supprimer leur propre inscription
+          allow create: if isAuthenticated() && hasValidSession(clubId);
+          allow update, delete: if isAuthenticated()
+            && hasValidSession(clubId)
+            && (
+              // L'utilisateur peut modifier/supprimer sa propre inscription
+              resource.data.membre_id == request.auth.uid ||
+              // Ou être admin
+              getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur']
+            );
+        }
+
+        // Messages subcollection (discussion entre participants)
+        match /messages/{messageId} {
+          // Tous les membres authentifiés peuvent lire les messages
+          allow read: if isAuthenticated();
+          // Membres authentifiés avec session peuvent créer des messages
+          allow create: if isAuthenticated() && hasValidSession(clubId);
+          // Seul l'auteur ou un admin peut supprimer un message
+          allow delete: if isAuthenticated()
+            && hasValidSession(clubId)
+            && (
+              resource.data.sender_id == request.auth.uid ||
+              getUserData(clubId).app_role in ['superadmin', 'admin']
+            );
+          // Pas de modification des messages (on peut seulement supprimer)
+          allow update: if false;
+        }
       }
 
-      // Operation participants (inscriptions, cotisations payées, etc.)
+      // Operation participants (inscriptions, cotisations payées, etc.) - LEGACY
       match /operation_participants/{participantId} {
         allow read: if isAuthenticated();
         allow write: if isAuthenticated()
@@ -324,6 +355,18 @@ service cloud.firestore {
         allow read: if isAuthenticated();
         allow create: if isAuthenticated();
         allow update, delete: if false; // Audit logs are immutable
+      }
+
+      // ========== COMMUNICATION MODULE ==========
+
+      // Announcements (annonces du club) - tous les membres peuvent lire, admin peut écrire
+      match /announcements/{announcementId} {
+        // Lecture: tous les membres authentifiés
+        allow read: if isAuthenticated();
+        // Création: admins uniquement
+        allow create: if isAdmin(clubId) && hasValidSession(clubId);
+        // Modification/Suppression: admins uniquement
+        allow update, delete: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
       // ========== INVENTAIRE MODULE (ADMIN+ ACCESS - PHASE DÉVELOPPEMENT) ==========

@@ -17,6 +17,8 @@ import 'providers/operation_provider.dart';
 import 'providers/expense_provider.dart';
 import 'providers/announcement_provider.dart';
 import 'providers/event_message_provider.dart';
+import 'providers/payment_provider.dart';
+import 'providers/exercice_valide_provider.dart';
 
 // Screens
 import 'screens/auth/login_screen.dart';
@@ -68,6 +70,8 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ExpenseProvider()),
         ChangeNotifierProvider(create: (_) => AnnouncementProvider()),
         ChangeNotifierProvider(create: (_) => EventMessageProvider()),
+        ChangeNotifierProvider(create: (_) => PaymentProvider()),
+        ChangeNotifierProvider(create: (_) => ExerciceValideProvider()),
       ],
       child: MaterialApp(
         title: 'CalyMob',

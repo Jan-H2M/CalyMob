@@ -1,27 +1,32 @@
-/// Modèles pour les réponses de l'API de paiement Noda
+/// Payment API response models
 ///
-/// Ces modèles sont utilisés pour communiquer avec les Cloud Functions
-/// qui interagissent avec l'API Noda pour le traitement des paiements.
+/// Used for communication with Cloud Functions that interact with
+/// payment providers (Ponto Connect, Noda).
 
 class PaymentResponse {
   final String paymentId;
-  final String paymentUrl;
+  final String? paymentUrl;
   final String status;
-  final DateTime expiresAt;
+  final DateTime? expiresAt;
+  final String? provider; // 'ponto' or 'noda'
 
   PaymentResponse({
     required this.paymentId,
-    required this.paymentUrl,
+    this.paymentUrl,
     required this.status,
-    required this.expiresAt,
+    this.expiresAt,
+    this.provider,
   });
 
   factory PaymentResponse.fromJson(Map<String, dynamic> json) {
     return PaymentResponse(
       paymentId: json['paymentId'] as String,
-      paymentUrl: json['paymentUrl'] as String,
+      paymentUrl: json['paymentUrl'] as String?,
       status: json['status'] as String,
-      expiresAt: DateTime.parse(json['expiresAt'] as String),
+      expiresAt: json['expiresAt'] != null
+          ? DateTime.tryParse(json['expiresAt'] as String)
+          : null,
+      provider: json['provider'] as String?,
     );
   }
 
@@ -30,42 +35,57 @@ class PaymentResponse {
       'paymentId': paymentId,
       'paymentUrl': paymentUrl,
       'status': status,
-      'expiresAt': expiresAt.toIso8601String(),
+      'expiresAt': expiresAt?.toIso8601String(),
+      'provider': provider,
     };
   }
+
+  /// Whether this payment has a valid redirect URL
+  bool get hasPaymentUrl => paymentUrl != null && paymentUrl!.isNotEmpty;
 }
 
 class PaymentStatus {
-  final String status; // 'pending', 'completed', 'failed', 'cancelled'
+  final String status; // 'pending', 'signed', 'completed', 'failed', 'cancelled'
+  final bool paye;
   final DateTime? completedAt;
   final String? failureReason;
+  final String? paymentId;
 
   PaymentStatus({
     required this.status,
+    this.paye = false,
     this.completedAt,
     this.failureReason,
+    this.paymentId,
   });
 
   factory PaymentStatus.fromJson(Map<String, dynamic> json) {
     return PaymentStatus(
       status: json['status'] as String,
+      paye: json['paye'] as bool? ?? false,
       completedAt: json['completedAt'] != null
-          ? DateTime.parse(json['completedAt'] as String)
-          : null,
+          ? DateTime.tryParse(json['completedAt'] as String)
+          : (json['updatedAt'] != null
+              ? DateTime.tryParse(json['updatedAt'] as String)
+              : null),
       failureReason: json['failureReason'] as String?,
+      paymentId: json['paymentId'] as String?,
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       'status': status,
+      'paye': paye,
       'completedAt': completedAt?.toIso8601String(),
       'failureReason': failureReason,
+      'paymentId': paymentId,
     };
   }
 
   bool get isPending => status == 'pending';
-  bool get isCompleted => status == 'completed';
+  bool get isSigned => status == 'signed';
+  bool get isCompleted => status == 'completed' || paye;
   bool get isFailed => status == 'failed';
   bool get isCancelled => status == 'cancelled';
 }

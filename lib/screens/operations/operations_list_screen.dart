@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/firebase_config.dart';
-import '../../providers/auth_provider.dart';
 import '../../providers/operation_provider.dart';
 import '../../widgets/operation_card.dart';
 import '../../widgets/loading_widget.dart';
 import '../../widgets/empty_state_widget.dart';
 import 'operation_detail_screen.dart';
 
-/// Liste des événements (sans bottom navigation)
+/// Liste des événements avec tabs Plongées / Sorties
 class OperationsListScreen extends StatefulWidget {
   const OperationsListScreen({Key? key}) : super(key: key);
 
@@ -16,16 +15,25 @@ class OperationsListScreen extends StatefulWidget {
   State<OperationsListScreen> createState() => _OperationsListScreenState();
 }
 
-class _OperationsListScreenState extends State<OperationsListScreen> {
+class _OperationsListScreenState extends State<OperationsListScreen>
+    with SingleTickerProviderStateMixin {
   final String _clubId = FirebaseConfig.defaultClubId;
+  late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     // Démarrer le stream
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<OperationProvider>().listenToOpenEvents(_clubId);
     });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _refreshOperations() async {
@@ -42,30 +50,68 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
           'Événements',
           style: TextStyle(color: Colors.white),
         ),
-        backgroundColor: const Color(0xFF1976D2), // Blue
+        backgroundColor: const Color(0xFF1976D2),
         iconTheme: const IconThemeData(color: Colors.white),
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: Colors.white,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          tabs: const [
+            Tab(
+              icon: Text('🤿', style: TextStyle(fontSize: 20)),
+              text: 'Plongées',
+            ),
+            Tab(
+              icon: Text('🎉', style: TextStyle(fontSize: 20)),
+              text: 'Sorties',
+            ),
+          ],
+        ),
       ),
-      body: RefreshIndicator(
-        onRefresh: _refreshOperations,
-        child: _buildBody(operationProvider),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          // Tab Plongées
+          RefreshIndicator(
+            onRefresh: _refreshOperations,
+            child: _buildEventList(operationProvider, 'plongee'),
+          ),
+          // Tab Sorties
+          RefreshIndicator(
+            onRefresh: _refreshOperations,
+            child: _buildEventList(operationProvider, 'sortie'),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildBody(OperationProvider operationProvider) {
-    final operations = operationProvider.operations;
+  Widget _buildEventList(OperationProvider operationProvider, String categorie) {
+    final allOperations = operationProvider.operations;
+
+    // Filtrer par catégorie (plongee par défaut si pas de catégorie)
+    final operations = allOperations.where((op) {
+      final opCategorie = op.categorie ?? 'plongee';
+      return opCategorie == categorie;
+    }).toList();
 
     // Loading initial
-    if (operationProvider.isLoading && operations.isEmpty) {
+    if (operationProvider.isLoading && allOperations.isEmpty) {
       return const LoadingWidget(message: 'Chargement des événements...');
     }
 
     // Empty state
     if (operations.isEmpty) {
+      final isPlongee = categorie == 'plongee';
       return EmptyStateWidget(
-        icon: Icons.event_busy,
-        title: 'Aucun événement disponible',
-        subtitle: 'Les nouveaux événements apparaîtront ici',
+        icon: isPlongee ? Icons.scuba_diving : Icons.celebration,
+        title: isPlongee
+            ? 'Aucune plongée disponible'
+            : 'Aucune sortie disponible',
+        subtitle: isPlongee
+            ? 'Les prochaines plongées apparaîtront ici'
+            : 'Les prochaines sorties apparaîtront ici',
         onAction: _refreshOperations,
         actionLabel: 'Actualiser',
       );
@@ -77,7 +123,8 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
       itemCount: operations.length,
       itemBuilder: (context, index) {
         final operation = operations[index];
-        final participantCount = operationProvider.getParticipantCount(operation.id);
+        final participantCount =
+            operationProvider.getParticipantCount(operation.id);
 
         return OperationCard(
           operation: operation,

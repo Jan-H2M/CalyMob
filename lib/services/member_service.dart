@@ -88,4 +88,77 @@ class MemberService {
       return null;
     }
   }
+
+  /// Récupérer tous les moniteurs du club (MC, MF, MN, AM)
+  Future<List<Map<String, dynamic>>> getMonitors(String clubId) async {
+    try {
+      final snapshot = await _firestore
+          .collection('clubs/$clubId/members')
+          .where('plongeur_code', whereIn: ['MC', 'MF', 'MN', 'AM'])
+          .get();
+
+      final monitors = snapshot.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'id': doc.id,
+          'nom': data['nom'] ?? '',
+          'prenom': data['prenom'] ?? '',
+          'displayName': '${data['prenom'] ?? ''} ${data['nom'] ?? ''}'.trim(),
+          'plongeur_code': data['plongeur_code'] ?? '',
+        };
+      }).toList();
+
+      // Sort by displayName
+      monitors.sort((a, b) => (a['displayName'] as String)
+          .compareTo(b['displayName'] as String));
+
+      debugPrint('👨‍🏫 ${monitors.length} moniteurs trouvés dans le club');
+      return monitors;
+    } catch (e) {
+      debugPrint('❌ Erreur récupération moniteurs: $e');
+      return [];
+    }
+  }
+
+  /// Récupérer tous les membres du club
+  Future<List<Map<String, dynamic>>> getAllMembers(String clubId) async {
+    try {
+      final snapshot = await _firestore
+          .collection('clubs/$clubId/members')
+          .orderBy('nom')
+          .get();
+
+      final members = snapshot.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'id': doc.id,
+          'nom': data['nom'] ?? '',
+          'prenom': data['prenom'] ?? '',
+          'displayName': '${data['prenom'] ?? ''} ${data['nom'] ?? ''}'.trim(),
+          'plongeur_code': data['plongeur_code'] ?? '',
+          'email': data['email'] ?? '',
+        };
+      }).toList();
+
+      debugPrint('👥 ${members.length} membres trouvés dans le club');
+      return members;
+    } catch (e) {
+      debugPrint('❌ Erreur récupération membres: $e');
+      return [];
+    }
+  }
+
+  /// Vérifier si un membre est moniteur (MC, MF, MN, ou AM)
+  Future<bool> isMonitor(String clubId, String memberId) async {
+    try {
+      final data = await getMemberData(clubId, memberId);
+      if (data == null) return false;
+
+      final code = data['plongeur_code'] as String?;
+      return code == 'MC' || code == 'MF' || code == 'MN' || code == 'AM';
+    } catch (e) {
+      debugPrint('❌ Erreur vérification moniteur: $e');
+      return false;
+    }
+  }
 }

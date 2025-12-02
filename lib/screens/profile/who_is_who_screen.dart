@@ -5,6 +5,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/member_profile.dart';
 import '../../services/profile_service.dart';
+import '../../services/member_service.dart';
+import '../../utils/permission_helper.dart';
+import '../exercises/member_exercises_screen.dart';
 
 /// Écran "Who's Who" - Annuaire des membres
 class WhoIsWhoScreen extends StatefulWidget {
@@ -17,11 +20,36 @@ class WhoIsWhoScreen extends StatefulWidget {
 class _WhoIsWhoScreenState extends State<WhoIsWhoScreen> {
   final String _clubId = 'calypso';
   final ProfileService _profileService = ProfileService();
+  final MemberService _memberService = MemberService();
   final TextEditingController _searchController = TextEditingController();
 
   String _searchQuery = '';
   String? _filterLevel;
   bool _onlyWithPhotos = false;
+  String _sortBy = 'prenom'; // 'prenom' (first name) or 'nom' (last name)
+  bool _canManageExercises = false; // Monitor, admin, or super admin
+
+  @override
+  void initState() {
+    super.initState();
+    _checkPermissions();
+  }
+
+  Future<void> _checkPermissions() async {
+    final userId = context.read<AuthProvider>().currentUser?.uid ?? '';
+    if (userId.isNotEmpty) {
+      // Check if user is a monitor
+      final isMonitor = await _memberService.isMonitor(_clubId, userId);
+
+      // Check if user is admin based on clubStatuten
+      final profile = await _profileService.getProfile(_clubId, userId);
+      final isAdmin = profile != null && PermissionHelper.isAdmin(profile.clubStatuten);
+
+      if (mounted) {
+        setState(() => _canManageExercises = isMonitor || isAdmin);
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -29,24 +57,19 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen> {
     super.dispose();
   }
 
-  Future<void> _launchWhatsApp(String phoneNumber, String name) async {
+  Future<void> _launchPhone(String phoneNumber) async {
     // Nettoyer le numéro de téléphone (enlever espaces, tirets, etc.)
     final cleanPhone = phoneNumber.replaceAll(RegExp(r'[^\d+]'), '');
-
-    // Format WhatsApp: https://wa.me/32xxxxxxxxx
-    final whatsappUrl = Uri.parse('https://wa.me/$cleanPhone');
+    final phoneUrl = Uri.parse('tel:$cleanPhone');
 
     try {
-      if (await canLaunchUrl(whatsappUrl)) {
-        await launchUrl(
-          whatsappUrl,
-          mode: LaunchMode.externalApplication,
-        );
+      if (await canLaunchUrl(phoneUrl)) {
+        await launchUrl(phoneUrl);
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Impossible d\'ouvrir WhatsApp pour $name'),
+            const SnackBar(
+              content: Text('Impossible d\'ouvrir l\'application téléphone'),
               backgroundColor: Colors.orange,
             ),
           );
@@ -95,6 +118,9 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen> {
   List<MemberProfile> _filterMembers(List<MemberProfile> members) {
     var filtered = members;
 
+    // Filtre par membres actifs uniquement
+    filtered = filtered.where((member) => member.isActive).toList();
+
     // Filtre de recherche
     if (_searchQuery.isNotEmpty) {
       filtered = filtered.where((member) {
@@ -116,6 +142,19 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen> {
     if (_onlyWithPhotos) {
       filtered = filtered.where((member) => member.hasPhoto).toList();
     }
+
+    // Trier par prénom ou nom
+    filtered.sort((a, b) {
+      if (_sortBy == 'prenom') {
+        final prenomCompare = a.prenom.toLowerCase().compareTo(b.prenom.toLowerCase());
+        if (prenomCompare != 0) return prenomCompare;
+        return a.nom.toLowerCase().compareTo(b.nom.toLowerCase());
+      } else {
+        final nomCompare = a.nom.toLowerCase().compareTo(b.nom.toLowerCase());
+        if (nomCompare != 0) return nomCompare;
+        return a.prenom.toLowerCase().compareTo(b.prenom.toLowerCase());
+      }
+    });
 
     return filtered;
   }
@@ -426,10 +465,10 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Photo
+              // Photo (bigger size: 160x160)
               Container(
-                width: 120,
-                height: 120,
+                width: 160,
+                height: 160,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: Colors.grey.shade200,
@@ -444,13 +483,13 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen> {
                           ),
                           errorWidget: (context, url, error) => Icon(
                             Icons.person,
-                            size: 60,
+                            size: 80,
                             color: Colors.grey.shade400,
                           ),
                         )
                       : Icon(
                           Icons.person,
-                          size: 60,
+                          size: 80,
                           color: Colors.grey.shade400,
                         ),
                 ),
@@ -500,6 +539,37 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen> {
               // Boutons de contact
               Column(
                 children: [
+                  // Exercices validés (visible pour le membre lui-même, moniteurs et admins)
+                  if (isCurrentUser || _canManageExercises)
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => MemberExercisesScreen(
+                                memberId: member.id,
+                                memberName: member.fullName,
+                                isMonitor: _canManageExercises,
+                                isOwnProfile: isCurrentUser,
+                              ),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.assignment_turned_in),
+                        label: Text(isCurrentUser ? 'Mes exercices validés' : 'Voir exercices'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.teal,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ),
+
+                  if ((isCurrentUser || _canManageExercises) && member.shareEmail)
+                    const SizedBox(height: 8),
+
                   // Email
                   if (member.shareEmail)
                     SizedBox(
@@ -517,17 +587,17 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen> {
                   if (member.shareEmail && member.sharePhone && member.phoneNumber != null)
                     const SizedBox(height: 8),
 
-                  // WhatsApp
+                  // Phone call
                   if (member.sharePhone && member.phoneNumber != null)
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
                         onPressed: () {
                           Navigator.pop(context);
-                          _launchWhatsApp(member.phoneNumber!, member.fullName);
+                          _launchPhone(member.phoneNumber!);
                         },
                         icon: const Icon(Icons.phone),
-                        label: const Text('Contacter sur WhatsApp'),
+                        label: Text('Appeler ${member.phoneNumber}'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.green,
                           foregroundColor: Colors.white,
@@ -638,6 +708,47 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen> {
                 title: const Text('Avec photo uniquement'),
                 contentPadding: EdgeInsets.zero,
               ),
+
+              const SizedBox(height: 16),
+
+              // Tri
+              const Text(
+                'Trier par',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: RadioListTile<String>(
+                      value: 'prenom',
+                      groupValue: _sortBy,
+                      onChanged: (value) {
+                        setState(() {
+                          _sortBy = value!;
+                        });
+                      },
+                      title: const Text('Prénom'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                  ),
+                  Expanded(
+                    child: RadioListTile<String>(
+                      value: 'nom',
+                      groupValue: _sortBy,
+                      onChanged: (value) {
+                        setState(() {
+                          _sortBy = value!;
+                        });
+                      },
+                      title: const Text('Nom'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
           actions: [
@@ -646,6 +757,7 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen> {
                 setState(() {
                   _filterLevel = null;
                   _onlyWithPhotos = false;
+                  _sortBy = 'prenom';
                 });
                 Navigator.pop(context);
                 this.setState(() {});

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../config/account_codes.dart';
 import '../../models/expense_claim.dart';
 import '../../providers/expense_provider.dart';
 import '../../utils/date_formatter.dart';
@@ -24,7 +23,6 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
   late final TextEditingController _descriptionController;
 
   late DateTime _selectedDate;
-  AccountCode? _selectedAccountCode;
   bool _isSubmitting = false;
 
   @override
@@ -33,14 +31,6 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
     _montantController = TextEditingController(text: widget.expense.montant.toString());
     _descriptionController = TextEditingController(text: widget.expense.description);
     _selectedDate = widget.expense.dateDepense;
-
-    // Trouver le code comptable correspondant
-    if (widget.expense.codeComptable != null) {
-      _selectedAccountCode = getSortedExpenseAccountCodes().firstWhere(
-        (code) => code.code == widget.expense.codeComptable,
-        orElse: () => getSortedExpenseAccountCodes().first,
-      );
-    }
   }
 
   @override
@@ -100,9 +90,6 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
         montant: montant,
         description: description,
         dateDepense: _selectedDate,
-        categorie: _selectedAccountCode?.category,
-        codeComptable: _selectedAccountCode?.code,
-        codeComptableLabel: _selectedAccountCode?.label,
       );
 
       if (mounted) {
@@ -208,43 +195,6 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                     style: const TextStyle(fontSize: 16),
                   ),
                 ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // Code comptable
-              DropdownButtonFormField<AccountCode>(
-                value: _selectedAccountCode,
-                decoration: const InputDecoration(
-                  labelText: 'Code comptable',
-                  prefixIcon: Icon(Icons.account_balance, color: Colors.orange),
-                  border: OutlineInputBorder(),
-                ),
-                items: getSortedExpenseAccountCodes().map((code) {
-                  return DropdownMenuItem(
-                    value: code,
-                    child: Text(
-                      code.isFavorite
-                          ? '⭐ ${code.code} - ${code.label}'
-                          : '${code.code} - ${code.label}',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: code.isFavorite ? FontWeight.bold : FontWeight.normal,
-                      ),
-                    ),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  setState(() {
-                    _selectedAccountCode = value;
-                  });
-                },
-                validator: (value) {
-                  if (value == null) {
-                    return 'Le code comptable est requis';
-                  }
-                  return null;
-                },
               ),
 
               const SizedBox(height: 24),
