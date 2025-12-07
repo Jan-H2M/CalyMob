@@ -1,7 +1,7 @@
 name: calymob
 description: Calypso DC Mobile Application
 publish_to: 'none'
-version: 1.0.5+14
+version: 1.0.6+22
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -44,10 +44,18 @@ dependencies:
   # Document Scanner
   cunning_document_scanner: ^1.3.1
   flutter_image_compress: ^2.1.0
+  permission_handler: ^12.0.1
 
   # Biometric Authentication
   local_auth: ^2.3.0
   flutter_secure_storage: ^9.2.2
+
+  # Local Notifications (for Android notification channel)
+  flutter_local_notifications: ^18.0.1
+
+  # Device & App Info (for app installation tracking)
+  device_info_plus: ^10.1.2
+  package_info_plus: ^8.1.1
 
   # Payments (if needed)
   # stripe_payment: ^1.1.1
