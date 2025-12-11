@@ -231,12 +231,12 @@ class _LandingScreenState extends State<LandingScreen>
             ),
           ),
 
-          // Vis 1 - grote vis (in de golf, links naar rechts)
+          // Vis 1 - grote vis (springt uit water, links naar rechts)
           AnimatedBuilder(
             animation: _fishPosition1,
             builder: (context, child) {
               return Positioned(
-                top: screenHeight * 0.52,
+                top: screenHeight * 0.38,
                 left: MediaQuery.of(context).size.width * _fishPosition1.value - 40,
                 child: IgnorePointer(
                   child: Transform.scale(
@@ -256,12 +256,12 @@ class _LandingScreenState extends State<LandingScreen>
             },
           ),
 
-          // Vis 2 - kleine vis (hoger in golf, rechts naar links)
+          // Vis 2 - kleine vis (hoger, rechts naar links)
           AnimatedBuilder(
             animation: _fishPosition2,
             builder: (context, child) {
               return Positioned(
-                top: screenHeight * 0.48,
+                top: screenHeight * 0.35,
                 left: MediaQuery.of(context).size.width * _fishPosition2.value - 25,
                 child: IgnorePointer(
                   child: Transform.scale(
@@ -281,12 +281,12 @@ class _LandingScreenState extends State<LandingScreen>
             },
           ),
 
-          // Vis 3 - medium vis (dieper in zee, links naar rechts)
+          // Vis 3 - medium vis (net boven golflijn, links naar rechts)
           AnimatedBuilder(
             animation: _fishPosition3,
             builder: (context, child) {
               return Positioned(
-                top: screenHeight * 0.62,
+                top: screenHeight * 0.40,
                 left: MediaQuery.of(context).size.width * _fishPosition3.value - 30,
                 child: IgnorePointer(
                   child: Transform.scale(
@@ -306,12 +306,12 @@ class _LandingScreenState extends State<LandingScreen>
             },
           ),
 
-          // Vis 4 - kleine vis (nog dieper, rechts naar links)
+          // Vis 4 - kleine vis (springend, rechts naar links)
           AnimatedBuilder(
             animation: _fishPosition4,
             builder: (context, child) {
               return Positioned(
-                top: screenHeight * 0.70,
+                top: screenHeight * 0.36,
                 left: MediaQuery.of(context).size.width * _fishPosition4.value - 20,
                 child: IgnorePointer(
                   child: Transform.scale(
