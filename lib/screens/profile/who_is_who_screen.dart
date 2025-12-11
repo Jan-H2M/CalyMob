@@ -1,7 +1,11 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:lottie/lottie.dart';
+import '../../config/app_assets.dart';
+import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/member_profile.dart';
 import '../../services/profile_service.dart';
@@ -17,7 +21,8 @@ class WhoIsWhoScreen extends StatefulWidget {
   State<WhoIsWhoScreen> createState() => _WhoIsWhoScreenState();
 }
 
-class _WhoIsWhoScreenState extends State<WhoIsWhoScreen> {
+class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
+    with SingleTickerProviderStateMixin {
   final String _clubId = 'calypso';
   final ProfileService _profileService = ProfileService();
   final MemberService _memberService = MemberService();
@@ -29,10 +34,28 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen> {
   String _sortBy = 'prenom'; // 'prenom' (first name) or 'nom' (last name)
   bool _canManageExercises = false; // Monitor, admin, or super admin
 
+  // Bubbles animation
+  late AnimationController _bubblesController;
+  late Animation<double> _bubblesPosition;
+
   @override
   void initState() {
     super.initState();
     _checkPermissions();
+
+    // Bubbles animation: 35 seconden, van onder naar boven
+    _bubblesController = AnimationController(
+      duration: const Duration(seconds: 35),
+      vsync: this,
+    );
+    _bubblesPosition = Tween<double>(
+      begin: 0.5,  // Start in midden
+      end: -0.5,   // Eind boven het scherm
+    ).animate(CurvedAnimation(
+      parent: _bubblesController,
+      curve: Curves.linear,
+    ));
+    _bubblesController.repeat();
   }
 
   Future<void> _checkPermissions() async {
@@ -54,6 +77,7 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _bubblesController.dispose();
     super.dispose();
   }
 
@@ -164,9 +188,11 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen> {
     final currentUserId = context.watch<AuthProvider>().currentUser?.uid ?? '';
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text('Who\'s Who', style: TextStyle(color: Colors.white)),
-        backgroundColor: const Color(0xFF2196F3), // Blue
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
@@ -176,90 +202,156 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen> {
           ),
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          // Barre de recherche
+          // Donkerblauwe achtergrond
           Container(
-            padding: const EdgeInsets.all(16),
-            color: Colors.grey.shade100,
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Rechercher un membre...',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          setState(() {
-                            _searchController.clear();
-                            _searchQuery = '';
-                          });
-                        },
-                      )
-                    : null,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(30),
-                  borderSide: BorderSide.none,
-                ),
-                filled: true,
-                fillColor: Colors.white,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            width: double.infinity,
+            height: double.infinity,
+            decoration: const BoxDecoration(
+              image: DecorationImage(
+                image: AssetImage(AppAssets.backgroundFull),
+                fit: BoxFit.cover,
               ),
-              onChanged: (value) {
-                setState(() {
-                  _searchQuery = value;
-                });
-              },
             ),
           ),
 
-          // Filtres actifs
-          if (_filterLevel != null || _onlyWithPhotos)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              color: Colors.blue.shade50,
-              child: Row(
-                children: [
-                  const Icon(Icons.filter_alt, size: 16, color: Colors.blue),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Wrap(
-                      spacing: 8,
-                      children: [
-                        if (_filterLevel != null)
-                          Chip(
-                            label: Text('Niveau: $_filterLevel'),
-                            onDeleted: () {
-                              setState(() {
-                                _filterLevel = null;
-                              });
-                            },
-                            deleteIcon: const Icon(Icons.close, size: 16),
-                          ),
-                        if (_onlyWithPhotos)
-                          Chip(
-                            label: const Text('Avec photo'),
-                            onDeleted: () {
-                              setState(() {
-                                _onlyWithPhotos = false;
-                              });
-                            },
-                            deleteIcon: const Icon(Icons.close, size: 16),
-                          ),
-                      ],
+          // Bubbels animatie - ACHTER de cards
+          AnimatedBuilder(
+            animation: _bubblesPosition,
+            builder: (context, child) {
+              return Positioned(
+                top: MediaQuery.of(context).size.height * _bubblesPosition.value,
+                left: 0,
+                right: 0,
+                child: IgnorePointer(
+                  child: Opacity(
+                    opacity: 0.5,
+                    child: Lottie.asset(
+                      'assets/animations/bubbles2.json',
+                      width: MediaQuery.of(context).size.width,
+                      height: MediaQuery.of(context).size.height,
+                      fit: BoxFit.cover,
+                      repeat: true,
                     ),
                   ),
-                  TextButton(
-                    onPressed: () {
-                      setState(() {
-                        _filterLevel = null;
-                        _onlyWithPhotos = false;
-                      });
-                    },
-                    child: const Text('Réinitialiser'),
+                ),
+              );
+            },
+          ),
+
+          // Hoofdinhoud
+          SafeArea(
+            child: Column(
+        children: [
+          // Barre de recherche - glass effect
+          ClipRRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.15),
+                ),
+                child: TextField(
+                  controller: _searchController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: 'Rechercher un membre...',
+                    hintStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+                    prefixIcon: Icon(Icons.search, color: Colors.white.withOpacity(0.9)),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: Icon(Icons.clear, color: Colors.white.withOpacity(0.9)),
+                            onPressed: () {
+                              setState(() {
+                                _searchController.clear();
+                                _searchQuery = '';
+                              });
+                            },
+                          )
+                        : null,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(30),
+                      borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(30),
+                      borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(30),
+                      borderSide: BorderSide(color: Colors.white.withOpacity(0.6)),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white.withOpacity(0.1),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   ),
-                ],
+                  onChanged: (value) {
+                    setState(() {
+                      _searchQuery = value;
+                    });
+                  },
+                ),
+              ),
+            ),
+          ),
+
+          // Filtres actifs - glass effect
+          if (_filterLevel != null || _onlyWithPhotos)
+            ClipRRect(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryLight.withOpacity(0.2),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.filter_alt, size: 16, color: Colors.white.withOpacity(0.9)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Wrap(
+                          spacing: 8,
+                          children: [
+                            if (_filterLevel != null)
+                              Chip(
+                                label: Text('Niveau: $_filterLevel', style: const TextStyle(color: Colors.white)),
+                                backgroundColor: Colors.white.withOpacity(0.2),
+                                onDeleted: () {
+                                  setState(() {
+                                    _filterLevel = null;
+                                  });
+                                },
+                                deleteIcon: const Icon(Icons.close, size: 16, color: Colors.white),
+                              ),
+                            if (_onlyWithPhotos)
+                              Chip(
+                                label: const Text('Avec photo', style: TextStyle(color: Colors.white)),
+                                backgroundColor: Colors.white.withOpacity(0.2),
+                                onDeleted: () {
+                                  setState(() {
+                                    _onlyWithPhotos = false;
+                                  });
+                                },
+                                deleteIcon: const Icon(Icons.close, size: 16, color: Colors.white),
+                              ),
+                          ],
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _filterLevel = null;
+                            _onlyWithPhotos = false;
+                          });
+                        },
+                        child: const Text('Réinitialiser', style: TextStyle(color: Colors.white)),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
 
@@ -289,14 +381,14 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen> {
                         Icon(
                           Icons.person_search,
                           size: 64,
-                          color: Colors.grey.shade400,
+                          color: Colors.white.withOpacity(0.6),
                         ),
                         const SizedBox(height: 16),
                         Text(
                           _searchQuery.isNotEmpty
                               ? 'Aucun membre trouvé pour "$_searchQuery"'
                               : 'Aucun membre correspondant aux filtres',
-                          style: TextStyle(color: Colors.grey.shade600),
+                          style: TextStyle(color: Colors.white.withOpacity(0.8)),
                         ),
                       ],
                     ),
@@ -324,28 +416,48 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen> {
           ),
         ],
       ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildMemberGridTile(MemberProfile member, bool isCurrentUser) {
     return GestureDetector(
       onTap: () => _showMemberDetails(member, isCurrentUser),
-      child: Card(
-        elevation: 2,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Photo
-            Stack(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.3),
+                width: 1.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 10,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.grey.shade200,
-                  ),
+                // Photo
+                Stack(
+                  children: [
+                    Container(
+                      width: 100,
+                      height: 100,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withOpacity(0.2),
+                      ),
                   child: ClipOval(
                     child: member.hasPhoto && member.consentInternalPhoto
                         ? CachedNetworkImage(
@@ -357,13 +469,13 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen> {
                             errorWidget: (context, url, error) => Icon(
                               Icons.person,
                               size: 50,
-                              color: Colors.grey.shade400,
+                              color: Colors.white.withOpacity(0.6),
                             ),
                           )
                         : Icon(
                             Icons.person,
                             size: 50,
-                            color: Colors.grey.shade400,
+                            color: Colors.white.withOpacity(0.6),
                           ),
                   ),
                 ),
@@ -389,41 +501,51 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen> {
 
             const SizedBox(height: 12),
 
-            // Nom
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Text(
-                member.fullName,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-
-            const SizedBox(height: 6),
-
-            // Niveau de plongée (compact)
-            if (member.plongeurNiveau != null)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: _getNiveauColor(member.plongeurCode),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  member.plongeurNiveau!,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
+                // Nom
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    member.fullName,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black26,
+                          offset: Offset(1, 1),
+                          blurRadius: 2,
+                        ),
+                      ],
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-              ),
-          ],
+
+                const SizedBox(height: 6),
+
+                // Niveau de plongée (compact)
+                if (member.plongeurNiveau != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: _getNiveauColor(member.plongeurCode),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      member.plongeurNiveau!,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );

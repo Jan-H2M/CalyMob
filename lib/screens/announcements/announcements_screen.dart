@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:lottie/lottie.dart';
+import '../../config/app_assets.dart';
+import '../../config/app_colors.dart';
 import '../../models/announcement.dart';
 import '../../providers/announcement_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/permission_helper.dart';
 import '../../widgets/announcement_card.dart';
+import '../../widgets/glossy_button.dart';
 import 'create_announcement_dialog.dart';
 
 class AnnouncementsScreen extends StatefulWidget {
@@ -15,17 +19,80 @@ class AnnouncementsScreen extends StatefulWidget {
   State<AnnouncementsScreen> createState() => _AnnouncementsScreenState();
 }
 
-class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
+class _AnnouncementsScreenState extends State<AnnouncementsScreen>
+    with TickerProviderStateMixin {
   List<String>? _clubStatuten;
   String? _appRole;
+
+  late AnimationController _jellyfishController1;
+  late AnimationController _jellyfishController2;
+  late AnimationController _jellyfishController3;
+  late Animation<double> _jellyfishPosition1;
+  late Animation<double> _jellyfishPosition2;
+  late Animation<double> _jellyfishPosition3;
 
   @override
   void initState() {
     super.initState();
+
+    // Jellyfish 1: medium, rechts, 25 seconden
+    _jellyfishController1 = AnimationController(
+      duration: const Duration(seconds: 25),
+      vsync: this,
+    );
+    _jellyfishPosition1 = Tween<double>(
+      begin: 1.2,
+      end: -0.3,
+    ).animate(CurvedAnimation(
+      parent: _jellyfishController1,
+      curve: Curves.easeInOut,
+    ));
+    _jellyfishController1.repeat();
+
+    // Jellyfish 2: groter, links, 30 seconden, start na 8 sec
+    _jellyfishController2 = AnimationController(
+      duration: const Duration(seconds: 30),
+      vsync: this,
+    );
+    _jellyfishPosition2 = Tween<double>(
+      begin: 1.3,
+      end: -0.4,
+    ).animate(CurvedAnimation(
+      parent: _jellyfishController2,
+      curve: Curves.easeInOut,
+    ));
+    Future.delayed(const Duration(seconds: 8), () {
+      if (mounted) _jellyfishController2.repeat();
+    });
+
+    // Jellyfish 3: kleiner, midden, 20 seconden, start na 15 sec
+    _jellyfishController3 = AnimationController(
+      duration: const Duration(seconds: 20),
+      vsync: this,
+    );
+    _jellyfishPosition3 = Tween<double>(
+      begin: 1.1,
+      end: -0.2,
+    ).animate(CurvedAnimation(
+      parent: _jellyfishController3,
+      curve: Curves.easeInOut,
+    ));
+    Future.delayed(const Duration(seconds: 15), () {
+      if (mounted) _jellyfishController3.repeat();
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadAnnouncements();
       _loadMemberInfo();
     });
+  }
+
+  @override
+  void dispose() {
+    _jellyfishController1.dispose();
+    _jellyfishController2.dispose();
+    _jellyfishController3.dispose();
+    super.dispose();
   }
 
   Future<void> _loadMemberInfo() async {
@@ -204,106 +271,222 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
     const clubId = 'calypso';
 
     if (currentUser == null) {
-      return const Scaffold(
-        body: Center(
-          child: Text('Veuillez vous connecter'),
+      return Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(
+            image: DecorationImage(
+              image: AssetImage(AppAssets.backgroundLight),
+              fit: BoxFit.cover,
+            ),
+          ),
+          child: const Center(
+            child: Text('Veuillez vous connecter', style: TextStyle(color: Colors.white)),
+          ),
         ),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Annonces du club'),
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
-      ),
-      body: StreamBuilder<List<Announcement>>(
-        stream: announcementProvider.watchAnnouncements(clubId),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (snapshot.hasError) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error_outline,
-                      size: 64, color: Colors.red),
-                  const SizedBox(height: 16),
-                  Text('Erreur: ${snapshot.error}'),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: _loadAnnouncements,
-                    child: const Text('Réessayer'),
-                  ),
-                ],
+      body: Stack(
+        children: [
+          // Achtergrond
+          Container(
+            width: double.infinity,
+            height: double.infinity,
+            decoration: const BoxDecoration(
+              image: DecorationImage(
+                image: AssetImage(AppAssets.backgroundLight),
+                fit: BoxFit.cover,
               ),
-            );
-          }
-
-          final announcements = snapshot.data ?? [];
-
-          if (announcements.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.campaign_outlined,
-                      size: 80, color: Colors.grey[400]),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Aucune annonce',
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    isAdmin
-                        ? 'Cliquez sur + pour créer une annonce'
-                        : 'Les annonces apparaîtront ici',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[500],
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          return RefreshIndicator(
-            onRefresh: () async => _loadAnnouncements(),
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: announcements.length,
-              itemBuilder: (context, index) {
-                final announcement = announcements[index];
-                return AnnouncementCard(
-                  announcement: announcement,
-                  isAdmin: isAdmin,
-                  onDelete: isAdmin
-                      ? () => _deleteAnnouncement(announcement.id)
-                      : null,
-                );
-              },
             ),
-          );
-        },
+          ),
+
+          // Jellyfish 1: medium, rechts - ACHTER de cards
+          AnimatedBuilder(
+            animation: _jellyfishPosition1,
+            builder: (context, child) {
+              return Positioned(
+                top: MediaQuery.of(context).size.height * _jellyfishPosition1.value,
+                right: 20,
+                child: IgnorePointer(
+                  child: Opacity(
+                    opacity: 0.7,
+                    child: Lottie.asset(
+                      'assets/animations/jellyfish.json',
+                      width: 120,
+                      height: 120,
+                      repeat: true,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+
+          // Jellyfish 3: kleiner, midden - ACHTER de cards
+          AnimatedBuilder(
+            animation: _jellyfishPosition3,
+            builder: (context, child) {
+              return Positioned(
+                top: MediaQuery.of(context).size.height * _jellyfishPosition3.value,
+                left: MediaQuery.of(context).size.width * 0.4,
+                child: IgnorePointer(
+                  child: Opacity(
+                    opacity: 0.5,
+                    child: Lottie.asset(
+                      'assets/animations/jellyfish.json',
+                      width: 80,
+                      height: 80,
+                      repeat: true,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+
+          // Inhoud
+          SafeArea(
+          child: Column(
+            children: [
+              // Header
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                    const Expanded(
+                      child: Text(
+                        'Communication',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    if (isAdmin)
+                      GlossyButton(
+                        icon: Icons.add_rounded,
+                        label: '',
+                        size: 50,
+                        onTap: _showCreateDialog,
+                      ),
+                  ],
+                ),
+              ),
+              // Body
+              Expanded(
+                child: StreamBuilder<List<Announcement>>(
+                  stream: announcementProvider.watchAnnouncements(clubId),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator(color: Colors.white));
+                    }
+
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Erreur: ${snapshot.error}',
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: _loadAnnouncements,
+                              child: const Text('Réessayer'),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    final announcements = snapshot.data ?? [];
+
+                    if (announcements.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.campaign_outlined, size: 80, color: Colors.white.withOpacity(0.6)),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Aucune annonce',
+                              style: TextStyle(
+                                fontSize: 18,
+                                color: Colors.white.withOpacity(0.9),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              isAdmin
+                                  ? 'Cliquez sur + pour créer une annonce'
+                                  : 'Les annonces apparaîtront ici',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.white.withOpacity(0.7),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    return RefreshIndicator(
+                      onRefresh: () async => _loadAnnouncements(),
+                      child: ListView.builder(
+                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                        itemCount: announcements.length,
+                        itemBuilder: (context, index) {
+                          final announcement = announcements[index];
+                          return AnnouncementCard(
+                            announcement: announcement,
+                            isAdmin: isAdmin,
+                            onDelete: isAdmin
+                                ? () => _deleteAnnouncement(announcement.id)
+                                : null,
+                          );
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+          ),
+
+          // Jellyfish 2: groter, links - VOOR de cards
+          AnimatedBuilder(
+            animation: _jellyfishPosition2,
+            builder: (context, child) {
+              return Positioned(
+                top: MediaQuery.of(context).size.height * _jellyfishPosition2.value,
+                left: 15,
+                child: IgnorePointer(
+                  child: Opacity(
+                    opacity: 0.6,
+                    child: Lottie.asset(
+                      'assets/animations/jellyfish.json',
+                      width: 160,
+                      height: 160,
+                      repeat: true,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
       ),
-      floatingActionButton: isAdmin
-          ? FloatingActionButton.extended(
-              heroTag: 'announcement_fab',
-              onPressed: _showCreateDialog,
-              icon: const Icon(Icons.add),
-              label: const Text('Nouvelle annonce'),
-              backgroundColor: Colors.blue,
-              foregroundColor: Colors.white,
-            )
-          : null,
     );
   }
 }

@@ -240,11 +240,13 @@ class _LoginScreenState extends State<LoginScreen> {
                           autofillHints: const [AutofillHints.email, AutofillHints.username],
                           textInputAction: TextInputAction.next,
                           decoration: InputDecoration(
-                            labelText: 'Email',
+                            hintText: 'Email',
                             prefixIcon: const Icon(Icons.email),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
+                            filled: true,
+                            fillColor: Colors.white.withOpacity(0.9),
                           ),
                           validator: (value) {
                             if (value == null || value.isEmpty) {
@@ -267,7 +269,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           textInputAction: TextInputAction.done,
                           onFieldSubmitted: (_) => _handleLoginWithBiometricSetup(),
                           decoration: InputDecoration(
-                            labelText: 'Mot de passe',
+                            hintText: 'Mot de passe',
                             prefixIcon: const Icon(Icons.lock),
                             suffixIcon: IconButton(
                               icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
@@ -276,6 +278,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
+                            filled: true,
+                            fillColor: Colors.white.withOpacity(0.9),
                           ),
                           validator: (value) {
                             if (value == null || value.isEmpty) {
