@@ -47,7 +47,7 @@ class GlossyButton extends StatelessWidget {
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: (tintColor ?? AppColors.lightCyan).withOpacity(0.4),
+                            color: (tintColor ?? AppColors.primaryLight).withOpacity(0.4),
                             blurRadius: 15,
                             spreadRadius: 2,
                           ),
