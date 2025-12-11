@@ -225,7 +225,7 @@ class _LandingScreenState extends State<LandingScreen>
             right: 0,
             bottom: 0,
             child: Image.asset(
-              AppAssets.backgroundHalf,
+              AppAssets.backgroundWave,
               fit: BoxFit.cover,
               width: double.infinity,
             ),
