@@ -26,34 +26,38 @@ class _LandingScreenState extends State<LandingScreen>
   String? _appRole;
   List<String>? _clubStatuten;
 
-  // Swimming fish animaties
+  // Swimming fish animaties - 4 visjes
   late AnimationController _fishController1;
   late AnimationController _fishController2;
+  late AnimationController _fishController3;
+  late AnimationController _fishController4;
   late Animation<double> _fishPosition1;
   late Animation<double> _fishPosition2;
+  late Animation<double> _fishPosition3;
+  late Animation<double> _fishPosition4;
 
   @override
   void initState() {
     super.initState();
     _loadMemberInfo();
 
-    // Vis 1: grotere vis, langzamer (links naar rechts)
+    // Vis 1: grote vis, langzaam (links naar rechts) - start meteen
     _fishController1 = AnimationController(
-      duration: const Duration(seconds: 20),
+      duration: const Duration(seconds: 25),
       vsync: this,
     );
     _fishPosition1 = Tween<double>(
-      begin: -0.3,
-      end: 1.3,
+      begin: -0.2,
+      end: 1.2,
     ).animate(CurvedAnimation(
       parent: _fishController1,
       curve: Curves.easeInOut,
     ));
     _fishController1.repeat();
 
-    // Vis 2: kleinere vis, sneller (rechts naar links, iets lager)
+    // Vis 2: kleine vis, sneller (rechts naar links) - start na 3 sec
     _fishController2 = AnimationController(
-      duration: const Duration(seconds: 15),
+      duration: const Duration(seconds: 18),
       vsync: this,
     );
     _fishPosition2 = Tween<double>(
@@ -63,8 +67,40 @@ class _LandingScreenState extends State<LandingScreen>
       parent: _fishController2,
       curve: Curves.easeInOut,
     ));
-    Future.delayed(const Duration(seconds: 5), () {
+    Future.delayed(const Duration(seconds: 3), () {
       if (mounted) _fishController2.repeat();
+    });
+
+    // Vis 3: medium vis (links naar rechts, lager) - start na 7 sec
+    _fishController3 = AnimationController(
+      duration: const Duration(seconds: 22),
+      vsync: this,
+    );
+    _fishPosition3 = Tween<double>(
+      begin: -0.3,
+      end: 1.3,
+    ).animate(CurvedAnimation(
+      parent: _fishController3,
+      curve: Curves.easeInOut,
+    ));
+    Future.delayed(const Duration(seconds: 7), () {
+      if (mounted) _fishController3.repeat();
+    });
+
+    // Vis 4: kleine vis (rechts naar links, nog lager) - start na 12 sec
+    _fishController4 = AnimationController(
+      duration: const Duration(seconds: 15),
+      vsync: this,
+    );
+    _fishPosition4 = Tween<double>(
+      begin: 1.1,
+      end: -0.1,
+    ).animate(CurvedAnimation(
+      parent: _fishController4,
+      curve: Curves.easeInOut,
+    ));
+    Future.delayed(const Duration(seconds: 12), () {
+      if (mounted) _fishController4.repeat();
     });
   }
 
@@ -72,6 +108,8 @@ class _LandingScreenState extends State<LandingScreen>
   void dispose() {
     _fishController1.dispose();
     _fishController2.dispose();
+    _fishController3.dispose();
+    _fishController4.dispose();
     super.dispose();
   }
 
@@ -193,22 +231,22 @@ class _LandingScreenState extends State<LandingScreen>
             ),
           ),
 
-          // Vis 1 - grotere vis (links in de golf)
+          // Vis 1 - grote vis (in de golf, links naar rechts)
           AnimatedBuilder(
             animation: _fishPosition1,
             builder: (context, child) {
               return Positioned(
-                top: screenHeight * 0.48,
-                left: MediaQuery.of(context).size.width * _fishPosition1.value - 60,
+                top: screenHeight * 0.52,
+                left: MediaQuery.of(context).size.width * _fishPosition1.value - 40,
                 child: IgnorePointer(
                   child: Transform.scale(
                     scaleX: 1, // Zwemt naar rechts
                     child: Opacity(
-                      opacity: 0.8,
+                      opacity: 0.9,
                       child: Lottie.asset(
                         'assets/animations/swimming_fish.json',
-                        width: 80,
-                        height: 80,
+                        width: 70,
+                        height: 70,
                         repeat: true,
                       ),
                     ),
@@ -218,13 +256,63 @@ class _LandingScreenState extends State<LandingScreen>
             },
           ),
 
-          // Vis 2 - kleinere vis (hoger, naar links)
+          // Vis 2 - kleine vis (hoger in golf, rechts naar links)
           AnimatedBuilder(
             animation: _fishPosition2,
             builder: (context, child) {
               return Positioned(
-                top: screenHeight * 0.44,
-                left: MediaQuery.of(context).size.width * _fishPosition2.value - 30,
+                top: screenHeight * 0.48,
+                left: MediaQuery.of(context).size.width * _fishPosition2.value - 25,
+                child: IgnorePointer(
+                  child: Transform.scale(
+                    scaleX: -1, // Zwemt naar links (gespiegeld)
+                    child: Opacity(
+                      opacity: 0.7,
+                      child: Lottie.asset(
+                        'assets/animations/swimming_fish.json',
+                        width: 45,
+                        height: 45,
+                        repeat: true,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+
+          // Vis 3 - medium vis (dieper in zee, links naar rechts)
+          AnimatedBuilder(
+            animation: _fishPosition3,
+            builder: (context, child) {
+              return Positioned(
+                top: screenHeight * 0.62,
+                left: MediaQuery.of(context).size.width * _fishPosition3.value - 30,
+                child: IgnorePointer(
+                  child: Transform.scale(
+                    scaleX: 1, // Zwemt naar rechts
+                    child: Opacity(
+                      opacity: 0.8,
+                      child: Lottie.asset(
+                        'assets/animations/swimming_fish.json',
+                        width: 55,
+                        height: 55,
+                        repeat: true,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+
+          // Vis 4 - kleine vis (nog dieper, rechts naar links)
+          AnimatedBuilder(
+            animation: _fishPosition4,
+            builder: (context, child) {
+              return Positioned(
+                top: screenHeight * 0.70,
+                left: MediaQuery.of(context).size.width * _fishPosition4.value - 20,
                 child: IgnorePointer(
                   child: Transform.scale(
                     scaleX: -1, // Zwemt naar links (gespiegeld)
@@ -232,8 +320,8 @@ class _LandingScreenState extends State<LandingScreen>
                       opacity: 0.6,
                       child: Lottie.asset(
                         'assets/animations/swimming_fish.json',
-                        width: 50,
-                        height: 50,
+                        width: 40,
+                        height: 40,
                         repeat: true,
                       ),
                     ),
