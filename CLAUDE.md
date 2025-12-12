@@ -109,3 +109,27 @@ clubs/{clubId}/
 - Never commit `GoogleService-Info.plist` (iOS) or `google-services.json` (Android)
 - Firestore security rules are managed in the CalyCompta web app
 - Version format in `pubspec.yaml`: `version: X.Y.Z+buildNumber` (buildNumber must increment for App Store)
+
+## KRITIEKE VEILIGHEIDSREGELS
+
+### Git Veiligheid
+**NOOIT** zonder expliciete toestemming van de gebruiker:
+- `git restore .` - vernietigt alle uncommitted werk
+- `git checkout .` - zelfde effect
+- `git reset --hard` - vernietigt commits
+- `git clean -fd` - verwijdert bestanden permanent
+
+**ALTIJD** bij backup verzoek:
+1. EERST: `git stash push -m "backup"`
+2. DAN: `git add -A && git commit -m "backup" && git push`
+3. PAS DAARNA: andere taken
+
+### Commit Frequentie
+- Commit na elke werkende feature
+- Commit na elk uur werk
+- Push direct naar GitHub na commit
+
+### Bij Problemen
+- STOP en vraag de gebruiker
+- Geen impulsieve "fixes"
+- Wacht op toestemming voor destructieve acties
