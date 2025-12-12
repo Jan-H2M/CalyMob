@@ -14,6 +14,7 @@ class AppAssets {
   static const String backgroundLight = 'assets/images/Background Full Light.png';
   static const String backgroundTop = 'assets/images/Background_top.png';
   static const String backgroundWave = 'assets/images/Background_1o2 .png';
+  static const String backgroundWaveBig = 'assets/images/BackgroundWaveBig.png';
 
   // === Buttons ===
   static const String buttonBlue = 'assets/images/ButtonBlue.png';

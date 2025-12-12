@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:lottie/lottie.dart';
+import '../../config/app_assets.dart';
 import '../../providers/auth_provider.dart';
 import '../auth/login_screen.dart';
 import '../operations/operations_list_screen.dart';
 import '../expenses/expense_list_screen.dart';
-import '../expenses/approval_list_screen.dart';
 import '../profile/profile_screen.dart';
 import '../profile/who_is_who_screen.dart';
 import '../announcements/announcements_screen.dart';
 
-/// Landing page avec logo Calypso et navigation par grandes cartes
+/// Landing page avec thème maritime et boutons ronds
 class LandingScreen extends StatefulWidget {
   const LandingScreen({Key? key}) : super(key: key);
 
@@ -18,72 +18,40 @@ class LandingScreen extends StatefulWidget {
   State<LandingScreen> createState() => _LandingScreenState();
 }
 
-class _LandingScreenState extends State<LandingScreen> {
-  String? _appRole;
-  List<String>? _clubStatuten;
+class _LandingScreenState extends State<LandingScreen> with TickerProviderStateMixin {
+  // Delayed fish controllers
+  late List<AnimationController> _fishControllers;
+  late List<bool> _fishVisible;
 
   @override
   void initState() {
     super.initState();
-    _loadMemberInfo();
+    _fishVisible = [false, false, false, false];
+    _fishControllers = [];
+
+    // Start elke vis met een andere delay
+    _startFishWithDelay(0, 0);      // Vis 1: direct
+    _startFishWithDelay(1, 1200);   // Vis 2: 1.2s delay (changed from 0.8s)
+    _startFishWithDelay(2, 1600);   // Vis 3: 1.6s delay
+    _startFishWithDelay(3, 2400);   // Vis 4: 2.4s delay
   }
 
-  Future<void> _loadMemberInfo() async {
-    final authProvider = context.read<AuthProvider>();
-    final uid = authProvider.currentUser?.uid;
-    if (uid == null) return;
-
-    const clubId = 'calypso';
-
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('clubs/$clubId/members')
-          .doc(uid)
-          .get();
-
-      if (doc.exists && mounted) {
-        final data = doc.data();
+  void _startFishWithDelay(int index, int delayMs) {
+    Future.delayed(Duration(milliseconds: delayMs), () {
+      if (mounted) {
         setState(() {
-          _clubStatuten = (data?['clubStatuten'] as List<dynamic>?)?.cast<String>();
-          _appRole = data?['app_role'] as String? ?? data?['role'] as String?;
+          _fishVisible[index] = true;
         });
       }
-    } catch (e) {
-      debugPrint('❌ Erreur chargement member info: $e');
-    }
+    });
   }
 
-  /// Vérifie si l'utilisateur peut approuver (superadmin, admin, validateur)
-  bool _canApprove() {
-    if (_appRole != null) {
-      final role = _appRole!.toLowerCase();
-      if (role == 'superadmin' || role == 'admin' || role == 'validateur') {
-        return true;
-      }
+  @override
+  void dispose() {
+    for (var controller in _fishControllers) {
+      controller.dispose();
     }
-    return false;
-  }
-
-  /// Vérifie si l'utilisateur peut créer des demandes
-  /// (superadmin, admin, validateur, ou fonction encadrant/CA)
-  bool _canCreateExpenses() {
-    // Vérifier app_role
-    if (_appRole != null) {
-      final role = _appRole!.toLowerCase();
-      if (role == 'superadmin' || role == 'admin' || role == 'validateur') {
-        return true;
-      }
-    }
-    // Vérifier clubStatuten (fonctions)
-    if (_clubStatuten != null) {
-      for (final statut in _clubStatuten!) {
-        final lower = statut.toLowerCase();
-        if (lower.contains('encadrant') || lower.contains('ca') || lower == 'ca') {
-          return true;
-        }
-      }
-    }
-    return false;
+    super.dispose();
   }
 
   Future<void> _handleLogout(BuildContext context) async {
@@ -121,264 +89,290 @@ class _LandingScreenState extends State<LandingScreen> {
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
     final userName = authProvider.displayName ?? 'Utilisateur';
-
-    final canApprove = _canApprove();
-    final canCreateExpenses = _canCreateExpenses();
+    final screenHeight = MediaQuery.of(context).size.height;
 
     return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        title: const Text(
-          'CalyMob',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: const Color(0xFF1976D2),
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout, color: Colors.white),
-            onPressed: () => _handleLogout(context),
-            tooltip: 'Déconnexion',
+      backgroundColor: Colors.white,
+      body: Stack(
+        children: [
+          // Ocean wave achtergrond - nieuwe grote wave afbeelding
+          Positioned(
+            left: 0,
+            right: 0,
+            top: screenHeight * 0.07,
+            bottom: 0,
+            child: Image.asset(
+              AppAssets.backgroundWaveBig,
+              fit: BoxFit.cover,
+              width: double.infinity,
+              alignment: Alignment.topCenter,
+            ),
           ),
-        ],
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              // Logo Calypso
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Image.asset(
-                  'assets/images/logo-vertical.png',
-                  height: 100,
-                  fit: BoxFit.contain,
+
+          // Springende vissen - 4 stuks met verschillende delays en diepte-effect
+          // Vis 1 - klein, achteraan (links)
+          if (_fishVisible[0])
+            Positioned(
+              left: 30,
+              top: screenHeight * 0.38,
+              child: IgnorePointer(
+                child: Opacity(
+                  opacity: 0.5,
+                  child: Lottie.asset(
+                    'assets/animations/jumping_fish.json',
+                    width: 60,
+                    height: 60,
+                    repeat: true,
+                  ),
                 ),
               ),
-
-              const SizedBox(height: 8),
-
-              // Bienvenue
-              Text(
-                'Bienvenue, $userName',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey[800],
-                    ),
-                textAlign: TextAlign.center,
-              ),
-
-              const SizedBox(height: 4),
-
-              Text(
-                'Calypso Diving Club',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey[600],
-                    ),
-                textAlign: TextAlign.center,
-              ),
-
-              const SizedBox(height: 24),
-
-              // Ligne 1: Événements + Communication
-              Row(
-                children: [
-                  Expanded(
-                    child: _NavigationTile(
-                      title: 'Événements',
-                      icon: Icons.event,
-                      color: const Color(0xFF2196F3),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const OperationsListScreen(),
-                          ),
-                        );
-                      },
-                    ),
+            ),
+          // Vis 2 - medium, midden-achter (rechts)
+          if (_fishVisible[1])
+            Positioned(
+              right: 50,
+              top: screenHeight * 0.48,
+              child: IgnorePointer(
+                child: Opacity(
+                  opacity: 0.6,
+                  child: Lottie.asset(
+                    'assets/animations/jumping_fish.json',
+                    width: 80,
+                    height: 80,
+                    repeat: true,
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _NavigationTile(
-                      title: 'Communication',
-                      icon: Icons.campaign,
-                      color: const Color(0xFFE91E63),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const AnnouncementsScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
+                ),
               ),
-
-              const SizedBox(height: 12),
-
-              // Ligne 2: Who is Who + Profil
-              Row(
-                children: [
-                  Expanded(
-                    child: _NavigationTile(
-                      title: 'Who is Who',
-                      icon: Icons.people,
-                      color: const Color(0xFF00BCD4),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const WhoIsWhoScreen(),
-                          ),
-                        );
-                      },
-                    ),
+            ),
+          // Vis 3 - groter, midden-voor (links)
+          if (_fishVisible[2])
+            Positioned(
+              left: 100,
+              top: screenHeight * 0.36,
+              child: IgnorePointer(
+                child: Opacity(
+                  opacity: 0.75,
+                  child: Lottie.asset(
+                    'assets/animations/jumping_fish.json',
+                    width: 100,
+                    height: 100,
+                    repeat: true,
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _NavigationTile(
-                      title: 'Profil',
-                      icon: Icons.person,
-                      color: const Color(0xFF9C27B0),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const ProfileScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
+                ),
               ),
-
-              const SizedBox(height: 12),
-
-              // Ligne 3: Mes demandes + Approbation (en bas, avec restrictions)
-              Row(
-                children: [
-                  Expanded(
-                    child: _NavigationTile(
-                      title: 'Mes demandes',
-                      icon: Icons.receipt_long,
-                      color: const Color(0xFFFF6F00),
-                      isEnabled: canCreateExpenses,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const ExpenseListScreen(),
-                          ),
-                        );
-                      },
-                    ),
+            ),
+          // Vis 4 - grootste, vooraan (rechts)
+          if (_fishVisible[3])
+            Positioned(
+              right: 80,
+              top: screenHeight * 0.40,
+              child: IgnorePointer(
+                child: Opacity(
+                  opacity: 0.9,
+                  child: Lottie.asset(
+                    'assets/animations/jumping_fish.json',
+                    width: 120,
+                    height: 120,
+                    repeat: true,
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _NavigationTile(
-                      title: 'Approbation',
-                      icon: Icons.check_circle_outline,
-                      color: const Color(0xFF4CAF50),
-                      isEnabled: canApprove,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const ApprovalListScreen(),
-                          ),
-                        );
-                      },
-                    ),
+                ),
+              ),
+            ),
+
+          // Content
+          SafeArea(
+            child: Column(
+              children: [
+                // Top bar met logout
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.logout, color: Colors.white),
+                        onPressed: () => _handleLogout(context),
+                        tooltip: 'Déconnexion',
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
 
-              const SizedBox(height: 30),
+                // Groot logo
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Image.asset(
+                    'assets/images/logo-vertical-transparent.png',
+                    height: 150,
+                    fit: BoxFit.contain,
+                  ),
+                ),
 
-              // Footer
-              Text(
-                'Version 1.0.5',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.grey[400],
-                    ),
-              ),
-            ],
+                // Welkom tekst - Bienvenue klein, naam groot en vet
+                Text(
+                  'Bienvenue',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: const Color(0xFF1976D2),
+                      ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  userName,
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFF0D47A1),
+                      ),
+                  textAlign: TextAlign.center,
+                ),
+
+                const Spacer(),
+
+                // 5 Ronde knoppen met ButtonBlue - onderaan in het blauwe deel
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      // Rij 1: Événements, Communication
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          _GlossyButton(
+                            title: 'Événements',
+                            icon: Icons.event,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const OperationsListScreen()),
+                            ),
+                          ),
+                          _GlossyButton(
+                            title: 'Communication',
+                            icon: Icons.campaign,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const AnnouncementsScreen()),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // Rij 2: Who is Who, Finances, Mon Profil
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          _GlossyButton(
+                            title: 'Who is Who',
+                            icon: Icons.people,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const WhoIsWhoScreen()),
+                            ),
+                          ),
+                          _GlossyButton(
+                            title: 'Finances',
+                            icon: Icons.account_balance_wallet,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const ExpenseListScreen()),
+                            ),
+                          ),
+                          _GlossyButton(
+                            title: 'Mon Profil',
+                            icon: Icons.person,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 40),
+
+                // Version footer
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Text(
+                    'Version 1.0.5',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.white70,
+                        ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
 }
 
-/// Widget pour une tuile de navigation (rectangulaire)
-class _NavigationTile extends StatelessWidget {
+/// Widget voor een glossy blauwe knop met ButtonBlue.png
+class _GlossyButton extends StatelessWidget {
   final String title;
   final IconData icon;
-  final Color color;
   final VoidCallback onTap;
-  final bool isEnabled;
 
-  const _NavigationTile({
+  const _GlossyButton({
     required this.title,
     required this.icon,
-    required this.color,
     required this.onTap,
-    this.isEnabled = true,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Opacity(
-      opacity: isEnabled ? 1.0 : 0.4,
-      child: Card(
-        elevation: isEnabled ? 3 : 1,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: InkWell(
-          onTap: isEnabled ? onTap : null,
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            height: 100,
-            padding: const EdgeInsets.all(12),
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  color,
-                  color.withOpacity(0.8),
-                ],
-              ),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.white.withOpacity(0.6),
+                  blurRadius: 20,
+                  spreadRadius: 5,
+                ),
+              ],
             ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+            child: Stack(
+              alignment: Alignment.center,
               children: [
+                // ButtonBlue.png als achtergrond
+                Image.asset(
+                  AppAssets.buttonBlue,
+                  width: 70,
+                  height: 70,
+                ),
+                // Icoon erop
                 Icon(
                   icon,
-                  size: 36,
+                  size: 30,
                   color: Colors.white,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                  textAlign: TextAlign.center,
                 ),
               ],
             ),
           ),
-        ),
+          const SizedBox(height: 8),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }
