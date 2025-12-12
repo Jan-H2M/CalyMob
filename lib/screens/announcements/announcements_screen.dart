@@ -372,7 +372,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen>
                       GlossyButton(
                         icon: Icons.add_rounded,
                         label: '',
-                        size: 50,
+                        size: 55,
                         onTap: _showCreateDialog,
                       ),
                   ],

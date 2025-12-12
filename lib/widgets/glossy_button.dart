@@ -16,7 +16,7 @@ class GlossyButton extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
-    this.size = 100,
+    this.size = 110,
     this.tintColor,
     this.isEnabled = true,
   }) : super(key: key);
@@ -34,27 +34,12 @@ class GlossyButton extends StatelessWidget {
             children: [
               // De glossy knop
               SizedBox(
-                width: size * 0.85,
-                height: size * 0.85,
+                width: size,
+                height: size,
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    // Glow effect achter de knop
-                    Container(
-                      width: size * 0.8,
-                      height: size * 0.8,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: (tintColor ?? AppColors.lightCyan).withOpacity(0.4),
-                            blurRadius: 15,
-                            spreadRadius: 2,
-                          ),
-                        ],
-                      ),
-                    ),
-                    // De knop afbeelding met optionele tint
+                    // De knop afbeelding met optionele tint (geen boxShadow)
                     tintColor != null
                         ? ColorFiltered(
                             colorFilter: ColorFilter.mode(
@@ -63,41 +48,34 @@ class GlossyButton extends StatelessWidget {
                             ),
                             child: Image.asset(
                               AppAssets.buttonBlue,
-                              width: size * 0.85,
-                              height: size * 0.85,
+                              width: size,
+                              height: size,
                               fit: BoxFit.contain,
                             ),
                           )
                         : Image.asset(
                             AppAssets.buttonBlue,
-                            width: size * 0.85,
-                            height: size * 0.85,
+                            width: size,
+                            height: size,
                             fit: BoxFit.contain,
                           ),
                     // Het icoon
                     Icon(
                       icon,
-                      size: size * 0.35,
+                      size: size * 0.42,
                       color: Colors.white,
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               // Label
               Text(
                 label,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  shadows: [
-                    Shadow(
-                      color: Colors.black45,
-                      offset: Offset(1, 1),
-                      blurRadius: 2,
-                    ),
-                  ],
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
                 ),
                 textAlign: TextAlign.center,
               ),
