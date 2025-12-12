@@ -335,15 +335,8 @@ class _GlossyButton extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.white.withOpacity(0.4),
-                  blurRadius: 15,
-                  spreadRadius: 2,
-                ),
-              ],
             ),
             child: Stack(
               alignment: Alignment.center,
