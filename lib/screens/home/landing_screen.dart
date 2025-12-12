@@ -351,23 +351,23 @@ class _GlossyButton extends StatelessWidget {
                 // ButtonBlue.png als achtergrond
                 Image.asset(
                   AppAssets.buttonBlue,
-                  width: 90,
-                  height: 90,
+                  width: 110,
+                  height: 110,
                 ),
                 // Icoon erop
                 Icon(
                   icon,
-                  size: 38,
+                  size: 46,
                   color: Colors.white,
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Text(
             title,
             style: const TextStyle(
-              fontSize: 12,
+              fontSize: 14,
               fontWeight: FontWeight.w600,
               color: Colors.white,
             ),
