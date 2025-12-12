@@ -142,9 +142,6 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
   List<MemberProfile> _filterMembers(List<MemberProfile> members) {
     var filtered = members;
 
-    // Filtre par membres actifs uniquement
-    filtered = filtered.where((member) => member.isActive).toList();
-
     // Filtre de recherche
     if (_searchQuery.isNotEmpty) {
       filtered = filtered.where((member) {
@@ -587,55 +584,88 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Photo (bigger size: 160x160)
-              Container(
-                width: 160,
-                height: 160,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.grey.shade200,
-                ),
-                child: ClipOval(
-                  child: member.hasPhoto && member.consentInternalPhoto
-                      ? CachedNetworkImage(
-                          imageUrl: member.photoUrl!,
-                          fit: BoxFit.cover,
-                          placeholder: (context, url) => const Center(
-                            child: CircularProgressIndicator(),
-                          ),
-                          errorWidget: (context, url, error) => Icon(
-                            Icons.person,
-                            size: 80,
-                            color: Colors.grey.shade400,
-                          ),
-                        )
-                      : Icon(
-                          Icons.person,
-                          size: 80,
-                          color: Colors.grey.shade400,
+              // Photo with sea star overlay
+              SizedBox(
+                width: 240,
+                height: 240,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    // Photo (bigger size: 160x160)
+                    Center(
+                      child: Container(
+                        width: 160,
+                        height: 160,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.grey.shade200,
                         ),
+                        child: ClipOval(
+                          child: member.hasPhoto && member.consentInternalPhoto
+                              ? CachedNetworkImage(
+                                  imageUrl: member.photoUrl!,
+                                  fit: BoxFit.cover,
+                                  placeholder: (context, url) => const Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                  errorWidget: (context, url, error) => Icon(
+                                    Icons.person,
+                                    size: 80,
+                                    color: Colors.grey.shade400,
+                                  ),
+                                )
+                              : Icon(
+                                  Icons.person,
+                                  size: 80,
+                                  color: Colors.grey.shade400,
+                                ),
+                        ),
+                      ),
+                    ),
+                    // Sea star with diver level - positioned bottom right, overlapping
+                    if (member.plongeurCode != null)
+                      Positioned(
+                        bottom: -40,
+                        right: -50,
+                        child: SizedBox(
+                          width: 180,
+                          height: 180,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              // Sea star image
+                              Image.asset(
+                                'assets/images/Etoile.png',
+                                width: 180,
+                                height: 180,
+                                fit: BoxFit.contain,
+                              ),
+                              // Level text centered in the middle of the star
+                              Positioned(
+                                bottom: 68,
+                                child: Text(
+                                  _formatLevelCode(member.plongeurCode!),
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                    shadows: [
+                                      Shadow(
+                                        color: Colors.black54,
+                                        offset: Offset(1, 1),
+                                        blurRadius: 2,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
-
-              const SizedBox(height: 16),
-
-              // Niveau de plongée
-              if (member.plongeurNiveau != null)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: _getNiveauColor(member.plongeurCode),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Text(
-                    member.plongeurNiveau!,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
 
               const SizedBox(height: 16),
 
@@ -683,7 +713,7 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
                         icon: const Icon(Icons.assignment_turned_in),
                         label: Text(isCurrentUser ? 'Mes exercices validés' : 'Voir exercices'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.teal,
+                          backgroundColor: AppColors.middenblauw,
                           foregroundColor: Colors.white,
                         ),
                       ),
@@ -908,20 +938,31 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
         return Colors.grey;
       case '2':
       case 'P2':
-        return Colors.blue;
+        return AppColors.middenblauw;
       case '3':
       case 'P3':
-        return Colors.green;
+        return AppColors.success;
       case '4':
       case 'P4':
-        return Colors.orange;
+        return AppColors.oranje;
       case 'AM':
-        return Colors.purple;
+        return AppColors.donkerblauw;
       case 'MC':
       case 'MF':
         return Colors.red;
       default:
         return Colors.grey;
     }
+  }
+
+  /// Format the level code for display in the sea star
+  /// Extracts just the number/code (e.g., "P2" -> "2")
+  String _formatLevelCode(String code) {
+    final upperCode = code.toUpperCase();
+    // If it's like "P2", "P3", etc., extract just the number
+    if (upperCode.startsWith('P') && upperCode.length == 2) {
+      return upperCode.substring(1);
+    }
+    return upperCode;
   }
 }

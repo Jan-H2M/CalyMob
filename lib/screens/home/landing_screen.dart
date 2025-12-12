@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:lottie/lottie.dart';
 import '../../config/app_assets.dart';
+import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../auth/login_screen.dart';
 import '../operations/operations_list_screen.dart';
-import '../expenses/expense_list_screen.dart';
+import '../expenses/financial_screen.dart';
 import '../profile/profile_screen.dart';
 import '../profile/who_is_who_screen.dart';
 import '../announcements/announcements_screen.dart';
@@ -212,7 +213,7 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
                 Text(
                   'Bienvenue',
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: const Color(0xFF1976D2),
+                        color: AppColors.middenblauw,
                       ),
                   textAlign: TextAlign.center,
                 ),
@@ -221,7 +222,7 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
                   userName,
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                         fontWeight: FontWeight.bold,
-                        color: const Color(0xFF0D47A1),
+                        color: AppColors.donkerblauw,
                       ),
                   textAlign: TextAlign.center,
                 ),
@@ -276,7 +277,7 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
                             icon: Icons.account_balance_wallet,
                             onTap: () => Navigator.push(
                               context,
-                              MaterialPageRoute(builder: (_) => const ExpenseListScreen()),
+                              MaterialPageRoute(builder: (_) => const FinancialScreen()),
                             ),
                           ),
                           _GlossyButton(
@@ -338,9 +339,9 @@ class _GlossyButton extends StatelessWidget {
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.white.withOpacity(0.6),
-                  blurRadius: 20,
-                  spreadRadius: 5,
+                  color: Colors.white.withOpacity(0.4),
+                  blurRadius: 15,
+                  spreadRadius: 2,
                 ),
               ],
             ),
@@ -350,13 +351,13 @@ class _GlossyButton extends StatelessWidget {
                 // ButtonBlue.png als achtergrond
                 Image.asset(
                   AppAssets.buttonBlue,
-                  width: 70,
-                  height: 70,
+                  width: 90,
+                  height: 90,
                 ),
                 // Icoon erop
                 Icon(
                   icon,
-                  size: 30,
+                  size: 38,
                   color: Colors.white,
                 ),
               ],
@@ -366,7 +367,7 @@ class _GlossyButton extends StatelessWidget {
           Text(
             title,
             style: const TextStyle(
-              fontSize: 11,
+              fontSize: 12,
               fontWeight: FontWeight.w600,
               color: Colors.white,
             ),
