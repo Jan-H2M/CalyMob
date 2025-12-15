@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../config/app_assets.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/operation.dart';
 import '../operations/event_discussion_screen.dart';
@@ -17,15 +18,28 @@ class MessagesScreen extends StatelessWidget {
     final userId = authProvider.currentUser?.uid ?? '';
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text(
           'Mes Messages',
           style: TextStyle(color: Colors.white),
         ),
-        backgroundColor: Colors.teal,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: FutureBuilder<List<Operation>>(
+      body: Stack(
+        children: [
+          // Ocean background
+          Positioned.fill(
+            child: Image.asset(
+              AppAssets.backgroundFull,
+              fit: BoxFit.cover,
+            ),
+          ),
+          // Content
+          SafeArea(
+            child: FutureBuilder<List<Operation>>(
         future: _loadUserEvents(userId),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -85,6 +99,9 @@ class MessagesScreen extends StatelessWidget {
           );
         },
       ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -105,13 +122,15 @@ class MessagesScreen extends StatelessWidget {
         // Filtrer seulement les événements
         if (data['type'] != 'evenement') continue;
 
-        // Vérifier si l'utilisateur est inscrit
+        // Vérifier si l'utilisateur est inscrit (via operation_participants)
         final inscriptionSnapshot = await FirebaseFirestore.instance
-            .collection('clubs/calypso/operations/${opDoc.id}/inscriptions')
-            .doc(userId)
+            .collection('operation_participants')
+            .where('operation_id', isEqualTo: opDoc.id)
+            .where('user_id', isEqualTo: userId)
+            .limit(1)
             .get();
 
-        if (inscriptionSnapshot.exists) {
+        if (inscriptionSnapshot.docs.isNotEmpty) {
           userOperations.add(Operation.fromFirestore(opDoc));
         }
       }

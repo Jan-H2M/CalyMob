@@ -151,12 +151,19 @@ class ExpenseProvider with ChangeNotifier {
   Future<void> approveExpense({
     required String clubId,
     required String expenseId,
+    required String approverId,
+    required String approverName,
   }) async {
     try {
       _isLoading = true;
       notifyListeners();
 
-      await _expenseService.approveExpense(clubId, expenseId);
+      await _expenseService.approveExpense(
+        clubId,
+        expenseId,
+        approverId: approverId,
+        approverName: approverName,
+      );
 
       _isLoading = false;
       notifyListeners();

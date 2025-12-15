@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:lottie/lottie.dart';
 import '../../config/firebase_config.dart';
 import '../../config/app_assets.dart';
+import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/biometric_service.dart';
 import '../home/landing_screen.dart';
@@ -182,8 +183,12 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
 
-          // Bubbles animatie
-          Positioned.fill(
+          // Bubbles animatie (hoger gepositioneerd)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 200,
             child: IgnorePointer(
               child: Lottie.asset(
                 'assets/animations/bubbles.json',
@@ -253,7 +258,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              side: const BorderSide(color: Colors.blue, width: 2),
+                              side: const BorderSide(color: AppColors.middenblauw, width: 2),
                             ),
                           ),
                         ),
@@ -347,7 +352,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: ElevatedButton(
                               onPressed: authProvider.isLoading ? null : _handleLoginWithBiometricSetup,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blue,
+                                backgroundColor: AppColors.middenblauw,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
                                 ),

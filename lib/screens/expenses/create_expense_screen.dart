@@ -3,10 +3,13 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:cunning_document_scanner/cunning_document_scanner.dart';
+import 'package:flutter_doc_scanner/flutter_doc_scanner.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../config/firebase_config.dart';
+import '../../config/app_assets.dart';
+import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../utils/date_formatter.dart';
@@ -119,28 +122,45 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
 
   Future<void> _scanDocument() async {
     try {
-      final List<String>? scannedPaths = await CunningDocumentScanner.getPictures(
-        noOfPages: 5,
-        isGalleryImportAllowed: true,
-      );
+      // flutter_doc_scanner uses native iOS VisionKit / Android ML Kit
+      // It handles permissions internally
+      final scannedDocuments = await FlutterDocScanner().getScanDocuments();
 
-      if (scannedPaths != null && scannedPaths.isNotEmpty) {
-        // Compresser chaque image scannée
-        final List<File> compressedFiles = [];
-        for (final path in scannedPaths) {
-          final originalFile = File(path);
-          final compressedFile = await _compressImage(originalFile);
-          if (compressedFile != null) {
-            compressedFiles.add(compressedFile);
-          }
+      if (scannedDocuments != null) {
+        List<String> scannedPaths = [];
+
+        // Handle different return types from the scanner
+        if (scannedDocuments is List) {
+          scannedPaths = scannedDocuments.cast<String>();
+        } else if (scannedDocuments is String) {
+          scannedPaths = [scannedDocuments];
         }
 
-        setState(() {
-          _selectedPhotos.addAll(compressedFiles);
-        });
+        if (scannedPaths.isNotEmpty) {
+          // Compresser chaque image scannée
+          final List<File> compressedFiles = [];
+          for (final path in scannedPaths) {
+            final originalFile = File(path);
+            final compressedFile = await _compressImage(originalFile);
+            if (compressedFile != null) {
+              compressedFiles.add(compressedFile);
+            }
+          }
+
+          setState(() {
+            _selectedPhotos.addAll(compressedFiles);
+          });
+        }
       }
     } catch (e) {
       if (mounted) {
+        // Check if user cancelled
+        final errorMsg = e.toString().toLowerCase();
+        if (errorMsg.contains('cancel') || errorMsg.contains('user')) {
+          // User cancelled - no error message needed
+          return;
+        }
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Erreur lors du scan: $e'),
@@ -157,12 +177,11 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
       initialDate: _selectedDate,
       firstDate: DateTime(2020),
       lastDate: DateTime.now(),
-      locale: const Locale('fr', 'FR'),
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: Colors.orange,
+            colorScheme: ColorScheme.light(
+              primary: AppColors.middenblauw,
               onPrimary: Colors.white,
               surface: Colors.white,
               onSurface: Colors.black,
@@ -247,269 +266,290 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
     }
   }
 
+  Widget _buildRoundButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onPressed,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        FloatingActionButton(
+          heroTag: label,
+          onPressed: onPressed,
+          backgroundColor: AppColors.middenblauw,
+          child: Icon(icon, color: Colors.white),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            color: Colors.white,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Nouvelle demande', style: TextStyle(color: Colors.white)),
-        backgroundColor: Colors.orange,
-        iconTheme: const IconThemeData(color: Colors.white),
+    return Container(
+      decoration: BoxDecoration(
+        image: DecorationImage(
+          image: AssetImage(AppAssets.backgroundFull),
+          fit: BoxFit.cover,
+        ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Montant
-              TextFormField(
-                controller: _montantController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'Montant (€)',
-                  prefixIcon: Icon(Icons.euro, color: Colors.orange),
-                  border: OutlineInputBorder(),
-                  helperText: 'Ex: 25.50',
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Le montant est requis';
-                  }
-                  final montant = double.tryParse(value.trim());
-                  if (montant == null || montant <= 0) {
-                    return 'Montant invalide';
-                  }
-                  return null;
-                },
-              ),
-
-              const SizedBox(height: 16),
-
-              // Description
-              TextFormField(
-                controller: _descriptionController,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Description',
-                  prefixIcon: Icon(Icons.description, color: Colors.orange),
-                  border: OutlineInputBorder(),
-                  helperText: 'Décrivez la dépense',
-                ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'La description est requise';
-                  }
-                  if (value.trim().length < 5) {
-                    return 'Description trop courte (min 5 caractères)';
-                  }
-                  return null;
-                },
-              ),
-
-              const SizedBox(height: 16),
-
-              // Date de la dépense
-              InkWell(
-                onTap: _selectDate,
-                child: InputDecorator(
-                  decoration: const InputDecoration(
-                    labelText: 'Date de la dépense',
-                    prefixIcon: Icon(Icons.calendar_today, color: Colors.orange),
-                    border: OutlineInputBorder(),
-                  ),
-                  child: Text(
-                    DateFormatter.formatMedium(_selectedDate),
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 24),
-
-              // Section Justificatifs
-              const Text(
-                'Justificatifs',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-
-              // Bouton Scanner (principal, mobile uniquement)
-              if (!kIsWeb) ...[
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: _isSubmitting ? null : _scanDocument,
-                    icon: const Icon(Icons.document_scanner, color: Colors.white),
-                    label: const Text('Scanner un justificatif', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          title: const Text('Nouvelle demande', style: TextStyle(color: Colors.white)),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          iconTheme: const IconThemeData(color: Colors.white),
+        ),
+        body: SafeArea(
+          child: GestureDetector(
+            onTap: () => FocusScope.of(context).unfocus(),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight - 32, // Account for padding
                     ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Conseil : Scannez un seul justificatif par demande pour faciliter le traitement.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ],
-
-              // Boutons secondaires (Photo et Galerie)
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _isSubmitting ? null : _pickImageFromCamera,
-                      icon: const Icon(Icons.camera_alt, color: Colors.orange),
-                      label: const Text('Photo', style: TextStyle(color: Colors.orange)),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Colors.orange),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.lichtblauw.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.lichtblauw.withOpacity(0.5)),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _isSubmitting ? null : _pickImageFromGallery,
-                      icon: const Icon(Icons.photo_library, color: Colors.orange),
-                      label: const Text('Galerie', style: TextStyle(color: Colors.orange)),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Colors.orange),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 16),
-
-              // Photos preview (disabled on web - Image.file not supported)
-              if (_selectedPhotos.isNotEmpty && !kIsWeb) ...[
-                Text(
-                  '${_selectedPhotos.length} photo(s) sélectionnée(s)',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                  ),
-                ),
-                const SizedBox(height: 8),
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    crossAxisSpacing: 8,
-                    mainAxisSpacing: 8,
-                  ),
-                  itemCount: _selectedPhotos.length,
-                  itemBuilder: (context, index) {
-                    return Stack(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.file(
-                            _selectedPhotos[index],
-                            width: double.infinity,
-                            height: double.infinity,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        Positioned(
-                          top: 4,
-                          right: 4,
-                          child: InkWell(
-                            onTap: () => _removePhoto(index),
-                            child: Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: BoxDecoration(
-                                color: Colors.red,
-                                shape: BoxShape.circle,
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Montant
+                            TextFormField(
+                              controller: _montantController,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              decoration: InputDecoration(
+                                hintText: 'Montant (€)',
+                                prefixIcon: Icon(Icons.euro, color: AppColors.middenblauw),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                filled: true,
+                                fillColor: Colors.white,
                               ),
-                              child: const Icon(
-                                Icons.close,
-                                color: Colors.white,
-                                size: 16,
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Le montant est requis';
+                                }
+                                final montant = double.tryParse(value.trim());
+                                if (montant == null || montant <= 0) {
+                                  return 'Montant invalide';
+                                }
+                                return null;
+                              },
+                            ),
+
+                            const SizedBox(height: 12),
+
+                            // Description
+                            TextFormField(
+                              controller: _descriptionController,
+                              maxLines: 2,
+                              textInputAction: TextInputAction.done,
+                              onFieldSubmitted: (_) => FocusScope.of(context).unfocus(),
+                              decoration: InputDecoration(
+                                hintText: 'Description de la dépense',
+                                prefixIcon: Icon(Icons.description, color: AppColors.middenblauw),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                filled: true,
+                                fillColor: Colors.white,
+                              ),
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'La description est requise';
+                                }
+                                if (value.trim().length < 5) {
+                                  return 'Description trop courte (min 5 caractères)';
+                                }
+                                return null;
+                              },
+                            ),
+
+                            const SizedBox(height: 12),
+
+                            // Date de la dépense
+                            InkWell(
+                              onTap: _selectDate,
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.grey.shade400),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.calendar_today, color: AppColors.middenblauw),
+                                    const SizedBox(width: 12),
+                                    Text(
+                                      DateFormatter.formatMedium(_selectedDate),
+                                      style: const TextStyle(fontSize: 16),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
+
+                            const SizedBox(height: 24),
+
+                            // Section Justificatifs - 3 round buttons
+                            const Text(
+                              'Justificatifs',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+
+                            // Three round buttons: Scan, Photo, Gallery
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: [
+                                // Scan button (not available on web)
+                                if (!kIsWeb)
+                                  _buildRoundButton(
+                                    icon: Icons.document_scanner,
+                                    label: 'Scanner',
+                                    onPressed: _isSubmitting ? null : _scanDocument,
+                                  ),
+                                // Photo button
+                                _buildRoundButton(
+                                  icon: Icons.camera_alt,
+                                  label: 'Photo',
+                                  onPressed: _isSubmitting ? null : _pickImageFromCamera,
+                                ),
+                                // Gallery button
+                                _buildRoundButton(
+                                  icon: Icons.photo_library,
+                                  label: 'Galerie',
+                                  onPressed: _isSubmitting ? null : _pickImageFromGallery,
+                                ),
+                              ],
+                            ),
+
+                            const SizedBox(height: 16),
+
+                            // Photos preview (disabled on web - Image.file not supported)
+                            if (_selectedPhotos.isNotEmpty && !kIsWeb) ...[
+                              Text(
+                                '${_selectedPhotos.length} photo(s) sélectionnée(s)',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.white70,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              GridView.builder(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 3,
+                                  crossAxisSpacing: 8,
+                                  mainAxisSpacing: 8,
+                                ),
+                                itemCount: _selectedPhotos.length,
+                                itemBuilder: (context, index) {
+                                  return Stack(
+                                    children: [
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Image.file(
+                                          _selectedPhotos[index],
+                                          width: double.infinity,
+                                          height: double.infinity,
+                                          fit: BoxFit.cover,
+                                        ),
+                                      ),
+                                      Positioned(
+                                        top: 4,
+                                        right: 4,
+                                        child: InkWell(
+                                          onTap: () => _removePhoto(index),
+                                          child: Container(
+                                            padding: const EdgeInsets.all(4),
+                                            decoration: const BoxDecoration(
+                                              color: Colors.red,
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: const Icon(
+                                              Icons.close,
+                                              color: Colors.white,
+                                              size: 16,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 24),
+                            ] else if (_selectedPhotos.isNotEmpty && kIsWeb) ...[
+                              // Web: show text only (no image preview)
+                              Text(
+                                '${_selectedPhotos.length} photo(s) sélectionnée(s)',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.white70,
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                            ],
+
+                            // Submit button - round blue
+                            Center(
+                              child: FloatingActionButton.extended(
+                                onPressed: _isSubmitting ? null : _handleSubmit,
+                                backgroundColor: AppColors.middenblauw,
+                                icon: _isSubmitting
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          color: Colors.white,
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.send, color: Colors.white),
+                                label: Text(
+                                  _isSubmitting ? 'Envoi...' : 'Soumettre',
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    );
-                  },
-                ),
-              ] else if (_selectedPhotos.isNotEmpty && kIsWeb)
-                // Web: show text only (no image preview)
-                Text(
-                  '📷 ${_selectedPhotos.length} photo(s) sélectionnée(s)',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                  ),
-                )
-              else
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey[300]!),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Column(
-                    children: [
-                      Icon(Icons.photo_camera, size: 48, color: Colors.grey[400]),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Aucune photo ajoutée',
-                        style: TextStyle(color: Colors.grey[600]),
                       ),
-                    ],
-                  ),
-                ),
-
-              const SizedBox(height: 24),
-
-              // Submit button
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: _isSubmitting ? null : _handleSubmit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: _isSubmitting
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Text(
-                          'Soumettre la demande',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                ),
-              ),
-            ],
+                );
+              },
+            ),
           ),
         ),
       ),

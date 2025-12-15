@@ -1,7 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:lottie/lottie.dart';
+import '../../config/app_assets.dart';
+import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/member_profile.dart';
 import '../../services/profile_service.dart';
@@ -22,7 +26,7 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
+class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMixin {
   final String _clubId = 'calypso';
   final ProfileService _profileService = ProfileService();
   final MemberService _memberService = MemberService();
@@ -30,10 +34,57 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isLoading = false;
   bool _canManageExercises = false; // Monitor, admin, or super admin
 
+  // Splash animation controllers
+  late AnimationController _leftSplashController;
+  late AnimationController _rightSplashController;
+  Timer? _splashTimer;
+  bool _isLeftSplashTurn = true;
+
   @override
   void initState() {
     super.initState();
     _checkPermissions();
+    _initSplashAnimations();
+  }
+
+  void _initSplashAnimations() {
+    // Initialize animation controllers
+    _leftSplashController = AnimationController(vsync: this);
+    _rightSplashController = AnimationController(vsync: this);
+
+    // Start left splash after 4 seconds
+    Future.delayed(const Duration(seconds: 4), () {
+      if (mounted) {
+        _leftSplashController.forward(from: 0);
+      }
+    });
+
+    // Start right splash after 5 seconds
+    Future.delayed(const Duration(seconds: 5), () {
+      if (mounted) {
+        _rightSplashController.forward(from: 0);
+      }
+    });
+
+    // Continue alternating every 10 seconds
+    _splashTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+      if (mounted) {
+        if (_isLeftSplashTurn) {
+          _leftSplashController.forward(from: 0);
+        } else {
+          _rightSplashController.forward(from: 0);
+        }
+        _isLeftSplashTurn = !_isLeftSplashTurn;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _leftSplashController.dispose();
+    _rightSplashController.dispose();
+    _splashTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _checkPermissions() async {
@@ -316,66 +367,117 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final userId = context.watch<AuthProvider>().currentUser?.uid ?? '';
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text('Mon Profil', style: TextStyle(color: Colors.white)),
-        backgroundColor: const Color(0xFF7B1FA2), // Purple
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: StreamBuilder<MemberProfile?>(
-        stream: _profileService.watchProfile(_clubId, userId),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: Stack(
+        children: [
+          // Ocean background
+          Positioned.fill(
+            child: Image.asset(
+              AppAssets.backgroundFull,
+              fit: BoxFit.cover,
+            ),
+          ),
+          // Content
+          SafeArea(
+            child: StreamBuilder<MemberProfile?>(
+              stream: _profileService.watchProfile(_clubId, userId),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator(color: Colors.white));
+                }
 
-          if (!snapshot.hasData || snapshot.data == null) {
-            return const Center(
-              child: Text('Erreur de chargement du profil'),
-            );
-          }
+                if (!snapshot.hasData || snapshot.data == null) {
+                  return const Center(
+                    child: Text('Erreur de chargement du profil', style: TextStyle(color: Colors.white)),
+                  );
+                }
 
-          final profile = snapshot.data!;
+                final profile = snapshot.data!;
 
-          return Stack(
-            children: [
-              SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                return Stack(
                   children: [
-                    // Photo de profil
-                    _buildPhotoSection(profile),
+                    SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Photo de profil
+                          _buildPhotoSection(profile),
 
-                    const SizedBox(height: 24),
+                          const SizedBox(height: 24),
 
-                    // Informations personnelles
-                    _buildInfoSection(profile),
+                          // Informations personnelles
+                          _buildInfoSection(profile),
 
-                    const SizedBox(height: 24),
+                          const SizedBox(height: 24),
 
-                    // Consentements photo
-                    if (profile.hasPhoto) ...[
-                      _buildConsentSection(profile),
-                      const SizedBox(height: 24),
-                    ],
+                          // Consentements photo
+                          if (profile.hasPhoto) ...[
+                            _buildConsentSection(profile),
+                            const SizedBox(height: 24),
+                          ],
 
-                    // Actions
-                    _buildActionsSection(),
+                          // Actions
+                          _buildActionsSection(),
+                        ],
+                      ),
+                    ),
+
+                    // Loading overlay
+                    if (_isLoading)
+                      Container(
+                        color: Colors.black54,
+                        child: const Center(
+                          child: CircularProgressIndicator(color: Colors.white),
+                        ),
+                      ),
                   ],
+                );
+              },
+            ),
+          ),
+          // Left splash animation - top left, throwing water to the right (IN FRONT)
+          Positioned(
+            top: 20,
+            left: -80,
+            child: IgnorePointer(
+              child: Lottie.asset(
+                'assets/animations/splash.json',
+                width: 350,
+                height: 350,
+                controller: _leftSplashController,
+                onLoaded: (composition) {
+                  _leftSplashController.duration = composition.duration;
+                },
+              ),
+            ),
+          ),
+          // Right splash animation - top right, mirrored (throwing water to the left) (IN FRONT)
+          Positioned(
+            top: 20,
+            right: -80,
+            child: IgnorePointer(
+              child: Transform.flip(
+                flipX: true,
+                child: Lottie.asset(
+                  'assets/animations/splash.json',
+                  width: 350,
+                  height: 350,
+                  controller: _rightSplashController,
+                  onLoaded: (composition) {
+                    _rightSplashController.duration = composition.duration;
+                  },
                 ),
               ),
-
-              // Loading overlay
-              if (_isLoading)
-                Container(
-                  color: Colors.black54,
-                  child: const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
-                  ),
-                ),
-            ],
-          );
-        },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -400,7 +502,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       shape: BoxShape.circle,
                       color: Colors.grey.shade200,
                       border: Border.all(
-                        color: const Color(0xFF7B1FA2),
+                        color: AppColors.middenblauw,
                         width: 3,
                       ),
                     ),
@@ -432,7 +534,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     child: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: const BoxDecoration(
-                        color: Color(0xFF7B1FA2),
+                        color: AppColors.middenblauw,
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(
@@ -596,9 +698,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 const Spacer(),
-                TextButton(
+                IconButton(
                   onPressed: () => _editConsents(profile),
-                  child: const Text('Modifier'),
+                  icon: Icon(Icons.edit, size: 20, color: AppColors.middenblauw),
+                  tooltip: 'Modifier les consentements',
                 ),
               ],
             ),
@@ -669,7 +772,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const Divider(height: 1),
           ListTile(
-            leading: const Icon(Icons.settings, color: Color(0xFF607D8B)),
+            leading: Icon(Icons.settings, color: AppColors.middenblauw),
             title: const Text('Paramètres'),
             subtitle: const Text('Notifications et vie privée'),
             trailing: const Icon(Icons.chevron_right),

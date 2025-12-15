@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/firebase_config.dart';
+import '../../config/app_assets.dart';
 import '../../models/exercice_lifras.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/exercice_valide_service.dart';
@@ -209,6 +210,7 @@ class _ValidateExerciseScreenState extends State<ValidateExerciseScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -220,14 +222,26 @@ class _ValidateExerciseScreenState extends State<ValidateExerciseScreen> {
             ),
           ],
         ),
-        backgroundColor: Colors.teal,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Form(
-              key: _formKey,
-              child: ListView(
+      body: Stack(
+        children: [
+          // Ocean background
+          Positioned.fill(
+            child: Image.asset(
+              AppAssets.backgroundFull,
+              fit: BoxFit.cover,
+            ),
+          ),
+          // Content
+          SafeArea(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator(color: Colors.white))
+                : Form(
+                    key: _formKey,
+                    child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
                   // Exercise selection
@@ -362,9 +376,12 @@ class _ValidateExerciseScreenState extends State<ValidateExerciseScreen> {
                             ),
                     ),
                   ),
-                ],
-              ),
-            ),
+                    ],
+                  ),
+                ),
+          ),
+        ],
+      ),
     );
   }
 

@@ -200,7 +200,12 @@ class ExpenseService {
   }
 
   /// Approuver une demande de remboursement
-  Future<void> approveExpense(String clubId, String demandeId) async {
+  Future<void> approveExpense(
+    String clubId,
+    String demandeId, {
+    required String approverId,
+    required String approverName,
+  }) async {
     await _firestore
         .collection('clubs')
         .doc(clubId)
@@ -208,6 +213,9 @@ class ExpenseService {
         .doc(demandeId)
         .update({
       'statut': 'approuve',
+      'approuve_par': approverId,
+      'approuve_par_nom': approverName,
+      'date_approbation': FieldValue.serverTimestamp(),
       'updated_at': FieldValue.serverTimestamp(),
     });
   }

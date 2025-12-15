@@ -3,7 +3,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
-/// Écran de capture photo (sans détection de visage - MLKit désactivé pour compatibilité Firebase)
+/// Écran de capture photo avec vérification que le visage est bien positionné
 class FaceCameraScreen extends StatefulWidget {
   const FaceCameraScreen({super.key});
 
@@ -16,6 +16,8 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
   bool _isInitialized = false;
   bool _isProcessing = false;
   String? _errorMessage;
+  File? _capturedPhoto;
+  bool _showConfirmation = false;
 
   @override
   void initState() {
@@ -85,14 +87,31 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
       final String newPath = '${tempDir.path}/$fileName';
       final File newImage = await File(image.path).copy(newPath);
 
-      // Retourner le fichier
-      if (mounted) {
-        Navigator.of(context).pop(newImage);
-      }
+      // Afficher l'écran de confirmation
+      setState(() {
+        _capturedPhoto = newImage;
+        _showConfirmation = true;
+        _isProcessing = false;
+      });
     } catch (e) {
       _showError('Erreur lors de la capture: $e');
       setState(() => _isProcessing = false);
     }
+  }
+
+  /// Confirmer la photo et la retourner
+  void _confirmPhoto() {
+    if (_capturedPhoto != null && mounted) {
+      Navigator.of(context).pop(_capturedPhoto);
+    }
+  }
+
+  /// Reprendre une nouvelle photo
+  void _retakePhoto() {
+    setState(() {
+      _capturedPhoto = null;
+      _showConfirmation = false;
+    });
   }
 
   void _showError(String message) {
@@ -111,16 +130,119 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         iconTheme: const IconThemeData(color: Colors.white),
-        title: const Text(
-          'Photo de profil',
-          style: TextStyle(color: Colors.white),
+        title: Text(
+          _showConfirmation ? 'Vérifier la photo' : 'Photo de profil',
+          style: const TextStyle(color: Colors.white),
         ),
       ),
       body: _errorMessage != null
           ? _buildErrorView()
           : !_isInitialized
               ? _buildLoadingView()
-              : _buildCameraView(),
+              : _showConfirmation
+                  ? _buildConfirmationView()
+                  : _buildCameraView(),
+    );
+  }
+
+  Widget _buildConfirmationView() {
+    return Column(
+      children: [
+        // Photo preview met cirkel overlay
+        Expanded(
+          child: Stack(
+            children: [
+              // Photo
+              Center(
+                child: Image.file(
+                  _capturedPhoto!,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  height: double.infinity,
+                ),
+              ),
+              // Overlay met cirkel
+              CustomPaint(
+                size: MediaQuery.of(context).size,
+                painter: FaceOverlayPainter(),
+              ),
+            ],
+          ),
+        ),
+
+        // Vraag aan gebruiker
+        Container(
+          padding: const EdgeInsets.all(20),
+          color: Colors.black,
+          child: Column(
+            children: [
+              const Icon(
+                Icons.help_outline,
+                color: Colors.orange,
+                size: 32,
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Est-ce que votre visage est bien visible\ndans le cercle ?',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Votre photo doit montrer clairement votre visage\npour être reconnu par les autres membres.',
+                style: TextStyle(
+                  color: Colors.grey[400],
+                  fontSize: 14,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+
+              // Boutons
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  // Reprendre
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _retakePhoto,
+                      icon: const Icon(Icons.refresh, color: Colors.white),
+                      label: const Text(
+                        'Reprendre',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.white),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  // Confirmer
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _confirmPhoto,
+                      icon: const Icon(Icons.check, color: Colors.white),
+                      label: const Text(
+                        'Oui, confirmer',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -201,26 +323,51 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
           left: 0,
           right: 0,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            margin: const EdgeInsets.symmetric(horizontal: 24),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            margin: const EdgeInsets.symmetric(horizontal: 16),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.7),
-              borderRadius: BorderRadius.circular(8),
+              color: Colors.black.withOpacity(0.75),
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: const Column(
+            child: Column(
               children: [
-                Icon(
-                  Icons.face,
-                  color: Colors.white,
-                  size: 32,
+                const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.diversity_3,
+                      color: Colors.lightBlueAccent,
+                      size: 28,
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'Who\'s Who Calypso',
+                      style: TextStyle(
+                        color: Colors.lightBlueAccent,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
                 ),
-                SizedBox(height: 8),
-                Text(
+                const SizedBox(height: 12),
+                const Text(
                   'Positionnez votre visage dans le cercle',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Votre photo permet aux nouveaux membres de vous reconnaître, '
+                  'et à vous de les reconnaître aussi ! '
+                  'C\'est l\'esprit Calypso : convivial et accueillant 🤿',
+                  style: TextStyle(
+                    color: Colors.grey[300],
+                    fontSize: 13,
                   ),
                   textAlign: TextAlign.center,
                 ),

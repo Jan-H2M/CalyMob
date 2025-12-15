@@ -4,6 +4,9 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:syncfusion_flutter_core/core.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:syncfusion_localizations/syncfusion_localizations.dart';
 
 // Firebase options
 import 'firebase_options.dart';
@@ -23,8 +26,16 @@ import 'providers/exercice_valide_provider.dart';
 // Screens
 import 'screens/auth/login_screen.dart';
 
+// Config
+import 'config/app_colors.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Register Syncfusion license
+  SyncfusionLicense.registerLicense(
+    'Ngo9BigBOggjHTQxAR8/V1JFaF1cXGFCf1FpRGpGfV5ycUVHYVZQRXxeQE0SNHVRdkdmWH1fcnVUR2FdU0J+W0pWYEg='
+  );
 
   try {
     // Initialiser Firebase avec les options de configuration
@@ -76,16 +87,30 @@ class MyApp extends StatelessWidget {
       child: MaterialApp(
         title: 'CalyMob',
         debugShowCheckedModeBanner: false,
+        // Localisation française pour Syncfusion Calendar
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          SfGlobalLocalizations.delegate,
+        ],
+        supportedLocales: const [
+          Locale('fr', 'FR'),
+        ],
+        locale: const Locale('fr', 'FR'),
         theme: ThemeData(
           primarySwatch: Colors.blue,
           useMaterial3: true,
           colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFF0066CC), // Bleu Calypso
+            seedColor: AppColors.middenblauw, // Thème maritime
             brightness: Brightness.light,
           ),
           appBarTheme: const AppBarTheme(
             centerTitle: false,
             elevation: 0,
+            backgroundColor: Colors.transparent,
+            foregroundColor: Colors.white,
+            iconTheme: IconThemeData(color: Colors.white),
           ),
           cardTheme: CardThemeData(
             elevation: 2,
@@ -96,6 +121,8 @@ class MyApp extends StatelessWidget {
           elevatedButtonTheme: ElevatedButtonThemeData(
             style: ElevatedButton.styleFrom(
               elevation: 0,
+              backgroundColor: AppColors.middenblauw,
+              foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -115,7 +142,7 @@ class MyApp extends StatelessWidget {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFF0066CC), width: 2),
+              borderSide: BorderSide(color: AppColors.middenblauw, width: 2),
             ),
           ),
         ),

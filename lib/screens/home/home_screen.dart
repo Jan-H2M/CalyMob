@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/firebase_config.dart';
+import '../../config/app_assets.dart';
+import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/operation_provider.dart';
 import '../../providers/expense_provider.dart';
@@ -77,12 +79,14 @@ class _HomeScreenState extends State<HomeScreen> {
     final operationProvider = context.watch<OperationProvider>();
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text(
           _currentIndex == 0 ? 'Événements' : 'Mes demandes',
           style: const TextStyle(color: Colors.white),
         ),
-        backgroundColor: _currentIndex == 0 ? Colors.blue : Colors.orange,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         actions: [
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.white),
@@ -91,12 +95,26 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: _currentIndex == 0
-          ? RefreshIndicator(
-              onRefresh: _refreshOperations,
-              child: _buildBody(operationProvider, authProvider),
-            )
-          : const ExpenseListScreen(),
+      body: Stack(
+        children: [
+          // Ocean background
+          Positioned.fill(
+            child: Image.asset(
+              AppAssets.backgroundFull,
+              fit: BoxFit.cover,
+            ),
+          ),
+          // Content
+          SafeArea(
+            child: _currentIndex == 0
+                ? RefreshIndicator(
+                    onRefresh: _refreshOperations,
+                    child: _buildBody(operationProvider, authProvider),
+                  )
+                : const ExpenseListScreen(),
+          ),
+        ],
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) {
@@ -114,7 +132,7 @@ class _HomeScreenState extends State<HomeScreen> {
             label: 'Demandes',
           ),
         ],
-        selectedItemColor: _currentIndex == 0 ? Colors.blue : Colors.orange,
+        selectedItemColor: AppColors.middenblauw,
         unselectedItemColor: Colors.grey,
       ),
     );

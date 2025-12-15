@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Widget de chargement centré
+/// Widget de chargement centré - optimisé pour ocean background
 class LoadingWidget extends StatelessWidget {
   final String? message;
 
@@ -12,14 +12,16 @@ class LoadingWidget extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const CircularProgressIndicator(),
+          const CircularProgressIndicator(
+            color: Colors.white,
+          ),
           if (message != null) ...[
             const SizedBox(height: 16),
             Text(
               message!,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 14,
-                color: Colors.grey[600],
+                color: Colors.white,
               ),
               textAlign: TextAlign.center,
             ),

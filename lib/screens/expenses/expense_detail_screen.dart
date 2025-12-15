@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../config/app_assets.dart';
 import '../../models/expense_claim.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -24,8 +25,12 @@ class ExpenseDetailScreen extends StatelessWidget {
     final currentUserId = authProvider.currentUser?.uid;
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Détail Demande'),
+        title: const Text('Détail Demande', style: TextStyle(color: Colors.white)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           // Modifier/Supprimer alleen als status = 'soumis'
           if (expense.statut == 'soumis') ...[
@@ -75,11 +80,22 @@ class ExpenseDetailScreen extends StatelessWidget {
           ],
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      body: Stack(
+        children: [
+          // Ocean background
+          Positioned.fill(
+            child: Image.asset(
+              AppAssets.backgroundFull,
+              fit: BoxFit.cover,
+            ),
+          ),
+          // Content
+          SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
             // Status Badge
             Center(
               child: _buildStatusBadge(expense.statut),
@@ -298,8 +314,11 @@ class ExpenseDetailScreen extends StatelessWidget {
                   textAlign: TextAlign.center,
                 ),
               ),
-          ],
-        ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -449,9 +468,15 @@ class ExpenseDetailScreen extends StatelessWidget {
 
     if (confirmed == true && context.mounted) {
       try {
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        final approverId = authProvider.currentUser?.uid ?? '';
+        final approverName = authProvider.displayName ?? authProvider.currentUser?.email ?? 'Inconnu';
+
         await expenseProvider.approveExpense(
           clubId: expense.clubId ?? 'calypso',
           expenseId: expense.id,
+          approverId: approverId,
+          approverName: approverName,
         );
         if (context.mounted) {
           Navigator.pop(context);

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../config/app_assets.dart';
+import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/member_profile.dart';
 import '../../services/profile_service.dart';
@@ -324,60 +326,76 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final userId = context.watch<AuthProvider>().currentUser?.uid ?? '';
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text('Paramètres', style: TextStyle(color: Colors.white)),
-        backgroundColor: const Color(0xFF607D8B), // Blue Grey
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: StreamBuilder<MemberProfile?>(
-        stream: _profileService.watchProfile(_clubId, userId),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: Stack(
+        children: [
+          // Ocean background
+          Positioned.fill(
+            child: Image.asset(
+              AppAssets.backgroundFull,
+              fit: BoxFit.cover,
+            ),
+          ),
+          // Content
+          SafeArea(
+            child: StreamBuilder<MemberProfile?>(
+              stream: _profileService.watchProfile(_clubId, userId),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator(color: Colors.white));
+                }
 
-          if (!snapshot.hasData || snapshot.data == null) {
-            return const Center(
-              child: Text('Erreur de chargement du profil'),
-            );
-          }
+                if (!snapshot.hasData || snapshot.data == null) {
+                  return const Center(
+                    child: Text('Erreur de chargement du profil', style: TextStyle(color: Colors.white)),
+                  );
+                }
 
-          final profile = snapshot.data!;
-          _notificationsEnabled = profile.notificationsEnabled;
+                final profile = snapshot.data!;
+                _notificationsEnabled = profile.notificationsEnabled;
 
-          return Stack(
-            children: [
-              ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  // Contact
-                  _buildSectionHeader('Contact'),
-                  _buildContactSection(profile),
+                return Stack(
+                  children: [
+                    ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        // Contact
+                        _buildSectionHeader('Contact'),
+                        _buildContactSection(profile),
 
-                  const SizedBox(height: 24),
+                        const SizedBox(height: 24),
 
-                  // Notifications
-                  _buildSectionHeader('Notifications'),
-                  _buildNotificationsSection(profile),
+                        // Notifications
+                        _buildSectionHeader('Notifications'),
+                        _buildNotificationsSection(profile),
 
-                  const SizedBox(height: 24),
+                        const SizedBox(height: 24),
 
-                  // Vie privée
-                  _buildSectionHeader('Vie privée'),
-                  _buildPrivacySection(profile),
-                ],
-              ),
+                        // Vie privée
+                        _buildSectionHeader('Vie privée'),
+                        _buildPrivacySection(profile),
+                      ],
+                    ),
 
-              if (_isLoading)
-                Container(
-                  color: Colors.black54,
-                  child: const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
-                  ),
-                ),
-            ],
-          );
-        },
+                    if (_isLoading)
+                      Container(
+                        color: Colors.black54,
+                        child: const Center(
+                          child: CircularProgressIndicator(color: Colors.white),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -390,7 +408,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         style: const TextStyle(
           fontSize: 18,
           fontWeight: FontWeight.bold,
-          color: Color(0xFF607D8B),
+          color: Colors.white,
         ),
       ),
     );
@@ -514,7 +532,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const Divider(height: 1),
           ListTile(
-            leading: const Icon(Icons.privacy_tip, color: Color(0xFF607D8B)),
+            leading: Icon(Icons.privacy_tip, color: AppColors.middenblauw),
             title: const Text('Politique de confidentialité'),
             subtitle: const Text('RGPD et protection des données'),
             trailing: const Icon(Icons.chevron_right),

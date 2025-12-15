@@ -393,12 +393,12 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
                 }
 
                 return GridView.builder(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(12),
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    childAspectRatio: 0.75,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
+                    crossAxisCount: 3,
+                    childAspectRatio: 0.8,
+                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 10,
                   ),
                   itemCount: filteredMembers.length,
                   itemBuilder: (context, index) {
@@ -442,105 +442,98 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
                 ),
               ],
             ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Photo
-                Stack(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // Bereken de foto grootte: breedte minus padding, vierkant
+                final photoSize = constraints.maxWidth - 16; // 8px padding aan elke kant
+                return Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Container(
-                      width: 100,
-                      height: 100,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withOpacity(0.2),
-                      ),
-                  child: ClipOval(
-                    child: member.hasPhoto && member.consentInternalPhoto
-                        ? CachedNetworkImage(
-                            imageUrl: member.photoUrl!,
-                            fit: BoxFit.cover,
-                            placeholder: (context, url) => const Center(
-                              child: CircularProgressIndicator(),
+                    // Photo - vaste vierkante grootte
+                    Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Stack(
+                        children: [
+                          Container(
+                            width: photoSize,
+                            height: photoSize,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white.withOpacity(0.2),
                             ),
-                            errorWidget: (context, url, error) => Icon(
-                              Icons.person,
-                              size: 50,
-                              color: Colors.white.withOpacity(0.6),
+                            child: ClipOval(
+                              child: member.hasPhoto && member.consentInternalPhoto
+                                  ? CachedNetworkImage(
+                                      imageUrl: member.photoUrl!,
+                                      fit: BoxFit.cover,
+                                      width: photoSize,
+                                      height: photoSize,
+                                      placeholder: (context, url) => const Center(
+                                        child: SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        ),
+                                      ),
+                                      errorWidget: (context, url, error) => Icon(
+                                        Icons.person,
+                                        size: 40,
+                                        color: Colors.white.withOpacity(0.6),
+                                      ),
+                                    )
+                                  : Icon(
+                                      Icons.person,
+                                      size: 40,
+                                      color: Colors.white.withOpacity(0.6),
+                                    ),
                             ),
-                          )
-                        : Icon(
-                            Icons.person,
-                            size: 50,
-                            color: Colors.white.withOpacity(0.6),
                           ),
-                  ),
-                ),
-                if (isCurrentUser)
-                  Positioned(
-                    top: 0,
-                    right: 0,
-                    child: Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: const BoxDecoration(
-                        color: Colors.green,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.check,
-                        color: Colors.white,
-                        size: 14,
+                          if (isCurrentUser)
+                            Positioned(
+                              top: 0,
+                              right: 0,
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: const BoxDecoration(
+                                  color: Colors.green,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.check,
+                                  color: Colors.white,
+                                  size: 10,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
-                  ),
-              ],
-            ),
 
-            const SizedBox(height: 12),
-
-                // Nom
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Text(
-                    member.fullName,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      shadows: [
-                        Shadow(
-                          color: Colors.black26,
-                          offset: Offset(1, 1),
-                          blurRadius: 2,
+                    // Alleen voornaam (geen familienaam)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4, right: 4, bottom: 12),
+                      child: Text(
+                        member.prenom,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black26,
+                              offset: Offset(1, 1),
+                              blurRadius: 2,
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-
-                const SizedBox(height: 6),
-
-                // Niveau de plongée (compact)
-                if (member.plongeurNiveau != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: _getNiveauColor(member.plongeurCode),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      member.plongeurNiveau!,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                  ),
-              ],
+                  ],
+                );
+              },
             ),
           ),
         ),

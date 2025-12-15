@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../config/firebase_config.dart';
+import '../../config/app_assets.dart';
 import '../../models/exercice_valide.dart';
 import '../../models/exercice_lifras.dart';
 import '../../services/exercice_valide_service.dart';
@@ -121,6 +122,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -132,7 +134,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
             ),
           ],
         ),
-        backgroundColor: Colors.teal,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           if (widget.isMonitor)
@@ -156,7 +159,18 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
             ),
         ],
       ),
-      body: _isLoading
+      body: Stack(
+        children: [
+          // Ocean background
+          Positioned.fill(
+            child: Image.asset(
+              AppAssets.backgroundFull,
+              fit: BoxFit.cover,
+            ),
+          ),
+          // Content
+          SafeArea(
+            child: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
               ? Center(
@@ -177,6 +191,9 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
               : _exercices.isEmpty
                   ? _buildEmptyState()
                   : _buildContent(),
+          ),
+        ],
+      ),
     );
   }
 

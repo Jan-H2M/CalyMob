@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../config/app_assets.dart';
+import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/operation_provider.dart';
 import '../../providers/payment_provider.dart';
@@ -45,6 +47,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
   bool _isLoadingExercices = false;
   ParticipantOperation? _userInscription;
   bool _isPaymentProcessing = false;
+  final TextEditingController _messageController = TextEditingController();
 
   @override
   void initState() {
@@ -53,6 +56,12 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
       _loadOperation();
       _loadUserProfile();
     });
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadOperation() async {
@@ -428,12 +437,25 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text('Détail événement', style: TextStyle(color: Colors.white)),
-        backgroundColor: Colors.blue,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: Consumer<OperationProvider>(
+      body: Stack(
+        children: [
+          // Ocean background
+          Positioned.fill(
+            child: Image.asset(
+              AppAssets.backgroundFull,
+              fit: BoxFit.cover,
+            ),
+          ),
+          // Content
+          SafeArea(
+            child: Consumer<OperationProvider>(
         builder: (context, operationProvider, child) {
           final operation = operationProvider.selectedOperation;
 
@@ -482,6 +504,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
                         style: const TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
+                          color: Colors.white,
                         ),
                       ),
 
@@ -501,9 +524,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
                       if (operation.description != null && operation.description!.isNotEmpty) ...[
                         Text(
                           operation.description!,
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 15,
-                            color: Colors.grey[700],
+                            color: Colors.white70,
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -546,6 +569,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
           );
         },
       ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -555,29 +581,29 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
       children: [
         // Date
         if (operation.dateDebut != null) ...[
-          Icon(Icons.calendar_today, size: 18, color: Colors.grey[600]),
+          const Icon(Icons.calendar_today, size: 18, color: Colors.white70),
           const SizedBox(width: 6),
           Text(
             DateFormatter.formatLong(operation.dateDebut!),
-            style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+            style: const TextStyle(fontSize: 14, color: Colors.white),
           ),
         ],
 
         // Separator
         if (operation.dateDebut != null && operation.lieu != null) ...[
           const SizedBox(width: 16),
-          Text('|', style: TextStyle(color: Colors.grey[400])),
+          const Text('|', style: TextStyle(color: Colors.white54)),
           const SizedBox(width: 16),
         ],
 
         // Lieu
         if (operation.lieu != null) ...[
-          Icon(Icons.location_on, size: 18, color: Colors.grey[600]),
+          const Icon(Icons.location_on, size: 18, color: Colors.white70),
           const SizedBox(width: 6),
           Expanded(
             child: Text(
               operation.lieu!,
-              style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+              style: const TextStyle(fontSize: 14, color: Colors.white),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -608,14 +634,14 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
       children: [
         // Prix (personnalisé selon fonction)
         if (displayPrice != null && displayPrice > 0) ...[
-          Icon(Icons.euro, size: 18, color: Colors.grey[600]),
+          const Icon(Icons.euro, size: 18, color: Colors.white70),
           const SizedBox(width: 6),
           Text(
             CurrencyFormatter.format(displayPrice),
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: Colors.grey[700],
+              color: Colors.white,
             ),
           ),
           // Show function if different from default
@@ -624,14 +650,14 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
               decoration: BoxDecoration(
-                color: Colors.green.shade100,
+                color: AppColors.lichtblauw.withOpacity(0.3),
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
                 userFunction,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 10,
-                  color: Colors.green.shade700,
+                  color: Colors.white,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -642,20 +668,20 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
         // Separator
         if (displayPrice != null && displayPrice > 0 && userLevel != null) ...[
           const SizedBox(width: 16),
-          Text('|', style: TextStyle(color: Colors.grey[400])),
+          const Text('|', style: TextStyle(color: Colors.white54)),
           const SizedBox(width: 16),
         ],
 
         // User level
         if (userLevel != null) ...[
-          Icon(Icons.pool, size: 18, color: Colors.blue[600]),
+          Icon(Icons.pool, size: 18, color: AppColors.lichtblauw),
           const SizedBox(width: 6),
           Text(
             'Niveau: $userLevel',
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: Colors.blue[700],
+              color: AppColors.lichtblauw,
             ),
           ),
         ],
@@ -667,42 +693,42 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
   Widget _buildCommunicationAccordion(operation) {
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.orange.shade200),
+        border: Border.all(color: AppColors.lichtblauw.withOpacity(0.5)),
         borderRadius: BorderRadius.circular(12),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: ExpansionTile(
           initiallyExpanded: true, // Open by default
-          backgroundColor: Colors.orange.shade50,
-          collapsedBackgroundColor: Colors.white,
+          backgroundColor: AppColors.lichtblauw.withOpacity(0.2),
+          collapsedBackgroundColor: Colors.white.withOpacity(0.9),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          leading: Icon(Icons.campaign, color: Colors.orange[700]),
+          leading: Icon(Icons.campaign, color: AppColors.middenblauw),
           title: Text(
             'Communication',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
-              color: Colors.grey[800],
+              color: AppColors.donkerblauw,
             ),
           ),
           subtitle: Text(
             'Message de l\'organisateur',
             style: TextStyle(
               fontSize: 13,
-              color: Colors.grey[600],
+              color: AppColors.middenblauw,
             ),
           ),
           children: [
             Container(
               width: double.infinity,
-              color: Colors.white,
+              color: Colors.white.withOpacity(0.95),
               padding: const EdgeInsets.all(16),
               child: Text(
                 operation.communication ?? '',
                 style: TextStyle(
                   fontSize: 14,
-                  color: Colors.grey[800],
+                  color: AppColors.donkerblauw,
                   height: 1.5,
                 ),
               ),
@@ -722,30 +748,30 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
 
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.purple.shade200),
+        border: Border.all(color: AppColors.lichtblauw.withOpacity(0.5)),
         borderRadius: BorderRadius.circular(12),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: ExpansionTile(
           initiallyExpanded: false,
-          backgroundColor: Colors.purple.shade50,
-          collapsedBackgroundColor: Colors.white,
+          backgroundColor: AppColors.lichtblauw.withOpacity(0.2),
+          collapsedBackgroundColor: Colors.white.withOpacity(0.9),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          leading: Icon(Icons.chat, color: Colors.purple[700]),
+          leading: Icon(Icons.chat, color: AppColors.middenblauw),
           title: Text(
             'Discussion',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
-              color: Colors.grey[800],
+              color: AppColors.donkerblauw,
             ),
           ),
           subtitle: Text(
             isRegistered ? 'Discutez avec les participants' : 'Inscrivez-vous pour participer',
             style: TextStyle(
               fontSize: 13,
-              color: Colors.purple[700],
+              color: AppColors.middenblauw,
             ),
           ),
           children: [
@@ -841,7 +867,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.65),
         decoration: BoxDecoration(
-          color: isOwnMessage ? Colors.purple[100] : Colors.grey[200],
+          color: isOwnMessage ? AppColors.lichtblauw.withOpacity(0.4) : Colors.grey[200],
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
@@ -866,8 +892,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
 
   /// Message input field
   Widget _buildMessageInputField(EventMessageProvider messageProvider, String userId, String displayName) {
-    final controller = TextEditingController();
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       decoration: BoxDecoration(
@@ -878,7 +902,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
         children: [
           Expanded(
             child: TextField(
-              controller: controller,
+              controller: _messageController,
               decoration: InputDecoration(
                 hintText: 'Votre message...',
                 border: OutlineInputBorder(
@@ -898,7 +922,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
                     senderName: displayName,
                     message: text.trim(),
                   );
-                  controller.clear();
+                  _messageController.clear();
                 }
               },
             ),
@@ -906,7 +930,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
           const SizedBox(width: 8),
           IconButton(
             onPressed: () async {
-              final text = controller.text.trim();
+              final text = _messageController.text.trim();
               if (text.isNotEmpty) {
                 await messageProvider.sendMessage(
                   clubId: widget.clubId,
@@ -915,11 +939,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
                   senderName: displayName,
                   message: text,
                 );
-                controller.clear();
+                _messageController.clear();
               }
             },
             icon: const Icon(Icons.send),
-            color: Colors.purple,
+            color: AppColors.middenblauw,
           ),
         ],
       ),
@@ -934,30 +958,30 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
 
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.blue.shade200),
+        border: Border.all(color: AppColors.lichtblauw.withOpacity(0.5)),
         borderRadius: BorderRadius.circular(12),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: ExpansionTile(
           initiallyExpanded: false, // Closed by default
-          backgroundColor: Colors.blue.shade50,
-          collapsedBackgroundColor: Colors.white,
+          backgroundColor: AppColors.lichtblauw.withOpacity(0.2),
+          collapsedBackgroundColor: Colors.white.withOpacity(0.9),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          leading: Icon(Icons.group, color: Colors.blue[700]),
+          leading: Icon(Icons.group, color: AppColors.middenblauw),
           title: Text(
             'Membres inscrits',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
-              color: Colors.grey[800],
+              color: AppColors.donkerblauw,
             ),
           ),
           subtitle: Text(
             '${participants.length} inscrit(s)',
             style: TextStyle(
               fontSize: 13,
-              color: Colors.blue[700],
+              color: AppColors.middenblauw,
             ),
           ),
           children: [
@@ -988,12 +1012,12 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
 
                         return ListTile(
                           leading: CircleAvatar(
-                            backgroundColor: isCurrentUser ? Colors.green.shade100 : Colors.blue.shade100,
+                            backgroundColor: isCurrentUser ? AppColors.lichtblauw.withOpacity(0.5) : AppColors.lichtblauw.withOpacity(0.3),
                             radius: 18,
                             child: Text(
                               prenom.isNotEmpty ? prenom[0].toUpperCase() : (nom.isNotEmpty ? nom[0].toUpperCase() : '?'),
                               style: TextStyle(
-                                color: isCurrentUser ? Colors.green.shade700 : Colors.blue.shade700,
+                                color: isCurrentUser ? AppColors.donkerblauw : AppColors.middenblauw,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 14,
                               ),
@@ -1013,14 +1037,14 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: Colors.green.shade100,
+                                    color: AppColors.lichtblauw.withOpacity(0.3),
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: Text(
                                     'vous',
                                     style: TextStyle(
                                       fontSize: 10,
-                                      color: Colors.green.shade700,
+                                      color: AppColors.donkerblauw,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
@@ -1199,7 +1223,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
         icon: const Icon(Icons.check_circle, color: Colors.white),
         label: const Text('S\'inscrire', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
         style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.green,
+          backgroundColor: AppColors.middenblauw,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),

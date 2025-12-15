@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../config/app_assets.dart';
+import '../../config/app_colors.dart';
 import '../../models/expense_claim.dart';
 import '../../providers/expense_provider.dart';
 import '../../utils/date_formatter.dart';
@@ -50,8 +52,8 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: Colors.orange,
+            colorScheme: ColorScheme.light(
+              primary: AppColors.middenblauw,
               onPrimary: Colors.white,
               surface: Colors.white,
               onSurface: Colors.black,
@@ -121,116 +123,155 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Modifier la demande', style: TextStyle(color: Colors.white)),
-        backgroundColor: Colors.orange,
-        iconTheme: const IconThemeData(color: Colors.white),
+    return Container(
+      decoration: BoxDecoration(
+        image: DecorationImage(
+          image: AssetImage(AppAssets.backgroundFull),
+          fit: BoxFit.cover,
+        ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Montant
-              TextFormField(
-                controller: _montantController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'Montant (€)',
-                  prefixIcon: Icon(Icons.euro, color: Colors.orange),
-                  border: OutlineInputBorder(),
-                  helperText: 'Ex: 25.50',
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Le montant est requis';
-                  }
-                  final montant = double.tryParse(value.trim());
-                  if (montant == null || montant <= 0) {
-                    return 'Montant invalide';
-                  }
-                  return null;
-                },
-              ),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          title: const Text('Modifier la demande', style: TextStyle(color: Colors.white)),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          iconTheme: const IconThemeData(color: Colors.white),
+        ),
+        body: SafeArea(
+          child: GestureDetector(
+            onTap: () => FocusScope.of(context).unfocus(),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight - 32, // Account for padding
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.lichtblauw.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.lichtblauw.withOpacity(0.5)),
+                      ),
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Montant
+                            TextFormField(
+                              controller: _montantController,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              decoration: InputDecoration(
+                                hintText: 'Montant (€)',
+                                prefixIcon: Icon(Icons.euro, color: AppColors.middenblauw),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                filled: true,
+                                fillColor: Colors.white,
+                              ),
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Le montant est requis';
+                                }
+                                final montant = double.tryParse(value.trim());
+                                if (montant == null || montant <= 0) {
+                                  return 'Montant invalide';
+                                }
+                                return null;
+                              },
+                            ),
 
-              const SizedBox(height: 16),
+                            const SizedBox(height: 12),
 
-              // Description
-              TextFormField(
-                controller: _descriptionController,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Description',
-                  prefixIcon: Icon(Icons.description, color: Colors.orange),
-                  border: OutlineInputBorder(),
-                  helperText: 'Décrivez la dépense',
-                ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'La description est requise';
-                  }
-                  if (value.trim().length < 5) {
-                    return 'Description trop courte (min 5 caractères)';
-                  }
-                  return null;
-                },
-              ),
+                            // Description
+                            TextFormField(
+                              controller: _descriptionController,
+                              maxLines: 2,
+                              textInputAction: TextInputAction.done,
+                              onFieldSubmitted: (_) => FocusScope.of(context).unfocus(),
+                              decoration: InputDecoration(
+                                hintText: 'Description de la dépense',
+                                prefixIcon: Icon(Icons.description, color: AppColors.middenblauw),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                filled: true,
+                                fillColor: Colors.white,
+                              ),
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'La description est requise';
+                                }
+                                if (value.trim().length < 5) {
+                                  return 'Description trop courte (min 5 caractères)';
+                                }
+                                return null;
+                              },
+                            ),
 
-              const SizedBox(height: 16),
+                            const SizedBox(height: 12),
 
-              // Date de la dépense
-              InkWell(
-                onTap: _selectDate,
-                child: InputDecorator(
-                  decoration: const InputDecoration(
-                    labelText: 'Date de la dépense',
-                    prefixIcon: Icon(Icons.calendar_today, color: Colors.orange),
-                    border: OutlineInputBorder(),
-                  ),
-                  child: Text(
-                    DateFormatter.formatMedium(_selectedDate),
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                ),
-              ),
+                            // Date de la dépense
+                            InkWell(
+                              onTap: _selectDate,
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.grey.shade400),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.calendar_today, color: AppColors.middenblauw),
+                                    const SizedBox(width: 12),
+                                    Text(
+                                      DateFormatter.formatMedium(_selectedDate),
+                                      style: const TextStyle(fontSize: 16),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
 
-              const SizedBox(height: 24),
+                            const SizedBox(height: 24),
 
-              // Submit button
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: _isSubmitting ? null : _handleSubmit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                            // Submit button - round blue
+                            Center(
+                              child: FloatingActionButton.extended(
+                                onPressed: _isSubmitting ? null : _handleSubmit,
+                                backgroundColor: AppColors.middenblauw,
+                                icon: _isSubmitting
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          color: Colors.white,
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.save, color: Colors.white),
+                                label: Text(
+                                  _isSubmitting ? 'Enregistrement...' : 'Enregistrer',
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                  child: _isSubmitting
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Text(
-                          'Enregistrer les modifications',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                ),
-              ),
-            ],
+                );
+              },
+            ),
           ),
         ),
       ),

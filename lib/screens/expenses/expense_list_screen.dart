@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/firebase_config.dart';
+import '../../config/app_assets.dart';
+import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../models/expense_claim.dart';
@@ -41,19 +43,34 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
     final expenses = expenseProvider.expenses;
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text('Mes demandes', style: TextStyle(color: Colors.white)),
-        backgroundColor: const Color(0xFFFF6F00),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: _buildBody(expenseProvider, expenses),
-      floatingActionButton: FloatingActionButton.extended(
+      body: Stack(
+        children: [
+          // Ocean background
+          Positioned.fill(
+            child: Image.asset(
+              AppAssets.backgroundFull,
+              fit: BoxFit.cover,
+            ),
+          ),
+          // Content
+          SafeArea(
+            child: _buildBody(expenseProvider, expenses),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
         onPressed: () {
           Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateExpenseScreen()));
         },
-        backgroundColor: Colors.orange,
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text('Nouvelle demande', style: TextStyle(color: Colors.white)),
+        backgroundColor: AppColors.middenblauw,
+        child: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }

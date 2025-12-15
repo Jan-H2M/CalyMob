@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import '../../config/app_assets.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/operation_provider.dart';
 import '../../models/user_event_registration.dart';
@@ -56,12 +57,14 @@ class _MyEventsScreenState extends State<MyEventsScreen> with SingleTickerProvid
     final operationProvider = context.watch<OperationProvider>();
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text(
           'Mes événements',
           style: TextStyle(color: Colors.white),
         ),
-        backgroundColor: const Color(0xFF7B1FA2), // Purple
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         bottom: TabBar(
           controller: _tabController,
@@ -74,15 +77,29 @@ class _MyEventsScreenState extends State<MyEventsScreen> with SingleTickerProvid
           ],
         ),
       ),
-      body: RefreshIndicator(
-        onRefresh: _refreshRegistrations,
-        child: TabBarView(
-          controller: _tabController,
-          children: [
-            _buildEventsList(operationProvider.upcomingEvents, isUpcoming: true),
-            _buildEventsList(operationProvider.pastEvents, isUpcoming: false),
-          ],
-        ),
+      body: Stack(
+        children: [
+          // Ocean background
+          Positioned.fill(
+            child: Image.asset(
+              AppAssets.backgroundFull,
+              fit: BoxFit.cover,
+            ),
+          ),
+          // Content
+          SafeArea(
+            child: RefreshIndicator(
+              onRefresh: _refreshRegistrations,
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildEventsList(operationProvider.upcomingEvents, isUpcoming: true),
+                  _buildEventsList(operationProvider.pastEvents, isUpcoming: false),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../config/app_assets.dart';
 import '../../widgets/event_discussion_tab.dart';
 
 class EventDiscussionScreen extends StatelessWidget {
@@ -16,6 +17,7 @@ class EventDiscussionScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -34,12 +36,27 @@ class EventDiscussionScreen extends StatelessWidget {
             ),
           ],
         ),
-        backgroundColor: Colors.teal,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: EventDiscussionTab(
-        clubId: clubId,
-        operationId: operationId,
+      body: Stack(
+        children: [
+          // Ocean background
+          Positioned.fill(
+            child: Image.asset(
+              AppAssets.backgroundFull,
+              fit: BoxFit.cover,
+            ),
+          ),
+          // Content
+          SafeArea(
+            child: EventDiscussionTab(
+              clubId: clubId,
+              operationId: operationId,
+            ),
+          ),
+        ],
       ),
     );
   }
