@@ -4,12 +4,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../services/auth_service.dart';
 import '../services/session_service.dart';
+import '../services/notification_service.dart';
 import '../config/firebase_config.dart';
 
 /// Provider pour l'état d'authentification
 class AuthProvider with ChangeNotifier {
   final AuthService _authService = AuthService();
   final SessionService _sessionService = SessionService();
+  final NotificationService _notificationService = NotificationService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   // Stream subscription for memory management
@@ -33,6 +35,11 @@ class AuthProvider with ChangeNotifier {
       _currentUser = user;
       if (user != null) {
         _loadUserDisplayName(user.uid);
+        // Enregistrer/mettre à jour le token FCM et les infos appareil à chaque ouverture
+        _notificationService.saveTokenToFirestore(
+          FirebaseConfig.defaultClubId,
+          user.uid,
+        );
       } else {
         _displayName = null;
       }
@@ -95,7 +102,10 @@ class AuthProvider with ChangeNotifier {
         clubId: clubId,
       );
 
-      debugPrint('✅ Login et session OK');
+      // 3. Enregistrer le token FCM et les infos de l'appareil
+      await _notificationService.saveTokenToFirestore(clubId, user.uid);
+
+      debugPrint('✅ Login, session et FCM token OK');
 
       _isLoading = false;
       notifyListeners();
