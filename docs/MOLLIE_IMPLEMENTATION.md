@@ -1,26 +1,30 @@
 # Mollie Payment Integration - CalyMob
 
 **Datum**: 16 december 2025
-**Status**: Geimplementeerd en gedeployed
-**Auteur**: Claude AI Assistant
+**Status**: Geïmplementeerd en gedeployed
+**Commit**: `eff38fe`
 
 ---
 
 ## Overzicht
 
-Mollie is geintegreerd als primaire betaalprovider voor CalyMob, waarmee leden hun evenement-inschrijvingen kunnen betalen via Belgische betaalmethodes.
+Mollie is geïntegreerd als primaire betaalprovider voor CalyMob, waarmee leden hun evenement-inschrijvingen kunnen betalen via Belgische betaalmethodes. De integratie volgt het bestaande Noda payment pattern en houdt legacy Ponto code voor backward compatibility.
 
 ### Ondersteunde Betaalmethodes
 
-- **Bancontact** - Meest populair in Belgie
-- **KBC/CBC** - KBC Payment Button
-- **Belfius** - Belfius Direct Net
-- **Credit/Debit Cards** - Visa, Mastercard
-- **Apple Pay** - Contactloos betalen
+| Methode | Code | Beschrijving |
+|---------|------|--------------|
+| Bancontact | `bancontact` | Meest populair in België |
+| KBC/CBC | `kbc` | KBC Payment Button |
+| Belfius | `belfius` | Belfius Direct Net |
+| Credit/Debit Cards | `creditcard` | Visa, Mastercard |
+| Apple Pay | `applepay` | Contactloos betalen |
 
 ---
 
-## Credentials (Sandbox/Test)
+## Credentials
+
+### Sandbox/Test
 
 | Parameter | Waarde |
 |-----------|--------|
@@ -29,7 +33,16 @@ Mollie is geintegreerd als primaire betaalprovider voor CalyMob, waarmee leden h
 | API Base URL | `https://api.mollie.com/v2` |
 | Webhook URL | `https://europe-west1-calycompta.cloudfunctions.net/mollieWebhook` |
 
-**Let op**: Voor productie moet `MOLLIE_API_KEY` environment variable geconfigureerd worden met de live API key.
+### Productie
+
+Voor productie moet `MOLLIE_API_KEY` environment variable geconfigureerd worden:
+```bash
+# Via Firebase Functions config
+firebase functions:config:set mollie.api_key="live_xxxxx"
+
+# Of via .env file in functions/
+MOLLIE_API_KEY=live_xxxxx
+```
 
 ---
 
@@ -74,18 +87,21 @@ Mollie is geintegreerd als primaire betaalprovider voor CalyMob, waarmee leden h
 
 ---
 
-## Geimplementeerde Bestanden
+## Geïmplementeerde Bestanden
 
 ### Cloud Functions (functions/)
 
 #### 1. functions/src/utils/mollie-client.js
 Mollie API client utility met axios.
 
-**Methodes**:
-- `constructor(apiKey)` - Initialiseer client met API key
-- `createPayment(paymentData)` - Maak nieuw payment aan
-- `getPaymentStatus(paymentId)` - Haal payment status op
-- `getPaymentMethods(options)` - Haal beschikbare methodes op
+```javascript
+class MollieClient {
+  constructor(apiKey)              // Bearer token auth
+  async createPayment(paymentData) // POST /v2/payments
+  async getPaymentStatus(paymentId) // GET /v2/payments/{id}
+  async getPaymentMethods(options)  // GET /v2/methods
+}
+```
 
 #### 2. functions/src/payment/createMolliePayment.js
 Firebase `onCall` function om betalingen aan te maken.
@@ -188,7 +204,6 @@ Data models voor payment responses.
 #### 2. lib/services/payment_service.dart
 Service voor API calls naar Cloud Functions.
 
-**Nieuw toegevoegd**:
 ```dart
 enum MolliePaymentMethod {
   bancontact,
@@ -217,7 +232,6 @@ Future<PaymentStatus> checkMolliePaymentStatus({
 #### 3. lib/providers/payment_provider.dart
 State management voor payments.
 
-**Nieuw toegevoegd**:
 ```dart
 String? get currentMolliePaymentId;
 String? get currentProvider;
@@ -302,6 +316,42 @@ mollieWebhook.js:
 
 ---
 
+## Mollie API Reference
+
+### Create Payment
+```
+POST https://api.mollie.com/v2/payments
+Authorization: Bearer {api_key}
+Content-Type: application/json
+
+{
+  "amount": { "currency": "EUR", "value": "25.00" },
+  "description": "Inscription Plongee Zeeland",
+  "redirectUrl": "https://calycompta.vercel.app/payment/return",
+  "webhookUrl": "https://europe-west1-calycompta.cloudfunctions.net/mollieWebhook",
+  "method": "bancontact", // optional - let customer choose if null
+  "locale": "nl_BE",
+  "metadata": {
+    "clubId": "calypso",
+    "operationId": "xxx",
+    "participantId": "xxx"
+  }
+}
+```
+
+### Response
+```json
+{
+  "id": "tr_xxx",
+  "status": "open",
+  "_links": {
+    "checkout": { "href": "https://www.mollie.com/checkout/..." }
+  }
+}
+```
+
+---
+
 ## Mollie Status Mapping
 
 | Mollie Status | Betekenis | paye | UI Actie |
@@ -364,6 +414,16 @@ mollieWebhook.js:
 6. Verifieer dat status polling "paid" detecteert
 7. Check Firestore: `paye: true`
 
+### Testing Checklist
+- [ ] Create payment in sandbox mode
+- [ ] Redirect to Mollie checkout works
+- [ ] Complete test payment (simulate paid)
+- [ ] Status polling detects completion
+- [ ] Firestore updated with paye=true
+- [ ] Webhook receives notification
+- [ ] Error handling (failed, canceled, expired)
+- [ ] UI shows correct status messages
+
 ---
 
 ## Deployment
@@ -375,24 +435,22 @@ npm install
 firebase deploy --only functions:createMolliePayment,functions:checkMolliePaymentStatus,functions:mollieWebhook
 ```
 
-### Environment variables (productie)
+### Alle functions deployen
 ```bash
-firebase functions:config:set mollie.api_key="live_xxxxx"
-```
-
-Of via `.env` file in functions/:
-```
-MOLLIE_API_KEY=live_xxxxx
+firebase deploy --only functions
 ```
 
 ---
 
 ## Backward Compatibility
 
-De legacy Ponto payment code is behouden:
-- `PaymentService.createPayment()` - Legacy Ponto
-- `PaymentService.checkPaymentStatus()` - Legacy Ponto
-- `PaymentProvider.startPaymentStatusPolling()` - Legacy Ponto
+De legacy payment code is behouden:
+
+| Provider | Create Method | Status Method |
+|----------|--------------|---------------|
+| **Mollie** (primary) | `createMolliePayment()` | `checkMolliePaymentStatus()` |
+| Ponto (legacy) | `createPayment()` | `checkPaymentStatus()` |
+| Noda (legacy) | via Cloud Functions | `checkNodaPaymentStatus()` |
 
 Mollie is nu de **default provider** voor nieuwe betalingen in `operation_detail_screen.dart`.
 
@@ -402,7 +460,7 @@ Mollie is nu de **default provider** voor nieuwe betalingen in `operation_detail
 
 1. **Redirect URL**: Momenteel wijst naar CalyCompta web app (`calycompta.vercel.app`). Voor deep linking naar de Flutter app zou een custom URL scheme nodig zijn.
 
-2. **Webhook betrouwbaarheid**: Als webhook faalt, detecteert de app dit alsnog via polling. Polling stopt na 5 minuten.
+2. **Webhook betrouwbaarheid**: Als webhook faalt, detecteert de app dit alsnog via polling. Polling stopt na 5 minuten (100 ticks × 3 seconden).
 
 3. **Methode selectie**: Momenteel laat de code de klant kiezen (`method: null`). Om een specifieke methode te forceren, geef `MolliePaymentMethod.bancontact` mee.
 
@@ -416,18 +474,9 @@ Mollie is nu de **default provider** voor nieuwe betalingen in `operation_detail
 
 ---
 
-## Commit
+## Versie Historie
 
-```
-feat: Integrate Mollie payment provider for event registrations
-
-- Add Mollie Cloud Functions (createMolliePayment, checkMolliePaymentStatus, mollieWebhook)
-- Create Mollie API client utility (mollie-client.js)
-- Update Flutter payment service with Mollie methods
-- Update payment provider with Mollie state management
-- Update operation detail screen to use Mollie as primary payment provider
-- Support Belgian payment methods: Bancontact, KBC/CBC, Belfius, Credit cards, Apple Pay
-```
-
-**Commit hash**: `eff38fe`
-**Datum**: 16 december 2025
+| Datum | Commit | Beschrijving |
+|-------|--------|--------------|
+| 16 dec 2025 | `eff38fe` | Initiële Mollie integratie |
+| 16 dec 2025 | `1fa264a` | Documentatie toegevoegd |
