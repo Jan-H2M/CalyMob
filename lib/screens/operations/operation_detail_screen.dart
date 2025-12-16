@@ -395,6 +395,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
     // Start polling for Mollie payment status
     paymentProvider.startMolliePaymentStatusPolling(
       clubId: widget.clubId,
+      operationId: widget.operationId,
       participantId: _userInscription!.id,
       onStatusUpdate: (PaymentStatus status) {
         if (status.isCompleted || status.paye) {

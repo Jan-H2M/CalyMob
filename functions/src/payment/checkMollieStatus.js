@@ -15,6 +15,7 @@ const MOLLIE_TEST_API_KEY = 'test_KmcCG7eVBTuJMrEUrfCS5FcMtJAa5V';
  *
  * @param {Object} request.data - Donnees de la requete
  * @param {string} request.data.clubId - ID du club
+ * @param {string} request.data.operationId - ID de l'operation (evenement)
  * @param {string} request.data.participantId - ID du participant
  * @returns {Promise<Object>} - { paymentId, molliePaymentId, status, paye, method, updatedAt }
  */
@@ -32,13 +33,13 @@ exports.checkMolliePaymentStatus = onCall(
     }
 
     const userId = request.auth.uid;
-    const { clubId, participantId } = request.data;
+    const { clubId, operationId, participantId } = request.data;
 
     // 2. Valider les parametres
-    if (!clubId || !participantId) {
+    if (!clubId || !operationId || !participantId) {
       throw new HttpsError(
         'invalid-argument',
-        'Parametres manquants: clubId, participantId requis'
+        'Parametres manquants: clubId, operationId, participantId requis'
       );
     }
 
@@ -46,10 +47,13 @@ exports.checkMolliePaymentStatus = onCall(
       const db = admin.firestore();
 
       // 3. Recuperer l'inscription
+      // Inscriptions are stored in: clubs/{clubId}/operations/{operationId}/inscriptions/{participantId}
       const participantRef = db
         .collection('clubs')
         .doc(clubId)
-        .collection('operation_participants')
+        .collection('operations')
+        .doc(operationId)
+        .collection('inscriptions')
         .doc(participantId);
 
       const participantDoc = await participantRef.get();

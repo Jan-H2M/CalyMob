@@ -74,7 +74,7 @@ exports.mollieWebhook = onRequest(
         userId
       } = metadata;
 
-      if (!clubId || !participantId) {
+      if (!clubId || !operationId || !participantId) {
         console.error('Metadata incompletes dans le paiement Mollie');
         // Log l'erreur mais retourner 200
         return res.status(200).send('Missing metadata');
@@ -83,10 +83,13 @@ exports.mollieWebhook = onRequest(
       const db = admin.firestore();
 
       // 5. Recuperer l'inscription
+      // Inscriptions are stored in: clubs/{clubId}/operations/{operationId}/inscriptions/{participantId}
       const participantRef = db
         .collection('clubs')
         .doc(clubId)
-        .collection('operation_participants')
+        .collection('operations')
+        .doc(operationId)
+        .collection('inscriptions')
         .doc(participantId);
 
       const participantDoc = await participantRef.get();

@@ -121,6 +121,7 @@ class PaymentService {
   ///
   /// Parameters:
   /// - [clubId]: Club ID
+  /// - [operationId]: Operation (event) ID
   /// - [participantId]: Participant ID
   ///
   /// Returns a [PaymentStatus] with current payment state
@@ -128,6 +129,7 @@ class PaymentService {
   /// Throws [PaymentException] on error
   Future<PaymentStatus> checkMolliePaymentStatus({
     required String clubId,
+    required String operationId,
     required String participantId,
   }) async {
     try {
@@ -135,6 +137,7 @@ class PaymentService {
 
       final result = await _functions.httpsCallable('checkMolliePaymentStatus').call({
         'clubId': clubId,
+        'operationId': operationId,
         'participantId': participantId,
       });
 

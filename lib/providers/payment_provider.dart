@@ -94,11 +94,13 @@ class PaymentProvider with ChangeNotifier {
   /// Returns current status or null on error
   Future<PaymentStatus?> checkMolliePaymentStatus({
     required String clubId,
+    required String operationId,
     required String participantId,
   }) async {
     try {
       return await _paymentService.checkMolliePaymentStatus(
         clubId: clubId,
+        operationId: operationId,
         participantId: participantId,
       );
     } on PaymentException catch (e) {
@@ -118,6 +120,7 @@ class PaymentProvider with ChangeNotifier {
   /// Automatically stops when payment is completed/failed
   void startMolliePaymentStatusPolling({
     required String clubId,
+    required String operationId,
     required String participantId,
     required Function(PaymentStatus) onStatusUpdate,
   }) {
@@ -141,6 +144,7 @@ class PaymentProvider with ChangeNotifier {
       try {
         final status = await _paymentService.checkMolliePaymentStatus(
           clubId: clubId,
+          operationId: operationId,
           participantId: participantId,
         );
         onStatusUpdate(status);

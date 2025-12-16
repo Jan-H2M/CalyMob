@@ -78,10 +78,13 @@ exports.createMolliePayment = onCall(
       const db = admin.firestore();
 
       // 3. Verifier que le participant existe et n'a pas deja paye
+      // Inscriptions are stored in: clubs/{clubId}/operations/{operationId}/inscriptions/{participantId}
       const participantRef = db
         .collection('clubs')
         .doc(clubId)
-        .collection('operation_participants')
+        .collection('operations')
+        .doc(operationId)
+        .collection('inscriptions')
         .doc(participantId);
 
       const participantDoc = await participantRef.get();
