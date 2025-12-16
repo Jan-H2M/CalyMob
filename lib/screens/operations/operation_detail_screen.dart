@@ -281,12 +281,12 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
     }
   }
 
-  /// Handle payment button press
+  /// Handle payment button press - Uses Mollie as primary payment provider
   Future<void> _handlePayment(double amount) async {
     if (_userInscription == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Inscription non trouvée'),
+          content: Text('Inscription non trouvee'),
           backgroundColor: Colors.red,
         ),
       );
@@ -304,24 +304,27 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
     });
 
     try {
-      // Create payment request via Ponto
-      final paymentUrl = await paymentProvider.createPayment(
+      // Create payment request via Mollie (primary provider)
+      final paymentUrl = await paymentProvider.createMolliePayment(
         clubId: widget.clubId,
         operationId: widget.operationId,
         participantId: _userInscription!.id,
         amount: amount,
         description: 'Inscription: ${operation.titre}',
+        // Let customer choose payment method (Bancontact, KBC, Belfius, etc.)
+        method: null,
+        locale: 'nl_BE',
       );
 
       if (paymentUrl != null && paymentUrl.isNotEmpty) {
-        // Open Ponto payment page in browser
+        // Open Mollie checkout page in browser
         final uri = Uri.parse(paymentUrl);
         if (await canLaunchUrl(uri)) {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
 
           // Show dialog to start polling after user returns
           if (mounted) {
-            _showPaymentStatusDialog(paymentProvider.currentPaymentId!);
+            _showMolliePaymentStatusDialog();
           }
         } else {
           throw Exception('Impossible d\'ouvrir la page de paiement');
@@ -331,7 +334,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(paymentProvider.errorMessage ?? 'Erreur lors de la création du paiement'),
+              content: Text(paymentProvider.errorMessage ?? 'Erreur lors de la creation du paiement'),
               backgroundColor: Colors.red,
             ),
           );
@@ -355,7 +358,60 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
     }
   }
 
-  /// Show dialog to check payment status after user returns from payment page
+  /// Show dialog to check Mollie payment status after user returns from checkout
+  void _showMolliePaymentStatusDialog() {
+    final paymentProvider = context.read<PaymentProvider>();
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Verification du paiement'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            const Text('Verification du statut de votre paiement...'),
+            const SizedBox(height: 8),
+            Text(
+              'Cela peut prendre quelques instants.',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              paymentProvider.stopPaymentStatusPolling();
+              Navigator.pop(dialogContext);
+            },
+            child: const Text('Annuler'),
+          ),
+        ],
+      ),
+    );
+
+    // Start polling for Mollie payment status
+    paymentProvider.startMolliePaymentStatusPolling(
+      clubId: widget.clubId,
+      participantId: _userInscription!.id,
+      onStatusUpdate: (PaymentStatus status) {
+        if (status.isCompleted || status.paye) {
+          // Payment successful!
+          Navigator.pop(context); // Close dialog
+          _onPaymentSuccess();
+        } else if (status.isFailed || status.isCancelled || status.isExpired) {
+          // Payment failed
+          Navigator.pop(context); // Close dialog
+          _onPaymentFailed(status.failureReason);
+        }
+        // If still pending/open, continue polling
+      },
+    );
+  }
+
+  /// Show dialog to check Ponto payment status after user returns (Legacy)
   void _showPaymentStatusDialog(String paymentId) {
     final paymentProvider = context.read<PaymentProvider>();
 
@@ -363,13 +419,13 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Vérification du paiement'),
+        title: const Text('Verification du paiement'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const CircularProgressIndicator(),
             const SizedBox(height: 16),
-            const Text('Vérification du statut de votre paiement...'),
+            const Text('Verification du statut de votre paiement...'),
             const SizedBox(height: 8),
             Text(
               'Cela peut prendre quelques instants.',

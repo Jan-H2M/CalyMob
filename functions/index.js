@@ -1,6 +1,6 @@
 /**
  * Cloud Functions for CalyMob (Gen2)
- * Payment management via Noda (Open Banking) and Push Notifications
+ * Payment management via Mollie & Noda (Open Banking) and Push Notifications
  */
 
 // Load environment variables from .env file (for local development)
@@ -24,6 +24,20 @@ const { checkNodaPaymentStatus } = require('./src/payment/checkStatus');
 exports.createNodaPayment = createNodaPayment;
 exports.nodaWebhook = nodaWebhook;
 exports.checkNodaPaymentStatus = checkNodaPaymentStatus;
+
+// =============================================================================
+// MOLLIE PAYMENT FUNCTIONS (Gen2)
+// =============================================================================
+
+// Import Mollie payment functions
+const { createMolliePayment } = require('./src/payment/createMolliePayment');
+const { mollieWebhook } = require('./src/payment/mollieWebhook');
+const { checkMolliePaymentStatus } = require('./src/payment/checkMollieStatus');
+
+// Export Mollie functions
+exports.createMolliePayment = createMolliePayment;
+exports.mollieWebhook = mollieWebhook;
+exports.checkMolliePaymentStatus = checkMolliePaymentStatus;
 
 // =============================================================================
 // PUSH NOTIFICATIONS (Gen2)
