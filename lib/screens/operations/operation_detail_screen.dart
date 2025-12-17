@@ -61,6 +61,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
   @override
   void dispose() {
     _messageController.dispose();
+    // Stop payment polling timer to prevent memory leaks
+    context.read<PaymentProvider>().stopPaymentStatusPolling();
     super.dispose();
   }
 
@@ -361,6 +363,15 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
   /// Show dialog to check Mollie payment status after user returns from checkout
   void _showMolliePaymentStatusDialog() {
     final paymentProvider = context.read<PaymentProvider>();
+    final navigatorState = Navigator.of(context);
+    bool dialogClosed = false;
+
+    void closeDialog() {
+      if (!dialogClosed && mounted) {
+        dialogClosed = true;
+        navigatorState.pop();
+      }
+    }
 
     showDialog(
       context: context,
@@ -384,7 +395,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
           TextButton(
             onPressed: () {
               paymentProvider.stopPaymentStatusPolling();
-              Navigator.pop(dialogContext);
+              closeDialog();
             },
             child: const Text('Annuler'),
           ),
@@ -400,11 +411,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
       onStatusUpdate: (PaymentStatus status) {
         if (status.isCompleted || status.paye) {
           // Payment successful!
-          Navigator.pop(context); // Close dialog
+          closeDialog();
           _onPaymentSuccess();
         } else if (status.isFailed || status.isCancelled || status.isExpired) {
           // Payment failed
-          Navigator.pop(context); // Close dialog
+          closeDialog();
           _onPaymentFailed(status.failureReason);
         }
         // If still pending/open, continue polling
@@ -415,6 +426,15 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
   /// Show dialog to check Ponto payment status after user returns (Legacy)
   void _showPaymentStatusDialog(String paymentId) {
     final paymentProvider = context.read<PaymentProvider>();
+    final navigatorState = Navigator.of(context);
+    bool dialogClosed = false;
+
+    void closeDialog() {
+      if (!dialogClosed && mounted) {
+        dialogClosed = true;
+        navigatorState.pop();
+      }
+    }
 
     showDialog(
       context: context,
@@ -438,7 +458,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
           TextButton(
             onPressed: () {
               paymentProvider.stopPaymentStatusPolling();
-              Navigator.pop(dialogContext);
+              closeDialog();
             },
             child: const Text('Annuler'),
           ),
@@ -455,11 +475,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
       onStatusUpdate: (PaymentStatus status) {
         if (status.isCompleted || status.paye) {
           // Payment successful!
-          Navigator.pop(context); // Close dialog
+          closeDialog();
           _onPaymentSuccess();
         } else if (status.isFailed || status.isCancelled) {
           // Payment failed
-          Navigator.pop(context); // Close dialog
+          closeDialog();
           _onPaymentFailed(status.failureReason);
         }
         // If still pending, continue polling
@@ -640,9 +660,12 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
         if (operation.dateDebut != null) ...[
           const Icon(Icons.calendar_today, size: 18, color: Colors.white70),
           const SizedBox(width: 6),
-          Text(
-            DateFormatter.formatLong(operation.dateDebut!),
-            style: const TextStyle(fontSize: 14, color: Colors.white),
+          Flexible(
+            child: Text(
+              DateFormatter.formatLong(operation.dateDebut!),
+              style: const TextStyle(fontSize: 14, color: Colors.white),
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ],
 
@@ -657,7 +680,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
         if (operation.lieu != null) ...[
           const Icon(Icons.location_on, size: 18, color: Colors.white70),
           const SizedBox(width: 6),
-          Expanded(
+          Flexible(
             child: Text(
               operation.lieu!,
               style: const TextStyle(fontSize: 14, color: Colors.white),
@@ -693,12 +716,15 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
         if (displayPrice != null && displayPrice > 0) ...[
           const Icon(Icons.euro, size: 18, color: Colors.white70),
           const SizedBox(width: 6),
-          Text(
-            CurrencyFormatter.format(displayPrice),
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: Colors.white,
+          Flexible(
+            child: Text(
+              CurrencyFormatter.format(displayPrice),
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
           // Show function if different from default
@@ -717,6 +743,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
                 ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
@@ -733,12 +760,15 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
         if (userLevel != null) ...[
           Icon(Icons.pool, size: 18, color: AppColors.lichtblauw),
           const SizedBox(width: 6),
-          Text(
-            'Niveau: $userLevel',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: AppColors.lichtblauw,
+          Flexible(
+            child: Text(
+              'Niveau: $userLevel',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.lichtblauw,
+              ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],

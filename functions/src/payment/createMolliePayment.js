@@ -10,9 +10,6 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const { MollieClient } = require('../utils/mollie-client');
 
-// Test API key for sandbox mode
-const MOLLIE_TEST_API_KEY = 'test_KmcCG7eVBTuJMrEUrfCS5FcMtJAa5V';
-
 /**
  * Fonction callable pour creer un paiement Mollie
  *
@@ -29,6 +26,8 @@ const MOLLIE_TEST_API_KEY = 'test_KmcCG7eVBTuJMrEUrfCS5FcMtJAa5V';
 exports.createMolliePayment = onCall(
   {
     region: 'europe-west1',
+    // Use Firebase Admin SDK service account for Firestore access
+    serviceAccount: `firebase-adminsdk-fbsvc@${process.env.GCLOUD_PROJECT}.iam.gserviceaccount.com`,
   },
   async (request) => {
     // 1. Verifier l'authentification
@@ -87,33 +86,53 @@ exports.createMolliePayment = onCall(
         .collection('inscriptions')
         .doc(participantId);
 
-      const participantDoc = await participantRef.get();
-
-      if (!participantDoc.exists) {
-        throw new HttpsError('not-found', 'Inscription non trouvee');
-      }
-
-      const participantData = participantDoc.data();
-
-      // Verifier que c'est bien l'inscription de l'utilisateur
-      if (participantData.membre_id !== userId) {
-        throw new HttpsError(
-          'permission-denied',
-          'Vous ne pouvez pas payer pour une autre personne'
-        );
-      }
-
-      if (participantData.paye === true) {
-        throw new HttpsError('already-exists', 'Paiement deja effectue');
-      }
-
-      // 4. Creer le paiement chez Mollie
-      // Use environment variable if available, otherwise use test key
-      const apiKey = process.env.MOLLIE_API_KEY || MOLLIE_TEST_API_KEY;
-      const mollieClient = new MollieClient(apiKey);
-
-      // Generate internal payment ID
+      // Generate internal payment ID early for transaction
       const internalPaymentId = `mol_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+
+      // Use transaction to prevent race conditions (double-payment)
+      // Mark payment as "initiating" atomically before calling Mollie
+      let participantData;
+      await db.runTransaction(async (transaction) => {
+        const participantDoc = await transaction.get(participantRef);
+
+        if (!participantDoc.exists) {
+          throw new HttpsError('not-found', 'Inscription non trouvee');
+        }
+
+        participantData = participantDoc.data();
+
+        // Verifier que c'est bien l'inscription de l'utilisateur
+        if (participantData.membre_id !== userId) {
+          throw new HttpsError(
+            'permission-denied',
+            'Vous ne pouvez pas payer pour une autre personne'
+          );
+        }
+
+        // Check if already paid
+        if (participantData.paye === true) {
+          throw new HttpsError('already-exists', 'Paiement deja effectue');
+        }
+
+        // Check if payment is already in progress (prevents double-click race condition)
+        if (participantData.payment_status === 'initiating' || participantData.payment_status === 'open') {
+          throw new HttpsError('already-exists', 'Un paiement est deja en cours');
+        }
+
+        // Mark as initiating to prevent concurrent payment attempts
+        transaction.update(participantRef, {
+          payment_status: 'initiating',
+          payment_id: internalPaymentId,
+          updated_at: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      });
+
+      // 4. Creer le paiement chez Mollie (outside transaction - external API call)
+      const apiKey = process.env.MOLLIE_API_KEY;
+      if (!apiKey) {
+        throw new HttpsError('failed-precondition', 'Configuration paiement manquante. Contactez l\'administrateur.');
+      }
+      const mollieClient = new MollieClient(apiKey);
 
       // URL de webhook pour recevoir les notifications
       const webhookUrl = `https://europe-west1-${process.env.GCLOUD_PROJECT}.cloudfunctions.net/mollieWebhook`;
@@ -155,7 +174,18 @@ exports.createMolliePayment = onCall(
         participantId
       });
 
-      const mollieResponse = await mollieClient.createPayment(molliePaymentData);
+      let mollieResponse;
+      try {
+        mollieResponse = await mollieClient.createPayment(molliePaymentData);
+      } catch (mollieError) {
+        // Reset payment status if Mollie fails
+        await participantRef.update({
+          payment_status: null,
+          payment_id: null,
+          updated_at: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        throw mollieError;
+      }
 
       console.log('Paiement Mollie cree:', mollieResponse.id, 'status:', mollieResponse.status);
 

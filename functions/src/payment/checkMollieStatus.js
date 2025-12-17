@@ -7,9 +7,6 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const { MollieClient } = require('../utils/mollie-client');
 
-// Test API key for sandbox mode
-const MOLLIE_TEST_API_KEY = 'test_KmcCG7eVBTuJMrEUrfCS5FcMtJAa5V';
-
 /**
  * Fonction callable pour verifier le statut d'un paiement Mollie
  *
@@ -22,6 +19,8 @@ const MOLLIE_TEST_API_KEY = 'test_KmcCG7eVBTuJMrEUrfCS5FcMtJAa5V';
 exports.checkMolliePaymentStatus = onCall(
   {
     region: 'europe-west1',
+    // Use Firebase Admin SDK service account for Firestore access
+    serviceAccount: `firebase-adminsdk-fbsvc@${process.env.GCLOUD_PROJECT}.iam.gserviceaccount.com`,
   },
   async (request) => {
     // 1. Verifier l'authentification
@@ -99,7 +98,10 @@ exports.checkMolliePaymentStatus = onCall(
       // 6. Appeler l'API Mollie pour verifier le statut
       console.log('Verification statut Mollie:', molliePaymentId);
 
-      const apiKey = process.env.MOLLIE_API_KEY || MOLLIE_TEST_API_KEY;
+      const apiKey = process.env.MOLLIE_API_KEY;
+      if (!apiKey) {
+        throw new HttpsError('failed-precondition', 'Configuration paiement manquante');
+      }
       const mollieClient = new MollieClient(apiKey);
       const paymentStatus = await mollieClient.getPaymentStatus(molliePaymentId);
 

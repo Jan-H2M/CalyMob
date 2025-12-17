@@ -5,14 +5,15 @@
  * Important: Mollie envoie seulement { id: "tr_xxx" } dans le webhook.
  * On doit recuperer les details complets via l'API.
  * On retourne toujours 200 OK pour eviter les retries inutiles.
+ *
+ * Security: Mollie webhooks are verified by fetching payment details from the API.
+ * Only valid payment IDs that exist in your Mollie account will return data.
+ * This is the recommended verification method by Mollie.
  */
 
 const { onRequest } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const { MollieClient } = require('../utils/mollie-client');
-
-// Test API key for sandbox mode
-const MOLLIE_TEST_API_KEY = 'test_KmcCG7eVBTuJMrEUrfCS5FcMtJAa5V';
 
 /**
  * Webhook pour recevoir les notifications Mollie
@@ -23,6 +24,8 @@ const MOLLIE_TEST_API_KEY = 'test_KmcCG7eVBTuJMrEUrfCS5FcMtJAa5V';
 exports.mollieWebhook = onRequest(
   {
     region: 'europe-west1',
+    // Use Firebase Admin SDK service account for Firestore access
+    serviceAccount: `firebase-adminsdk-fbsvc@${process.env.GCLOUD_PROJECT}.iam.gserviceaccount.com`,
   },
   async (req, res) => {
     // 1. Verifier que c'est une requete POST
@@ -44,7 +47,12 @@ exports.mollieWebhook = onRequest(
       }
 
       // 3. Recuperer les details du paiement via l'API Mollie
-      const apiKey = process.env.MOLLIE_API_KEY || MOLLIE_TEST_API_KEY;
+      // This also serves as webhook verification - only valid Mollie payments will return data
+      const apiKey = process.env.MOLLIE_API_KEY;
+      if (!apiKey) {
+        console.error('MOLLIE_API_KEY environment variable not configured');
+        return res.status(500).send('Server configuration error');
+      }
       const mollieClient = new MollieClient(apiKey);
 
       let paymentData;

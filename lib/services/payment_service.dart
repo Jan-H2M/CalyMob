@@ -51,7 +51,7 @@ extension MolliePaymentMethodExtension on MolliePaymentMethod {
 /// Mollie is the primary payment provider for Belgian payments:
 /// - Bancontact, KBC/CBC, Belfius, Credit cards, Apple Pay
 class PaymentService {
-  final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(region: 'europe-west1');
 
   // ============================================================================
   // MOLLIE PAYMENTS (Primary)

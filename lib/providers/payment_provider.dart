@@ -17,6 +17,7 @@ class PaymentProvider with ChangeNotifier {
   String? _errorMessage;
   String? _currentProvider; // 'mollie' or 'ponto'
   Timer? _statusCheckTimer;
+  bool _isPollingInProgress = false; // Prevents overlapping async polls
 
   // Current payment context for status polling
   String? _currentClubId;
@@ -128,10 +129,18 @@ class PaymentProvider with ChangeNotifier {
 
     int tickCount = 0;
     const maxTicks = 100; // 5 minutes (100 * 3 seconds)
+    int consecutiveErrors = 0;
+    const maxConsecutiveErrors = 5;
 
     debugPrint('🔄 Starting Mollie payment status polling for participant: $participantId');
 
     _statusCheckTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+      // Prevent overlapping async operations
+      if (_isPollingInProgress) {
+        debugPrint('⏳ Mollie poll skipped - previous poll still in progress');
+        return;
+      }
+
       tickCount++;
 
       // Stop after 5 minutes
@@ -141,12 +150,15 @@ class PaymentProvider with ChangeNotifier {
         return;
       }
 
+      _isPollingInProgress = true;
       try {
         final status = await _paymentService.checkMolliePaymentStatus(
           clubId: clubId,
           operationId: operationId,
           participantId: participantId,
-        );
+        ).timeout(const Duration(seconds: 10)); // Add timeout to prevent hanging
+
+        consecutiveErrors = 0; // Reset error count on success
         onStatusUpdate(status);
 
         // Stop if payment is final (success or failure)
@@ -155,8 +167,16 @@ class PaymentProvider with ChangeNotifier {
           stopPaymentStatusPolling();
         }
       } catch (e) {
-        debugPrint('❌ Error checking Mollie payment status: $e');
-        // Continue polling despite errors
+        consecutiveErrors++;
+        debugPrint('❌ Error checking Mollie payment status ($consecutiveErrors/$maxConsecutiveErrors): $e');
+
+        // Stop polling after too many consecutive errors
+        if (consecutiveErrors >= maxConsecutiveErrors) {
+          debugPrint('🛑 Mollie polling stopped due to repeated errors');
+          stopPaymentStatusPolling();
+        }
+      } finally {
+        _isPollingInProgress = false;
       }
     });
   }
@@ -299,6 +319,7 @@ class PaymentProvider with ChangeNotifier {
   void stopPaymentStatusPolling() {
     _statusCheckTimer?.cancel();
     _statusCheckTimer = null;
+    _isPollingInProgress = false;
   }
 
   /// Resets provider state
