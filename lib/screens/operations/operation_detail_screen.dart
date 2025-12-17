@@ -49,6 +49,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
   bool _isPaymentProcessing = false;
   final TextEditingController _messageController = TextEditingController();
 
+  // Store provider reference for safe disposal
+  PaymentProvider? _paymentProvider;
+
   @override
   void initState() {
     super.initState();
@@ -59,10 +62,17 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Store provider reference for safe access in dispose()
+    _paymentProvider = context.read<PaymentProvider>();
+  }
+
+  @override
   void dispose() {
     _messageController.dispose();
     // Stop payment polling timer to prevent memory leaks
-    context.read<PaymentProvider>().stopPaymentStatusPolling();
+    _paymentProvider?.stopPaymentStatusPolling();
     super.dispose();
   }
 
@@ -209,6 +219,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
         );
 
         if (mounted) {
+          // Load the inscription data so payment button works
+          await _loadUserInscription();
+
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Inscription réussie !'),
@@ -623,8 +636,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
                       _buildInscribedMembersAccordion(operationProvider),
                       const SizedBox(height: 12),
 
-                      // 4. Course selection (only if registered) - exercises last
-                      if (isRegistered) ...[
+                      // 4. Course selection (only if registered AND plongee event) - exercises last
+                      if (isRegistered && operation.categorie == 'plongee') ...[
                         _buildCourseSelection(),
                       ],
                     ],
@@ -692,9 +705,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
     );
   }
 
-  /// Price + User's function and level
+  /// Price + User's function and level (level only for plongee events)
   Widget _buildPriceAndLevel(operation) {
     final userLevel = _userProfile?.plongeurCode;
+    final isPlongee = operation.categorie == 'plongee';
 
     // Calculate the user's price based on their function
     double? userPrice;
@@ -749,15 +763,15 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
           ],
         ],
 
-        // Separator
-        if (displayPrice != null && displayPrice > 0 && userLevel != null) ...[
+        // Separator (only show if both price and level are visible)
+        if (displayPrice != null && displayPrice > 0 && userLevel != null && isPlongee) ...[
           const SizedBox(width: 16),
           const Text('|', style: TextStyle(color: Colors.white54)),
           const SizedBox(width: 16),
         ],
 
-        // User level
-        if (userLevel != null) ...[
+        // User level (only for plongee events)
+        if (userLevel != null && isPlongee) ...[
           Icon(Icons.pool, size: 18, color: AppColors.lichtblauw),
           const SizedBox(width: 6),
           Flexible(

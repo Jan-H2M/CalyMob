@@ -71,16 +71,30 @@ class Operation {
       capaciteMax: data['capacite_max'],
       prixMembre: (data['prix_membre'] as num?)?.toDouble(),
       prixNonMembre: (data['prix_non_membre'] as num?)?.toDouble(),
-      eventTariffs: (data['event_tariffs'] as List<dynamic>?)
-              ?.map((t) => Tariff.fromMap(t as Map<String, dynamic>))
-              .toList() ??
-          [],
+      eventTariffs: _parseTariffs(data['event_tariffs']),
       organisateurId: data['organisateur_id'],
       organisateurNom: data['organisateur_nom'],
       communication: data['communication'],
       createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (data['updated_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
+  }
+
+  /// Parse tariffs from Firestore data with debug logging
+  static List<Tariff> _parseTariffs(dynamic tariffsData) {
+    if (tariffsData == null) return [];
+
+    final tariffsList = tariffsData as List<dynamic>;
+    final tariffs = tariffsList
+        .map((t) => Tariff.fromMap(t as Map<String, dynamic>))
+        .toList();
+
+    // Debug logging
+    if (tariffs.isNotEmpty) {
+      print('📊 Parsed ${tariffs.length} tariffs: ${tariffs.map((t) => "${t.label}=${t.price}€ (cat:${t.category})").join(", ")}');
+    }
+
+    return tariffs;
   }
 
   /// Est-ce que l'événement accepte encore des inscriptions ?

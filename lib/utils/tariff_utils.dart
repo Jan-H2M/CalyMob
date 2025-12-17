@@ -49,6 +49,11 @@ class TariffUtils {
         }
       }
 
+      // Si toujours pas trouvé, utiliser le premier tarif disponible (pour sorties avec tarif simple)
+      if (operation.eventTariffs.isNotEmpty) {
+        return operation.eventTariffs.first.price;
+      }
+
       // Aucun tarif trouvé
       return 0.0;
     }
