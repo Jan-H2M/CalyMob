@@ -934,10 +934,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
             ),
           ),
           children: [
-            Container(
+            Material(
               color: Colors.white,
-              height: 300, // Fixed height for chat
-              child: StreamBuilder<List<EventMessage>>(
+              child: SizedBox(
+                height: 300, // Fixed height for chat
+                child: StreamBuilder<List<EventMessage>>(
                 stream: messageProvider.watchMessages(widget.clubId, widget.operationId),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
@@ -1008,6 +1009,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                   );
                 },
               ),
+              ),
             ),
           ],
         ),
@@ -1051,60 +1053,72 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
 
   /// Message input field
   Widget _buildMessageInputField(EventMessageProvider messageProvider, String userId, String displayName) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.grey[300]!)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _messageController,
-              decoration: InputDecoration(
-                hintText: 'Votre message...',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  borderSide: BorderSide(color: Colors.grey[300]!),
+    return Material(
+      color: Colors.white,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: Colors.grey[300]!)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _messageController,
+                decoration: InputDecoration(
+                  hintText: 'Votre message...',
+                  filled: true,
+                  fillColor: Colors.grey[100],
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    borderSide: BorderSide(color: Colors.grey[300]!),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    borderSide: BorderSide(color: AppColors.middenblauw, width: 2),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                isDense: true,
+                textInputAction: TextInputAction.send,
+                onSubmitted: (text) async {
+                  if (text.trim().isNotEmpty) {
+                    await messageProvider.sendMessage(
+                      clubId: widget.clubId,
+                      operationId: widget.operationId,
+                      senderId: userId,
+                      senderName: displayName,
+                      message: text.trim(),
+                    );
+                    _messageController.clear();
+                  }
+                },
               ),
-              textInputAction: TextInputAction.send,
-              onSubmitted: (text) async {
-                if (text.trim().isNotEmpty) {
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              onPressed: () async {
+                final text = _messageController.text.trim();
+                if (text.isNotEmpty) {
                   await messageProvider.sendMessage(
                     clubId: widget.clubId,
                     operationId: widget.operationId,
                     senderId: userId,
                     senderName: displayName,
-                    message: text.trim(),
+                    message: text,
                   );
                   _messageController.clear();
                 }
               },
+              icon: const Icon(Icons.send),
+              color: AppColors.middenblauw,
             ),
-          ),
-          const SizedBox(width: 8),
-          IconButton(
-            onPressed: () async {
-              final text = _messageController.text.trim();
-              if (text.isNotEmpty) {
-                await messageProvider.sendMessage(
-                  clubId: widget.clubId,
-                  operationId: widget.operationId,
-                  senderId: userId,
-                  senderName: displayName,
-                  message: text,
-                );
-                _messageController.clear();
-              }
-            },
-            icon: const Icon(Icons.send),
-            color: AppColors.middenblauw,
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
