@@ -7,14 +7,32 @@ set -e
 
 echo "=== CI Post Clone Script ==="
 
+# Navigate to repository root
+cd "$CI_PRIMARY_REPOSITORY_PATH"
+
+# Install Flutter
+echo "Installing Flutter..."
+git clone https://github.com/flutter/flutter.git --depth 1 -b stable "$HOME/flutter"
+export PATH="$PATH:$HOME/flutter/bin"
+
+# Disable analytics
+flutter config --no-analytics
+
+# Get Flutter dependencies
+echo "Getting Flutter dependencies..."
+flutter pub get
+
+# Generate iOS project files
+echo "Generating iOS project files..."
+flutter build ios --release --no-codesign || true
+
 # Navigate to ios directory
 cd "$CI_PRIMARY_REPOSITORY_PATH/ios"
 
 # Clean any existing Pods
 echo "Cleaning existing Pods..."
 rm -rf Pods
-rm -rf ~/Library/Caches/CocoaPods
-rm -rf ~/.cocoapods/repos
+rm -rf Podfile.lock
 
 # Install CocoaPods if needed
 if ! command -v pod &> /dev/null; then
@@ -22,9 +40,8 @@ if ! command -v pod &> /dev/null; then
     gem install cocoapods
 fi
 
-# Update repo and install pods
+# Install pods
 echo "Installing Pods..."
-pod repo update
 pod install --repo-update
 
 echo "=== CI Post Clone Complete ==="
