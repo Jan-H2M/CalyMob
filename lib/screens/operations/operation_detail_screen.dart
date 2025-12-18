@@ -38,7 +38,7 @@ class OperationDetailScreen extends StatefulWidget {
   State<OperationDetailScreen> createState() => _OperationDetailScreenState();
 }
 
-class _OperationDetailScreenState extends State<OperationDetailScreen> {
+class _OperationDetailScreenState extends State<OperationDetailScreen> with WidgetsBindingObserver {
   final ProfileService _profileService = ProfileService();
   final LifrasService _lifrasService = LifrasService();
   final OperationService _operationService = OperationService();
@@ -57,14 +57,34 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
   // Deep link subscription for payment return
   StreamSubscription<PaymentReturnData>? _deepLinkSubscription;
 
+  // Flag to track if we're waiting for payment return
+  bool _awaitingPaymentReturn = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadOperation();
       _loadUserProfile();
       _setupDeepLinkListener();
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // When app resumes and we were waiting for payment, show status dialog
+    if (state == AppLifecycleState.resumed && _awaitingPaymentReturn) {
+      _awaitingPaymentReturn = false;
+      if (mounted && _userInscription != null) {
+        // Small delay to ensure app is fully resumed
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) {
+            _showMolliePaymentStatusDialog();
+          }
+        });
+      }
+    }
   }
 
   /// Setup listener for payment return deep links
@@ -95,6 +115,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _messageController.dispose();
     // Stop payment polling timer to prevent memory leaks
     _paymentProvider?.stopPaymentStatusPolling();
@@ -359,15 +380,24 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
       );
 
       if (paymentUrl != null && paymentUrl.isNotEmpty) {
+        // Show instruction before opening payment page
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Vous allez être redirigé vers la page de paiement. Revenez à CalyMob après avoir effectué le paiement.'),
+              backgroundColor: Colors.blue,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+
         // Open Mollie checkout page in browser
         final uri = Uri.parse(paymentUrl);
         if (await canLaunchUrl(uri)) {
+          // Mark that we're waiting for payment return
+          _awaitingPaymentReturn = true;
           await launchUrl(uri, mode: LaunchMode.externalApplication);
-
-          // Show dialog to start polling after user returns
-          if (mounted) {
-            _showMolliePaymentStatusDialog();
-          }
+          // Status dialog will be shown when app resumes (via WidgetsBindingObserver)
         } else {
           throw Exception('Impossible d\'ouvrir la page de paiement');
         }
