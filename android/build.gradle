@@ -25,6 +25,22 @@ subprojects {
 }
 subprojects {
     project.evaluationDependsOn(':app')
+
+    // Fix for deprecated plugins that don't specify namespace
+    project.plugins.withId('com.android.library') {
+        project.android {
+            if (namespace == null) {
+                def manifest = file("${project.projectDir}/src/main/AndroidManifest.xml")
+                if (manifest.exists()) {
+                    def xml = new XmlParser().parse(manifest)
+                    def packageName = xml.@package
+                    if (packageName) {
+                        namespace = packageName
+                    }
+                }
+            }
+        }
+    }
 }
 
 tasks.register("clean", Delete) {

@@ -61,9 +61,6 @@ dependencies:
   # Local Notifications (for Android notification channel)
   flutter_local_notifications: ^18.0.1
 
-  # App Badge Management
-  flutter_app_badger: ^1.5.0
-
   # Device & App Info (for app installation tracking)
   device_info_plus: ^10.1.2
   package_info_plus: ^8.1.1

@@ -54,25 +54,39 @@ class NotificationService {
     }
   }
 
-  /// Créer le canal de notification pour Android 8+ (API 26+)
+  /// Créer les canaux de notification pour Android 8+ (API 26+)
   Future<void> _createNotificationChannel() async {
     try {
-      const AndroidNotificationChannel channel = AndroidNotificationChannel(
-        'announcements', // id - must match default_channel_id in AndroidManifest
-        'Annonces du club', // name
+      final androidPlugin = _localNotifications
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+
+      if (androidPlugin == null) return;
+
+      // Canal pour les annonces du club
+      const announcementsChannel = AndroidNotificationChannel(
+        'announcements',
+        'Annonces du club',
         description: 'Notifications pour les annonces importantes du club',
         importance: Importance.high,
         playSound: true,
         enableVibration: true,
       );
+      await androidPlugin.createNotificationChannel(announcementsChannel);
 
-      await _localNotifications
-          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-          ?.createNotificationChannel(channel);
+      // Canal pour les messages d'événements
+      const eventMessagesChannel = AndroidNotificationChannel(
+        'event_messages',
+        'Messages d\'événements',
+        description: 'Notifications pour les nouveaux messages dans les événements',
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+      );
+      await androidPlugin.createNotificationChannel(eventMessagesChannel);
 
-      debugPrint('✅ Canal de notification Android créé');
+      debugPrint('✅ Canaux de notification Android créés');
     } catch (e) {
-      debugPrint('❌ Erreur création canal notification: $e');
+      debugPrint('❌ Erreur création canaux notification: $e');
     }
   }
 
@@ -293,6 +307,14 @@ class NotificationService {
       debugPrint('❌ Erreur demande permission: $e');
       return false;
     }
+  }
+
+  /// Effacer le badge de l'icône de l'app
+  /// Note: flutter_app_badger was removed due to incompatibility with AGP 8.9+
+  /// Badge clearing is now handled by the OS when app is opened
+  Future<void> clearBadge() async {
+    // Badge is automatically cleared by iOS/Android when app opens
+    debugPrint('ℹ️ Badge clearing handled by OS');
   }
 }
 
