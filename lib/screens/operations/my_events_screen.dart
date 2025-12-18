@@ -265,8 +265,21 @@ class _MyEventsScreenState extends State<MyEventsScreen> with SingleTickerProvid
   }
 
   Widget _buildStatusBadge(UserEventRegistration registration) {
-    final color = registration.isPaid ? Colors.green : Colors.orange;
-    final icon = registration.isPaid ? Icons.check_circle : Icons.pending;
+    // Determine color based on payment status
+    Color color;
+    IconData icon;
+
+    if (!registration.isPaid) {
+      color = Colors.orange;
+      icon = Icons.pending;
+    } else if (registration.isPaidAwaitingBank) {
+      color = Colors.amber.shade700;
+      icon = Icons.schedule;
+    } else {
+      color = Colors.green;
+      icon = Icons.check_circle;
+    }
+
     final label = registration.statusLabel;
 
     return Container(

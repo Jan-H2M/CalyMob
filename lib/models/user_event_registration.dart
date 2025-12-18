@@ -21,15 +21,23 @@ class UserEventRegistration {
   /// L'événement est-il payé ?
   bool get isPaid => participant.paye;
 
+  /// Payment is confirmed via Mollie but bank transaction not yet matched
+  bool get isPaidAwaitingBank => participant.isPaidAwaitingBank;
+
+  /// Payment is fully confirmed (bank transaction matched)
+  bool get isFullyPaid => participant.isFullyPaid;
+
   /// Statut pour l'affichage
   String get statusLabel {
-    if (isPaid) return 'Payé';
-    return 'À payer';
+    if (!isPaid) return 'À payer';
+    if (isPaidAwaitingBank) return 'En attente banque';
+    return 'Payé';
   }
 
   /// Couleur du badge de statut
   String get statusColor {
-    if (isPaid) return 'green';
-    return 'orange';
+    if (!isPaid) return 'orange';
+    if (isPaidAwaitingBank) return 'amber';
+    return 'green';
   }
 }

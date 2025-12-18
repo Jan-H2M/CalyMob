@@ -681,6 +681,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
                 isFull: isFull,
                 isPaid: isPaid,
                 inscriptionPrice: inscriptionPrice,
+                userInscription: userInscription,
               ),
             ],
           );
@@ -1201,6 +1202,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
     required bool isFull,
     required bool isPaid,
     required double inscriptionPrice,
+    ParticipantOperation? userInscription,
   }) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1253,30 +1255,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
               const SizedBox(height: 12),
             ],
 
-            // Show "Paid" badge if already paid
+            // Show payment status badge if paid
             if (isRegistered && isPaid) ...[
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade100,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.check_circle, color: Colors.green.shade700, size: 20),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Inscription payée',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.green.shade700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              _buildPaymentStatusBadge(userInscription),
               const SizedBox(height: 12),
             ],
 
@@ -1289,6 +1270,66 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Build payment status badge with different states
+  Widget _buildPaymentStatusBadge(ParticipantOperation? inscription) {
+    if (inscription == null) return const SizedBox.shrink();
+
+    final isAwaitingBank = inscription.isPaidAwaitingBank;
+    final isFullyPaid = inscription.isFullyPaid;
+
+    // Determine colors and text based on status
+    Color bgColor;
+    Color textColor;
+    IconData icon;
+    String text;
+
+    if (isFullyPaid) {
+      // Fully paid - bank transaction matched
+      bgColor = Colors.green.shade100;
+      textColor = Colors.green.shade700;
+      icon = Icons.check_circle;
+      text = 'Payé';
+    } else if (isAwaitingBank) {
+      // Paid via CalyMob but awaiting bank processing
+      bgColor = Colors.orange.shade100;
+      textColor = Colors.orange.shade700;
+      icon = Icons.schedule;
+      text = 'Payé via CalyMob\nEn attente de traitement bancaire';
+    } else {
+      // Fallback - just show paid (legacy data without transaction_matched)
+      bgColor = Colors.green.shade100;
+      textColor = Colors.green.shade700;
+      icon = Icons.check_circle;
+      text = 'Inscription payée';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: textColor, size: 20),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              text,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: textColor,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -15,6 +15,8 @@ class ParticipantOperation {
   final String? commentaire;
   final String? notes;
   final List<String> exercices; // IDs des exercices LIFRAS sélectionnés
+  final String? paymentStatus; // Mollie status: open, pending, paid, failed, canceled, expired
+  final bool transactionMatched; // True when bank transaction is matched in CalyCompta
 
   ParticipantOperation({
     required this.id,
@@ -30,7 +32,22 @@ class ParticipantOperation {
     this.commentaire,
     this.notes,
     this.exercices = const [],
+    this.paymentStatus,
+    this.transactionMatched = false,
   });
+
+  /// Payment is confirmed via Mollie but bank transaction not yet matched
+  bool get isPaidAwaitingBank => paye && !transactionMatched;
+
+  /// Payment is fully confirmed (bank transaction matched)
+  bool get isFullyPaid => paye && transactionMatched;
+
+  /// Get display status for payment
+  String get paymentDisplayStatus {
+    if (!paye) return 'À payer';
+    if (isPaidAwaitingBank) return 'Payé via CalyMob\nEn attente de traitement bancaire';
+    return 'Payé';
+  }
 
   /// Convertir depuis Firestore
   /// Supports both 'operation_id' and legacy 'evenement_id' fields
@@ -62,6 +79,8 @@ class ParticipantOperation {
       commentaire: data['commentaire'],
       notes: data['notes'],
       exercices: List<String>.from(data['exercices'] ?? []),
+      paymentStatus: data['payment_status'],
+      transactionMatched: data['transaction_matched'] ?? false,
     );
   }
 
@@ -80,6 +99,8 @@ class ParticipantOperation {
       'commentaire': commentaire,
       'notes': notes,
       'exercices': exercices,
+      'payment_status': paymentStatus,
+      'transaction_matched': transactionMatched,
       'created_at': FieldValue.serverTimestamp(),
       'updated_at': FieldValue.serverTimestamp(),
     };
@@ -100,6 +121,8 @@ class ParticipantOperation {
     String? commentaire,
     String? notes,
     List<String>? exercices,
+    String? paymentStatus,
+    bool? transactionMatched,
   }) {
     return ParticipantOperation(
       id: id ?? this.id,
@@ -115,6 +138,8 @@ class ParticipantOperation {
       commentaire: commentaire ?? this.commentaire,
       notes: notes ?? this.notes,
       exercices: exercices ?? this.exercices,
+      paymentStatus: paymentStatus ?? this.paymentStatus,
+      transactionMatched: transactionMatched ?? this.transactionMatched,
     );
   }
 }
