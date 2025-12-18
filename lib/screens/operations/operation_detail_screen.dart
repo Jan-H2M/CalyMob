@@ -934,11 +934,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
             ),
           ),
           children: [
-            Material(
+            // Messages list - fixed height
+            Container(
               color: Colors.white,
-              child: SizedBox(
-                height: 300, // Fixed height for chat
-                child: StreamBuilder<List<EventMessage>>(
+              height: 250,
+              child: StreamBuilder<List<EventMessage>>(
                 stream: messageProvider.watchMessages(widget.clubId, widget.operationId),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
@@ -953,64 +953,54 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
 
                   final messages = snapshot.data ?? [];
 
-                  return Column(
-                    children: [
-                      // Messages list
-                      Expanded(
-                        child: messages.isEmpty
-                            ? Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.chat_bubble_outline, size: 48, color: Colors.grey[400]),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'Aucun message',
-                                      style: TextStyle(color: Colors.grey[600]),
-                                    ),
-                                  ],
-                                ),
-                              )
-                            : ListView.builder(
-                                padding: const EdgeInsets.all(12),
-                                itemCount: messages.length,
-                                itemBuilder: (context, index) {
-                                  final message = messages[index];
-                                  final isOwnMessage = message.senderId == currentUserId;
-                                  return _buildMessageBubble(message, isOwnMessage);
-                                },
-                              ),
+                  if (messages.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.chat_bubble_outline, size: 48, color: Colors.grey[400]),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Aucun message',
+                            style: TextStyle(color: Colors.grey[600]),
+                          ),
+                        ],
                       ),
+                    );
+                  }
 
-                      // Input field (only if registered)
-                      if (isRegistered)
-                        _buildMessageInputField(messageProvider, currentUserId, displayName)
-                      else
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.grey[100],
-                            border: Border(top: BorderSide(color: Colors.grey[300]!)),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.info_outline, color: Colors.grey[600], size: 18),
-                              const SizedBox(width: 8),
-                              const Expanded(
-                                child: Text(
-                                  'Inscrivez-vous pour participer à la discussion',
-                                  style: TextStyle(fontSize: 13, color: Colors.grey),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                    ],
+                  return ListView.builder(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: messages.length,
+                    itemBuilder: (context, index) {
+                      final message = messages[index];
+                      final isOwnMessage = message.senderId == currentUserId;
+                      return _buildMessageBubble(message, isOwnMessage);
+                    },
                   );
                 },
               ),
-              ),
             ),
+            // Input field - OUTSIDE the fixed height container
+            if (isRegistered)
+              _buildMessageInputField(messageProvider, currentUserId, displayName)
+            else
+              Container(
+                color: Colors.white,
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.grey[600], size: 18),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Inscrivez-vous pour participer à la discussion',
+                        style: TextStyle(fontSize: 13, color: Colors.grey),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),
