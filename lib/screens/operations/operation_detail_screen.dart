@@ -50,6 +50,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
   ParticipantOperation? _userInscription;
   bool _isPaymentProcessing = false;
   final TextEditingController _messageController = TextEditingController();
+  bool _isDiscussionExpanded = false;
 
   // Store provider reference for safe disposal
   PaymentProvider? _paymentProvider;
@@ -687,6 +688,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
 
                       // 2. Discussion accordion (chat entre participants)
                       _buildDiscussionAccordion(isRegistered),
+                      // Input field OUTSIDE ExpansionTile for iOS compatibility
+                      if (_isDiscussionExpanded && isRegistered)
+                        _buildStandaloneMessageInput(),
                       const SizedBox(height: 12),
 
                       // 3. Inscribed members accordion (closed by default)
@@ -903,7 +907,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
     final messageProvider = context.watch<EventMessageProvider>();
     final authProvider = context.read<AuthProvider>();
     final currentUserId = authProvider.currentUser?.uid ?? '';
-    final displayName = authProvider.displayName ?? 'Membre';
 
     return Container(
       decoration: BoxDecoration(
@@ -913,7 +916,12 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: ExpansionTile(
-          initiallyExpanded: false,
+          initiallyExpanded: _isDiscussionExpanded,
+          onExpansionChanged: (expanded) {
+            setState(() {
+              _isDiscussionExpanded = expanded;
+            });
+          },
           backgroundColor: AppColors.lichtblauw.withOpacity(0.2),
           collapsedBackgroundColor: Colors.white.withOpacity(0.9),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -934,7 +942,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
             ),
           ),
           children: [
-            // Messages list - fixed height
+            // Messages list only - input is outside ExpansionTile
             Container(
               color: Colors.white,
               height: 250,
@@ -981,10 +989,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                 },
               ),
             ),
-            // Input field - OUTSIDE the fixed height container
-            if (isRegistered)
-              _buildMessageInputField(messageProvider, currentUserId, displayName)
-            else
+            // Show info message for non-registered users
+            if (!isRegistered)
               Container(
                 color: Colors.white,
                 padding: const EdgeInsets.all(12),
@@ -1005,6 +1011,83 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         ),
       ),
     );
+  }
+
+  /// Standalone message input - OUTSIDE ExpansionTile for iOS compatibility
+  Widget _buildStandaloneMessageInput() {
+    final messageProvider = context.watch<EventMessageProvider>();
+    final authProvider = context.read<AuthProvider>();
+    final currentUserId = authProvider.currentUser?.uid ?? '';
+    final displayName = authProvider.displayName ?? 'Membre';
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[300]!),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _messageController,
+              decoration: InputDecoration(
+                hintText: 'Votre message...',
+                filled: true,
+                fillColor: Colors.grey[100],
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              ),
+              textInputAction: TextInputAction.send,
+              onSubmitted: (text) => _sendDiscussionMessage(messageProvider, currentUserId, displayName, text),
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            onPressed: () {
+              final text = _messageController.text.trim();
+              if (text.isNotEmpty) {
+                _sendDiscussionMessage(messageProvider, currentUserId, displayName, text);
+              }
+            },
+            icon: const Icon(Icons.send),
+            color: AppColors.middenblauw,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Send message helper
+  Future<void> _sendDiscussionMessage(
+    EventMessageProvider messageProvider,
+    String userId,
+    String displayName,
+    String text,
+  ) async {
+    if (text.trim().isEmpty) return;
+
+    try {
+      await messageProvider.sendMessage(
+        clubId: widget.clubId,
+        operationId: widget.operationId,
+        senderId: userId,
+        senderName: displayName,
+        message: text.trim(),
+      );
+      _messageController.clear();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   /// Message bubble for chat
@@ -1034,78 +1117,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
             Text(
               dateFormat.format(message.createdAt),
               style: TextStyle(fontSize: 10, color: Colors.grey[600]),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Message input field
-  Widget _buildMessageInputField(EventMessageProvider messageProvider, String userId, String displayName) {
-    return Material(
-      color: Colors.white,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border(top: BorderSide(color: Colors.grey[300]!)),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _messageController,
-                decoration: InputDecoration(
-                  hintText: 'Votre message...',
-                  filled: true,
-                  fillColor: Colors.grey[100],
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(20),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(20),
-                    borderSide: BorderSide(color: Colors.grey[300]!),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(20),
-                    borderSide: BorderSide(color: AppColors.middenblauw, width: 2),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                ),
-                textInputAction: TextInputAction.send,
-                onSubmitted: (text) async {
-                  if (text.trim().isNotEmpty) {
-                    await messageProvider.sendMessage(
-                      clubId: widget.clubId,
-                      operationId: widget.operationId,
-                      senderId: userId,
-                      senderName: displayName,
-                      message: text.trim(),
-                    );
-                    _messageController.clear();
-                  }
-                },
-              ),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              onPressed: () async {
-                final text = _messageController.text.trim();
-                if (text.isNotEmpty) {
-                  await messageProvider.sendMessage(
-                    clubId: widget.clubId,
-                    operationId: widget.operationId,
-                    senderId: userId,
-                    senderName: displayName,
-                    message: text,
-                  );
-                  _messageController.clear();
-                }
-              },
-              icon: const Icon(Icons.send),
-              color: AppColors.middenblauw,
             ),
           ],
         ),
