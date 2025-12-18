@@ -317,13 +317,13 @@ class _OperationsListScreenState extends State<OperationsListScreen>
           minDate: DateTime.now().subtract(const Duration(days: 30)),
           maxDate: DateTime.now().add(const Duration(days: 365)),
 
-          // Month view settings
+          // Month view settings - bigger fields for more text
           monthViewSettings: MonthViewSettings(
             showAgenda: true,
-            agendaViewHeight: 150,
+            agendaViewHeight: 300, // Taller agenda panel for more events
             appointmentDisplayMode: MonthAppointmentDisplayMode.appointment,
-            appointmentDisplayCount: 2,
-            agendaItemHeight: 60,
+            appointmentDisplayCount: 4, // Show more events per day cell
+            agendaItemHeight: 70, // Taller agenda items for more text lines
             agendaStyle: AgendaStyle(
               backgroundColor: Colors.transparent,
               appointmentTextStyle: const TextStyle(
@@ -358,25 +358,33 @@ class _OperationsListScreenState extends State<OperationsListScreen>
             ),
           ),
 
-          // Custom appointment builder for centered text
+          // Custom appointment builder - more lines for better readability
           appointmentBuilder: (context, calendarAppointmentDetails) {
             final appointment = calendarAppointmentDetails.appointments.first;
+            final bounds = calendarAppointmentDetails.bounds;
+            // Calculate max lines based on available height
+            final maxLines = (bounds.height / 14).floor().clamp(1, 4);
+
             return Container(
               decoration: BoxDecoration(
                 color: appointment.color,
                 borderRadius: BorderRadius.circular(4),
               ),
-              alignment: Alignment.center,
-              child: Text(
-                appointment.subject,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                child: Text(
+                  appointment.subject,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    height: 1.2,
+                  ),
+                  textAlign: TextAlign.left,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: maxLines, // Dynamic based on cell height
                 ),
-                textAlign: TextAlign.center,
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
               ),
             );
           },
@@ -401,7 +409,7 @@ class _OperationsListScreenState extends State<OperationsListScreen>
 
           // Schedule view settings - Thème maritime
           scheduleViewSettings: ScheduleViewSettings(
-            appointmentItemHeight: 70,
+            appointmentItemHeight: 85,
             hideEmptyScheduleWeek: true,
             monthHeaderSettings: const MonthHeaderSettings(
               height: 70,
@@ -434,12 +442,12 @@ class _OperationsListScreenState extends State<OperationsListScreen>
             ),
           ),
 
-          // Week view settings
+          // Week view settings - taller slots for more text
           timeSlotViewSettings: const TimeSlotViewSettings(
             startHour: 6,
             endHour: 22,
             timeFormat: 'HH:mm',
-            timeIntervalHeight: 60,
+            timeIntervalHeight: 100, // Taller slots = more space for event text
             timeTextStyle: TextStyle(
               fontSize: 12,
               color: Colors.grey,
