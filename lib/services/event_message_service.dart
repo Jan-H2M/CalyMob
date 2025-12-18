@@ -80,11 +80,13 @@ class EventMessageService {
     required String userId,
   }) async {
     try {
-      final doc = await _firestore
-          .doc('clubs/$clubId/operations/$operationId/inscriptions/$userId')
+      // Query by membre_id field, not by document ID
+      final snapshot = await _firestore
+          .collection('clubs/$clubId/operations/$operationId/inscriptions')
+          .where('membre_id', isEqualTo: userId)
           .get();
 
-      final isParticipant = doc.exists;
+      final isParticipant = snapshot.docs.isNotEmpty;
       debugPrint(
           'User $userId ${isParticipant ? "IS" : "IS NOT"} participant for event $operationId');
 
