@@ -28,6 +28,8 @@ exports.createMolliePayment = onCall(
     region: 'europe-west1',
     // Use Firebase Admin SDK service account for Firestore access
     serviceAccount: `firebase-adminsdk-fbsvc@${process.env.GCLOUD_PROJECT}.iam.gserviceaccount.com`,
+    // Load Mollie API key from Firebase Secrets
+    secrets: ['MOLLIE_API_KEY'],
   },
   async (request) => {
     // 1. Verifier l'authentification
@@ -114,20 +116,70 @@ exports.createMolliePayment = onCall(
           throw new HttpsError('already-exists', 'Paiement deja effectue');
         }
 
-        // Check if payment is already in progress (prevents double-click race condition)
-        if (participantData.payment_status === 'initiating' || participantData.payment_status === 'open') {
-          throw new HttpsError('already-exists', 'Un paiement est deja en cours');
+        // Only block if payment was initiated very recently (prevents double-click)
+        // 30 seconds is enough to prevent accidental double payments
+        const paymentInitiatedAt = participantData.payment_initiated_at?.toDate?.();
+        const thirtySecondsAgo = new Date(Date.now() - 30 * 1000);
+        const isRecentPayment = paymentInitiatedAt && paymentInitiatedAt > thirtySecondsAgo;
+
+        if (participantData.payment_status === 'initiating' && isRecentPayment) {
+          throw new HttpsError('already-exists', 'Un paiement est deja en cours. Attendez quelques secondes.');
+        }
+
+        // Log retry attempt
+        if (participantData.payment_status && participantData.payment_status !== 'paid') {
+          console.log(`Retrying payment (previous status: ${participantData.payment_status})`);
         }
 
         // Mark as initiating to prevent concurrent payment attempts
+        // Also clear any old payment IDs from failed attempts
         transaction.update(participantRef, {
           payment_status: 'initiating',
           payment_id: internalPaymentId,
+          mollie_payment_id: null, // Clear old Mollie ID for retry
           updated_at: admin.firestore.FieldValue.serverTimestamp(),
         });
       });
 
-      // 4. Creer le paiement chez Mollie (outside transaction - external API call)
+      // 4. Fetch operation data for enriched payment description
+      const operationRef = db
+        .collection('clubs')
+        .doc(clubId)
+        .collection('operations')
+        .doc(operationId);
+
+      const operationDoc = await operationRef.get();
+      let operationData = null;
+      if (operationDoc.exists) {
+        operationData = operationDoc.data();
+      }
+
+      // Build enriched payment description for bank reconciliation
+      // Format: "Event Number - Event Title - DD/MM/YYYY - First Name"
+      let enrichedDescription = description; // Fallback to client-provided description
+
+      if (operationData) {
+        const eventTitle = operationData.titre || description;
+        const eventNumber = operationData.event_number || '';
+        const eventDate = operationData.date_debut?.toDate?.();
+        const formattedDate = eventDate
+          ? `${String(eventDate.getDate()).padStart(2, '0')}/${String(eventDate.getMonth() + 1).padStart(2, '0')}/${eventDate.getFullYear()}`
+          : '';
+        // Use only first name (membre_prenom) for privacy
+        const firstName = participantData.membre_prenom || '';
+
+        // Build description parts - event number first for easy bank reconciliation
+        const parts = [];
+        if (eventNumber) parts.push(eventNumber);
+        parts.push(eventTitle);
+        if (formattedDate) parts.push(formattedDate);
+        if (firstName) parts.push(firstName);
+
+        enrichedDescription = parts.join(' - ');
+        console.log('Enriched payment description:', enrichedDescription);
+      }
+
+      // 5. Creer le paiement chez Mollie (outside transaction - external API call)
       const apiKey = process.env.MOLLIE_API_KEY;
       if (!apiKey) {
         throw new HttpsError('failed-precondition', 'Configuration paiement manquante. Contactez l\'administrateur.');
@@ -138,15 +190,15 @@ exports.createMolliePayment = onCall(
       const webhookUrl = `https://europe-west1-${process.env.GCLOUD_PROJECT}.cloudfunctions.net/mollieWebhook`;
 
       // URL de redirection apres paiement (deep link vers l'app)
-      // On utilise une URL web qui redirigera vers l'app
-      const redirectUrl = `https://calycompta.vercel.app/payment/return?provider=mollie&payment=${internalPaymentId}`;
+      // Utilise le custom URL scheme calymob:// pour ouvrir directement l'app
+      const redirectUrl = `calymob://payment/return?provider=mollie&payment=${internalPaymentId}&clubId=${clubId}&operationId=${operationId}`;
 
       const molliePaymentData = {
         amount: {
           currency: 'EUR',
           value: parseFloat(amount).toFixed(2)
         },
-        description: description,
+        description: enrichedDescription,
         redirectUrl: redirectUrl,
         webhookUrl: webhookUrl,
         locale: locale,

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -14,6 +15,7 @@ import '../../utils/tariff_utils.dart';
 import '../../services/profile_service.dart';
 import '../../services/lifras_service.dart';
 import '../../services/operation_service.dart';
+import '../../services/deep_link_service.dart';
 import '../../models/member_profile.dart';
 import '../../models/exercice_lifras.dart';
 import '../../models/participant_operation.dart';
@@ -52,12 +54,35 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
   // Store provider reference for safe disposal
   PaymentProvider? _paymentProvider;
 
+  // Deep link subscription for payment return
+  StreamSubscription<PaymentReturnData>? _deepLinkSubscription;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadOperation();
       _loadUserProfile();
+      _setupDeepLinkListener();
+    });
+  }
+
+  /// Setup listener for payment return deep links
+  void _setupDeepLinkListener() {
+    final deepLinkService = DeepLinkService();
+    _deepLinkSubscription = deepLinkService.onPaymentReturn.listen((data) {
+      debugPrint('DeepLink: Payment return received in OperationDetailScreen: $data');
+
+      // Check if this payment return is for this operation
+      if (data.operationId == widget.operationId) {
+        debugPrint('DeepLink: Payment return matches this operation, showing status dialog');
+        // Show payment status dialog to check the result
+        if (mounted && _userInscription != null) {
+          _showMolliePaymentStatusDialog();
+        }
+      } else {
+        debugPrint('DeepLink: Payment return is for different operation (${data.operationId} vs ${widget.operationId})');
+      }
     });
   }
 
@@ -73,6 +98,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> {
     _messageController.dispose();
     // Stop payment polling timer to prevent memory leaks
     _paymentProvider?.stopPaymentStatusPolling();
+    // Cancel deep link subscription
+    _deepLinkSubscription?.cancel();
     super.dispose();
   }
 

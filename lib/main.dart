@@ -13,6 +13,7 @@ import 'firebase_options.dart';
 
 // Services
 import 'services/notification_service.dart';
+import 'services/deep_link_service.dart';
 
 // Providers
 import 'providers/auth_provider.dart';
@@ -60,7 +61,14 @@ void main() async {
 
     final notificationService = NotificationService();
     await notificationService.initialize();
+    // Effacer le badge au démarrage de l'app
+    await notificationService.clearBadge();
     debugPrint('✅ Notifications initialisées');
+
+    // Initialiser le service de deep links (pour les retours de paiement Mollie)
+    final deepLinkService = DeepLinkService();
+    await deepLinkService.initialize();
+    debugPrint('✅ Deep links initialisés');
   } catch (e) {
     debugPrint('❌ Erreur initialisation: $e');
     debugPrint('Stack trace: ${StackTrace.current}');
@@ -69,8 +77,35 @@ void main() async {
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({Key? key}) : super(key: key);
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
+  final NotificationService _notificationService = NotificationService();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Effacer le badge quand l'app revient au premier plan
+      _notificationService.clearBadge();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

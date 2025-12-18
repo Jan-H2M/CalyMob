@@ -66,5 +66,17 @@
 	<!-- Export Compliance - App uses only standard iOS encryption (HTTPS, Keychain) -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!-- Deep linking for payment return URLs -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.calypso.calymob</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>calymob</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>
