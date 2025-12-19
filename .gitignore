@@ -106,3 +106,7 @@ coverage/
 *.ipa
 *.aab
 *.zip
+
+# IDE project files
+*.code-workspace
+.metadata
