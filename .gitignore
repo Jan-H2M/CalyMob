@@ -98,3 +98,14 @@ serviceAccountKey.json
 
 # Ibanity certificates (sensitive)
 functions/certs/
+
+# Flutter/Dart
+.dart_tool/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+*.iml
+build/
+ios/Flutter/ephemeral/
+ios/Pods/
+android/.gradle/
