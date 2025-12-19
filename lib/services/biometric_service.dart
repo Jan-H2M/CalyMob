@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:local_auth_android/local_auth_android.dart';
+import 'package:local_auth_darwin/local_auth_darwin.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 /// Service for biometric authentication (Face ID / Touch ID / Fingerprint)
@@ -60,6 +62,7 @@ class BiometricService {
   }
 
   /// Authenticate user with biometrics
+  /// Uses French localized messages for both Android and iOS
   Future<bool> authenticate({String reason = 'Authentifiez-vous pour continuer'}) async {
     try {
       return await _localAuth.authenticate(
@@ -68,6 +71,27 @@ class BiometricService {
           stickyAuth: true,
           biometricOnly: true,
         ),
+        authMessages: const <AuthMessages>[
+          AndroidAuthMessages(
+            signInTitle: 'Authentification CalyMob',
+            cancelButton: 'Annuler',
+            biometricHint: 'Vérification biométrique',
+            biometricNotRecognized: 'Empreinte non reconnue. Réessayez.',
+            biometricRequiredTitle: 'Biométrie requise',
+            biometricSuccess: 'Authentification réussie',
+            deviceCredentialsRequiredTitle: 'Identifiants requis',
+            deviceCredentialsSetupDescription: 'Configurez vos identifiants',
+            goToSettingsButton: 'Paramètres',
+            goToSettingsDescription: 'La biométrie n\'est pas configurée. Allez dans Paramètres > Sécurité pour l\'activer.',
+          ),
+          IOSAuthMessages(
+            cancelButton: 'Annuler',
+            goToSettingsButton: 'Paramètres',
+            goToSettingsDescription: 'Configurez Face ID ou Touch ID pour vous connecter rapidement.',
+            lockOut: 'Biométrie désactivée. Verrouillez et déverrouillez votre écran pour la réactiver.',
+            localizedFallbackTitle: 'Utiliser le code',
+          ),
+        ],
       );
     } on PlatformException {
       return false;

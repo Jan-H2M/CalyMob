@@ -270,8 +270,19 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
   }
 
   Widget _buildMessageInput() {
+    // Use viewInsets.bottom for keyboard height, padding.bottom for safe area
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+    final bottomSafeArea = MediaQuery.of(context).padding.bottom;
+    // When keyboard is visible, use keyboard height; otherwise use safe area
+    final bottomPadding = keyboardHeight > 0 ? keyboardHeight : bottomSafeArea;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      padding: EdgeInsets.only(
+        left: 8,
+        right: 8,
+        top: 8,
+        bottom: 8 + bottomPadding,
+      ),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(

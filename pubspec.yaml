@@ -1,7 +1,7 @@
 name: calymob
 description: Calypso DC Mobile Application
 publish_to: 'none'
-version: 1.0.6+48
+version: 1.0.9+52
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -56,6 +56,8 @@ dependencies:
 
   # Biometric Authentication
   local_auth: ^2.3.0
+  local_auth_android: ^1.0.46
+  local_auth_darwin: ^1.4.1
   flutter_secure_storage: ^9.2.2
 
   # Local Notifications (for Android notification channel)

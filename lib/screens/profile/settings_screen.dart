@@ -6,6 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../models/member_profile.dart';
 import '../../services/profile_service.dart';
 import '../../services/notification_service.dart';
+import '../../services/biometric_service.dart';
 import 'privacy_policy_screen.dart';
 
 /// Écran des paramètres
@@ -20,15 +21,89 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final String _clubId = 'calypso';
   final ProfileService _profileService = ProfileService();
   final NotificationService _notificationService = NotificationService();
+  final BiometricService _biometricService = BiometricService();
   final TextEditingController _phoneController = TextEditingController();
 
   bool _isLoading = false;
   bool _notificationsEnabled = false;
+  bool _biometricAvailable = false;
+  bool _biometricEnabled = false;
+  String _biometricTypeName = 'Biométrie';
+
+  @override
+  void initState() {
+    super.initState();
+    _checkBiometricStatus();
+  }
+
+  Future<void> _checkBiometricStatus() async {
+    final available = await _biometricService.isBiometricAvailable();
+    final enabled = await _biometricService.isBiometricLoginEnabled();
+    final hasCredentials = await _biometricService.hasStoredCredentials();
+    final typeName = await _biometricService.getBiometricTypeName();
+
+    if (mounted) {
+      setState(() {
+        _biometricAvailable = available;
+        _biometricEnabled = enabled && hasCredentials;
+        _biometricTypeName = typeName;
+      });
+    }
+  }
 
   @override
   void dispose() {
     _phoneController.dispose();
     super.dispose();
+  }
+
+  Future<void> _toggleBiometric(bool value) async {
+    if (!value) {
+      // Désactiver la biométrie
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Désactiver $_biometricTypeName ?'),
+          content: const Text(
+            'Vous devrez saisir votre email et mot de passe pour vous connecter.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Annuler'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text('Désactiver', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed == true) {
+        await _biometricService.disableBiometricLogin();
+        if (mounted) {
+          setState(() => _biometricEnabled = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('$_biometricTypeName désactivé'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+    } else {
+      // Pour activer, l'utilisateur doit se reconnecter avec email/mot de passe
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Déconnectez-vous et reconnectez-vous pour activer la biométrie'),
+            backgroundColor: Colors.blue,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _updatePhoneNumber(MemberProfile profile) async {
@@ -371,6 +446,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                         const SizedBox(height: 24),
 
+                        // Sécurité (Biométrie)
+                        if (_biometricAvailable) ...[
+                          _buildSectionHeader('Sécurité'),
+                          _buildSecuritySection(),
+                          const SizedBox(height: 24),
+                        ],
+
                         // Notifications
                         _buildSectionHeader('Notifications'),
                         _buildNotificationsSection(profile),
@@ -431,6 +513,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             trailing: const Icon(Icons.edit, size: 20),
             onTap: () => _updatePhoneNumber(profile),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSecuritySection() {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Column(
+        children: [
+          SwitchListTile(
+            value: _biometricEnabled,
+            onChanged: _toggleBiometric,
+            title: Text('Connexion avec $_biometricTypeName'),
+            subtitle: Text(
+              _biometricEnabled
+                  ? 'Connectez-vous rapidement avec $_biometricTypeName'
+                  : 'Reconnectez-vous pour activer cette option',
+              style: TextStyle(
+                fontSize: 12,
+                color: _biometricEnabled ? Colors.green.shade700 : Colors.grey.shade600,
+              ),
+            ),
+            secondary: Icon(
+              _biometricTypeName == 'Face ID' ? Icons.face : Icons.fingerprint,
+              color: _biometricEnabled ? Colors.green : Colors.grey,
+              size: 28,
+            ),
           ),
         ],
       ),
