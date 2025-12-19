@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:flutter_doc_scanner/flutter_doc_scanner.dart';
+import 'package:cunning_document_scanner/cunning_document_scanner.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -122,37 +122,47 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
 
   Future<void> _scanDocument() async {
     try {
-      // flutter_doc_scanner uses native iOS VisionKit / Android ML Kit
-      // It handles permissions internally
-      final scannedDocuments = await FlutterDocScanner().getScanDocuments();
+      // cunning_document_scanner uses native iOS VisionKit / Android ML Kit
+      // Returns List<String> with file paths on both platforms
+      debugPrint('🔍 Scanner: Starting document scan...');
 
-      if (scannedDocuments != null) {
-        List<String> scannedPaths = [];
+      final List<String>? scannedPaths = await CunningDocumentScanner.getPictures(
+        isGalleryImportAllowed: true,
+      );
 
-        // Handle different return types from the scanner
-        if (scannedDocuments is List) {
-          scannedPaths = scannedDocuments.cast<String>();
-        } else if (scannedDocuments is String) {
-          scannedPaths = [scannedDocuments];
-        }
+      debugPrint('🔍 Scanner: Result: $scannedPaths');
 
-        if (scannedPaths.isNotEmpty) {
-          // Compresser chaque image scannée
-          final List<File> compressedFiles = [];
-          for (final path in scannedPaths) {
-            final originalFile = File(path);
+      if (scannedPaths != null && scannedPaths.isNotEmpty) {
+        debugPrint('🔍 Scanner: Found ${scannedPaths.length} scanned pages');
+
+        // Compress each scanned image
+        final List<File> compressedFiles = [];
+        for (final path in scannedPaths) {
+          debugPrint('🔍 Scanner: Processing path: $path');
+          final originalFile = File(path);
+
+          if (await originalFile.exists()) {
             final compressedFile = await _compressImage(originalFile);
             if (compressedFile != null) {
               compressedFiles.add(compressedFile);
+              debugPrint('🔍 Scanner: Added compressed file: ${compressedFile.path}');
             }
+          } else {
+            debugPrint('🔍 Scanner: File does not exist at path: $path');
           }
-
-          setState(() {
-            _selectedPhotos.addAll(compressedFiles);
-          });
         }
+
+        debugPrint('🔍 Scanner: Total files to add: ${compressedFiles.length}');
+        setState(() {
+          _selectedPhotos.addAll(compressedFiles);
+        });
+        debugPrint('🔍 Scanner: Total photos now: ${_selectedPhotos.length}');
+      } else {
+        debugPrint('🔍 Scanner: No documents scanned (user cancelled or empty result)');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('🔍 Scanner: Error: $e');
+      debugPrint('🔍 Scanner: Stack trace: $stackTrace');
       if (mounted) {
         // Check if user cancelled
         final errorMsg = e.toString().toLowerCase();
