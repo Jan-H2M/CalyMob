@@ -15,6 +15,7 @@ flutter run -d ios                   # Run on iOS simulator
 flutter run -d android               # Run on Android emulator
 flutter build ios                    # Build iOS release (then archive in Xcode)
 flutter build appbundle              # Build Android release
+flutter analyze                      # Run static analysis
 
 # iOS specific (from project root)
 cd ios && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install   # Install CocoaPods
@@ -22,7 +23,9 @@ cd ios && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install   # Install CocoaPods
 # Cloud Functions (from functions/ directory)
 npm install                          # Install dependencies
 firebase deploy --only functions     # Deploy all functions
+firebase deploy --only functions:createMolliePayment,functions:mollieWebhook  # Deploy specific
 firebase functions:log               # View logs
+firebase emulators:start --only functions  # Local testing
 ```
 
 ## Architecture
@@ -46,29 +49,34 @@ lib/
 **Key Services**:
 - `NotificationService` - FCM push notifications with foreground/background handlers
 - `OperationService` - Event operations and participant management
-- `PaymentService` - Noda payment integration via Cloud Functions
+- `PaymentService` - Mollie payment integration via Cloud Functions (primary), Ponto/Noda (legacy)
 - `BiometricService` - Face detection for profile photos
 
 ### Cloud Functions (functions/)
 
-Firebase Functions v2 (Gen2) deployed to `europe-west1`:
+Firebase Functions v2 (Gen2) deployed to `europe-west1`. Requires **Node.js 20**.
 
 ```
 functions/
 ├── index.js                     # Entry point, exports all functions
 └── src/
     ├── payment/
-    │   ├── createPayment.js     # createNodaPayment - onCall
-    │   ├── webhook.js           # nodaWebhook - onRequest (HTTP POST)
-    │   └── checkStatus.js       # checkNodaPaymentStatus - onCall
+    │   ├── createMolliePayment.js   # createMolliePayment - onCall (PRIMARY)
+    │   ├── mollieWebhook.js         # mollieWebhook - onRequest (HTTP POST)
+    │   ├── checkMollieStatus.js     # checkMolliePaymentStatus - onCall
+    │   ├── createPayment.js         # createNodaPayment - onCall (legacy)
+    │   ├── webhook.js               # nodaWebhook - onRequest (legacy)
+    │   └── checkStatus.js           # checkNodaPaymentStatus - onCall (legacy)
     ├── notifications/
-    │   └── onNewEventMessage.js # Firestore trigger for push notifications
+    │   └── onNewEventMessage.js     # Firestore trigger for push notifications
     └── utils/
-        └── noda-client.js       # Axios client for Noda API
+        ├── mollie-client.js         # Axios client for Mollie API v2
+        └── noda-client.js           # Axios client for Noda API (legacy)
 ```
 
-**Environment Variables** (set via `firebase functions:config:set`):
-- `NODA_API_KEY`, `NODA_API_SECRET`, `NODA_BASE_URL`, `NODA_WEBHOOK_SECRET`
+**Environment Variables** (set via `firebase functions:config:set` or `.env` file):
+- `MOLLIE_API_KEY` - Mollie API key (live_xxx for production, test_xxx for sandbox)
+- `NODA_API_KEY`, `NODA_API_SECRET`, `NODA_BASE_URL`, `NODA_WEBHOOK_SECRET` (legacy)
 
 ### Firestore Structure
 
@@ -87,13 +95,13 @@ clubs/{clubId}/
 
 - **iOS**: Minimum deployment target 15.5 (required by Firebase SDK 12.x and Xcode 26)
 - **Flutter SDK**: >=3.0.0 <4.0.0
-- **Node.js**: For Cloud Functions
+- **Node.js**: 20 (required for Cloud Functions)
 
 ## Key Integration Points
 
 1. **Push Notifications**: `onNewEventMessage` trigger sends FCM notifications when messages are posted in event discussions. The Flutter app handles navigation to the relevant screen via `navigatorKey`.
 
-2. **Payments**: Noda Open Banking integration. Flow: `createNodaPayment` -> User redirected to bank -> `nodaWebhook` receives confirmation -> Firestore updated.
+2. **Payments (Mollie)**: Primary payment provider for Belgian payments (Bancontact, KBC/CBC, Belfius, credit cards, Apple Pay). Flow: `createMolliePayment` -> User redirected to Mollie checkout -> `mollieWebhook` receives confirmation -> Firestore `paye` field updated. See `docs/MOLLIE_IMPLEMENTATION.md` for details.
 
 3. **Tariff System**: Flexible pricing with member/guest rates, optional pricing, and calculated totals in `pricing_calculator.dart` and `tariff_utils.dart`.
 

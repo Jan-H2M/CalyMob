@@ -26,6 +26,8 @@ exports.mollieWebhook = onRequest(
     region: 'europe-west1',
     // Use Firebase Admin SDK service account for Firestore access
     serviceAccount: `firebase-adminsdk-fbsvc@${process.env.GCLOUD_PROJECT}.iam.gserviceaccount.com`,
+    // Load Mollie API key from Firebase Secrets
+    secrets: ['MOLLIE_API_KEY'],
   },
   async (req, res) => {
     // 1. Verifier que c'est une requete POST

@@ -54,6 +54,51 @@ class NotificationService {
     }
   }
 
+  /// Configurer les handlers pour les messages foreground
+  /// Doit être appelé après initialize()
+  void setupForegroundNotifications() {
+    // Écouter les messages quand l'app est au premier plan
+    FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+    debugPrint('✅ Foreground notification handler configuré');
+  }
+
+  /// Afficher une notification quand l'app est au premier plan
+  Future<void> _handleForegroundMessage(RemoteMessage message) async {
+    debugPrint('📬 Message reçu en foreground: ${message.messageId}');
+    debugPrint('   Titre: ${message.notification?.title}');
+    debugPrint('   Corps: ${message.notification?.body}');
+
+    final notification = message.notification;
+    if (notification == null) return;
+
+    // Déterminer le canal en fonction du type de notification
+    final channelId = message.data['type'] == 'event_message'
+        ? 'event_messages'
+        : 'announcements';
+
+    // Afficher la notification localement
+    await _localNotifications.show(
+      notification.hashCode,
+      notification.title,
+      notification.body,
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          channelId,
+          channelId == 'event_messages' ? 'Messages d\'événements' : 'Annonces du club',
+          importance: Importance.high,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      ),
+      payload: message.data['operation_id'],
+    );
+  }
+
   /// Créer les canaux de notification pour Android 8+ (API 26+)
   Future<void> _createNotificationChannel() async {
     try {

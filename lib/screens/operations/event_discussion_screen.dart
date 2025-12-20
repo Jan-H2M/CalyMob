@@ -18,6 +18,7 @@ class EventDiscussionScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       extendBodyBehindAppBar: true,
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -51,6 +52,7 @@ class EventDiscussionScreen extends StatelessWidget {
           ),
           // Content
           SafeArea(
+            bottom: false, // Let the input bar handle its own padding
             child: EventDiscussionTab(
               clubId: clubId,
               operationId: operationId,

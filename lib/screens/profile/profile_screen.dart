@@ -15,6 +15,7 @@ import '../../widgets/photo_consent_dialog.dart';
 // Conditional import for camera screen
 import 'face_camera_screen.dart' if (dart.library.html) 'face_camera_screen_stub.dart';
 import 'settings_screen.dart';
+import 'calendar_feed_screen.dart';
 import '../auth/login_screen.dart';
 import '../exercises/member_exercises_screen.dart';
 
@@ -769,6 +770,17 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
                 );
               }
             },
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: Icon(Icons.calendar_month, color: Colors.teal.shade700),
+            title: const Text('Synchronisation calendrier'),
+            subtitle: const Text('Ajouter les événements à votre agenda'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const CalendarFeedScreen()),
+            ),
           ),
           const Divider(height: 1),
           ListTile(

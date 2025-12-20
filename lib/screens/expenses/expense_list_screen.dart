@@ -8,6 +8,7 @@ import '../../providers/expense_provider.dart';
 import '../../models/expense_claim.dart';
 import '../../utils/date_formatter.dart';
 import '../../utils/currency_formatter.dart';
+import '../../utils/document_utils.dart';
 import '../../widgets/loading_widget.dart';
 import '../../widgets/empty_state_widget.dart';
 import 'create_expense_screen.dart';
@@ -194,23 +195,41 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
                     itemCount: expense.urlsJustificatifs.length,
-                    itemBuilder: (context, index) => Container(
-                      margin: const EdgeInsets.only(right: 8),
-                      width: 80,
-                      decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey[300]!)),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
-                          expense.urlsJustificatifs[index],
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Center(child: Icon(Icons.error, color: Colors.grey[400])),
-                          loadingBuilder: (_, child, progress) {
-                            if (progress == null) return child;
-                            return Center(child: CircularProgressIndicator(value: progress.expectedTotalBytes != null ? progress.cumulativeBytesLoaded / progress.expectedTotalBytes! : null));
-                          },
+                    itemBuilder: (context, index) {
+                      final url = expense.urlsJustificatifs[index];
+                      final isPdf = DocumentUtils.isPdf(url);
+
+                      return Container(
+                        margin: const EdgeInsets.only(right: 8),
+                        width: 80,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey[300]!),
+                          color: isPdf ? Colors.grey[100] : null,
                         ),
-                      ),
-                    ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: isPdf
+                              ? Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.picture_as_pdf, size: 32, color: Colors.red[400]),
+                                    const SizedBox(height: 4),
+                                    Text('PDF', style: TextStyle(fontSize: 10, color: Colors.grey[600], fontWeight: FontWeight.bold)),
+                                  ],
+                                )
+                              : Image.network(
+                                  url,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Center(child: Icon(Icons.error, color: Colors.grey[400])),
+                                  loadingBuilder: (_, child, progress) {
+                                    if (progress == null) return child;
+                                    return Center(child: CircularProgressIndicator(value: progress.expectedTotalBytes != null ? progress.cumulativeBytesLoaded / progress.expectedTotalBytes! : null));
+                                  },
+                                ),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ],

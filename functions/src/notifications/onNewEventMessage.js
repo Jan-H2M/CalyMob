@@ -39,15 +39,15 @@ exports.onNewEventMessage = onDocumentCreated(
       }
 
       const operation = operationDoc.data();
-      const eventTitle = operation.title || 'Événement';
+      const eventTitle = operation.titre || operation.title || 'Événement';
 
-      // 2. Get participants of the event
+      // 2. Get participants of the event (inscriptions subcollection)
       const participantsSnapshot = await admin.firestore()
         .collection('clubs')
         .doc(clubId)
         .collection('operations')
         .doc(operationId)
-        .collection('participants')
+        .collection('inscriptions')
         .get();
 
       if (participantsSnapshot.empty) {
@@ -62,9 +62,10 @@ exports.onNewEventMessage = onDocumentCreated(
 
       const tokenPromises = [];
       participantsSnapshot.forEach(doc => {
-        const participantId = doc.id;
+        const inscriptionData = doc.data();
+        const participantId = inscriptionData.membre_id; // Get member ID from inscription data
         // Don't notify the sender
-        if (participantId !== senderId) {
+        if (participantId && participantId !== senderId) {
           tokenPromises.push(
             admin.firestore()
               .collection('clubs')
@@ -78,13 +79,24 @@ exports.onNewEventMessage = onDocumentCreated(
 
       const memberDocs = await Promise.all(tokenPromises);
 
-      // Collect all valid FCM tokens
+      // Collect all valid FCM tokens (including all devices per member)
       const tokens = [];
       memberDocs.forEach(doc => {
         if (doc.exists) {
           const memberData = doc.data();
-          if (memberData.fcm_token && memberData.notifications_enabled !== false) {
-            tokens.push(memberData.fcm_token);
+          if (memberData.notifications_enabled !== false) {
+            // Add all tokens from fcm_tokens array (supports multiple devices)
+            if (memberData.fcm_tokens && Array.isArray(memberData.fcm_tokens)) {
+              memberData.fcm_tokens.forEach(token => {
+                if (token && !tokens.includes(token)) {
+                  tokens.push(token);
+                }
+              });
+            }
+            // Fallback to single fcm_token if array is empty
+            else if (memberData.fcm_token) {
+              tokens.push(memberData.fcm_token);
+            }
           }
         }
       });

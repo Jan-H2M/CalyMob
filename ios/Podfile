@@ -44,6 +44,11 @@ post_install do |installer|
       if config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'].to_f < 15.5
         config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.5'
       end
+
+      # Enable permission_handler macros for camera and photos
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'PERMISSION_CAMERA=1' unless config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'].include?('PERMISSION_CAMERA=1')
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'PERMISSION_PHOTOS=1' unless config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'].include?('PERMISSION_PHOTOS=1')
     end
   end
 end

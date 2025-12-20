@@ -7,6 +7,7 @@ class EventMessage {
   final String senderName;
   final String message;
   final DateTime createdAt;
+  final List<String> readBy; // User IDs who have read this message
 
   EventMessage({
     required this.id,
@@ -14,6 +15,7 @@ class EventMessage {
     required this.senderName,
     required this.message,
     required this.createdAt,
+    this.readBy = const [],
   });
 
   /// Créer depuis Firestore
@@ -26,6 +28,7 @@ class EventMessage {
       senderName: data['sender_name'] ?? '',
       message: data['message'] ?? '',
       createdAt: (data['created_at'] as Timestamp).toDate(),
+      readBy: (data['read_by'] as List<dynamic>?)?.cast<String>() ?? [],
     );
   }
 
@@ -36,6 +39,7 @@ class EventMessage {
       'sender_name': senderName,
       'message': message,
       'created_at': Timestamp.fromDate(createdAt),
+      'read_by': readBy,
     };
   }
 

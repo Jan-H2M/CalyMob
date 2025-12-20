@@ -699,7 +699,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
 
                       // 4. Course selection (only if registered AND plongee event) - exercises last
                       if (isRegistered && operation.categorie == 'plongee') ...[
-                        _buildCourseSelection(),
+                        _buildCourseSelection(operationProvider),
                       ],
                     ],
                   ),
@@ -875,13 +875,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
               color: AppColors.donkerblauw,
             ),
           ),
-          subtitle: Text(
-            'Message de l\'organisateur',
-            style: TextStyle(
-              fontSize: 13,
-              color: AppColors.middenblauw,
-            ),
-          ),
           children: [
             Container(
               width: double.infinity,
@@ -906,109 +899,145 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
   Widget _buildDiscussionAccordion(bool isRegistered) {
     final messageProvider = context.watch<EventMessageProvider>();
     final authProvider = context.read<AuthProvider>();
+    final operationProvider = context.read<OperationProvider>();
     final currentUserId = authProvider.currentUser?.uid ?? '';
+    final totalParticipants = operationProvider.selectedOperationParticipants.length;
 
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: AppColors.lichtblauw.withOpacity(0.5)),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: ExpansionTile(
-          initiallyExpanded: _isDiscussionExpanded,
-          onExpansionChanged: (expanded) {
-            setState(() {
-              _isDiscussionExpanded = expanded;
-            });
-          },
-          backgroundColor: AppColors.lichtblauw.withOpacity(0.2),
-          collapsedBackgroundColor: Colors.white.withOpacity(0.9),
-          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          leading: Icon(Icons.chat, color: AppColors.middenblauw),
-          title: Text(
-            'Discussion',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: AppColors.donkerblauw,
-            ),
+    return StreamBuilder<List<EventMessage>>(
+      stream: messageProvider.watchMessages(widget.clubId, widget.operationId),
+      builder: (context, snapshot) {
+        final messages = snapshot.data ?? [];
+        final messageCount = messages.length;
+
+        return Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: AppColors.lichtblauw.withOpacity(0.5)),
+            borderRadius: BorderRadius.circular(12),
           ),
-          subtitle: Text(
-            isRegistered ? 'Discutez avec les participants' : 'Inscrivez-vous pour participer',
-            style: TextStyle(
-              fontSize: 13,
-              color: AppColors.middenblauw,
-            ),
-          ),
-          children: [
-            // Messages list only - input is outside ExpansionTile
-            Container(
-              color: Colors.white,
-              height: 250,
-              child: StreamBuilder<List<EventMessage>>(
-                stream: messageProvider.watchMessages(widget.clubId, widget.operationId),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-
-                  if (snapshot.hasError) {
-                    return Center(
-                      child: Text('Erreur: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
-                    );
-                  }
-
-                  final messages = snapshot.data ?? [];
-
-                  if (messages.isEmpty) {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.chat_bubble_outline, size: 48, color: Colors.grey[400]),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Aucun message',
-                            style: TextStyle(color: Colors.grey[600]),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-
-                  return ListView.builder(
-                    padding: const EdgeInsets.all(12),
-                    itemCount: messages.length,
-                    itemBuilder: (context, index) {
-                      final message = messages[index];
-                      final isOwnMessage = message.senderId == currentUserId;
-                      return _buildMessageBubble(message, isOwnMessage);
-                    },
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: ExpansionTile(
+              initiallyExpanded: _isDiscussionExpanded,
+              onExpansionChanged: (expanded) {
+                setState(() {
+                  _isDiscussionExpanded = expanded;
+                });
+                // Mark messages as read when opening discussion
+                if (expanded && currentUserId.isNotEmpty) {
+                  messageProvider.markAsRead(
+                    clubId: widget.clubId,
+                    operationId: widget.operationId,
+                    userId: currentUserId,
                   );
-                },
-              ),
-            ),
-            // Show info message for non-registered users
-            if (!isRegistered)
-              Container(
-                color: Colors.white,
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    Icon(Icons.info_outline, color: Colors.grey[600], size: 18),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        'Inscrivez-vous pour participer à la discussion',
-                        style: TextStyle(fontSize: 13, color: Colors.grey),
-                      ),
-                    ),
-                  ],
+                }
+              },
+              backgroundColor: AppColors.lichtblauw.withOpacity(0.2),
+              collapsedBackgroundColor: Colors.white.withOpacity(0.9),
+              tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              leading: Icon(Icons.chat, color: AppColors.middenblauw),
+              title: Text(
+                'Discussion',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.donkerblauw,
                 ),
               ),
-          ],
-        ),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (messageCount > 0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.lichtblauw.withOpacity(0.5),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '$messageCount',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.donkerblauw,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  const Icon(Icons.expand_more),
+                ],
+              ),
+              children: [
+                // Messages list only - input is outside ExpansionTile
+                Container(
+                  color: Colors.white,
+                  height: 250,
+                  child: Builder(
+                    builder: (context) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+
+                      if (snapshot.hasError) {
+                        return Center(
+                          child: Text('Erreur: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
+                        );
+                      }
+
+                      if (messages.isEmpty) {
+                        return Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.chat_bubble_outline, size: 48, color: Colors.grey[400]),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Aucun message',
+                                style: TextStyle(color: Colors.grey[600]),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+
+                      // Use reverse: true to auto-scroll to bottom (like WhatsApp)
+                      return ListView.builder(
+                        padding: const EdgeInsets.all(12),
+                        reverse: true,
+                        itemCount: messages.length,
+                        itemBuilder: (context, index) {
+                          // Since list is reversed, access messages from the end
+                          final message = messages[messages.length - 1 - index];
+                          final isOwnMessage = message.senderId == currentUserId;
+                          return _buildMessageBubble(message, isOwnMessage, totalParticipants);
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Info message for non-registered users in discussion
+  Widget _buildDiscussionInfoForNonRegistered() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline, color: Colors.grey[600], size: 18),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              'Inscrivez-vous pour participer à la discussion',
+              style: TextStyle(fontSize: 13, color: Colors.grey),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1090,33 +1119,59 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
     }
   }
 
-  /// Message bubble for chat
-  Widget _buildMessageBubble(EventMessage message, bool isOwnMessage) {
+  /// Message bubble for chat - compact style with time on the right
+  Widget _buildMessageBubble(EventMessage message, bool isOwnMessage, int totalParticipants) {
     final dateFormat = DateFormat('HH:mm');
+
+    // Check if all participants (except sender) have read the message
+    // readBy includes sender, so we compare with totalParticipants
+    final readByAll = isOwnMessage && message.readBy.length >= totalParticipants && totalParticipants > 1;
 
     return Align(
       alignment: isOwnMessage ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.65),
+        margin: const EdgeInsets.only(bottom: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
         decoration: BoxDecoration(
           color: isOwnMessage ? AppColors.lichtblauw.withOpacity(0.4) : Colors.grey[200],
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            if (!isOwnMessage)
-              Text(
-                message.senderName,
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (!isOwnMessage)
+                    Text(
+                      message.senderName,
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.donkerblauw),
+                    ),
+                  Text(message.message, style: const TextStyle(fontSize: 14)),
+                ],
               ),
-            Text(message.message, style: const TextStyle(fontSize: 14)),
-            const SizedBox(height: 2),
-            Text(
-              dateFormat.format(message.createdAt),
-              style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+            ),
+            const SizedBox(width: 6),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  dateFormat.format(message.createdAt),
+                  style: TextStyle(fontSize: 9, color: Colors.grey[500]),
+                ),
+                if (isOwnMessage) ...[
+                  const SizedBox(width: 2),
+                  Icon(
+                    Icons.done_all,
+                    size: 14,
+                    color: readByAll ? Colors.green : Colors.grey[400],
+                  ),
+                ],
+              ],
             ),
           ],
         ),
@@ -1151,12 +1206,27 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
               color: AppColors.donkerblauw,
             ),
           ),
-          subtitle: Text(
-            '${participants.length} inscrit(s)',
-            style: TextStyle(
-              fontSize: 13,
-              color: AppColors.middenblauw,
-            ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.lichtblauw.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '${participants.length}',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: AppColors.donkerblauw,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const Icon(Icons.expand_more),
+            ],
           ),
           children: [
             Container(
@@ -1179,9 +1249,12 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                       children: participants.map((participant) {
                         final prenom = participant.membrePrenom ?? '';
                         final nom = participant.membreNom ?? '';
+                        // Filter out email addresses from nom
+                        final isEmail = nom.contains('@');
+                        final displayNom = isEmail ? '' : nom;
                         final displayName = prenom.isNotEmpty
-                            ? '$prenom $nom'.trim()
-                            : (nom.isNotEmpty ? nom : 'Anonyme');
+                            ? '$prenom $displayNom'.trim()
+                            : (displayNom.isNotEmpty ? displayNom : 'Anonyme');
                         final isCurrentUser = participant.membreId == currentUserId;
 
                         return ListTile(
@@ -1189,7 +1262,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                             backgroundColor: isCurrentUser ? AppColors.lichtblauw.withOpacity(0.5) : AppColors.lichtblauw.withOpacity(0.3),
                             radius: 18,
                             child: Text(
-                              prenom.isNotEmpty ? prenom[0].toUpperCase() : (nom.isNotEmpty ? nom[0].toUpperCase() : '?'),
+                              prenom.isNotEmpty ? prenom[0].toUpperCase() : (displayNom.isNotEmpty ? displayNom[0].toUpperCase() : '?'),
                               style: TextStyle(
                                 color: isCurrentUser ? AppColors.donkerblauw : AppColors.middenblauw,
                                 fontWeight: FontWeight.bold,
@@ -1226,7 +1299,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                               ],
                             ],
                           ),
-                          trailing: _buildPaymentBadge(participant.paye),
+                          trailing: _buildPaymentBadge(participant),
                           dense: true,
                         );
                       }).toList(),
@@ -1445,8 +1518,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
   }
 
   /// Course selection with accordion/dropdown for LIFRAS exercises
-  Widget _buildCourseSelection() {
+  Widget _buildCourseSelection(OperationProvider operationProvider) {
     final userLevel = _userProfile?.plongeurCode;
+    final participants = operationProvider.selectedOperationParticipants;
+    // Count participants who have selected at least one exercise
+    final participantsWithExercises = participants.where((p) => p.exercices.isNotEmpty).length;
 
     if (_isLoadingExercices) {
       return const Center(child: CircularProgressIndicator());
@@ -1497,35 +1573,25 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
               color: Colors.grey[800],
             ),
           ),
-          subtitle: Text(
-            _selectedExercices.isEmpty
-                ? '${_availableExercices.length} exercice(s) disponible(s)'
-                : '${_selectedExercices.length} exercice(s) sélectionné(s)',
-            style: TextStyle(
-              fontSize: 13,
-              color: _selectedExercices.isEmpty ? Colors.grey[600] : Colors.blue[700],
-            ),
-          ),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (userLevel != null)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  margin: const EdgeInsets.only(right: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade100,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    userLevel,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.blue[700],
-                      fontWeight: FontWeight.bold,
-                    ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '$participantsWithExercises',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.blue[700],
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
+              ),
               const Icon(Icons.expand_more),
             ],
           ),
@@ -1590,32 +1656,29 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
     );
   }
 
-  Widget _buildPaymentBadge(bool paye) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: paye ? Colors.green.shade100 : Colors.orange.shade100,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            paye ? Icons.check_circle : Icons.pending,
-            size: 14,
-            color: paye ? Colors.green : Colors.orange,
-          ),
-          const SizedBox(width: 4),
-          Text(
-            paye ? 'Payé' : 'En attente',
-            style: TextStyle(
-              fontSize: 12,
-              color: paye ? Colors.green : Colors.orange,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
+  Widget _buildPaymentBadge(ParticipantOperation participant) {
+    // Determine status: not paid, paid awaiting bank, or fully paid
+    final IconData icon;
+    final Color color;
+
+    if (!participant.paye) {
+      // À payer - rode X
+      icon = Icons.close;
+      color = Colors.red;
+    } else if (participant.isPaidAwaitingBank) {
+      // Payé via CalyMob, en attente de traitement bancaire - gele V
+      icon = Icons.check;
+      color = Colors.orange;
+    } else {
+      // Volledig betaald en gematcht - groene V
+      icon = Icons.check;
+      color = Colors.green;
+    }
+
+    return Icon(
+      icon,
+      size: 20,
+      color: color,
     );
   }
 }

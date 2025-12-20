@@ -46,3 +46,19 @@ exports.checkMolliePaymentStatus = checkMolliePaymentStatus;
 // Push notifications for event messages
 const { onNewEventMessage } = require('./src/notifications/onNewEventMessage');
 exports.onNewEventMessage = onNewEventMessage;
+
+// Push notifications for club announcements
+const { onNewAnnouncement } = require('./src/notifications/onNewAnnouncement');
+exports.onNewAnnouncement = onNewAnnouncement;
+
+// =============================================================================
+// EXPENSE EMAIL NOTIFICATIONS (Gen2)
+// =============================================================================
+
+// Email notification when expense request is created
+const { onExpenseCreated } = require('./src/notifications/onExpenseCreated');
+exports.onExpenseCreated = onExpenseCreated;
+
+// Email notification when expense status changes (approved/reimbursed)
+const { onExpenseStatusChange } = require('./src/notifications/onExpenseStatusChange');
+exports.onExpenseStatusChange = onExpenseStatusChange;

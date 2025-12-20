@@ -11,6 +11,10 @@ class Operation {
   final double montantPrevu;
   final String statut; // 'brouillon', 'ouvert', 'ferme', 'annule'
 
+  // Unique event number for bank reconciliation
+  // Format: 2XXXXX for dive events, 3XXXXX for other events
+  final String? eventNumber;
+
   // Spécifique événements
   final DateTime? dateDebut;
   final DateTime? dateFin;
@@ -39,6 +43,7 @@ class Operation {
     this.description,
     required this.montantPrevu,
     required this.statut,
+    this.eventNumber,
     this.dateDebut,
     this.dateFin,
     this.lieu,
@@ -65,6 +70,7 @@ class Operation {
       description: data['description'],
       montantPrevu: (data['montant_prevu'] ?? 0).toDouble(),
       statut: data['statut'] ?? 'brouillon',
+      eventNumber: data['event_number'],
       dateDebut: (data['date_debut'] as Timestamp?)?.toDate(),
       dateFin: (data['date_fin'] as Timestamp?)?.toDate(),
       lieu: data['lieu'],

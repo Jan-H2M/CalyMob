@@ -81,6 +81,7 @@ class ExpenseService {
         'date_demande': Timestamp.now(),
         'operation_id': operationId,
         'fiscal_year_id': fiscalYearId, // Required for web app filtering
+        'source': 'mobile', // Identifies this was created from CalyMob app
         'urls_justificatifs': [],
         'created_at': FieldValue.serverTimestamp(),
         'updated_at': FieldValue.serverTimestamp(),

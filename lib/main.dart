@@ -61,6 +61,8 @@ void main() async {
 
     final notificationService = NotificationService();
     await notificationService.initialize();
+    // Configurer les handlers pour les notifications en foreground
+    notificationService.setupForegroundNotifications();
     // Effacer le badge au démarrage de l'app
     await notificationService.clearBadge();
     debugPrint('✅ Notifications initialisées');

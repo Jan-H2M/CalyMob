@@ -103,8 +103,10 @@ class PaymentService {
       return PaymentResponse.fromJson(Map<String, dynamic>.from(result.data));
     } on FirebaseFunctionsException catch (e) {
       debugPrint('❌ Firebase Functions error: ${e.code} - ${e.message}');
+      // Use server message if available, otherwise fallback to generic message
+      final message = e.message ?? _getFriendlyErrorMessage(e.code);
       throw PaymentException(
-        _getFriendlyErrorMessage(e.code),
+        message,
         code: e.code,
         details: e.details,
       );

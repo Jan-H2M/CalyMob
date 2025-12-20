@@ -133,6 +133,19 @@ class EventMessageProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Marquer tous les messages comme lus
+  Future<void> markAsRead({
+    required String clubId,
+    required String operationId,
+    required String userId,
+  }) async {
+    await _eventMessageService.markMessagesAsRead(
+      clubId: clubId,
+      operationId: operationId,
+      userId: userId,
+    );
+  }
+
   /// Nettoyer les données d'un événement
   void clearOperationData(String operationId) {
     _messagesByOperation.remove(operationId);

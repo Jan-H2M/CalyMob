@@ -115,4 +115,37 @@ class EventMessageService {
       rethrow;
     }
   }
+
+  /// Marquer les messages comme lus par un utilisateur
+  Future<void> markMessagesAsRead({
+    required String clubId,
+    required String operationId,
+    required String userId,
+  }) async {
+    try {
+      final snapshot = await _firestore
+          .collection('clubs/$clubId/operations/$operationId/messages')
+          .get();
+
+      final batch = _firestore.batch();
+      int updated = 0;
+
+      for (final doc in snapshot.docs) {
+        final readBy = (doc.data()['read_by'] as List<dynamic>?)?.cast<String>() ?? [];
+        if (!readBy.contains(userId)) {
+          batch.update(doc.reference, {
+            'read_by': FieldValue.arrayUnion([userId]),
+          });
+          updated++;
+        }
+      }
+
+      if (updated > 0) {
+        await batch.commit();
+        debugPrint('✅ $updated messages marqués comme lus par $userId');
+      }
+    } catch (e) {
+      debugPrint('❌ Erreur marquage messages lus: $e');
+    }
+  }
 }

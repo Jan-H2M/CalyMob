@@ -91,6 +91,7 @@ class ExpenseDetailScreen extends StatelessWidget {
           ),
           // Content
           SafeArea(
+            bottom: false,
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -102,7 +103,7 @@ class ExpenseDetailScreen extends StatelessWidget {
             ),
             const SizedBox(height: 24),
 
-            // Montant Card
+            // Informations Card (met Montant)
             Card(
               elevation: 2,
               child: Padding(
@@ -110,39 +111,19 @@ class ExpenseDetailScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Montant',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      CurrencyFormatter.format(expense.montant),
-                      style: theme.textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: theme.primaryColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Informations Card
-            Card(
-              elevation: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Informations',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                    // Montant prominent bovenaan
+                    Row(
+                      children: [
+                        Icon(Icons.euro, size: 28, color: theme.primaryColor),
+                        const SizedBox(width: 12),
+                        Text(
+                          CurrencyFormatter.format(expense.montant),
+                          style: theme.textTheme.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: theme.primaryColor,
+                          ),
+                        ),
+                      ],
                     ),
                     const Divider(height: 24),
                     _buildInfoRow(

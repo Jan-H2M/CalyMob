@@ -124,13 +124,13 @@ class OperationService {
         prix = operation.prixMembre ?? 0.0;
       }
 
-      // Créer participant
+      // Créer participant - utiliser les champs du profil si disponibles
       final participant = ParticipantOperation(
         id: '', // Firestore génère l'ID
         operationId: operationId,
         operationTitre: operation.titre,
         membreId: userId,
-        membreNom: userName,
+        membreNom: memberProfile?.nom ?? userName,
         membrePrenom: memberProfile?.prenom,
         prix: prix,
         paye: false,
