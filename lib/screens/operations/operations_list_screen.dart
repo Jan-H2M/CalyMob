@@ -10,7 +10,7 @@ import '../../providers/operation_provider.dart';
 import '../../widgets/loading_widget.dart';
 import 'operation_detail_screen.dart';
 
-/// Liste des événements avec tabs Plongées / Sorties
+/// Liste des événements avec filtre (Tout / Plongées / Sorties)
 class OperationsListScreen extends StatefulWidget {
   const OperationsListScreen({Key? key}) : super(key: key);
 
@@ -18,25 +18,17 @@ class OperationsListScreen extends StatefulWidget {
   State<OperationsListScreen> createState() => _OperationsListScreenState();
 }
 
-class _OperationsListScreenState extends State<OperationsListScreen>
-    with SingleTickerProviderStateMixin {
+class _OperationsListScreenState extends State<OperationsListScreen> {
   final String _clubId = FirebaseConfig.defaultClubId;
-  late TabController _tabController;
+  String _selectedFilter = 'all'; // 'all', 'plongee', 'sortie'
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
     // Démarrer le stream
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<OperationProvider>().listenToOpenEvents(_clubId);
     });
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
   }
 
   Future<void> _refreshOperations() async {
@@ -95,35 +87,23 @@ class _OperationsListScreenState extends State<OperationsListScreen>
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Colors.white,
-          indicatorWeight: 3,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          dividerColor: Colors.transparent,
-          tabs: [
-            Tab(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Text('Plongées', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-              ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(60),
+          child: Container(
+            height: 50,
+            margin: const EdgeInsets.only(bottom: 10),
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              children: [
+                _buildFilterChip('all', 'Tout'),
+                const SizedBox(width: 12),
+                _buildFilterChip('plongee', 'Plongées'),
+                const SizedBox(width: 12),
+                _buildFilterChip('sortie', 'Sorties'),
+              ],
             ),
-            Tab(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Text('Sorties', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
       body: Stack(
@@ -137,20 +117,9 @@ class _OperationsListScreenState extends State<OperationsListScreen>
           ),
           // Content
           SafeArea(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                // Tab Plongées
-                RefreshIndicator(
-                  onRefresh: _refreshOperations,
-                  child: _buildEventsList(operationProvider, 'plongee'),
-                ),
-                // Tab Sorties
-                RefreshIndicator(
-                  onRefresh: _refreshOperations,
-                  child: _buildEventsList(operationProvider, 'sortie'),
-                ),
-              ],
+            child: RefreshIndicator(
+              onRefresh: _refreshOperations,
+              child: _buildEventsList(operationProvider),
             ),
           ),
           // Seaweed 1 - far left, smaller and transparent
@@ -190,7 +159,38 @@ class _OperationsListScreenState extends State<OperationsListScreen>
     );
   }
 
-  Widget _buildEventsList(OperationProvider operationProvider, String categorie) {
+  Widget _buildFilterChip(String value, String label) {
+    final isSelected = _selectedFilter == value;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedFilter = value;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.white.withOpacity(0.2),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: Colors.white.withOpacity(0.3),
+            width: 1,
+          ),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? AppColors.donkerblauw : Colors.white,
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEventsList(OperationProvider operationProvider) {
     final allOperations = operationProvider.operations;
 
     // Loading initial
@@ -198,10 +198,11 @@ class _OperationsListScreenState extends State<OperationsListScreen>
       return const LoadingWidget(message: 'Chargement des événements...');
     }
 
-    // Filter by category
+    // Filter
     final filtered = allOperations.where((op) {
+      if (_selectedFilter == 'all') return true;
       final opCategorie = op.categorie ?? 'plongee';
-      return opCategorie == categorie;
+      return opCategorie == _selectedFilter;
     }).toList();
 
     // Sort by date
@@ -220,15 +221,17 @@ class _OperationsListScreenState extends State<OperationsListScreen>
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              categorie == 'plongee' ? Icons.scuba_diving : Icons.directions_boat,
+              _selectedFilter == 'plongee'
+                  ? Icons.scuba_diving
+                  : _selectedFilter == 'sortie'
+                      ? Icons.directions_boat
+                      : Icons.event_busy,
               size: 64,
               color: Colors.white.withOpacity(0.7),
             ),
             const SizedBox(height: 16),
             Text(
-              categorie == 'plongee'
-                  ? 'Aucune plongée prévue'
-                  : 'Aucune sortie prévue',
+              'Aucun événement trouvé',
               style: TextStyle(
                 fontSize: 18,
                 color: Colors.white.withOpacity(0.9),
@@ -253,7 +256,7 @@ class _OperationsListScreenState extends State<OperationsListScreen>
             // Month header
             _buildMonthHeader(monthKey),
             // Events for this month
-            ...monthEvents.map((op) => _buildEventCard(op, categorie)),
+            ...monthEvents.map((op) => _buildEventCard(op)),
           ],
         );
       },
@@ -305,12 +308,12 @@ class _OperationsListScreenState extends State<OperationsListScreen>
     );
   }
 
-  Widget _buildEventCard(Operation operation, String categorie) {
+  Widget _buildEventCard(Operation operation) {
     final date = operation.dateDebut ?? DateTime.now();
     final dayName = DateFormat('EEEE', 'fr_FR').format(date);
     final dayNumber = DateFormat('d', 'fr_FR').format(date);
     final time = DateFormat('HH:mm', 'fr_FR').format(date);
-    final isPlongee = categorie == 'plongee';
+    final isPlongee = (operation.categorie ?? 'plongee') == 'plongee';
 
     return GestureDetector(
       onTap: () => _onEventTapped(operation),
@@ -468,7 +471,7 @@ class _OperationsListScreenState extends State<OperationsListScreen>
                               decoration: BoxDecoration(
                                 color: AppColors.lichtblauw.withOpacity(0.3),
                                 borderRadius: BorderRadius.circular(8),
-                              ),
+                                ),
                               child: Text(
                                 '${operation.prixMembre!.toStringAsFixed(2)} €',
                                 style: TextStyle(
