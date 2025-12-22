@@ -71,6 +71,12 @@ dependencies:
   # Deep Linking (for payment return URLs)
   app_links: ^6.3.3
 
+  # QR Code Generation
+  qr_flutter: ^4.1.0
+
+  # QR/Barcode Scanner
+  mobile_scanner: ^5.2.3
+
   # Payments (if needed)
   # stripe_payment: ^1.1.1
 

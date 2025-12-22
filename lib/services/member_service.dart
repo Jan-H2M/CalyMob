@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../models/exercice_lifras.dart';
+import '../models/member_profile.dart';
 
 /// Service de gestion des membres
 class MemberService {
@@ -159,6 +160,72 @@ class MemberService {
     } catch (e) {
       debugPrint('❌ Erreur vérification moniteur: $e');
       return false;
+    }
+  }
+
+  /// Get a single member by ID (for QR scan result)
+  Future<MemberProfile?> getMemberById(String clubId, String memberId) async {
+    try {
+      final doc = await _firestore
+          .collection('clubs/$clubId/members')
+          .doc(memberId)
+          .get();
+
+      if (!doc.exists) {
+        debugPrint('❌ Membre $memberId non trouvé');
+        return null;
+      }
+
+      return MemberProfile.fromFirestore(doc);
+    } catch (e) {
+      debugPrint('❌ Erreur récupération membre: $e');
+      return null;
+    }
+  }
+
+  /// Search members by name (client-side filtering)
+  Future<List<MemberProfile>> searchMembers(String clubId, String query) async {
+    try {
+      if (query.trim().isEmpty) {
+        return [];
+      }
+
+      final queryLower = query.toLowerCase().trim();
+
+      // Get all members and filter client-side
+      // (Firestore doesn't support full-text search natively)
+      final snapshot = await _firestore
+          .collection('clubs/$clubId/members')
+          .orderBy('nom')
+          .get();
+
+      final members = snapshot.docs
+          .map((doc) => MemberProfile.fromFirestore(doc))
+          .where((member) {
+        final fullName = '${member.prenom} ${member.nom}'.toLowerCase();
+        final reverseName = '${member.nom} ${member.prenom}'.toLowerCase();
+        return fullName.contains(queryLower) ||
+            reverseName.contains(queryLower) ||
+            member.email.toLowerCase().contains(queryLower);
+      }).toList();
+
+      // Sort by relevance (exact match first, then by name)
+      members.sort((a, b) {
+        final aFullName = '${a.prenom} ${a.nom}'.toLowerCase();
+        final bFullName = '${b.prenom} ${b.nom}'.toLowerCase();
+        final aStartsWith = aFullName.startsWith(queryLower);
+        final bStartsWith = bFullName.startsWith(queryLower);
+
+        if (aStartsWith && !bStartsWith) return -1;
+        if (!aStartsWith && bStartsWith) return 1;
+        return aFullName.compareTo(bFullName);
+      });
+
+      debugPrint('🔍 Recherche "$query": ${members.length} résultats');
+      return members.take(20).toList(); // Limit to 20 results
+    } catch (e) {
+      debugPrint('❌ Erreur recherche membres: $e');
+      return [];
     }
   }
 }

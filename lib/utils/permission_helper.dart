@@ -18,6 +18,24 @@ class PermissionHelper {
     'board',
   ];
 
+  /// Roles that can use the attendance scanner
+  static const List<String> scannerRoles = [
+    'admin',
+    'administrateur',
+    'ca',
+    'accueil',
+    'encadrant',
+    'president',
+    'président',
+    'secretaire',
+    'secrétaire',
+    'tresorier',
+    'trésorier',
+    'board',
+    'comite',
+    'comité',
+  ];
+
   /// Check if user has admin permissions based on their club statutes
   static bool isAdmin(List<String> clubStatuten) {
     if (clubStatuten.isEmpty) return false;
@@ -44,5 +62,18 @@ class PermissionHelper {
   /// Check if user can manage announcements
   static bool canManageAnnouncements(List<String> clubStatuten) {
     return isAdmin(clubStatuten);
+  }
+
+  /// Check if user can use the attendance scanner
+  static bool canScan(List<String> clubStatuten) {
+    if (clubStatuten.isEmpty) return false;
+
+    final normalizedStatuten = clubStatuten
+        .map((s) => s.toLowerCase().trim())
+        .toList();
+
+    return scannerRoles.any(
+      (role) => normalizedStatuten.contains(role.toLowerCase()),
+    );
   }
 }

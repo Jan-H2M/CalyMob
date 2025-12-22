@@ -6,11 +6,14 @@ import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/operation_provider.dart';
 import '../../providers/expense_provider.dart';
+import '../../services/profile_service.dart';
+import '../../utils/permission_helper.dart';
 import '../../widgets/operation_card.dart';
 import '../../widgets/loading_widget.dart';
 import '../../widgets/empty_state_widget.dart';
 import '../operations/operation_detail_screen.dart';
 import '../expenses/expense_list_screen.dart';
+import '../scanner/scan_page.dart';
 import '../auth/login_screen.dart';
 
 /// Écran d'accueil avec navigation tabs (événements + demandes)
@@ -23,7 +26,9 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final String _clubId = FirebaseConfig.defaultClubId;
+  final ProfileService _profileService = ProfileService();
   int _currentIndex = 0;
+  bool _canScan = false;
 
   @override
   void initState() {
@@ -35,7 +40,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
       context.read<OperationProvider>().listenToOpenEvents(_clubId);
       context.read<ExpenseProvider>().listenToUserExpenses(_clubId, userId);
+
+      // Check scanner permission
+      _checkScanPermission(userId);
     });
+  }
+
+  Future<void> _checkScanPermission(String userId) async {
+    if (userId.isEmpty) return;
+
+    final profile = await _profileService.getProfile(_clubId, userId);
+    if (profile != null && mounted) {
+      setState(() {
+        _canScan = PermissionHelper.canScan(profile.clubStatuten);
+      });
+    }
   }
 
   Future<void> _handleLogout() async {
@@ -82,7 +101,7 @@ class _HomeScreenState extends State<HomeScreen> {
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text(
-          _currentIndex == 0 ? 'Événements' : 'Mes demandes',
+          _getAppBarTitle(),
           style: const TextStyle(color: Colors.white),
         ),
         backgroundColor: Colors.transparent,
@@ -106,12 +125,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           // Content
           SafeArea(
-            child: _currentIndex == 0
-                ? RefreshIndicator(
-                    onRefresh: _refreshOperations,
-                    child: _buildBody(operationProvider, authProvider),
-                  )
-                : const ExpenseListScreen(),
+            child: _buildContent(operationProvider, authProvider),
           ),
         ],
       ),
@@ -122,15 +136,20 @@ class _HomeScreenState extends State<HomeScreen> {
             _currentIndex = index;
           });
         },
-        items: const [
-          BottomNavigationBarItem(
+        items: [
+          const BottomNavigationBarItem(
             icon: Icon(Icons.event),
             label: 'Événements',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.receipt_long),
             label: 'Demandes',
           ),
+          if (_canScan)
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.qr_code_scanner),
+              label: 'Scanner',
+            ),
         ],
         selectedItemColor: AppColors.middenblauw,
         unselectedItemColor: Colors.grey,
@@ -138,7 +157,41 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildBody(OperationProvider operationProvider, AuthProvider authProvider) {
+  String _getAppBarTitle() {
+    switch (_currentIndex) {
+      case 0:
+        return 'Événements';
+      case 1:
+        return 'Mes demandes';
+      case 2:
+        return 'Scanner';
+      default:
+        return 'Événements';
+    }
+  }
+
+  Widget _buildContent(
+      OperationProvider operationProvider, AuthProvider authProvider) {
+    switch (_currentIndex) {
+      case 0:
+        return RefreshIndicator(
+          onRefresh: _refreshOperations,
+          child: _buildBody(operationProvider, authProvider),
+        );
+      case 1:
+        return const ExpenseListScreen();
+      case 2:
+        return const ScanPage();
+      default:
+        return RefreshIndicator(
+          onRefresh: _refreshOperations,
+          child: _buildBody(operationProvider, authProvider),
+        );
+    }
+  }
+
+  Widget _buildBody(
+      OperationProvider operationProvider, AuthProvider authProvider) {
     final operations = operationProvider.operations;
 
     // Loading initial
@@ -163,7 +216,8 @@ class _HomeScreenState extends State<HomeScreen> {
       itemCount: operations.length,
       itemBuilder: (context, index) {
         final operation = operations[index];
-        final participantCount = operationProvider.getParticipantCount(operation.id);
+        final participantCount =
+            operationProvider.getParticipantCount(operation.id);
 
         return OperationCard(
           operation: operation,
