@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "328464166969",
+    "project_id": "calycompta",
+    "storage_bucket": "calycompta.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:328464166969:android:cfa7f3477e5d8e368f5de8",
+        "android_client_info": {
+          "package_name": "be.calypsodc.calymob"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAjDApGsDwHEAKea8DwBohf77Dm8-SUd-4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

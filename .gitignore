@@ -9,6 +9,7 @@ Thumbs.db
 # ===================
 .idea/
 .vscode/
+.claude/
 *.swp
 *.swo
 *.sw?
@@ -51,14 +52,19 @@ ios/.symlinks/
 
 # Android
 android/.gradle/
+android/.kotlin/
 android/local.properties
+android/app/src/debug/
+android/app/src/profile/
 
 # ===================
 # Build outputs
 # ===================
 build/
+build */
 dist/
 dist-ssr/
+**/node_modules_old/
 
 # ===================
 # Firebase
