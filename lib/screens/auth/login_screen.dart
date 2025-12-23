@@ -392,7 +392,23 @@ class _LoginScreenState extends State<LoginScreen> {
                       // Lien mot de passe oublié
                       TextButton(
                         onPressed: _handleForgotPassword,
-                        child: const Text('Mot de passe oublié ?'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text(
+                          'Mot de passe oublié ?',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w500,
+                            shadows: [
+                              Shadow(
+                                offset: Offset(0, 1),
+                                blurRadius: 2,
+                                color: Colors.black38,
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ],
                   ),
