@@ -16,7 +16,7 @@ import IconPicker from '../commun/IconPicker';
 import ColorPicker from '../commun/ColorPicker';
 import { renderIcon } from '@/utils/iconHelper';
 import {
-  X, Save, Star, Plus,
+  X, Save, Star, Plus, Edit2,
   AlertCircle, Loader, Trash2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -38,7 +38,7 @@ export default function ValueListDetailView({ valueList, isCreateMode, onClose }
 
   // Items data
   const [items, setItems] = useState<ValueListItem[]>([]);
-  // plain list view: no accordion/expanded rows
+  const [expandedItemValue, setExpandedItemValue] = useState<string | null>(null);
   const [newItem, setNewItem] = useState<Partial<CreateValueListItemDTO>>({});
   const [showNewItemForm, setShowNewItemForm] = useState(false);
 
@@ -65,14 +65,19 @@ export default function ValueListDetailView({ valueList, isCreateMode, onClose }
   useEffect(() => {
     const handleEscKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        // Close entire panel on Escape
-        onClose();
+        if (expandedItemValue) {
+          // Close expanded item first
+          setExpandedItemValue(null);
+        } else {
+          // Close entire modal
+          onClose();
+        }
       }
     };
 
     document.addEventListener('keydown', handleEscKey);
     return () => document.removeEventListener('keydown', handleEscKey);
-  }, [onClose]);
+  }, [onClose, expandedItemValue]);
 
   const isSystemList = valueList?.type === 'system';
   const canEdit = !isSystemList;
@@ -410,7 +415,7 @@ export default function ValueListDetailView({ valueList, isCreateMode, onClose }
                   )}
                 </div>
 
-                {/* Items - Plain List View */}
+                {/* Items Table - Accordion Style */}
                 {items.length === 0 ? (
                   <div className="text-center py-12 bg-gray-50 dark:bg-dark-bg-secondary rounded-lg">
                     <p className="text-gray-600 dark:text-dark-text-secondary">
@@ -419,77 +424,241 @@ export default function ValueListDetailView({ valueList, isCreateMode, onClose }
                   </div>
                 ) : (
                   <div className="bg-white dark:bg-dark-bg-primary border border-gray-200 dark:border-dark-border rounded-lg overflow-hidden">
-                    <ul className="divide-y divide-gray-200 dark:divide-dark-border">
-                      {items.map((item, index) => (
-                        <li key={item.value} className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 dark:hover:bg-dark-bg-secondary">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <button
-                              onClick={() => handleToggleFavorite(item.value)}
-                              disabled={!canEdit}
-                              className={`p-1 rounded transition-colors ${canEdit ? 'hover:bg-amber-50 dark:hover:bg-amber-900/20' : 'opacity-50 cursor-not-allowed'}`}
-                            >
-                              <Star className={`w-4 h-4 ${item.isFavorite ? 'fill-amber-400 text-amber-400' : 'text-gray-300 dark:text-gray-600'}`} />
-                            </button>
-
-                            {item.icon && renderIcon(item.icon, 'w-4 h-4 text-gray-500 dark:text-gray-400')}
-
-                            <div className="min-w-0">
-                              <input
-                                type="text"
-                                defaultValue={item.label}
-                                onBlur={(e) => handleUpdateItemField(item.value, 'label', e.target.value)}
-                                className="w-full text-sm px-1 py-0.5 bg-transparent border-0 focus:ring-0 text-gray-900 dark:text-dark-text-primary"
-                              />
-                              <div className="text-xs text-gray-600 dark:text-dark-text-secondary font-mono">{item.shortCode}</div>
-                            </div>
-
-                            {item.color && (
-                              <div
-                                className="w-3 h-3 rounded-full border border-gray-300 dark:border-gray-600"
-                                style={{ backgroundColor: item.color }}
-                              />
-                            )}
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => handleToggleActive(item.value)}
-                              disabled={!canEdit}
-                              className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
-                                item.active
-                                  ? 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-300'
-                                  : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                    <table className="w-full">
+                      <thead className="bg-gray-50 dark:bg-dark-bg-secondary border-b border-gray-200 dark:border-dark-border">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase w-10">⭐</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase">Label</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase w-24">Abrév.</th>
+                          <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase w-20">Actif</th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase w-16">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 dark:divide-dark-border">
+                        {items.map((item, index) => (
+                          <>
+                            {/* Compact Row */}
+                            <tr
+                              key={item.value}
+                              className={`cursor-pointer transition-colors ${
+                                expandedItemValue === item.value
+                                  ? 'bg-blue-50 dark:bg-blue-900/10'
+                                  : 'hover:bg-gray-50 dark:hover:bg-dark-bg-secondary'
                               }`}
+                              onClick={() => canEdit && setExpandedItemValue(expandedItemValue === item.value ? null : item.value)}
                             >
-                              {item.active ? 'Actif' : 'Inactif'}
-                            </button>
+                              {/* Favorite */}
+                              <td className="px-3 py-2">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleToggleFavorite(item.value);
+                                  }}
+                                  disabled={!canEdit}
+                                  className={`p-1 rounded transition-colors ${canEdit ? 'hover:bg-amber-50 dark:hover:bg-amber-900/20' : 'opacity-50 cursor-not-allowed'}`}
+                                >
+                                  <Star className={`w-4 h-4 ${item.isFavorite ? 'fill-amber-400 text-amber-400' : 'text-gray-300 dark:text-gray-600'}`} />
+                                </button>
+                              </td>
 
-                            <button
-                              onClick={() => handleMoveItem(item.value, 'up')}
-                              disabled={index === 0}
-                              className="px-2 py-1 border border-gray-300 dark:border-dark-border rounded text-gray-600 dark:text-dark-text-secondary hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                            >
-                              ▲
-                            </button>
-                            <button
-                              onClick={() => handleMoveItem(item.value, 'down')}
-                              disabled={index === items.length - 1}
-                              className="px-2 py-1 border border-gray-300 dark:border-dark-border rounded text-gray-600 dark:text-dark-text-secondary hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                            >
-                              ▼
-                            </button>
+                              {/* Label */}
+                              <td className="px-3 py-2">
+                                <div className="flex items-center gap-2">
+                                  {item.icon && renderIcon(item.icon, 'w-4 h-4 text-gray-500 dark:text-gray-400')}
+                                  <span className="text-sm text-gray-900 dark:text-dark-text-primary">
+                                    {item.label}
+                                  </span>
+                                  {item.color && (
+                                    <div
+                                      className="w-3 h-3 rounded-full border border-gray-300 dark:border-gray-600"
+                                      style={{ backgroundColor: item.color }}
+                                    />
+                                  )}
+                                </div>
+                              </td>
 
-                            <button
-                              onClick={() => handleDeleteItem(item.value)}
-                              disabled={!canEdit}
-                              className="px-2 py-1 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                            >
-                              Suppr.
-                            </button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
+                              {/* ShortCode */}
+                              <td className="px-3 py-2">
+                                <span className="text-sm text-gray-600 dark:text-dark-text-secondary font-mono">
+                                  {item.shortCode}
+                                </span>
+                              </td>
+
+                              {/* Active */}
+                              <td className="px-3 py-2 text-center">
+                                <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
+                                  item.active
+                                    ? 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-300'
+                                    : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                                }`}>
+                                  {item.active ? 'Actif' : 'Inactif'}
+                                </span>
+                              </td>
+
+                              {/* Edit Icon */}
+                              <td className="px-3 py-2 text-right">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setExpandedItemValue(expandedItemValue === item.value ? null : item.value);
+                                  }}
+                                  disabled={!canEdit}
+                                  className={`p-1.5 rounded transition-colors ${
+                                    canEdit
+                                      ? 'text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20'
+                                      : 'text-gray-400 cursor-not-allowed'
+                                  }`}
+                                  title="Modifier"
+                                >
+                                  <Edit2 className="w-4 h-4" />
+                                </button>
+                              </td>
+                            </tr>
+
+                            {/* Expanded Row */}
+                            {expandedItemValue === item.value && (
+                              <tr key={`${item.value}-expanded`}>
+                                <td colSpan={5} className="px-0 py-0">
+                                  <div className="bg-blue-50 dark:bg-blue-900/10 border-t border-blue-200 dark:border-blue-800">
+                                    <div className="p-4 space-y-4">
+                                      {/* Valeur BD (read-only) */}
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-600 dark:text-dark-text-secondary mb-1">
+                                          Valeur BD
+                                        </label>
+                                        <input
+                                          type="text"
+                                          value={item.value}
+                                          disabled
+                                          className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-sm font-mono text-gray-600 dark:text-gray-400 cursor-not-allowed"
+                                        />
+                                      </div>
+
+                                      <div className="grid grid-cols-2 gap-4">
+                                        {/* Label */}
+                                        <div>
+                                          <label className="block text-xs font-medium text-gray-700 dark:text-dark-text-primary mb-1">
+                                            Label
+                                          </label>
+                                          <input
+                                            type="text"
+                                            defaultValue={item.label}
+                                            onBlur={(e) => handleUpdateItemField(item.value, 'label', e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded text-sm
+                                              bg-white dark:bg-dark-bg-secondary
+                                              text-gray-900 dark:text-dark-text-primary
+                                              focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                          />
+                                        </div>
+
+                                        {/* ShortCode */}
+                                        <div>
+                                          <label className="block text-xs font-medium text-gray-700 dark:text-dark-text-primary mb-1">
+                                            Abréviation
+                                          </label>
+                                          <input
+                                            type="text"
+                                            defaultValue={item.shortCode}
+                                            maxLength={10}
+                                            onBlur={(e) => handleUpdateItemField(item.value, 'shortCode', e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded text-sm font-mono
+                                              bg-white dark:bg-dark-bg-secondary
+                                              text-gray-900 dark:text-dark-text-primary
+                                              focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                          />
+                                        </div>
+                                      </div>
+
+                                      <div className="grid grid-cols-2 gap-4">
+                                        {/* Icon Picker */}
+                                        <div>
+                                          <label className="block text-xs font-medium text-gray-700 dark:text-dark-text-primary mb-1">
+                                            Icône
+                                          </label>
+                                          <IconPicker
+                                            value={item.icon}
+                                            onChange={(icon) => handleUpdateItemField(item.value, 'icon', icon)}
+                                            disabled={!canEdit}
+                                          />
+                                        </div>
+
+                                        {/* Color Picker */}
+                                        <div>
+                                          <label className="block text-xs font-medium text-gray-700 dark:text-dark-text-primary mb-1">
+                                            Couleur
+                                          </label>
+                                          <ColorPicker
+                                            value={item.color}
+                                            onChange={(color) => handleUpdateItemField(item.value, 'color', color)}
+                                            disabled={!canEdit}
+                                          />
+                                        </div>
+                                      </div>
+
+                                      <div className="grid grid-cols-2 gap-4">
+                                        {/* Order */}
+                                        <div>
+                                          <label className="block text-xs font-medium text-gray-700 dark:text-dark-text-primary mb-1">
+                                            Ordre
+                                          </label>
+                                          <div className="flex items-center gap-2">
+                                            <button
+                                              onClick={() => handleMoveItem(item.value, 'up')}
+                                              disabled={index === 0}
+                                              className="px-3 py-2 border border-gray-300 dark:border-dark-border rounded text-gray-600 dark:text-dark-text-secondary hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                            >
+                                              ▲
+                                            </button>
+                                            <span className="text-sm text-gray-600 dark:text-dark-text-secondary min-w-[40px] text-center">
+                                              {item.order}
+                                            </span>
+                                            <button
+                                              onClick={() => handleMoveItem(item.value, 'down')}
+                                              disabled={index === items.length - 1}
+                                              className="px-3 py-2 border border-gray-300 dark:border-dark-border rounded text-gray-600 dark:text-dark-text-secondary hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                            >
+                                              ▼
+                                            </button>
+                                          </div>
+                                        </div>
+
+                                        {/* Active Toggle */}
+                                        <div>
+                                          <label className="block text-xs font-medium text-gray-700 dark:text-dark-text-primary mb-1">
+                                            Statut
+                                          </label>
+                                          <select
+                                            value={item.active ? 'true' : 'false'}
+                                            onChange={(e) => handleUpdateItemField(item.value, 'active', e.target.value === 'true')}
+                                            className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded text-sm
+                                              bg-white dark:bg-dark-bg-secondary
+                                              text-gray-900 dark:text-dark-text-primary
+                                              focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                          >
+                                            <option value="true">Actif</option>
+                                            <option value="false">Inactif</option>
+                                          </select>
+                                        </div>
+                                      </div>
+
+                                      {/* Action Buttons */}
+                                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-blue-200 dark:border-blue-800">
+                                        <button
+                                          onClick={() => setExpandedItemValue(null)}
+                                          className="px-4 py-2 text-sm text-gray-700 dark:text-dark-text-primary hover:bg-white dark:hover:bg-dark-bg-secondary rounded transition-colors"
+                                        >
+                                          Fermer
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
 
