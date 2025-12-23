@@ -12,6 +12,7 @@ import '../../widgets/loading_widget.dart';
 import '../../utils/date_formatter.dart';
 import '../../utils/currency_formatter.dart';
 import '../../utils/tariff_utils.dart';
+import '../../utils/permission_helper.dart';
 import '../../services/profile_service.dart';
 import '../../services/lifras_service.dart';
 import '../../services/operation_service.dart';
@@ -21,6 +22,8 @@ import '../../models/exercice_lifras.dart';
 import '../../models/participant_operation.dart';
 import '../../models/payment_response.dart';
 import '../../models/event_message.dart';
+import '../scanner/scan_page.dart';
+import 'add_guest_dialog.dart';
 import 'package:intl/intl.dart';
 
 /// Écran de détail d'une opération avec bouton inscription
@@ -582,6 +585,96 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
     );
   }
 
+  /// Check if current user can scan attendance
+  bool get _canScan {
+    if (_userProfile == null) {
+      debugPrint('🔍 _canScan: profile is null');
+      return false;
+    }
+    final result = PermissionHelper.canScan(_userProfile!.clubStatuten);
+    debugPrint('🔍 _canScan: clubStatuten=${_userProfile!.clubStatuten}, result=$result');
+    return result;
+  }
+
+  /// Check if current user can add guests (same permission as scan)
+  bool get _canAddGuest => _canScan;
+
+  /// Show dialog to add a guest to this operation
+  Future<void> _showAddGuestDialog() async {
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => const AddGuestDialog(),
+    );
+
+    if (result != null && mounted) {
+      final authProvider = context.read<AuthProvider>();
+      final operationProvider = context.read<OperationProvider>();
+      final operation = operationProvider.selectedOperation;
+
+      if (operation == null) return;
+
+      try {
+        await operationProvider.addGuestToOperation(
+          clubId: widget.clubId,
+          operationId: widget.operationId,
+          operationTitle: operation.titre ?? 'Événement',
+          guestPrenom: result['prenom'] as String,
+          guestNom: result['nom'] as String,
+          prix: result['prix'] as double,
+          addedByUserId: authProvider.currentUser?.uid ?? '',
+          addedByUserName: authProvider.displayName ?? 'Admin',
+        );
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Invité ${result['prenom']} ${result['nom']} ajouté'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Erreur: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  /// Open scanner for this event
+  void _openScanner() async {
+    final operationProvider = context.read<OperationProvider>();
+    final operation = operationProvider.selectedOperation;
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          appBar: AppBar(
+            title: const Text('Scanner Présence', style: TextStyle(color: Colors.white)),
+            backgroundColor: AppColors.middenblauw,
+            iconTheme: const IconThemeData(color: Colors.white),
+          ),
+          body: ScanPage(
+            clubId: widget.clubId,
+            operationId: widget.operationId,
+            operationTitle: operation?.titre ?? 'Événement',
+          ),
+        ),
+      ),
+    );
+
+    // Refresh participants list after closing scanner
+    if (mounted) {
+      _loadOperation();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -591,6 +684,19 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          // Scanner button for authorized users (larger, fits in app bar)
+          if (_canScan)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: IconButton(
+                onPressed: _openScanner,
+                iconSize: 40, // Larger but fits in app bar
+                icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
+                tooltip: 'Scanner présence',
+              ),
+            ),
+        ],
       ),
       body: Stack(
         children: [
@@ -1209,6 +1315,25 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Add guest button (only for admins/encadrants)
+              if (_canAddGuest)
+                GestureDetector(
+                  onTap: _showAddGuestDialog,
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.oranje.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.person_add_alt_1,
+                      size: 20,
+                      color: AppColors.oranje,
+                    ),
+                  ),
+                ),
+              // Participant count badge
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 margin: const EdgeInsets.only(right: 8),
@@ -1256,19 +1381,25 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                             ? '$prenom $displayNom'.trim()
                             : (displayNom.isNotEmpty ? displayNom : 'Anonyme');
                         final isCurrentUser = participant.membreId == currentUserId;
+                        final isGuest = participant.isGuest;
 
+                        final isPresent = participant.present ?? false;
                         return ListTile(
                           leading: CircleAvatar(
-                            backgroundColor: isCurrentUser ? AppColors.lichtblauw.withOpacity(0.5) : AppColors.lichtblauw.withOpacity(0.3),
+                            backgroundColor: isGuest
+                                ? AppColors.oranje.withOpacity(0.3)
+                                : (isCurrentUser ? AppColors.lichtblauw.withOpacity(0.5) : AppColors.lichtblauw.withOpacity(0.3)),
                             radius: 18,
-                            child: Text(
-                              prenom.isNotEmpty ? prenom[0].toUpperCase() : (displayNom.isNotEmpty ? displayNom[0].toUpperCase() : '?'),
-                              style: TextStyle(
-                                color: isCurrentUser ? AppColors.donkerblauw : AppColors.middenblauw,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
-                            ),
+                            child: isGuest
+                                ? Icon(Icons.person_outline, size: 18, color: AppColors.oranje)
+                                : Text(
+                                    prenom.isNotEmpty ? prenom[0].toUpperCase() : (displayNom.isNotEmpty ? displayNom[0].toUpperCase() : '?'),
+                                    style: TextStyle(
+                                      color: isCurrentUser ? AppColors.donkerblauw : AppColors.middenblauw,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                    ),
+                                  ),
                           ),
                           title: Row(
                             children: [
@@ -1279,7 +1410,27 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              if (isCurrentUser) ...[
+                              // Guest badge
+                              if (isGuest) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.oranje.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    'invité',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: AppColors.oranje,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              // Current user badge
+                              if (isCurrentUser && !isGuest) ...[
                                 const SizedBox(width: 8),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -1299,7 +1450,23 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                               ],
                             ],
                           ),
-                          trailing: _buildPaymentBadge(participant),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // Present indicator (green check)
+                              if (isPresent)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: Icon(
+                                    Icons.check_circle,
+                                    size: 20,
+                                    color: Colors.green[600],
+                                  ),
+                                ),
+                              // Payment indicator
+                              _buildPaymentBadge(participant),
+                            ],
+                          ),
                           dense: true,
                         );
                       }).toList(),

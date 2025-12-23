@@ -216,4 +216,53 @@ class OperationProvider with ChangeNotifier {
     _isLoading = false;
     notifyListeners();
   }
+
+  /// Ajouter un invité (non-membre) à une opération
+  Future<void> addGuestToOperation({
+    required String clubId,
+    required String operationId,
+    required String operationTitle,
+    required String guestPrenom,
+    required String guestNom,
+    required double prix,
+    required String addedByUserId,
+    required String addedByUserName,
+  }) async {
+    try {
+      _isLoading = true;
+      notifyListeners();
+
+      await _operationService.createGuestInscription(
+        clubId: clubId,
+        operationId: operationId,
+        operationTitle: operationTitle,
+        guestPrenom: guestPrenom,
+        guestNom: guestNom,
+        prix: prix,
+        addedByUserId: addedByUserId,
+        addedByUserName: addedByUserName,
+      );
+
+      // Mettre à jour cache
+      _participantCounts[operationId] = (_participantCounts[operationId] ?? 0) + 1;
+
+      // Recharger la liste des participants
+      _selectedOperationParticipants = await _operationService.getParticipants(
+        clubId,
+        operationId,
+      );
+
+      _isLoading = false;
+      notifyListeners();
+
+      debugPrint('✅ Invité ajouté via provider');
+    } catch (e) {
+      _isLoading = false;
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      notifyListeners();
+
+      debugPrint('❌ Erreur addGuestToOperation: $e');
+      rethrow;
+    }
+  }
 }

@@ -258,4 +258,127 @@ class OperationService {
       return null;
     }
   }
+
+  /// Marquer une inscription comme présent
+  /// Sets present=true with timestamp and user info
+  Future<void> markAsPresent({
+    required String clubId,
+    required String operationId,
+    required String memberId,
+    required String markedByUserId,
+    required String markedByUserName,
+  }) async {
+    try {
+      // Find the inscription
+      final snapshot = await _firestore
+          .collection('clubs/$clubId/operations/$operationId/inscriptions')
+          .where('membre_id', isEqualTo: memberId)
+          .get();
+
+      if (snapshot.docs.isEmpty) {
+        throw Exception('Inscription non trouvée');
+      }
+
+      // Update the inscription with present info
+      await snapshot.docs.first.reference.update({
+        'present': true,
+        'present_at': FieldValue.serverTimestamp(),
+        'present_by': markedByUserId,
+        'present_by_name': markedByUserName,
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      debugPrint('✅ Membre $memberId marqué présent pour opération $operationId');
+    } catch (e) {
+      debugPrint('❌ Erreur marquage présent: $e');
+      rethrow;
+    }
+  }
+
+  /// Créer une inscription "walk-in" (sur place) avec présence déjà marquée
+  /// Used when scanning a member who wasn't pre-registered
+  Future<void> createWalkInInscription({
+    required String clubId,
+    required String operationId,
+    required String operationTitle,
+    required MemberProfile member,
+    required String markedByUserId,
+    required String markedByUserName,
+  }) async {
+    try {
+      // Create inscription with present=true
+      final inscriptionData = {
+        'operation_id': operationId,
+        'operation_titre': operationTitle,
+        'membre_id': member.id,
+        'membre_nom': member.nom,
+        'membre_prenom': member.prenom,
+        'prix': 0.0, // Walk-in, prix à déterminer si nécessaire
+        'paye': false,
+        'date_inscription': FieldValue.serverTimestamp(),
+        // Already present (scanned)
+        'present': true,
+        'present_at': FieldValue.serverTimestamp(),
+        'present_by': markedByUserId,
+        'present_by_name': markedByUserName,
+        // Walk-in marker
+        'walk_in': true,
+        'created_at': FieldValue.serverTimestamp(),
+        'updated_at': FieldValue.serverTimestamp(),
+      };
+
+      await _firestore
+          .collection('clubs/$clubId/operations/$operationId/inscriptions')
+          .add(inscriptionData);
+
+      debugPrint('✅ Inscription walk-in créée: ${member.fullName} → $operationTitle');
+    } catch (e) {
+      debugPrint('❌ Erreur création inscription walk-in: $e');
+      rethrow;
+    }
+  }
+
+  /// Créer une inscription pour un invité (non-membre)
+  /// Used by admins/encadrants to add guests to an operation
+  Future<void> createGuestInscription({
+    required String clubId,
+    required String operationId,
+    required String operationTitle,
+    required String guestPrenom,
+    required String guestNom,
+    required double prix,
+    required String addedByUserId,
+    required String addedByUserName,
+  }) async {
+    try {
+      // Generate unique guest ID
+      final guestId = 'guest_${DateTime.now().millisecondsSinceEpoch}';
+
+      final inscriptionData = {
+        'operation_id': operationId,
+        'operation_titre': operationTitle,
+        'membre_id': guestId,
+        'membre_nom': guestNom,
+        'membre_prenom': guestPrenom,
+        'prix': prix,
+        'paye': false,
+        'date_inscription': FieldValue.serverTimestamp(),
+        // Guest marker
+        'is_guest': true,
+        'added_by': addedByUserId,
+        'added_by_name': addedByUserName,
+        'created_at': FieldValue.serverTimestamp(),
+        'updated_at': FieldValue.serverTimestamp(),
+      };
+
+      await _firestore
+          .collection('clubs/$clubId/operations/$operationId/inscriptions')
+          .add(inscriptionData);
+
+      debugPrint('✅ Inscription invité créée: $guestPrenom $guestNom → $operationTitle');
+    } catch (e) {
+      debugPrint('❌ Erreur création inscription invité: $e');
+      rethrow;
+    }
+  }
 }

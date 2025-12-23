@@ -17,6 +17,11 @@ class ParticipantOperation {
   final List<String> exercices; // IDs des exercices LIFRAS sélectionnés
   final String? paymentStatus; // Mollie status: open, pending, paid, failed, canceled, expired
   final bool transactionMatched; // True when bank transaction is matched in CalyCompta
+  final bool? present; // True when member has been marked present at the event
+  final DateTime? presentAt; // Timestamp when marked present
+  final String? presentBy; // User ID who marked them present
+  final String? presentByName; // Name of user who marked them present
+  final bool isGuest; // True for non-member guests
 
   ParticipantOperation({
     required this.id,
@@ -34,6 +39,11 @@ class ParticipantOperation {
     this.exercices = const [],
     this.paymentStatus,
     this.transactionMatched = false,
+    this.present,
+    this.presentAt,
+    this.presentBy,
+    this.presentByName,
+    this.isGuest = false,
   });
 
   /// Payment is confirmed via Mollie but bank transaction not yet matched
@@ -81,6 +91,11 @@ class ParticipantOperation {
       exercices: List<String>.from(data['exercices'] ?? []),
       paymentStatus: data['payment_status'],
       transactionMatched: data['transaction_matched'] ?? false,
+      present: data['present'],
+      presentAt: (data['present_at'] as Timestamp?)?.toDate(),
+      presentBy: data['present_by'],
+      presentByName: data['present_by_name'],
+      isGuest: data['is_guest'] ?? false,
     );
   }
 
@@ -101,6 +116,11 @@ class ParticipantOperation {
       'exercices': exercices,
       'payment_status': paymentStatus,
       'transaction_matched': transactionMatched,
+      'present': present,
+      'present_at': presentAt != null ? Timestamp.fromDate(presentAt!) : null,
+      'present_by': presentBy,
+      'present_by_name': presentByName,
+      'is_guest': isGuest,
       'created_at': FieldValue.serverTimestamp(),
       'updated_at': FieldValue.serverTimestamp(),
     };
@@ -123,6 +143,11 @@ class ParticipantOperation {
     List<String>? exercices,
     String? paymentStatus,
     bool? transactionMatched,
+    bool? present,
+    DateTime? presentAt,
+    String? presentBy,
+    String? presentByName,
+    bool? isGuest,
   }) {
     return ParticipantOperation(
       id: id ?? this.id,
@@ -140,6 +165,11 @@ class ParticipantOperation {
       exercices: exercices ?? this.exercices,
       paymentStatus: paymentStatus ?? this.paymentStatus,
       transactionMatched: transactionMatched ?? this.transactionMatched,
+      present: present ?? this.present,
+      presentAt: presentAt ?? this.presentAt,
+      presentBy: presentBy ?? this.presentBy,
+      presentByName: presentByName ?? this.presentByName,
+      isGuest: isGuest ?? this.isGuest,
     );
   }
 }
