@@ -7,6 +7,7 @@ import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/biometric_service.dart';
 import '../home/landing_screen.dart';
+import 'forgot_password_screen.dart';
 
 /// Écran de login
 class LoginScreen extends StatefulWidget {
@@ -138,6 +139,13 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  void _handleForgotPassword() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ForgotPasswordScreen()),
+    );
+  }
+
   Future<void> _handleLoginWithBiometricSetup() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -230,7 +238,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     children: [
                       // Logo Calypso
                       Image.asset(
-                        'assets/images/logo-vertical-transparent.png',
+                        AppAssets.logoVerticalPng,
                         height: 180,
                         fit: BoxFit.contain,
                       ),
@@ -383,12 +391,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                       // Lien mot de passe oublié
                       TextButton(
-                        onPressed: () {
-                          // TODO: Implémenter reset password
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Fonctionnalité à venir')),
-                          );
-                        },
+                        onPressed: _handleForgotPassword,
                         child: const Text('Mot de passe oublié ?'),
                       ),
                     ],
