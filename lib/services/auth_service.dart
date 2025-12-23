@@ -77,10 +77,21 @@ class AuthService {
   }
 
   /// Envoyer email de réinitialisation mot de passe
-  Future<void> sendPasswordResetEmail(String email) async {
+  /// [source] indique la source de la demande ('app' pour CalyMob, 'web' pour CalyCompta)
+  Future<void> sendPasswordResetEmail(String email, {String source = 'app'}) async {
     try {
-      await _auth.sendPasswordResetEmail(email: email);
-      debugPrint('✅ Email de réinitialisation envoyé à: $email');
+      // Utiliser ActionCodeSettings pour ajouter un paramètre source
+      // Cela permet à la page web de savoir d'où vient la demande
+      final actionCodeSettings = ActionCodeSettings(
+        url: 'https://caly.club/reset-password?source=$source',
+        handleCodeInApp: false,
+      );
+
+      await _auth.sendPasswordResetEmail(
+        email: email,
+        actionCodeSettings: actionCodeSettings,
+      );
+      debugPrint('✅ Email de réinitialisation envoyé à: $email (source: $source)');
     } on FirebaseAuthException catch (e) {
       debugPrint('❌ Erreur reset password: ${e.code}');
 
