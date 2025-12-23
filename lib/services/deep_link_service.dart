@@ -2,10 +2,11 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:app_links/app_links.dart';
 
-/// Service for handling deep links (payment return URLs, etc.)
+/// Service for handling deep links (payment return URLs, password reset, etc.)
 ///
 /// Supported deep link formats:
 /// - calymob://payment/return?provider=mollie&payment=xxx&clubId=xxx&operationId=xxx
+/// - https://caly.club/reset-password?oobCode=xxx&mode=resetPassword
 class DeepLinkService {
   static final DeepLinkService _instance = DeepLinkService._internal();
   factory DeepLinkService() => _instance;
@@ -16,6 +17,10 @@ class DeepLinkService {
   // Stream controller for payment return events
   final _paymentReturnController = StreamController<PaymentReturnData>.broadcast();
   Stream<PaymentReturnData> get onPaymentReturn => _paymentReturnController.stream;
+
+  // Stream controller for password reset events
+  final _passwordResetController = StreamController<PasswordResetData>.broadcast();
+  Stream<PasswordResetData> get onPasswordReset => _passwordResetController.stream;
 
   StreamSubscription<Uri>? _linkSubscription;
   bool _isInitialized = false;
@@ -55,6 +60,26 @@ class DeepLinkService {
     debugPrint('DeepLink: Handling URI: $uri');
     debugPrint('DeepLink: Scheme: ${uri.scheme}, Host: ${uri.host}, Path: ${uri.path}');
 
+    // Check if it's a password reset link from caly.club
+    // Format: https://caly.club/reset-password?oobCode=xxx&mode=resetPassword
+    if ((uri.scheme == 'https' || uri.scheme == 'http') &&
+        uri.host == 'caly.club' &&
+        uri.path == '/reset-password') {
+      final oobCode = uri.queryParameters['oobCode'];
+      final mode = uri.queryParameters['mode'];
+
+      if (oobCode != null && mode == 'resetPassword') {
+        debugPrint('DeepLink: Password reset detected - oobCode: ${oobCode.substring(0, 10)}...');
+
+        _passwordResetController.add(PasswordResetData(
+          oobCode: oobCode,
+        ));
+      } else {
+        debugPrint('DeepLink: Missing oobCode or invalid mode for password reset');
+      }
+      return;
+    }
+
     // Check if it's a payment return link
     // Format: calymob://payment/return?provider=mollie&payment=xxx
     if (uri.scheme == 'calymob' && uri.host == 'payment' && uri.path == '/return') {
@@ -75,15 +100,17 @@ class DeepLinkService {
       } else {
         debugPrint('DeepLink: Missing required payment parameters');
       }
-    } else {
-      debugPrint('DeepLink: Unknown deep link format');
+      return;
     }
+
+    debugPrint('DeepLink: Unknown deep link format');
   }
 
   /// Dispose of the service
   void dispose() {
     _linkSubscription?.cancel();
     _paymentReturnController.close();
+    _passwordResetController.close();
     _isInitialized = false;
   }
 }
@@ -104,4 +131,16 @@ class PaymentReturnData {
 
   @override
   String toString() => 'PaymentReturnData(provider: $provider, paymentId: $paymentId, clubId: $clubId, operationId: $operationId)';
+}
+
+/// Data class for password reset events
+class PasswordResetData {
+  final String oobCode;
+
+  PasswordResetData({
+    required this.oobCode,
+  });
+
+  @override
+  String toString() => 'PasswordResetData(oobCode: ${oobCode.substring(0, 10)}...)';
 }

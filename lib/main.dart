@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -26,6 +27,7 @@ import 'providers/exercice_valide_provider.dart';
 
 // Screens
 import 'screens/auth/login_screen.dart';
+import 'screens/auth/reset_password_screen.dart';
 
 // Config
 import 'config/app_colors.dart';
@@ -55,16 +57,20 @@ void main() async {
     Intl.defaultLocale = 'fr_FR';
     debugPrint('✅ Locale initialisée (fr_FR)');
 
-    // Initialiser le service de notifications
+    // Initialiser le service de notifications (pas sur web)
     // Note: Le handler en arrière-plan doit être enregistré avant runApp
-    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    if (!kIsWeb) {
+      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    }
 
     final notificationService = NotificationService();
     await notificationService.initialize();
     // Configurer les handlers pour les notifications en foreground
-    notificationService.setupForegroundNotifications();
-    // Effacer le badge au démarrage de l'app
-    await notificationService.clearBadge();
+    if (!kIsWeb) {
+      notificationService.setupForegroundNotifications();
+      // Effacer le badge au démarrage de l'app
+      await notificationService.clearBadge();
+    }
     debugPrint('✅ Notifications initialisées');
 
     // Initialiser le service de deep links (pour les retours de paiement Mollie)
@@ -88,11 +94,26 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   final NotificationService _notificationService = NotificationService();
+  final DeepLinkService _deepLinkService = DeepLinkService();
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _setupDeepLinkListener();
+  }
+
+  void _setupDeepLinkListener() {
+    _deepLinkService.onPasswordReset.listen((data) {
+      debugPrint('Main: Password reset deep link received');
+      // Navigate to reset password screen
+      _navigatorKey.currentState?.push(
+        MaterialPageRoute(
+          builder: (_) => ResetPasswordScreen(oobCode: data.oobCode),
+        ),
+      );
+    });
   }
 
   @override
@@ -122,6 +143,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         ChangeNotifierProvider(create: (_) => ExerciceValideProvider()),
       ],
       child: MaterialApp(
+        navigatorKey: _navigatorKey,
         title: 'CalyMob',
         debugShowCheckedModeBanner: false,
         // Localisation française pour Syncfusion Calendar
