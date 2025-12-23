@@ -1,10 +1,12 @@
-import 'dart:io';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+
+// Import dart:io only on non-web platforms
+import 'notification_service_io.dart' if (dart.library.html) 'notification_service_web.dart' as platform_helper;
 
 /// Service de gestion des notifications push
 class NotificationService {
@@ -14,9 +16,15 @@ class NotificationService {
 
   /// Initialiser les notifications
   Future<void> initialize() async {
+    // Skip initialization on web - not supported
+    if (kIsWeb) {
+      debugPrint('⚠️ Notifications non supportées sur web');
+      return;
+    }
+
     try {
       // Créer le canal de notification pour Android 8+
-      if (Platform.isAndroid) {
+      if (!kIsWeb && platform_helper.isAndroid) {
         await _createNotificationChannel();
       }
 
@@ -205,12 +213,12 @@ class NotificationService {
     String osVersion;
 
     try {
-      if (Platform.isIOS) {
+      if (platform_helper.isIOS) {
         final iosInfo = await deviceInfoPlugin.iosInfo;
         platform = 'ios';
         model = iosInfo.utsname.machine; // Ex: "iPhone14,2"
         osVersion = 'iOS ${iosInfo.systemVersion}';
-      } else if (Platform.isAndroid) {
+      } else if (platform_helper.isAndroid) {
         final androidInfo = await deviceInfoPlugin.androidInfo;
         platform = 'android';
         model = androidInfo.model; // Ex: "Pixel 7"
@@ -222,7 +230,7 @@ class NotificationService {
       }
     } catch (e) {
       debugPrint('❌ Erreur récupération device info: $e');
-      platform = Platform.isIOS ? 'ios' : (Platform.isAndroid ? 'android' : 'unknown');
+      platform = platform_helper.isIOS ? 'ios' : (platform_helper.isAndroid ? 'android' : 'unknown');
       model = 'unknown';
       osVersion = 'unknown';
     }

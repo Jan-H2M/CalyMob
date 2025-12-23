@@ -87,4 +87,26 @@ class AttendanceService {
       return [];
     }
   }
+
+  /// Check if a member has already checked in for a specific event
+  Future<AttendanceRecord?> getEventCheckIn(
+      String clubId, String operationId, String memberId) async {
+    try {
+      final snapshot = await _firestore
+          .collection('clubs/$clubId/attendance')
+          .where('operation_id', isEqualTo: operationId)
+          .where('membre_id', isEqualTo: memberId)
+          .limit(1)
+          .get();
+
+      if (snapshot.docs.isEmpty) {
+        return null;
+      }
+
+      return AttendanceRecord.fromFirestore(snapshot.docs.first);
+    } catch (e) {
+      debugPrint('❌ Erreur vérification présence événement: $e');
+      return null;
+    }
+  }
 }

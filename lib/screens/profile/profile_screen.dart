@@ -12,6 +12,7 @@ import '../../services/profile_service.dart';
 import '../../services/member_service.dart';
 import '../../utils/permission_helper.dart';
 import '../../widgets/photo_consent_dialog.dart';
+import '../../widgets/user_qr_card.dart';
 // Conditional import for camera screen
 import 'face_camera_screen.dart' if (dart.library.html) 'face_camera_screen_stub.dart';
 import 'settings_screen.dart';
@@ -410,6 +411,11 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
                         children: [
                           // Photo de profil
                           _buildPhotoSection(profile),
+
+                          const SizedBox(height: 24),
+
+                          // QR Code
+                          UserQRCard(profile: profile),
 
                           const SizedBox(height: 24),
 

@@ -20,7 +20,7 @@ class OperationsListScreen extends StatefulWidget {
 
 class _OperationsListScreenState extends State<OperationsListScreen> {
   final String _clubId = FirebaseConfig.defaultClubId;
-  String _selectedFilter = 'all'; // 'all', 'plongee', 'sortie'
+  String _selectedFilter = 'all'; // 'all', 'plongee', 'piscine', 'sortie'
 
   @override
   void initState() {
@@ -99,6 +99,8 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                 _buildFilterChip('all', 'Tout'),
                 const SizedBox(width: 12),
                 _buildFilterChip('plongee', 'Plongées'),
+                const SizedBox(width: 12),
+                _buildFilterChip('piscine', 'Piscine'),
                 const SizedBox(width: 12),
                 _buildFilterChip('sortie', 'Sorties'),
               ],
@@ -223,9 +225,11 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
             Icon(
               _selectedFilter == 'plongee'
                   ? Icons.scuba_diving
-                  : _selectedFilter == 'sortie'
-                      ? Icons.directions_boat
-                      : Icons.event_busy,
+                  : _selectedFilter == 'piscine'
+                      ? Icons.pool
+                      : _selectedFilter == 'sortie'
+                          ? Icons.directions_boat
+                          : Icons.event_busy,
               size: 64,
               color: Colors.white.withOpacity(0.7),
             ),

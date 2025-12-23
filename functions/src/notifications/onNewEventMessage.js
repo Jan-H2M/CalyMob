@@ -80,7 +80,10 @@ exports.onNewEventMessage = onDocumentCreated(
       const memberDocs = await Promise.all(tokenPromises);
 
       // Collect all valid FCM tokens (including all devices per member)
+      // Also track which member owns which token for cleanup
       const tokens = [];
+      const tokenToMember = new Map(); // token -> { memberId, clubId }
+
       memberDocs.forEach(doc => {
         if (doc.exists) {
           const memberData = doc.data();
@@ -90,12 +93,14 @@ exports.onNewEventMessage = onDocumentCreated(
               memberData.fcm_tokens.forEach(token => {
                 if (token && !tokens.includes(token)) {
                   tokens.push(token);
+                  tokenToMember.set(token, { memberId: doc.id, clubId });
                 }
               });
             }
             // Fallback to single fcm_token if array is empty
             else if (memberData.fcm_token) {
               tokens.push(memberData.fcm_token);
+              tokenToMember.set(memberData.fcm_token, { memberId: doc.id, clubId });
             }
           }
         }
@@ -109,12 +114,15 @@ exports.onNewEventMessage = onDocumentCreated(
       console.log(`Sending notification to ${tokens.length} devices`);
 
       // 4. Prepare the notification payload
+      const notificationTitle = `${senderName} - ${eventTitle}`;
+      const notificationBody = messageText.length > 100
+        ? messageText.substring(0, 97) + '...'
+        : messageText;
+
       const payload = {
         notification: {
-          title: `${senderName} - ${eventTitle}`,
-          body: messageText.length > 100
-            ? messageText.substring(0, 97) + '...'
-            : messageText,
+          title: notificationTitle,
+          body: notificationBody,
         },
         data: {
           type: 'event_message',
@@ -124,6 +132,7 @@ exports.onNewEventMessage = onDocumentCreated(
           click_action: 'FLUTTER_NOTIFICATION_CLICK',
         },
         android: {
+          priority: 'high',
           notification: {
             channelId: 'event_messages',
             priority: 'high',
@@ -131,10 +140,19 @@ exports.onNewEventMessage = onDocumentCreated(
           },
         },
         apns: {
+          headers: {
+            'apns-priority': '10',
+            'apns-expiration': '0',
+          },
           payload: {
             aps: {
+              alert: {
+                title: notificationTitle,
+                body: notificationBody,
+              },
               sound: 'default',
               badge: 1,
+              'content-available': 1,
             },
           },
         },
@@ -164,15 +182,27 @@ exports.onNewEventMessage = onDocumentCreated(
         successCount += result.successCount;
         failureCount += result.failureCount;
 
-        // Remove invalid tokens
+        // Collect invalid tokens for cleanup
         result.responses.forEach((response, index) => {
           if (!response.success) {
             const error = response.error;
             if (error.code === 'messaging/invalid-registration-token' ||
                 error.code === 'messaging/registration-token-not-registered') {
               const failedToken = tokens[batchIndex * batchSize + index];
-              console.log(`Removing invalid token: ${failedToken.substring(0, 20)}...`);
-              // Could add logic here to remove token from Firestore
+              const memberInfo = tokenToMember.get(failedToken);
+              if (memberInfo) {
+                console.log(`Removing invalid token from member ${memberInfo.memberId}: ${failedToken.substring(0, 20)}...`);
+                // Remove invalid token from Firestore
+                admin.firestore()
+                  .collection('clubs')
+                  .doc(memberInfo.clubId)
+                  .collection('members')
+                  .doc(memberInfo.memberId)
+                  .update({
+                    fcm_tokens: admin.firestore.FieldValue.arrayRemove(failedToken)
+                  })
+                  .catch(err => console.error(`Failed to remove token: ${err.message}`));
+              }
             }
           }
         });

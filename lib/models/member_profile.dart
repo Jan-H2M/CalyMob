@@ -1,5 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// Statut de validation pour cotisation et certificat médical
+enum ValidationStatus { valid, warning, expired, missing }
+
 /// Modèle pour le profil d'un membre
 class MemberProfile {
   final String id; // User ID
@@ -34,6 +37,10 @@ class MemberProfile {
   // Statut membre
   final String? memberStatus; // "active", "inactive", "deleted"
 
+  // Validation dates (for attendance tracking)
+  final DateTime? cotisationValidite; // Membership fee validity
+  final DateTime? certificatMedicalValidite; // Medical certificate validity
+
   // Métadonnées
   final DateTime? createdAt;
   final DateTime? updatedAt;
@@ -60,6 +67,8 @@ class MemberProfile {
     this.notificationsEnabled = true, // Par défaut, notifications activées
     this.fcmToken,
     this.memberStatus,
+    this.cotisationValidite,
+    this.certificatMedicalValidite,
     this.createdAt,
     this.updatedAt,
   });
@@ -70,8 +79,9 @@ class MemberProfile {
 
     return MemberProfile(
       id: doc.id,
-      nom: data['nom'] ?? '',
-      prenom: data['prenom'] ?? '',
+      // Support both French (nom/prenom) and English (lastName/firstName) field names
+      nom: data['nom'] ?? data['lastName'] ?? '',
+      prenom: data['prenom'] ?? data['firstName'] ?? '',
       email: data['email'] ?? '',
       plongeurCode: data['plongeur_code'],
       plongeurNiveau: data['plongeur_niveau'],
@@ -90,6 +100,8 @@ class MemberProfile {
       notificationsEnabled: data['notifications_enabled'] ?? true,
       fcmToken: data['fcm_token'],
       memberStatus: data['member_status'] ?? data['status'],
+      cotisationValidite: (data['cotisation_validite'] as Timestamp?)?.toDate(),
+      certificatMedicalValidite: (data['certificat_medical_validite'] as Timestamp?)?.toDate(),
       createdAt: (data['created_at'] as Timestamp?)?.toDate(),
       updatedAt: (data['updated_at'] as Timestamp?)?.toDate(),
     );
@@ -180,4 +192,26 @@ class MemberProfile {
 
   /// Vérifie si le membre est actif
   bool get isActive => memberStatus == 'active' || memberStatus == null;
+
+  /// Statut de validation de la cotisation
+  ValidationStatus get cotisationStatus {
+    if (cotisationValidite == null) return ValidationStatus.missing;
+    final now = DateTime.now();
+    final daysUntilExpiry = cotisationValidite!.difference(now).inDays;
+    
+    if (daysUntilExpiry < 0) return ValidationStatus.expired;
+    if (daysUntilExpiry <= 30) return ValidationStatus.warning;
+    return ValidationStatus.valid;
+  }
+
+  /// Statut de validation du certificat médical
+  ValidationStatus get certificatStatus {
+    if (certificatMedicalValidite == null) return ValidationStatus.missing;
+    final now = DateTime.now();
+    final daysUntilExpiry = certificatMedicalValidite!.difference(now).inDays;
+    
+    if (daysUntilExpiry < 0) return ValidationStatus.expired;
+    if (daysUntilExpiry <= 30) return ValidationStatus.warning;
+    return ValidationStatus.valid;
+  }
 }

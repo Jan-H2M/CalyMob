@@ -6,7 +6,8 @@ import 'package:app_links/app_links.dart';
 ///
 /// Supported deep link formats:
 /// - calymob://payment/return?provider=mollie&payment=xxx&clubId=xxx&operationId=xxx
-/// - https://caly.club/reset-password?oobCode=xxx&mode=resetPassword
+/// - calymob://reset-password?oobCode=xxx&mode=resetPassword (custom scheme)
+/// - https://caly.club/reset-password?oobCode=xxx&mode=resetPassword (Universal/App Links)
 class DeepLinkService {
   static final DeepLinkService _instance = DeepLinkService._internal();
   factory DeepLinkService() => _instance;
@@ -76,6 +77,24 @@ class DeepLinkService {
         ));
       } else {
         debugPrint('DeepLink: Missing oobCode or invalid mode for password reset');
+      }
+      return;
+    }
+
+    // Check if it's a password reset link via custom scheme
+    // Format: calymob://reset-password?oobCode=xxx&mode=resetPassword
+    if (uri.scheme == 'calymob' && uri.host == 'reset-password') {
+      final oobCode = uri.queryParameters['oobCode'];
+      final mode = uri.queryParameters['mode'];
+
+      if (oobCode != null && mode == 'resetPassword') {
+        debugPrint('DeepLink: Password reset via custom scheme - oobCode: ${oobCode.substring(0, 10)}...');
+
+        _passwordResetController.add(PasswordResetData(
+          oobCode: oobCode,
+        ));
+      } else {
+        debugPrint('DeepLink: Missing oobCode or invalid mode for password reset (custom scheme)');
       }
       return;
     }

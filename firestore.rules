@@ -60,6 +60,28 @@ service cloud.firestore {
              (userRole == 'user' && request.auth.uid == ownerId);
     }
 
+    // Check if user can scan/mark attendance (encadrants, CA, accueil)
+    // Uses clubStatuten array which contains club functions
+    // Note: Firestore rules are case-sensitive, so we list all variations
+    function canScanAttendance(clubId) {
+      let userData = getUserData(clubId);
+      // Admin roles can always scan
+      // Or user has a club function that allows scanning
+      return userData.app_role in ['superadmin', 'admin', 'validateur'] ||
+             ('clubStatuten' in userData &&
+              userData.clubStatuten.hasAny([
+                // Encadrants variations
+                'encadrant', 'Encadrant', 'encadrants', 'Encadrants',
+                // CA variations
+                'ca', 'CA', 'comite', 'Comite', 'comité', 'Comité',
+                // Accueil variations
+                'accueil', 'Accueil',
+                // Board/admin roles that should also be able to scan
+                'admin', 'administrateur', 'president', 'président',
+                'secretaire', 'secrétaire', 'tresorier', 'trésorier', 'board'
+              ]));
+    }
+
     // For development/emulator - simplified rules for most data
     // Permission settings have strict protection
 
@@ -271,7 +293,9 @@ service cloud.firestore {
               // L'utilisateur peut modifier/supprimer sa propre inscription
               resource.data.membre_id == request.auth.uid ||
               // Ou être admin
-              getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur']
+              getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
+              // Ou avoir le droit de scanner (encadrant, CA, accueil)
+              canScanAttendance(clubId)
             );
         }
 
@@ -365,6 +389,21 @@ service cloud.firestore {
         allow read: if isAuthenticated();
         // Création: admins uniquement
         allow create: if isAdmin(clubId) && hasValidSession(clubId);
+        // Modification/Suppression: admins uniquement
+        allow update, delete: if isAdmin(clubId) && hasValidSession(clubId);
+      }
+
+      // ========== ATTENDANCE MODULE (Check-in Scanner) ==========
+
+      // Attendance records (présences aux événements)
+      match /attendance/{attendanceId} {
+        // Lecture: tous les membres authentifiés
+        allow read: if isAuthenticated();
+        // Création: encadrants, CA, accueil peuvent scanner (+ admins)
+        allow create: if isAuthenticated()
+          && hasValidSession(clubId)
+          && request.resource.data.checked_in_by == request.auth.uid
+          && canScanAttendance(clubId);
         // Modification/Suppression: admins uniquement
         allow update, delete: if isAdmin(clubId) && hasValidSession(clubId);
       }

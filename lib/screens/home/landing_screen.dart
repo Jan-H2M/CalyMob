@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:lottie/lottie.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
@@ -203,7 +204,7 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   child: Image.asset(
-                    'assets/images/logo-vertical-transparent.png',
+                    AppAssets.logoVerticalPng,
                     height: 150,
                     fit: BoxFit.contain,
                   ),

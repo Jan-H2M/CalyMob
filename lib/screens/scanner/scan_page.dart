@@ -2,26 +2,40 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
-import '../../config/firebase_config.dart';
 import '../../models/member_profile.dart';
 import '../../models/attendance_record.dart';
+import '../../models/participant_operation.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/member_service.dart';
 import '../../services/attendance_service.dart';
+import '../../services/operation_service.dart';
 import 'member_validation_card.dart';
 
 /// Scanner page for member check-in with QR code scanning
+///
+/// Two modes:
+/// 1. Event with inscriptions: Mark existing inscription as "present"
+/// 2. Event without required inscription: Create attendance record
 class ScanPage extends StatefulWidget {
-  const ScanPage({Key? key}) : super(key: key);
+  final String clubId;
+  final String operationId;
+  final String operationTitle;
+
+  const ScanPage({
+    Key? key,
+    required this.clubId,
+    required this.operationId,
+    required this.operationTitle,
+  }) : super(key: key);
 
   @override
   State<ScanPage> createState() => _ScanPageState();
 }
 
 class _ScanPageState extends State<ScanPage> {
-  final String _clubId = FirebaseConfig.defaultClubId;
   final MemberService _memberService = MemberService();
   final AttendanceService _attendanceService = AttendanceService();
+  final OperationService _operationService = OperationService();
   final MobileScannerController _scannerController = MobileScannerController(
     detectionSpeed: DetectionSpeed.normal,
     facing: CameraFacing.back,
@@ -33,7 +47,8 @@ class _ScanPageState extends State<ScanPage> {
   bool _isLoading = false;
   bool _isCheckingIn = false;
   MemberProfile? _scannedMember;
-  bool _alreadyCheckedIn = false;
+  ParticipantOperation? _memberInscription; // Inscription for this event
+  bool _alreadyPresent = false; // Already marked present
   String? _errorMessage;
   String _scanMethod = 'qr';
 
@@ -70,32 +85,209 @@ class _ScanPageState extends State<ScanPage> {
   }
 
   Future<void> _lookupMember(String memberId) async {
+    debugPrint('🔍 Looking up member: $memberId');
     try {
-      final member = await _memberService.getMemberById(_clubId, memberId);
+      final member = await _memberService.getMemberById(widget.clubId, memberId);
 
       if (member == null) {
+        debugPrint('❌ Membre non trouvé: $memberId');
         setState(() {
           _isLoading = false;
           _errorMessage = 'Membre non trouvé';
           _scannedMember = null;
+          _memberInscription = null;
         });
         return;
       }
 
-      // Check if already checked in today
-      final todayCheckIn =
-          await _attendanceService.getTodayCheckIn(_clubId, memberId);
+      debugPrint('✅ Membre trouvé: ${member.fullName} (${member.id})');
 
-      setState(() {
-        _isLoading = false;
-        _scannedMember = member;
-        _alreadyCheckedIn = todayCheckIn != null;
-      });
+      // Check if member is inscribed for this event
+      final inscription = await _operationService.getUserInscription(
+        clubId: widget.clubId,
+        operationId: widget.operationId,
+        userId: memberId,
+      );
+
+      // Check if already marked present (only from inscription, not attendance)
+      // We want to allow creating inscriptions for people scanned before
+      bool alreadyPresent = false;
+      if (inscription != null) {
+        // Check the present field on the inscription
+        alreadyPresent = inscription.present ?? false;
+      }
+      // Note: We no longer check attendance collection - if they're not inscribed,
+      // we want to create an inscription for them
+
+      debugPrint('📋 alreadyPresent: $alreadyPresent, inscription: ${inscription != null}');
+
+      // Check if both cotisation and certificat are valid for auto-registration
+      final cotisationValid = member.cotisationStatus == ValidationStatus.valid;
+      final certificatValid = member.certificatStatus == ValidationStatus.valid;
+      final bothValid = cotisationValid && certificatValid;
+
+      debugPrint('🟢 Auto-register check: cotisation=$cotisationValid, certificat=$certificatValid, bothValid=$bothValid, alreadyPresent=$alreadyPresent');
+
+      if (bothValid) {
+        if (alreadyPresent) {
+          // Already registered - show toast and go back to scanner
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.info, color: Colors.white, size: 32),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            member.fullName,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const Text(
+                            'Déjà enregistré',
+                            style: TextStyle(fontSize: 14, color: Colors.white70),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                backgroundColor: AppColors.middenblauw,
+                duration: const Duration(seconds: 2),
+                behavior: SnackBarBehavior.floating,
+                margin: const EdgeInsets.all(16),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            );
+            _resetScanner();
+          }
+        } else {
+          // Auto-register immediately when both are valid
+          setState(() {
+            _isLoading = false;
+            _scannedMember = member;
+            _memberInscription = inscription;
+            _alreadyPresent = alreadyPresent;
+          });
+          // Trigger auto-registration
+          await _autoRegisterMember(member, inscription);
+        }
+      } else {
+        // Show validation card for manual review (cotisation or certificat not valid)
+        setState(() {
+          _isLoading = false;
+          _scannedMember = member;
+          _memberInscription = inscription;
+          _alreadyPresent = alreadyPresent;
+        });
+      }
     } catch (e) {
+      debugPrint('❌ Erreur lookup: $e');
       setState(() {
         _isLoading = false;
         _errorMessage = 'Erreur: ${e.toString()}';
       });
+    }
+  }
+
+  /// Auto-register member when both cotisation and certificat are valid
+  Future<void> _autoRegisterMember(MemberProfile member, ParticipantOperation? inscription) async {
+    final authProvider = context.read<AuthProvider>();
+    final currentUser = authProvider.currentUser;
+    final displayName = authProvider.displayName ?? 'Inconnu';
+
+    if (currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Vous devez être connecté'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    try {
+      if (inscription != null) {
+        // Member is inscribed - mark the inscription as present
+        await _operationService.markAsPresent(
+          clubId: widget.clubId,
+          operationId: widget.operationId,
+          memberId: member.id,
+          markedByUserId: currentUser.uid,
+          markedByUserName: displayName,
+        );
+      } else {
+        // No inscription - create inscription with present=true (walk-in)
+        await _operationService.createWalkInInscription(
+          clubId: widget.clubId,
+          operationId: widget.operationId,
+          operationTitle: widget.operationTitle,
+          member: member,
+          markedByUserId: currentUser.uid,
+          markedByUserName: displayName,
+        );
+      }
+
+      if (mounted) {
+        // Show big success toast
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white, size: 32),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        member.fullName,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const Text(
+                        'Enregistré avec succès',
+                        style: TextStyle(fontSize: 14, color: Colors.white70),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: AppColors.success,
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+
+        // Reset to scanning mode immediately
+        _resetScanner();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -121,28 +313,31 @@ class _ScanPageState extends State<ScanPage> {
     });
 
     try {
-      final record = AttendanceRecord(
-        id: '',
-        membreId: _scannedMember!.id,
-        membreNom: _scannedMember!.nom,
-        membrePrenom: _scannedMember!.prenom,
-        photoUrl: _scannedMember!.photoUrl,
-        checkedInAt: DateTime.now(),
-        checkedInBy: currentUser.uid,
-        checkedInByName: displayName,
-        cotisationStatus: _scannedMember!.cotisationStatus.name,
-        cotisationValidite: _scannedMember!.cotisationValidite,
-        certificatStatus: _scannedMember!.certificatStatus.name,
-        certificatValidite: _scannedMember!.certificatMedicalValidite,
-        scanMethod: _scanMethod,
-      );
-
-      await _attendanceService.recordAttendance(_clubId, record);
+      if (_memberInscription != null) {
+        // Member is inscribed - mark the inscription as present
+        await _operationService.markAsPresent(
+          clubId: widget.clubId,
+          operationId: widget.operationId,
+          memberId: _scannedMember!.id,
+          markedByUserId: currentUser.uid,
+          markedByUserName: displayName,
+        );
+      } else {
+        // No inscription - create inscription with present=true (walk-in)
+        await _operationService.createWalkInInscription(
+          clubId: widget.clubId,
+          operationId: widget.operationId,
+          operationTitle: widget.operationTitle,
+          member: _scannedMember!,
+          markedByUserId: currentUser.uid,
+          markedByUserName: displayName,
+        );
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${_scannedMember!.fullName} enregistré'),
+            content: Text('${_scannedMember!.fullName} enregistré ✓'),
             backgroundColor: AppColors.success,
           ),
         );
@@ -172,7 +367,8 @@ class _ScanPageState extends State<ScanPage> {
     setState(() {
       _isScanning = true;
       _scannedMember = null;
-      _alreadyCheckedIn = false;
+      _memberInscription = null;
+      _alreadyPresent = false;
       _errorMessage = null;
       _showSearch = false;
       _searchController.clear();
@@ -193,7 +389,7 @@ class _ScanPageState extends State<ScanPage> {
     });
 
     try {
-      final results = await _memberService.searchMembers(_clubId, query);
+      final results = await _memberService.searchMembers(widget.clubId, query);
       setState(() {
         _searchResults = results;
         _isSearching = false;
@@ -395,9 +591,10 @@ class _ScanPageState extends State<ScanPage> {
         child: SingleChildScrollView(
           child: MemberValidationCard(
             member: _scannedMember!,
-            onCheckIn: _alreadyCheckedIn ? null : _recordAttendance,
+            onCheckIn: _alreadyPresent ? null : _recordAttendance,
             isLoading: _isCheckingIn,
-            alreadyCheckedIn: _alreadyCheckedIn,
+            alreadyCheckedIn: _alreadyPresent,
+            isInscribed: _memberInscription != null,
           ),
         ),
       ),
@@ -495,14 +692,13 @@ class _ScanPageState extends State<ScanPage> {
             if (!_showSearch && _scannedMember == null)
               IconButton(
                 onPressed: () => _scannerController.toggleTorch(),
-                icon: ValueListenableBuilder(
+                icon: ValueListenableBuilder<MobileScannerState>(
                   valueListenable: _scannerController,
                   builder: (context, state, child) {
+                    final torchOn = state.torchState == TorchState.on;
                     return Icon(
-                      state.torchState == TorchState.on
-                          ? Icons.flash_on
-                          : Icons.flash_off,
-                      color: state.torchState == TorchState.on
+                      torchOn ? Icons.flash_on : Icons.flash_off,
+                      color: torchOn
                           ? AppColors.oranje
                           : AppColors.textSecondary,
                     );

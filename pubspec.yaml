@@ -1,7 +1,7 @@
 name: calymob
 description: Calypso DC Mobile Application
 publish_to: 'none'
-version: 1.0.9+52
+version: 1.0.9+56
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -75,7 +75,7 @@ dependencies:
   qr_flutter: ^4.1.0
 
   # QR/Barcode Scanner
-  mobile_scanner: ^5.2.3
+  mobile_scanner: ^6.0.2
 
   # Payments (if needed)
   # stripe_payment: ^1.1.1

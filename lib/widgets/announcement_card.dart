@@ -129,11 +129,15 @@ class AnnouncementCard extends StatelessWidget {
                   children: [
                     Icon(Icons.person_outline, size: 16, color: Colors.grey[600]),
                     const SizedBox(width: 4),
-                    Text(
-                      announcement.senderName,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey[600],
+                    Flexible(
+                      child: Text(
+                        announcement.senderName,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey[600],
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
                     ),
                     const SizedBox(width: 16),

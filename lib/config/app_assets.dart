@@ -4,10 +4,12 @@ class AppAssets {
   AppAssets._();
 
   // === Logos ===
-  static const String logoVertical = 'assets/images/logo-vertical-transparent.png';
-  static const String logoHorizontal = 'assets/images/logo-horizontal.jpg';
+  static const String logoVertical = 'assets/images/logo-vertical.svg';
+  static const String logoVerticalPng = 'assets/images/logo-vertical-transparent.png';
+  static const String logoHorizontal = 'assets/images/logo-horizontal.svg';
+  static const String logoHorizontalJpg = 'assets/images/logo-horizontal.jpg';
   static const String logoNoBackground = 'assets/images/logo-noBackground.png';
-  static const String logoHorizontalSvg = 'assets/images/logo-horizontal.SVG';
+  static const String logoIdentifier = 'assets/images/logo-identifier.svg';
 
   // === Backgrounds ===
   static const String backgroundFull = 'assets/images/Background Full.png';

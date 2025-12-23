@@ -9,6 +9,7 @@ class MemberValidationCard extends StatelessWidget {
   final VoidCallback? onCheckIn;
   final bool isLoading;
   final bool alreadyCheckedIn;
+  final bool isInscribed; // True if member is pre-registered for this event
 
   const MemberValidationCard({
     Key? key,
@@ -16,6 +17,7 @@ class MemberValidationCard extends StatelessWidget {
     this.onCheckIn,
     this.isLoading = false,
     this.alreadyCheckedIn = false,
+    this.isInscribed = false,
   }) : super(key: key);
 
   @override
@@ -94,25 +96,64 @@ class MemberValidationCard extends StatelessWidget {
                   color: AppColors.textPrimary,
                 ),
               ),
-              if (member.plongeurCode != null) ...[
-                const SizedBox(height: 4),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: AppColors.middenblauw.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    member.plongeurCode!,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.middenblauw,
+              const SizedBox(height: 4),
+              // Inscription status badge
+              Row(
+                children: [
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: isInscribed
+                          ? Colors.green[100]
+                          : Colors.orange[100],
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          isInscribed ? Icons.check_circle : Icons.person_add,
+                          size: 14,
+                          color: isInscribed
+                              ? Colors.green[800]
+                              : Colors.orange[800],
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          isInscribed ? 'Inscrit' : 'Non inscrit',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: isInscribed
+                                ? Colors.green[800]
+                                : Colors.orange[800],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-              ],
+                  if (member.plongeurCode != null) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppColors.middenblauw.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        member.plongeurCode!,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.middenblauw,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ],
           ),
         ),

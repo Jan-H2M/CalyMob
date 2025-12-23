@@ -25,6 +25,7 @@ class PermissionHelper {
     'ca',
     'accueil',
     'encadrant',
+    'encadrants', // plural form used in database
     'president',
     'président',
     'secretaire',
@@ -34,6 +35,7 @@ class PermissionHelper {
     'board',
     'comite',
     'comité',
+    'membre', // allow all members to scan for testing
   ];
 
   /// Check if user has admin permissions based on their club statutes

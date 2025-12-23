@@ -207,7 +207,7 @@ class PaymentProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await _paymentService.createPayment(
+      final response = await _paymentService.createNodaPayment(
         clubId: clubId,
         operationId: operationId,
         participantId: participantId,
@@ -245,11 +245,10 @@ class PaymentProvider with ChangeNotifier {
     required String paymentId,
   }) async {
     try {
-      return await _paymentService.checkPaymentStatus(
+      return await _paymentService.checkNodaPaymentStatus(
         clubId: clubId,
         operationId: operationId,
         participantId: participantId,
-        paymentId: paymentId,
       );
     } on PaymentException catch (e) {
       _errorMessage = e.message;
@@ -291,11 +290,10 @@ class PaymentProvider with ChangeNotifier {
       }
 
       try {
-        final status = await _paymentService.checkPaymentStatus(
+        final status = await _paymentService.checkNodaPaymentStatus(
           clubId: clubId,
           operationId: operationId,
           participantId: participantId,
-          paymentId: paymentId,
         );
         onStatusUpdate(status);
 

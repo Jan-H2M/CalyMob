@@ -43,12 +43,13 @@ extension MolliePaymentMethodExtension on MolliePaymentMethod {
   }
 }
 
-/// Service for managing payments via Mollie and Ponto Connect
+/// Service for managing payments via Noda and Mollie
 ///
 /// Communicates with Firebase Cloud Functions that securely interact
 /// with payment APIs. API credentials are stored server-side.
 ///
-/// Mollie is the primary payment provider for Belgian payments:
+/// Noda is the primary payment provider for bank transfers.
+/// Mollie is available for Belgian payments:
 /// - Bancontact, KBC/CBC, Belfius, Credit cards, Apple Pay
 class PaymentService {
   final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(region: 'europe-west1');
@@ -164,10 +165,10 @@ class PaymentService {
   }
 
   // ============================================================================
-  // PONTO PAYMENTS (Legacy)
+  // NODA PAYMENTS (Primary for bank transfers)
   // ============================================================================
 
-  /// Creates a Ponto payment request for an event registration (Legacy)
+  /// Creates a Noda payment request for an event registration
   ///
   /// Parameters:
   /// - [clubId]: Club ID
@@ -176,10 +177,10 @@ class PaymentService {
   /// - [amount]: Amount to pay in EUR
   /// - [description]: Payment description (event title)
   ///
-  /// Returns a [PaymentResponse] with the Ponto payment URL
+  /// Returns a [PaymentResponse] with the Noda payment URL
   ///
   /// Throws [PaymentException] on error
-  Future<PaymentResponse> createPayment({
+  Future<PaymentResponse> createNodaPayment({
     required String clubId,
     required String operationId,
     required String participantId,
@@ -187,9 +188,9 @@ class PaymentService {
     required String description,
   }) async {
     try {
-      debugPrint('💳 Creating Ponto payment: amount=$amount, operationId=$operationId');
+      debugPrint('💳 Creating Noda payment: amount=$amount, operationId=$operationId');
 
-      final result = await _functions.httpsCallable('pontoCreatePayment').call({
+      final result = await _functions.httpsCallable('createNodaPayment').call({
         'clubId': clubId,
         'operationId': operationId,
         'participantId': participantId,
@@ -197,7 +198,7 @@ class PaymentService {
         'description': description,
       });
 
-      debugPrint('✅ Payment created successfully: ${result.data}');
+      debugPrint('✅ Noda payment created successfully: ${result.data}');
 
       return PaymentResponse.fromJson(Map<String, dynamic>.from(result.data));
     } on FirebaseFunctionsException catch (e) {
@@ -208,7 +209,7 @@ class PaymentService {
         details: e.details,
       );
     } catch (e) {
-      debugPrint('❌ Error creating payment: $e');
+      debugPrint('❌ Error creating Noda payment: $e');
       throw PaymentException(
         'Erreur lors de la creation du paiement. Veuillez reessayer.',
         details: e,
@@ -216,36 +217,32 @@ class PaymentService {
     }
   }
 
-  /// Checks Ponto payment status (Legacy)
+  /// Checks Noda payment status
   ///
   /// Parameters:
   /// - [clubId]: Club ID
   /// - [operationId]: Operation ID
   /// - [participantId]: Participant ID
-  /// - [paymentId]: Ponto payment request ID
   ///
   /// Returns a [PaymentStatus] with current payment state
   ///
   /// Throws [PaymentException] on error
-  Future<PaymentStatus> checkPaymentStatus({
+  Future<PaymentStatus> checkNodaPaymentStatus({
     required String clubId,
     required String operationId,
     required String participantId,
-    required String paymentId,
   }) async {
     try {
-      debugPrint('🔍 Checking Ponto payment status: $paymentId');
+      debugPrint('🔍 Checking Noda payment status for participant: $participantId');
 
-      final result =
-          await _functions.httpsCallable('pontoCheckStatus').call({
+      final result = await _functions.httpsCallable('checkNodaPaymentStatus').call({
         'clubId': clubId,
         'operationId': operationId,
         'participantId': participantId,
-        'paymentId': paymentId,
       });
 
       final status = PaymentStatus.fromJson(Map<String, dynamic>.from(result.data));
-      debugPrint('📊 Payment status: ${status.status}, paye: ${status.paye}');
+      debugPrint('📊 Noda payment status: ${status.status}, paye: ${status.paye}');
 
       return status;
     } on FirebaseFunctionsException catch (e) {
@@ -256,7 +253,7 @@ class PaymentService {
         details: e.details,
       );
     } catch (e) {
-      debugPrint('❌ Error checking payment status: $e');
+      debugPrint('❌ Error checking Noda payment status: $e');
       throw PaymentException(
         'Erreur lors de la verification du paiement',
         details: e,

@@ -1,12 +1,16 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Record of a member check-in for attendance tracking
+/// Used for events that don't require pre-registration
 class AttendanceRecord {
   final String id;
   final String membreId;
   final String membreNom;
   final String membrePrenom;
   final String? photoUrl;
+
+  final String? operationId; // Event this attendance is for
+  final String? operationTitre; // Event title for reference
 
   final DateTime checkedInAt;
   final String checkedInBy;
@@ -25,6 +29,8 @@ class AttendanceRecord {
     required this.membreNom,
     required this.membrePrenom,
     this.photoUrl,
+    this.operationId,
+    this.operationTitre,
     required this.checkedInAt,
     required this.checkedInBy,
     required this.checkedInByName,
@@ -45,6 +51,8 @@ class AttendanceRecord {
       membreNom: data['membre_nom'] ?? '',
       membrePrenom: data['membre_prenom'] ?? '',
       photoUrl: data['photo_url'],
+      operationId: data['operation_id'],
+      operationTitre: data['operation_titre'],
       checkedInAt: (data['checked_in_at'] as Timestamp).toDate(),
       checkedInBy: data['checked_in_by'] ?? '',
       checkedInByName: data['checked_in_by_name'] ?? '',
@@ -65,6 +73,8 @@ class AttendanceRecord {
       'membre_nom': membreNom,
       'membre_prenom': membrePrenom,
       'photo_url': photoUrl,
+      'operation_id': operationId,
+      'operation_titre': operationTitre,
       'checked_in_at': Timestamp.fromDate(checkedInAt),
       'checked_in_by': checkedInBy,
       'checked_in_by_name': checkedInByName,
