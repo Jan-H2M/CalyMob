@@ -1,10 +1,15 @@
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as path;
 import '../models/event_message.dart';
+import '../models/session_message.dart' show MessageAttachment;
 
 /// Service de gestion des messages liés aux événements
 class EventMessageService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseStorage _storage = FirebaseStorage.instance;
 
   /// Stream des messages d'un événement (temps réel)
   Stream<List<EventMessage>> getEventMessagesStream(
@@ -46,12 +51,15 @@ class EventMessageService {
   }
 
   /// Envoyer un message (participant inscrit uniquement)
-  Future<void> sendMessage({
+  Future<String> sendMessage({
     required String clubId,
     required String operationId,
     required String senderId,
     required String senderName,
     required String message,
+    String? replyToId,
+    ReplyPreview? replyToPreview,
+    List<MessageAttachment>? attachments,
   }) async {
     try {
       final eventMessage = EventMessage(
@@ -60,16 +68,121 @@ class EventMessageService {
         senderName: senderName,
         message: message,
         createdAt: DateTime.now(),
+        readBy: [senderId], // L'expéditeur a lu son propre message
+        replyToId: replyToId,
+        replyToPreview: replyToPreview,
+        attachments: attachments ?? [],
       );
 
-      await _firestore
+      final docRef = await _firestore
           .collection('clubs/$clubId/operations/$operationId/messages')
           .add(eventMessage.toFirestore());
 
       debugPrint('✅ Message envoyé pour event $operationId');
+      return docRef.id;
     } catch (e) {
       debugPrint('❌ Erreur envoi message: $e');
       rethrow;
+    }
+  }
+
+  /// Créer un ReplyPreview à partir d'un message existant
+  ReplyPreview createReplyPreview(EventMessage originalMessage) {
+    final preview = originalMessage.message.length > 50
+        ? '${originalMessage.message.substring(0, 50)}...'
+        : originalMessage.message;
+    return ReplyPreview(
+      senderName: originalMessage.senderName,
+      messagePreview: preview,
+    );
+  }
+
+  /// Upload une pièce jointe et retourner l'attachment
+  Future<MessageAttachment> uploadAttachment({
+    required String clubId,
+    required String operationId,
+    required File file,
+    required String type, // 'image' ou 'pdf'
+  }) async {
+    final filename = path.basename(file.path);
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final storagePath =
+        'clubs/$clubId/operations/$operationId/attachments/${timestamp}_$filename';
+
+    final ref = _storage.ref().child(storagePath);
+    await ref.putFile(file);
+
+    final url = await ref.getDownloadURL();
+    final fileSize = await file.length();
+
+    debugPrint('✅ Pièce jointe uploadée: $filename');
+
+    return MessageAttachment(
+      type: type,
+      url: url,
+      filename: filename,
+      size: fileSize,
+    );
+  }
+
+  /// Récupérer un message par ID
+  Future<EventMessage?> getMessage({
+    required String clubId,
+    required String operationId,
+    required String messageId,
+  }) async {
+    try {
+      final doc = await _firestore
+          .collection('clubs/$clubId/operations/$operationId/messages')
+          .doc(messageId)
+          .get();
+
+      if (!doc.exists) return null;
+      return EventMessage.fromFirestore(doc);
+    } catch (e) {
+      debugPrint('❌ Erreur récupération message: $e');
+      return null;
+    }
+  }
+
+  /// Marquer un seul message comme lu
+  Future<void> markMessageAsRead({
+    required String clubId,
+    required String operationId,
+    required String messageId,
+    required String userId,
+  }) async {
+    try {
+      await _firestore
+          .collection('clubs/$clubId/operations/$operationId/messages')
+          .doc(messageId)
+          .update({
+        'read_by': FieldValue.arrayUnion([userId]),
+      });
+    } catch (e) {
+      debugPrint('❌ Erreur marquage message lu: $e');
+    }
+  }
+
+  /// Compter les messages non lus pour un événement
+  Future<int> getUnreadCount({
+    required String clubId,
+    required String operationId,
+    required String userId,
+  }) async {
+    try {
+      final snapshot = await _firestore
+          .collection('clubs/$clubId/operations/$operationId/messages')
+          .get();
+
+      return snapshot.docs.where((doc) {
+        final readBy =
+            (doc.data()['read_by'] as List<dynamic>?)?.cast<String>() ?? [];
+        return !readBy.contains(userId);
+      }).length;
+    } catch (e) {
+      debugPrint('❌ Erreur comptage messages non lus: $e');
+      return 0;
     }
   }
 

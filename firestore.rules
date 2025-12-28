@@ -312,8 +312,10 @@ service cloud.firestore {
               resource.data.sender_id == request.auth.uid ||
               getUserData(clubId).app_role in ['superadmin', 'admin']
             );
-          // Pas de modification des messages (on peut seulement supprimer)
-          allow update: if false;
+          // Modification: uniquement pour marquer comme lu (read_by)
+          allow update: if isAuthenticated()
+            && hasValidSession(clubId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by']);
         }
       }
 
@@ -458,8 +460,33 @@ service cloud.firestore {
         allow read: if isAuthenticated();
         // Création: admins uniquement
         allow create: if isAdmin(clubId) && hasValidSession(clubId);
-        // Modification/Suppression: admins uniquement
-        allow update, delete: if isAdmin(clubId) && hasValidSession(clubId);
+        // Modification: admins peuvent tout modifier, membres peuvent ajouter leur ID à read_by
+        allow update: if isAuthenticated()
+          && hasValidSession(clubId)
+          && (
+            isAdmin(clubId)
+            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by'])
+          );
+        // Suppression: admins uniquement
+        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
+
+        // Replies to announcements
+        match /replies/{replyId} {
+          // Lecture: tous les membres authentifiés
+          allow read: if isAuthenticated();
+          // Création: tous les membres peuvent répondre
+          allow create: if isAuthenticated()
+            && hasValidSession(clubId)
+            && request.resource.data.sender_id == request.auth.uid;
+          // Modification: seulement pour marquer comme lu (read_by)
+          allow update: if isAuthenticated()
+            && hasValidSession(clubId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by']);
+          // Suppression: auteur ou admin
+          allow delete: if isAuthenticated()
+            && hasValidSession(clubId)
+            && (resource.data.sender_id == request.auth.uid || isAdmin(clubId));
+        }
       }
 
       // ========== ATTENDANCE MODULE (Check-in Scanner) ==========

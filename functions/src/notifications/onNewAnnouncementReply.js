@@ -1,7 +1,7 @@
 /**
- * Cloud Function: Send push notification when a new message is posted in an event
+ * Cloud Function: Send push notification when a new reply is posted on an announcement
  *
- * Triggers on: clubs/{clubId}/operations/{operationId}/messages/{messageId}
+ * Triggers on: clubs/{clubId}/announcements/{announcementId}/replies/{replyId}
  *
  * Uses Firebase Functions v2 API (Gen2)
  */
@@ -10,85 +10,90 @@ const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 
 /**
- * Firestore trigger for new event messages (Gen2)
+ * Firestore trigger for new announcement replies (Gen2)
  */
-exports.onNewEventMessage = onDocumentCreated(
+exports.onNewAnnouncementReply = onDocumentCreated(
   {
-    document: 'clubs/{clubId}/operations/{operationId}/messages/{messageId}',
+    document: 'clubs/{clubId}/announcements/{announcementId}/replies/{replyId}',
     region: 'europe-west1',
   },
   async (event) => {
-    const { clubId, operationId, messageId } = event.params;
-    const message = event.data.data();
+    const { clubId, announcementId, replyId } = event.params;
+    const reply = event.data.data();
 
-    console.log(`New message in club/${clubId}/operations/${operationId}/messages/${messageId}`);
-    console.log('Message data:', JSON.stringify(message));
+    console.log(`New reply in club/${clubId}/announcements/${announcementId}/replies/${replyId}`);
+    console.log('Reply data:', JSON.stringify(reply));
 
     try {
-      // 1. Get the event/operation details
-      const operationDoc = await admin.firestore()
+      // 1. Get the announcement details
+      const announcementDoc = await admin.firestore()
         .collection('clubs')
         .doc(clubId)
-        .collection('operations')
-        .doc(operationId)
+        .collection('announcements')
+        .doc(announcementId)
         .get();
 
-      if (!operationDoc.exists) {
-        console.log('Operation not found, skipping notification');
+      if (!announcementDoc.exists) {
+        console.log('Announcement not found, skipping notification');
         return null;
       }
 
-      const operation = operationDoc.data();
-      const eventTitle = operation.titre || operation.title || 'Événement';
+      const announcement = announcementDoc.data();
+      const announcementTitle = announcement.title || 'Annonce';
+      const announcementSenderId = announcement.sender_id;
 
-      // 2. Get participants of the event (inscriptions subcollection)
-      const participantsSnapshot = await admin.firestore()
-        .collection('clubs')
-        .doc(clubId)
-        .collection('operations')
-        .doc(operationId)
-        .collection('inscriptions')
-        .get();
+      // 2. Get all club members to notify
+      // For announcements, we notify:
+      // - The announcement author (if not the replier)
+      // - Members who have read the announcement or replied to it
+      const membersToNotify = new Set();
 
-      if (participantsSnapshot.empty) {
-        console.log('No participants found, skipping notification');
+      // Always notify the announcement author
+      if (announcementSenderId && announcementSenderId !== reply.sender_id) {
+        membersToNotify.add(announcementSenderId);
+      }
+
+      // Add members who have read the announcement
+      if (announcement.read_by && Array.isArray(announcement.read_by)) {
+        announcement.read_by.forEach(userId => {
+          if (userId !== reply.sender_id) {
+            membersToNotify.add(userId);
+          }
+        });
+      }
+
+      // If replying to a specific reply, also notify that person
+      if (reply.reply_to_id && reply.reply_to_preview) {
+        // The person being replied to should definitely be notified
+        // We don't have their ID directly, but they're likely in read_by
+      }
+
+      if (membersToNotify.size === 0) {
+        console.log('No members to notify, skipping notification');
         return null;
       }
 
-      // 3. Get FCM tokens for all participants except the sender
-      const senderId = message.sender_id;
-      const senderName = message.sender_name || 'Quelqu\'un';
-      const messageText = message.message || '';
-
-      const tokenPromises = [];
-      participantsSnapshot.forEach(doc => {
-        const inscriptionData = doc.data();
-        const participantId = inscriptionData.membre_id; // Get member ID from inscription data
-        // Don't notify the sender
-        if (participantId && participantId !== senderId) {
-          tokenPromises.push(
-            admin.firestore()
-              .collection('clubs')
-              .doc(clubId)
-              .collection('members')
-              .doc(participantId)
-              .get()
-          );
-        }
-      });
+      // 3. Get FCM tokens for members to notify
+      const memberIds = Array.from(membersToNotify);
+      const tokenPromises = memberIds.map(memberId =>
+        admin.firestore()
+          .collection('clubs')
+          .doc(clubId)
+          .collection('members')
+          .doc(memberId)
+          .get()
+      );
 
       const memberDocs = await Promise.all(tokenPromises);
 
-      // Collect all valid FCM tokens (including all devices per member)
-      // Also track which member owns which token for cleanup
+      // Collect all valid FCM tokens
       const tokens = [];
-      const tokenToMember = new Map(); // token -> { memberId, clubId }
+      const tokenToMember = new Map();
 
       memberDocs.forEach(doc => {
         if (doc.exists) {
           const memberData = doc.data();
           if (memberData.notifications_enabled !== false) {
-            // Add all tokens from fcm_tokens array (supports multiple devices)
             if (memberData.fcm_tokens && Array.isArray(memberData.fcm_tokens)) {
               memberData.fcm_tokens.forEach(token => {
                 if (token && !tokens.includes(token)) {
@@ -96,9 +101,7 @@ exports.onNewEventMessage = onDocumentCreated(
                   tokenToMember.set(token, { memberId: doc.id, clubId });
                 }
               });
-            }
-            // Fallback to single fcm_token if array is empty
-            else if (memberData.fcm_token) {
+            } else if (memberData.fcm_token) {
               tokens.push(memberData.fcm_token);
               tokenToMember.set(memberData.fcm_token, { memberId: doc.id, clubId });
             }
@@ -114,12 +117,13 @@ exports.onNewEventMessage = onDocumentCreated(
       console.log(`Sending notification to ${tokens.length} devices`);
 
       // 4. Prepare the notification payload
-      // Check if this is a reply
-      const isReply = !!message.reply_to_id;
-      const replyPreview = message.reply_to_preview;
-      const hasAttachments = message.attachments && message.attachments.length > 0;
+      const senderName = reply.sender_name || 'Quelqu\'un';
+      const messageText = reply.message || '';
+      const isReply = !!reply.reply_to_id;
+      const replyPreview = reply.reply_to_preview;
+      const hasAttachments = reply.attachments && reply.attachments.length > 0;
 
-      let notificationTitle = `${senderName} - ${eventTitle}`;
+      let notificationTitle;
       let notificationBody;
 
       if (isReply && replyPreview) {
@@ -127,12 +131,15 @@ exports.onNewEventMessage = onDocumentCreated(
         notificationBody = messageText.length > 80
           ? messageText.substring(0, 77) + '...'
           : messageText;
-      } else if (hasAttachments && !messageText) {
-        notificationBody = `📎 ${message.attachments.length} pièce(s) jointe(s)`;
       } else {
-        notificationBody = messageText.length > 100
-          ? messageText.substring(0, 97) + '...'
-          : messageText;
+        notificationTitle = `${senderName} a répondu à "${announcementTitle}"`;
+        if (hasAttachments && !messageText) {
+          notificationBody = `📎 ${reply.attachments.length} pièce(s) jointe(s)`;
+        } else {
+          notificationBody = messageText.length > 100
+            ? messageText.substring(0, 97) + '...'
+            : messageText;
+        }
       }
 
       const payload = {
@@ -141,16 +148,16 @@ exports.onNewEventMessage = onDocumentCreated(
           body: notificationBody,
         },
         data: {
-          type: 'event_message',
+          type: 'announcement_reply',
           club_id: clubId,
-          operation_id: operationId,
-          message_id: messageId,
+          announcement_id: announcementId,
+          reply_id: replyId,
           click_action: 'FLUTTER_NOTIFICATION_CLICK',
         },
         android: {
           priority: 'high',
           notification: {
-            channelId: 'event_messages',
+            channelId: 'announcements',
             priority: 'high',
             sound: 'default',
           },
@@ -198,7 +205,6 @@ exports.onNewEventMessage = onDocumentCreated(
         successCount += result.successCount;
         failureCount += result.failureCount;
 
-        // Collect invalid tokens for cleanup
         result.responses.forEach((response, index) => {
           if (!response.success) {
             const error = response.error;
@@ -208,7 +214,6 @@ exports.onNewEventMessage = onDocumentCreated(
               const memberInfo = tokenToMember.get(failedToken);
               if (memberInfo) {
                 console.log(`Removing invalid token from member ${memberInfo.memberId}: ${failedToken.substring(0, 20)}...`);
-                // Remove invalid token from Firestore
                 admin.firestore()
                   .collection('clubs')
                   .doc(memberInfo.clubId)

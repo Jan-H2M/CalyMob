@@ -5,13 +5,17 @@ import 'package:intl/intl.dart';
 class AnnouncementCard extends StatelessWidget {
   final Announcement announcement;
   final VoidCallback? onDelete;
+  final VoidCallback? onTap;
   final bool isAdmin;
+  final String? currentUserId;
 
   const AnnouncementCard({
     super.key,
     required this.announcement,
     this.onDelete,
+    this.onTap,
     this.isAdmin = false,
+    this.currentUserId,
   });
 
   Color _getTypeColor() {
@@ -51,15 +55,18 @@ class AnnouncementCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = _getTypeColor();
     final dateFormat = DateFormat('dd/MM/yyyy HH:mm');
+    final isRead = currentUserId != null && announcement.isReadBy(currentUserId!);
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: color.withOpacity(0.3), width: 1),
-      ),
-      child: Column(
+    return GestureDetector(
+      onTap: onTap,
+      child: Card(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        elevation: 2,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: color.withOpacity(0.3), width: 1),
+        ),
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header with type badge
@@ -152,10 +159,112 @@ class AnnouncementCard extends StatelessWidget {
                     ),
                   ],
                 ),
+
+                // Stats row (read count, reply count, attachments)
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    // Read count
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: isRead ? Colors.green.shade50 : Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isRead ? Icons.visibility : Icons.visibility_outlined,
+                            size: 14,
+                            color: isRead ? Colors.green.shade700 : Colors.grey[600],
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Lu par ${announcement.readCount}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isRead ? Colors.green.shade700 : Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+
+                    // Reply count
+                    if (announcement.hasReplies)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.chat_bubble_outline,
+                              size: 14,
+                              color: Colors.blue.shade700,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${announcement.replyCount}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.blue.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    // Attachment indicator
+                    if (announcement.attachments.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.attach_file,
+                              size: 14,
+                              color: Colors.orange.shade700,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${announcement.attachments.length}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.orange.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    const Spacer(),
+
+                    // Tap hint
+                    Icon(
+                      Icons.chevron_right,
+                      size: 20,
+                      color: Colors.grey[400],
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
         ],
+        ),
       ),
     );
   }

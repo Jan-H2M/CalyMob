@@ -3,13 +3,13 @@ import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:lottie/lottie.dart';
 import '../../config/app_assets.dart';
-import '../../config/app_colors.dart';
 import '../../models/announcement.dart';
 import '../../providers/announcement_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/permission_helper.dart';
 import '../../widgets/announcement_card.dart';
 import '../../widgets/glossy_button.dart';
+import 'announcement_detail_screen.dart';
 import 'create_announcement_dialog.dart';
 
 class AnnouncementsScreen extends StatefulWidget {
@@ -206,6 +206,17 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen>
         );
       }
     }
+  }
+
+  void _navigateToDetail(Announcement announcement) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => AnnouncementDetailScreen(
+          announcement: announcement,
+          clubId: 'calypso',
+        ),
+      ),
+    );
   }
 
   Future<void> _deleteAnnouncement(String announcementId) async {
@@ -450,9 +461,11 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen>
                           return AnnouncementCard(
                             announcement: announcement,
                             isAdmin: isAdmin,
+                            currentUserId: currentUser.uid,
                             onDelete: isAdmin
                                 ? () => _deleteAnnouncement(announcement.id)
                                 : null,
+                            onTap: () => _navigateToDetail(announcement),
                           );
                         },
                       ),

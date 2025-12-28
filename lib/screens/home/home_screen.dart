@@ -13,7 +13,7 @@ import '../../widgets/loading_widget.dart';
 import '../../widgets/empty_state_widget.dart';
 import '../operations/operation_detail_screen.dart';
 import '../expenses/expense_list_screen.dart';
-import '../scanner/scan_page.dart';
+// scan_page.dart is used from operation_detail_screen, not here
 import '../auth/login_screen.dart';
 
 /// Écran d'accueil avec navigation tabs (événements + demandes)
@@ -181,13 +181,64 @@ class _HomeScreenState extends State<HomeScreen> {
       case 1:
         return const ExpenseListScreen();
       case 2:
-        return const ScanPage();
+        return _buildScannerPlaceholder();
       default:
         return RefreshIndicator(
           onRefresh: _refreshOperations,
           child: _buildBody(operationProvider, authProvider),
         );
     }
+  }
+
+  Widget _buildScannerPlaceholder() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.qr_code_scanner,
+              size: 80,
+              color: Colors.grey[400],
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Scanner QR',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[700],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Pour scanner les présences, ouvrez un événement depuis l\'onglet "Événements" et utilisez le bouton scanner.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 32),
+            ElevatedButton.icon(
+              onPressed: () {
+                setState(() {
+                  _currentIndex = 0;
+                });
+              },
+              icon: const Icon(Icons.event),
+              label: const Text('Voir les événements'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.middenblauw,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildBody(

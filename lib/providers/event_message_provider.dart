@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../models/event_message.dart';
+import '../models/session_message.dart' show MessageAttachment;
 import '../services/event_message_service.dart';
 
 /// Provider pour la gestion des messages d'événement
@@ -79,29 +81,69 @@ class EventMessageProvider with ChangeNotifier {
   }
 
   /// Envoyer un message
-  Future<void> sendMessage({
+  Future<String> sendMessage({
     required String clubId,
     required String operationId,
     required String senderId,
     required String senderName,
     required String message,
+    String? replyToId,
+    ReplyPreview? replyToPreview,
+    List<MessageAttachment>? attachments,
   }) async {
     try {
-      await _eventMessageService.sendMessage(
+      final messageId = await _eventMessageService.sendMessage(
         clubId: clubId,
         operationId: operationId,
         senderId: senderId,
         senderName: senderName,
         message: message,
+        replyToId: replyToId,
+        replyToPreview: replyToPreview,
+        attachments: attachments,
       );
 
       // Recharger les messages
       await loadMessages(clubId, operationId);
+      return messageId;
     } catch (e) {
       _errorByOperation[operationId] = e.toString();
       debugPrint('❌ Erreur envoi message: $e');
       rethrow;
     }
+  }
+
+  /// Upload une pièce jointe
+  Future<MessageAttachment> uploadAttachment({
+    required String clubId,
+    required String operationId,
+    required File file,
+    required String type,
+  }) async {
+    return await _eventMessageService.uploadAttachment(
+      clubId: clubId,
+      operationId: operationId,
+      file: file,
+      type: type,
+    );
+  }
+
+  /// Créer un ReplyPreview à partir d'un message
+  ReplyPreview createReplyPreview(EventMessage message) {
+    return _eventMessageService.createReplyPreview(message);
+  }
+
+  /// Récupérer un message par ID
+  Future<EventMessage?> getMessage({
+    required String clubId,
+    required String operationId,
+    required String messageId,
+  }) async {
+    return await _eventMessageService.getMessage(
+      clubId: clubId,
+      operationId: operationId,
+      messageId: messageId,
+    );
   }
 
   /// Supprimer un message

@@ -51,6 +51,10 @@ exports.onNewEventMessage = onNewEventMessage;
 const { onNewAnnouncement } = require('./src/notifications/onNewAnnouncement');
 exports.onNewAnnouncement = onNewAnnouncement;
 
+// Push notifications for announcement replies
+const { onNewAnnouncementReply } = require('./src/notifications/onNewAnnouncementReply');
+exports.onNewAnnouncementReply = onNewAnnouncementReply;
+
 // =============================================================================
 // EXPENSE EMAIL NOTIFICATIONS (Gen2)
 // =============================================================================

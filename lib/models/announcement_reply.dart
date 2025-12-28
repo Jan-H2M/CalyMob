@@ -1,115 +1,91 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'session_message.dart' show MessageAttachment;
+import 'event_message.dart' show ReplyPreview;
 
-/// Type d'annonce
-enum AnnouncementType {
-  info,
-  warning,
-  urgent,
-}
-
-/// Modèle pour les annonces du club
-class Announcement {
+/// Modèle pour les réponses aux annonces du club
+/// Collection: clubs/{clubId}/announcements/{announcementId}/replies
+class AnnouncementReply {
   final String id;
-  final String title;
-  final String message;
   final String senderId;
   final String senderName;
-  final AnnouncementType type;
+  final String message;
   final DateTime createdAt;
   final List<String> readBy;
+  final String? replyToId;
+  final ReplyPreview? replyToPreview;
   final List<MessageAttachment> attachments;
-  final int replyCount;
 
-  Announcement({
+  AnnouncementReply({
     required this.id,
-    required this.title,
-    required this.message,
     required this.senderId,
     required this.senderName,
-    required this.type,
+    required this.message,
     required this.createdAt,
     this.readBy = const [],
+    this.replyToId,
+    this.replyToPreview,
     this.attachments = const [],
-    this.replyCount = 0,
   });
 
   /// Créer depuis Firestore
-  factory Announcement.fromFirestore(DocumentSnapshot doc) {
+  factory AnnouncementReply.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
 
-    return Announcement(
+    return AnnouncementReply(
       id: doc.id,
-      title: data['title'] ?? '',
-      message: data['message'] ?? '',
       senderId: data['sender_id'] ?? '',
       senderName: data['sender_name'] ?? '',
-      type: _parseType(data['type']),
+      message: data['message'] ?? '',
       createdAt: (data['created_at'] as Timestamp).toDate(),
       readBy: (data['read_by'] as List<dynamic>?)?.cast<String>() ?? [],
+      replyToId: data['reply_to_id'],
+      replyToPreview: data['reply_to_preview'] != null
+          ? ReplyPreview.fromMap(data['reply_to_preview'] as Map<String, dynamic>)
+          : null,
       attachments: (data['attachments'] as List<dynamic>?)
               ?.map((a) => MessageAttachment.fromMap(a as Map<String, dynamic>))
               .toList() ??
           [],
-      replyCount: data['reply_count'] ?? 0,
     );
   }
 
   /// Convertir vers Firestore
   Map<String, dynamic> toFirestore() {
     return {
-      'title': title,
-      'message': message,
       'sender_id': senderId,
       'sender_name': senderName,
-      'type': type.name,
+      'message': message,
       'created_at': Timestamp.fromDate(createdAt),
       'read_by': readBy,
+      if (replyToId != null) 'reply_to_id': replyToId,
+      if (replyToPreview != null) 'reply_to_preview': replyToPreview!.toMap(),
       if (attachments.isNotEmpty)
         'attachments': attachments.map((a) => a.toMap()).toList(),
-      'reply_count': replyCount,
     };
   }
 
-  /// Parser le type depuis string
-  static AnnouncementType _parseType(dynamic type) {
-    if (type == null) return AnnouncementType.info;
-
-    switch (type.toString().toLowerCase()) {
-      case 'warning':
-        return AnnouncementType.warning;
-      case 'urgent':
-        return AnnouncementType.urgent;
-      case 'info':
-      default:
-        return AnnouncementType.info;
-    }
-  }
-
   /// Copier avec modifications
-  Announcement copyWith({
-    String? title,
+  AnnouncementReply copyWith({
     String? message,
-    AnnouncementType? type,
     List<String>? readBy,
+    String? replyToId,
+    ReplyPreview? replyToPreview,
     List<MessageAttachment>? attachments,
-    int? replyCount,
   }) {
-    return Announcement(
+    return AnnouncementReply(
       id: id,
-      title: title ?? this.title,
-      message: message ?? this.message,
       senderId: senderId,
       senderName: senderName,
-      type: type ?? this.type,
+      message: message ?? this.message,
       createdAt: createdAt,
       readBy: readBy ?? this.readBy,
+      replyToId: replyToId ?? this.replyToId,
+      replyToPreview: replyToPreview ?? this.replyToPreview,
       attachments: attachments ?? this.attachments,
-      replyCount: replyCount ?? this.replyCount,
     );
   }
 
-  /// Vérifier si l'annonce a été lue par un utilisateur
+  /// Vérifier si la réponse a été lue par un utilisateur
   bool isReadBy(String userId) => readBy.contains(userId);
 
   /// Nombre de lecteurs
@@ -118,6 +94,6 @@ class Announcement {
   /// A des pièces jointes
   bool get hasAttachments => attachments.isNotEmpty;
 
-  /// A des réponses
-  bool get hasReplies => replyCount > 0;
+  /// Est une réponse à un autre message
+  bool get isReply => replyToId != null;
 }

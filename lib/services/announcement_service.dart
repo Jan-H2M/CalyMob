@@ -1,10 +1,17 @@
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as path;
 import '../models/announcement.dart';
+import '../models/announcement_reply.dart';
+import '../models/session_message.dart' show MessageAttachment;
+import '../models/event_message.dart' show ReplyPreview;
 
 /// Service de gestion des annonces du club
 class AnnouncementService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseStorage _storage = FirebaseStorage.instance;
 
   /// Stream de toutes les annonces (temps réel)
   Stream<List<Announcement>> getAnnouncementsStream(String clubId) {
@@ -112,5 +119,216 @@ class AnnouncementService {
       debugPrint('❌ Erreur mise à jour annonce: $e');
       rethrow;
     }
+  }
+
+  // ==================== READ TRACKING ====================
+
+  /// Marquer une annonce comme lue par un utilisateur
+  Future<void> markAnnouncementAsRead({
+    required String clubId,
+    required String announcementId,
+    required String userId,
+  }) async {
+    try {
+      await _firestore
+          .collection('clubs/$clubId/announcements')
+          .doc(announcementId)
+          .update({
+        'read_by': FieldValue.arrayUnion([userId]),
+      });
+      debugPrint('✅ Annonce marquée comme lue: $announcementId');
+    } catch (e) {
+      debugPrint('❌ Erreur marquage annonce lue: $e');
+    }
+  }
+
+  /// Compter les annonces non lues
+  Future<int> getUnreadCount({
+    required String clubId,
+    required String userId,
+  }) async {
+    try {
+      final snapshot = await _firestore
+          .collection('clubs/$clubId/announcements')
+          .get();
+
+      return snapshot.docs.where((doc) {
+        final readBy =
+            (doc.data()['read_by'] as List<dynamic>?)?.cast<String>() ?? [];
+        return !readBy.contains(userId);
+      }).length;
+    } catch (e) {
+      debugPrint('❌ Erreur comptage annonces non lues: $e');
+      return 0;
+    }
+  }
+
+  // ==================== REPLIES ====================
+
+  /// Stream des réponses pour une annonce
+  Stream<List<AnnouncementReply>> getRepliesStream({
+    required String clubId,
+    required String announcementId,
+  }) {
+    return _firestore
+        .collection('clubs/$clubId/announcements/$announcementId/replies')
+        .orderBy('created_at', descending: false)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs
+          .map((doc) => AnnouncementReply.fromFirestore(doc))
+          .toList();
+    });
+  }
+
+  /// Récupérer les réponses (une seule fois)
+  Future<List<AnnouncementReply>> getReplies({
+    required String clubId,
+    required String announcementId,
+  }) async {
+    try {
+      final snapshot = await _firestore
+          .collection('clubs/$clubId/announcements/$announcementId/replies')
+          .orderBy('created_at', descending: false)
+          .get();
+
+      return snapshot.docs
+          .map((doc) => AnnouncementReply.fromFirestore(doc))
+          .toList();
+    } catch (e) {
+      debugPrint('❌ Erreur chargement réponses: $e');
+      return [];
+    }
+  }
+
+  /// Envoyer une réponse à une annonce
+  Future<String> sendReply({
+    required String clubId,
+    required String announcementId,
+    required String senderId,
+    required String senderName,
+    required String message,
+    String? replyToId,
+    ReplyPreview? replyToPreview,
+    List<MessageAttachment>? attachments,
+  }) async {
+    try {
+      final reply = AnnouncementReply(
+        id: '',
+        senderId: senderId,
+        senderName: senderName,
+        message: message,
+        createdAt: DateTime.now(),
+        readBy: [senderId],
+        replyToId: replyToId,
+        replyToPreview: replyToPreview,
+        attachments: attachments ?? [],
+      );
+
+      final docRef = await _firestore
+          .collection('clubs/$clubId/announcements/$announcementId/replies')
+          .add(reply.toFirestore());
+
+      // Incrémenter le compteur de réponses
+      await _firestore
+          .collection('clubs/$clubId/announcements')
+          .doc(announcementId)
+          .update({
+        'reply_count': FieldValue.increment(1),
+      });
+
+      debugPrint('✅ Réponse envoyée pour annonce $announcementId');
+      return docRef.id;
+    } catch (e) {
+      debugPrint('❌ Erreur envoi réponse: $e');
+      rethrow;
+    }
+  }
+
+  /// Créer un ReplyPreview à partir d'une réponse existante
+  ReplyPreview createReplyPreview(AnnouncementReply originalReply) {
+    final preview = originalReply.message.length > 50
+        ? '${originalReply.message.substring(0, 50)}...'
+        : originalReply.message;
+    return ReplyPreview(
+      senderName: originalReply.senderName,
+      messagePreview: preview,
+    );
+  }
+
+  /// Supprimer une réponse
+  Future<void> deleteReply({
+    required String clubId,
+    required String announcementId,
+    required String replyId,
+  }) async {
+    try {
+      await _firestore
+          .collection('clubs/$clubId/announcements/$announcementId/replies')
+          .doc(replyId)
+          .delete();
+
+      // Décrémenter le compteur de réponses
+      await _firestore
+          .collection('clubs/$clubId/announcements')
+          .doc(announcementId)
+          .update({
+        'reply_count': FieldValue.increment(-1),
+      });
+
+      debugPrint('✅ Réponse supprimée: $replyId');
+    } catch (e) {
+      debugPrint('❌ Erreur suppression réponse: $e');
+      rethrow;
+    }
+  }
+
+  /// Marquer une réponse comme lue
+  Future<void> markReplyAsRead({
+    required String clubId,
+    required String announcementId,
+    required String replyId,
+    required String userId,
+  }) async {
+    try {
+      await _firestore
+          .collection('clubs/$clubId/announcements/$announcementId/replies')
+          .doc(replyId)
+          .update({
+        'read_by': FieldValue.arrayUnion([userId]),
+      });
+    } catch (e) {
+      debugPrint('❌ Erreur marquage réponse lue: $e');
+    }
+  }
+
+  // ==================== ATTACHMENTS ====================
+
+  /// Upload une pièce jointe pour une annonce
+  Future<MessageAttachment> uploadAnnouncementAttachment({
+    required String clubId,
+    required String announcementId,
+    required File file,
+    required String type, // 'image' ou 'pdf'
+  }) async {
+    final filename = path.basename(file.path);
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final storagePath =
+        'clubs/$clubId/announcements/$announcementId/attachments/${timestamp}_$filename';
+
+    final ref = _storage.ref().child(storagePath);
+    await ref.putFile(file);
+
+    final url = await ref.getDownloadURL();
+    final fileSize = await file.length();
+
+    debugPrint('✅ Pièce jointe uploadée: $filename');
+
+    return MessageAttachment(
+      type: type,
+      url: url,
+      filename: filename,
+      size: fileSize,
+    );
   }
 }
