@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:lottie/lottie.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
@@ -11,6 +12,8 @@ import '../expenses/financial_screen.dart';
 import '../profile/profile_screen.dart';
 import '../profile/who_is_who_screen.dart';
 import '../announcements/announcements_screen.dart';
+import '../piscine/availability_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Landing page avec thème maritime et boutons ronds
 class LandingScreen extends StatefulWidget {
@@ -25,6 +28,12 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
   late List<AnimationController> _fishControllers;
   late List<bool> _fishVisible;
 
+  // Version info
+  String _versionString = '';
+
+  // User roles for piscine access
+  List<String>? _clubStatuten;
+
   @override
   void initState() {
     super.initState();
@@ -36,6 +45,80 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
     _startFishWithDelay(1, 1200);   // Vis 2: 1.2s delay (changed from 0.8s)
     _startFishWithDelay(2, 1600);   // Vis 3: 1.6s delay
     _startFishWithDelay(3, 2400);   // Vis 4: 2.4s delay
+
+    // Load version info
+    _loadVersionInfo();
+
+    // Load member info for piscine access
+    _loadMemberInfo();
+  }
+
+  Future<void> _loadVersionInfo() async {
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() {
+          _versionString = 'Version ${packageInfo.version} (${packageInfo.buildNumber})';
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading version info: $e');
+    }
+  }
+
+  Future<void> _loadMemberInfo() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final uid = authProvider.currentUser?.uid;
+    if (uid == null) return;
+
+    const clubId = 'calypso';
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('clubs/$clubId/members')
+          .doc(uid)
+          .get();
+
+      if (doc.exists && mounted) {
+        final data = doc.data();
+        setState(() {
+          _clubStatuten =
+              (data?['clubStatuten'] as List<dynamic>?)?.cast<String>();
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading member info: $e');
+    }
+  }
+
+  /// Check if user has piscine role (accueil, encadrant/encadrants, or gonflage)
+  bool _hasPiscineRole() {
+    if (_clubStatuten == null) return false;
+    final roles = _clubStatuten!.map((s) => s.toLowerCase()).toList();
+    return roles.contains('accueil') ||
+           roles.contains('encadrant') ||
+           roles.contains('encadrants') ||
+           roles.contains('gonflage');
+  }
+
+  /// Get all piscine roles the user has
+  List<String> _getPiscineRoles() {
+    if (_clubStatuten == null) return [];
+    final roles = _clubStatuten!.map((s) => s.toLowerCase()).toList();
+    final piscineRoles = <String>[];
+
+    // Check encadrant (both singular and plural forms)
+    if (roles.contains('encadrant') || roles.contains('encadrants')) {
+      piscineRoles.add('encadrant');
+    }
+    // Check accueil
+    if (roles.contains('accueil')) {
+      piscineRoles.add('accueil');
+    }
+    // Check gonflage
+    if (roles.contains('gonflage')) {
+      piscineRoles.add('gonflage');
+    }
+    return piscineRoles;
   }
 
   void _startFishWithDelay(int index, int delayMs) {
@@ -230,13 +313,13 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
 
                 const Spacer(),
 
-                // 5 Ronde knoppen met ButtonBlue - onderaan in het blauwe deel
+                // Ronde knoppen met ButtonBlue - onderaan in het blauwe deel
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      // Rij 1: Événements, Communication
+                      // Rij 1: Événements, Communication, (optioneel Piscine)
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
@@ -256,6 +339,23 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
                               MaterialPageRoute(builder: (_) => const AnnouncementsScreen()),
                             ),
                           ),
+                          // Piscine button - only for accueil/encadrant
+                          if (_hasPiscineRole())
+                            _GlossyButton(
+                              title: 'Piscine',
+                              icon: Icons.pool,
+                              onTap: () {
+                                final roles = _getPiscineRoles();
+                                if (roles.isNotEmpty) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => AvailabilityScreen(userRoles: roles),
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
                         ],
                       ),
 
@@ -301,7 +401,7 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
                 Padding(
                   padding: const EdgeInsets.only(bottom: 16),
                   child: Text(
-                    'Version 1.0.5',
+                    _versionString,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Colors.white70,
                         ),

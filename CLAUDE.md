@@ -17,6 +17,13 @@ flutter build ios                    # Build iOS release (then archive in Xcode)
 flutter build appbundle              # Build Android release
 flutter analyze                      # Run static analysis
 
+# Release APK met versienummer (GEBRUIK DEZE SCRIPTS!)
+./scripts/build_release.sh           # Bouw APK met versienummer in bestandsnaam
+./scripts/build_release.sh --bump patch  # Verhoog versie + bouw (patch: 1.0.10→1.0.11)
+./scripts/build_release.sh --bump minor  # Minor bump (1.0.10→1.1.0)
+./scripts/build_release.sh --bump major  # Major bump (1.0.10→2.0.0)
+./scripts/bump_version.sh patch      # Alleen versie verhogen zonder te bouwen
+
 # iOS specific (from project root)
 cd ios && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install   # Install CocoaPods
 

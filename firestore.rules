@@ -381,6 +381,75 @@ service cloud.firestore {
         allow update, delete: if false; // Audit logs are immutable
       }
 
+      // ========== PISCINE PLANNING MODULE ==========
+
+      // Piscine availabilities (disponibilités des accueil/encadrants)
+      match /availabilities/{availabilityId} {
+        // Lecture: tous les membres authentifiés (nécessaire pour l'admin grid)
+        allow read: if isAuthenticated();
+        // Création/Modification: membre peut gérer sa propre disponibilité
+        allow create: if isAuthenticated()
+          && hasValidSession(clubId)
+          && request.resource.data.membre_id == request.auth.uid;
+        allow update: if isAuthenticated()
+          && hasValidSession(clubId)
+          && resource.data.membre_id == request.auth.uid;
+        // Suppression: uniquement sa propre disponibilité ou admin
+        allow delete: if isAuthenticated()
+          && hasValidSession(clubId)
+          && (resource.data.membre_id == request.auth.uid || isAdmin(clubId));
+      }
+
+      // Piscine sessions (séances piscine configurées)
+      match /piscine_sessions/{sessionId} {
+        // Lecture: tous les membres authentifiés
+        allow read: if isAuthenticated();
+        // Création/Modification/Suppression: admin uniquement
+        allow create, update, delete: if isAdmin(clubId) && hasValidSession(clubId);
+
+        // Messages subcollection (discussions entre participants)
+        match /messages/{messageId} {
+          // Lecture: tous les membres authentifiés
+          allow read: if isAuthenticated();
+          // Création: membres avec session valide
+          allow create: if isAuthenticated() && hasValidSession(clubId);
+          // Suppression: auteur ou admin
+          allow delete: if isAuthenticated()
+            && hasValidSession(clubId)
+            && (resource.data.sender_id == request.auth.uid || isAdmin(clubId));
+          // Modification: uniquement pour marquer comme lu (read_by)
+          allow update: if isAuthenticated()
+            && hasValidSession(clubId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by']);
+        }
+      }
+
+      // Team channels (canaux d'équipe permanents)
+      match /team_channels/{channelId} {
+        // Lecture: membres authentifiés avec le bon rôle
+        allow read: if isAuthenticated();
+        // Création: admin uniquement (canaux créés automatiquement par le système)
+        allow create: if isAdmin(clubId) && hasValidSession(clubId);
+        // Modification/Suppression: admin uniquement
+        allow update, delete: if isAdmin(clubId) && hasValidSession(clubId);
+
+        // Messages subcollection
+        match /messages/{messageId} {
+          // Lecture: membres authentifiés
+          allow read: if isAuthenticated();
+          // Création: membres avec session valide
+          allow create: if isAuthenticated() && hasValidSession(clubId);
+          // Suppression: auteur ou admin
+          allow delete: if isAuthenticated()
+            && hasValidSession(clubId)
+            && (resource.data.sender_id == request.auth.uid || isAdmin(clubId));
+          // Modification: uniquement pour marquer comme lu (read_by)
+          allow update: if isAuthenticated()
+            && hasValidSession(clubId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by']);
+        }
+      }
+
       // ========== COMMUNICATION MODULE ==========
 
       // Announcements (annonces du club) - tous les membres peuvent lire, admin peut écrire

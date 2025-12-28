@@ -24,6 +24,8 @@ import 'providers/announcement_provider.dart';
 import 'providers/event_message_provider.dart';
 import 'providers/payment_provider.dart';
 import 'providers/exercice_valide_provider.dart';
+import 'providers/availability_provider.dart';
+import 'providers/activity_provider.dart';
 
 // Screens
 import 'screens/auth/login_screen.dart';
@@ -141,6 +143,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         ChangeNotifierProvider(create: (_) => EventMessageProvider()),
         ChangeNotifierProvider(create: (_) => PaymentProvider()),
         ChangeNotifierProvider(create: (_) => ExerciceValideProvider()),
+        ChangeNotifierProvider(create: (_) => AvailabilityProvider()),
+        ChangeNotifierProvider(create: (_) => ActivityProvider()),
       ],
       child: MaterialApp(
         navigatorKey: _navigatorKey,

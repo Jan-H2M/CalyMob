@@ -5,12 +5,14 @@ import 'package:intl/intl.dart';
 import '../../config/firebase_config.dart';
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
-import '../../models/operation.dart';
-import '../../providers/operation_provider.dart';
+import '../../models/activity_item.dart';
+import '../../providers/activity_provider.dart';
 import '../../widgets/loading_widget.dart';
 import 'operation_detail_screen.dart';
+import '../piscine/session_detail_screen.dart';
 
-/// Liste des événements avec filtre (Tout / Plongées / Sorties)
+/// Liste des événements avec filtre (Tout / Plongées / Piscine / Sorties)
+/// Combineert operations en piscine sessions in één overzicht
 class OperationsListScreen extends StatefulWidget {
   const OperationsListScreen({Key? key}) : super(key: key);
 
@@ -25,57 +27,65 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
   @override
   void initState() {
     super.initState();
-    // Démarrer le stream
+    // Start de gecombineerde stream
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<OperationProvider>().listenToOpenEvents(_clubId);
+      context.read<ActivityProvider>().listenToActivities(_clubId);
     });
   }
 
-  Future<void> _refreshOperations() async {
-    await context.read<OperationProvider>().refresh(_clubId);
+  Future<void> _refreshActivities() async {
+    await context.read<ActivityProvider>().refresh(_clubId);
   }
 
-  /// Group operations by month
-  Map<String, List<Operation>> _groupByMonth(List<Operation> operations) {
-    final Map<String, List<Operation>> grouped = {};
+  /// Group activities by month
+  Map<String, List<ActivityItem>> _groupByMonth(List<ActivityItem> activities) {
+    final Map<String, List<ActivityItem>> grouped = {};
 
-    for (final op in operations) {
-      final date = op.dateDebut ?? DateTime.now();
-      final monthKey = DateFormat('MMMM yyyy', 'fr_FR').format(date);
+    for (final item in activities) {
+      final monthKey = DateFormat('MMMM yyyy', 'fr_FR').format(item.date);
 
       if (!grouped.containsKey(monthKey)) {
         grouped[monthKey] = [];
       }
-      grouped[monthKey]!.add(op);
+      grouped[monthKey]!.add(item);
     }
 
-    // Sort operations within each month by date
+    // Sort activities within each month by date
     for (final key in grouped.keys) {
-      grouped[key]!.sort((a, b) {
-        final dateA = a.dateDebut ?? DateTime.now();
-        final dateB = b.dateDebut ?? DateTime.now();
-        return dateA.compareTo(dateB);
-      });
+      grouped[key]!.sort((a, b) => a.date.compareTo(b.date));
     }
 
     return grouped;
   }
 
-  void _onEventTapped(Operation operation) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => OperationDetailScreen(
-          operationId: operation.id,
-          clubId: _clubId,
+  void _onActivityTapped(ActivityItem item) {
+    if (item.isPiscine && item.piscineSession != null) {
+      // Navigeer naar SessionDetailScreen voor piscine
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SessionDetailScreen(
+            session: item.piscineSession!,
+          ),
         ),
-      ),
-    );
+      );
+    } else if (item.isOperation) {
+      // Navigeer naar OperationDetailScreen voor reguliere operations
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => OperationDetailScreen(
+            operationId: item.id,
+            clubId: _clubId,
+          ),
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final operationProvider = context.watch<OperationProvider>();
+    final activityProvider = context.watch<ActivityProvider>();
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -120,8 +130,8 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
           // Content
           SafeArea(
             child: RefreshIndicator(
-              onRefresh: _refreshOperations,
-              child: _buildEventsList(operationProvider),
+              onRefresh: _refreshActivities,
+              child: _buildActivityList(activityProvider),
             ),
           ),
           // Seaweed 1 - far left, smaller and transparent
@@ -192,27 +202,22 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
     );
   }
 
-  Widget _buildEventsList(OperationProvider operationProvider) {
-    final allOperations = operationProvider.operations;
+  Widget _buildActivityList(ActivityProvider activityProvider) {
+    final allActivities = activityProvider.activities;
 
     // Loading initial
-    if (operationProvider.isLoading && allOperations.isEmpty) {
+    if (activityProvider.isLoading && allActivities.isEmpty) {
       return const LoadingWidget(message: 'Chargement des événements...');
     }
 
-    // Filter
-    final filtered = allOperations.where((op) {
+    // Filter op categorie
+    final filtered = allActivities.where((item) {
       if (_selectedFilter == 'all') return true;
-      final opCategorie = op.categorie ?? 'plongee';
-      return opCategorie == _selectedFilter;
+      return item.categorie == _selectedFilter;
     }).toList();
 
     // Sort by date
-    filtered.sort((a, b) {
-      final dateA = a.dateDebut ?? DateTime.now();
-      final dateB = b.dateDebut ?? DateTime.now();
-      return dateA.compareTo(dateB);
-    });
+    filtered.sort((a, b) => a.date.compareTo(b.date));
 
     // Group by month
     final grouped = _groupByMonth(filtered);
@@ -252,15 +257,15 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
       itemCount: grouped.length,
       itemBuilder: (context, index) {
         final monthKey = grouped.keys.elementAt(index);
-        final monthEvents = grouped[monthKey]!;
+        final monthActivities = grouped[monthKey]!;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Month header
             _buildMonthHeader(monthKey),
-            // Events for this month
-            ...monthEvents.map((op) => _buildEventCard(op)),
+            // Activities for this month
+            ...monthActivities.map((item) => _buildActivityCard(item)),
           ],
         );
       },
@@ -269,7 +274,8 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
 
   Widget _buildMonthHeader(String monthName) {
     // Capitalize first letter
-    final capitalizedMonth = monthName[0].toUpperCase() + monthName.substring(1);
+    final capitalizedMonth =
+        monthName[0].toUpperCase() + monthName.substring(1);
 
     return Container(
       margin: const EdgeInsets.only(top: 16, bottom: 12),
@@ -312,15 +318,32 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
     );
   }
 
-  Widget _buildEventCard(Operation operation) {
-    final date = operation.dateDebut ?? DateTime.now();
-    final dayName = DateFormat('EEEE', 'fr_FR').format(date);
-    final dayNumber = DateFormat('d', 'fr_FR').format(date);
-    final time = DateFormat('HH:mm', 'fr_FR').format(date);
-    final isPlongee = (operation.categorie ?? 'plongee') == 'plongee';
+  Widget _buildActivityCard(ActivityItem item) {
+    final dayName = DateFormat('EEEE', 'fr_FR').format(item.date);
+    final dayNumber = DateFormat('d', 'fr_FR').format(item.date);
+
+    // Tijd bepalen op basis van type
+    String time;
+    if (item.isPiscine && item.horaire != null) {
+      time = item.horaire!;
+    } else if (item.operation?.dateDebut != null) {
+      time = DateFormat('HH:mm', 'fr_FR').format(item.operation!.dateDebut!);
+    } else {
+      time = '--:--';
+    }
+
+    // Icoon op basis van categorie
+    IconData icon;
+    if (item.categorie == 'piscine') {
+      icon = Icons.pool;
+    } else if (item.categorie == 'plongee') {
+      icon = Icons.scuba_diving;
+    } else {
+      icon = Icons.directions_boat;
+    }
 
     return GestureDetector(
-      onTap: () => _onEventTapped(operation),
+      onTap: () => _onActivityTapped(item),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
@@ -346,10 +369,15 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [
-                      AppColors.middenblauw,
-                      AppColors.donkerblauw,
-                    ],
+                    colors: item.isPiscine
+                        ? [
+                            const Color(0xFF00B4DB), // Piscine blauw
+                            const Color(0xFF0083B0),
+                          ]
+                        : [
+                            AppColors.middenblauw,
+                            AppColors.donkerblauw,
+                          ],
                   ),
                 ),
                 child: Column(
@@ -376,7 +404,8 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                     ),
                     const SizedBox(height: 6),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(8),
@@ -393,7 +422,7 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                   ],
                 ),
               ),
-              // Event details
+              // Activity details
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.all(14),
@@ -404,14 +433,16 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                       Row(
                         children: [
                           Icon(
-                            isPlongee ? Icons.scuba_diving : Icons.directions_boat,
+                            icon,
                             size: 18,
-                            color: AppColors.middenblauw,
+                            color: item.isPiscine
+                                ? const Color(0xFF0083B0)
+                                : AppColors.middenblauw,
                           ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              operation.titre,
+                              item.titre,
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
@@ -424,7 +455,7 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                         ],
                       ),
                       // Location
-                      if (operation.lieu != null && operation.lieu!.isNotEmpty) ...[
+                      if (item.lieu != null && item.lieu!.isNotEmpty) ...[
                         const SizedBox(height: 8),
                         Row(
                           children: [
@@ -436,7 +467,7 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                             const SizedBox(width: 4),
                             Expanded(
                               child: Text(
-                                operation.lieu!,
+                                item.lieu!,
                                 style: TextStyle(
                                   fontSize: 13,
                                   color: Colors.grey[700],
@@ -448,11 +479,28 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                           ],
                         ),
                       ],
-                      // Capacity and price info
+                      // Extra info (verschilt per type)
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          if (operation.capaciteMax != null && operation.capaciteMax! > 0) ...[
+                          if (item.isPiscine) ...[
+                            // Piscine: toon accueil en encadrants count
+                            Icon(
+                              Icons.group,
+                              size: 14,
+                              color: const Color(0xFF0083B0).withOpacity(0.7),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              item.subtitle ?? '',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ] else if (item.capaciteMax != null &&
+                              item.capaciteMax! > 0) ...[
+                            // Operation: toon capaciteit
                             Icon(
                               Icons.group,
                               size: 14,
@@ -460,7 +508,7 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              'Max ${operation.capaciteMax}',
+                              'Max ${item.capaciteMax}',
                               style: TextStyle(
                                 fontSize: 13,
                                 color: Colors.grey[600],
@@ -468,16 +516,35 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                             ),
                           ],
                           const Spacer(),
-                          // Price badge if applicable
-                          if (operation.prixMembre != null && operation.prixMembre! > 0)
+                          // Piscine badge of price badge
+                          if (item.isPiscine)
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color:
+                                    const Color(0xFF00B4DB).withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Text(
+                                'Piscine',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF0083B0),
+                                ),
+                              ),
+                            )
+                          else if (item.prix != null && item.prix! > 0)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
                                 color: AppColors.lichtblauw.withOpacity(0.3),
                                 borderRadius: BorderRadius.circular(8),
-                                ),
+                              ),
                               child: Text(
-                                '${operation.prixMembre!.toStringAsFixed(2)} €',
+                                '${item.prix!.toStringAsFixed(2)} €',
                                 style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
@@ -496,7 +563,9 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                 padding: const EdgeInsets.only(right: 12),
                 child: Icon(
                   Icons.chevron_right,
-                  color: AppColors.middenblauw.withOpacity(0.5),
+                  color: item.isPiscine
+                      ? const Color(0xFF0083B0).withOpacity(0.5)
+                      : AppColors.middenblauw.withOpacity(0.5),
                 ),
               ),
             ],

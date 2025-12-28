@@ -1,7 +1,7 @@
 name: calymob
 description: Calypso DC Mobile Application
 publish_to: 'none'
-version: 1.0.9+56
+version: 1.0.10+58
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -22,6 +22,7 @@ dependencies:
 
   # State Management
   provider: ^6.1.2
+  rxdart: ^0.28.0
 
   # UI
   cupertino_icons: ^1.0.6

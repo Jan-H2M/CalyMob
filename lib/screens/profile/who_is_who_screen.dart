@@ -505,6 +505,24 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
                                 ),
                               ),
                             ),
+                          // Validation status indicator (cotisation + certificat)
+                          Positioned(
+                            bottom: 5,
+                            right: 15,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: _isMemberValid(member) ? Colors.green : Colors.red,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.white, width: 1),
+                              ),
+                              child: Icon(
+                                _isMemberValid(member) ? Icons.check : Icons.close,
+                                color: Colors.white,
+                                size: 10,
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -612,6 +630,24 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
                                   size: 80,
                                   color: Colors.grey.shade400,
                                 ),
+                        ),
+                      ),
+                    ),
+                    // Validation status indicator (cotisation + certificat)
+                    Positioned(
+                      bottom: 40,
+                      left: 40,
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: _isMemberValid(member) ? Colors.green : Colors.red,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
+                        child: Icon(
+                          _isMemberValid(member) ? Icons.check : Icons.close,
+                          color: Colors.white,
+                          size: 16,
                         ),
                       ),
                     ),
@@ -946,6 +982,14 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
       default:
         return Colors.grey;
     }
+  }
+
+  /// Check if member has valid cotisation AND certificat médical
+  bool _isMemberValid(MemberProfile member) {
+    return (member.cotisationStatus == ValidationStatus.valid ||
+            member.cotisationStatus == ValidationStatus.warning) &&
+           (member.certificatStatus == ValidationStatus.valid ||
+            member.certificatStatus == ValidationStatus.warning);
   }
 
   /// Format the level code for display in the sea star

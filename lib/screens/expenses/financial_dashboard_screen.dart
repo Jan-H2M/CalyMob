@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
 import 'package:provider/provider.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
@@ -9,8 +10,34 @@ import 'expense_list_screen.dart';
 import 'approval_list_screen.dart';
 
 /// Dashboard financier avec navigation vers Approbation et Mes demandes
-class FinancialDashboardScreen extends StatelessWidget {
+class FinancialDashboardScreen extends StatefulWidget {
   const FinancialDashboardScreen({Key? key}) : super(key: key);
+
+  @override
+  State<FinancialDashboardScreen> createState() => _FinancialDashboardScreenState();
+}
+
+class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
+  String _versionString = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersionInfo();
+  }
+
+  Future<void> _loadVersionInfo() async {
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() {
+          _versionString = 'Version ${packageInfo.version} (${packageInfo.buildNumber})';
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading version info: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -111,7 +138,7 @@ class FinancialDashboardScreen extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 20),
                   child: Text(
-                    'Version 1.0.7',
+                    _versionString,
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.5),
                       fontSize: 11,

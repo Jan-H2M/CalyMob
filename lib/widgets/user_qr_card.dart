@@ -62,7 +62,7 @@ class UserQRCard extends StatelessWidget {
             // Statut de validation - Cotisation
             _buildValidationStatus(
               icon: Icons.card_membership,
-              label: 'Lidgeld',
+              label: 'Cotisation',
               status: profile.cotisationStatus,
               validityDate: profile.cotisationValidite,
             ),
@@ -72,7 +72,7 @@ class UserQRCard extends StatelessWidget {
             // Statut de validation - Certificat médical
             _buildValidationStatus(
               icon: Icons.medical_services,
-              label: 'Medisch attest',
+              label: 'Certificat médical',
               status: profile.certificatStatus,
               validityDate: profile.certificatMedicalValidite,
             ),
@@ -88,7 +88,7 @@ class UserQRCard extends StatelessWidget {
                 );
               },
               icon: const Icon(Icons.fullscreen),
-              label: const Text('Volledig scherm'),
+              label: const Text('Plein écran'),
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.middenblauw,
                 side: BorderSide(color: AppColors.middenblauw),
@@ -116,26 +116,26 @@ class UserQRCard extends StatelessWidget {
         statusIcon = Icons.check_circle;
         statusText = validityDate != null
             ? DateFormat('dd/MM/yyyy').format(validityDate)
-            : 'Geldig';
+            : 'Valide';
         break;
       case ValidationStatus.warning:
         statusColor = Colors.orange;
         statusIcon = Icons.warning;
         statusText = validityDate != null
-            ? 'Verloopt ${DateFormat('dd/MM/yyyy').format(validityDate)}'
-            : 'Verloopt binnenkort';
+            ? 'Expire le ${DateFormat('dd/MM/yyyy').format(validityDate)}'
+            : 'Expire bientôt';
         break;
       case ValidationStatus.expired:
         statusColor = Colors.red;
         statusIcon = Icons.cancel;
         statusText = validityDate != null
-            ? 'Verlopen ${DateFormat('dd/MM/yyyy').format(validityDate)}'
-            : 'Verlopen';
+            ? 'Expiré le ${DateFormat('dd/MM/yyyy').format(validityDate)}'
+            : 'Expiré';
         break;
       case ValidationStatus.missing:
         statusColor = Colors.red;
         statusIcon = Icons.cancel;
-        statusText = 'Niet ingevuld';
+        statusText = 'Non renseigné';
         break;
     }
 

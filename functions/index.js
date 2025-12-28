@@ -62,3 +62,19 @@ exports.onExpenseCreated = onExpenseCreated;
 // Email notification when expense status changes (approved/reimbursed)
 const { onExpenseStatusChange } = require('./src/notifications/onExpenseStatusChange');
 exports.onExpenseStatusChange = onExpenseStatusChange;
+
+// =============================================================================
+// PISCINE SESSION NOTIFICATIONS (Gen2)
+// =============================================================================
+
+// Push notifications for new piscine session messages
+const { onNewSessionMessage } = require('./src/notifications/onNewSessionMessage');
+exports.onNewSessionMessage = onNewSessionMessage;
+
+// Push notifications for new team channel messages
+const { onNewTeamMessage } = require('./src/notifications/onNewTeamMessage');
+exports.onNewTeamMessage = onNewTeamMessage;
+
+// Daily reminder for upcoming piscine sessions
+const { sessionReminder } = require('./src/notifications/sessionReminder');
+exports.sessionReminder = sessionReminder;
