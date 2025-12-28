@@ -209,14 +209,10 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
                 ),
               ),
 
-              // Content
+              // Content: scrollable list with header + replies
               Expanded(
                 child: Column(
                   children: [
-                    // Announcement header card
-                    _buildAnnouncementHeader(dateFormat),
-
-                    // Replies list
                     Expanded(
                       child: StreamBuilder<List<AnnouncementReply>>(
                         stream: _announcementService.getRepliesStream(
@@ -226,40 +222,19 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
                         builder: (context, snapshot) {
                           final replies = snapshot.data ?? [];
 
-                          if (replies.isEmpty) {
-                            return Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.chat_bubble_outline,
-                                      size: 60, color: Colors.white.withOpacity(0.5)),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    'Aucune reponse',
-                                    style: TextStyle(
-                                      color: Colors.white.withOpacity(0.7),
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Soyez le premier a reagir',
-                                    style: TextStyle(
-                                      color: Colors.white.withOpacity(0.5),
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }
-
                           return ListView.builder(
                             controller: _scrollController,
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            itemCount: replies.length,
+                            // +1 for the announcement header at index 0
+                            itemCount: replies.length + 1,
                             itemBuilder: (context, index) {
-                              final reply = replies[index];
+                              // First item is the announcement header
+                              if (index == 0) {
+                                return _buildAnnouncementHeader(dateFormat);
+                              }
+
+                              // Replies start at index 1
+                              final reply = replies[index - 1];
                               final isOwnReply = reply.senderId == currentUserId;
                               return _buildReplyBubble(reply, isOwnReply, dateFormat);
                             },
@@ -282,7 +257,7 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
 
   Widget _buildAnnouncementHeader(DateFormat dateFormat) {
     return Container(
-      margin: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.95),
