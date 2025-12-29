@@ -1210,6 +1210,40 @@ PODS:
     - Flutter
   - device_info_plus (0.0.1):
     - Flutter
+  - DKImagePickerController/Core (4.3.9):
+    - DKImagePickerController/ImageDataManager
+    - DKImagePickerController/Resource
+  - DKImagePickerController/ImageDataManager (4.3.9)
+  - DKImagePickerController/PhotoGallery (4.3.9):
+    - DKImagePickerController/Core
+    - DKPhotoGallery
+  - DKImagePickerController/Resource (4.3.9)
+  - DKPhotoGallery (0.0.19):
+    - DKPhotoGallery/Core (= 0.0.19)
+    - DKPhotoGallery/Model (= 0.0.19)
+    - DKPhotoGallery/Preview (= 0.0.19)
+    - DKPhotoGallery/Resource (= 0.0.19)
+    - SDWebImage
+    - SwiftyGif
+  - DKPhotoGallery/Core (0.0.19):
+    - DKPhotoGallery/Model
+    - DKPhotoGallery/Preview
+    - SDWebImage
+    - SwiftyGif
+  - DKPhotoGallery/Model (0.0.19):
+    - SDWebImage
+    - SwiftyGif
+  - DKPhotoGallery/Preview (0.0.19):
+    - DKPhotoGallery/Model
+    - DKPhotoGallery/Resource
+    - SDWebImage
+    - SwiftyGif
+  - DKPhotoGallery/Resource (0.0.19):
+    - SDWebImage
+    - SwiftyGif
+  - file_picker (0.0.1):
+    - DKImagePickerController/PhotoGallery
+    - Flutter
   - Firebase/Auth (12.6.0):
     - Firebase/CoreOnly
     - FirebaseAuth (~> 12.6.0)
@@ -1581,9 +1615,6 @@ PODS:
   - path_provider_foundation (0.0.1):
     - Flutter
     - FlutterMacOS
-  - pdfrx (0.0.6):
-    - Flutter
-    - FlutterMacOS
   - permission_handler_apple (9.3.0):
     - Flutter
   - PromisesObjC (2.4.0)
@@ -1602,6 +1633,7 @@ PODS:
   - sqflite_darwin (0.0.4):
     - Flutter
     - FlutterMacOS
+  - SwiftyGif (5.4.5)
   - url_launcher_ios (0.0.1):
     - Flutter
 
@@ -1612,6 +1644,7 @@ DEPENDENCIES:
   - cloud_functions (from `.symlinks/plugins/cloud_functions/ios`)
   - cunning_document_scanner (from `.symlinks/plugins/cunning_document_scanner/ios`)
   - device_info_plus (from `.symlinks/plugins/device_info_plus/ios`)
+  - file_picker (from `.symlinks/plugins/file_picker/ios`)
   - firebase_analytics (from `.symlinks/plugins/firebase_analytics/ios`)
   - firebase_auth (from `.symlinks/plugins/firebase_auth/ios`)
   - firebase_core (from `.symlinks/plugins/firebase_core/ios`)
@@ -1627,7 +1660,6 @@ DEPENDENCIES:
   - mobile_scanner (from `.symlinks/plugins/mobile_scanner/ios`)
   - package_info_plus (from `.symlinks/plugins/package_info_plus/ios`)
   - path_provider_foundation (from `.symlinks/plugins/path_provider_foundation/darwin`)
-  - pdfrx (from `.symlinks/plugins/pdfrx/darwin`)
   - permission_handler_apple (from `.symlinks/plugins/permission_handler_apple/ios`)
   - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
   - sqflite_darwin (from `.symlinks/plugins/sqflite_darwin/darwin`)
@@ -1637,6 +1669,8 @@ SPEC REPOS:
   trunk:
     - abseil
     - BoringSSL-GRPC
+    - DKImagePickerController
+    - DKPhotoGallery
     - Firebase
     - FirebaseAnalytics
     - FirebaseAppCheckInterop
@@ -1678,6 +1712,7 @@ SPEC REPOS:
     - RecaptchaInterop
     - SDWebImage
     - SDWebImageWebPCoder
+    - SwiftyGif
 
 EXTERNAL SOURCES:
   app_links:
@@ -1692,6 +1727,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/cunning_document_scanner/ios"
   device_info_plus:
     :path: ".symlinks/plugins/device_info_plus/ios"
+  file_picker:
+    :path: ".symlinks/plugins/file_picker/ios"
   firebase_analytics:
     :path: ".symlinks/plugins/firebase_analytics/ios"
   firebase_auth:
@@ -1722,8 +1759,6 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/package_info_plus/ios"
   path_provider_foundation:
     :path: ".symlinks/plugins/path_provider_foundation/darwin"
-  pdfrx:
-    :path: ".symlinks/plugins/pdfrx/darwin"
   permission_handler_apple:
     :path: ".symlinks/plugins/permission_handler_apple/ios"
   shared_preferences_foundation:
@@ -1742,6 +1777,9 @@ SPEC CHECKSUMS:
   cloud_functions: 8d86e6aa7e6171502bd72b28c46134f75c2e96f1
   cunning_document_scanner: 43a2bda11ef6a33fd68766b287ed056b4caf6a06
   device_info_plus: 71ffc6ab7634ade6267c7a93088ed7e4f74e5896
+  DKImagePickerController: 946cec48c7873164274ecc4624d19e3da4c1ef3c
+  DKPhotoGallery: b3834fecb755ee09a593d7c9e389d8b5d6deed60
+  file_picker: a0560bc09d61de87f12d246fc47d2119e6ef37be
   Firebase: a451a7b61536298fd5cbfe3a746fd40443a50679
   firebase_analytics: 4f9cca09e65f6c2944a862c6dc86f6bed9fb769c
   firebase_auth: f547a06ed4933a1da2b9ac8d8c64ae09d113c8e1
@@ -1793,7 +1831,6 @@ SPEC CHECKSUMS:
   nanopb: fad817b59e0457d11a5dfbde799381cd727c1275
   package_info_plus: af8e2ca6888548050f16fa2f1938db7b5a5df499
   path_provider_foundation: bb55f6dbba17d0dccd6737fe6f7f34fbd0376880
-  pdfrx: 310e84d01e06fd2af26e16507a0e48c27e99195c
   permission_handler_apple: 4ed2196e43d0651e8ff7ca3483a069d469701f2d
   PromisesObjC: f5707f49cb48b9636751c5b2e7d227e43fba9f47
   PromisesSwift: 9d77319bbe72ebf6d872900551f7eeba9bce2851
@@ -1802,6 +1839,7 @@ SPEC CHECKSUMS:
   SDWebImageWebPCoder: 0e06e365080397465cc73a7a9b472d8a3bd0f377
   shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
   sqflite_darwin: 20b2a3a3b70e43edae938624ce550a3cbf66a3d0
+  SwiftyGif: 706c60cf65fa2bc5ee0313beece843c8eb8194d4
   url_launcher_ios: 7a95fa5b60cc718a708b8f2966718e93db0cef1b
 
 PODFILE CHECKSUM: 1eaf35d55aa8eac6c73c3b77d5fbe80325063d4e

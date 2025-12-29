@@ -53,7 +53,7 @@ android {
                 keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
                 keyAlias keystoreProperties['keyAlias']
                 keyPassword keystoreProperties['keyPassword']
-                storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
+                storeFile rootProject.file('calymob-release.keystore')
                 storePassword keystoreProperties['storePassword']
             }
         }

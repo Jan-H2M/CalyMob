@@ -118,6 +118,33 @@ clubs/{clubId}/
 - CocoaPods requires UTF-8 encoding: use `LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install`
 - The Podfile forces iOS 15.5 minimum for all pods
 
+## Android APK Build Naamgeving
+
+### Versie en Build Nummer
+Het versienummer staat in `pubspec.yaml` in het formaat: `version: X.Y.Z+buildNumber`
+
+Voorbeeld: `version: 1.0.10+61`
+- `1.0.10` = versienummer (major.minor.patch)
+- `61` = build nummer (moet altijd verhoogd worden voor elke nieuwe release)
+
+### APK Bestandsnaam
+De APK wordt gegenereerd met de volgende naamgeving:
+```
+calymob-{versie}-build{buildnummer}.apk
+```
+
+Voorbeeld: `calymob-1.0.10-build61.apk`
+
+### BELANGRIJK: Build Nummer Verhogen
+**Bij elke nieuwe Android build MOET het build nummer worden verhoogd in `pubspec.yaml`:**
+
+1. Open `pubspec.yaml`
+2. Zoek de regel `version: X.Y.Z+buildNumber`
+3. Verhoog het build nummer (het getal na de `+`)
+4. Bouw de APK met `./scripts/build_release.sh`
+
+Het script `build_release.sh` leest automatisch het versienummer uit `pubspec.yaml` en genereert de APK met de correcte bestandsnaam.
+
 ## Development Notes
 
 - UI language is French

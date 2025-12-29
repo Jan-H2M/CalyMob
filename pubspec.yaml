@@ -1,7 +1,7 @@
 name: calymob
 description: Calypso DC Mobile Application
 publish_to: 'none'
-version: 1.0.10+58
+version: 1.0.10+61
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -44,7 +44,7 @@ dependencies:
   path_provider: ^2.1.1
   image_picker: ^1.0.4
   file_picker: ^8.0.0
-  pdfrx: ^1.0.0
+  # pdfrx: ^1.0.0  # Tijdelijk disabled - incompatibel met Xcode 26
   cached_network_image: ^3.3.1
 
   # Camera & Face Detection (mobile only)

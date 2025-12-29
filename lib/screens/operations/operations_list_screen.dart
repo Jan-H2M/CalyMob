@@ -454,8 +454,8 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                           ),
                         ],
                       ),
-                      // Location
-                      if (item.lieu != null && item.lieu!.isNotEmpty) ...[
+                      // Location (niet tonen voor piscine - dat is al duidelijk)
+                      if (item.lieu != null && item.lieu!.isNotEmpty && !item.isPiscine) ...[
                         const SizedBox(height: 8),
                         Row(
                           children: [
@@ -516,26 +516,8 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                             ),
                           ],
                           const Spacer(),
-                          // Piscine badge of price badge
-                          if (item.isPiscine)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color:
-                                    const Color(0xFF00B4DB).withOpacity(0.15),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Text(
-                                'Piscine',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF0083B0),
-                                ),
-                              ),
-                            )
-                          else if (item.prix != null && item.prix! > 0)
+                          // Price badge (alleen voor operations met prijs)
+                          if (!item.isPiscine && item.prix != null && item.prix! > 0)
                             Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 8, vertical: 4),

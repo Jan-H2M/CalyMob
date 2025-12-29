@@ -363,6 +363,19 @@ service cloud.firestore {
           && request.auth.uid == memberId
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastLogin', 'updatedAt']);
 
+        // Allow users to update their own profile fields (photo, consents, contact sharing)
+        // These fields can be updated by the user with a valid session
+        allow update: if isAuthenticated()
+          && hasValidSession(clubId)
+          && request.auth.uid == memberId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'photo_url', 'photo_uploaded_at', 'updated_at',
+            'consent_internal_photo', 'consent_internal_photo_date',
+            'consent_external_photo', 'consent_external_photo_date',
+            'share_email', 'share_phone', 'phone_number',
+            'notifications_enabled', 'fcm_token', 'fcm_tokens', 'fcm_token_updated_at'
+          ]);
+
         // Admins can create new members (for user management UI)
         allow create: if isAdmin(clubId) && hasValidSession(clubId);
 
@@ -460,12 +473,16 @@ service cloud.firestore {
         allow read: if isAuthenticated();
         // Création: admins uniquement
         allow create: if isAdmin(clubId) && hasValidSession(clubId);
-        // Modification: admins peuvent tout modifier, membres peuvent ajouter leur ID à read_by
+        // Modification: admins peuvent tout modifier, membres peuvent:
+        // - ajouter leur ID à read_by (marquer comme lu)
+        // - incrémenter/décrémenter reply_count (quand ils ajoutent/suppriment une réponse)
         allow update: if isAuthenticated()
           && hasValidSession(clubId)
           && (
             isAdmin(clubId)
             || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by'])
+            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reply_count'])
+            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by', 'reply_count'])
           );
         // Suppression: admins uniquement
         allow delete: if isAdmin(clubId) && hasValidSession(clubId);

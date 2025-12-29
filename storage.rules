@@ -97,6 +97,24 @@ service firebase.storage {
       allow delete: if hasRole(clubId, ['superadmin', 'admin', 'validateur']);
     }
 
+    // Operation message attachments (images, PDFs in event discussions)
+    match /clubs/{clubId}/operations/{operationId}/attachments/{fileName} {
+      allow read: if isClubMember(clubId);
+      allow create: if isClubMember(clubId) &&
+                      isValidDocumentSize() &&
+                      isValidFileType('(application/pdf|image/.*)');
+      allow delete: if hasRole(clubId, ['superadmin', 'admin']);
+    }
+
+    // Announcement attachments (images, PDFs in club announcements)
+    match /clubs/{clubId}/announcements/{announcementId}/attachments/{fileName} {
+      allow read: if isClubMember(clubId);
+      allow create: if isClubMember(clubId) &&
+                      isValidDocumentSize() &&
+                      isValidFileType('(application/pdf|image/.*)');
+      allow delete: if hasRole(clubId, ['superadmin', 'admin']);
+    }
+
     // LEGACY: Event documents - Gardé pour compatibilité migration
     match /clubs/{clubId}/evenements/{eventId}/{document} {
       allow read: if isClubMember(clubId);
@@ -105,13 +123,23 @@ service firebase.storage {
       allow delete: if hasRole(clubId, ['admin']);
     }
 
-    // User profile pictures
+    // User profile pictures (global path)
     match /users/{userId}/profile/{fileName} {
       allow read: if isAuthenticated();
       allow create, update: if isOwner(userId) &&
                               isValidImageSize() &&
                               isValidFileType('image/.*');
       allow delete: if isOwner(userId) || request.auth.token.admin == true;
+    }
+
+    // Member profile pictures (club-specific path used by CalyMob)
+    match /clubs/{clubId}/members/{userId}/profile.jpg {
+      allow read: if isClubMember(clubId);
+      allow create, update: if isOwner(userId) &&
+                              isClubMember(clubId) &&
+                              isValidImageSize() &&
+                              isValidFileType('image/.*');
+      allow delete: if isOwner(userId) || hasRole(clubId, ['admin', 'superadmin']);
     }
 
     // VP Dive imports (Excel files)
