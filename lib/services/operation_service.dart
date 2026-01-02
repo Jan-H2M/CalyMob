@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../models/operation.dart';
 import '../models/member_profile.dart';
 import '../models/participant_operation.dart';
+import '../models/supplement.dart';
 import '../utils/tariff_utils.dart';
 
 /// Service de gestion des opérations (événements)
@@ -97,6 +98,8 @@ class OperationService {
     required String userName,
     required Operation operation,
     MemberProfile? memberProfile,
+    List<SelectedSupplement>? selectedSupplements,
+    double? supplementTotal,
   }) async {
     try {
       // Vérifier si déjà inscrit
@@ -135,6 +138,8 @@ class OperationService {
         prix: prix,
         paye: false,
         dateInscription: DateTime.now(),
+        selectedSupplements: selectedSupplements ?? [],
+        supplementTotal: supplementTotal ?? 0,
       );
 
       // Sauvegarder dans Firestore (subcollection under operation)
@@ -142,7 +147,8 @@ class OperationService {
           .collection('clubs/$clubId/operations/$operationId/inscriptions')
           .add(participant.toFirestore());
 
-      debugPrint('✅ Inscription réussie: $userName → ${operation.titre}');
+      final totalPrix = prix + (supplementTotal ?? 0);
+      debugPrint('✅ Inscription réussie: $userName → ${operation.titre} (total: $totalPrix€)');
     } catch (e) {
       debugPrint('❌ Erreur inscription: $e');
       rethrow;

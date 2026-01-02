@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../models/operation.dart';
 import '../models/member_profile.dart';
 import '../models/participant_operation.dart';
+import '../models/supplement.dart';
 import '../services/operation_service.dart';
 
 /// Provider pour l'état des opérations
@@ -128,6 +129,8 @@ class OperationProvider with ChangeNotifier {
     required String userId,
     required String userName,
     MemberProfile? memberProfile,
+    List<SelectedSupplement>? selectedSupplements,
+    double? supplementTotal,
   }) async {
     try {
       _isLoading = true;
@@ -142,6 +145,8 @@ class OperationProvider with ChangeNotifier {
         userName: userName,
         operation: operation,
         memberProfile: memberProfile,
+        selectedSupplements: selectedSupplements,
+        supplementTotal: supplementTotal,
       );
 
       // Mettre à jour cache

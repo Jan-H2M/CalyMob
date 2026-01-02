@@ -22,6 +22,7 @@ import '../../models/exercice_lifras.dart';
 import '../../models/participant_operation.dart';
 import '../../models/payment_response.dart';
 import '../../models/event_message.dart';
+import '../../models/supplement.dart';
 import '../scanner/scan_page.dart';
 import 'add_guest_dialog.dart';
 import 'package:intl/intl.dart';
@@ -238,57 +239,125 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
   Future<void> _handleRegister() async {
     final authProvider = context.read<AuthProvider>();
     final operationProvider = context.read<OperationProvider>();
+    final operation = operationProvider.selectedOperation;
 
     final userId = authProvider.currentUser?.uid ?? '';
     final userEmail = authProvider.currentUser?.email ?? '';
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirmer l\'inscription'),
-        content: Text('Voulez-vous vous inscrire à "${operationProvider.selectedOperation?.titre}" ?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Annuler'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('S\'inscrire'),
-          ),
-        ],
-      ),
-    );
+    // Calculate base price for display
+    final basePrice = _userProfile != null
+        ? TariffUtils.computeRegistrationPrice(
+            operation: operation!,
+            profile: _userProfile!,
+          )
+        : operation!.prixMembre ?? 0.0;
 
-    if (confirmed == true && mounted) {
-      try {
-        await operationProvider.registerToOperation(
-          clubId: widget.clubId,
-          operationId: widget.operationId,
-          userId: userId,
-          userName: userEmail,
-          memberProfile: _userProfile,
-        );
+    // If operation has supplements, show supplement selection dialog
+    if (operation.supplements.isNotEmpty) {
+      final result = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (context) => _SupplementSelectionDialog(
+          operationTitle: operation.titre,
+          supplements: operation.supplements,
+          basePrice: basePrice,
+        ),
+      );
 
-        if (mounted) {
-          // Load the inscription data so payment button works
-          await _loadUserInscription();
+      if (result == null) return; // User cancelled
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Inscription réussie !'),
-              backgroundColor: Colors.green,
-            ),
+      if (mounted) {
+        try {
+          await operationProvider.registerToOperation(
+            clubId: widget.clubId,
+            operationId: widget.operationId,
+            userId: userId,
+            userName: userEmail,
+            memberProfile: _userProfile,
+            selectedSupplements: result['supplements'] as List<SelectedSupplement>,
+            supplementTotal: result['supplementTotal'] as double,
           );
+
+          if (mounted) {
+            await _loadUserInscription();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Inscription réussie !'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(e.toString()),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
         }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(e.toString()),
-              backgroundColor: Colors.red,
+      }
+    } else {
+      // No supplements - simple confirmation dialog
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Confirmer l\'inscription'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Voulez-vous vous inscrire à "${operation.titre}" ?'),
+              if (basePrice > 0) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Prix: ${basePrice.toStringAsFixed(2)} €',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Annuler'),
             ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('S\'inscrire'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed == true && mounted) {
+        try {
+          await operationProvider.registerToOperation(
+            clubId: widget.clubId,
+            operationId: widget.operationId,
+            userId: userId,
+            userName: userEmail,
+            memberProfile: _userProfile,
           );
+
+          if (mounted) {
+            await _loadUserInscription();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Inscription réussie !'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(e.toString()),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
         }
       }
     }
@@ -728,11 +797,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
           final isPaid = userInscription?.paye ?? false;
 
           // Calculate price based on user function if not already inscribed
-          // If inscribed, use the stored price; otherwise calculate from tariffs
+          // If inscribed, use the total price (base + supplements); otherwise calculate from tariffs
           double inscriptionPrice;
           if (userInscription != null) {
-            // Use the price stored in the inscription
-            inscriptionPrice = userInscription.prix;
+            // Use the total price stored in the inscription (includes supplements)
+            inscriptionPrice = userInscription.totalPrix;
           } else if (_userProfile != null) {
             // Calculate price based on user's function
             inscriptionPrice = TariffUtils.computeRegistrationPrice(
@@ -1846,6 +1915,140 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
       icon,
       size: 20,
       color: color,
+    );
+  }
+}
+
+/// Dialog for selecting supplements during registration
+class _SupplementSelectionDialog extends StatefulWidget {
+  final String operationTitle;
+  final List<Supplement> supplements;
+  final double basePrice;
+
+  const _SupplementSelectionDialog({
+    required this.operationTitle,
+    required this.supplements,
+    required this.basePrice,
+  });
+
+  @override
+  State<_SupplementSelectionDialog> createState() => _SupplementSelectionDialogState();
+}
+
+class _SupplementSelectionDialogState extends State<_SupplementSelectionDialog> {
+  final Set<String> _selectedIds = {};
+
+  double get _supplementTotal {
+    return widget.supplements
+        .where((s) => _selectedIds.contains(s.id))
+        .fold(0.0, (sum, s) => sum + s.price);
+  }
+
+  double get _totalPrice => widget.basePrice + _supplementTotal;
+
+  List<SelectedSupplement> get _selectedSupplements {
+    return widget.supplements
+        .where((s) => _selectedIds.contains(s.id))
+        .map((s) => SelectedSupplement(id: s.id, name: s.name, price: s.price))
+        .toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Confirmer l\'inscription'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Voulez-vous vous inscrire à "${widget.operationTitle}" ?'),
+            const SizedBox(height: 16),
+
+            // Base price
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Prix de base:'),
+                Text(
+                  '${widget.basePrice.toStringAsFixed(2)} €',
+                  style: const TextStyle(fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 8),
+
+            // Supplements section
+            const Text(
+              'Suppléments optionnels:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+
+            // Supplement checkboxes
+            ...widget.supplements.map((supplement) {
+              final isSelected = _selectedIds.contains(supplement.id);
+              return CheckboxListTile(
+                value: isSelected,
+                onChanged: (value) {
+                  setState(() {
+                    if (value == true) {
+                      _selectedIds.add(supplement.id);
+                    } else {
+                      _selectedIds.remove(supplement.id);
+                    }
+                  });
+                },
+                title: Text(supplement.name),
+                subtitle: Text('+${supplement.price.toStringAsFixed(2)} €'),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+              );
+            }),
+
+            const SizedBox(height: 8),
+            const Divider(),
+            const SizedBox(height: 8),
+
+            // Total
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Total:',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                Text(
+                  '${_totalPrice.toStringAsFixed(2)} €',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Annuler'),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.pop(context, {
+            'supplements': _selectedSupplements,
+            'supplementTotal': _supplementTotal,
+          }),
+          child: const Text('S\'inscrire'),
+        ),
+      ],
     );
   }
 }

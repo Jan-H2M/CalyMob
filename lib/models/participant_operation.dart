@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'supplement.dart';
 
 /// Model ParticipantOperation - Inscription à une opération
 class ParticipantOperation {
@@ -15,6 +16,8 @@ class ParticipantOperation {
   final String? commentaire;
   final String? notes;
   final List<String> exercices; // IDs des exercices LIFRAS sélectionnés
+  final List<SelectedSupplement> selectedSupplements; // Suppléments sélectionnés (snapshot)
+  final double supplementTotal; // Somme des prix des suppléments
   final String? paymentStatus; // Mollie status: open, pending, paid, failed, canceled, expired
   final bool transactionMatched; // True when bank transaction is matched in CalyCompta
   final bool? present; // True when member has been marked present at the event
@@ -37,6 +40,8 @@ class ParticipantOperation {
     this.commentaire,
     this.notes,
     this.exercices = const [],
+    this.selectedSupplements = const [],
+    this.supplementTotal = 0,
     this.paymentStatus,
     this.transactionMatched = false,
     this.present,
@@ -51,6 +56,9 @@ class ParticipantOperation {
 
   /// Payment is fully confirmed (bank transaction matched)
   bool get isFullyPaid => paye && transactionMatched;
+
+  /// Total price including supplements
+  double get totalPrix => prix + supplementTotal;
 
   /// Get display status for payment
   String get paymentDisplayStatus {
@@ -89,6 +97,8 @@ class ParticipantOperation {
       commentaire: data['commentaire'],
       notes: data['notes'],
       exercices: List<String>.from(data['exercices'] ?? []),
+      selectedSupplements: _parseSelectedSupplements(data['selected_supplements']),
+      supplementTotal: (data['supplement_total'] ?? 0).toDouble(),
       paymentStatus: data['payment_status'],
       transactionMatched: data['transaction_matched'] ?? false,
       present: data['present'],
@@ -97,6 +107,13 @@ class ParticipantOperation {
       presentByName: data['present_by_name'],
       isGuest: data['is_guest'] ?? false,
     );
+  }
+
+  /// Parse selected supplements from Firestore data
+  static List<SelectedSupplement> _parseSelectedSupplements(dynamic data) {
+    if (data == null) return [];
+    final list = data as List<dynamic>;
+    return list.map((s) => SelectedSupplement.fromMap(s as Map<String, dynamic>)).toList();
   }
 
   /// Convertir vers Firestore
@@ -114,6 +131,8 @@ class ParticipantOperation {
       'commentaire': commentaire,
       'notes': notes,
       'exercices': exercices,
+      'selected_supplements': selectedSupplements.map((s) => s.toMap()).toList(),
+      'supplement_total': supplementTotal,
       'payment_status': paymentStatus,
       'transaction_matched': transactionMatched,
       'present': present,
@@ -141,6 +160,8 @@ class ParticipantOperation {
     String? commentaire,
     String? notes,
     List<String>? exercices,
+    List<SelectedSupplement>? selectedSupplements,
+    double? supplementTotal,
     String? paymentStatus,
     bool? transactionMatched,
     bool? present,
@@ -163,6 +184,8 @@ class ParticipantOperation {
       commentaire: commentaire ?? this.commentaire,
       notes: notes ?? this.notes,
       exercices: exercices ?? this.exercices,
+      selectedSupplements: selectedSupplements ?? this.selectedSupplements,
+      supplementTotal: supplementTotal ?? this.supplementTotal,
       paymentStatus: paymentStatus ?? this.paymentStatus,
       transactionMatched: transactionMatched ?? this.transactionMatched,
       present: present ?? this.present,

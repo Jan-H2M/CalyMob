@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'tariff.dart';
+import 'supplement.dart';
 
 /// Model Operation - Événements, cotisations, dons, etc.
 class Operation {
@@ -23,6 +24,7 @@ class Operation {
   final double? prixMembre; // Legacy: prix pour membres
   final double? prixNonMembre; // Legacy: prix pour non-membres
   final List<Tariff> eventTariffs; // Nouveau: tarifs flexibles par fonction
+  final List<Supplement> supplements; // Suppléments optionnels (location combinaison, etc.)
 
   // Organisateur
   final String? organisateurId;
@@ -51,6 +53,7 @@ class Operation {
     this.prixMembre,
     this.prixNonMembre,
     this.eventTariffs = const [],
+    this.supplements = const [],
     this.organisateurId,
     this.organisateurNom,
     this.communication,
@@ -78,6 +81,7 @@ class Operation {
       prixMembre: (data['prix_membre'] as num?)?.toDouble(),
       prixNonMembre: (data['prix_non_membre'] as num?)?.toDouble(),
       eventTariffs: _parseTariffs(data['event_tariffs']),
+      supplements: _parseSupplements(data['supplements']),
       organisateurId: data['organisateur_id'],
       organisateurNom: data['organisateur_nom'],
       communication: data['communication'],
@@ -101,6 +105,16 @@ class Operation {
     }
 
     return tariffs;
+  }
+
+  /// Parse supplements from Firestore data
+  static List<Supplement> _parseSupplements(dynamic supplementsData) {
+    if (supplementsData == null) return [];
+
+    final supplementsList = supplementsData as List<dynamic>;
+    return supplementsList
+        .map((s) => Supplement.fromMap(s as Map<String, dynamic>))
+        .toList();
   }
 
   /// Est-ce que l'événement accepte encore des inscriptions ?
