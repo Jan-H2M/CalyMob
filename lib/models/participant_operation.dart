@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'supplement.dart';
 
 /// Model ParticipantOperation - Inscription à une opération
@@ -110,10 +111,23 @@ class ParticipantOperation {
   }
 
   /// Parse selected supplements from Firestore data
+  /// Handles null, wrong types, and malformed data gracefully
   static List<SelectedSupplement> _parseSelectedSupplements(dynamic data) {
     if (data == null) return [];
-    final list = data as List<dynamic>;
-    return list.map((s) => SelectedSupplement.fromMap(s as Map<String, dynamic>)).toList();
+    if (data is! List) return [];
+
+    try {
+      return data
+          .map((s) {
+            if (s is! Map<String, dynamic>) return null;
+            return SelectedSupplement.fromMap(s);
+          })
+          .whereType<SelectedSupplement>()
+          .toList();
+    } catch (e) {
+      debugPrint('⚠️ Erreur parsing selected_supplements: $e');
+      return [];
+    }
   }
 
   /// Convertir vers Firestore

@@ -264,12 +264,13 @@ class _MyEventsScreenState extends State<MyEventsScreen> with SingleTickerProvid
                   padding: const EdgeInsets.only(top: 4),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: participant.selectedSupplements.map((s) =>
-                      Text(
-                        '+ ${s.name}: ${s.price.toStringAsFixed(2)} €',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                      ),
-                    ).toList(),
+                    children: participant.selectedSupplements
+                        .where((s) => s.name.isNotEmpty)
+                        .map((s) => Text(
+                              '+ ${s.name}: ${s.price.toStringAsFixed(2)} €',
+                              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                            ))
+                        .toList(),
                   ),
                 ),
             ],

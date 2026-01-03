@@ -4,20 +4,23 @@ import '../models/operation.dart';
 import '../models/member_profile.dart';
 import '../models/participant_operation.dart';
 import '../models/supplement.dart';
+import '../models/user_event_registration.dart';
 import '../services/operation_service.dart';
 
 /// Provider pour l'état des opérations
 class OperationProvider with ChangeNotifier {
   final OperationService _operationService = OperationService();
 
-  // Stream subscription for memory management
+  // Stream subscriptions for memory management
   StreamSubscription<List<Operation>>? _operationsSubscription;
+  StreamSubscription<List<UserEventRegistration>>? _userRegistrationsSubscription;
 
   List<Operation> _operations = [];
   Operation? _selectedOperation;
   Map<String, int> _participantCounts = {}; // Cache compteur participants
-  Map<String, bool> _userRegistrations = {}; // Cache inscriptions utilisateur
+  Map<String, bool> _userRegistrationStatus = {}; // Cache inscriptions utilisateur (per operation)
   List<ParticipantOperation> _selectedOperationParticipants = []; // Liste participants
+  List<UserEventRegistration> _userRegistrations = []; // User's registrations across all operations
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -25,12 +28,22 @@ class OperationProvider with ChangeNotifier {
   List<Operation> get operations => _operations;
   Operation? get selectedOperation => _selectedOperation;
   List<ParticipantOperation> get selectedOperationParticipants => _selectedOperationParticipants;
+  List<UserEventRegistration> get userRegistrations => _userRegistrations;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
+
+  /// Upcoming events (not yet passed)
+  List<UserEventRegistration> get upcomingEvents =>
+      _userRegistrations.where((r) => !r.isPast).toList();
+
+  /// Past events (already passed)
+  List<UserEventRegistration> get pastEvents =>
+      _userRegistrations.where((r) => r.isPast).toList();
 
   @override
   void dispose() {
     _operationsSubscription?.cancel();
+    _userRegistrationsSubscription?.cancel();
     super.dispose();
   }
 
@@ -39,9 +52,9 @@ class OperationProvider with ChangeNotifier {
     return _participantCounts[operationId] ?? 0;
   }
 
-  /// Vérifier si l'utilisateur est inscrit
+  /// Vérifier si l'utilisateur est inscrit à une opération spécifique
   bool isUserRegistered(String operationId) {
-    return _userRegistrations[operationId] ?? false;
+    return _userRegistrationStatus[operationId] ?? false;
   }
 
   /// Charger les événements ouverts (stream)
@@ -108,7 +121,7 @@ class OperationProvider with ChangeNotifier {
           operationId,
           userId,
         );
-        _userRegistrations[operationId] = isRegistered;
+        _userRegistrationStatus[operationId] = isRegistered;
       }
 
       _isLoading = false;
@@ -150,7 +163,7 @@ class OperationProvider with ChangeNotifier {
       );
 
       // Mettre à jour cache
-      _userRegistrations[operationId] = true;
+      _userRegistrationStatus[operationId] = true;
       _participantCounts[operationId] = (_participantCounts[operationId] ?? 0) + 1;
 
       _isLoading = false;
@@ -184,7 +197,7 @@ class OperationProvider with ChangeNotifier {
       );
 
       // Mettre à jour cache
-      _userRegistrations[operationId] = false;
+      _userRegistrationStatus[operationId] = false;
       _participantCounts[operationId] = (_participantCounts[operationId] ?? 1) - 1;
 
       _isLoading = false;
@@ -268,6 +281,55 @@ class OperationProvider with ChangeNotifier {
 
       debugPrint('❌ Erreur addGuestToOperation: $e');
       rethrow;
+    }
+  }
+
+  /// Écouter les inscriptions de l'utilisateur (stream)
+  /// Charge toutes les inscriptions de l'utilisateur avec les données d'opération associées
+  void listenToUserRegistrations(String clubId, String userId) {
+    // Cancel any existing subscription to prevent memory leaks
+    _userRegistrationsSubscription?.cancel();
+
+    _isLoading = true;
+    notifyListeners();
+
+    _userRegistrationsSubscription = _operationService
+        .getUserRegistrationsStream(clubId, userId)
+        .listen(
+          (registrations) {
+            _userRegistrations = registrations;
+            _isLoading = false;
+            notifyListeners();
+
+            debugPrint('📋 ${registrations.length} inscriptions utilisateur chargées (${upcomingEvents.length} à venir, ${pastEvents.length} passées)');
+          },
+          onError: (error) {
+            _errorMessage = error.toString();
+            _isLoading = false;
+            notifyListeners();
+
+            debugPrint('❌ Erreur listenToUserRegistrations: $error');
+          },
+        );
+  }
+
+  /// Charger les inscriptions de l'utilisateur (one-time, pour refresh)
+  Future<void> loadUserRegistrations(String clubId, String userId) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      _userRegistrations = await _operationService.getUserRegistrations(clubId, userId);
+      _isLoading = false;
+      notifyListeners();
+
+      debugPrint('📋 ${_userRegistrations.length} inscriptions utilisateur rechargées');
+    } catch (e) {
+      _errorMessage = e.toString();
+      _isLoading = false;
+      notifyListeners();
+
+      debugPrint('❌ Erreur loadUserRegistrations: $e');
     }
   }
 }

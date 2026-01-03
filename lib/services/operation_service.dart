@@ -4,6 +4,7 @@ import '../models/operation.dart';
 import '../models/member_profile.dart';
 import '../models/participant_operation.dart';
 import '../models/supplement.dart';
+import '../models/user_event_registration.dart';
 import '../utils/tariff_utils.dart';
 
 /// Service de gestion des opérations (événements)
@@ -385,6 +386,107 @@ class OperationService {
     } catch (e) {
       debugPrint('❌ Erreur création inscription invité: $e');
       rethrow;
+    }
+  }
+
+  /// Stream van alle inscriptions van een gebruiker met bijbehorende Operation data
+  /// Uses collectionGroup query to find all inscriptions across all operations
+  Stream<List<UserEventRegistration>> getUserRegistrationsStream(String clubId, String userId) {
+    return _firestore
+        .collectionGroup('inscriptions')
+        .where('membre_id', isEqualTo: userId)
+        .snapshots()
+        .asyncMap((snapshot) async {
+          final registrations = <UserEventRegistration>[];
+
+          for (var doc in snapshot.docs) {
+            try {
+              // Verify this inscription belongs to the correct club
+              final path = doc.reference.path;
+              if (!path.startsWith('clubs/$clubId/')) continue;
+
+              final participant = ParticipantOperation.fromFirestore(doc);
+
+              // Get parent operation document
+              final operationRef = doc.reference.parent.parent;
+              if (operationRef == null) continue;
+
+              final operationDoc = await operationRef.get();
+              if (!operationDoc.exists) continue;
+
+              final operation = Operation.fromFirestore(operationDoc);
+
+              registrations.add(UserEventRegistration(
+                operation: operation,
+                participant: participant,
+              ));
+            } catch (e) {
+              debugPrint('⚠️ Erreur parsing registration: $e');
+              // Continue with next registration
+            }
+          }
+
+          // Sort by date (upcoming first)
+          registrations.sort((a, b) {
+            final dateA = a.operation.dateDebut ?? DateTime(2100);
+            final dateB = b.operation.dateDebut ?? DateTime(2100);
+            return dateA.compareTo(dateB);
+          });
+
+          debugPrint('📋 ${registrations.length} inscriptions chargées pour user $userId');
+          return registrations;
+        });
+  }
+
+  /// Async variant voor refresh (one-time load)
+  Future<List<UserEventRegistration>> getUserRegistrations(String clubId, String userId) async {
+    try {
+      final snapshot = await _firestore
+          .collectionGroup('inscriptions')
+          .where('membre_id', isEqualTo: userId)
+          .get();
+
+      final registrations = <UserEventRegistration>[];
+
+      for (var doc in snapshot.docs) {
+        try {
+          // Verify this inscription belongs to the correct club
+          final path = doc.reference.path;
+          if (!path.startsWith('clubs/$clubId/')) continue;
+
+          final participant = ParticipantOperation.fromFirestore(doc);
+
+          // Get parent operation document
+          final operationRef = doc.reference.parent.parent;
+          if (operationRef == null) continue;
+
+          final operationDoc = await operationRef.get();
+          if (!operationDoc.exists) continue;
+
+          final operation = Operation.fromFirestore(operationDoc);
+
+          registrations.add(UserEventRegistration(
+            operation: operation,
+            participant: participant,
+          ));
+        } catch (e) {
+          debugPrint('⚠️ Erreur parsing registration: $e');
+          // Continue with next registration
+        }
+      }
+
+      // Sort by date (upcoming first)
+      registrations.sort((a, b) {
+        final dateA = a.operation.dateDebut ?? DateTime(2100);
+        final dateB = b.operation.dateDebut ?? DateTime(2100);
+        return dateA.compareTo(dateB);
+      });
+
+      debugPrint('📋 ${registrations.length} inscriptions chargées pour user $userId');
+      return registrations;
+    } catch (e) {
+      debugPrint('❌ Erreur chargement inscriptions utilisateur: $e');
+      return [];
     }
   }
 }
