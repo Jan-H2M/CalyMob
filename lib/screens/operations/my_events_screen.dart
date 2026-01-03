@@ -226,7 +226,7 @@ class _MyEventsScreenState extends State<MyEventsScreen> with SingleTickerProvid
                       const Icon(Icons.euro, size: 16, color: Colors.grey),
                       const SizedBox(width: 4),
                       Text(
-                        '${participant.prix.toStringAsFixed(2)} €',
+                        '${participant.totalPrix.toStringAsFixed(2)} €',
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -257,6 +257,21 @@ class _MyEventsScreenState extends State<MyEventsScreen> with SingleTickerProvid
                     ),
                 ],
               ),
+
+              // Supplement details (si présents)
+              if (participant.selectedSupplements.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: participant.selectedSupplements.map((s) =>
+                      Text(
+                        '+ ${s.name}: ${s.price.toStringAsFixed(2)} €',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                    ).toList(),
+                  ),
+                ),
             ],
           ),
         ),
