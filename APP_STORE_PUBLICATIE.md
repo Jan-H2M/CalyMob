@@ -13,7 +13,81 @@ Dit plan beschrijft alle stappen om CalyMob te publiceren in de Apple App Store 
 **Account status:**
 - [x] Apple Developer Account: **ACTIEF**
 - [x] Google Play Developer Account: **ACTIEF**
-- [ ] Privacy Policy URL: **https://caly.club/privacy** (moet nog gehost worden)
+- [x] Privacy Policy URL: **https://caly.club/privacy** ✅ ONLINE
+
+---
+
+## ASSET LOCATIES (Snelle Referentie)
+
+Alle marketing assets bevinden zich in: `CalyMob/assets/`
+
+### App Iconen
+| Bestand | Afmetingen | Gebruik |
+|---------|------------|---------|
+| `icon-1024x1024.png` | 1024x1024 | **iOS App Store** (vereist) |
+| `icon-512x512.png` | 512x512 | **Google Play Store** |
+| `icon.png` | 595x842 | Origineel/backup |
+
+### Feature Graphic (Google Play)
+| Bestand | Afmetingen | Status |
+|---------|------------|--------|
+| `feature-graphic.png` | 1024x500 | ✅ Klaar |
+
+### Screenshots (Januari 2026)
+
+**Locatie**: `CalyMob/assets/screenshots/`
+
+| Bestand | Scherm | Gebruik |
+|---------|--------|---------|
+| `01-login.jpeg` | Login met Face ID | Beide stores |
+| `02-home.jpeg` | Home dashboard | Beide stores |
+| `03-evenements.jpeg` | Événements kalender | Beide stores |
+| `04-communication.jpeg` | Announcements | Beide stores |
+| `05-piscine-disponibilites.jpeg` | Piscine beschikbaarheid | Beide stores |
+| `06-whoswho.jpeg` | Who's Who ledenlijst | Beide stores |
+| `07-finances.jpeg` | Finances menu | Beide stores |
+| `08-mes-demandes.jpeg` | Onkostendeclaraties | Beide stores |
+| `09-mon-profil.jpeg` | Profiel met QR code | Beide stores |
+
+**Oudere screenshots** (in `CalyMob/assets/`):
+| Bestand | Type |
+|---------|------|
+| `phone-screenshot-1.png` | Phone |
+| `phone-screenshot-2.png` | Phone |
+| `tablet-7-screenshot-1.png` | Tablet 7" |
+| `tablet-10-screenshot-1.png` | Tablet 10" |
+
+### Vereiste Screenshot Formaten
+
+**iOS App Store:**
+- iPhone 6.9" (15 Pro Max): 1320 x 2868
+- iPhone 6.7" (14 Pro Max): 1290 x 2796
+- iPhone 6.5" (11 Pro Max): 1242 x 2688
+- iPhone 5.5" (8 Plus): 1242 x 2208
+- iPad Pro 12.9": 2048 x 2732
+
+**Google Play:**
+- Phone: min 320px, max 3840px (16:9 of 9:16)
+- Tablet 7": 1024 x 500
+- Tablet 10": 1024 x 500
+
+### Hoe Screenshots te Maken
+
+```bash
+# Start iOS simulator
+open -a Simulator
+
+# Kies device: File > Open Simulator > iOS 17 > iPhone 15 Pro Max
+
+# Run de app
+cd CalyMob && flutter run -d "iPhone 15 Pro Max"
+
+# Screenshot maken: Cmd+S (opslaat in ~/Desktop)
+# Of: Device > Screenshot
+
+# Verplaats naar assets folder
+mv ~/Desktop/*.png CalyMob/assets/
+```
 
 ---
 
