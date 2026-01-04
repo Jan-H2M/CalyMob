@@ -323,4 +323,68 @@ class ProfileService {
       return [];
     }
   }
+
+  /// Supprimer toutes les données utilisateur (RGPD Article 17 - Droit à l'effacement)
+  /// Cette méthode supprime:
+  /// - La photo de profil dans Storage
+  /// - Le document membre dans Firestore
+  /// - Les sessions actives
+  /// Note: Les inscriptions aux événements et les notes de frais sont conservées
+  /// pour des raisons légales/comptables mais anonymisées
+  Future<void> deleteUserData(String clubId, String userId) async {
+    try {
+      debugPrint('🗑️ Suppression des données utilisateur: $userId');
+
+      // 1. Supprimer la photo de profil si elle existe
+      try {
+        final photoRef = _storage.ref().child('clubs/$clubId/members/$userId/profile.jpg');
+        await photoRef.delete();
+        debugPrint('✅ Photo profil supprimée');
+      } catch (e) {
+        // Photo n'existe peut-être pas, ce n'est pas une erreur critique
+        debugPrint('ℹ️ Pas de photo à supprimer ou erreur: $e');
+      }
+
+      // 2. Supprimer les sessions actives
+      try {
+        final sessionsSnapshot = await _firestore
+            .collection('clubs/$clubId/sessions')
+            .where('userId', isEqualTo: userId)
+            .get();
+
+        for (final doc in sessionsSnapshot.docs) {
+          await doc.reference.delete();
+        }
+        debugPrint('✅ ${sessionsSnapshot.docs.length} session(s) supprimée(s)');
+      } catch (e) {
+        debugPrint('⚠️ Erreur suppression sessions: $e');
+      }
+
+      // 3. Marquer le membre comme supprimé (soft delete pour conserver l'historique)
+      // Ceci anonymise les données tout en conservant les références
+      await _firestore.collection('clubs/$clubId/members').doc(userId).update({
+        'nom': 'Compte supprimé',
+        'prenom': '',
+        'email': 'deleted@deleted.local',
+        'phone_number': null,
+        'photo_url': null,
+        'fcm_token': null,
+        'fcm_tokens': [],
+        'notifications_enabled': false,
+        'share_email': false,
+        'share_phone': false,
+        'consent_internal_photo': false,
+        'consent_external_photo': false,
+        'app_installed': false,
+        'account_deleted': true,
+        'account_deleted_at': FieldValue.serverTimestamp(),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      debugPrint('✅ Données utilisateur anonymisées/supprimées');
+    } catch (e) {
+      debugPrint('❌ Erreur suppression données utilisateur: $e');
+      rethrow;
+    }
+  }
 }

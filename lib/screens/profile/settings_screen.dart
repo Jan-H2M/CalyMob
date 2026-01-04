@@ -462,6 +462,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         // Vie privée
                         _buildSectionHeader('Vie privée'),
                         _buildPrivacySection(profile),
+
+                        const SizedBox(height: 24),
+
+                        // Mon compte
+                        _buildSectionHeader('Mon compte'),
+                        _buildAccountSection(profile),
                       ],
                     ),
 
@@ -644,7 +650,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const Divider(height: 1),
           ListTile(
-            leading: Icon(Icons.privacy_tip, color: AppColors.middenblauw),
+            leading: const Icon(Icons.privacy_tip, color: AppColors.middenblauw),
             title: const Text('Politique de confidentialité'),
             subtitle: const Text('RGPD et protection des données'),
             trailing: const Icon(Icons.chevron_right),
@@ -660,5 +666,183 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildAccountSection(MemberProfile profile) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Column(
+        children: [
+          ListTile(
+            leading: const Icon(Icons.delete_forever, color: Colors.red),
+            title: const Text(
+              'Supprimer mon compte',
+              style: TextStyle(color: Colors.red),
+            ),
+            subtitle: const Text(
+              'Suppression définitive de toutes vos données',
+              style: TextStyle(fontSize: 12),
+            ),
+            trailing: const Icon(Icons.chevron_right, color: Colors.red),
+            onTap: () => _showDeleteAccountDialog(profile),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showDeleteAccountDialog(MemberProfile profile) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.red, size: 28),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Supprimer votre compte ?',
+                style: TextStyle(color: Colors.red),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '⚠️ Cette action est irréversible !',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.red,
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Toutes vos données personnelles seront supprimées :',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              _buildDeleteInfoItem(Icons.person, 'Vos informations personnelles'),
+              _buildDeleteInfoItem(Icons.photo, 'Votre photo de profil'),
+              _buildDeleteInfoItem(Icons.notifications, 'Vos préférences de notifications'),
+              _buildDeleteInfoItem(Icons.fingerprint, 'Vos données biométriques locales'),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.info_outline, size: 20, color: Colors.blue.shade700),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Conformément au RGPD, vos inscriptions aux activités et notes de frais seront anonymisées mais conservées pour des raisons légales.',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Supprimer définitivement'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await _performAccountDeletion();
+    }
+  }
+
+  Widget _buildDeleteInfoItem(IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: Colors.grey.shade600),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.shade700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _performAccountDeletion() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final authProvider = context.read<AuthProvider>();
+      await authProvider.deleteAccount(clubId: _clubId);
+
+      if (mounted) {
+        // Afficher un message de confirmation
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Votre compte a été supprimé'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+
+        // Naviguer vers l'écran de login (remplace toute la stack)
+        Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Erreur: ${e.toString().replaceFirst('Exception: ', '')}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
   }
 }
