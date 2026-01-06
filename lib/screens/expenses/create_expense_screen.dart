@@ -12,6 +12,7 @@ import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/expense_provider.dart';
+import '../../providers/member_provider.dart';
 import '../../utils/date_formatter.dart';
 
 /// Écran de création d'une demande de remboursement
@@ -232,9 +233,17 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
     try {
       final authProvider = context.read<AuthProvider>();
       final expenseProvider = context.read<ExpenseProvider>();
+      final memberProvider = context.read<MemberProvider>();
       final clubId = FirebaseConfig.defaultClubId;
       final userId = authProvider.currentUser?.uid ?? '';
-      final userName = authProvider.currentUser?.displayName ?? authProvider.currentUser?.email ?? 'Utilisateur';
+      // Haal naam uit MemberProvider (prenom + nom), fallback naar displayName of email
+      final member = memberProvider.currentMember;
+      final memberName = member != null
+          ? '${member.prenom ?? ''} ${member.nom ?? ''}'.trim()
+          : null;
+      final userName = (memberName?.isNotEmpty == true)
+          ? memberName!
+          : (authProvider.displayName ?? authProvider.currentUser?.email ?? 'Utilisateur');
 
       final montant = double.parse(_montantController.text.trim());
       final description = _descriptionController.text.trim();
