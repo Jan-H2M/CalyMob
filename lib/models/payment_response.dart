@@ -1,20 +1,18 @@
 /// Payment API response models
 ///
 /// Used for communication with Cloud Functions that interact with
-/// payment providers (Ponto Connect, Noda, Mollie).
+/// payment providers (Noda Open Banking).
 
 class PaymentResponse {
   final String paymentId;
-  final String? molliePaymentId; // Mollie's tr_xxx ID
   final String? paymentUrl;
   final String status;
   final DateTime? expiresAt;
-  final String? provider; // 'ponto', 'noda', or 'mollie'
-  final String? method; // Payment method (bancontact, kbc, etc.)
+  final String? provider;
+  final String? method;
 
   PaymentResponse({
     required this.paymentId,
-    this.molliePaymentId,
     this.paymentUrl,
     required this.status,
     this.expiresAt,
@@ -25,7 +23,6 @@ class PaymentResponse {
   factory PaymentResponse.fromJson(Map<String, dynamic> json) {
     return PaymentResponse(
       paymentId: json['paymentId'] as String,
-      molliePaymentId: json['molliePaymentId'] as String?,
       paymentUrl: json['paymentUrl'] as String?,
       status: json['status'] as String,
       expiresAt: json['expiresAt'] != null
@@ -39,7 +36,6 @@ class PaymentResponse {
   Map<String, dynamic> toJson() {
     return {
       'paymentId': paymentId,
-      'molliePaymentId': molliePaymentId,
       'paymentUrl': paymentUrl,
       'status': status,
       'expiresAt': expiresAt?.toIso8601String(),
@@ -53,14 +49,12 @@ class PaymentResponse {
 }
 
 class PaymentStatus {
-  // Mollie: 'open', 'pending', 'paid', 'failed', 'canceled', 'expired'
-  // Ponto/Noda: 'pending', 'signed', 'completed', 'failed', 'cancelled'
+  // Noda: 'pending', 'signed', 'completed', 'failed', 'cancelled'
   final String status;
   final bool paye;
   final DateTime? completedAt;
   final String? failureReason;
   final String? paymentId;
-  final String? molliePaymentId;
   final String? method;
   final String? provider;
 
@@ -70,7 +64,6 @@ class PaymentStatus {
     this.completedAt,
     this.failureReason,
     this.paymentId,
-    this.molliePaymentId,
     this.method,
     this.provider,
   });
@@ -86,7 +79,6 @@ class PaymentStatus {
               : null),
       failureReason: json['failureReason'] as String?,
       paymentId: json['paymentId'] as String?,
-      molliePaymentId: json['molliePaymentId'] as String?,
       method: json['method'] as String?,
       provider: json['provider'] as String?,
     );
@@ -99,20 +91,14 @@ class PaymentStatus {
       'completedAt': completedAt?.toIso8601String(),
       'failureReason': failureReason,
       'paymentId': paymentId,
-      'molliePaymentId': molliePaymentId,
       'method': method,
       'provider': provider,
     };
   }
 
-  // Ponto/Noda status checks
   bool get isPending => status == 'pending' || status == 'open';
   bool get isSigned => status == 'signed';
-
-  // Combined completed check (works for all providers)
   bool get isCompleted => status == 'completed' || status == 'paid' || paye;
-
-  // Failed checks (supports both naming conventions)
   bool get isFailed => status == 'failed';
   bool get isCancelled => status == 'cancelled' || status == 'canceled';
   bool get isExpired => status == 'expired';

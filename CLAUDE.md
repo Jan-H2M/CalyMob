@@ -30,7 +30,7 @@ cd ios && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install   # Install CocoaPods
 # Cloud Functions (from functions/ directory)
 npm install                          # Install dependencies
 firebase deploy --only functions     # Deploy all functions
-firebase deploy --only functions:createMolliePayment,functions:mollieWebhook  # Deploy specific
+firebase deploy --only functions:createNodaPayment,functions:nodaWebhook  # Deploy specific
 firebase functions:log               # View logs
 firebase emulators:start --only functions  # Local testing
 ```
@@ -53,11 +53,21 @@ lib/
 └── utils/                       # Formatters, helpers (date_formatter, currency_formatter)
 ```
 
-**Key Services**:
+**Key Providers** (in `lib/providers/`):
+- `AuthProvider` - Firebase Auth state, login/logout, session management
+- `MemberProvider` - **Cached member data** including `clubStatuten` (user roles). Loaded after login, cleared on logout.
+- `OperationProvider` - Event operations state
+- `ExpenseProvider` - Expense claims state
+- `AnnouncementProvider` - Club announcements
+- `PaymentProvider` - Payment state management
+
+**Key Services** (in `lib/services/`):
 - `NotificationService` - FCM push notifications with foreground/background handlers
 - `OperationService` - Event operations and participant management
-- `PaymentService` - Mollie payment integration via Cloud Functions (primary), Ponto/Noda (legacy)
+- `PaymentService` - Noda payment integration via Cloud Functions
 - `BiometricService` - Face detection for profile photos
+- `SessionService` - Firestore session management for security rules
+- `TeamChannelService` - Team chat channels (encadrants, accueil, gonflage)
 
 ### Cloud Functions (functions/)
 
@@ -68,22 +78,17 @@ functions/
 ├── index.js                     # Entry point, exports all functions
 └── src/
     ├── payment/
-    │   ├── createMolliePayment.js   # createMolliePayment - onCall (PRIMARY)
-    │   ├── mollieWebhook.js         # mollieWebhook - onRequest (HTTP POST)
-    │   ├── checkMollieStatus.js     # checkMolliePaymentStatus - onCall
-    │   ├── createPayment.js         # createNodaPayment - onCall (legacy)
-    │   ├── webhook.js               # nodaWebhook - onRequest (legacy)
-    │   └── checkStatus.js           # checkNodaPaymentStatus - onCall (legacy)
+    │   ├── createPayment.js         # createNodaPayment - onCall
+    │   ├── webhook.js               # nodaWebhook - onRequest (HTTP POST)
+    │   └── checkStatus.js           # checkNodaPaymentStatus - onCall
     ├── notifications/
     │   └── onNewEventMessage.js     # Firestore trigger for push notifications
     └── utils/
-        ├── mollie-client.js         # Axios client for Mollie API v2
-        └── noda-client.js           # Axios client for Noda API (legacy)
+        └── noda-client.js           # Axios client for Noda API
 ```
 
 **Environment Variables** (set via `firebase functions:config:set` or `.env` file):
-- `MOLLIE_API_KEY` - Mollie API key (live_xxx for production, test_xxx for sandbox)
-- `NODA_API_KEY`, `NODA_API_SECRET`, `NODA_BASE_URL`, `NODA_WEBHOOK_SECRET` (legacy)
+- `NODA_API_KEY`, `NODA_API_SECRET`, `NODA_BASE_URL`, `NODA_WEBHOOK_SECRET`
 
 ### Firestore Structure
 
@@ -108,7 +113,7 @@ clubs/{clubId}/
 
 1. **Push Notifications**: `onNewEventMessage` trigger sends FCM notifications when messages are posted in event discussions. The Flutter app handles navigation to the relevant screen via `navigatorKey`.
 
-2. **Payments (Mollie)**: Primary payment provider for Belgian payments (Bancontact, KBC/CBC, Belfius, credit cards, Apple Pay). Flow: `createMolliePayment` -> User redirected to Mollie checkout -> `mollieWebhook` receives confirmation -> Firestore `paye` field updated. See `docs/MOLLIE_IMPLEMENTATION.md` for details.
+2. **Payments (Noda)**: Payment provider via Open Banking. Flow: `createNodaPayment` -> User redirected to Noda checkout -> `nodaWebhook` receives confirmation -> Firestore `paye` field updated.
 
 3. **Tariff System**: Flexible pricing with member/guest rates, optional pricing, and calculated totals in `pricing_calculator.dart` and `tariff_utils.dart`.
 
@@ -149,8 +154,70 @@ Het script `build_release.sh` leest automatisch het versienummer uit `pubspec.ya
 
 - UI language is French
 - Never commit `GoogleService-Info.plist` (iOS) or `google-services.json` (Android)
-- Firestore security rules are managed in the CalyCompta web app
 - Version format in `pubspec.yaml`: `version: X.Y.Z+buildNumber` (buildNumber must increment for App Store)
+
+## Firestore Security Rules - BELANGRIJK
+
+**CalyCompta is de bron van waarheid voor Firestore rules.** De `firestore.rules` in deze directory is alleen een lokale kopie ter referentie.
+
+### Bij nieuwe Firestore collections:
+1. Voeg ALTIJD de rules toe in `CalyCompta/firestore.rules`
+2. Deploy met: `cd ../CalyCompta && firebase deploy --only firestore:rules`
+3. De lokale `CalyMob/firestore.rules` wordt NIET gedeployed
+
+### Mobile app pattern (geen sessie nodig):
+```javascript
+// ✅ Correct voor mobile app
+allow read: if isAuthenticated() &&
+  exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+
+// ❌ Vermijd hasValidSession voor mobile-only features
+allow read: if hasValidSession(clubId);  // Vereist web sessie
+```
+
+### Collections die CalyMob gebruikt:
+- `team_channels` + `messages` - Team chat
+- `piscine_sessions` + `messages`, `attendees` - Zwembad sessies
+- `announcements` + `replies` - Clubmededelingen
+- `operations` + `messages`, `inscriptions` - Events
+- `availabilities` - Beschikbaarheden
+
+## Provider Patronen - BELANGRIJK
+
+### Correcte manier om user data te krijgen in screens:
+
+```dart
+// CORRECT - zo moet het:
+final clubId = FirebaseConfig.defaultClubId;
+final userId = authProvider.currentUser?.uid;
+final userName = authProvider.displayName ?? authProvider.currentUser?.email ?? 'Anonyme';
+final userRoles = memberProvider.clubStatuten;  // Uit MemberProvider!
+
+// FOUT - deze getters bestaan NIET op AuthProvider:
+// authProvider.clubId      // BESTAAT NIET
+// authProvider.userId      // BESTAAT NIET
+// authProvider.userName    // BESTAAT NIET
+// authProvider.clubStatuten // BESTAAT NIET - gebruik MemberProvider
+```
+
+### MemberProvider gebruik:
+
+```dart
+// In screen imports:
+import '../../providers/member_provider.dart';
+import '../../config/firebase_config.dart';
+
+// In build method:
+final authProvider = Provider.of<AuthProvider>(context);
+final memberProvider = Provider.of<MemberProvider>(context);
+final clubId = FirebaseConfig.defaultClubId;
+final userId = authProvider.currentUser?.uid;
+final userRoles = memberProvider.clubStatuten;
+```
+
+### Login/Logout flow:
+
+De `MemberProvider` wordt automatisch geladen na login in `login_screen.dart` en gecleared bij logout in de logout handlers. **Niet handmatig aanroepen** tenzij je member data wilt refreshen.
 
 ## KRITIEKE VEILIGHEIDSREGELS
 

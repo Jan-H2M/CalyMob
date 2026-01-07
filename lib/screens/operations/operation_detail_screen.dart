@@ -85,7 +85,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         // Small delay to ensure app is fully resumed
         Future.delayed(const Duration(milliseconds: 500), () {
           if (mounted) {
-            _showMolliePaymentStatusDialog();
+            final paymentProvider = context.read<PaymentProvider>();
+            _showPaymentStatusDialog(paymentProvider.currentPaymentId ?? '');
           }
         });
       }
@@ -103,7 +104,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         debugPrint('DeepLink: Payment return matches this operation, showing status dialog');
         // Show payment status dialog to check the result
         if (mounted && _userInscription != null) {
-          _showMolliePaymentStatusDialog();
+          _showPaymentStatusDialog(data.paymentId);
         }
       } else {
         debugPrint('DeepLink: Payment return is for different operation (${data.operationId} vs ${widget.operationId})');
@@ -417,7 +418,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
     }
   }
 
-  /// Handle payment button press - Uses Mollie as primary payment provider
+  /// Handle payment button press - Uses Noda Open Banking
   Future<void> _handlePayment(double amount) async {
     if (_userInscription == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -440,16 +441,13 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
     });
 
     try {
-      // Create payment request via Mollie (primary provider)
-      final paymentUrl = await paymentProvider.createMolliePayment(
+      // Create payment request via Noda (Open Banking)
+      final paymentUrl = await paymentProvider.createPayment(
         clubId: widget.clubId,
         operationId: widget.operationId,
         participantId: _userInscription!.id,
         amount: amount,
         description: 'Inscription: ${operation.titre}',
-        // Let customer choose payment method (Bancontact, KBC, Belfius, etc.)
-        method: null,
-        locale: 'nl_BE',
       );
 
       if (paymentUrl != null && paymentUrl.isNotEmpty) {
@@ -464,7 +462,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
           );
         }
 
-        // Open Mollie checkout page in browser
+        // Open payment page in browser
         final uri = Uri.parse(paymentUrl);
         if (await canLaunchUrl(uri)) {
           // Mark that we're waiting for payment return
@@ -503,70 +501,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
     }
   }
 
-  /// Show dialog to check Mollie payment status after user returns from checkout
-  void _showMolliePaymentStatusDialog() {
-    final paymentProvider = context.read<PaymentProvider>();
-    final navigatorState = Navigator.of(context);
-    bool dialogClosed = false;
-
-    void closeDialog() {
-      if (!dialogClosed && mounted) {
-        dialogClosed = true;
-        navigatorState.pop();
-      }
-    }
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Verification du paiement'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: 16),
-            const Text('Verification du statut de votre paiement...'),
-            const SizedBox(height: 8),
-            Text(
-              'Cela peut prendre quelques instants.',
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              paymentProvider.stopPaymentStatusPolling();
-              closeDialog();
-            },
-            child: const Text('Annuler'),
-          ),
-        ],
-      ),
-    );
-
-    // Start polling for Mollie payment status
-    paymentProvider.startMolliePaymentStatusPolling(
-      clubId: widget.clubId,
-      operationId: widget.operationId,
-      participantId: _userInscription!.id,
-      onStatusUpdate: (PaymentStatus status) {
-        if (status.isCompleted || status.paye) {
-          // Payment successful!
-          closeDialog();
-          _onPaymentSuccess();
-        } else if (status.isFailed || status.isCancelled || status.isExpired) {
-          // Payment failed
-          closeDialog();
-          _onPaymentFailed(status.failureReason);
-        }
-        // If still pending/open, continue polling
-      },
-    );
-  }
-
-  /// Show dialog to check Ponto payment status after user returns (Legacy)
+  /// Show dialog to check payment status after user returns from checkout
   void _showPaymentStatusDialog(String paymentId) {
     final paymentProvider = context.read<PaymentProvider>();
     final navigatorState = Navigator.of(context);
@@ -620,7 +555,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
           // Payment successful!
           closeDialog();
           _onPaymentSuccess();
-        } else if (status.isFailed || status.isCancelled) {
+        } else if (status.isFailed || status.isCancelled || status.isExpired) {
           // Payment failed
           closeDialog();
           _onPaymentFailed(status.failureReason);
@@ -1519,6 +1454,32 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                               ],
                             ],
                           ),
+                          subtitle: participant.selectedSupplements.isNotEmpty
+                              ? Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Wrap(
+                                    spacing: 4,
+                                    runSpacing: 4,
+                                    children: participant.selectedSupplements
+                                        .where((s) => s.name.isNotEmpty)
+                                        .map((s) => Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: AppColors.oranje.withOpacity(0.15),
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: Text(
+                                                '${s.name}: ${s.price.toStringAsFixed(2)} €',
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: AppColors.oranje.withOpacity(0.9),
+                                                ),
+                                              ),
+                                            ))
+                                        .toList(),
+                                  ),
+                                )
+                              : null,
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [

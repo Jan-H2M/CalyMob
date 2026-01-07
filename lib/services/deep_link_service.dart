@@ -5,7 +5,7 @@ import 'package:app_links/app_links.dart';
 /// Service for handling deep links (payment return URLs, password reset, etc.)
 ///
 /// Supported deep link formats:
-/// - calymob://payment/return?provider=mollie&payment=xxx&clubId=xxx&operationId=xxx
+/// - calymob://payment/return?provider=noda&payment=xxx&clubId=xxx&operationId=xxx
 /// - calymob://reset-password?oobCode=xxx&mode=resetPassword (custom scheme)
 /// - https://caly.club/reset-password?oobCode=xxx&mode=resetPassword (Universal/App Links)
 class DeepLinkService {
@@ -100,7 +100,7 @@ class DeepLinkService {
     }
 
     // Check if it's a payment return link
-    // Format: calymob://payment/return?provider=mollie&payment=xxx
+    // Format: calymob://payment/return?provider=noda&payment=xxx
     if (uri.scheme == 'calymob' && uri.host == 'payment' && uri.path == '/return') {
       final provider = uri.queryParameters['provider'];
       final paymentId = uri.queryParameters['payment'];

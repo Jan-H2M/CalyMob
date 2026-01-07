@@ -19,7 +19,7 @@ class ParticipantOperation {
   final List<String> exercices; // IDs des exercices LIFRAS sélectionnés
   final List<SelectedSupplement> selectedSupplements; // Suppléments sélectionnés (snapshot)
   final double supplementTotal; // Somme des prix des suppléments
-  final String? paymentStatus; // Mollie status: open, pending, paid, failed, canceled, expired
+  final String? paymentStatus; // Payment status: open, pending, paid, failed, canceled, expired
   final bool transactionMatched; // True when bank transaction is matched in CalyCompta
   final bool? present; // True when member has been marked present at the event
   final DateTime? presentAt; // Timestamp when marked present
@@ -52,7 +52,7 @@ class ParticipantOperation {
     this.isGuest = false,
   });
 
-  /// Payment is confirmed via Mollie but bank transaction not yet matched
+  /// Payment is confirmed but bank transaction not yet matched
   bool get isPaidAwaitingBank => paye && !transactionMatched;
 
   /// Payment is fully confirmed (bank transaction matched)
