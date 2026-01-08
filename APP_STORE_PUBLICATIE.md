@@ -804,8 +804,8 @@ ACCESS INFORMATION:
 - New users cannot register through the app
 
 DEMO ACCOUNT FOR TESTING:
-Email: [DEMO_EMAIL]
-Password: [DEMO_PASSWORD]
+Email: demo.reviewer@calypsodc.be
+Password: CalyMob2025!
 
 KEY FEATURES TO TEST:
 1. Login with demo account
@@ -1732,14 +1732,14 @@ Na analyse van de CalyMob codebase zijn de volgende **blokkerende issues** gevon
 
 | Issue | Status | Impact | Actie |
 |-------|--------|--------|-------|
-| **Account Deletion Feature** | ❌ ONTBREEKT | BLOKKERT PUBLICATIE | Moet worden geïmplementeerd in de app |
+| **Account Deletion Feature** | ✅ GEÏMPLEMENTEERD | - | Aanwezig in Settings → "Supprimer mon compte" |
 | **Privacy Manifest (iOS)** | ❌ ONTBREEKT | BLOKKERT iOS REVIEW | `PrivacyInfo.xcprivacy` moet worden aangemaakt |
 | **Privacy Policy URL** | ⚠️ NIET GETEST | KAN BLOKKEREN | `https://caly.club/privacy` moet online staan |
 | **Demo Account** | ⚠️ NIET AANWEZIG | BLOKKERT REVIEW | Moet worden aangemaakt in Firebase |
 | **EU Trader Status** | ⚠️ NIET INGEVULD | KAN BLOKKEREN EU | Moet in beide store consoles worden ingevuld |
 
 **Geschatte extra werk:**
-- Account Deletion Feature: 2-4 uur development
+- ~~Account Deletion Feature: 2-4 uur development~~ ✅ Al geïmplementeerd
 - Privacy Manifest: 30 minuten
 - Privacy Policy hosting: 1 uur
 - Demo Account: 30 minuten
@@ -2018,7 +2018,7 @@ Google vereist sinds november 2023 voor nieuwe persoonlijke accounts:
 
 ---
 
-### 11.5 ACCOUNT DELETION REQUIREMENT
+### 11.5 ACCOUNT DELETION REQUIREMENT ✅ GEÏMPLEMENTEERD
 
 **KRITIEK voor beide stores**
 
@@ -2032,32 +2032,40 @@ Beide Apple en Google vereisen dat gebruikers hun account kunnen verwijderen **v
 
 #### Huidige situatie CalyMob:
 ```
-❌ ACCOUNT DELETION FEATURE ONTBREEKT!
-   Geen "delete account" of "supprimer compte" gevonden in de codebase.
-   DIT MOET WORDEN TOEGEVOEGD VOOR PUBLICATIE!
+✅ ACCOUNT DELETION FEATURE IS GEÏMPLEMENTEERD!
+   Locatie: Settings → "Supprimer mon compte"
 ```
 
-#### Implementatie vereisten:
-1. **In-app optie** om account verwijdering aan te vragen
-2. **Confirmatie dialoog** voordat verwijdering start
-3. **Duidelijke uitleg** van wat er verwijderd wordt
-4. Mag doorverwijzen naar webformulier, maar **link moet in app staan**
-5. Email-only optie (contact@calypsodc.be) is **NIET voldoende**
+#### Implementatie details:
 
-#### Voorgestelde flow:
+**Bestanden:**
+- UI: `lib/screens/profile/settings_screen.dart` (regels 671-847)
+- Logic: `lib/providers/auth_provider.dart` (regels 189-246)
+- Data cleanup: `lib/services/profile_service.dart` (regels 327-389)
+
+**Wat er gebeurt bij deletion:**
+1. Profielfoto verwijderd uit Firebase Storage
+2. Member document geanonimiseerd (GDPR soft delete)
+3. Alle sessies verwijderd
+4. Biometrische credentials gewist
+5. Firebase Auth account verwijderd
+6. Gebruiker uitgelogd naar login scherm
+
+**GDPR Compliance:**
+- Soft delete met anonymisatie ("Compte supprimé", "deleted@deleted.local")
+- `account_deleted: true` flag gezet
+- `account_deleted_at` timestamp opgeslagen
+- Onkosten/registraties behouden voor boekhouding (geanonimiseerd)
+
+**User flow:**
 ```
-Settings > Mon compte > Supprimer mon compte
-
-[Dialog]
-Êtes-vous sûr de vouloir supprimer votre compte ?
-
-Cette action est irréversible. Toutes vos données seront supprimées :
-• Vos informations personnelles
-• Votre historique d'inscriptions
-• Vos notes de frais
-• Votre photo de profil
-
+Settings > "Supprimer mon compte" (rode knop)
+    ↓
+Warning dialog met uitleg wat verwijderd wordt
+    ↓
 [Annuler] [Supprimer définitivement]
+    ↓
+Data anonymisatie + logout
 ```
 
 ---
@@ -2157,9 +2165,9 @@ Voeg deze items toe aan de checklist uit DEEL 4:
 - [ ] **Financial Features Declaration** (Google Play)
   - Play Console: Policy > App content > Financial features
 
-- [ ] **Account Deletion Feature** (beide stores)
-  - In-app optie om account te verwijderen
-  - Niet alleen via email
+- [x] **Account Deletion Feature** (beide stores) ✅
+  - Geïmplementeerd: Settings → "Supprimer mon compte"
+  - Inclusief confirmatie dialoog en GDPR compliance
 
 - [ ] **Xcode 16+ geïnstalleerd** (iOS)
   - Check: `xcodebuild -version`

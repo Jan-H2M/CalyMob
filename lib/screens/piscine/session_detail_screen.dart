@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/piscine_session.dart';
+import '../../models/piscine_attendee.dart';
 import '../../models/session_message.dart';
+import '../../models/member_profile.dart';
 import '../../services/piscine_session_service.dart';
 import '../../services/session_message_service.dart';
+import '../../services/profile_service.dart';
 import '../../providers/auth_provider.dart';
+import '../../utils/permission_helper.dart';
 import '../../widgets/piscine_animated_background.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
+import '../scanner/scan_page.dart';
 import 'theme_edit_dialog.dart';
 import 'session_chat_screen.dart';
+import 'add_attendee_dialog.dart';
 
 class SessionDetailScreen extends StatefulWidget {
   final PiscineSession session;
@@ -26,8 +32,16 @@ class SessionDetailScreen extends StatefulWidget {
 class _SessionDetailScreenState extends State<SessionDetailScreen> {
   final PiscineSessionService _sessionService = PiscineSessionService();
   final SessionMessageService _messageService = SessionMessageService();
+  final ProfileService _profileService = ProfileService();
   late Stream<PiscineSession?> _sessionStream;
   List<SessionChatGroup> _chatGroups = [];
+  MemberProfile? _userProfile;
+
+  /// Check if current user can scan attendance
+  bool get _canScan {
+    if (_userProfile == null) return false;
+    return PermissionHelper.canScan(_userProfile!.clubStatuten);
+  }
 
   @override
   void initState() {
@@ -38,12 +52,102 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
     _sessionStream = _sessionService.getSessionStream(clubId, widget.session.id);
 
+    // Load user profile for permission check
+    _loadUserProfile();
+
     // Get available chat groups for this user
     if (userId != null) {
       _chatGroups = _messageService.getAvailableGroups(
         session: widget.session,
         userId: userId,
       );
+    }
+  }
+
+  Future<void> _loadUserProfile() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final userId = authProvider.currentUser?.uid ?? '';
+    final clubId = FirebaseConfig.defaultClubId;
+
+    final profile = await _profileService.getProfile(clubId, userId);
+    if (mounted) {
+      setState(() {
+        _userProfile = profile;
+      });
+    }
+  }
+
+  /// Open scanner for this session
+  void _openScanner() async {
+    final clubId = FirebaseConfig.defaultClubId;
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          appBar: AppBar(
+            title: const Text('Scanner Présence', style: TextStyle(color: Colors.white)),
+            backgroundColor: AppColors.middenblauw,
+            iconTheme: const IconThemeData(color: Colors.white),
+          ),
+          body: ScanPage(
+            clubId: clubId,
+            operationId: widget.session.id,
+            operationTitle: 'Piscine ${widget.session.formattedDate}',
+            isPiscine: true,
+          ),
+        ),
+      ),
+    );
+
+    // Refresh after closing scanner
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  /// Show dialog to add attendee manually
+  Future<void> _showAddAttendeeDialog() async {
+    final clubId = FirebaseConfig.defaultClubId;
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final currentUser = authProvider.currentUser;
+
+    if (currentUser == null) return;
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => AddAttendeeDialog(clubId: clubId),
+    );
+
+    if (result != null && mounted) {
+      try {
+        await _sessionService.addAttendee(
+          clubId: clubId,
+          sessionId: widget.session.id,
+          memberId: result['memberId'] as String,
+          memberName: result['memberName'] as String,
+          scannedBy: currentUser.uid,
+          isGuest: result['isGuest'] as bool,
+        );
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${result['memberName']} ajouté'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Erreur: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
     }
   }
 
@@ -69,6 +173,24 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.of(context).pop(),
         ),
+        actions: [
+          if (_canScan) ...[
+            IconButton(
+              onPressed: _showAddAttendeeDialog,
+              icon: const Icon(Icons.person_add, color: Colors.white),
+              tooltip: 'Ajouter manuellement',
+            ),
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: IconButton(
+                onPressed: _openScanner,
+                iconSize: 40,
+                icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
+                tooltip: 'Scanner présence',
+              ),
+            ),
+          ],
+        ],
       ),
       body: PiscineAnimatedBackground(
         showJellyfish: true,
@@ -135,6 +257,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
                     // Niveaux section
                     _buildNiveauxSection(session, userId, clubId),
+
+                    // Attendees section (only visible for users with scan permission)
+                    if (_canScan) ...[
+                      const SizedBox(height: 24),
+                      _buildAttendeesSection(clubId),
+                    ],
                   ],
                 ),
               );
@@ -143,6 +271,220 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildAttendeesSection(String clubId) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 12),
+          child: Text(
+            'Présences',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.white.withOpacity(0.9),
+            ),
+          ),
+        ),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.95),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: StreamBuilder<List<PiscineAttendee>>(
+            stream: _sessionService.getAttendeesStream(clubId, widget.session.id),
+            builder: (context, snapshot) {
+              final attendees = snapshot.data ?? [];
+
+              if (snapshot.connectionState == ConnectionState.waiting && attendees.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Center(
+                    child: CircularProgressIndicator(color: AppColors.middenblauw),
+                  ),
+                );
+              }
+
+              return Column(
+                children: [
+                  // Header with count
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppColors.success.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.people,
+                            color: AppColors.success,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          'Présents',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: AppColors.success,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '${attendees.length}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  // List of attendees
+                  if (attendees.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        'Aucun participant enregistré',
+                        style: TextStyle(
+                          color: Colors.grey.shade500,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    )
+                  else
+                    ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: attendees.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final attendee = attendees[index];
+                        return Dismissible(
+                          key: Key(attendee.id),
+                          direction: DismissDirection.endToStart,
+                          background: Container(
+                            color: Colors.red,
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.only(right: 16),
+                            child: const Icon(Icons.delete, color: Colors.white),
+                          ),
+                          confirmDismiss: (direction) async {
+                            return await showDialog<bool>(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: const Text('Supprimer?'),
+                                content: Text('Supprimer ${attendee.memberName} de la liste?'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.of(context).pop(false),
+                                    child: const Text('Annuler'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => Navigator.of(context).pop(true),
+                                    style: TextButton.styleFrom(foregroundColor: Colors.red),
+                                    child: const Text('Supprimer'),
+                                  ),
+                                ],
+                              ),
+                            ) ?? false;
+                          },
+                          onDismissed: (direction) async {
+                            await _sessionService.removeAttendee(
+                              clubId: clubId,
+                              sessionId: widget.session.id,
+                              attendeeId: attendee.id,
+                            );
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('${attendee.memberName} supprimé'),
+                                  backgroundColor: Colors.orange,
+                                ),
+                              );
+                            }
+                          },
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: attendee.isGuest
+                                  ? Colors.orange
+                                  : AppColors.middenblauw,
+                              child: Text(
+                                attendee.memberName.isNotEmpty
+                                    ? attendee.memberName[0].toUpperCase()
+                                    : '?',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            title: Text(attendee.memberName),
+                            subtitle: Text(
+                              _formatTime(attendee.scannedAt),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade500,
+                              ),
+                            ),
+                            trailing: attendee.isGuest
+                                ? Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                                    ),
+                                    child: const Text(
+                                      'Invité',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.orange,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  )
+                                : null,
+                          ),
+                        );
+                      },
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatTime(DateTime dateTime) {
+    final hour = dateTime.hour.toString().padLeft(2, '0');
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
   }
 
   Widget _buildChatGroupsSection(PiscineSession session, String clubId) {

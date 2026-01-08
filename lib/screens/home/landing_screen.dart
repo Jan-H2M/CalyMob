@@ -6,6 +6,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/member_provider.dart';
 import '../auth/login_screen.dart';
 import '../operations/operations_list_screen.dart';
 import '../expenses/financial_screen.dart';
@@ -161,6 +162,7 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
 
     if (confirmed == true && context.mounted) {
       await context.read<AuthProvider>().logout();
+      context.read<MemberProvider>().clear();
 
       if (context.mounted) {
         Navigator.of(context).pushReplacement(

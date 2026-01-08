@@ -214,6 +214,37 @@ class AvailabilityService {
     }
   }
 
+  /// Supprimer une disponibilité pour une date spécifique
+  /// Utilisé pour revenir à l'état "pas encore indiqué"
+  Future<void> deleteAvailabilityForDate({
+    required String clubId,
+    required String userId,
+    required DateTime date,
+    required String role,
+  }) async {
+    try {
+      final normalizedDate = DateTime(date.year, date.month, date.day);
+      final startOfDay = normalizedDate;
+      final endOfDay = normalizedDate.add(const Duration(days: 1));
+
+      final snapshot = await _firestore
+          .collection(_collectionPath(clubId))
+          .where('membre_id', isEqualTo: userId)
+          .where('role', isEqualTo: role)
+          .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
+          .where('date', isLessThan: Timestamp.fromDate(endOfDay))
+          .get();
+
+      if (snapshot.docs.isNotEmpty) {
+        await snapshot.docs.first.reference.delete();
+        debugPrint('✅ Disponibilité supprimée pour $normalizedDate');
+      }
+    } catch (e) {
+      debugPrint('❌ Erreur suppression disponibilité par date: $e');
+      rethrow;
+    }
+  }
+
   /// Obtenir tous les mardis d'un mois donné
   static List<DateTime> getTuesdaysOfMonth(int year, int month) {
     final tuesdays = <DateTime>[];

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -34,6 +35,9 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
   AnnouncementReply? _replyingTo;
   final List<_PendingAttachment> _pendingAttachments = [];
   bool _isUploading = false;
+
+  // Store replies locally to prevent flickering
+  List<AnnouncementReply> _cachedReplies = [];
 
   @override
   void initState() {
@@ -171,7 +175,8 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
+    // Use listen: false to prevent unnecessary rebuilds that would recreate the stream
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final currentUserId = authProvider.currentUser?.uid ?? '';
     final dateFormat = DateFormat('dd/MM/yyyy HH:mm');
 
@@ -220,7 +225,18 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
                           announcementId: widget.announcement.id,
                         ),
                         builder: (context, snapshot) {
-                          final replies = snapshot.data ?? [];
+                          debugPrint('🔵 StreamBuilder state: ${snapshot.connectionState}, hasData: ${snapshot.hasData}, hasError: ${snapshot.hasError}');
+                          if (snapshot.hasError) {
+                            debugPrint('❌ StreamBuilder error: ${snapshot.error}');
+                          }
+
+                          // Use cached replies while waiting for stream data to prevent flickering
+                          if (snapshot.hasData) {
+                            _cachedReplies = snapshot.data!;
+                            debugPrint('📝 Updated cache with ${_cachedReplies.length} replies');
+                          }
+                          final replies = _cachedReplies;
+                          debugPrint('📋 Displaying ${replies.length} replies (cached: ${_cachedReplies.length})');
 
                           return ListView.builder(
                             controller: _scrollController,

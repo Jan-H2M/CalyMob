@@ -18,6 +18,7 @@ import 'services/deep_link_service.dart';
 
 // Providers
 import 'providers/auth_provider.dart';
+import 'providers/member_provider.dart';
 import 'providers/operation_provider.dart';
 import 'providers/expense_provider.dart';
 import 'providers/announcement_provider.dart';
@@ -137,6 +138,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => MemberProvider()),
         ChangeNotifierProvider(create: (_) => OperationProvider()),
         ChangeNotifierProvider(create: (_) => ExpenseProvider()),
         ChangeNotifierProvider(create: (_) => AnnouncementProvider()),

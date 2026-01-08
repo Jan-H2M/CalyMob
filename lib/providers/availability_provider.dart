@@ -143,6 +143,7 @@ class AvailabilityProvider with ChangeNotifier {
   }
 
   /// Basculer la disponibilité pour une date
+  /// Cycle: null (pas indiqué) → true (disponible) → false (non disponible) → null
   Future<void> toggleAvailability({
     required DateTime date,
     required String userNom,
@@ -155,20 +156,43 @@ class AvailabilityProvider with ChangeNotifier {
     try {
       // Trouver l'état actuel
       final currentAvailability = getAvailabilityForDate(date);
-      final newAvailable = currentAvailability?.available != true;
 
-      await _availabilityService.toggleAvailability(
-        clubId: _currentClubId!,
-        userId: _currentUserId!,
-        userNom: userNom,
-        userPrenom: userPrenom,
-        date: date,
-        role: _userRole!,
-        available: newAvailable,
-      );
+      if (currentAvailability == null) {
+        // null → true (disponible)
+        await _availabilityService.toggleAvailability(
+          clubId: _currentClubId!,
+          userId: _currentUserId!,
+          userNom: userNom,
+          userPrenom: userPrenom,
+          date: date,
+          role: _userRole!,
+          available: true,
+        );
+        debugPrint('✅ Disponibilité: pas indiqué → disponible pour $date');
+      } else if (currentAvailability.available) {
+        // true → false (non disponible)
+        await _availabilityService.toggleAvailability(
+          clubId: _currentClubId!,
+          userId: _currentUserId!,
+          userNom: userNom,
+          userPrenom: userPrenom,
+          date: date,
+          role: _userRole!,
+          available: false,
+        );
+        debugPrint('✅ Disponibilité: disponible → non disponible pour $date');
+      } else {
+        // false → null (supprimer pour revenir à "pas encore indiqué")
+        await _availabilityService.deleteAvailabilityForDate(
+          clubId: _currentClubId!,
+          userId: _currentUserId!,
+          date: date,
+          role: _userRole!,
+        );
+        debugPrint('✅ Disponibilité: non disponible → pas indiqué pour $date');
+      }
 
       // Le stream mettra à jour automatiquement
-      debugPrint('✅ Disponibilité basculée: $newAvailable pour $date');
     } catch (e) {
       _error = e.toString();
       notifyListeners();

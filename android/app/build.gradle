@@ -55,6 +55,8 @@ android {
                 keyPassword keystoreProperties['keyPassword']
                 storeFile rootProject.file('calymob-release.keystore')
                 storePassword keystoreProperties['storePassword']
+                enableV1Signing true
+                enableV2Signing true
             }
         }
     }

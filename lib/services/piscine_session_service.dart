@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/piscine_session.dart';
+import '../models/piscine_attendee.dart';
 
 /// Service voor het beheren van piscine sessies
 class PiscineSessionService {
@@ -220,6 +221,85 @@ class PiscineSessionService {
       if (snapshot.docs.isEmpty) return null;
       return PiscineSession.fromFirestore(snapshot.docs.first);
     });
+  }
+
+  // ========== ATTENDEES (Aanwezigen) ==========
+
+  /// Collectie referentie voor aanwezigen van een sessie
+  CollectionReference<Map<String, dynamic>> _attendeesCollection(
+      String clubId, String sessionId) {
+    return _sessionsCollection(clubId).doc(sessionId).collection('attendees');
+  }
+
+  /// Stream van aanwezigen voor een sessie
+  Stream<List<PiscineAttendee>> getAttendeesStream(
+      String clubId, String sessionId) {
+    return _attendeesCollection(clubId, sessionId)
+        .orderBy('scannedAt', descending: false)
+        .snapshots()
+        .map((snapshot) =>
+            snapshot.docs.map((doc) => PiscineAttendee.fromFirestore(doc)).toList());
+  }
+
+  /// Voeg een aanwezige toe
+  Future<void> addAttendee({
+    required String clubId,
+    required String sessionId,
+    required String memberId,
+    required String memberName,
+    required String scannedBy,
+    bool isGuest = false,
+  }) async {
+    // Check of lid al aanwezig is
+    final existing = await _attendeesCollection(clubId, sessionId)
+        .where('memberId', isEqualTo: memberId)
+        .get();
+
+    if (existing.docs.isNotEmpty) {
+      throw Exception('Ce membre est déjà marqué présent');
+    }
+
+    await _attendeesCollection(clubId, sessionId).add({
+      'memberId': memberId,
+      'memberName': memberName,
+      'scannedAt': Timestamp.fromDate(DateTime.now()),
+      'scannedBy': scannedBy,
+      'isGuest': isGuest,
+    });
+  }
+
+  /// Verwijder een aanwezige
+  Future<void> removeAttendee({
+    required String clubId,
+    required String sessionId,
+    required String attendeeId,
+  }) async {
+    await _attendeesCollection(clubId, sessionId).doc(attendeeId).delete();
+  }
+
+  /// Check of een lid al aanwezig is gemarkeerd
+  Future<bool> isAttendeePresent({
+    required String clubId,
+    required String sessionId,
+    required String memberId,
+  }) async {
+    final existing = await _attendeesCollection(clubId, sessionId)
+        .where('memberId', isEqualTo: memberId)
+        .get();
+    return existing.docs.isNotEmpty;
+  }
+
+  /// Haal aanwezige op basis van memberId
+  Future<PiscineAttendee?> getAttendeeByMemberId({
+    required String clubId,
+    required String sessionId,
+    required String memberId,
+  }) async {
+    final snapshot = await _attendeesCollection(clubId, sessionId)
+        .where('memberId', isEqualTo: memberId)
+        .get();
+    if (snapshot.docs.isEmpty) return null;
+    return PiscineAttendee.fromFirestore(snapshot.docs.first);
   }
 }
 

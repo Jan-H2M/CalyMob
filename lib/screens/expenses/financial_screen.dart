@@ -69,7 +69,7 @@ class FinancialScreen extends StatelessWidget {
                         ),
                       ),
                       _GlossyButton(
-                        title: 'Mes approbations',
+                        title: 'Approbations\nouvertes',
                         icon: Icons.approval,
                         onTap: () => Navigator.push(
                           context,

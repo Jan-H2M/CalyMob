@@ -170,14 +170,23 @@ class AnnouncementService {
     required String clubId,
     required String announcementId,
   }) {
+    debugPrint('🔄 getRepliesStream called for announcement: $announcementId');
     return _firestore
         .collection('clubs/$clubId/announcements/$announcementId/replies')
         .orderBy('created_at', descending: false)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => AnnouncementReply.fromFirestore(doc))
-          .toList();
+      debugPrint('📨 Received ${snapshot.docs.length} replies from Firestore');
+      final replies = <AnnouncementReply>[];
+      for (final doc in snapshot.docs) {
+        try {
+          replies.add(AnnouncementReply.fromFirestore(doc));
+        } catch (e) {
+          debugPrint('❌ Error parsing reply ${doc.id}: $e');
+        }
+      }
+      debugPrint('✅ Parsed ${replies.length} replies successfully');
+      return replies;
     });
   }
 

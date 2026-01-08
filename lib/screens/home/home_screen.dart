@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'dart:io';
 import '../../config/firebase_config.dart';
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/member_provider.dart';
 import '../../providers/operation_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../services/profile_service.dart';
+import '../../services/compatibility_service.dart';
+import '../../models/compatibility_settings.dart';
 import '../../utils/permission_helper.dart';
 import '../../widgets/operation_card.dart';
 import '../../widgets/loading_widget.dart';
@@ -29,6 +34,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final ProfileService _profileService = ProfileService();
   int _currentIndex = 0;
   bool _canScan = false;
+  CompatibilityStatus? _compatibilityStatus;
 
   @override
   void initState() {
@@ -43,7 +49,73 @@ class _HomeScreenState extends State<HomeScreen> {
 
       // Check scanner permission
       _checkScanPermission(userId);
+
+      // Check device compatibility
+      _checkDeviceCompatibility(userId);
     });
+  }
+
+  Future<void> _checkDeviceCompatibility(String userId) async {
+    if (userId.isEmpty) return;
+
+    try {
+      // Initialize compatibility settings
+      await CompatibilityService.initialize(_clubId);
+
+      // Get device info
+      final deviceInfo = DeviceInfoPlugin();
+      String platform;
+      String osVersion;
+      int? androidSdkInt;
+
+      if (Platform.isIOS) {
+        final iosInfo = await deviceInfo.iosInfo;
+        platform = 'ios';
+        osVersion = iosInfo.systemVersion;
+      } else if (Platform.isAndroid) {
+        final androidInfo = await deviceInfo.androidInfo;
+        platform = 'android';
+        osVersion = androidInfo.version.release;
+        androidSdkInt = androidInfo.version.sdkInt;
+      } else {
+        return;
+      }
+
+      // Check compatibility
+      final status = await CompatibilityService.checkCurrentDevice(
+        platform,
+        osVersion,
+        androidSdkInt: androidSdkInt,
+      );
+
+      // Save status to Firestore
+      await CompatibilityService.saveCompatibilityStatus(_clubId, userId, status);
+
+      // Update UI if warning needed
+      if (status.warningLevel != 'none' && mounted) {
+        setState(() {
+          _compatibilityStatus = status;
+        });
+
+        // Show SnackBar for warning/error
+        if (status.warningLevel == 'warning' || status.warningLevel == 'error') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(status.message ?? 'Compatibilité device'),
+              backgroundColor: status.warningLevel == 'error' ? Colors.red : Colors.orange,
+              duration: const Duration(seconds: 5),
+              action: SnackBarAction(
+                label: 'OK',
+                textColor: Colors.white,
+                onPressed: () {},
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('⚠️ Failed to check device compatibility: $e');
+    }
   }
 
   Future<void> _checkScanPermission(String userId) async {
@@ -79,6 +151,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (confirmed == true && mounted) {
       await context.read<AuthProvider>().logout();
+      context.read<MemberProvider>().clear();
 
       if (mounted) {
         Navigator.of(context).pushReplacement(
@@ -125,7 +198,17 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           // Content
           SafeArea(
-            child: _buildContent(operationProvider, authProvider),
+            child: Column(
+              children: [
+                // Compatibility warning banner
+                if (_compatibilityStatus != null && _compatibilityStatus!.warningLevel != 'none')
+                  _buildCompatibilityBanner(),
+                // Main content
+                Expanded(
+                  child: _buildContent(operationProvider, authProvider),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -168,6 +251,71 @@ class _HomeScreenState extends State<HomeScreen> {
       default:
         return 'Événements';
     }
+  }
+
+  Widget _buildCompatibilityBanner() {
+    if (_compatibilityStatus == null) return const SizedBox.shrink();
+
+    Color backgroundColor;
+    Color textColor;
+    IconData icon;
+
+    switch (_compatibilityStatus!.warningLevel) {
+      case 'error':
+        backgroundColor = Colors.red.shade100;
+        textColor = Colors.red.shade900;
+        icon = Icons.error_outline;
+        break;
+      case 'warning':
+        backgroundColor = Colors.orange.shade100;
+        textColor = Colors.orange.shade900;
+        icon = Icons.warning_amber_outlined;
+        break;
+      case 'info':
+        backgroundColor = Colors.blue.shade100;
+        textColor = Colors.blue.shade900;
+        icon = Icons.info_outline;
+        break;
+      default:
+        return const SizedBox.shrink();
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: textColor.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: textColor, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              _compatibilityStatus!.message ?? '',
+              style: TextStyle(
+                color: textColor,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.close, color: textColor, size: 18),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            onPressed: () {
+              setState(() {
+                _compatibilityStatus = null;
+              });
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildContent(

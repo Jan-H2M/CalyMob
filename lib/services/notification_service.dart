@@ -1,5 +1,6 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -188,6 +189,14 @@ class NotificationService {
         'device_model': deviceInfo['model'],
         'device_os_version': deviceInfo['osVersion'],
         'app_last_opened': FieldValue.serverTimestamp(),
+        // Nieuwe debug velden
+        'device_brand': deviceInfo['brand'],
+        'device_is_physical': deviceInfo['isPhysicalDevice'],
+        'device_locale': deviceInfo['locale'],
+        'device_timezone': deviceInfo['timezone'],
+        'device_screen_width': deviceInfo['screenWidth'],
+        'device_screen_height': deviceInfo['screenHeight'],
+        'device_pixel_ratio': deviceInfo['pixelRatio'],
       };
 
       // Ajouter app_first_installed uniquement si c'est la première installation
@@ -206,11 +215,13 @@ class NotificationService {
   }
 
   /// Récupérer les informations de l'appareil
-  Future<Map<String, String>> _getDeviceInfo() async {
+  Future<Map<String, dynamic>> _getDeviceInfo() async {
     final deviceInfoPlugin = DeviceInfoPlugin();
     String platform;
     String model;
     String osVersion;
+    String brand = 'unknown';
+    bool isPhysicalDevice = true;
 
     try {
       if (platform_helper.isIOS) {
@@ -218,11 +229,15 @@ class NotificationService {
         platform = 'ios';
         model = iosInfo.utsname.machine; // Ex: "iPhone14,2"
         osVersion = 'iOS ${iosInfo.systemVersion}';
+        brand = 'Apple';
+        isPhysicalDevice = iosInfo.isPhysicalDevice;
       } else if (platform_helper.isAndroid) {
         final androidInfo = await deviceInfoPlugin.androidInfo;
         platform = 'android';
         model = androidInfo.model; // Ex: "Pixel 7"
         osVersion = 'Android ${androidInfo.version.release}';
+        brand = androidInfo.brand; // Ex: "Samsung", "Google"
+        isPhysicalDevice = androidInfo.isPhysicalDevice;
       } else {
         platform = 'unknown';
         model = 'unknown';
@@ -235,10 +250,35 @@ class NotificationService {
       osVersion = 'unknown';
     }
 
+    // Récupérer locale et timezone (disponibles sans packages supplémentaires)
+    final locale = platform_helper.getCurrentLocale();
+    final timezone = DateTime.now().timeZoneName;
+
+    // Récupérer taille d'écran via WidgetsBinding
+    int screenWidth = 0;
+    int screenHeight = 0;
+    double pixelRatio = 1.0;
+    try {
+      final binding = WidgetsBinding.instance;
+      final window = binding.platformDispatcher.views.first;
+      pixelRatio = window.devicePixelRatio;
+      screenWidth = (window.physicalSize.width / pixelRatio).round();
+      screenHeight = (window.physicalSize.height / pixelRatio).round();
+    } catch (e) {
+      debugPrint('⚠️ Impossible de récupérer taille écran: $e');
+    }
+
     return {
       'platform': platform,
       'model': model,
       'osVersion': osVersion,
+      'brand': brand,
+      'isPhysicalDevice': isPhysicalDevice,
+      'locale': locale,
+      'timezone': timezone,
+      'screenWidth': screenWidth,
+      'screenHeight': screenHeight,
+      'pixelRatio': pixelRatio,
     };
   }
 

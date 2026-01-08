@@ -4,6 +4,7 @@ import 'package:lottie/lottie.dart';
 import '../../models/piscine_session.dart';
 import '../../services/piscine_session_service.dart';
 import '../../providers/auth_provider.dart';
+import '../../config/firebase_config.dart';
 import '../../widgets/piscine_animated_background.dart';
 import '../../theme/calypso_theme.dart';
 import 'session_detail_screen.dart';
@@ -38,10 +39,10 @@ class _PiscineListScreenState extends State<PiscineListScreen>
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
-    final clubId = authProvider.clubId;
-    final userId = authProvider.userId;
+    final clubId = FirebaseConfig.defaultClubId;
+    final userId = authProvider.currentUser?.uid;
 
-    if (clubId == null || userId == null) {
+    if (userId == null) {
       return const Scaffold(
         body: Center(child: Text('Niet verbonden')),
       );

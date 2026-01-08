@@ -7,6 +7,7 @@ import 'package:lottie/lottie.dart';
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/member_provider.dart';
 import '../../models/member_profile.dart';
 import '../../services/profile_service.dart';
 import '../../services/member_service.dart';
@@ -290,6 +291,7 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
 
     if (confirmed == true && mounted) {
       await context.read<AuthProvider>().logout();
+      context.read<MemberProvider>().clear();
 
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(

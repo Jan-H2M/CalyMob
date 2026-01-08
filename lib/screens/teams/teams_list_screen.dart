@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../../models/team_channel.dart';
 import '../../services/team_channel_service.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/member_provider.dart';
+import '../../config/firebase_config.dart';
 import '../../widgets/piscine_animated_background.dart';
 import '../../theme/calypso_theme.dart';
 import 'team_chat_screen.dart';
@@ -20,11 +22,12 @@ class _TeamsListScreenState extends State<TeamsListScreen> {
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
-    final clubId = authProvider.clubId;
-    final userId = authProvider.userId;
-    final userRoles = authProvider.clubStatuten ?? [];
+    final memberProvider = Provider.of<MemberProvider>(context);
+    final clubId = FirebaseConfig.defaultClubId;
+    final userId = authProvider.currentUser?.uid;
+    final userRoles = memberProvider.clubStatuten;
 
-    if (clubId == null || userId == null) {
+    if (userId == null) {
       return const Scaffold(
         body: Center(child: Text('Niet verbonden')),
       );

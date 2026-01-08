@@ -9,23 +9,27 @@ import '../../providers/auth_provider.dart';
 import '../../services/member_service.dart';
 import '../../services/attendance_service.dart';
 import '../../services/operation_service.dart';
+import '../../services/piscine_session_service.dart';
 import 'member_validation_card.dart';
 
 /// Scanner page for member check-in with QR code scanning
 ///
-/// Two modes:
+/// Three modes:
 /// 1. Event with inscriptions: Mark existing inscription as "present"
 /// 2. Event without required inscription: Create attendance record
+/// 3. Piscine mode: Add to piscine session attendees
 class ScanPage extends StatefulWidget {
   final String clubId;
   final String operationId;
   final String operationTitle;
+  final bool isPiscine;
 
   const ScanPage({
     Key? key,
     required this.clubId,
     required this.operationId,
     required this.operationTitle,
+    this.isPiscine = false,
   }) : super(key: key);
 
   @override
@@ -36,6 +40,7 @@ class _ScanPageState extends State<ScanPage> {
   final MemberService _memberService = MemberService();
   final AttendanceService _attendanceService = AttendanceService();
   final OperationService _operationService = OperationService();
+  final PiscineSessionService _piscineService = PiscineSessionService();
   final MobileScannerController _scannerController = MobileScannerController(
     detectionSpeed: DetectionSpeed.normal,
     facing: CameraFacing.back,
@@ -102,6 +107,13 @@ class _ScanPageState extends State<ScanPage> {
 
       debugPrint('✅ Membre trouvé: ${member.fullName} (${member.id})');
 
+      // PISCINE MODE: Simpler logic - just check if already present
+      if (widget.isPiscine) {
+        await _lookupMemberPiscine(member);
+        return;
+      }
+
+      // OPERATION MODE: Check inscriptions
       // Check if member is inscribed for this event
       final inscription = await _operationService.getUserInscription(
         clubId: widget.clubId,
@@ -192,6 +204,127 @@ class _ScanPageState extends State<ScanPage> {
       }
     } catch (e) {
       debugPrint('❌ Erreur lookup: $e');
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Erreur: ${e.toString()}';
+      });
+    }
+  }
+
+  /// Piscine mode: simpler lookup - just check if already present and auto-register
+  Future<void> _lookupMemberPiscine(MemberProfile member) async {
+    final authProvider = context.read<AuthProvider>();
+    final currentUser = authProvider.currentUser;
+
+    if (currentUser == null) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Vous devez être connecté';
+      });
+      return;
+    }
+
+    // Check if already present
+    final alreadyPresent = await _piscineService.isAttendeePresent(
+      clubId: widget.clubId,
+      sessionId: widget.operationId,
+      memberId: member.id,
+    );
+
+    if (alreadyPresent) {
+      // Already registered - show toast and go back to scanner
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.info, color: Colors.white, size: 32),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        member.fullName,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const Text(
+                        'Déjà enregistré',
+                        style: TextStyle(fontSize: 14, color: Colors.white70),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: AppColors.middenblauw,
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+        _resetScanner();
+      }
+      return;
+    }
+
+    // Auto-register for piscine (no validation checks needed)
+    try {
+      await _piscineService.addAttendee(
+        clubId: widget.clubId,
+        sessionId: widget.operationId,
+        memberId: member.id,
+        memberName: member.fullName,
+        scannedBy: currentUser.uid,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white, size: 32),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        member.fullName,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const Text(
+                        'Présence enregistrée',
+                        style: TextStyle(fontSize: 14, color: Colors.white70),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: AppColors.success,
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+        _resetScanner();
+      }
+    } catch (e) {
       setState(() {
         _isLoading = false;
         _errorMessage = 'Erreur: ${e.toString()}';

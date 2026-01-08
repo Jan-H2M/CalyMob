@@ -4,6 +4,7 @@ import '../../config/firebase_config.dart';
 import '../../config/app_assets.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/expense_provider.dart';
+import '../../providers/member_provider.dart';
 import '../../models/expense_claim.dart';
 import '../../utils/date_formatter.dart';
 import '../../utils/currency_formatter.dart';
@@ -21,6 +22,7 @@ class ApprovalListScreen extends StatefulWidget {
 
 class _ApprovalListScreenState extends State<ApprovalListScreen> {
   final String _clubId = FirebaseConfig.defaultClubId;
+  String? _currentUserId;
 
   @override
   void initState() {
@@ -30,8 +32,8 @@ class _ApprovalListScreenState extends State<ApprovalListScreen> {
 
   void _loadExpenses() {
     final authProvider = context.read<AuthProvider>();
-    final userId = authProvider.currentUser?.uid ?? '';
-    context.read<ExpenseProvider>().listenToPendingApprovals(_clubId, userId);
+    _currentUserId = authProvider.currentUser?.uid ?? '';
+    context.read<ExpenseProvider>().listenToPendingApprovals(_clubId, _currentUserId!);
   }
 
   @override
@@ -66,6 +68,17 @@ class _ApprovalListScreenState extends State<ApprovalListScreen> {
   }
 
   Widget _buildBody(ExpenseProvider expenseProvider, List<ExpenseClaim> expenses) {
+    final memberProvider = context.watch<MemberProvider>();
+
+    // Check if user has permission to approve expenses
+    if (!memberProvider.canApproveExpenses) {
+      return const EmptyStateWidget(
+        icon: Icons.lock_outline,
+        title: 'Accès non autorisé',
+        subtitle: 'Vous n\'avez pas les droits pour approuver les demandes',
+      );
+    }
+
     if (expenseProvider.isLoading && expenses.isEmpty) {
       return const LoadingWidget(message: 'Chargement des demandes...');
     }
@@ -81,34 +94,55 @@ class _ApprovalListScreenState extends State<ApprovalListScreen> {
     return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: expenses.length,
-      itemBuilder: (context, index) => _buildExpenseCard(expenses[index]),
+      itemBuilder: (context, index) => _buildExpenseCard(expenses[index], expenses[index].demandeurId == _currentUserId),
     );
   }
 
-  Widget _buildExpenseCard(ExpenseClaim expense) {
+  Widget _buildExpenseCard(ExpenseClaim expense, bool isOwnExpense) {
+    // Own expenses are shown in grey and are not tappable (can't approve own expenses)
+    final cardColor = isOwnExpense ? Colors.grey[300] : Colors.white;
+    final textColor = isOwnExpense ? Colors.grey[600] : Colors.black;
+    final secondaryTextColor = isOwnExpense ? Colors.grey[500] : Colors.grey[600];
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
+      color: cardColor,
       child: InkWell(
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ExpenseDetailScreen(expense: expense))),
+        onTap: isOwnExpense ? null : () => Navigator.push(context, MaterialPageRoute(builder: (_) => ExpenseDetailScreen(expense: expense))),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Own expense indicator
+              if (isOwnExpense) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  margin: const EdgeInsets.only(bottom: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[400],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'Ma demande - non modifiable',
+                    style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w500),
+                  ),
+                ),
+              ],
               // HEADER
               Row(
                 children: [
-                  Text(CurrencyFormatter.format(expense.montant), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  Text(CurrencyFormatter.format(expense.montant), style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: textColor)),
                   if (expense.urlsJustificatifs.isNotEmpty) Container(
                     margin: const EdgeInsets.only(left: 8),
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10)),
+                    decoration: BoxDecoration(color: isOwnExpense ? Colors.grey[400] : Colors.grey[300], borderRadius: BorderRadius.circular(10)),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.attach_file, size: 12, color: Colors.grey[600]),
+                        Icon(Icons.attach_file, size: 12, color: secondaryTextColor),
                         const SizedBox(width: 2),
-                        Text('${expense.urlsJustificatifs.length}', style: TextStyle(fontSize: 11, color: Colors.grey[700])),
+                        Text('${expense.urlsJustificatifs.length}', style: TextStyle(fontSize: 11, color: secondaryTextColor)),
                       ],
                     ),
                   ),
@@ -116,13 +150,13 @@ class _ApprovalListScreenState extends State<ApprovalListScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4CAF50).withOpacity(0.1),
+                      color: isOwnExpense ? Colors.grey[400]!.withOpacity(0.3) : const Color(0xFF4CAF50).withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFF4CAF50), width: 1),
+                      border: Border.all(color: isOwnExpense ? Colors.grey[500]! : const Color(0xFF4CAF50), width: 1),
                     ),
-                    child: Text(expense.demandeurNom ?? '', style: const TextStyle(color: Color(0xFF4CAF50), fontSize: 12, fontWeight: FontWeight.bold)),
+                    child: Text(expense.demandeurNom ?? '', style: TextStyle(color: isOwnExpense ? Colors.grey[600] : const Color(0xFF4CAF50), fontSize: 12, fontWeight: FontWeight.bold)),
                   ),
-                  IconButton(
+                  if (!isOwnExpense) IconButton(
                     icon: const Icon(Icons.visibility, size: 20),
                     onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ExpenseDetailScreen(expense: expense))),
                     tooltip: 'Voir détails',
@@ -132,18 +166,18 @@ class _ApprovalListScreenState extends State<ApprovalListScreen> {
                 ],
               ),
               const SizedBox(height: 8),
-              Text(expense.description, style: const TextStyle(fontSize: 16), maxLines: 2, overflow: TextOverflow.ellipsis),
+              Text(expense.description, style: TextStyle(fontSize: 16, color: textColor), maxLines: 2, overflow: TextOverflow.ellipsis),
               const SizedBox(height: 8),
               Row(
                 children: [
-                  Icon(Icons.calendar_today, size: 14, color: Colors.grey[600]),
+                  Icon(Icons.calendar_today, size: 14, color: secondaryTextColor),
                   const SizedBox(width: 4),
-                  Text(DateFormatter.formatShort(expense.dateDepense), style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+                  Text(DateFormatter.formatShort(expense.dateDepense), style: TextStyle(fontSize: 14, color: secondaryTextColor)),
                   const SizedBox(width: 16),
                   if (expense.categorie != null) ...[
-                    Icon(Icons.category, size: 14, color: Colors.grey[600]),
+                    Icon(Icons.category, size: 14, color: secondaryTextColor),
                     const SizedBox(width: 4),
-                    Text(expense.categorie!, style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+                    Text(expense.categorie!, style: TextStyle(fontSize: 14, color: secondaryTextColor)),
                   ],
                 ],
               ),
@@ -160,14 +194,19 @@ class _ApprovalListScreenState extends State<ApprovalListScreen> {
                       decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey[300]!)),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
-                          expense.urlsJustificatifs[index],
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Center(child: Icon(Icons.error, color: Colors.grey[400])),
-                          loadingBuilder: (_, child, progress) {
-                            if (progress == null) return child;
-                            return Center(child: CircularProgressIndicator(value: progress.expectedTotalBytes != null ? progress.cumulativeBytesLoaded / progress.expectedTotalBytes! : null));
-                          },
+                        child: ColorFiltered(
+                          colorFilter: isOwnExpense
+                              ? const ColorFilter.mode(Colors.grey, BlendMode.saturation)
+                              : const ColorFilter.mode(Colors.transparent, BlendMode.multiply),
+                          child: Image.network(
+                            expense.urlsJustificatifs[index],
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Center(child: Icon(Icons.error, color: Colors.grey[400])),
+                            loadingBuilder: (_, child, progress) {
+                              if (progress == null) return child;
+                              return Center(child: CircularProgressIndicator(value: progress.expectedTotalBytes != null ? progress.cumulativeBytesLoaded / progress.expectedTotalBytes! : null));
+                            },
+                          ),
                         ),
                       ),
                     ),

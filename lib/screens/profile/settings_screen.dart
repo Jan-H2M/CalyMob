@@ -433,7 +433,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 }
 
                 final profile = snapshot.data!;
-                _notificationsEnabled = profile.notificationsEnabled;
+                // Alleen notificatie status syncen als we niet bezig zijn met een update
+                if (!_isLoading) {
+                  _notificationsEnabled = profile.notificationsEnabled;
+                }
 
                 return Stack(
                   children: [

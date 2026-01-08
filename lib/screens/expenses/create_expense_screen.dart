@@ -236,13 +236,9 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
       final memberProvider = context.read<MemberProvider>();
       final clubId = FirebaseConfig.defaultClubId;
       final userId = authProvider.currentUser?.uid ?? '';
-      // Haal naam uit MemberProvider (prenom + nom), fallback naar displayName of email
-      final member = memberProvider.currentMember;
-      final memberName = member != null
-          ? '${member.prenom ?? ''} ${member.nom ?? ''}'.trim()
-          : null;
-      final userName = (memberName?.isNotEmpty == true)
-          ? memberName!
+      // Haal naam uit MemberProvider (displayName), fallback naar auth displayName of email
+      final userName = memberProvider.displayName.isNotEmpty
+          ? memberProvider.displayName
           : (authProvider.displayName ?? authProvider.currentUser?.email ?? 'Utilisateur');
 
       final montant = double.parse(_montantController.text.trim());

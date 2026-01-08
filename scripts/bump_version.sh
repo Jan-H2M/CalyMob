@@ -38,8 +38,20 @@ esac
 BUILD_NUMBER=$((BUILD_NUMBER + 1))
 
 NEW_VERSION="$MAJOR.$MINOR.$PATCH+$BUILD_NUMBER"
+NEW_VERSION_NAME="$MAJOR.$MINOR.$PATCH"
 
 # Update pubspec.yaml
 sed -i '' "s/^version: .*/version: $NEW_VERSION/" pubspec.yaml
 
 echo "Version bumped: $CURRENT_VERSION → $NEW_VERSION"
+
+# Update Firestore version (CalyCompta maintenance page)
+echo ""
+echo "📱 Syncing version to Firestore..."
+if node scripts/update_firestore_version.cjs "$NEW_VERSION_NAME" "$BUILD_NUMBER"; then
+  echo "✅ Firestore version synced successfully"
+else
+  echo "⚠️  Warning: Could not update Firestore version"
+  echo "   Mobile version updated, but web admin maintenance page may be out of sync"
+  echo "   You can manually update it in CalyCompta > Paramètres > Maintenance"
+fi

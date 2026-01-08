@@ -8,6 +8,25 @@ CalyMob is a Flutter mobile application (iOS/Android) for the Calypso diving clu
 
 ## Build Commands
 
+### IMPORTANT: When User Requests a Build
+
+**When the user says**: "maak een nieuwe build", "nieuwe versie", "build de app", "release maken"
+
+**YOU (Claude) MUST run**:
+```bash
+cd CalyMob
+./scripts/build_release.sh --bump patch
+```
+
+This automatically:
+1. ✅ Bumps version in pubspec.yaml (1.0.12+69 → 1.0.13+70)
+2. ✅ Updates Firestore settings/app_version (1.0.13) via update_firestore_version.cjs
+3. ✅ Builds APK with version in filename: calymob-1.0.13-build70.apk
+
+**User doesn't need to remember "bump"** - you handle it automatically!
+
+### Manual Commands (for reference)
+
 ```bash
 # Flutter
 flutter pub get                      # Install dependencies
@@ -23,6 +42,15 @@ flutter analyze                      # Run static analysis
 ./scripts/build_release.sh --bump minor  # Minor bump (1.0.10→1.1.0)
 ./scripts/build_release.sh --bump major  # Major bump (1.0.10→2.0.0)
 ./scripts/bump_version.sh patch      # Alleen versie verhogen zonder te bouwen
+
+# Versie synchronisatie
+# bump_version.sh update automatisch de versie in:
+# 1. pubspec.yaml (bijv. 1.0.12+69 → 1.0.13+70)
+# 2. Firestore settings/app_version (1.0.13) - zichtbaar in CalyCompta maintenance page
+# Gebruikt update_firestore_version.cjs die Firebase credentials vindt via:
+# - Hardcoded path (Jan's machine): /Users/jan/Documents/CALYPSO/calycompta-firebase-adminsdk-*.json
+# - GOOGLE_APPLICATION_CREDENTIALS environment variable
+# - Application Default Credentials (gcloud auth application-default login)
 
 # iOS specific (from project root)
 cd ios && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install   # Install CocoaPods

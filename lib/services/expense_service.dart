@@ -29,23 +29,23 @@ class ExpenseService {
     });
   }
 
-  /// Stream des demandes en attente d'approbation (sauf celles de l'utilisateur)
+  /// Stream des demandes en attente d'approbation (toutes, y compris celles de l'utilisateur)
+  /// Inclut les statuts 'soumis' et 'en_attente_validation'
   Stream<List<ExpenseClaim>> getPendingApprovalsStream(String clubId, String currentUserId) {
     return _firestore
         .collection('clubs/$clubId/demandes_remboursement')
-        .where('statut', isEqualTo: 'soumis')
+        .where('statut', whereIn: ['soumis', 'en_attente_validation'])
         .snapshots()
         .map((snapshot) {
-      // Filter out current user's expenses (can't approve own expenses)
+      // Include all pending expenses (own expenses will be shown in grey in UI)
       final expenses = snapshot.docs
           .map((doc) => ExpenseClaim.fromFirestore(doc))
-          .where((expense) => expense.demandeurId != currentUserId)
           .toList();
 
       // Sort in-memory by dateDemande (most recent first)
       expenses.sort((a, b) => b.dateDemande.compareTo(a.dateDemande));
 
-      debugPrint('✅ ${expenses.length} demandes en attente d\'approbation (excluant user $currentUserId)');
+      debugPrint('✅ ${expenses.length} demandes en attente d\'approbation');
       return expenses;
     });
   }

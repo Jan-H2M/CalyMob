@@ -439,29 +439,35 @@ service cloud.firestore {
         }
       }
 
-      // Team channels (canaux d'équipe permanents)
+      // Team channels (canaux d'équipe permanents: Accueil, Encadrants, Gonflage)
       match /team_channels/{channelId} {
-        // Lecture: membres authentifiés avec le bon rôle
-        allow read: if isAuthenticated();
-        // Création: admin uniquement (canaux créés automatiquement par le système)
-        allow create: if isAdmin(clubId) && hasValidSession(clubId);
-        // Modification/Suppression: admin uniquement
-        allow update, delete: if isAdmin(clubId) && hasValidSession(clubId);
+        // Lecture: membres authentifiés du club (l'app filtre par rôle)
+        allow read: if isAuthenticated() &&
+          exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+        // Création: membres authentifiés peuvent créer le canal au premier message
+        allow create: if isAuthenticated() &&
+          exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+        // Modification: membres authentifiés (pour mise à jour metadata)
+        allow update: if isAuthenticated() &&
+          exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+        // Suppression: admin uniquement
+        allow delete: if isAdmin(clubId);
 
-        // Messages subcollection
+        // Messages subcollection - team chat messages
         match /messages/{messageId} {
-          // Lecture: membres authentifiés
-          allow read: if isAuthenticated();
-          // Création: membres avec session valide
-          allow create: if isAuthenticated() && hasValidSession(clubId);
+          // Lecture: membres authentifiés du club (l'app filtre par rôle)
+          allow read: if isAuthenticated() &&
+            exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+          // Création: membres authentifiés peuvent envoyer des messages
+          allow create: if isAuthenticated() &&
+            exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)) &&
+            request.resource.data.sender_id == request.auth.uid;
+          // Modification: pour marquer comme lu (read_by array)
+          allow update: if isAuthenticated() &&
+            exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
           // Suppression: auteur ou admin
-          allow delete: if isAuthenticated()
-            && hasValidSession(clubId)
-            && (resource.data.sender_id == request.auth.uid || isAdmin(clubId));
-          // Modification: uniquement pour marquer comme lu (read_by)
-          allow update: if isAuthenticated()
-            && hasValidSession(clubId)
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by']);
+          allow delete: if isAuthenticated() &&
+            (resource.data.sender_id == request.auth.uid || isAdmin(clubId));
         }
       }
 

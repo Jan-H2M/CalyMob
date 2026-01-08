@@ -5,6 +5,7 @@ import '../../config/firebase_config.dart';
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/member_provider.dart';
 import '../../services/biometric_service.dart';
 import '../home/landing_screen.dart';
 import 'forgot_password_screen.dart';
@@ -65,6 +66,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     final authProvider = context.read<AuthProvider>();
+    final memberProvider = context.read<MemberProvider>();
     final email = _emailController.text.trim();
     final password = _passwordController.text;
 
@@ -74,6 +76,14 @@ class _LoginScreenState extends State<LoginScreen> {
         password: password,
         clubId: _clubId,
       );
+
+      // Laad member data na succesvolle login
+      if (authProvider.currentUser != null) {
+        await memberProvider.loadMemberData(
+          _clubId,
+          authProvider.currentUser!.uid,
+        );
+      }
 
       // Save credentials for biometric login if enabled
       if (saveBiometric && _biometricAvailable) {
@@ -109,6 +119,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (credentials == null) return;
 
     final authProvider = context.read<AuthProvider>();
+    final memberProvider = context.read<MemberProvider>();
 
     try {
       await authProvider.login(
@@ -116,6 +127,14 @@ class _LoginScreenState extends State<LoginScreen> {
         password: credentials['password']!,
         clubId: _clubId,
       );
+
+      // Laad member data na succesvolle login
+      if (authProvider.currentUser != null) {
+        await memberProvider.loadMemberData(
+          _clubId,
+          authProvider.currentUser!.uid,
+        );
+      }
 
       if (mounted) {
         Navigator.of(context).pushReplacement(

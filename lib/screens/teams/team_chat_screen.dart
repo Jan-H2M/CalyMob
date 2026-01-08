@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../models/team_channel.dart';
 import '../../services/team_channel_service.dart';
 import '../../providers/auth_provider.dart';
+import '../../config/firebase_config.dart';
 import '../../widgets/piscine_animated_background.dart';
 import '../../theme/calypso_theme.dart';
 
@@ -25,6 +26,7 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
   final FocusNode _focusNode = FocusNode();
 
   bool _isSending = false;
+  bool _hasMarkedAsRead = false;
 
   @override
   void initState() {
@@ -41,17 +43,25 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
   }
 
   Future<void> _markMessagesAsRead() async {
+    if (_hasMarkedAsRead) return;
+
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final clubId = authProvider.clubId;
-    final userId = authProvider.userId;
+    final clubId = FirebaseConfig.defaultClubId;
+    final userId = authProvider.currentUser?.uid;
 
-    if (clubId == null || userId == null) return;
+    if (userId == null) return;
 
-    await _channelService.markAllAsRead(
-      clubId: clubId,
-      channelId: widget.channel.id,
-      userId: userId,
-    );
+    _hasMarkedAsRead = true;
+
+    try {
+      await _channelService.markAllAsRead(
+        clubId: clubId,
+        channelId: widget.channel.id,
+        userId: userId,
+      );
+    } catch (e) {
+      debugPrint('Error marking messages as read: $e');
+    }
   }
 
   Future<void> _sendMessage() async {
@@ -59,11 +69,11 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
     if (message.isEmpty || _isSending) return;
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final clubId = authProvider.clubId;
-    final userId = authProvider.userId;
-    final userName = authProvider.userName;
+    final clubId = FirebaseConfig.defaultClubId;
+    final userId = authProvider.currentUser?.uid;
+    final userName = authProvider.displayName ?? authProvider.currentUser?.email ?? 'Anonyme';
 
-    if (clubId == null || userId == null) return;
+    if (userId == null) return;
 
     setState(() => _isSending = true);
 
@@ -72,14 +82,17 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
         clubId: clubId,
         channelId: widget.channel.id,
         senderId: userId,
-        senderName: userName ?? 'Anonyme',
+        senderName: userName,
         message: message,
       );
+
+      if (!mounted) return;
 
       _messageController.clear();
 
       // Scroll to bottom
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
         if (_scrollController.hasClients) {
           _scrollController.animateTo(
             _scrollController.position.maxScrollExtent,
@@ -89,14 +102,13 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
         }
       });
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erreur: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erreur: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     } finally {
       if (mounted) {
         setState(() => _isSending = false);
@@ -107,10 +119,10 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
-    final clubId = authProvider.clubId;
-    final userId = authProvider.userId;
+    final clubId = FirebaseConfig.defaultClubId;
+    final userId = authProvider.currentUser?.uid;
 
-    if (clubId == null || userId == null) {
+    if (userId == null) {
       return const Scaffold(
         body: Center(child: Text('Niet verbonden')),
       );
@@ -177,6 +189,29 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
                       );
                     }
 
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.error_outline,
+                              size: 64,
+                              color: Colors.red.shade300,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Erreur de chargement',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.7),
+                                fontSize: 16,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
                     final messages = snapshot.data ?? [];
 
                     if (messages.isEmpty) {
@@ -210,9 +245,6 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
                         ),
                       );
                     }
-
-                    // Mark new messages as read
-                    _markMessagesAsRead();
 
                     return ListView.builder(
                       controller: _scrollController,

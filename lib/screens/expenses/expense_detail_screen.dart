@@ -189,8 +189,13 @@ class ExpenseDetailScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
 
-            // Historique Card
-            if (expense.dateApprobation != null || expense.dateRefus != null || expense.requiresDoubleApproval) ...[
+            // Historique Card - show for any status that indicates processing happened
+            if (expense.dateApprobation != null ||
+                expense.dateRefus != null ||
+                expense.requiresDoubleApproval ||
+                expense.statut == 'approuve' ||
+                expense.statut == 'rembourse' ||
+                expense.statut == 'refuse') ...[
               Card(
                 elevation: 2,
                 child: Padding(
@@ -570,6 +575,16 @@ class ExpenseDetailScreen extends StatelessWidget {
                 ? 'Approuvé par ${expense.appouveParNom}'
                 : 'Approuvé',
             subtitle: DateFormatter.formatLong(expense.dateApprobation!),
+          )
+        // Fallback: status is approved but no approval date (legacy data)
+        else if (expense.statut == 'approuve' || expense.statut == 'rembourse')
+          _buildTimelineItem(
+            icon: Icons.check_circle,
+            color: Colors.green,
+            title: expense.appouveParNom != null
+                ? 'Approuvé par ${expense.appouveParNom}'
+                : 'Approuvé (détails non disponibles)',
+            subtitle: 'Date d\'approbation non enregistrée',
           ),
 
         // 2ème approbation (si double approval requis)
@@ -601,6 +616,18 @@ class ExpenseDetailScreen extends StatelessWidget {
                 ? 'Refusé par ${expense.refuseParNom}'
                 : 'Refusé',
             subtitle: DateFormatter.formatLong(expense.dateRefus!),
+            detail: expense.motifRefus,
+            isLast: true,
+          )
+        // Fallback: status is refused but no refusal date (legacy data)
+        else if (expense.statut == 'refuse')
+          _buildTimelineItem(
+            icon: Icons.cancel,
+            color: Colors.red,
+            title: expense.refuseParNom != null
+                ? 'Refusé par ${expense.refuseParNom}'
+                : 'Refusé (détails non disponibles)',
+            subtitle: 'Date de refus non enregistrée',
             detail: expense.motifRefus,
             isLast: true,
           ),
