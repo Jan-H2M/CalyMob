@@ -62,16 +62,30 @@ class ExpenseClaim {
     this.motifRefus,
   });
 
+  /// Helper to parse date fields that can be Timestamp, String, or null
+  static DateTime? _parseDate(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is String) {
+      try {
+        return DateTime.parse(value);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
+
   /// Convertir depuis Firestore
   factory ExpenseClaim.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
 
-    // Handle Timestamp fields that might be null (serverTimestamp not yet set)
-    final dateDepenseData = data['date_depense'];
-    final dateDemandeData = data['date_demande'];
-    final dateApprobationData = data['date_approbation'];
-    final dateApprobation2Data = data['date_approbation_2'];
-    final dateRefusData = data['date_refus'];
+    // Handle date fields that can be Timestamp, String, or null
+    final dateDepense = _parseDate(data['date_depense']);
+    final dateDemande = _parseDate(data['date_demande']);
+    final dateApprobation = _parseDate(data['date_approbation']);
+    final dateApprobation2 = _parseDate(data['date_approbation_2']);
+    final dateRefus = _parseDate(data['date_refus']);
 
     // Read documents - support both old and new formats
     List<String> documents = [];
@@ -106,28 +120,18 @@ class ExpenseClaim {
       codeComptable: data['code_comptable'],
       codeComptableLabel: data['code_comptable_label'],
       statut: data['statut'] ?? 'soumis',
-      dateDepense: dateDepenseData != null
-          ? (dateDepenseData as Timestamp).toDate()
-          : DateTime.now(),
-      dateDemande: dateDemandeData != null
-          ? (dateDemandeData as Timestamp).toDate()
-          : DateTime.now(),
+      dateDepense: dateDepense ?? DateTime.now(),
+      dateDemande: dateDemande ?? DateTime.now(),
       urlsJustificatifs: documents,
       operationId: data['operation_id'],
-      dateApprobation: dateApprobationData != null
-          ? (dateApprobationData as Timestamp).toDate()
-          : null,
+      dateApprobation: dateApprobation,
       approuvePar: data['approuve_par'],
       appouveParNom: data['approuve_par_nom'],
-      dateApprobation2: dateApprobation2Data != null
-          ? (dateApprobation2Data as Timestamp).toDate()
-          : null,
+      dateApprobation2: dateApprobation2,
       approuvePar2: data['approuve_par_2'],
       approuvePar2Nom: data['approuve_par_2_nom'],
       requiresDoubleApproval: data['requires_double_approval'] ?? false,
-      dateRefus: dateRefusData != null
-          ? (dateRefusData as Timestamp).toDate()
-          : null,
+      dateRefus: dateRefus,
       refusePar: data['refuse_par'],
       refuseParNom: data['refuse_par_nom'],
       motifRefus: data['motif_refus'],
