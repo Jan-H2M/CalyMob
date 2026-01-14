@@ -11,6 +11,10 @@ import '../../providers/member_provider.dart';
 import '../../models/member_profile.dart';
 import '../../services/profile_service.dart';
 import '../../services/member_service.dart';
+import '../../services/medical_certification_service.dart';
+import '../../models/medical_certification.dart';
+import '../../widgets/certification_status_badge.dart';
+import 'medical_certification_screen.dart';
 import '../../utils/permission_helper.dart';
 import '../../widgets/photo_consent_dialog.dart';
 import '../../widgets/user_qr_card.dart';
@@ -33,6 +37,7 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
   final String _clubId = 'calypso';
   final ProfileService _profileService = ProfileService();
   final MemberService _memberService = MemberService();
+  final MedicalCertificationService _certService = MedicalCertificationService();
 
   bool _isLoading = false;
   bool _canManageExercises = false; // Monitor, admin, or super admin
@@ -756,6 +761,35 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Column(
         children: [
+          // Certificat médical
+          StreamBuilder<MedicalCertification?>(
+            stream: _certService.watchCurrentCertification(_clubId, userId),
+            builder: (context, snapshot) {
+              final cert = snapshot.data;
+              return ListTile(
+                leading: const Icon(Icons.medical_services, color: AppColors.middenblauw),
+                title: const Text('Certificat médical'),
+                subtitle: Row(
+                  children: [
+                    Flexible(
+                      child: CertificationStatusBadge(
+                        certification: cert,
+                        compact: true,
+                      ),
+                    ),
+                  ],
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => MedicalCertificationScreen(userId: userId),
+                  ),
+                ),
+              );
+            },
+          ),
+          const Divider(height: 1),
           // Mes exercices validés
           ListTile(
             leading: const Icon(Icons.assignment_turned_in, color: Colors.teal),
