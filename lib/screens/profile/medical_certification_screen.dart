@@ -29,6 +29,9 @@ class _MedicalCertificationScreenState extends State<MedicalCertificationScreen>
   final MedicalCertificationService _certService = MedicalCertificationService();
   final String _clubId = FirebaseConfig.defaultClubId;
 
+  // Maximum file size: 10 MB
+  static const int _maxFileSizeBytes = 10 * 1024 * 1024;
+
   MedicalCertification? _certification;
   bool _isLoading = true;
   bool _isUploading = false;
@@ -527,6 +530,14 @@ class _MedicalCertificationScreenState extends State<MedicalCertificationScreen>
   }
 
   Future<void> _uploadFile(File file, String type, String? fileName) async {
+    // Validate file size
+    final fileSize = await file.length();
+    if (fileSize > _maxFileSizeBytes) {
+      final sizeMB = (fileSize / (1024 * 1024)).toStringAsFixed(1);
+      _showError('Fichier trop volumineux ($sizeMB MB). Maximum: 10 MB');
+      return;
+    }
+
     setState(() => _isUploading = true);
 
     try {

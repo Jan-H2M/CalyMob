@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lottie/lottie.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
@@ -47,7 +48,7 @@ class _CertificatePresentationScreenState extends State<CertificatePresentationS
   void initState() {
     super.initState();
 
-    // Force landscape orientation for presentation
+    // Keep portrait orientation for presentation mode
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
@@ -681,28 +682,53 @@ class _CertificatePresentationScreenState extends State<CertificatePresentationS
   void _showFullScreenDocument() {
     if (_currentCert == null) return;
 
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => Scaffold(
-          backgroundColor: Colors.black,
-          appBar: AppBar(
+    final cert = _currentCert!;
+    final isImage = cert.documentType == 'image';
+
+    if (isImage) {
+      // Show image in full screen with zoom
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => Scaffold(
             backgroundColor: Colors.black,
-            iconTheme: const IconThemeData(color: Colors.white),
-            title: const Text('Certificat', style: TextStyle(color: Colors.white)),
-          ),
-          body: Center(
-            child: InteractiveViewer(
-              minScale: 0.5,
-              maxScale: 4.0,
-              child: Image.network(
-                _currentCert!.documentUrl,
-                fit: BoxFit.contain,
+            appBar: AppBar(
+              backgroundColor: Colors.black,
+              iconTheme: const IconThemeData(color: Colors.white),
+              title: const Text('Certificat', style: TextStyle(color: Colors.white)),
+            ),
+            body: Center(
+              child: InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 4.0,
+                child: Image.network(
+                  cert.documentUrl,
+                  fit: BoxFit.contain,
+                ),
               ),
             ),
           ),
         ),
-      ),
-    );
+      );
+    } else {
+      // Open PDF in external application
+      _openPdf(cert.documentUrl);
+    }
+  }
+
+  Future<void> _openPdf(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Impossible d\'ouvrir le PDF'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   String _formatDate(DateTime date) {

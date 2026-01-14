@@ -52,18 +52,49 @@ class MedicalCertificationService {
   }
 
   /// Stream du certificat médical actuel (temps réel)
+  /// Priorité: certificat approuvé > certificat en attente
+  /// (même logique que getCurrentCertification)
   Stream<MedicalCertification?> watchCurrentCertification(
     String clubId,
     String userId,
   ) {
+    // Watch all certificates and apply priority logic locally
     return _firestore
         .collection('clubs/$clubId/members/$userId/medical_certificates')
         .orderBy('uploaded_at', descending: true)
-        .limit(1)
         .snapshots()
         .map((snapshot) {
       if (snapshot.docs.isEmpty) return null;
-      return MedicalCertification.fromFirestore(snapshot.docs.first);
+
+      final certs = snapshot.docs
+          .map((doc) => MedicalCertification.fromFirestore(doc))
+          .toList();
+
+      // Priority 1: Find approved certificate (most recent by valid_until)
+      final approvedCerts = certs
+          .where((c) => c.status == CertificateStatus.approved)
+          .toList();
+      if (approvedCerts.isNotEmpty) {
+        // Sort by valid_until descending
+        approvedCerts.sort((a, b) {
+          final aDate = a.validUntil ?? DateTime(1900);
+          final bDate = b.validUntil ?? DateTime(1900);
+          return bDate.compareTo(aDate);
+        });
+        return approvedCerts.first;
+      }
+
+      // Priority 2: Find pending certificate (most recent by uploaded_at)
+      final pendingCerts = certs
+          .where((c) => c.status == CertificateStatus.pending)
+          .toList();
+      if (pendingCerts.isNotEmpty) {
+        // Already sorted by uploaded_at descending from query
+        return pendingCerts.first;
+      }
+
+      // Priority 3: Return most recent rejected (for display)
+      return certs.first;
     });
   }
 
