@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:cunning_document_scanner/cunning_document_scanner.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
@@ -356,6 +359,16 @@ class _MedicalCertificationScreenState extends State<MedicalCertificationScreen>
                 ),
               )
             else ...[
+              // Scanner button (recommended)
+              _buildUploadOption(
+                icon: Icons.document_scanner,
+                title: 'Scanner le document',
+                subtitle: 'Scan automatique (recommandé)',
+                color: AppColors.success,
+                onTap: _scanDocument,
+              ),
+              const SizedBox(height: 12),
+
               // Camera button
               _buildUploadOption(
                 icon: Icons.camera_alt,
@@ -472,6 +485,75 @@ class _MedicalCertificationScreenState extends State<MedicalCertificationScreen>
         ],
       ),
     );
+  }
+
+  /// Compresse une image pour réduire sa taille
+  Future<File?> _compressImage(File file) async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final targetPath = '${dir.path}/compressed_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+      final result = await FlutterImageCompress.compressAndGetFile(
+        file.absolute.path,
+        targetPath,
+        quality: 70,
+        minWidth: 1200,
+        minHeight: 1600,
+      );
+
+      if (result != null) {
+        return File(result.path);
+      }
+      return file; // Retourne l'original si la compression échoue
+    } catch (e) {
+      debugPrint('Erreur compression: $e');
+      return file; // Retourne l'original en cas d'erreur
+    }
+  }
+
+  Future<void> _scanDocument() async {
+    try {
+      // cunning_document_scanner uses native iOS VisionKit / Android ML Kit
+      debugPrint('🔍 Scanner: Starting document scan...');
+
+      final List<String>? scannedPaths = await CunningDocumentScanner.getPictures(
+        isGalleryImportAllowed: true,
+      );
+
+      debugPrint('🔍 Scanner: Result: $scannedPaths');
+
+      if (scannedPaths != null && scannedPaths.isNotEmpty) {
+        debugPrint('🔍 Scanner: Found ${scannedPaths.length} scanned pages');
+
+        // Use only the first scanned page for medical certificate
+        final path = scannedPaths.first;
+        debugPrint('🔍 Scanner: Processing path: $path');
+        final originalFile = File(path);
+
+        if (await originalFile.exists()) {
+          final compressedFile = await _compressImage(originalFile);
+          if (compressedFile != null) {
+            debugPrint('🔍 Scanner: Uploading compressed file: ${compressedFile.path}');
+            await _uploadFile(compressedFile, 'image', 'certificat_scan.jpg');
+          }
+        } else {
+          debugPrint('🔍 Scanner: File does not exist at path: $path');
+          _showError('Erreur: fichier scanné introuvable');
+        }
+      } else {
+        debugPrint('🔍 Scanner: No documents scanned (user cancelled or empty result)');
+      }
+    } catch (e, stackTrace) {
+      debugPrint('🔍 Scanner: Error: $e');
+      debugPrint('🔍 Scanner: Stack trace: $stackTrace');
+      // Check if user cancelled
+      final errorMsg = e.toString().toLowerCase();
+      if (errorMsg.contains('cancel') || errorMsg.contains('user')) {
+        // User cancelled - no error message needed
+        return;
+      }
+      _showError('Erreur lors du scan: $e');
+    }
   }
 
   Future<void> _pickFromCamera() async {

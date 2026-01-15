@@ -142,22 +142,34 @@ class CertificationStatusBadge extends StatelessWidget {
         return 'Validation en cours';
 
       case CertificateStatus.rejected:
-        return certification!.rejectionReason ?? 'Document non conforme';
+        final reason = certification!.rejectionReason ?? 'Document non conforme';
+        final reviewer = certification!.reviewedByNom;
+        if (reviewer != null && reviewer.isNotEmpty) {
+          return '$reviewer: $reason';
+        }
+        return reason;
 
       case CertificateStatus.approved:
         if (certification!.validUntil == null) return null;
         final days = certification!.daysUntilExpiry ?? 0;
+        final reviewer = certification!.reviewedByNom;
+        String expiryText;
         if (days < 0) {
-          return 'Depuis ${-days} jour${days < -1 ? 's' : ''}';
+          expiryText = 'Depuis ${-days} jour${days < -1 ? 's' : ''}';
         } else if (days == 0) {
-          return "Expire aujourd'hui";
+          expiryText = "Expire aujourd'hui";
         } else if (days == 1) {
-          return 'Expire demain';
+          expiryText = 'Expire demain';
         } else if (days <= 30) {
-          return 'Expire dans $days jours';
+          expiryText = 'Expire dans $days jours';
         } else {
-          return 'Jusqu\'au ${_formatDate(certification!.validUntil!)}';
+          expiryText = 'Jusqu\'au ${_formatDate(certification!.validUntil!)}';
         }
+        // Add reviewer name if available and not in compact mode
+        if (!compact && reviewer != null && reviewer.isNotEmpty) {
+          return '$expiryText • Par $reviewer';
+        }
+        return expiryText;
     }
   }
 

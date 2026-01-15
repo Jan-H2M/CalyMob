@@ -179,6 +179,11 @@ class MedicalCertificationService {
       await docRef.set(certification.toFirestore());
       debugPrint('✅ Certificat créé: ${docRef.id}');
 
+      // 6. Update member's has_pending_medical flag
+      final memberRef = _firestore.doc('clubs/$clubId/members/$userId');
+      await memberRef.update({'has_pending_medical': true});
+      debugPrint('✅ Flag has_pending_medical mis à jour');
+
       return certification;
     } catch (e) {
       debugPrint('❌ Erreur upload certificat: $e');

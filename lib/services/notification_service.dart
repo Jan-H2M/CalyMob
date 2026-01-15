@@ -81,9 +81,19 @@ class NotificationService {
     if (notification == null) return;
 
     // Déterminer le canal en fonction du type de notification
-    final channelId = message.data['type'] == 'event_message'
-        ? 'event_messages'
-        : 'announcements';
+    final type = message.data['type'];
+    String channelId;
+    String channelName;
+    if (type == 'event_message') {
+      channelId = 'event_messages';
+      channelName = 'Messages d\'événements';
+    } else if (type == 'medical_certificate') {
+      channelId = 'medical_certificates';
+      channelName = 'Certificats médicaux';
+    } else {
+      channelId = 'announcements';
+      channelName = 'Annonces du club';
+    }
 
     // Afficher la notification localement
     await _localNotifications.show(
@@ -93,7 +103,7 @@ class NotificationService {
       NotificationDetails(
         android: AndroidNotificationDetails(
           channelId,
-          channelId == 'event_messages' ? 'Messages d\'événements' : 'Annonces du club',
+          channelName,
           importance: Importance.high,
           priority: Priority.high,
           icon: '@mipmap/ic_launcher',
@@ -137,6 +147,17 @@ class NotificationService {
         enableVibration: true,
       );
       await androidPlugin.createNotificationChannel(eventMessagesChannel);
+
+      // Canal pour les certificats médicaux
+      const medicalCertificatesChannel = AndroidNotificationChannel(
+        'medical_certificates',
+        'Certificats médicaux',
+        description: 'Notifications pour les mises à jour de certificats médicaux',
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+      );
+      await androidPlugin.createNotificationChannel(medicalCertificatesChannel);
 
       debugPrint('✅ Canaux de notification Android créés');
     } catch (e) {

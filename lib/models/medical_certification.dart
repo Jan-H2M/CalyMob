@@ -20,6 +20,7 @@ class MedicalCertification {
   // Champs remplis par l'admin dans CalyCompta
   final DateTime? validUntil;
   final String? reviewedBy;
+  final String? reviewedByNom; // Display name of the reviewer
   final DateTime? reviewedAt;
   final String? rejectionReason;
 
@@ -33,6 +34,7 @@ class MedicalCertification {
     required this.status,
     this.validUntil,
     this.reviewedBy,
+    this.reviewedByNom,
     this.reviewedAt,
     this.rejectionReason,
   });
@@ -51,6 +53,7 @@ class MedicalCertification {
       status: _parseStatus(data['status']),
       validUntil: (data['valid_until'] as Timestamp?)?.toDate(),
       reviewedBy: data['reviewed_by'],
+      reviewedByNom: data['reviewed_by_nom'],
       reviewedAt: (data['reviewed_at'] as Timestamp?)?.toDate(),
       rejectionReason: data['rejection_reason'],
     );

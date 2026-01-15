@@ -68,3 +68,12 @@ exports.onNewTeamMessage = onNewTeamMessage;
 // Daily reminder for upcoming piscine sessions
 const { sessionReminder } = require('./src/notifications/sessionReminder');
 exports.sessionReminder = sessionReminder;
+
+// =============================================================================
+// MEDICAL CERTIFICATE NOTIFICATIONS (Gen2)
+// =============================================================================
+
+// Push notification when medical certificate status changes (approved/rejected)
+const { onMedicalCertStatusChange, onMedicalCertCreated } = require('./src/notifications/onMedicalCertStatusChange');
+exports.onMedicalCertStatusChange = onMedicalCertStatusChange;
+exports.onMedicalCertCreated = onMedicalCertCreated;
