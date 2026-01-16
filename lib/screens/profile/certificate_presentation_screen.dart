@@ -1,8 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lottie/lottie.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
@@ -358,6 +362,11 @@ class _CertificatePresentationScreenState extends State<CertificatePresentationS
 
           // Verification timestamp
           _buildVerificationTimestamp(),
+
+          const SizedBox(height: 24),
+
+          // Export button
+          _buildExportButton(),
         ],
       ),
     );
@@ -677,6 +686,69 @@ class _CertificatePresentationScreenState extends State<CertificatePresentationS
         ],
       ),
     );
+  }
+
+  Widget _buildExportButton() {
+    return ElevatedButton.icon(
+      onPressed: _exportCertificate,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.white.withOpacity(0.2),
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(30),
+          side: const BorderSide(color: Colors.white38),
+        ),
+      ),
+      icon: const Icon(Icons.ios_share, size: 20),
+      label: const Text(
+        'Exporter le certificat',
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _exportCertificate() async {
+    if (_currentCert == null) return;
+
+    try {
+      final cert = _currentCert!;
+
+      // Download the file to a temporary location
+      final response = await http.get(Uri.parse(cert.documentUrl));
+      if (response.statusCode != 200) {
+        throw Exception('Failed to download certificate');
+      }
+
+      // Determine file extension
+      final isImage = cert.documentType == 'image';
+      final extension = isImage ? 'jpg' : 'pdf';
+      final year = cert.validUntil?.year ?? DateTime.now().year;
+      final fileName = 'Certificat_medical_$year.$extension';
+
+      // Save to temporary directory
+      final tempDir = await getTemporaryDirectory();
+      final tempFile = File('${tempDir.path}/$fileName');
+      await tempFile.writeAsBytes(response.bodyBytes);
+
+      // Share the file using native share dialog
+      await Share.shareXFiles(
+        [XFile(tempFile.path)],
+        subject: 'Certificat médical $year',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur lors de l\'export: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   void _showFullScreenDocument() {

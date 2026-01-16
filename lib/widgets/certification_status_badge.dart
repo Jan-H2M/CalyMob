@@ -152,24 +152,17 @@ class CertificationStatusBadge extends StatelessWidget {
       case CertificateStatus.approved:
         if (certification!.validUntil == null) return null;
         final days = certification!.daysUntilExpiry ?? 0;
-        final reviewer = certification!.reviewedByNom;
-        String expiryText;
         if (days < 0) {
-          expiryText = 'Depuis ${-days} jour${days < -1 ? 's' : ''}';
+          return 'Depuis ${-days} jour${days < -1 ? 's' : ''}';
         } else if (days == 0) {
-          expiryText = "Expire aujourd'hui";
+          return "Expire aujourd'hui";
         } else if (days == 1) {
-          expiryText = 'Expire demain';
+          return 'Expire demain';
         } else if (days <= 30) {
-          expiryText = 'Expire dans $days jours';
+          return 'Expire dans $days jours';
         } else {
-          expiryText = 'Jusqu\'au ${_formatDate(certification!.validUntil!)}';
+          return 'Jusqu\'au ${_formatDate(certification!.validUntil!)}';
         }
-        // Add reviewer name if available and not in compact mode
-        if (!compact && reviewer != null && reviewer.isNotEmpty) {
-          return '$expiryText • Par $reviewer';
-        }
-        return expiryText;
     }
   }
 

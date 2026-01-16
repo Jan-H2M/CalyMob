@@ -1,12 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:cunning_document_scanner/cunning_document_scanner.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart';
-import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../models/medical_certification.dart';
@@ -102,12 +99,6 @@ class _MedicalCertificationScreenState extends State<MedicalCertificationScreen>
           _buildStatusCard(),
           const SizedBox(height: 16),
 
-          // Document preview
-          if (_certification != null) ...[
-            _buildDocumentPreview(),
-            const SizedBox(height: 16),
-          ],
-
           // Present button (only if valid)
           if (_certification?.canPresent == true) ...[
             _buildPresentButton(),
@@ -162,127 +153,6 @@ class _MedicalCertificationScreenState extends State<MedicalCertificationScreen>
             ],
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildDocumentPreview() {
-    final cert = _certification!;
-    final isImage = cert.documentType == 'image';
-
-    return Card(
-      color: Colors.white.withOpacity(0.95),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      elevation: 4,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Icon(
-                  isImage ? Icons.image : Icons.picture_as_pdf,
-                  color: isImage ? AppColors.middenblauw : Colors.red[700],
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Document actuel',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.donkerblauw,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (isImage)
-            GestureDetector(
-              onTap: () => _showFullScreenImage(cert.documentUrl),
-              child: Container(
-                height: 200,
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.network(
-                    cert.documentUrl,
-                    fit: BoxFit.cover,
-                    loadingBuilder: (context, child, progress) {
-                      if (progress == null) return child;
-                      return Center(
-                        child: CircularProgressIndicator(
-                          value: progress.expectedTotalBytes != null
-                              ? progress.cumulativeBytesLoaded / progress.expectedTotalBytes!
-                              : null,
-                        ),
-                      );
-                    },
-                    errorBuilder: (context, error, stack) {
-                      return Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.broken_image, size: 48, color: Colors.grey[400]),
-                            const SizedBox(height: 8),
-                            Text('Image non disponible', style: TextStyle(color: Colors.grey[600])),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            )
-          else
-            GestureDetector(
-              onTap: () => _openPdf(cert.documentUrl),
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: Colors.red[50],
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.red[200]!),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.picture_as_pdf, size: 48, color: Colors.red[700]),
-                    const SizedBox(width: 16),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          cert.fileName ?? 'Certificat médical.pdf',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.red[900],
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Appuyez pour ouvrir',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.red[700],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(width: 16),
-                    Icon(Icons.open_in_new, color: Colors.red[400]),
-                  ],
-                ),
-              ),
-            ),
-          const SizedBox(height: 16),
-        ],
       ),
     );
   }
@@ -369,33 +239,13 @@ class _MedicalCertificationScreenState extends State<MedicalCertificationScreen>
               ),
               const SizedBox(height: 12),
 
-              // Camera button
+              // Import file button (images or PDF)
               _buildUploadOption(
-                icon: Icons.camera_alt,
-                title: 'Prendre une photo',
-                subtitle: 'Photographier votre certificat',
+                icon: Icons.folder_open,
+                title: 'Importer un fichier',
+                subtitle: 'Image ou PDF depuis vos fichiers',
                 color: AppColors.middenblauw,
-                onTap: _pickFromCamera,
-              ),
-              const SizedBox(height: 12),
-
-              // Gallery button
-              _buildUploadOption(
-                icon: Icons.photo_library,
-                title: 'Choisir une image',
-                subtitle: 'Depuis votre galerie',
-                color: AppColors.lichtblauw,
-                onTap: _pickFromGallery,
-              ),
-              const SizedBox(height: 12),
-
-              // PDF button
-              _buildUploadOption(
-                icon: Icons.picture_as_pdf,
-                title: 'Importer un PDF',
-                subtitle: 'Depuis vos documents',
-                color: Colors.red[400]!,
-                onTap: _pickPdf,
+                onTap: _pickFile,
               ),
             ],
           ],
@@ -534,7 +384,9 @@ class _MedicalCertificationScreenState extends State<MedicalCertificationScreen>
           final compressedFile = await _compressImage(originalFile);
           if (compressedFile != null) {
             debugPrint('🔍 Scanner: Uploading compressed file: ${compressedFile.path}');
-            await _uploadFile(compressedFile, 'image', 'certificat_scan.jpg');
+            // Use current year for the certificate name (matching CalyCompta convention)
+            final year = DateTime.now().year;
+            await _uploadFile(compressedFile, 'image', 'Certificat médical $year');
           }
         } else {
           debugPrint('🔍 Scanner: File does not exist at path: $path');
@@ -556,58 +408,27 @@ class _MedicalCertificationScreenState extends State<MedicalCertificationScreen>
     }
   }
 
-  Future<void> _pickFromCamera() async {
-    try {
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 85,
-        maxWidth: 2048,
-        maxHeight: 2048,
-      );
-
-      if (image != null) {
-        await _uploadFile(File(image.path), 'image', image.name);
-      }
-    } catch (e) {
-      _showError('Erreur caméra: $e');
-    }
-  }
-
-  Future<void> _pickFromGallery() async {
-    try {
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 85,
-        maxWidth: 2048,
-        maxHeight: 2048,
-      );
-
-      if (image != null) {
-        await _uploadFile(File(image.path), 'image', image.name);
-      }
-    } catch (e) {
-      _showError('Erreur galerie: $e');
-    }
-  }
-
-  Future<void> _pickPdf() async {
+  Future<void> _pickFile() async {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['pdf'],
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
       );
 
       if (result != null && result.files.single.path != null) {
+        final file = File(result.files.single.path!);
+        final extension = result.files.single.extension?.toLowerCase();
+        final isPdf = extension == 'pdf';
+        final year = DateTime.now().year;
+
         await _uploadFile(
-          File(result.files.single.path!),
-          'pdf',
-          result.files.single.name,
+          file,
+          isPdf ? 'pdf' : 'image',
+          'Certificat médical $year',
         );
       }
     } catch (e) {
-      _showError('Erreur sélection PDF: $e');
+      _showError('Erreur sélection fichier: $e');
     }
   }
 
@@ -661,37 +482,6 @@ class _MedicalCertificationScreenState extends State<MedicalCertificationScreen>
         ),
       ),
     );
-  }
-
-  void _showFullScreenImage(String url) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => Scaffold(
-          backgroundColor: Colors.black,
-          appBar: AppBar(
-            backgroundColor: Colors.black,
-            iconTheme: const IconThemeData(color: Colors.white),
-            title: const Text('Certificat', style: TextStyle(color: Colors.white)),
-          ),
-          body: Center(
-            child: InteractiveViewer(
-              minScale: 0.5,
-              maxScale: 4.0,
-              child: Image.network(url, fit: BoxFit.contain),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _openPdf(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      _showError('Impossible d\'ouvrir le PDF');
-    }
   }
 
   void _showError(String message) {
