@@ -735,9 +735,14 @@ class _CertificatePresentationScreenState extends State<CertificatePresentationS
       await tempFile.writeAsBytes(response.bodyBytes);
 
       // Share the file using native share dialog
+      // On iOS, we need to provide sharePositionOrigin for iPad compatibility
+      final box = context.findRenderObject() as RenderBox?;
       await Share.shareXFiles(
         [XFile(tempFile.path)],
         subject: 'Certificat médical $year',
+        sharePositionOrigin: box != null
+            ? box.localToGlobal(Offset.zero) & box.size
+            : null,
       );
     } catch (e) {
       if (mounted) {
