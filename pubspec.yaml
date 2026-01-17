@@ -28,8 +28,8 @@ dependencies:
   cupertino_icons: ^1.0.6
   lottie: ^3.1.0
   flutter_svg: ^2.0.10
-  table_calendar: ^3.1.2
-  syncfusion_flutter_calendar: ^29.2.5
+  # table_calendar: ^3.1.2  # Removed - unused (syncfusion is used instead)
+  # syncfusion_flutter_calendar: ^29.2.5  # Removed - only core/localizations are used
   syncfusion_flutter_core: ^29.2.5
   flutter_localizations:
     sdk: flutter
@@ -40,7 +40,7 @@ dependencies:
 
   # Utilities
   url_launcher: ^6.1.14
-  shared_preferences: ^2.2.2
+  # shared_preferences: ^2.2.2  # Removed - not used in codebase
   path_provider: ^2.1.1
   image_picker: ^1.0.4
   file_picker: ^8.0.0
