@@ -145,7 +145,28 @@ clubs/{clubId}/
 
 3. **Tariff System**: Flexible pricing with member/guest rates, optional pricing, and calculated totals in `pricing_calculator.dart` and `tariff_utils.dart`.
 
-## Known Build Issues (Xcode 26.1 Beta)
+## iOS Build Issues & Solutions
+
+### BELANGRIJK: Clean Build Script
+
+**Bij iOS build problemen** (sandbox not in sync, Manifest.lock missing, pod errors):
+
+```bash
+cd CalyMob
+./scripts/clean_ios_build.sh
+```
+
+Dit script doet automatisch:
+1. Kill hangende processen (pod install, xcodebuild)
+2. Flutter clean + pub get
+3. Verwijdert Pods/, Podfile.lock, .symlinks/, DerivedData
+4. Runt `pod install --repo-update`
+5. Verifieert dat `Pods/Manifest.lock` bestaat
+6. Genereert iOS config met `flutter build ios --config-only`
+
+**Na het script**: Open Xcode met `open ios/Runner.xcworkspace` en build (Cmd+B)
+
+### Known Issues (Xcode 26.1 Beta)
 
 - `resource fork, Finder information, or similar detritus not allowed` during codesign - Build directly in Xcode rather than via CLI
 - CocoaPods requires UTF-8 encoding: use `LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install`
