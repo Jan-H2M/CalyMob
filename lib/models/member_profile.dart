@@ -11,7 +11,6 @@ class MemberProfile {
   final String email;
   final String? plongeurCode; // Niveau de plongée (ex: "P2", "P4", "MC")
   final String? plongeurNiveau; // Niveau complet en texte
-  final String? role; // Rôle dans le club
   final String? fonctionDefaut; // Fonction par défaut: "membre", "encadrant", "ca"
   final List<String> clubStatuten; // Fonctions multiples dans le club
 
@@ -52,7 +51,6 @@ class MemberProfile {
     required this.email,
     this.plongeurCode,
     this.plongeurNiveau,
-    this.role,
     this.fonctionDefaut,
     this.clubStatuten = const [],
     this.photoUrl,
@@ -85,7 +83,6 @@ class MemberProfile {
       email: data['email'] ?? '',
       plongeurCode: data['plongeur_code'],
       plongeurNiveau: data['plongeur_niveau'],
-      role: data['role'],
       fonctionDefaut: data['fonction_defaut'],
       clubStatuten: (data['clubStatuten'] as List<dynamic>?)?.cast<String>() ?? [],
       photoUrl: data['photo_url'],
@@ -115,7 +112,6 @@ class MemberProfile {
       'email': email,
       'plongeur_code': plongeurCode,
       'plongeur_niveau': plongeurNiveau,
-      'role': role,
       'fonction_defaut': fonctionDefaut,
       'clubStatuten': clubStatuten,
       'photo_url': photoUrl,
@@ -140,7 +136,6 @@ class MemberProfile {
     String? email,
     String? plongeurCode,
     String? plongeurNiveau,
-    String? role,
     String? fonctionDefaut,
     List<String>? clubStatuten,
     String? photoUrl,
@@ -162,7 +157,6 @@ class MemberProfile {
       email: email ?? this.email,
       plongeurCode: plongeurCode ?? this.plongeurCode,
       plongeurNiveau: plongeurNiveau ?? this.plongeurNiveau,
-      role: role ?? this.role,
       fonctionDefaut: fonctionDefaut ?? this.fonctionDefaut,
       clubStatuten: clubStatuten ?? this.clubStatuten,
       photoUrl: photoUrl ?? this.photoUrl,

@@ -13,7 +13,7 @@ service firebase.storage {
 
     function hasRole(clubId, roles) {
       return isClubMember(clubId) &&
-        firestore.get(/databases/(default)/documents/clubs/$(clubId)/members/$(request.auth.uid)).data.role in roles;
+        firestore.get(/databases/(default)/documents/clubs/$(clubId)/members/$(request.auth.uid)).data.app_role in roles;
     }
 
     function isOwner(userId) {

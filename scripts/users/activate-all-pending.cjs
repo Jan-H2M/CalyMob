@@ -56,11 +56,11 @@ async function activateUser(memberId, memberData) {
 
     // Set custom claims
     await admin.auth().setCustomUserClaims(userRecord.uid, {
-      role: memberData.role,
+      app_role: memberData.app_role || memberData.role || 'user',
       clubId: CLUB_ID,
     });
 
-    console.log(`   ✓ Custom claims set (role: ${memberData.role})`);
+    console.log(`   ✓ Custom claims set (app_role: ${memberData.app_role || memberData.role || 'user'})`);
 
     // Update Firestore
     const memberRef = db.collection('clubs').doc(CLUB_ID).collection('members').doc(memberId);

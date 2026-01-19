@@ -62,7 +62,7 @@ export interface User {
   displayName: string;
   firstName?: string;
   lastName?: string;
-  role: UserRole;
+  app_role: UserRole;
   status: UserStatus;
   isActive: boolean;
   clubId: string;
@@ -181,7 +181,7 @@ export interface EnhancedTransaction {
 
 // Role configuration
 export interface RoleConfig {
-  role: UserRole;
+  app_role: UserRole;
   label: string;
   description: string;
   level: number; // Hierarchy level (0 = lowest, higher = more permissions)
@@ -207,7 +207,7 @@ export interface CreateUserDTO {
   displayName: string;
   firstName?: string;
   lastName?: string;
-  role: UserRole;
+  app_role: UserRole;
   clubId: string;
   phoneNumber?: string;
   sendWelcomeEmail?: boolean;
@@ -247,9 +247,9 @@ export function isUserActive(user: User): boolean {
 
 export function hasRole(user: User, role: UserRole | UserRole[]): boolean {
   if (Array.isArray(role)) {
-    return role.includes(user.role);
+    return role.includes(user.app_role);
   }
-  return user.role === role;
+  return user.app_role === role;
 }
 
 export function canManageUser(actor: User, target: User): boolean {
@@ -261,14 +261,14 @@ export function canManageUser(actor: User, target: User): boolean {
     'superadmin': 3
   };
 
-  const actorLevel = hierarchy[actor.role];
-  const targetLevel = hierarchy[target.role];
+  const actorLevel = hierarchy[actor.app_role];
+  const targetLevel = hierarchy[target.app_role];
 
   // SuperAdmin can manage anyone
-  if (actor.role === 'superadmin') return true;
+  if (actor.app_role === 'superadmin') return true;
 
   // Admin can manage users, membres, and validateurs
-  if (actor.role === 'admin' && targetLevel < 2) return true;
+  if (actor.app_role === 'admin' && targetLevel < 2) return true;
 
   // Others cannot manage users
   return false;

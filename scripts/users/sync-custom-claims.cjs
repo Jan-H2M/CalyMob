@@ -59,7 +59,7 @@ const db = getFirestore();
  */
 function getClaimsFromMemberDoc(memberData) {
   return {
-    role: memberData.app_role || memberData.role || 'user',
+    app_role: memberData.app_role || 'user',
     clubId: memberData.clubId || 'calypso',
     status: memberData.app_status || memberData.status || 'active',
     isActive: memberData.isActive !== false && memberData.actif !== false
@@ -72,7 +72,7 @@ function getClaimsFromMemberDoc(memberData) {
 function claimsNeedUpdate(currentClaims, newClaims) {
   if (!currentClaims) return true;
 
-  return currentClaims.role !== newClaims.role ||
+  return currentClaims.app_role !== newClaims.app_role ||
          currentClaims.clubId !== newClaims.clubId ||
          currentClaims.status !== newClaims.status ||
          currentClaims.isActive !== newClaims.isActive;
@@ -104,7 +104,7 @@ async function syncUserClaims(memberId, memberData, clubId) {
 
     // Check if update needed
     if (!claimsNeedUpdate(currentClaims, newClaims)) {
-      console.log(`   ✓ UP-TO-DATE: ${email} (${newClaims.role})`);
+      console.log(`   ✓ UP-TO-DATE: ${email} (${newClaims.app_role})`);
       return { updated: false };
     }
 

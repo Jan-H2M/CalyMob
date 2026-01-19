@@ -696,25 +696,6 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
                 ),
               ),
 
-              const SizedBox(height: 16),
-
-              // Rôle
-              if (member.role != null)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.badge, size: 18, color: Colors.grey.shade600),
-                    const SizedBox(width: 6),
-                    Text(
-                      member.role!,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey.shade700,
-                      ),
-                    ),
-                  ],
-                ),
-
               const SizedBox(height: 20),
 
               // Boutons de contact

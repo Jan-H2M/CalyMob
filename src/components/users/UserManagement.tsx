@@ -175,7 +175,7 @@ export function UserManagement() {
         displayName: userData.displayName,
         firstName: userData.firstName,
         lastName: userData.lastName,
-        role: userData.role || 'user',
+        app_role: userData.app_role || 'user',
         clubId: appUser.clubId
       }, appUser.id);
 

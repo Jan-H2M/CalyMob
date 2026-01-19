@@ -89,12 +89,12 @@ async function createUser() {
     // Step 2: Set custom claims (CRITICAL: must include status and isActive to prevent role reversion bug)
     console.log('📝 Setting custom claims...');
     await auth.setCustomUserClaims(userRecord.uid, {
-      role: role,
+      app_role: role,
       clubId: clubId,
       status: 'active',
       isActive: true
     });
-    console.log('✅ Custom claims set (role, clubId, status, isActive)');
+    console.log('✅ Custom claims set (app_role, clubId, status, isActive)');
 
     // Step 3: Create Firestore document
     console.log('📝 Creating Firestore document...');
@@ -108,7 +108,7 @@ async function createUser() {
         displayName: displayName,
         firstName: displayName.split(' ')[0] || '',
         lastName: displayName.split(' ').slice(1).join(' ') || '',
-        role: role,
+        app_role: role,
         status: 'active',
         isActive: true,
         actif: true,
@@ -125,12 +125,12 @@ async function createUser() {
 
       // Update role if different
       const existingData = memberDoc.data();
-      if (existingData.role !== role) {
+      if (existingData.app_role !== role) {
         await memberRef.update({
-          role: role,
+          app_role: role,
           updatedAt: Timestamp.now()
         });
-        console.log(`✅ Role updated from ${existingData.role} to ${role}`);
+        console.log(`✅ Role updated from ${existingData.app_role} to ${role}`);
       }
     }
 

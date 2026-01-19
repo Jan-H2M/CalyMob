@@ -145,7 +145,7 @@ async function handler(req, res) {
     }
 
     // Check if user has admin/superadmin role
-    const userRole = decodedToken.role || 'user';
+    const userRole = decodedToken.app_role || 'user';
     if (userRole !== 'admin' && userRole !== 'superadmin') {
       console.error('❌ [activate-user API] Insufficient permissions:', { userRole });
       return res.status(403).json({
@@ -212,7 +212,7 @@ async function handler(req, res) {
     // 3. Set custom claims
     try {
       await auth.setCustomUserClaims(userId, {
-        role: memberData.app_role || memberData.role || 'user',
+        app_role: memberData.app_role || 'user',
         clubId: clubId
       });
       console.log('✅ [activate-user API] Custom claims set');

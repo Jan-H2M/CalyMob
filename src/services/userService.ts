@@ -74,7 +74,7 @@ export class UserService {
           lastName: data.lastName || data.nom,
           nom: data.nom || data.lastName || '',
           prenom: data.prenom || data.firstName || '',
-          app_role: (data.app_role || data.role || 'user') as UserRole,
+          app_role: (data.app_role || 'user') as UserRole,
           member_status: memberStatus as any,
           status: (data.status || memberStatus) as UserStatus, // Legacy field
           isActive: isActiveFromDb, // Read directly from Firestore!
@@ -131,7 +131,7 @@ export class UserService {
         lastName: data.lastName || data.nom,
         nom: data.nom || data.lastName || '',
         prenom: data.prenom || data.firstName || '',
-        app_role: (data.app_role || data.role || 'user') as UserRole,
+        app_role: (data.app_role || 'user') as UserRole,
         member_status: memberStatus as any,
         status: (data.status || memberStatus) as UserStatus, // Legacy field
         isActive: memberStatus === 'active', // Legacy field
@@ -214,7 +214,7 @@ export class UserService {
         displayName: userData.displayName,
         firstName: userData.firstName,
         lastName: userData.lastName,
-        role: userData.role,
+        app_role: userData.app_role,
         status: 'active',
         // If no Firebase Auth userId provided, member cannot login yet (pending activation)
         isActive: !!userId,
@@ -244,7 +244,7 @@ export class UserService {
         targetId: finalUserId,
         targetType: 'user',
         targetName: userData.displayName,
-        newValue: { role: userData.role },
+        newValue: { app_role: userData.app_role },
         details: {
           email: userData.email,
           pendingActivation: !userId // Note if activation is pending
@@ -440,7 +440,7 @@ export class UserService {
       }
 
       const userData = userDoc.data();
-      const previousRole = userData.app_role || userData.role;
+      const previousRole = userData.app_role;
 
       await updateDoc(userRef, {
         app_role: dto.newRole,

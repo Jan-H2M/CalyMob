@@ -96,7 +96,6 @@ export interface Membre {
   // Ces champs sont gardés pour compatibilité mais DEPRECATED
   isActive?: boolean;                  // DEPRECATED - Utiliser member_status === 'active'
   actif?: boolean;                     // DEPRECATED - Utiliser member_status === 'active'
-  role?: Role;                         // DEPRECATED - Utiliser app_role
   status?: UserStatus;                 // DEPRECATED - Utiliser app_status
   clubId?: string;                     // DEPRECATED - Implicite via path collection
   created_at?: Date;                   // DEPRECATED - Utiliser createdAt

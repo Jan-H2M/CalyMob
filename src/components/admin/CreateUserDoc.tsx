@@ -36,7 +36,7 @@ export function CreateUserDoc() {
         email: user.email,
         nom: "Demo",
         prenom: "User",
-        role: "superadmin",
+        app_role: "superadmin",
         actif: true,
         isActive: true,
         status: "active",

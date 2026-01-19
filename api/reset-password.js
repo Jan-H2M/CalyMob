@@ -161,7 +161,7 @@ async function handler(req, res) {
     }
 
     // Check if user has admin/superadmin role
-    const userRole = decodedToken.role || 'user';
+    const userRole = decodedToken.app_role || 'user';
     if (userRole !== 'admin' && userRole !== 'superadmin') {
       console.error('❌ [reset-password API] Insufficient permissions:', { userRole });
       return res.status(403).json({

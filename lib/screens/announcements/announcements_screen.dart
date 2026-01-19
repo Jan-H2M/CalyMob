@@ -111,12 +111,10 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen>
         final data = doc.data();
         debugPrint('📋 Member data keys: ${data?.keys.toList()}');
         debugPrint('📋 app_role: ${data?['app_role']}');
-        debugPrint('📋 role: ${data?['role']}');
         debugPrint('📋 clubStatuten: ${data?['clubStatuten']}');
         setState(() {
           _clubStatuten = (data?['clubStatuten'] as List<dynamic>?)?.cast<String>();
-          // Essayer app_role, sinon role
-          _appRole = data?['app_role'] as String? ?? data?['role'] as String?;
+          _appRole = data?['app_role'] as String?;
         });
       }
     } catch (e) {

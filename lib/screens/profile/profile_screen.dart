@@ -651,17 +651,6 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
               contentPadding: EdgeInsets.zero,
             ),
 
-            if (profile.role != null) ...[
-              const SizedBox(height: 8),
-              ListTile(
-                leading: const Icon(Icons.badge, color: Colors.orange),
-                title: const Text('Rôle', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                subtitle: Text(profile.role!, style: const TextStyle(fontSize: 16)),
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-              ),
-            ],
-
             const SizedBox(height: 8),
 
             // Téléphone (éditable)

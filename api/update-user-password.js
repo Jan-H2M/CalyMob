@@ -81,7 +81,7 @@ export default async function handler(req, res) {
     }
 
     // Check if the user making the request is an admin or superadmin
-    const userRole = decodedToken.role || 'user';
+    const userRole = decodedToken.app_role || 'user';
     if (userRole !== 'admin' && userRole !== 'superadmin') {
       console.error('❌ [UPDATE-PASSWORD] Insufficient permissions:', { userRole });
       return res.status(403).json({

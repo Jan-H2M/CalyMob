@@ -97,12 +97,12 @@ async function activateMember(member) {
     // Step 2: Set custom claims (CRITICAL: must include status and isActive to prevent role reversion bug)
     console.log('   Setting custom claims...');
     await auth.setCustomUserClaims(userRecord.uid, {
-      role: member.role,
+      app_role: member.app_role || member.role || 'user',
       clubId: CLUB_ID,
       status: 'active',
       isActive: true
     });
-    console.log(`   ✓ Custom claims set (role: ${member.role}, clubId: ${CLUB_ID}, status: active, isActive: true)`);
+    console.log(`   ✓ Custom claims set (app_role: ${member.app_role || member.role || 'user'}, clubId: ${CLUB_ID}, status: active, isActive: true)`);
 
     // Step 3: Update Firestore document
     console.log('   Updating Firestore document...');

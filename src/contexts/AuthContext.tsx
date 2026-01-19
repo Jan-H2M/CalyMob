@@ -122,7 +122,7 @@ export function AuthProvider({ children, value }: AuthProviderProps) {
           // Accès application (nouveaux champs unifiés)
           // ✅ FIXED: Custom claims take precedence to prevent role reversion bug
           has_app_access: true,  // Si utilisateur connecté, a forcément accès app
-          app_role: (customClaims.role || firestoreUserData?.app_role || firestoreUserData?.role || 'user') as UserRole,
+          app_role: (customClaims.app_role || firestoreUserData?.app_role || 'user') as UserRole,
           app_status: (customClaims.status || firestoreUserData?.app_status || firestoreUserData?.status || 'active') as UserStatus,
           lastLogin: new Date(firebaseUser.metadata.lastSignInTime || Date.now()),
           customPermissions: customClaims.customPermissions,
@@ -140,7 +140,6 @@ export function AuthProvider({ children, value }: AuthProviderProps) {
           // ✅ FIXED: Custom claims take precedence for isActive status
           isActive: customClaims.isActive !== false && firestoreUserData?.isActive !== false && firestoreUserData?.actif !== false,
           actif: firestoreUserData?.actif !== false,
-          role: customClaims.role || firestoreUserData?.role,
           status: customClaims.status || firestoreUserData?.status,
           clubId: clubId,
 
@@ -293,9 +292,8 @@ export function AuthProvider({ children, value }: AuthProviderProps) {
       // This prevents role reversion when token refreshes
       const updatedUser: Membre = {
         ...appUser!,
-        app_role: (customClaims.role || firestoreUserData?.app_role || appUser?.app_role || 'user') as UserRole,
+        app_role: (customClaims.app_role || firestoreUserData?.app_role || appUser?.app_role || 'user') as UserRole,
         app_status: (customClaims.status || firestoreUserData?.app_status || appUser?.app_status || 'active') as UserStatus,
-        role: customClaims.role || firestoreUserData?.role || appUser?.role,
         status: customClaims.status || firestoreUserData?.status || appUser?.status,
         isActive: customClaims.isActive !== false && (firestoreUserData?.isActive !== false || appUser?.isActive !== false),
         customPermissions: customClaims.customPermissions as Permission[] || appUser?.customPermissions,
