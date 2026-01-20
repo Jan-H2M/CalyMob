@@ -345,6 +345,56 @@ class OperationService {
     }
   }
 
+  /// Mark a participant's payment as received (by organizer on site)
+  /// Sets paye=true with timestamp and user info
+  Future<void> markParticipantAsPaid({
+    required String clubId,
+    required String operationId,
+    required String participantId,
+  }) async {
+    try {
+      await _firestore
+          .collection('clubs/$clubId/operations/$operationId/inscriptions')
+          .doc(participantId)
+          .update({
+        'paye': true,
+        'paye_at': FieldValue.serverTimestamp(),
+        'paye_method': 'epc_qr_onsite', // Payment collected on site via EPC QR
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      debugPrint('✅ Participant $participantId marked as paid');
+    } catch (e) {
+      debugPrint('❌ Error marking participant as paid: $e');
+      rethrow;
+    }
+  }
+
+  /// Update payment status for a participant
+  /// Used to track payment flow: qr_email_sent, qr_on_site, paid, etc.
+  Future<void> updatePaymentStatus({
+    required String clubId,
+    required String operationId,
+    required String participantId,
+    required String status,
+  }) async {
+    try {
+      await _firestore
+          .collection('clubs/$clubId/operations/$operationId/inscriptions')
+          .doc(participantId)
+          .update({
+        'payment_status': status,
+        'payment_status_at': FieldValue.serverTimestamp(),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      debugPrint('✅ Payment status updated to $status for participant $participantId');
+    } catch (e) {
+      debugPrint('❌ Error updating payment status: $e');
+      rethrow;
+    }
+  }
+
   /// Créer une inscription pour un invité (non-membre)
   /// Used by admins/encadrants to add guests to an operation
   Future<void> createGuestInscription({

@@ -284,6 +284,20 @@ class OperationProvider with ChangeNotifier {
     }
   }
 
+  /// Recharger la liste des participants pour l'opération sélectionnée
+  Future<void> reloadParticipants(String clubId, String operationId) async {
+    try {
+      _selectedOperationParticipants = await _operationService.getParticipants(
+        clubId,
+        operationId,
+      );
+      notifyListeners();
+      debugPrint('✅ Participants rechargés: ${_selectedOperationParticipants.length}');
+    } catch (e) {
+      debugPrint('❌ Erreur reloadParticipants: $e');
+    }
+  }
+
   /// Écouter les inscriptions de l'utilisateur (stream)
   /// Charge toutes les inscriptions de l'utilisateur avec les données d'opération associées
   void listenToUserRegistrations(String clubId, String userId) {

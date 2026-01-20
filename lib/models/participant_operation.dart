@@ -63,9 +63,39 @@ class ParticipantOperation {
 
   /// Get display status for payment
   String get paymentDisplayStatus {
-    if (!paye) return 'À payer';
-    if (isPaidAwaitingBank) return 'Payé via CalyMob\nEn attente de traitement bancaire';
-    return 'Payé';
+    // Fully paid with bank transaction matched
+    if (paye && transactionMatched) return 'Payé';
+
+    // Paid but awaiting bank reconciliation
+    if (paye && !transactionMatched) return 'Payé via CalyMob\nEn attente banque';
+
+    // Check payment_status for pending states
+    switch (paymentStatus) {
+      case 'qr_email_sent':
+        return 'QR code envoyé';
+      case 'qr_on_site':
+        return 'Paiement sur place';
+      case 'cash':
+        return 'Espèces';
+      default:
+        return 'À payer';
+    }
+  }
+
+  /// Get payment status category for styling
+  String get paymentStatusCategory {
+    if (paye && transactionMatched) return 'paid';
+    if (paye && !transactionMatched) return 'pending_bank';
+    switch (paymentStatus) {
+      case 'qr_email_sent':
+        return 'qr_sent';
+      case 'qr_on_site':
+        return 'on_site';
+      case 'cash':
+        return 'cash';
+      default:
+        return 'unpaid';
+    }
   }
 
   /// Convertir depuis Firestore

@@ -2,12 +2,89 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import '../models/payment_response.dart';
 
-/// Service for managing payments via Noda (Open Banking)
+/// Service for managing payments
 ///
-/// Communicates with Firebase Cloud Functions that securely interact
-/// with the Noda payment API. API credentials are stored server-side.
+/// Provides EPC QR code payment emails and legacy Noda Open Banking integration.
+/// Communicates with Firebase Cloud Functions.
 class PaymentService {
   final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(region: 'europe-west1');
+
+  // ===========================================================================
+  // EPC QR CODE PAYMENT EMAIL
+  // ===========================================================================
+
+  /// Sends an email with EPC QR code for event payment
+  ///
+  /// Parameters:
+  /// - [clubId]: Club ID
+  /// - [operationId]: Operation (event) ID
+  /// - [participantId]: Participant ID in inscriptions collection
+  /// - [memberEmail]: Email address to send to
+  /// - [memberFirstName]: Member's first name
+  /// - [memberLastName]: Member's last name
+  /// - [amount]: Amount to pay in EUR
+  /// - [operationTitle]: Event title for the email
+  /// - [operationNumber]: Event number (optional)
+  /// - [operationDate]: Event date (optional)
+  ///
+  /// Returns true if email was sent successfully
+  ///
+  /// Throws [PaymentException] on error
+  Future<bool> sendPaymentQrEmail({
+    required String clubId,
+    required String operationId,
+    required String participantId,
+    required String memberEmail,
+    required String memberFirstName,
+    required String memberLastName,
+    required double amount,
+    required String operationTitle,
+    String? operationNumber,
+    DateTime? operationDate,
+  }) async {
+    try {
+      debugPrint('📧 Sending EPC QR payment email to: $memberEmail');
+
+      final result = await _functions.httpsCallable('sendPaymentQrEmail').call({
+        'clubId': clubId,
+        'operationId': operationId,
+        'participantId': participantId,
+        'memberEmail': memberEmail,
+        'memberFirstName': memberFirstName,
+        'memberLastName': memberLastName,
+        'amount': amount,
+        'operationTitle': operationTitle,
+        if (operationNumber != null) 'operationNumber': operationNumber,
+        if (operationDate != null) 'operationDate': operationDate.toIso8601String(),
+      });
+
+      final success = result.data['success'] == true;
+      if (success) {
+        debugPrint('✅ EPC QR payment email sent successfully');
+      } else {
+        debugPrint('⚠️ EPC QR payment email failed: ${result.data['error']}');
+      }
+
+      return success;
+    } on FirebaseFunctionsException catch (e) {
+      debugPrint('❌ Firebase Functions error: ${e.code} - ${e.message}');
+      throw PaymentException(
+        _getFriendlyErrorMessage(e.code),
+        code: e.code,
+        details: e.details,
+      );
+    } catch (e) {
+      debugPrint('❌ Error sending EPC QR payment email: $e');
+      throw PaymentException(
+        'Erreur lors de l\'envoi de l\'email de paiement. Veuillez réessayer.',
+        details: e,
+      );
+    }
+  }
+
+  // ===========================================================================
+  // NODA PAYMENT (DEPRECATED - kept for backward compatibility)
+  // ===========================================================================
 
   /// Creates a Noda payment request for an event registration
   ///

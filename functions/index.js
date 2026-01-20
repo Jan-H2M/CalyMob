@@ -12,7 +12,15 @@ const admin = require('firebase-admin');
 admin.initializeApp();
 
 // =============================================================================
-// NODA PAYMENT FUNCTIONS (Gen2)
+// EPC QR PAYMENT EMAIL (Gen2)
+// =============================================================================
+
+// EPC QR code payment email for event registrations
+const { sendPaymentQrEmail } = require('./src/payment/sendPaymentQrEmail');
+exports.sendPaymentQrEmail = sendPaymentQrEmail;
+
+// =============================================================================
+// NODA PAYMENT FUNCTIONS (Gen2) - DEPRECATED, kept for backward compatibility
 // =============================================================================
 
 // Import Noda payment functions

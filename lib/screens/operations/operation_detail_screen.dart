@@ -1,12 +1,11 @@
-import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/member_provider.dart';
 import '../../providers/operation_provider.dart';
-import '../../providers/payment_provider.dart';
 import '../../providers/event_message_provider.dart';
 import '../../widgets/loading_widget.dart';
 import '../../utils/date_formatter.dart';
@@ -16,13 +15,13 @@ import '../../utils/permission_helper.dart';
 import '../../services/profile_service.dart';
 import '../../services/lifras_service.dart';
 import '../../services/operation_service.dart';
-import '../../services/deep_link_service.dart';
+import '../../services/payment_service.dart';
 import '../../models/member_profile.dart';
 import '../../models/exercice_lifras.dart';
 import '../../models/participant_operation.dart';
-import '../../models/payment_response.dart';
 import '../../models/event_message.dart';
 import '../../models/supplement.dart';
+import '../../widgets/participant_payment_card.dart';
 import '../scanner/scan_page.dart';
 import 'add_guest_dialog.dart';
 import 'package:intl/intl.dart';
@@ -52,81 +51,21 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
   List<String> _selectedExercices = [];
   bool _isLoadingExercices = false;
   ParticipantOperation? _userInscription;
-  bool _isPaymentProcessing = false;
   final TextEditingController _messageController = TextEditingController();
   bool _isDiscussionExpanded = false;
-
-  // Store provider reference for safe disposal
-  PaymentProvider? _paymentProvider;
-
-  // Deep link subscription for payment return
-  StreamSubscription<PaymentReturnData>? _deepLinkSubscription;
-
-  // Flag to track if we're waiting for payment return
-  bool _awaitingPaymentReturn = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadOperation();
       _loadUserProfile();
-      _setupDeepLinkListener();
     });
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // When app resumes and we were waiting for payment, show status dialog
-    if (state == AppLifecycleState.resumed && _awaitingPaymentReturn) {
-      _awaitingPaymentReturn = false;
-      if (mounted && _userInscription != null) {
-        // Small delay to ensure app is fully resumed
-        Future.delayed(const Duration(milliseconds: 500), () {
-          if (mounted) {
-            final paymentProvider = context.read<PaymentProvider>();
-            _showPaymentStatusDialog(paymentProvider.currentPaymentId ?? '');
-          }
-        });
-      }
-    }
-  }
-
-  /// Setup listener for payment return deep links
-  void _setupDeepLinkListener() {
-    final deepLinkService = DeepLinkService();
-    _deepLinkSubscription = deepLinkService.onPaymentReturn.listen((data) {
-      debugPrint('DeepLink: Payment return received in OperationDetailScreen: $data');
-
-      // Check if this payment return is for this operation
-      if (data.operationId == widget.operationId) {
-        debugPrint('DeepLink: Payment return matches this operation, showing status dialog');
-        // Show payment status dialog to check the result
-        if (mounted && _userInscription != null) {
-          _showPaymentStatusDialog(data.paymentId);
-        }
-      } else {
-        debugPrint('DeepLink: Payment return is for different operation (${data.operationId} vs ${widget.operationId})');
-      }
-    });
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // Store provider reference for safe access in dispose()
-    _paymentProvider = context.read<PaymentProvider>();
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     _messageController.dispose();
-    // Stop payment polling timer to prevent memory leaks
-    _paymentProvider?.stopPaymentStatusPolling();
-    // Cancel deep link subscription
-    _deepLinkSubscription?.cancel();
     super.dispose();
   }
 
@@ -239,6 +178,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
 
   Future<void> _handleRegister() async {
     final authProvider = context.read<AuthProvider>();
+    final memberProvider = context.read<MemberProvider>();
     final operationProvider = context.read<OperationProvider>();
     final operation = operationProvider.selectedOperation;
 
@@ -266,8 +206,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
 
       if (result == null) return; // User cancelled
 
+      final totalPrice = basePrice + (result['supplementTotal'] as double);
+
       if (mounted) {
         try {
+          // Register first
           await operationProvider.registerToOperation(
             clubId: widget.clubId,
             operationId: widget.operationId,
@@ -278,14 +221,30 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
             supplementTotal: result['supplementTotal'] as double,
           );
 
+          // Refresh participant list after registration
+          await operationProvider.reloadParticipants(widget.clubId, widget.operationId);
+
           if (mounted) {
             await _loadUserInscription();
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Inscription réussie !'),
-                backgroundColor: Colors.green,
-              ),
-            );
+
+            // If there's a price, show payment options dialog
+            if (totalPrice > 0 && _userInscription != null) {
+              await _showPaymentOptionsDialog(
+                operation: operation,
+                amount: totalPrice,
+                participantId: _userInscription!.id,
+                memberEmail: userEmail,
+                memberFirstName: memberProvider.prenom ?? '',
+                memberLastName: memberProvider.nom ?? '',
+              );
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Inscription réussie !'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            }
           }
         } catch (e) {
           if (mounted) {
@@ -341,14 +300,30 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
             memberProfile: _userProfile,
           );
 
+          // Refresh participant list after registration
+          await operationProvider.reloadParticipants(widget.clubId, widget.operationId);
+
           if (mounted) {
             await _loadUserInscription();
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Inscription réussie !'),
-                backgroundColor: Colors.green,
-              ),
-            );
+
+            // If there's a price, show payment options dialog
+            if (basePrice > 0 && _userInscription != null) {
+              await _showPaymentOptionsDialog(
+                operation: operation,
+                amount: basePrice,
+                participantId: _userInscription!.id,
+                memberEmail: userEmail,
+                memberFirstName: memberProvider.prenom ?? '',
+                memberLastName: memberProvider.nom ?? '',
+              );
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Inscription réussie !'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            }
           }
         } catch (e) {
           if (mounted) {
@@ -360,6 +335,411 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
             );
           }
         }
+      }
+    }
+  }
+
+  /// Shows dialog with payment options after successful registration
+  Future<void> _showPaymentOptionsDialog({
+    required dynamic operation,
+    required double amount,
+    required String participantId,
+    required String memberEmail,
+    required String memberFirstName,
+    required String memberLastName,
+  }) async {
+    final payNow = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.green, size: 28),
+            const SizedBox(width: 12),
+            const Expanded(child: Text('Inscription réussie !')),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.lichtblauw.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.euro, color: AppColors.middenblauw, size: 24),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Montant à payer: ${amount.toStringAsFixed(2)} €',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.middenblauw,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Button 1: Pay now (green)
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green.shade600,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.all(16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.email_outlined, size: 22),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Payer maintenant',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Recevez un QR code par email pour payer via votre app bancaire\n(ou virement manuel avec la communication exacte)',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.white.withOpacity(0.9),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // Button 2: Pay later (grey/blue)
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context, false),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blueGrey.shade100,
+                  foregroundColor: Colors.blueGrey.shade800,
+                  padding: const EdgeInsets.all(16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.schedule, size: 22, color: Colors.blueGrey.shade700),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Payer plus tard',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: Colors.blueGrey.shade800,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Payez sur place lors de l\'événement',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.blueGrey.shade600,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final operationProvider = context.read<OperationProvider>();
+
+    if (payNow == true && mounted) {
+      // Set status to qr_email_sent and send email
+      await _operationService.updatePaymentStatus(
+        clubId: widget.clubId,
+        operationId: widget.operationId,
+        participantId: participantId,
+        status: 'qr_email_sent',
+      );
+      await _sendPaymentEmail(
+        operation: operation,
+        amount: amount,
+        participantId: participantId,
+        memberEmail: memberEmail,
+        memberFirstName: memberFirstName,
+        memberLastName: memberLastName,
+      );
+      // Refresh participant list to show updated payment status
+      await operationProvider.reloadParticipants(widget.clubId, widget.operationId);
+    } else if (payNow == false && mounted) {
+      // Set status to qr_on_site (will pay at the event)
+      await _operationService.updatePaymentStatus(
+        clubId: widget.clubId,
+        operationId: widget.operationId,
+        participantId: participantId,
+        status: 'qr_on_site',
+      );
+      // Refresh participant list to show updated payment status
+      await operationProvider.reloadParticipants(widget.clubId, widget.operationId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Vous pourrez payer sur place lors de l\'événement'),
+            backgroundColor: Colors.blueGrey,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Sends the EPC QR code payment email
+  Future<void> _sendPaymentEmail({
+    required dynamic operation,
+    required double amount,
+    required String participantId,
+    required String memberEmail,
+    required String memberFirstName,
+    required String memberLastName,
+  }) async {
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 20),
+            Text('Envoi de l\'email...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final paymentService = PaymentService();
+      await paymentService.sendPaymentQrEmail(
+        clubId: widget.clubId,
+        operationId: widget.operationId,
+        participantId: participantId,
+        memberEmail: memberEmail,
+        memberFirstName: memberFirstName,
+        memberLastName: memberLastName,
+        amount: amount,
+        operationTitle: operation.titre ?? 'Événement',
+        operationNumber: operation.eventNumber,
+        operationDate: operation.dateDebut,
+      );
+
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+
+        // Show success dialog
+        await showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.mark_email_read, color: Colors.green, size: 28),
+                const SizedBox(width: 12),
+                const Expanded(child: Text('Email envoyé !')),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Un email avec le QR code de paiement a été envoyé à :',
+                  style: TextStyle(color: Colors.grey.shade700),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.email, size: 16, color: Colors.grey.shade600),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          memberEmail,
+                          style: const TextStyle(fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.lichtblauw.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.lichtblauw.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.info_outline, size: 18, color: AppColors.middenblauw),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Ouvrez l\'email et scannez le QR code avec votre application bancaire pour effectuer le virement.',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: AppColors.middenblauw,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Compris'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur lors de l\'envoi: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Shows the participant payment card for organizers to collect payment
+  Future<void> _showParticipantPaymentCard({
+    required ParticipantOperation participant,
+    required dynamic operation,
+  }) async {
+    // First, load bank settings from Firestore
+    try {
+      final bankDoc = await FirebaseFirestore.instance
+          .collection('clubs')
+          .doc(widget.clubId)
+          .collection('settings')
+          .doc('bank')
+          .get();
+
+      if (!bankDoc.exists) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Configuration bancaire non trouvée. Veuillez configurer l\'IBAN dans CalyCompta.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      final bankData = bankDoc.data()!;
+      final iban = bankData['iban'] as String?;
+      final beneficiaryName = bankData['beneficiaryName'] as String?;
+      final bic = bankData['bic'] as String?;
+
+      if (iban == null || iban.isEmpty || beneficiaryName == null || beneficiaryName.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('IBAN ou nom du bénéficiaire non configuré.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      if (!mounted) return;
+
+      final operationProvider = context.read<OperationProvider>();
+
+      final result = await showParticipantPaymentCard(
+        context: context,
+        participantFirstName: participant.membrePrenom ?? '',
+        participantLastName: participant.membreNom ?? '',
+        participantEmail: null, // Email not available on participant, QR code shown on screen
+        amount: participant.totalPrix,
+        eventTitle: operation.titre ?? 'Événement',
+        eventNumber: operation.eventNumber,
+        eventId: widget.operationId,
+        eventDate: operation.dateDebut,
+        clubIban: iban,
+        beneficiaryName: beneficiaryName,
+        bic: bic,
+        onMarkAsPaid: () async {
+          // Mark participant as paid in Firestore
+          await _operationService.markParticipantAsPaid(
+            clubId: widget.clubId,
+            operationId: widget.operationId,
+            participantId: participant.id,
+          );
+          // Refresh participant list
+          await operationProvider.reloadParticipants(widget.clubId, widget.operationId);
+        },
+      );
+
+      if (result == true && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Paiement enregistré !'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
@@ -397,6 +777,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
           userId: userId,
         );
 
+        // Refresh participant list after unregistration
+        await operationProvider.reloadParticipants(widget.clubId, widget.operationId);
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -416,177 +799,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         }
       }
     }
-  }
-
-  /// Handle payment button press - Uses Noda Open Banking
-  Future<void> _handlePayment(double amount) async {
-    if (_userInscription == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Inscription non trouvee'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    final operationProvider = context.read<OperationProvider>();
-    final paymentProvider = context.read<PaymentProvider>();
-    final operation = operationProvider.selectedOperation;
-
-    if (operation == null) return;
-
-    setState(() {
-      _isPaymentProcessing = true;
-    });
-
-    try {
-      // Create payment request via Noda (Open Banking)
-      final paymentUrl = await paymentProvider.createPayment(
-        clubId: widget.clubId,
-        operationId: widget.operationId,
-        participantId: _userInscription!.id,
-        amount: amount,
-        description: 'Inscription: ${operation.titre}',
-      );
-
-      if (paymentUrl != null && paymentUrl.isNotEmpty) {
-        // Show instruction before opening payment page
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Vous allez être redirigé vers la page de paiement. Revenez à CalyMob après avoir effectué le paiement.'),
-              backgroundColor: Colors.blue,
-              duration: Duration(seconds: 4),
-            ),
-          );
-        }
-
-        // Open payment page in browser
-        final uri = Uri.parse(paymentUrl);
-        if (await canLaunchUrl(uri)) {
-          // Mark that we're waiting for payment return
-          _awaitingPaymentReturn = true;
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-          // Status dialog will be shown when app resumes (via WidgetsBindingObserver)
-        } else {
-          throw Exception('Impossible d\'ouvrir la page de paiement');
-        }
-      } else {
-        // No payment URL - show error
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(paymentProvider.errorMessage ?? 'Erreur lors de la creation du paiement'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erreur: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isPaymentProcessing = false;
-        });
-      }
-    }
-  }
-
-  /// Show dialog to check payment status after user returns from checkout
-  void _showPaymentStatusDialog(String paymentId) {
-    final paymentProvider = context.read<PaymentProvider>();
-    final navigatorState = Navigator.of(context);
-    bool dialogClosed = false;
-
-    void closeDialog() {
-      if (!dialogClosed && mounted) {
-        dialogClosed = true;
-        navigatorState.pop();
-      }
-    }
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Verification du paiement'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: 16),
-            const Text('Verification du statut de votre paiement...'),
-            const SizedBox(height: 8),
-            Text(
-              'Cela peut prendre quelques instants.',
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              paymentProvider.stopPaymentStatusPolling();
-              closeDialog();
-            },
-            child: const Text('Annuler'),
-          ),
-        ],
-      ),
-    );
-
-    // Start polling for payment status
-    paymentProvider.startPaymentStatusPolling(
-      clubId: widget.clubId,
-      operationId: widget.operationId,
-      participantId: _userInscription!.id,
-      paymentId: paymentId,
-      onStatusUpdate: (PaymentStatus status) {
-        if (status.isCompleted || status.paye) {
-          // Payment successful!
-          closeDialog();
-          _onPaymentSuccess();
-        } else if (status.isFailed || status.isCancelled || status.isExpired) {
-          // Payment failed
-          closeDialog();
-          _onPaymentFailed(status.failureReason);
-        }
-        // If still pending, continue polling
-      },
-    );
-  }
-
-  void _onPaymentSuccess() {
-    // Reload inscription to get updated payment status
-    _loadUserInscription();
-    _loadOperation();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Paiement réussi ! Merci.'),
-        backgroundColor: Colors.green,
-        duration: Duration(seconds: 3),
-      ),
-    );
-  }
-
-  void _onPaymentFailed(String? reason) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(reason ?? 'Le paiement a échoué. Veuillez réessayer.'),
-        backgroundColor: Colors.red,
-        duration: const Duration(seconds: 4),
-      ),
-    );
   }
 
   /// Check if current user can scan attendance
@@ -681,6 +893,12 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
 
   @override
   Widget build(BuildContext context) {
+    // Check if this is a plongee event to hide scanner
+    final operationProvider = context.watch<OperationProvider>();
+    final operation = operationProvider.selectedOperation;
+    final isPlongeeEvent = operation?.categorie == 'plongee';
+    final showScanner = _canScan && !isPlongeeEvent;
+
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -689,8 +907,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          // Scanner button for authorized users (larger, fits in app bar)
-          if (_canScan)
+          // Scanner button for authorized users (only for non-plongee events)
+          if (showScanner)
             Padding(
               padding: const EdgeInsets.only(right: 12),
               child: IconButton(
@@ -778,16 +996,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
 
                       const SizedBox(height: 16),
 
-                      // Description
+                      // Description accordion
                       if (operation.description != null && operation.description!.isNotEmpty) ...[
-                        Text(
-                          operation.description!,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            color: Colors.white70,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
+                        _buildDescriptionAccordion(operation),
+                        const SizedBox(height: 12),
                       ],
 
                       // 1. Communication accordion (message de l'organisateur)
@@ -959,6 +1171,57 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
           ),
         ],
       ],
+    );
+  }
+
+  /// Description accordion with preview text
+  Widget _buildDescriptionAccordion(operation) {
+    final description = operation.description ?? '';
+    // Get preview: first line or first ~60 chars
+    String preview = description.split('\n').first;
+    if (preview.length > 60) {
+      preview = '${preview.substring(0, 57)}...';
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: AppColors.lichtblauw.withOpacity(0.5)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: ExpansionTile(
+          initiallyExpanded: false, // Closed by default
+          backgroundColor: AppColors.lichtblauw.withOpacity(0.2),
+          collapsedBackgroundColor: Colors.white.withOpacity(0.9),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          leading: Icon(Icons.info_outline, color: AppColors.middenblauw),
+          title: Text(
+            preview,
+            style: TextStyle(
+              fontSize: 14,
+              color: AppColors.donkerblauw,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          children: [
+            Container(
+              width: double.infinity,
+              color: Colors.white.withOpacity(0.95),
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                description,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: AppColors.donkerblauw,
+                  height: 1.5,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1294,6 +1557,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
     final participants = operationProvider.selectedOperationParticipants;
     final authProvider = context.read<AuthProvider>();
     final currentUserId = authProvider.currentUser?.uid ?? '';
+    // For plongee events, hide present indicator (no attendance tracking)
+    final isPlongeeEvent = operationProvider.selectedOperation?.categorie == 'plongee';
 
     return Container(
       decoration: BoxDecoration(
@@ -1388,20 +1653,31 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                         final isGuest = participant.isGuest;
 
                         final isPresent = participant.present ?? false;
+                        // Organizer can tap on unpaid participants to show payment QR
+                        final canShowPaymentCard = _canAddGuest && !participant.paye && participant.totalPrix > 0;
+                        // Get payment status info for subtitle
+                        final paymentInfo = _getPaymentStatusInfo(participant.paymentStatusCategory);
+
                         return ListTile(
+                          onTap: canShowPaymentCard
+                              ? () => _showParticipantPaymentCard(
+                                    participant: participant,
+                                    operation: operationProvider.selectedOperation!,
+                                  )
+                              : null,
                           leading: CircleAvatar(
                             backgroundColor: isGuest
                                 ? AppColors.oranje.withOpacity(0.3)
                                 : (isCurrentUser ? AppColors.lichtblauw.withOpacity(0.5) : AppColors.lichtblauw.withOpacity(0.3)),
-                            radius: 18,
+                            radius: 20,
                             child: isGuest
-                                ? Icon(Icons.person_outline, size: 18, color: AppColors.oranje)
+                                ? Icon(Icons.person_outline, size: 20, color: AppColors.oranje)
                                 : Text(
                                     prenom.isNotEmpty ? prenom[0].toUpperCase() : (displayNom.isNotEmpty ? displayNom[0].toUpperCase() : '?'),
                                     style: TextStyle(
                                       color: isCurrentUser ? AppColors.donkerblauw : AppColors.middenblauw,
                                       fontWeight: FontWeight.bold,
-                                      fontSize: 14,
+                                      fontSize: 16,
                                     ),
                                   ),
                           ),
@@ -1410,7 +1686,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                               Expanded(
                                 child: Text(
                                   displayName,
-                                  style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+                                  style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 15),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
@@ -1454,8 +1730,24 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                               ],
                             ],
                           ),
-                          subtitle: participant.selectedSupplements.isNotEmpty
-                              ? Padding(
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Payment status text
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  paymentInfo['text'] as String,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: paymentInfo['color'] as Color,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              // Supplements (if any)
+                              if (participant.selectedSupplements.isNotEmpty)
+                                Padding(
                                   padding: const EdgeInsets.only(top: 4),
                                   child: Wrap(
                                     spacing: 4,
@@ -1478,26 +1770,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                                             ))
                                         .toList(),
                                   ),
-                                )
-                              : null,
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              // Present indicator (green check)
-                              if (isPresent)
-                                Padding(
-                                  padding: const EdgeInsets.only(right: 8),
-                                  child: Icon(
-                                    Icons.check_circle,
-                                    size: 20,
-                                    color: Colors.green[600],
-                                  ),
                                 ),
-                              // Payment indicator
-                              _buildPaymentBadge(participant),
                             ],
                           ),
-                          dense: true,
+                          trailing: _buildPaymentBadge(participant),
                         );
                       }).toList(),
                     ),
@@ -1535,41 +1811,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Payment button - show if registered AND not paid yet AND price > 0
-            if (isRegistered && !isPaid && inscriptionPrice > 0) ...[
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton.icon(
-                  onPressed: _isPaymentProcessing
-                      ? null
-                      : () => _handlePayment(inscriptionPrice),
-                  icon: _isPaymentProcessing
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.payment, color: Colors.white),
-                  label: Text(
-                    _isPaymentProcessing
-                        ? 'Traitement...'
-                        : 'Payer ${CurrencyFormatter.format(inscriptionPrice)}',
-                    style: const TextStyle(fontSize: 16, color: Colors.white),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    disabledBackgroundColor: Colors.blue.shade300,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
-
             // Show payment status badge if paid
             if (isRegistered && isPaid) ...[
               _buildPaymentStatusBadge(userInscription),
@@ -1854,22 +2095,41 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
   }
 
   Widget _buildPaymentBadge(ParticipantOperation participant) {
-    // Determine status: not paid, paid awaiting bank, or fully paid
+    // Use paymentStatusCategory for consistent status display
+    final category = participant.paymentStatusCategory;
     final IconData icon;
     final Color color;
 
-    if (!participant.paye) {
-      // À payer - rode X
-      icon = Icons.close;
-      color = Colors.red;
-    } else if (participant.isPaidAwaitingBank) {
-      // Payé via CalyMob, en attente de traitement bancaire - gele V
-      icon = Icons.check;
-      color = Colors.orange;
-    } else {
-      // Volledig betaald en gematcht - groene V
-      icon = Icons.check;
-      color = Colors.green;
+    switch (category) {
+      case 'paid':
+        // Volledig betaald en gematcht met banktransactie - groene V
+        icon = Icons.check;
+        color = Colors.green;
+        break;
+      case 'pending_bank':
+        // Betaald via CalyMob, wacht op bankmatching - oranje V
+        icon = Icons.check;
+        color = Colors.orange;
+        break;
+      case 'qr_sent':
+        // QR code per email verstuurd - amber envelop
+        icon = Icons.email_outlined;
+        color = Colors.amber.shade700;
+        break;
+      case 'on_site':
+        // Betaalt ter plaatse - blauwgrijs klok
+        icon = Icons.schedule;
+        color = Colors.blueGrey;
+        break;
+      case 'cash':
+        // Contant betaald - blauw betaling icoon
+        icon = Icons.payments_outlined;
+        color = Colors.blue;
+        break;
+      default:
+        // Niet betaald - rode X
+        icon = Icons.close;
+        color = Colors.red;
     }
 
     return Icon(
@@ -1877,6 +2137,24 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
       size: 20,
       color: color,
     );
+  }
+
+  /// Returns payment status text and color for display
+  Map<String, dynamic> _getPaymentStatusInfo(String category) {
+    switch (category) {
+      case 'paid':
+        return {'text': 'Payé', 'color': Colors.green};
+      case 'pending_bank':
+        return {'text': 'En attente bancaire', 'color': Colors.orange};
+      case 'qr_sent':
+        return {'text': 'QR envoyé par email', 'color': Colors.amber.shade700};
+      case 'on_site':
+        return {'text': 'Paiement sur place', 'color': Colors.blueGrey};
+      case 'cash':
+        return {'text': 'Payé en espèces', 'color': Colors.blue};
+      default:
+        return {'text': 'Non payé', 'color': Colors.red};
+    }
   }
 }
 

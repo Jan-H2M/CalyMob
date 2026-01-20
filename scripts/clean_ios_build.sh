@@ -49,25 +49,17 @@ else
     exit 1
 fi
 
-# 7. Generate iOS config
+# 7. Generate iOS config (without building)
 echo "⚙️  Generating iOS config..."
 cd ..
-flutter build ios --config-only
-
-# 8. Verify Generated.xcconfig exists
-if [ -f "ios/Flutter/Generated.xcconfig" ]; then
-    echo "✅ Generated.xcconfig created successfully"
-else
-    echo "❌ ERROR: Generated.xcconfig not created!"
-    exit 1
-fi
+flutter pub get
 
 echo ""
 echo "════════════════════════════════════════════"
-echo "✅ Clean build complete!"
+echo "✅ iOS clean complete!"
 echo ""
 echo "Next steps:"
 echo "  1. Close Xcode completely (Cmd+Q)"
 echo "  2. Run: open ios/Runner.xcworkspace"
-echo "  3. Build in Xcode (Cmd+B or Play button)"
+echo "  3. Build in Xcode (Cmd+B or Archive)"
 echo "════════════════════════════════════════════"
