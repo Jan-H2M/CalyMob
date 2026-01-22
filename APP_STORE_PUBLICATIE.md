@@ -500,7 +500,7 @@ Het huidige `scripts/build_release.sh` bouwt APK. Voor Play Store moet dit AAB z
 - [ ] Firebase production config
 - [ ] Push notifications werken
 - [ ] Deep links werken
-- [ ] Mollie payments werken
+- [ ] EPC QR-code betalingen werken
 
 #### Testing
 - [ ] TestFlight build getest (iOS)
@@ -816,9 +816,12 @@ KEY FEATURES TO TEST:
 
 PAYMENT INFORMATION:
 - The app includes a payment feature for activity fees
-- Payments are processed through Mollie (Belgian payment provider)
+- Payments use EPC QR codes (European Payments Council standard)
+- Members scan the QR code with their own bank app to pay
+- Compatible with all European banking apps (ING, KBC, Belfius, BNP, etc.)
 - This is NOT an in-app purchase - it's for real-world club activities
-- No subscription or premium features
+- No third-party payment processor - direct bank-to-bank transfers
+- No payment data is stored in the app
 
 RESTRICTED ACCESS:
 The app is intentionally restricted to club members only. This is similar to corporate internal apps or private organization apps.
@@ -867,7 +870,7 @@ Contact for questions: jan.andriessens@gmail.com
 | Credit score | No | No |
 | Other financial info | No | No |
 
-*Uitleg: Mollie verwerkt betalingen extern, wij slaan geen betaalgegevens op*
+*Uitleg: Betalingen verlopen via EPC QR-codes die met de bank app van de gebruiker worden gescand. Geen betaalgegevens worden in de app opgeslagen.*
 
 **Health and fitness**
 | Data Type | Collected? | Shared? |
@@ -1261,7 +1264,7 @@ Apple heeft in 2025 een nieuw leeftijdsratingsysteem geïntroduceerd met ratings
 **Sectie 9: Purchases & Advertising**
 | Vraag | Antwoord CalyMob |
 |-------|------------------|
-| Does the app contain in-app purchases? | **No** (externe betaling via Mollie) |
+| Does the app contain in-app purchases? | **No** (betaling via EPC QR-codes met eigen bank app) |
 | Does the app contain advertising? | **No** |
 | Does the app link to external purchases? | **Yes** (activiteitskosten) |
 
@@ -1641,8 +1644,8 @@ WHAT THE REVIEWER CAN TEST:
 
 NOTE: The demo account has standard member permissions.
 Admin features like creating events are not accessible.
-The account cannot make real payments - Mollie integration
-is for actual club activity fees only.
+The account cannot make real payments - the EPC QR code payment
+feature is for actual club activity fees only.
 ```
 
 ### 9.3 Belangrijke Tips voor Review
@@ -1986,9 +1989,11 @@ Google Play vraagt nu bij ALLE apps of ze "financial features" bevatten, ongeach
 Als je "Yes" antwoordt op betaalfuncties:
 ```
 This app allows club members to pay for diving activities and events.
-Payments are processed by Mollie (licensed Belgian payment provider).
-The app itself does not process payments - it redirects to Mollie's
-secure payment page. No financial data is stored in the app.
+Payments use EPC QR codes (European Payments Council SEPA standard).
+Members scan the QR code with their own banking app to initiate payment.
+The app generates standardized payment instructions - no payment processing
+is done within the app. No financial data is collected or stored.
+Compatible with all European banking apps.
 ```
 
 ---
@@ -2144,7 +2149,7 @@ Uit de deep search kwamen deze veel voorkomende redenen voor app rejection:
 | **Restricted content** | Geen content die in strijd is met beleid |
 | **Store listing issues** | Screenshots moeten app content tonen |
 | **Functionality issues** | App moet werken op alle getargete devices |
-| **Payment policy** | Externe betalingen uitleggen (Mollie) |
+| **Payment policy** | Externe betalingen uitleggen (EPC QR-codes) |
 
 ---
 

@@ -36,6 +36,10 @@
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
     <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
 
+    <!-- Google Play requires AD_ID declaration for Android 13+ (API 33+) -->
+    <!-- CalyMob does NOT use advertising - this is for policy compliance only -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID"/>
+
     <!-- Camera is optional - don't require device to have camera -->
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false"/>
