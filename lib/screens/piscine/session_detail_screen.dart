@@ -166,22 +166,21 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
-          if (_canScan) ...[
-            IconButton(
-              onPressed: _showAddAttendeeDialog,
-              icon: const Icon(Icons.person_add, color: Colors.white),
-              tooltip: 'Ajouter manuellement',
+          // Scanner buttons - always visible for all logged-in users
+          IconButton(
+            onPressed: _showAddAttendeeDialog,
+            icon: const Icon(Icons.person_add, color: Colors.white),
+            tooltip: 'Ajouter manuellement',
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: IconButton(
+              onPressed: _openScanner,
+              iconSize: 40,
+              icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
+              tooltip: 'Scanner présence',
             ),
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: IconButton(
-                onPressed: _openScanner,
-                iconSize: 40,
-                icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
-                tooltip: 'Scanner présence',
-              ),
-            ),
-          ],
+          ),
         ],
       ),
       body: PiscineAnimatedBackground(
@@ -250,11 +249,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                     // Niveaux section
                     _buildNiveauxSection(session, userId, clubId),
 
-                    // Attendees section (only visible for users with scan permission)
-                    if (_canScan) ...[
-                      const SizedBox(height: 24),
-                      _buildAttendeesSection(clubId),
-                    ],
+                    // Attendees section - visible for all logged-in users
+                    const SizedBox(height: 24),
+                    _buildAttendeesSection(clubId),
                   ],
                 ),
               );

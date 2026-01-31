@@ -886,11 +886,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
 
   @override
   Widget build(BuildContext context) {
-    // Check if this is a plongee event to hide scanner
     final operationProvider = context.watch<OperationProvider>();
     final operation = operationProvider.selectedOperation;
     final isPlongeeEvent = operation?.categorie == 'plongee';
-    final showScanner = _canScan && !isPlongeeEvent;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -900,8 +898,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          // Scanner button for authorized users (only for non-plongee events)
-          if (showScanner)
+          // Scanner button - always visible for all logged-in users (except plongee events)
+          if (!isPlongeeEvent)
             Padding(
               padding: const EdgeInsets.only(right: 12),
               child: IconButton(
