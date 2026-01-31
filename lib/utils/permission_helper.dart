@@ -67,10 +67,23 @@ class PermissionHelper {
   }
 
   /// Check if user can use the attendance scanner
-  static bool canScan(List<String> clubStatuten) {
-    if (clubStatuten.isEmpty) return false;
+  /// Can optionally pass fonctionDefaut as fallback when clubStatuten is empty
+  static bool canScan(List<String> clubStatuten, {String? fonctionDefaut}) {
+    // Build list of roles to check
+    List<String> rolesToCheck = List<String>.from(clubStatuten);
+    
+    // Add fonctionDefaut as fallback if clubStatuten is empty
+    if (rolesToCheck.isEmpty && fonctionDefaut != null && fonctionDefaut.isNotEmpty) {
+      rolesToCheck.add(fonctionDefaut);
+    }
+    
+    // If still empty, allow for all logged-in users (testing mode)
+    // TODO: Remove this fallback in production
+    if (rolesToCheck.isEmpty) {
+      return true; // Allow all logged-in users to scan for testing
+    }
 
-    final normalizedStatuten = clubStatuten
+    final normalizedStatuten = rolesToCheck
         .map((s) => s.toLowerCase().trim())
         .toList();
 

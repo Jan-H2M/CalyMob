@@ -807,8 +807,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
       debugPrint('🔍 _canScan: profile is null');
       return false;
     }
-    final result = PermissionHelper.canScan(_userProfile!.clubStatuten);
-    debugPrint('🔍 _canScan: clubStatuten=${_userProfile!.clubStatuten}, result=$result');
+    final result = PermissionHelper.canScan(
+      _userProfile!.clubStatuten,
+      fonctionDefaut: _userProfile!.fonctionDefaut,
+    );
+    debugPrint('🔍 _canScan: clubStatuten=${_userProfile!.clubStatuten}, fonctionDefaut=${_userProfile!.fonctionDefaut}, result=$result');
     return result;
   }
 

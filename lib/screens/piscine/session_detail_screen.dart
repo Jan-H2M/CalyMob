@@ -40,7 +40,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   /// Check if current user can scan attendance
   bool get _canScan {
     if (_userProfile == null) return false;
-    return PermissionHelper.canScan(_userProfile!.clubStatuten);
+    return PermissionHelper.canScan(
+      _userProfile!.clubStatuten,
+      fonctionDefaut: _userProfile!.fonctionDefaut,
+    );
   }
 
   @override
