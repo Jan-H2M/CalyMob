@@ -22,7 +22,7 @@ import '../../models/participant_operation.dart';
 import '../../models/event_message.dart';
 import '../../models/supplement.dart';
 import '../../widgets/participant_payment_card.dart';
-import '../scanner/scan_page.dart';
+import '../../widgets/scanner_modal_sheet.dart';
 import 'add_guest_dialog.dart';
 import 'package:intl/intl.dart';
 
@@ -862,27 +862,17 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
     }
   }
 
-  /// Open scanner for this event
+  /// Open scanner modal for this event
   void _openScanner() async {
     final operationProvider = context.read<OperationProvider>();
     final operation = operationProvider.selectedOperation;
 
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => Scaffold(
-          appBar: AppBar(
-            title: const Text('Scanner Présence', style: TextStyle(color: Colors.white)),
-            backgroundColor: AppColors.middenblauw,
-            iconTheme: const IconThemeData(color: Colors.white),
-          ),
-          body: ScanPage(
-            clubId: widget.clubId,
-            operationId: widget.operationId,
-            operationTitle: operation?.titre ?? 'Événement',
-          ),
-        ),
-      ),
+    await ScannerModalSheet.show(
+      context: context,
+      clubId: widget.clubId,
+      operationId: widget.operationId,
+      operationTitle: operation?.titre ?? 'Événement',
+      isPiscine: false,
     );
 
     // Refresh participants list after closing scanner

@@ -12,7 +12,7 @@ import '../../utils/permission_helper.dart';
 import '../../widgets/piscine_animated_background.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
-import '../scanner/scan_page.dart';
+import '../../widgets/scanner_modal_sheet.dart';
 import 'theme_edit_dialog.dart';
 import 'session_chat_screen.dart';
 import 'add_attendee_dialog.dart';
@@ -77,27 +77,16 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     }
   }
 
-  /// Open scanner for this session
+  /// Open scanner modal for this session
   void _openScanner() async {
     final clubId = FirebaseConfig.defaultClubId;
 
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => Scaffold(
-          appBar: AppBar(
-            title: const Text('Scanner Présence', style: TextStyle(color: Colors.white)),
-            backgroundColor: AppColors.middenblauw,
-            iconTheme: const IconThemeData(color: Colors.white),
-          ),
-          body: ScanPage(
-            clubId: clubId,
-            operationId: widget.session.id,
-            operationTitle: 'Piscine ${widget.session.formattedDate}',
-            isPiscine: true,
-          ),
-        ),
-      ),
+    await ScannerModalSheet.show(
+      context: context,
+      clubId: clubId,
+      operationId: widget.session.id,
+      operationTitle: 'Piscine ${widget.session.formattedDate}',
+      isPiscine: true,
     );
 
     // Refresh after closing scanner

@@ -488,6 +488,32 @@ class OperationService {
         });
   }
 
+  /// Stream van deelnemers die present zijn (voor live scanner lijst)
+  /// Returns participants ordered by presentAt descending (newest first)
+  Stream<List<ParticipantOperation>> getPresentParticipantsStream(
+    String clubId,
+    String operationId,
+  ) {
+    return _firestore
+        .collection('clubs/$clubId/operations/$operationId/inscriptions')
+        .where('present', isEqualTo: true)
+        .snapshots()
+        .map((snapshot) {
+      final participants = snapshot.docs
+          .map((doc) => ParticipantOperation.fromFirestore(doc))
+          .toList();
+      
+      // Sort by presentAt descending (newest first)
+      participants.sort((a, b) {
+        final aTime = a.presentAt ?? DateTime(2000);
+        final bTime = b.presentAt ?? DateTime(2000);
+        return bTime.compareTo(aTime);
+      });
+      
+      return participants;
+    });
+  }
+
   /// Async variant voor refresh (one-time load)
   Future<List<UserEventRegistration>> getUserRegistrations(String clubId, String userId) async {
     try {
