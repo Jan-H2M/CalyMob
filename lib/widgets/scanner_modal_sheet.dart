@@ -364,6 +364,29 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
               child: MobileScanner(
                 controller: _scannerController,
                 onDetect: _handleBarcode,
+                errorBuilder: (context, error, child) {
+                  debugPrint('📷 Scanner error: ${error.errorCode} - ${error.errorDetails?.message}');
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.error, color: Colors.red, size: 48),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Camera error: ${error.errorCode.name}',
+                          style: const TextStyle(color: Colors.red),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          error.errorDetails?.message ?? 'Vérifiez les permissions caméra',
+                          style: const TextStyle(color: Colors.grey, fontSize: 12),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
             ),
           ),
