@@ -898,17 +898,16 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          // Scanner button - always visible for all logged-in users (except plongee events)
-          if (!isPlongeeEvent)
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: IconButton(
-                onPressed: _openScanner,
-                iconSize: 40, // Larger but fits in app bar
-                icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
-                tooltip: 'Scanner présence',
-              ),
+          // Scanner button - always visible for all logged-in users
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: IconButton(
+              onPressed: _openScanner,
+              iconSize: 40,
+              icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
+              tooltip: 'Scanner présence',
             ),
+          ),
         ],
       ),
       body: Stack(
