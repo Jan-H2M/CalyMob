@@ -60,6 +60,21 @@ class MemberProvider with ChangeNotifier {
     return role == 'validateur' || role == 'admin' || role == 'superadmin';
   }
 
+  /// Check if user must change password on first login
+  /// Checks both security.requirePasswordChange (new location) and root-level (legacy)
+  bool get requirePasswordChange {
+    // Check in security object (new location)
+    final security = _memberData?['security'] as Map<String, dynamic>?;
+    if (security?['requirePasswordChange'] == true) {
+      return true;
+    }
+    // Check at root level (legacy location)
+    if (_memberData?['requirePasswordChange'] == true) {
+      return true;
+    }
+    return false;
+  }
+
   /// Full display name
   String get displayName {
     final p = prenom ?? '';

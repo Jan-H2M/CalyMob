@@ -7,9 +7,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:328464166969:android:cfa7f3477e5d8e368f5de8",
+        "mobilesdk_app_id": "1:328464166969:android:da18a878212146038f5de8",
         "android_client_info": {
-          "package_name": "be.calypsodc.calymob"
+          "package_name": "club.caly.calymob"
         }
       },
       "oauth_client": [],

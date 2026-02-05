@@ -9,6 +9,7 @@ import '../../providers/member_provider.dart';
 import '../../services/biometric_service.dart';
 import '../home/landing_screen.dart';
 import 'forgot_password_screen.dart';
+import 'force_password_change_screen.dart';
 
 /// Écran de login
 class LoginScreen extends StatefulWidget {
@@ -90,6 +91,16 @@ class _LoginScreenState extends State<LoginScreen> {
         await _biometricService.saveCredentials(email, password);
       }
 
+      // Check if user needs to change password
+      if (memberProvider.requirePasswordChange) {
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => const ForcePasswordChangeScreen()),
+          );
+        }
+        return;
+      }
+
       // Navigation vers landing page
       if (mounted) {
         Navigator.of(context).pushReplacement(
@@ -134,6 +145,22 @@ class _LoginScreenState extends State<LoginScreen> {
           _clubId,
           authProvider.currentUser!.uid,
         );
+      }
+
+      // Check if user needs to change password
+      if (memberProvider.requirePasswordChange) {
+        // Clear biometric credentials since password will change
+        await _biometricService.clearCredentials();
+        setState(() {
+          _hasStoredCredentials = false;
+        });
+
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => const ForcePasswordChangeScreen()),
+          );
+        }
+        return;
       }
 
       if (mounted) {

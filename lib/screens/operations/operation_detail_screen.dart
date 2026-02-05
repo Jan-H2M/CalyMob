@@ -23,6 +23,7 @@ import '../../models/event_message.dart';
 import '../../models/supplement.dart';
 import '../../widgets/participant_payment_card.dart';
 import '../../widgets/scanner_modal_sheet.dart';
+import '../../widgets/documents_accordion.dart';
 import 'add_guest_dialog.dart';
 import 'package:intl/intl.dart';
 
@@ -992,6 +993,15 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                         const SizedBox(height: 12),
                       ],
 
+                      // Documents accordion (uploaded via CalyCompta)
+                      if (operation.documentsJustificatifs.isNotEmpty) ...[
+                        DocumentsAccordion(
+                          documents: operation.documentsJustificatifs,
+                          initiallyExpanded: false,
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+
                       // 1. Communication accordion (message de l'organisateur)
                       if (operation.communication != null && operation.communication!.isNotEmpty) ...[
                         _buildCommunicationAccordion(operation),
@@ -1788,14 +1798,15 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 4,
-            offset: const Offset(0, -2),
-          ),
-        ],
+        // Gradient from transparent to semi-opaque for ocean theme
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.transparent,
+            AppColors.donkerblauw.withOpacity(0.3),
+          ],
+        ),
       ),
       child: SafeArea(
         child: Column(
@@ -1897,6 +1908,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.red,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            elevation: 8,
+            shadowColor: Colors.red.withOpacity(0.5),
           ),
         ),
       );
@@ -1940,6 +1953,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.middenblauw,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          elevation: 8,
+          shadowColor: AppColors.middenblauw.withOpacity(0.5),
         ),
       ),
     );

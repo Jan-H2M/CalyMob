@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'tariff.dart';
 import 'supplement.dart';
+import 'document_justificatif.dart';
 
 /// Model Operation - Événements, cotisations, dons, etc.
 class Operation {
@@ -33,6 +34,9 @@ class Operation {
   // Communication
   final String? communication; // Message de l'organisateur aux participants
 
+  // Documents justificatifs (uploaded via CalyCompta)
+  final List<DocumentJustificatif> documentsJustificatifs;
+
   // Métadonnées
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -57,6 +61,7 @@ class Operation {
     this.organisateurId,
     this.organisateurNom,
     this.communication,
+    this.documentsJustificatifs = const [],
     required this.createdAt,
     required this.updatedAt,
   });
@@ -85,6 +90,7 @@ class Operation {
       organisateurId: data['organisateur_id'],
       organisateurNom: data['organisateur_nom'],
       communication: data['communication'],
+      documentsJustificatifs: _parseDocuments(data['documents_justificatifs']),
       createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (data['updated_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
@@ -114,6 +120,16 @@ class Operation {
     final supplementsList = supplementsData as List<dynamic>;
     return supplementsList
         .map((s) => Supplement.fromMap(s as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Parse documents justificatifs from Firestore data
+  static List<DocumentJustificatif> _parseDocuments(dynamic docsData) {
+    if (docsData == null) return [];
+
+    final docsList = docsData as List<dynamic>;
+    return docsList
+        .map((d) => DocumentJustificatif.fromMap(d as Map<String, dynamic>))
         .toList();
   }
 

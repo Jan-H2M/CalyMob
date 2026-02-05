@@ -8,6 +8,7 @@ import '../../services/profile_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/biometric_service.dart';
 import 'privacy_policy_screen.dart';
+import 'change_password_screen.dart';
 
 /// Écran des paramètres
 class SettingsScreen extends StatefulWidget {
@@ -449,12 +450,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                         const SizedBox(height: 24),
 
-                        // Sécurité (Biométrie)
-                        if (_biometricAvailable) ...[
-                          _buildSectionHeader('Sécurité'),
-                          _buildSecuritySection(),
-                          const SizedBox(height: 24),
-                        ],
+                        // Sécurité
+                        _buildSectionHeader('Sécurité'),
+                        _buildSecuritySection(),
+                        const SizedBox(height: 24),
 
                         // Notifications
                         _buildSectionHeader('Notifications'),
@@ -534,25 +533,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Column(
         children: [
-          SwitchListTile(
-            value: _biometricEnabled,
-            onChanged: _toggleBiometric,
-            title: Text('Connexion avec $_biometricTypeName'),
-            subtitle: Text(
-              _biometricEnabled
-                  ? 'Connectez-vous rapidement avec $_biometricTypeName'
-                  : 'Reconnectez-vous pour activer cette option',
-              style: TextStyle(
-                fontSize: 12,
-                color: _biometricEnabled ? Colors.green.shade700 : Colors.grey.shade600,
+          // Password change option
+          ListTile(
+            leading: const Icon(Icons.lock_reset, color: AppColors.middenblauw),
+            title: const Text('Changer mon mot de passe'),
+            subtitle: const Text(
+              'Modifier votre mot de passe de connexion',
+              style: TextStyle(fontSize: 12),
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const ChangePasswordScreen(),
+                ),
+              );
+            },
+          ),
+          // Biometric toggle (only show if biometric is available)
+          if (_biometricAvailable) ...[
+            const Divider(height: 1),
+            SwitchListTile(
+              value: _biometricEnabled,
+              onChanged: _toggleBiometric,
+              title: Text('Connexion avec $_biometricTypeName'),
+              subtitle: Text(
+                _biometricEnabled
+                    ? 'Connectez-vous rapidement avec $_biometricTypeName'
+                    : 'Reconnectez-vous pour activer cette option',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _biometricEnabled ? Colors.green.shade700 : Colors.grey.shade600,
+                ),
+              ),
+              secondary: Icon(
+                _biometricTypeName == 'Face ID' ? Icons.face : Icons.fingerprint,
+                color: _biometricEnabled ? Colors.green : Colors.grey,
+                size: 28,
               ),
             ),
-            secondary: Icon(
-              _biometricTypeName == 'Face ID' ? Icons.face : Icons.fingerprint,
-              color: _biometricEnabled ? Colors.green : Colors.grey,
-              size: 28,
-            ),
-          ),
+          ],
         ],
       ),
     );

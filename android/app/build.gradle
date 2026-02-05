@@ -23,7 +23,7 @@ if (flutterVersionName == null) {
 }
 
 android {
-    namespace 'be.calypsodc.calymob'
+    namespace 'club.caly.calymob'
     compileSdk 36
 
     compileOptions {
@@ -37,7 +37,7 @@ android {
     }
 
     defaultConfig {
-        applicationId "be.calypsodc.calymob"
+        applicationId "club.caly.calymob"
         minSdkVersion flutter.minSdkVersion
         targetSdk 35
         versionCode flutterVersionCode.toInteger()

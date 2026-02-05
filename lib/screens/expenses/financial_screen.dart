@@ -1,12 +1,55 @@
 import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
+import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../config/app_assets.dart';
+import '../../providers/auth_provider.dart';
 import 'expense_list_screen.dart';
 import 'approval_list_screen.dart';
 
 /// Écran financier avec deux boutons: Mes demandes et Mes approbations
-class FinancialScreen extends StatelessWidget {
+class FinancialScreen extends StatefulWidget {
   const FinancialScreen({Key? key}) : super(key: key);
+
+  @override
+  State<FinancialScreen> createState() => _FinancialScreenState();
+}
+
+class _FinancialScreenState extends State<FinancialScreen> {
+  bool _hasCaRole = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMemberInfo();
+  }
+
+  Future<void> _loadMemberInfo() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final uid = authProvider.currentUser?.uid;
+    if (uid == null) return;
+
+    const clubId = 'calypso';
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('clubs/$clubId/members')
+          .doc(uid)
+          .get();
+
+      if (doc.exists && mounted) {
+        final data = doc.data();
+        final clubStatuten =
+            (data?['clubStatuten'] as List<dynamic>?)?.cast<String>() ?? [];
+        setState(() {
+          _hasCaRole = clubStatuten
+              .map((s) => s.toLowerCase())
+              .contains('ca');
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading member info: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -54,7 +97,7 @@ class FinancialScreen extends StatelessWidget {
 
                 const Spacer(),
 
-                // Twee knoppen
+                // Knoppen
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 40),
                   child: Row(
@@ -68,14 +111,15 @@ class FinancialScreen extends StatelessWidget {
                           MaterialPageRoute(builder: (_) => const ExpenseListScreen()),
                         ),
                       ),
-                      _GlossyButton(
-                        title: 'Approbations\nouvertes',
-                        icon: Icons.approval,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const ApprovalListScreen()),
+                      if (_hasCaRole)
+                        _GlossyButton(
+                          title: 'Approbations',
+                          icon: Icons.approval,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const ApprovalListScreen()),
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),

@@ -53,8 +53,8 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyCmU-7GABqko2N-2saQNcNNSIyW_BbVCtU',
-    appId: '1:328464166969:android:d14870adcda5323a8f5de8',
+    apiKey: 'AIzaSyAjDApGsDwHEAKea8DwBohf77Dm8-SUd-4',
+    appId: '1:328464166969:android:da18a878212146038f5de8',
     messagingSenderId: '328464166969',
     projectId: 'calycompta',
     authDomain: 'calycompta.firebaseapp.com',

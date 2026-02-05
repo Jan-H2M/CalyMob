@@ -359,13 +359,15 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(16),
-          child: Row(
-            children: [
-              // Date badge on the left
-              Container(
-                width: 70,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                decoration: BoxDecoration(
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Date badge on the left
+                Container(
+                  width: 70,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
@@ -551,6 +553,7 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                 ),
               ),
             ],
+            ),
           ),
         ),
       ),
