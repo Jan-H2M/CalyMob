@@ -219,20 +219,20 @@ class _HomeScreenState extends State<HomeScreen> {
             _currentIndex = index;
           });
         },
-        items: [
-          const BottomNavigationBarItem(
+        items: const [
+          BottomNavigationBarItem(
             icon: Icon(Icons.event),
             label: 'Événements',
           ),
-          const BottomNavigationBarItem(
+          BottomNavigationBarItem(
             icon: Icon(Icons.receipt_long),
             label: 'Demandes',
           ),
-          if (_canScan)
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.qr_code_scanner),
-              label: 'Scanner',
-            ),
+          // Scanner tab - always visible for all logged-in users
+          BottomNavigationBarItem(
+            icon: Icon(Icons.qr_code_scanner),
+            label: 'Scanner',
+          ),
         ],
         selectedItemColor: AppColors.middenblauw,
         unselectedItemColor: Colors.grey,

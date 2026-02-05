@@ -22,7 +22,7 @@ import '../../models/participant_operation.dart';
 import '../../models/event_message.dart';
 import '../../models/supplement.dart';
 import '../../widgets/participant_payment_card.dart';
-import '../scanner/scan_page.dart';
+import '../../widgets/scanner_modal_sheet.dart';
 import 'add_guest_dialog.dart';
 import 'package:intl/intl.dart';
 
@@ -807,8 +807,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
       debugPrint('🔍 _canScan: profile is null');
       return false;
     }
-    final result = PermissionHelper.canScan(_userProfile!.clubStatuten);
-    debugPrint('🔍 _canScan: clubStatuten=${_userProfile!.clubStatuten}, result=$result');
+    final result = PermissionHelper.canScan(
+      _userProfile!.clubStatuten,
+      fonctionDefaut: _userProfile!.fonctionDefaut,
+    );
+    debugPrint('🔍 _canScan: clubStatuten=${_userProfile!.clubStatuten}, fonctionDefaut=${_userProfile!.fonctionDefaut}, result=$result');
     return result;
   }
 
@@ -862,27 +865,17 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
     }
   }
 
-  /// Open scanner for this event
+  /// Open scanner modal for this event
   void _openScanner() async {
     final operationProvider = context.read<OperationProvider>();
     final operation = operationProvider.selectedOperation;
 
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => Scaffold(
-          appBar: AppBar(
-            title: const Text('Scanner Présence', style: TextStyle(color: Colors.white)),
-            backgroundColor: AppColors.middenblauw,
-            iconTheme: const IconThemeData(color: Colors.white),
-          ),
-          body: ScanPage(
-            clubId: widget.clubId,
-            operationId: widget.operationId,
-            operationTitle: operation?.titre ?? 'Événement',
-          ),
-        ),
-      ),
+    await ScannerModalSheet.show(
+      context: context,
+      clubId: widget.clubId,
+      operationId: widget.operationId,
+      operationTitle: operation?.titre ?? 'Événement',
+      isPiscine: false,
     );
 
     // Refresh participants list after closing scanner
@@ -893,11 +886,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
 
   @override
   Widget build(BuildContext context) {
-    // Check if this is a plongee event to hide scanner
     final operationProvider = context.watch<OperationProvider>();
     final operation = operationProvider.selectedOperation;
     final isPlongeeEvent = operation?.categorie == 'plongee';
-    final showScanner = _canScan && !isPlongeeEvent;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -907,17 +898,16 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          // Scanner button for authorized users (only for non-plongee events)
-          if (showScanner)
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: IconButton(
-                onPressed: _openScanner,
-                iconSize: 40, // Larger but fits in app bar
-                icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
-                tooltip: 'Scanner présence',
-              ),
+          // Scanner button - always visible for all logged-in users
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: IconButton(
+              onPressed: _openScanner,
+              iconSize: 40,
+              icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
+              tooltip: 'Scanner présence',
             ),
+          ),
         ],
       ),
       body: Stack(
