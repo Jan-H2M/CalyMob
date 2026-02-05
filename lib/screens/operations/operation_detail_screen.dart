@@ -25,6 +25,7 @@ import '../../widgets/participant_payment_card.dart';
 import '../../widgets/scanner_modal_sheet.dart';
 import '../../widgets/documents_accordion.dart';
 import 'add_guest_dialog.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 
 /// Écran de détail d'une opération avec bouton inscription
@@ -1174,9 +1175,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
     );
   }
 
-  /// Description accordion with preview text
+  /// Description accordion with preview text and info document
   Widget _buildDescriptionAccordion(operation) {
     final description = operation.description ?? '';
+    final hasInfoDocument = operation.infoDocument != null;
+
     // Get preview: first line or first ~60 chars
     String preview = description.split('\n').first;
     if (preview.length > 60) {
@@ -1196,27 +1199,113 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
           collapsedBackgroundColor: Colors.white.withOpacity(0.9),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           leading: Icon(Icons.info_outline, color: AppColors.middenblauw),
-          title: Text(
-            preview,
-            style: TextStyle(
-              fontSize: 14,
-              color: AppColors.donkerblauw,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  preview,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: AppColors.donkerblauw,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              // Show document indicator if info document exists
+              if (hasInfoDocument) ...[
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.attach_file,
+                  size: 16,
+                  color: AppColors.middenblauw,
+                ),
+              ],
+            ],
           ),
           children: [
             Container(
               width: double.infinity,
               color: Colors.white.withOpacity(0.95),
               padding: const EdgeInsets.all(16),
-              child: Text(
-                description,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: AppColors.donkerblauw,
-                  height: 1.5,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Description text
+                  Text(
+                    description,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: AppColors.donkerblauw,
+                      height: 1.5,
+                    ),
+                  ),
+                  // Info document link (if exists)
+                  if (hasInfoDocument) ...[
+                    const SizedBox(height: 12),
+                    const Divider(),
+                    const SizedBox(height: 8),
+                    InkWell(
+                      onTap: () async {
+                        final uri = Uri.parse(operation.infoDocument!.url);
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: AppColors.lichtblauw.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppColors.lichtblauw.withOpacity(0.5)),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              operation.infoDocument!.isPdf
+                                  ? Icons.picture_as_pdf
+                                  : Icons.image,
+                              color: operation.infoDocument!.isPdf
+                                  ? Colors.red.shade700
+                                  : AppColors.middenblauw,
+                              size: 24,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    operation.infoDocument!.nomAffichage,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      color: AppColors.donkerblauw,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  Text(
+                                    operation.infoDocument!.formattedSize,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              Icons.open_in_new,
+                              color: Colors.grey[400],
+                              size: 18,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ],

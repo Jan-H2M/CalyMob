@@ -37,6 +37,9 @@ class Operation {
   // Documents justificatifs (uploaded via CalyCompta)
   final List<DocumentJustificatif> documentsJustificatifs;
 
+  // Info document (single document displayed with description in CalyMob)
+  final DocumentJustificatif? infoDocument;
+
   // Métadonnées
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -62,6 +65,7 @@ class Operation {
     this.organisateurNom,
     this.communication,
     this.documentsJustificatifs = const [],
+    this.infoDocument,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -91,6 +95,9 @@ class Operation {
       organisateurNom: data['organisateur_nom'],
       communication: data['communication'],
       documentsJustificatifs: _parseDocuments(data['documents_justificatifs']),
+      infoDocument: data['info_document'] != null
+          ? DocumentJustificatif.fromMap(data['info_document'] as Map<String, dynamic>)
+          : null,
       createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (data['updated_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
