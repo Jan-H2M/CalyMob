@@ -72,6 +72,9 @@ class SessionService with WidgetsBindingObserver {
     }
   }
 
+  // Maximum session duration: 30 days (security cap)
+  static const int _maxSessionDurationMinutes = 30 * 24 * 60; // 43200 minutes
+
   /// Charger le timeout configurable depuis Firebase settings
   Future<void> _loadTimeoutSettings(String clubId) async {
     try {
@@ -90,8 +93,9 @@ class SessionService with WidgetsBindingObserver {
           _idleTimeoutMinutes = data?['idleTimeoutMinutes'] ?? 30;
           debugPrint('⚙️ Timeout chargé: $_idleTimeoutMinutes minutes');
         } else {
-          debugPrint('⚠️ Auto-logout désactivé');
-          _idleTimeoutMinutes = 999999; // Quasi-infini si désactivé
+          debugPrint('⚠️ Auto-logout désactivé, max: $_maxSessionDurationMinutes min (30 jours)');
+          // SECURITY: Cap at 30 days even when auto-logout is disabled
+          _idleTimeoutMinutes = _maxSessionDurationMinutes;
         }
       } else {
         debugPrint('⚠️ Settings security non trouvés, défaut: 30 min');

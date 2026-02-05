@@ -3,8 +3,15 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:lottie/lottie.dart';
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
+import '../../services/password_service.dart';
 
 /// Écran pour réinitialiser le mot de passe (via deep link)
+///
+/// Uses the same password validation as ForcePasswordChangeScreen:
+/// - Minimum 8 characters
+/// - At least one uppercase letter
+/// - At least one lowercase letter
+/// - At least one number
 class ResetPasswordScreen extends StatefulWidget {
   final String oobCode;
   final String? email;
@@ -30,14 +37,27 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   String? _errorMessage;
   String? _verifiedEmail;
 
+  // Live validation state (same as ForcePasswordChangeScreen)
+  late PasswordValidation _validation;
+
   @override
   void initState() {
     super.initState();
+    _validation = PasswordService.validatePassword('');
+    _passwordController.addListener(_onPasswordChanged);
     _verifyCode();
+  }
+
+  void _onPasswordChanged() {
+    setState(() {
+      _validation = PasswordService.validatePassword(_passwordController.text);
+      _errorMessage = null; // Clear error when typing
+    });
   }
 
   @override
   void dispose() {
+    _passwordController.removeListener(_onPasswordChanged);
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
@@ -294,6 +314,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                     controller: _passwordController,
                     obscureText: _obscurePassword,
                     textInputAction: TextInputAction.next,
+                    autofillHints: const [AutofillHints.newPassword],
                     decoration: InputDecoration(
                       hintText: 'Nouveau mot de passe',
                       prefixIcon: const Icon(Icons.lock_outlined),
@@ -315,12 +336,19 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                       if (value == null || value.isEmpty) {
                         return 'Mot de passe requis';
                       }
-                      if (value.length < 6) {
-                        return 'Au moins 6 caractères';
+                      // Use consistent validation with ForcePasswordChangeScreen
+                      final validation = PasswordService.validatePassword(value);
+                      if (!validation.isValid) {
+                        return 'Le mot de passe ne respecte pas les exigences';
                       }
                       return null;
                     },
                   ),
+
+                  const SizedBox(height: 12),
+
+                  // Password requirements checklist (same as ForcePasswordChangeScreen)
+                  _buildRequirementsList(),
 
                   const SizedBox(height: 16),
 
@@ -365,7 +393,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                     width: double.infinity,
                     height: 50,
                     child: ElevatedButton.icon(
-                      onPressed: _isLoading ? null : _handleSubmit,
+                      onPressed: _isLoading || !_validation.isValid
+                          ? null
+                          : _handleSubmit,
                       icon: _isLoading
                           ? const SizedBox(
                               width: 20,
@@ -385,7 +415,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                         ),
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.middenblauw,
+                        backgroundColor: _validation.isValid
+                            ? AppColors.middenblauw
+                            : Colors.grey,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -601,6 +633,69 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildRequirementsList() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Exigences :',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[600],
+            ),
+          ),
+          const SizedBox(height: 8),
+          _buildRequirementRow(
+            'Au moins 8 caractères',
+            _validation.hasMinLength,
+          ),
+          _buildRequirementRow(
+            'Une lettre majuscule',
+            _validation.hasUppercase,
+          ),
+          _buildRequirementRow(
+            'Une lettre minuscule',
+            _validation.hasLowercase,
+          ),
+          _buildRequirementRow(
+            'Un chiffre',
+            _validation.hasNumber,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRequirementRow(String text, bool isMet) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Icon(
+            isMet ? Icons.check_circle : Icons.circle_outlined,
+            size: 16,
+            color: isMet ? Colors.green : Colors.grey,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 13,
+              color: isMet ? Colors.green[700] : Colors.grey[600],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
