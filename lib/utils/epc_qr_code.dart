@@ -208,10 +208,81 @@ String formatIbanDisplay(String iban) {
   ).trim();
 }
 
-/// Génère la communication de paiement structurée
+/// Convertit un nombre entier (0-9999) en mot français belge
 ///
-/// Format: #{eventNumber} {eventName} {date} {participantName}
-/// Exemple: #200006 Villers-2-Eglises 25/01/2026 Jean Dupont
+/// Utilise le français belge: septante (70), nonante (90)
+/// Exemples: 2 → deux, 25 → vingt-cinq, 70 → septante, 80 → quatre-vingts
+String numberToFrenchWord(int n) {
+  if (n < 0) return numberToFrenchWord(-n);
+
+  const units = [
+    'zéro', 'un', 'deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit',
+    'neuf', 'dix', 'onze', 'douze', 'treize', 'quatorze', 'quinze', 'seize',
+    'dix-sept', 'dix-huit', 'dix-neuf',
+  ];
+
+  const tens = [
+    '', '', 'vingt', 'trente', 'quarante', 'cinquante', 'soixante',
+    'septante', 'quatre-vingt', 'nonante',
+  ];
+
+  if (n < 20) return units[n];
+
+  if (n < 100) {
+    final t = n ~/ 10;
+    final u = n % 10;
+    if (t == 8) {
+      if (u == 0) return 'quatre-vingts';
+      return 'quatre-vingt-${units[u]}';
+    }
+    if (u == 0) return tens[t];
+    if (u == 1) return '${tens[t]} et un';
+    return '${tens[t]}-${units[u]}';
+  }
+
+  if (n < 1000) {
+    final h = n ~/ 100;
+    final r = n % 100;
+    final String prefix;
+    if (h == 1) {
+      prefix = r == 0 ? 'cent' : 'cent';
+    } else {
+      prefix = r == 0 ? '${units[h]} cents' : '${units[h]} cent';
+    }
+    if (r == 0) return prefix;
+    return '$prefix ${numberToFrenchWord(r)}';
+  }
+
+  if (n < 10000) {
+    final m = n ~/ 1000;
+    final r = n % 1000;
+    final prefix = m == 1 ? 'mille' : '${units[m]} mille';
+    if (r == 0) return prefix;
+    return '$prefix ${numberToFrenchWord(r)}';
+  }
+
+  // Fallback pour nombres >= 10000: chiffre par chiffre
+  return n.toString().split('').map((d) => units[int.parse(d)]).join('-');
+}
+
+/// Remplace tous les chiffres dans un texte par leur équivalent en mots français
+///
+/// Exemple: "Villers-2-Eglises" → "Villers-deux-Eglises"
+/// Exemple: "Stage 25m" → "Stage vingt-cinq m"  (note: "25m" → "vingt-cinqm" car pas d'espace)
+String replaceDigitsWithFrenchWords(String text) {
+  return text.replaceAllMapped(RegExp(r'\d+'), (match) {
+    final n = int.tryParse(match.group(0)!) ?? 0;
+    return numberToFrenchWord(n);
+  });
+}
+
+/// Génère la communication de paiement sans chiffres
+///
+/// Format: {eventNumber} {eventName} {participantName}
+/// Exemple: PAAAG Villers-deux-Eglises Jean Dupont
+///
+/// Le event_number est déjà en lettres (généré par CalyCompta).
+/// Les chiffres dans le titre sont remplacés par des mots français (workaround bug BNP).
 String generatePaymentCommunication({
   required String? eventNumber,
   required String? eventId,
@@ -220,26 +291,22 @@ String generatePaymentCommunication({
   required String participantFirstName,
   required String participantLastName,
 }) {
-  // Event number ou premiers 6 caractères de l'ID
-  final number = eventNumber ?? eventId?.substring(0, 6).toUpperCase() ?? '';
+  // 1. Code événement (déjà en lettres depuis CalyCompta, ex: PAAAG)
+  final code = eventNumber ?? eventId?.substring(0, 6).toUpperCase() ?? '';
 
-  // Nom de l'événement (max 40 chars)
-  final name = eventTitle.length > 40 ? eventTitle.substring(0, 40) : eventTitle;
+  // 2. Nom de l'événement avec chiffres remplacés par mots français
+  String name = replaceDigitsWithFrenchWords(eventTitle);
+  if (name.length > 60) name = name.substring(0, 60);
 
-  // Date formatée DD/MM/YYYY
-  String dateStr = '';
-  if (eventDate != null) {
-    dateStr =
-        '${eventDate.day.toString().padLeft(2, '0')}/${eventDate.month.toString().padLeft(2, '0')}/${eventDate.year}';
-  }
+  // 3. Pas de date (supprimée pour éviter les chiffres)
 
-  // Nom du participant (max 30 chars)
+  // 4. Nom du participant (max 30 chars)
   final participantName = '$participantFirstName $participantLastName'.trim();
   final truncatedName =
       participantName.length > 30 ? participantName.substring(0, 30) : participantName;
 
-  // Construire la communication
-  final communication = '#$number $name $dateStr $truncatedName'.trim();
+  // 5. Construire la communication
+  final communication = '$code $name $truncatedName'.trim();
 
   // Max 140 caractères (limite EPC spec)
   return communication.length > 140 ? communication.substring(0, 140) : communication;
