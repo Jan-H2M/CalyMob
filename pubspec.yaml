@@ -82,6 +82,9 @@ dependencies:
   # Share/Export
   share_plus: ^10.1.4
 
+  # PDF Generation (fiche de palanquée)
+  pdf: ^3.11.1
+
   # Payments (if needed)
   # stripe_payment: ^1.1.1
 

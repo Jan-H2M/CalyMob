@@ -27,6 +27,7 @@ import '../../widgets/documents_accordion.dart';
 import 'add_guest_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
+import '../../utils/fiche_palanquee_pdf.dart';
 
 /// Écran de détail d'une opération avec bouton inscription
 class OperationDetailScreen extends StatefulWidget {
@@ -900,6 +901,56 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          // Fiche de palanquée button - only for dive events with participants
+          if (isPlongeeEvent && (operationProvider.selectedOperationParticipants.isNotEmpty))
+            Padding(
+              padding: const EdgeInsets.only(right: 2),
+              child: SizedBox(
+                width: 32,
+                height: 32,
+                child: IconButton(
+                  onPressed: () async {
+                    final op = operationProvider.selectedOperation;
+                    final participants = operationProvider.selectedOperationParticipants;
+                    if (op == null || participants.isEmpty) return;
+
+                    try {
+                      await FichePalanqueePdf.generateAndShare(
+                        context: context,
+                        operation: op,
+                        participants: participants,
+                        clubId: widget.clubId,
+                      );
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Erreur PDF: $e'), backgroundColor: Colors.red),
+                        );
+                      }
+                    }
+                  },
+                  padding: EdgeInsets.zero,
+                  iconSize: 18,
+                  icon: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.25),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text(
+                      'FP',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                  tooltip: 'Fiche de palanquée (PDF)',
+                ),
+              ),
+            ),
           // Scanner button - always visible for all logged-in users
           Padding(
             padding: const EdgeInsets.only(right: 12),
