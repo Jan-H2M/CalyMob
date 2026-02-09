@@ -111,7 +111,7 @@ export function TransactionSplitModal({
   // NOUVEAU : Validation flexible
   // - Si 0-1 lignes : OK (restaure transaction normale)
   // - Si 2+ lignes : total doit = montant parent ET tous les champs remplis
-  const isValid = splits.length < 2 || (Math.abs(difference) < 0.01 && splits.every(s => s.description && s.amount > 0));
+  const isValid = splits.length < 2 || (Math.abs(difference) < 0.01 && splits.every(s => s.description && s.amount !== 0));
   const isTotalCorrect = Math.abs(difference) < 0.01;
 
   const handleSave = async () => {
@@ -125,7 +125,7 @@ export function TransactionSplitModal({
       const splitData = splits.map(split => ({
         bank_transaction_id: transaction.id,
         description: split.description,
-        amount: transaction.montant < 0 ? -Math.abs(split.amount) : Math.abs(split.amount),
+        amount: transaction.montant < 0 ? -split.amount : split.amount,
         categorie: split.categorie,
         code_comptable: split.code_comptable,
         notes: split.notes,
@@ -268,7 +268,6 @@ export function TransactionSplitModal({
                     value={split.amount || ''}
                     onChange={(e) => updateSplitLine(index, 'amount', parseFloat(e.target.value) || 0)}
                     step="0.01"
-                    min="0"
                     placeholder="0.00"
                     className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
@@ -431,8 +430,8 @@ export function TransactionSplitModal({
                   {splits.some(s => !s.description) && (
                     <li>Toutes les lignes doivent avoir une description</li>
                   )}
-                  {splits.some(s => s.amount <= 0) && (
-                    <li>Tous les montants doivent être supérieurs à zéro</li>
+                  {splits.some(s => s.amount === 0) && (
+                    <li>Les montants ne peuvent pas être zéro</li>
                   )}
                   {Math.abs(difference) >= 0.01 && (
                     <li>Le total doit correspondre au montant de la transaction</li>

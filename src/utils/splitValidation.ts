@@ -7,7 +7,7 @@ export function validateSplitSum(
   transactionAmount: number,
   splits: Array<{ amount: number }>
 ): boolean {
-  const totalSplit = splits.reduce((sum, split) => sum + Math.abs(split.amount || 0), 0);
+  const totalSplit = splits.reduce((sum, split) => sum + (split.amount || 0), 0);
   const targetAmount = Math.abs(transactionAmount);
   return Math.abs(totalSplit - targetAmount) < 0.01; // Tolérance de 1 centime pour les arrondis
 }
@@ -22,8 +22,8 @@ export function validateSingleSplit(split: Partial<TransactionSplit>): string[] 
     errors.push('La description est obligatoire');
   }
   
-  if (!split.amount || split.amount <= 0) {
-    errors.push('Le montant doit être supérieur à zéro');
+  if (split.amount === undefined || split.amount === null || split.amount === 0) {
+    errors.push('Le montant ne peut pas être zéro');
   }
   
   if (split.description && split.description.length > 200) {
@@ -61,7 +61,7 @@ export function validateAllSplits(
   
   // Valider la somme
   if (!validateSplitSum(transactionAmount, splits as Array<{ amount: number }>)) {
-    const totalSplit = splits.reduce((sum, split) => sum + Math.abs(split.amount || 0), 0);
+    const totalSplit = splits.reduce((sum, split) => sum + (split.amount || 0), 0);
     const targetAmount = Math.abs(transactionAmount);
     const difference = targetAmount - totalSplit;
     errors.push(`La somme des lignes (${totalSplit.toFixed(2)}€) ne correspond pas au montant de la transaction (${targetAmount.toFixed(2)}€). Différence: ${Math.abs(difference).toFixed(2)}€`);
@@ -80,7 +80,7 @@ export function calculateRemainingAmount(
   transactionAmount: number,
   splits: Array<{ amount: number }>
 ): number {
-  const totalSplit = splits.reduce((sum, split) => sum + Math.abs(split.amount || 0), 0);
+  const totalSplit = splits.reduce((sum, split) => sum + (split.amount || 0), 0);
   const targetAmount = Math.abs(transactionAmount);
   return targetAmount - totalSplit;
 }
@@ -99,7 +99,8 @@ export function formatSplitsForSave(
     ...split,
     bank_transaction_id: transactionId,
     // Assurer que le signe du montant correspond au type de transaction
-    amount: isExpense ? -Math.abs(split.amount) : Math.abs(split.amount),
+    // Pour les dépenses, inverser le signe ; pour les revenus, garder tel quel
+    amount: isExpense ? -split.amount : split.amount,
     reconcilie: split.reconcilie || false
   }));
 }
