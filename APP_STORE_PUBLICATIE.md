@@ -4,16 +4,20 @@
 
 Dit plan beschrijft alle stappen om CalyMob te publiceren in de Apple App Store en Google Play Store.
 
-**Huidige status:**
-- Bundle ID: `be.calypsodc.calymob`
-- Versie: 1.0.11 (build 68)
+**Huidige status (februari 2026):**
+- Apple Bundle ID: `be.calypsodc.calymob`
+- Google Play Package: `club.caly.calymob`
+- Versie: 1.0.22 (build 83/84)
 - iOS minimum: 15.5
-- Android target SDK: 35
+- Android target SDK: 34 (compileSdk 36)
+- **iOS**: ✅ Ready for Distribution (Build 84)
+- **Android**: ✅ Production op Google Play (calymob-1, Feb 2026)
 
 **Account status:**
 - [x] Apple Developer Account: **ACTIEF**
 - [x] Google Play Developer Account: **ACTIEF**
 - [x] Privacy Policy URL: **https://caly.club/privacy** ✅ ONLINE
+- [x] Google Play Organisation Account: **H2M.AI** (Account ID: 4868133097597517725)
 
 ---
 
@@ -431,7 +435,7 @@ Het huidige `scripts/build_release.sh` bouwt APK. Voor Play Store moet dit AAB z
    - Kies: "Use Google Play App Signing" (aanbevolen)
    - Of: "Manage your own signing key"
 4. Upload de `.aab` file
-5. **Release name**: 1.0.11 (68)
+5. **Release name**: 1.0.22 (83)
 6. **Release notes** (Frans):
    ```
    Première version de CalyMob pour les membres du Calypso Diving Club.
@@ -493,7 +497,8 @@ Het huidige `scripts/build_release.sh` bouwt APK. Voor Play Store moet dit AAB z
 - [ ] Keywords/Tags
 
 #### Technisch
-- [ ] Bundle ID correct: `be.calypsodc.calymob`
+- [ ] Apple Bundle ID correct: `be.calypsodc.calymob`
+- [ ] Google Play Package correct: `club.caly.calymob`
 - [ ] Version number verhoogd indien nodig
 - [ ] Release build succesvol
 - [ ] Geen debug code in release
@@ -605,7 +610,7 @@ Calypso Diving Club
 
 **Korte beschrijving Google Play** (max 80 tekens):
 ```
-Application officielle pour les membres du Calypso Diving Club
+Application privée et sur invitation - Calypso Diving Club
 ```
 
 ---
@@ -713,7 +718,7 @@ Deze app is voorbehouden aan leden van Calypso Diving Club ASBL (België).
 
 **iOS Keywords** (max 100 tekens, komma gescheiden):
 ```
-plongée,diving,duiken,club,activités,membres,événements,piscine,frais,LIFRAS
+gestion des dépenses,club de plongée,finances d'équipe,partage des frais,gestion budgétaire
 ```
 
 **Google Play Tags** (selecteer uit beschikbare categorieën):
@@ -771,7 +776,7 @@ Goede duik! 🐠
 
 **Support URL**:
 ```
-https://calypsodc.be
+https://calypsodiving.be/
 ```
 
 **Support Email**:
@@ -1329,7 +1334,7 @@ Dit betekent dat je GEEN jaarlijkse export compliance rapportage hoeft in te die
 
 **Copyright tekst**:
 ```
-© 2025 Calypso Diving Club ASBL. Tous droits réservés.
+© 2026 Calypso Diving Club ASBL. Tous droits réservés.
 ```
 
 **EULA/Terms of Service** (kort):
@@ -1483,7 +1488,7 @@ De privacy policy moet online staan op `https://caly.club/privacy`. Hier is de v
 <body>
     <div class="container">
         <h1>Politique de Confidentialité</h1>
-        <div class="update-date">Dernière mise à jour : Janvier 2025</div>
+        <div class="update-date">Dernière mise à jour : Janvier 2026</div>
 
         <h2>À propos de CalyMob</h2>
         <p>CalyMob est l'application mobile officielle du <strong>Calypso Diving Club ASBL</strong>, un club de plongée basé en Belgique. Cette application est exclusivement réservée aux membres du club et permet de gérer les activités, les inscriptions et les notes de frais.</p>
@@ -1581,7 +1586,7 @@ De privacy policy moet online staan op `https://caly.club/privacy`. Hier is de v
         </div>
 
         <div class="footer">
-            <p>© 2025 Calypso Diving Club ASBL - Tous droits réservés</p>
+            <p>© 2026 Calypso Diving Club ASBL - Tous droits réservés</p>
             <p>CalyMob - Application mobile pour les membres du club</p>
         </div>
     </div>
@@ -1736,9 +1741,9 @@ Na analyse van de CalyMob codebase zijn de volgende **blokkerende issues** gevon
 | Issue | Status | Impact | Actie |
 |-------|--------|--------|-------|
 | **Account Deletion Feature** | ✅ GEÏMPLEMENTEERD | - | Aanwezig in Settings → "Supprimer mon compte" |
-| **Privacy Manifest (iOS)** | ❌ ONTBREEKT | BLOKKERT iOS REVIEW | `PrivacyInfo.xcprivacy` moet worden aangemaakt |
-| **Privacy Policy URL** | ⚠️ NIET GETEST | KAN BLOKKEREN | `https://caly.club/privacy` moet online staan |
-| **Demo Account** | ⚠️ NIET AANWEZIG | BLOKKERT REVIEW | Moet worden aangemaakt in Firebase |
+| **Privacy Manifest (iOS)** | ✅ OPGELOST | - | `PrivacyInfo.xcprivacy` aangemaakt en toegevoegd |
+| **Privacy Policy URL** | ✅ ONLINE | - | `https://caly.club/privacy` is online |
+| **Demo Account** | ✅ AANGEMAAKT | - | demo.reviewer@calypsodc.be / CalyMob2025! |
 | **EU Trader Status** | ⚠️ NIET INGEVULD | KAN BLOKKEREN EU | Moet in beide store consoles worden ingevuld |
 
 **Geschatte extra werk:**

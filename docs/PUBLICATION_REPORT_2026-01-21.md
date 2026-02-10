@@ -4,6 +4,15 @@
 
 ---
 
+> **⚠️ UPDATE (Februari 2026):** Dit rapport is een historisch snapshot van 21 januari 2026.
+> Sindsdien zijn beide apps succesvol gepubliceerd:
+> - **iOS**: ✅ Ready for Distribution (Build 84, v1.0.22)
+> - **Android**: ✅ Production op Google Play (calymob-1, version code 83, 100% rollout)
+> - **Google Play package**: `club.caly.calymob` (onder H2M.ai organisatieaccount)
+> - **Apple Bundle ID**: `be.calypsodc.calymob`
+
+---
+
 ## Executive Summary
 
 Vandaag hebben we een monumentale mijlpaal bereikt: **CalyMob iOS is succesvol ingediend voor Apple App Store review**, terwijl we tegelijkertijd de Android blokkering hebben gediagnosticeerd en bij Google Support hebben geëscaleerd. Dit was een zeer productieve dag met significante vooruitgang op beide platforms.
@@ -244,3 +253,7 @@ De weg naar lancering is nu helder en beide platforms hebben duidelijke volgende
 **Rapport opgesteld:** 21 januari 2026, 22:42 UTC
 **Session Duration:** ~4 uur intensieve work
 **Apps in Flight:** iOS (review) + Android (support escalation)
+
+---
+
+> **Nota:** Het package name op Google Play is uiteindelijk `club.caly.calymob` geworden (niet `be.calypsodc.calymob` zoals vermeld in het support ticket).

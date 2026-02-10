@@ -19,9 +19,9 @@ cd CalyMob
 ```
 
 This automatically:
-1. ✅ Bumps version in pubspec.yaml (1.0.12+69 → 1.0.13+70)
-2. ✅ Updates Firestore settings/app_version (1.0.13) via update_firestore_version.cjs
-3. ✅ Builds APK with version in filename: calymob-1.0.13-build70.apk
+1. ✅ Bumps version in pubspec.yaml (1.0.22+83 → 1.0.23+84)
+2. ✅ Updates Firestore settings/app_version (1.0.23) via update_firestore_version.cjs
+3. ✅ Builds APK with version in filename: calymob-1.0.23-build84.apk
 
 **User doesn't need to remember "bump"** - you handle it automatically!
 
@@ -45,8 +45,8 @@ flutter analyze                      # Run static analysis
 
 # Versie synchronisatie
 # bump_version.sh update automatisch de versie in:
-# 1. pubspec.yaml (bijv. 1.0.12+69 → 1.0.13+70)
-# 2. Firestore settings/app_version (1.0.13) - zichtbaar in CalyCompta maintenance page
+# 1. pubspec.yaml (bijv. 1.0.22+83 → 1.0.23+84)
+# 2. Firestore settings/app_version (1.0.23) - zichtbaar in CalyCompta maintenance page
 # Gebruikt update_firestore_version.cjs die Firebase credentials vindt via:
 # - Hardcoded path (Jan's machine): /Users/jan/Documents/CALYPSO/calycompta-firebase-adminsdk-*.json
 # - GOOGLE_APPLICATION_CREDENTIALS environment variable
@@ -177,9 +177,9 @@ Dit script doet automatisch:
 ### Versie en Build Nummer
 Het versienummer staat in `pubspec.yaml` in het formaat: `version: X.Y.Z+buildNumber`
 
-Voorbeeld: `version: 1.0.10+61`
-- `1.0.10` = versienummer (major.minor.patch)
-- `61` = build nummer (moet altijd verhoogd worden voor elke nieuwe release)
+Voorbeeld: `version: 1.0.22+83`
+- `1.0.22` = versienummer (major.minor.patch)
+- `83` = build nummer (moet altijd verhoogd worden voor elke nieuwe release)
 
 ### APK Bestandsnaam
 De APK wordt gegenereerd met de volgende naamgeving:
@@ -187,7 +187,7 @@ De APK wordt gegenereerd met de volgende naamgeving:
 calymob-{versie}-build{buildnummer}.apk
 ```
 
-Voorbeeld: `calymob-1.0.10-build61.apk`
+Voorbeeld: `calymob-1.0.22-build83.apk`
 
 ### BELANGRIJK: Build Nummer Verhogen
 **Bij elke nieuwe Android build MOET het build nummer worden verhoogd in `pubspec.yaml`:**
