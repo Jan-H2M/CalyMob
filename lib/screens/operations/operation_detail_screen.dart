@@ -7,6 +7,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../providers/operation_provider.dart';
 import '../../providers/event_message_provider.dart';
+import '../../providers/unread_count_provider.dart';
 import '../../widgets/loading_widget.dart';
 import '../../utils/date_formatter.dart';
 import '../../utils/currency_formatter.dart';
@@ -1441,6 +1442,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                     clubId: widget.clubId,
                     operationId: widget.operationId,
                     userId: currentUserId,
+                    unreadProvider: Provider.of<UnreadCountProvider>(context, listen: false),
                   );
                 }
               },

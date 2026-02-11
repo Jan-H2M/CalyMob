@@ -8,6 +8,7 @@
 
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
+const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithBadge } = require('../utils/badge-helper');
 
 /**
  * Firestore trigger for new announcement replies (Gen2)
@@ -86,28 +87,8 @@ exports.onNewAnnouncementReply = onDocumentCreated(
 
       const memberDocs = await Promise.all(tokenPromises);
 
-      // Collect all valid FCM tokens
-      const tokens = [];
-      const tokenToMember = new Map();
-
-      memberDocs.forEach(doc => {
-        if (doc.exists) {
-          const memberData = doc.data();
-          if (memberData.notifications_enabled !== false) {
-            if (memberData.fcm_tokens && Array.isArray(memberData.fcm_tokens)) {
-              memberData.fcm_tokens.forEach(token => {
-                if (token && !tokens.includes(token)) {
-                  tokens.push(token);
-                  tokenToMember.set(token, { memberId: doc.id, clubId });
-                }
-              });
-            } else if (memberData.fcm_token) {
-              tokens.push(memberData.fcm_token);
-              tokenToMember.set(memberData.fcm_token, { memberId: doc.id, clubId });
-            }
-          }
-        }
-      });
+      // Collect tokens and members using helper function
+      const { tokens, memberTokenGroups, recipientIds } = collectTokensAndMembers(memberDocs, reply.sender_id);
 
       if (tokens.length === 0) {
         console.log('No FCM tokens found, skipping notification');
@@ -142,7 +123,7 @@ exports.onNewAnnouncementReply = onDocumentCreated(
         }
       }
 
-      const payload = {
+      const basePayload = {
         notification: {
           title: notificationTitle,
           body: notificationBody,
@@ -174,60 +155,17 @@ exports.onNewAnnouncementReply = onDocumentCreated(
                 body: notificationBody,
               },
               sound: 'default',
-              badge: 1,
               'content-available': 1,
             },
           },
         },
       };
 
-      // 5. Send notifications (in batches of 500 if needed)
-      const batchSize = 500;
-      const batches = [];
+      // 5. Send notifications with dynamic badge counts
+      const { successCount, failureCount } = await sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload, 'announcements');
 
-      for (let i = 0; i < tokens.length; i += batchSize) {
-        const batchTokens = tokens.slice(i, i + batchSize);
-        batches.push(
-          admin.messaging().sendEachForMulticast({
-            tokens: batchTokens,
-            ...payload,
-          })
-        );
-      }
-
-      const results = await Promise.all(batches);
-
-      // 6. Handle failed tokens (remove invalid ones)
-      let successCount = 0;
-      let failureCount = 0;
-
-      results.forEach((result, batchIndex) => {
-        successCount += result.successCount;
-        failureCount += result.failureCount;
-
-        result.responses.forEach((response, index) => {
-          if (!response.success) {
-            const error = response.error;
-            if (error.code === 'messaging/invalid-registration-token' ||
-                error.code === 'messaging/registration-token-not-registered') {
-              const failedToken = tokens[batchIndex * batchSize + index];
-              const memberInfo = tokenToMember.get(failedToken);
-              if (memberInfo) {
-                console.log(`Removing invalid token from member ${memberInfo.memberId}: ${failedToken.substring(0, 20)}...`);
-                admin.firestore()
-                  .collection('clubs')
-                  .doc(memberInfo.clubId)
-                  .collection('members')
-                  .doc(memberInfo.memberId)
-                  .update({
-                    fcm_tokens: admin.firestore.FieldValue.arrayRemove(failedToken)
-                  })
-                  .catch(err => console.error(`Failed to remove token: ${err.message}`));
-              }
-            }
-          }
-        });
-      });
+      // 6. Increment unread counts for recipients
+      await incrementUnreadCounts(clubId, recipientIds, 'announcements');
 
       console.log(`Notifications sent: ${successCount} success, ${failureCount} failures`);
       return { success: successCount, failure: failureCount };

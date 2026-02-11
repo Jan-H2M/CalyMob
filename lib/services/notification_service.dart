@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:app_badge_plus/app_badge_plus.dart';
 
 // Import dart:io only on non-web platforms
 import 'notification_service_io.dart' if (dart.library.html) 'notification_service_web.dart' as platform_helper;
@@ -424,11 +425,53 @@ class NotificationService {
   }
 
   /// Effacer le badge de l'icône de l'app
-  /// Note: flutter_app_badger was removed due to incompatibility with AGP 8.9+
-  /// Badge clearing is now handled by the OS when app is opened
+  /// Utilise app_badge_plus pour iOS et Android
   Future<void> clearBadge() async {
-    // Badge is automatically cleared by iOS/Android when app opens
-    debugPrint('ℹ️ Badge clearing handled by OS');
+    if (kIsWeb) return;
+    try {
+      final isSupported = await AppBadgePlus.isSupported();
+      if (isSupported) {
+        await AppBadgePlus.updateBadge(0);
+        debugPrint('✅ Badge effacé (mis à 0)');
+      } else {
+        debugPrint('ℹ️ Badge non supporté sur cet appareil');
+      }
+    } catch (e) {
+      debugPrint('❌ Erreur effacement badge: $e');
+    }
+  }
+
+  /// Mettre à jour le badge avec un nombre spécifique
+  Future<void> setBadge(int count) async {
+    if (kIsWeb) return;
+    try {
+      final isSupported = await AppBadgePlus.isSupported();
+      if (isSupported) {
+        await AppBadgePlus.updateBadge(count);
+        debugPrint('✅ Badge mis à jour: $count');
+      }
+    } catch (e) {
+      debugPrint('❌ Erreur mise à jour badge: $e');
+    }
+  }
+
+  /// Mettre à jour le badge depuis le compteur Firestore unread_counts
+  Future<void> updateBadgeFromFirestore(String clubId, String userId) async {
+    if (kIsWeb) return;
+    try {
+      final doc = await _firestore
+          .collection('clubs/$clubId/members')
+          .doc(userId)
+          .get();
+      final data = doc.data();
+      if (data != null) {
+        final unreadCounts = data['unread_counts'] as Map<String, dynamic>?;
+        final total = (unreadCounts?['total'] as num?)?.toInt() ?? 0;
+        await setBadge(total);
+      }
+    } catch (e) {
+      debugPrint('❌ Erreur lecture badge depuis Firestore: $e');
+    }
   }
 }
 

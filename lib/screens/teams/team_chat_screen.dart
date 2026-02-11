@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../models/team_channel.dart';
 import '../../services/team_channel_service.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/unread_count_provider.dart';
 import '../../config/firebase_config.dart';
 import '../../widgets/piscine_animated_background.dart';
 import '../../theme/calypso_theme.dart';
@@ -54,11 +55,33 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
     _hasMarkedAsRead = true;
 
     try {
+      // D'abord compter les non lus
+      final unreadCount = await _channelService.getUnreadCount(
+        clubId: clubId,
+        channelId: widget.channel.id,
+        userId: userId,
+      );
+
       await _channelService.markAllAsRead(
         clubId: clubId,
         channelId: widget.channel.id,
         userId: userId,
       );
+
+      // Décrémenter le compteur Firestore
+      if (unreadCount > 0) {
+        try {
+          final unreadProvider = Provider.of<UnreadCountProvider>(context, listen: false);
+          await unreadProvider.decrementCategory(
+            clubId: clubId,
+            userId: userId,
+            category: 'team_messages',
+            amount: unreadCount,
+          );
+        } catch (e) {
+          debugPrint('⚠️ Could not decrement team unread count: $e');
+        }
+      }
     } catch (e) {
       debugPrint('Error marking messages as read: $e');
     }

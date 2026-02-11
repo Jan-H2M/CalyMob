@@ -12,6 +12,7 @@
 
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
+const { getBadgeCount } = require('../utils/badge-helper');
 
 /**
  * Format date to French locale string
@@ -99,6 +100,10 @@ exports.onMedicalCertStatusChange = onDocumentUpdated(
       console.log(`📱 [onMedicalCertStatusChange] Sending to ${tokens.length} device(s): ${title}`);
 
       // 3. Prepare the notification payload
+      // Get the current badge count for this member
+      const badgeCount = await getBadgeCount(clubId, memberId);
+      const newBadge = badgeCount + 1;
+
       const payload = {
         notification: {
           title,
@@ -123,7 +128,7 @@ exports.onMedicalCertStatusChange = onDocumentUpdated(
           payload: {
             aps: {
               sound: 'default',
-              badge: 1,
+              badge: newBadge,
             },
           },
         },

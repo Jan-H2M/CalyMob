@@ -1,7 +1,7 @@
 name: calymob
 description: Calypso DC Mobile Application
 publish_to: 'none'
-version: 1.0.24+86
+version: 1.0.25+87
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -64,6 +64,9 @@ dependencies:
 
   # Local Notifications (for Android notification channel)
   flutter_local_notifications: ^18.0.1
+
+  # App Badge (for unread count on app icon)
+  app_badge_plus: ^1.1.4
 
   # Device & App Info (for app installation tracking)
   device_info_plus: ^10.1.2

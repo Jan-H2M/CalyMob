@@ -4,6 +4,7 @@ import '../../models/session_message.dart';
 import '../../models/piscine_session.dart';
 import '../../services/session_message_service.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/unread_count_provider.dart';
 import '../../widgets/piscine_animated_background.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
@@ -51,6 +52,15 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
 
     if (userId == null) return;
 
+    // D'abord compter les non lus
+    final unreadCount = await _messageService.getUnreadCount(
+      clubId: clubId,
+      sessionId: widget.session.id,
+      groupType: widget.chatGroup.type,
+      groupLevel: widget.chatGroup.level,
+      userId: userId,
+    );
+
     await _messageService.markAllAsRead(
       clubId: clubId,
       sessionId: widget.session.id,
@@ -58,6 +68,21 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
       groupLevel: widget.chatGroup.level,
       userId: userId,
     );
+
+    // Décrémenter le compteur Firestore
+    if (unreadCount > 0) {
+      try {
+        final unreadProvider = Provider.of<UnreadCountProvider>(context, listen: false);
+        await unreadProvider.decrementCategory(
+          clubId: clubId,
+          userId: userId,
+          category: 'session_messages',
+          amount: unreadCount,
+        );
+      } catch (e) {
+        debugPrint('⚠️ Could not decrement session unread count: $e');
+      }
+    }
   }
 
   Future<void> _sendMessage() async {

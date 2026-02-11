@@ -5,8 +5,10 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
+import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
+import '../../providers/unread_count_provider.dart';
 import '../auth/login_screen.dart';
 import '../operations/operations_list_screen.dart';
 import '../expenses/financial_screen.dart';
@@ -52,6 +54,9 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
 
     // Load member info for piscine access
     _loadMemberInfo();
+
+    // Start luisteren naar ongelezen berichten
+    _startUnreadCountListener();
   }
 
   Future<void> _loadVersionInfo() async {
@@ -64,6 +69,17 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
       }
     } catch (e) {
       debugPrint('Error loading version info: $e');
+    }
+  }
+
+  void _startUnreadCountListener() {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final uid = authProvider.currentUser?.uid;
+    if (uid == null) return;
+
+    final unreadProvider = Provider.of<UnreadCountProvider>(context, listen: false);
+    if (!unreadProvider.isListening) {
+      unreadProvider.listen(FirebaseConfig.defaultClubId, uid);
     }
   }
 
@@ -163,6 +179,7 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
     if (confirmed == true && context.mounted) {
       await context.read<AuthProvider>().logout();
       context.read<MemberProvider>().clear();
+      context.read<UnreadCountProvider>().clear();
 
       if (context.mounted) {
         Navigator.of(context).pushReplacement(
@@ -175,6 +192,7 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
+    final unreadProvider = context.watch<UnreadCountProvider>();
     final userName = authProvider.displayName ?? 'Utilisateur';
     final screenHeight = MediaQuery.of(context).size.height;
 
@@ -328,6 +346,7 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
                           _GlossyButton(
                             title: 'Événements',
                             icon: Icons.event,
+                            badgeCount: unreadProvider.eventMessages,
                             onTap: () => Navigator.push(
                               context,
                               MaterialPageRoute(builder: (_) => const OperationsListScreen()),
@@ -336,6 +355,7 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
                           _GlossyButton(
                             title: 'Communication',
                             icon: Icons.campaign,
+                            badgeCount: unreadProvider.announcements,
                             onTap: () => Navigator.push(
                               context,
                               MaterialPageRoute(builder: (_) => const AnnouncementsScreen()),
@@ -346,6 +366,7 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
                             _GlossyButton(
                               title: 'Piscine',
                               icon: Icons.pool,
+                              badgeCount: unreadProvider.sessionMessages + unreadProvider.teamMessages,
                               onTap: () {
                                 final roles = _getPiscineRoles();
                                 if (roles.isNotEmpty) {
@@ -423,11 +444,13 @@ class _GlossyButton extends StatelessWidget {
   final String title;
   final IconData icon;
   final VoidCallback onTap;
+  final int badgeCount;
 
   const _GlossyButton({
     required this.title,
     required this.icon,
     required this.onTap,
+    this.badgeCount = 0,
   });
 
   @override
@@ -442,6 +465,7 @@ class _GlossyButton extends StatelessWidget {
               shape: BoxShape.circle,
             ),
             child: Stack(
+              clipBehavior: Clip.none,
               alignment: Alignment.center,
               children: [
                 // ButtonBlue.png als achtergrond
@@ -456,6 +480,40 @@ class _GlossyButton extends StatelessWidget {
                   size: 46,
                   color: Colors.white,
                 ),
+                // Badge indicator (rood bolletje met getal)
+                if (badgeCount > 0)
+                  Positioned(
+                    top: -2,
+                    right: -2,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white, width: 2),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.3),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 22,
+                        minHeight: 22,
+                      ),
+                      child: Text(
+                        badgeCount > 99 ? '99+' : badgeCount.toString(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),

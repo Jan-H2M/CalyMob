@@ -1188,6 +1188,8 @@ PODS:
     - abseil/meta/type_traits
     - abseil/xcprivacy
   - abseil/xcprivacy (1.20240722.0)
+  - app_badge_plus (1.2.6):
+    - Flutter
   - app_links (6.4.1):
     - Flutter
   - BoringSSL-GRPC (0.0.37):
@@ -1637,6 +1639,7 @@ PODS:
     - Flutter
 
 DEPENDENCIES:
+  - app_badge_plus (from `.symlinks/plugins/app_badge_plus/ios`)
   - app_links (from `.symlinks/plugins/app_links/ios`)
   - camera_avfoundation (from `.symlinks/plugins/camera_avfoundation/ios`)
   - cloud_firestore (from `.symlinks/plugins/cloud_firestore/ios`)
@@ -1714,6 +1717,8 @@ SPEC REPOS:
     - SwiftyGif
 
 EXTERNAL SOURCES:
+  app_badge_plus:
+    :path: ".symlinks/plugins/app_badge_plus/ios"
   app_links:
     :path: ".symlinks/plugins/app_links/ios"
   camera_avfoundation:
@@ -1769,6 +1774,7 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   abseil: a05cc83bf02079535e17169a73c5be5ba47f714b
+  app_badge_plus: 32b6022e2a8585454d6c2a99aa65f8f31f06752a
   app_links: 3dbc685f76b1693c66a6d9dd1e9ab6f73d97dc0a
   BoringSSL-GRPC: dded2a44897e45f28f08ae87a55ee4bcd19bc508
   camera_avfoundation: 5675ca25298b6f81fa0a325188e7df62cc217741

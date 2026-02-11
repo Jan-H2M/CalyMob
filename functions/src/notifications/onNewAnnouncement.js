@@ -8,6 +8,7 @@
 
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
+const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithBadge } = require('../utils/badge-helper');
 
 /**
  * Firestore trigger for new announcements (Gen2)
@@ -44,15 +45,9 @@ exports.onNewAnnouncement = onDocumentCreated(
         return null;
       }
 
-      // 2. Collect all valid FCM tokens (except sender)
-      const tokens = [];
-      membersSnapshot.forEach(doc => {
-        const memberData = doc.data();
-        // Don't notify the sender
-        if (doc.id !== senderId && memberData.fcm_token) {
-          tokens.push(memberData.fcm_token);
-        }
-      });
+      // 2. Collect tokens and members using helper function
+      const memberDocs = membersSnapshot.docs;
+      const { tokens, memberTokenGroups, recipientIds } = collectTokensAndMembers(memberDocs, senderId);
 
       if (tokens.length === 0) {
         console.log('No FCM tokens found, skipping notification');
@@ -65,7 +60,7 @@ exports.onNewAnnouncement = onDocumentCreated(
       const isUrgent = type === 'urgent';
 
       // 4. Prepare the notification payload
-      const payload = {
+      const basePayload = {
         notification: {
           title: `📢 ${title}`,
           body: message.length > 100
@@ -90,49 +85,17 @@ exports.onNewAnnouncement = onDocumentCreated(
           payload: {
             aps: {
               sound: 'default',
-              badge: 1,
               ...(isUrgent && { 'interruption-level': 'time-sensitive' }),
             },
           },
         },
       };
 
-      // 5. Send notifications (in batches of 500 if needed)
-      const batchSize = 500;
-      const batches = [];
+      // 5. Send notifications with dynamic badge counts
+      const { successCount, failureCount } = await sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload, 'announcements');
 
-      for (let i = 0; i < tokens.length; i += batchSize) {
-        const batchTokens = tokens.slice(i, i + batchSize);
-        batches.push(
-          admin.messaging().sendEachForMulticast({
-            tokens: batchTokens,
-            ...payload,
-          })
-        );
-      }
-
-      const results = await Promise.all(batches);
-
-      // 6. Handle failed tokens
-      let successCount = 0;
-      let failureCount = 0;
-
-      results.forEach((result, batchIndex) => {
-        successCount += result.successCount;
-        failureCount += result.failureCount;
-
-        // Log invalid tokens
-        result.responses.forEach((response, index) => {
-          if (!response.success) {
-            const error = response.error;
-            if (error.code === 'messaging/invalid-registration-token' ||
-                error.code === 'messaging/registration-token-not-registered') {
-              const failedToken = tokens[batchIndex * batchSize + index];
-              console.log(`Invalid token: ${failedToken.substring(0, 20)}...`);
-            }
-          }
-        });
-      });
+      // 6. Increment unread counts for recipients
+      await incrementUnreadCounts(clubId, recipientIds, 'announcements');
 
       console.log(`Announcement notifications sent: ${successCount} success, ${failureCount} failures`);
       return { success: successCount, failure: failureCount };

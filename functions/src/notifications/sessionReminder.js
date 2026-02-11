@@ -8,6 +8,7 @@
 
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const admin = require('firebase-admin');
+const { getBadgeCount } = require('../utils/badge-helper');
 
 /**
  * Scheduled function to send session reminders (Gen2)
@@ -135,7 +136,7 @@ exports.sessionReminder = onSchedule(
           const notificationTitle = `Rappel: Piscine ${dayName}`;
           const notificationBody = `Séance piscine demain à ${session.horaire_debut || '20:30'} - ${session.lieu || 'Piscine'}`;
 
-          const payload = {
+          const basePayload = {
             notification: {
               title: notificationTitle,
               body: notificationBody,
@@ -165,48 +166,93 @@ exports.sessionReminder = onSchedule(
                     body: notificationBody,
                   },
                   sound: 'default',
-                  badge: 1,
                 },
               },
             },
           };
 
-          // 7. Send notifications
+          // 7. Send notifications with dynamic badge per member
           console.log(`Sending reminder to ${tokens.length} devices for session ${sessionId}`);
 
-          const batchSize = 500;
-          for (let i = 0; i < tokens.length; i += batchSize) {
-            const batchTokens = tokens.slice(i, i + batchSize);
-            const result = await admin.messaging().sendEachForMulticast({
-              tokens: batchTokens,
-              ...payload,
-            });
-
-            totalNotifications += result.successCount;
-
-            // Clean up invalid tokens
-            result.responses.forEach((response, index) => {
-              if (!response.success) {
-                const error = response.error;
-                if (error.code === 'messaging/invalid-registration-token' ||
-                    error.code === 'messaging/registration-token-not-registered') {
-                  const failedToken = batchTokens[index];
-                  const memberInfo = tokenToMember.get(failedToken);
-                  if (memberInfo) {
-                    admin.firestore()
-                      .collection('clubs')
-                      .doc(memberInfo.clubId)
-                      .collection('members')
-                      .doc(memberInfo.memberId)
-                      .update({
-                        fcm_tokens: admin.firestore.FieldValue.arrayRemove(failedToken)
-                      })
-                      .catch(err => console.error(`Failed to remove token: ${err.message}`));
-                  }
-                }
+          // Group tokens by member for badge count
+          const memberTokensMap = new Map();
+          tokens.forEach(token => {
+            const memberInfo = tokenToMember.get(token);
+            if (memberInfo) {
+              if (!memberTokensMap.has(memberInfo.memberId)) {
+                memberTokensMap.set(memberInfo.memberId, []);
               }
-            });
+              memberTokensMap.get(memberInfo.memberId).push(token);
+            }
+          });
+
+          // Send with per-member badge counts
+          const sendPromises = [];
+          for (const [memberId, memberTokens] of memberTokensMap.entries()) {
+            sendPromises.push(
+              (async () => {
+                try {
+                  // Get badge count for this member
+                  const badgeCount = await getBadgeCount(clubId, memberId);
+                  const newBadge = badgeCount + 1;
+
+                  // Create payload with personalized badge
+                  const payload = {
+                    ...basePayload,
+                    apns: {
+                      ...(basePayload.apns || {}),
+                      headers: {
+                        'apns-priority': '10',
+                        ...(basePayload.apns?.headers || {}),
+                      },
+                      payload: {
+                        aps: {
+                          ...(basePayload.apns?.payload?.aps || {}),
+                          alert: {
+                            title: notificationTitle,
+                            body: notificationBody,
+                          },
+                          sound: 'default',
+                          badge: newBadge,
+                        },
+                      },
+                    },
+                  };
+
+                  const result = await admin.messaging().sendEachForMulticast({
+                    tokens: memberTokens,
+                    ...payload,
+                  });
+
+                  totalNotifications += result.successCount;
+
+                  // Clean up invalid tokens
+                  result.responses.forEach((response, index) => {
+                    if (!response.success) {
+                      const error = response.error;
+                      if (error.code === 'messaging/invalid-registration-token' ||
+                          error.code === 'messaging/registration-token-not-registered') {
+                        const failedToken = memberTokens[index];
+                        admin.firestore()
+                          .collection('clubs')
+                          .doc(clubId)
+                          .collection('members')
+                          .doc(memberId)
+                          .update({
+                            fcm_tokens: admin.firestore.FieldValue.arrayRemove(failedToken)
+                          })
+                          .catch(err => console.error(`Failed to remove token: ${err.message}`));
+                      }
+                    }
+                  });
+                } catch (error) {
+                  console.error(`Error sending reminder to member ${memberId}: ${error.message}`);
+                }
+              })()
+            );
           }
+
+          await Promise.all(sendPromises);
         }
       }
 

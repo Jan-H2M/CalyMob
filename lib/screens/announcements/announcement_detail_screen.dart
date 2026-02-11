@@ -9,7 +9,9 @@ import '../../models/announcement_reply.dart';
 import '../../models/session_message.dart' show MessageAttachment;
 import '../../models/event_message.dart' show ReplyPreview;
 import '../../services/announcement_service.dart';
+import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/unread_count_provider.dart';
 import '../../widgets/attachment_display.dart';
 import '../../widgets/attachment_picker.dart';
 
@@ -57,11 +59,28 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
     final userId = authProvider.currentUser?.uid;
     if (userId == null) return;
 
+    // Vérifie si l'annonce est déjà lue par cet utilisateur
+    final alreadyRead = widget.announcement.readBy.contains(userId);
+
     await _announcementService.markAnnouncementAsRead(
       clubId: widget.clubId,
       announcementId: widget.announcement.id,
       userId: userId,
     );
+
+    // Décrémenter le compteur si c'était non lu
+    if (!alreadyRead) {
+      try {
+        final unreadProvider = Provider.of<UnreadCountProvider>(context, listen: false);
+        await unreadProvider.decrementCategory(
+          clubId: FirebaseConfig.defaultClubId,
+          userId: userId,
+          category: 'announcements',
+        );
+      } catch (e) {
+        debugPrint('⚠️ Could not decrement announcement unread count: $e');
+      }
+    }
   }
 
   Future<void> _sendReply() async {

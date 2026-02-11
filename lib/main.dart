@@ -27,6 +27,7 @@ import 'providers/payment_provider.dart';
 import 'providers/exercice_valide_provider.dart';
 import 'providers/availability_provider.dart';
 import 'providers/activity_provider.dart';
+import 'providers/unread_count_provider.dart';
 
 // Screens
 import 'screens/auth/login_screen.dart';
@@ -130,6 +131,24 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       // Effacer le badge quand l'app revient au premier plan
       _notificationService.clearBadge();
+    } else if (state == AppLifecycleState.paused) {
+      // Mettre à jour le badge avec le nombre d'éléments non lus
+      // quand l'app passe en arrière-plan
+      _updateBadgeFromUnreadCounts();
+    }
+  }
+
+  /// Met à jour le badge iOS/Android avec le total des non-lus depuis le provider
+  void _updateBadgeFromUnreadCounts() {
+    try {
+      final unreadProvider = _navigatorKey.currentContext != null
+          ? Provider.of<UnreadCountProvider>(_navigatorKey.currentContext!, listen: false)
+          : null;
+      if (unreadProvider != null) {
+        _notificationService.setBadge(unreadProvider.total);
+      }
+    } catch (e) {
+      debugPrint('⚠️ Could not update badge on pause: $e');
     }
   }
 
@@ -147,6 +166,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         ChangeNotifierProvider(create: (_) => ExerciceValideProvider()),
         ChangeNotifierProvider(create: (_) => AvailabilityProvider()),
         ChangeNotifierProvider(create: (_) => ActivityProvider()),
+        ChangeNotifierProvider(create: (_) => UnreadCountProvider()),
       ],
       child: MaterialApp(
         navigatorKey: _navigatorKey,
