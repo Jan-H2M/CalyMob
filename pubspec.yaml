@@ -65,8 +65,8 @@ dependencies:
   # Local Notifications (for Android notification channel)
   flutter_local_notifications: ^18.0.1
 
-  # App Badge - REMOVED: caused crash on startup in Play Store release builds
-  # app_badge_plus: ^1.1.4  # TODO: re-evaluate or use alternative approach
+  # App Badge (badge count on app icon)
+  app_badge_plus: ^1.1.4
 
   # Device & App Info (for app installation tracking)
   device_info_plus: ^10.1.2

@@ -5,8 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-// app_badge_plus REMOVED - caused crash on startup in Play Store release builds
-// Badge clearing is now handled by the OS when app is opened
+import 'package:app_badge_plus/app_badge_plus.dart';
 
 // Import dart:io only on non-web platforms
 import 'notification_service_io.dart' if (dart.library.html) 'notification_service_web.dart' as platform_helper;
@@ -426,25 +425,52 @@ class NotificationService {
   }
 
   /// Effacer le badge de l'icône de l'app
-  /// Note: app_badge_plus was removed due to crash on startup in Play Store builds.
-  /// Badge clearing is now handled by the OS when app is opened.
+  /// IMPORTANT: ne PAS appeler avant runApp() — la platform channel n'est pas prête
   Future<void> clearBadge() async {
-    // Badge is automatically cleared by iOS/Android when app opens
-    debugPrint('ℹ️ Badge clearing handled by OS');
+    try {
+      final supported = await AppBadgePlus.isSupported();
+      if (supported) {
+        await AppBadgePlus.updateBadge(0);
+        debugPrint('✅ Badge effacé');
+      }
+    } catch (e) {
+      debugPrint('⚠️ Badge clear failed (non-fatal): $e');
+    }
   }
 
   /// Mettre à jour le badge avec un nombre spécifique
-  /// Note: No-op until a stable badge solution is found
   Future<void> setBadge(int count) async {
-    // No-op: app_badge_plus removed due to startup crash
-    debugPrint('ℹ️ Badge update skipped (plugin removed): $count');
+    try {
+      final supported = await AppBadgePlus.isSupported();
+      if (supported) {
+        await AppBadgePlus.updateBadge(count);
+        debugPrint('✅ Badge mis à jour: $count');
+      }
+    } catch (e) {
+      debugPrint('⚠️ Badge update failed (non-fatal): $e');
+    }
   }
 
   /// Mettre à jour le badge depuis le compteur Firestore unread_counts
-  /// Note: No-op until a stable badge solution is found
   Future<void> updateBadgeFromFirestore(String clubId, String userId) async {
-    // No-op: app_badge_plus removed due to startup crash
-    debugPrint('ℹ️ Badge Firestore update skipped (plugin removed)');
+    try {
+      final doc = await _firestore
+          .collection('clubs/$clubId/members')
+          .doc(userId)
+          .get();
+      final data = doc.data();
+      if (data == null) return;
+
+      final unreadCounts = data['unread_counts'] as Map<String, dynamic>? ?? {};
+      int total = 0;
+      for (final value in unreadCounts.values) {
+        if (value is int) total += value;
+      }
+
+      await setBadge(total);
+    } catch (e) {
+      debugPrint('⚠️ Badge Firestore update failed (non-fatal): $e');
+    }
   }
 }
 

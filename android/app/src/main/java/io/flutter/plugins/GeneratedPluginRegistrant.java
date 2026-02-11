@@ -16,6 +16,11 @@ public final class GeneratedPluginRegistrant {
   private static final String TAG = "GeneratedPluginRegistrant";
   public static void registerWith(@NonNull FlutterEngine flutterEngine) {
     try {
+      flutterEngine.getPlugins().add(new me.liolin.app_badge_plus.AppBadgePlusPlugin());
+    } catch (Exception e) {
+      Log.e(TAG, "Error registering plugin app_badge_plus, me.liolin.app_badge_plus.AppBadgePlusPlugin", e);
+    }
+    try {
       flutterEngine.getPlugins().add(new com.llfbandit.app_links.AppLinksPlugin());
     } catch (Exception e) {
       Log.e(TAG, "Error registering plugin app_links, com.llfbandit.app_links.AppLinksPlugin", e);
@@ -114,6 +119,11 @@ public final class GeneratedPluginRegistrant {
       flutterEngine.getPlugins().add(new dev.steenbakker.mobile_scanner.MobileScannerPlugin());
     } catch (Exception e) {
       Log.e(TAG, "Error registering plugin mobile_scanner, dev.steenbakker.mobile_scanner.MobileScannerPlugin", e);
+    }
+    try {
+      flutterEngine.getPlugins().add(new com.crazecoder.openfile.OpenFilePlugin());
+    } catch (Exception e) {
+      Log.e(TAG, "Error registering plugin open_filex, com.crazecoder.openfile.OpenFilePlugin", e);
     }
     try {
       flutterEngine.getPlugins().add(new dev.fluttercommunity.plus.packageinfo.PackageInfoPlugin());

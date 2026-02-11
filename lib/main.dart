@@ -72,8 +72,8 @@ void main() async {
     // Configurer les handlers pour les notifications en foreground
     if (!kIsWeb) {
       notificationService.setupForegroundNotifications();
-      // Effacer le badge au démarrage de l'app
-      await notificationService.clearBadge();
+      // Note: clearBadge() est appelé dans _MyAppState.initState()
+      // et NON ici, car la platform channel n'est pas encore prête avant runApp()
     }
     debugPrint('✅ Notifications initialisées');
 
@@ -106,6 +106,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _setupDeepLinkListener();
+    // Effacer le badge au démarrage — ici la platform channel est prête
+    _notificationService.clearBadge();
   }
 
   void _setupDeepLinkListener() {
