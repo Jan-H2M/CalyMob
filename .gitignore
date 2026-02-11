@@ -9,7 +9,10 @@ Thumbs.db
 # ===================
 .idea/
 .vscode/
-.claude/
+.claude/*
+!.claude/skills/
+!.claude/context.md
+!.claude/instructions.md
 *.swp
 *.swo
 *.sw?
@@ -106,6 +109,10 @@ coverage/
 *.local
 .temp/
 .vercel/
+
+# Fastlane auto-generated
+android/fastlane/report.xml
+android/fastlane/README.md
 
 # Build artifacts (don't commit APKs/IPAs)
 *.apk

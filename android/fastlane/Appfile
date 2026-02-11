@@ -1,0 +1,2 @@
+json_key_file("~/.private_keys/google-play-deploy.json")
+package_name("club.caly.calymob")
