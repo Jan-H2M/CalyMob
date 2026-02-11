@@ -917,7 +917,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
 
                     try {
                       await FichePalanqueePdf.generateAndShare(
-                        context: context,
                         operation: op,
                         participants: participants,
                         clubId: widget.clubId,

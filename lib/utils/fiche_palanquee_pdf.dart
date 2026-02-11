@@ -1,11 +1,10 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/operation.dart';
 import '../models/participant_operation.dart';
@@ -29,9 +28,8 @@ class FichePalanqueePdf {
   ];
   static const List<double> _colFlex = [3.2, 0.8, 0.8, 0.9, 1.1, 1.1, 1.0, 1.6, 2.5];
 
-  /// Point d'entrée : génère le PDF et ouvre le dialog de partage.
+  /// Point d'entrée : génère le PDF et l'ouvre dans le viewer système.
   static Future<void> generateAndShare({
-    required BuildContext context,
     required Operation operation,
     required List<ParticipantOperation> participants,
     required String clubId,
@@ -200,15 +198,11 @@ class FichePalanqueePdf {
     final file = File('${dir.path}/$fileName');
     await file.writeAsBytes(bytes);
 
-    // Partager via le dialog système
-    final box = context.findRenderObject() as RenderBox?;
-    await Share.shareXFiles(
-      [XFile(file.path)],
-      subject: 'Fiche de Palanquée - ${operation.titre}',
-      sharePositionOrigin: box != null
-          ? box.localToGlobal(Offset.zero) & box.size
-          : null,
-    );
+    // Ouvrir directement dans le viewer PDF du système
+    final result = await OpenFilex.open(file.path, type: 'application/pdf');
+    if (result.type != ResultType.done) {
+      debugPrint('⚠️ Fiche PDF: impossible d\'ouvrir le fichier: ${result.message}');
+    }
   }
 
   /// Récupère les niveaux de plongée des membres depuis Firestore

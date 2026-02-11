@@ -88,6 +88,9 @@ dependencies:
   # PDF Generation (fiche de palanquée)
   pdf: ^3.11.1
 
+  # Open files with system viewer (PDF, images, etc.)
+  open_filex: ^4.5.0
+
   # Payments (if needed)
   # stripe_payment: ^1.1.1
 
