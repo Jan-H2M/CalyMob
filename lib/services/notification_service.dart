@@ -91,6 +91,12 @@ class NotificationService {
     } else if (type == 'medical_certificate') {
       channelId = 'medical_certificates';
       channelName = 'Certificats médicaux';
+    } else if (type == 'team_message') {
+      channelId = 'team_messages';
+      channelName = 'Messages d\'équipe';
+    } else if (type == 'session_message') {
+      channelId = 'piscine_messages';
+      channelName = 'Messages de piscine';
     } else {
       channelId = 'announcements';
       channelName = 'Annonces du club';
@@ -159,6 +165,28 @@ class NotificationService {
         enableVibration: true,
       );
       await androidPlugin.createNotificationChannel(medicalCertificatesChannel);
+
+      // Canal pour les messages d'équipe (team channels)
+      const teamMessagesChannel = AndroidNotificationChannel(
+        'team_messages',
+        'Messages d\'équipe',
+        description: 'Notifications pour les nouveaux messages dans les canaux d\'équipe',
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+      );
+      await androidPlugin.createNotificationChannel(teamMessagesChannel);
+
+      // Canal pour les messages de piscine (sessions)
+      const piscineMessagesChannel = AndroidNotificationChannel(
+        'piscine_messages',
+        'Messages de piscine',
+        description: 'Notifications pour les nouveaux messages dans les sessions de piscine',
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+      );
+      await androidPlugin.createNotificationChannel(piscineMessagesChannel);
 
       debugPrint('✅ Canaux de notification Android créés');
     } catch (e) {

@@ -150,9 +150,9 @@ async function sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload
     sendPromises.push(
       (async () => {
         try {
-          // Haal huidig badge count op + 1 voor dit nieuwe bericht
+          // Haal huidig badge count op (increment is al gebeurd vóór deze call)
           const currentBadge = await getBadgeCount(clubId, memberId);
-          const newBadge = currentBadge + 1; // +1 want increment gebeurt daarna
+          const newBadge = currentBadge;
 
           // Maak payload met juiste badge voor deze member
           const payload = {

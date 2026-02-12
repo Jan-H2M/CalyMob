@@ -138,11 +138,11 @@ exports.onNewTeamMessage = onDocumentCreated(
         },
       };
 
-      // 5. Send notifications with dynamic badge counts
-      const { successCount, failureCount } = await sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload, 'team_messages');
-
-      // 6. Increment unread counts for recipients
+      // 5. Increment unread counts FIRST (zodat badge-getal correct is bij verzending)
       await incrementUnreadCounts(clubId, recipientIds, 'team_messages');
+
+      // 6. Send notifications with dynamic badge counts
+      const { successCount, failureCount } = await sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload, 'team_messages');
 
       console.log(`Notifications sent: ${successCount} success, ${failureCount} failures`);
       return { success: successCount, failure: failureCount };

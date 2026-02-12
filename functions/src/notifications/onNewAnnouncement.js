@@ -82,20 +82,31 @@ exports.onNewAnnouncement = onDocumentCreated(
           },
         },
         apns: {
+          headers: {
+            'apns-priority': '10',
+            'apns-expiration': '0',
+          },
           payload: {
             aps: {
+              alert: {
+                title: `📢 ${title}`,
+                body: message.length > 100
+                  ? message.substring(0, 97) + '...'
+                  : message,
+              },
               sound: 'default',
+              'content-available': 1,
               ...(isUrgent && { 'interruption-level': 'time-sensitive' }),
             },
           },
         },
       };
 
-      // 5. Send notifications with dynamic badge counts
-      const { successCount, failureCount } = await sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload, 'announcements');
-
-      // 6. Increment unread counts for recipients
+      // 5. Increment unread counts FIRST (zodat badge-getal correct is bij verzending)
       await incrementUnreadCounts(clubId, recipientIds, 'announcements');
+
+      // 6. Send notifications with dynamic badge counts
+      const { successCount, failureCount } = await sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload, 'announcements');
 
       console.log(`Announcement notifications sent: ${successCount} success, ${failureCount} failures`);
       return { success: successCount, failure: failureCount };

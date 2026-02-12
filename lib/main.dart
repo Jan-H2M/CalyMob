@@ -32,9 +32,23 @@ import 'providers/unread_count_provider.dart';
 // Screens
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/reset_password_screen.dart';
+import 'screens/operations/operation_detail_screen.dart';
+import 'screens/announcements/announcement_detail_screen.dart';
+import 'screens/teams/team_chat_screen.dart';
+import 'screens/piscine/session_chat_screen.dart';
+
+// Models (pour la navigation depuis les notifications)
+import 'models/announcement.dart';
+import 'models/team_channel.dart';
+import 'models/piscine_session.dart';
+import 'models/session_message.dart';
 
 // Config
 import 'config/app_colors.dart';
+import 'config/firebase_config.dart';
+
+// Firestore (pour fetch depuis notifications)
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -106,8 +120,146 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _setupDeepLinkListener();
+    _setupNotificationTapHandlers();
     // Effacer le badge au démarrage — ici la platform channel est prête
     _notificationService.clearBadge();
+  }
+
+  /// Configure les handlers pour la navigation quand l'utilisateur tape sur une notification
+  void _setupNotificationTapHandlers() {
+    // Handler quand l'app est en arrière-plan et l'utilisateur tape sur la notification
+    FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
+
+    // Handler quand l'app est complètement fermée et ouverte via une notification
+    FirebaseMessaging.instance.getInitialMessage().then((message) {
+      if (message != null) {
+        // Petit délai pour s'assurer que le navigator est prêt
+        Future.delayed(const Duration(milliseconds: 500), () {
+          _handleNotificationTap(message);
+        });
+      }
+    });
+  }
+
+  /// Gère la navigation quand l'utilisateur tape sur une notification push
+  Future<void> _handleNotificationTap(RemoteMessage message) async {
+    final data = message.data;
+    final type = data['type'] as String?;
+    final clubId = data['club_id'] as String? ?? FirebaseConfig.defaultClubId;
+
+    debugPrint('🔔 Notification tap - type: $type, data: $data');
+
+    if (type == null || _navigatorKey.currentState == null) {
+      debugPrint('⚠️ Cannot handle notification tap: type=$type, navigator=${_navigatorKey.currentState != null}');
+      return;
+    }
+
+    try {
+      switch (type) {
+        case 'event_message':
+          final operationId = data['operation_id'] as String?;
+          if (operationId != null) {
+            _navigatorKey.currentState!.push(
+              MaterialPageRoute(
+                builder: (_) => OperationDetailScreen(
+                  operationId: operationId,
+                  clubId: clubId,
+                ),
+              ),
+            );
+          }
+          break;
+
+        case 'announcement':
+        case 'announcement_reply':
+          final announcementId = data['announcement_id'] as String?;
+          if (announcementId != null) {
+            final doc = await FirebaseFirestore.instance
+                .collection('clubs')
+                .doc(clubId)
+                .collection('announcements')
+                .doc(announcementId)
+                .get();
+            if (doc.exists) {
+              final announcement = Announcement.fromFirestore(doc);
+              _navigatorKey.currentState!.push(
+                MaterialPageRoute(
+                  builder: (_) => AnnouncementDetailScreen(
+                    announcement: announcement,
+                    clubId: clubId,
+                  ),
+                ),
+              );
+            }
+          }
+          break;
+
+        case 'team_message':
+          final channelId = data['channel_id'] as String?;
+          if (channelId != null) {
+            final doc = await FirebaseFirestore.instance
+                .collection('clubs')
+                .doc(clubId)
+                .collection('team_channels')
+                .doc(channelId)
+                .get();
+            if (doc.exists) {
+              final channel = TeamChannel.fromFirestore(doc);
+              _navigatorKey.currentState!.push(
+                MaterialPageRoute(
+                  builder: (_) => TeamChatScreen(channel: channel),
+                ),
+              );
+            }
+          }
+          break;
+
+        case 'session_message':
+          final sessionId = data['session_id'] as String?;
+          final groupType = data['group_type'] as String?;
+          final groupLevel = data['group_level'] as String?;
+          if (sessionId != null) {
+            final doc = await FirebaseFirestore.instance
+                .collection('clubs')
+                .doc(clubId)
+                .collection('piscine_sessions')
+                .doc(sessionId)
+                .get();
+            if (doc.exists) {
+              final session = PiscineSession.fromFirestore(doc);
+              // Déterminer le type de groupe
+              SessionGroupType sessionGroupType = SessionGroupType.encadrants;
+              String displayName = 'Encadrants';
+              if (groupType == 'accueil') {
+                sessionGroupType = SessionGroupType.accueil;
+                displayName = 'Accueil';
+              } else if (groupType == 'niveau' && groupLevel != null && groupLevel.isNotEmpty) {
+                sessionGroupType = SessionGroupType.niveau;
+                displayName = 'Niveau $groupLevel';
+              }
+              final chatGroup = SessionChatGroup(
+                type: sessionGroupType,
+                level: groupType == 'niveau' ? groupLevel : null,
+                displayName: displayName,
+              );
+              _navigatorKey.currentState!.push(
+                MaterialPageRoute(
+                  builder: (_) => SessionChatScreen(
+                    session: session,
+                    chatGroup: chatGroup,
+                  ),
+                ),
+              );
+            }
+          }
+          break;
+
+        default:
+          debugPrint('⚠️ Unknown notification type: $type');
+      }
+    } catch (e) {
+      debugPrint('❌ Error handling notification tap: $e');
+    }
   }
 
   void _setupDeepLinkListener() {
