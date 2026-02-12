@@ -8,6 +8,9 @@ import '../../config/app_colors.dart';
 import '../../models/activity_item.dart';
 import '../../providers/activity_provider.dart';
 import '../../widgets/loading_widget.dart';
+import '../../services/event_message_service.dart';
+import '../../services/session_message_service.dart';
+import '../../providers/auth_provider.dart';
 import 'operation_detail_screen.dart';
 import '../piscine/session_detail_screen.dart';
 
@@ -542,21 +545,98 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                   ),
                 ),
               ),
-              // Arrow indicator
-              Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: Icon(
-                  Icons.chevron_right,
-                  color: item.isPiscine
-                      ? const Color(0xFF0083B0).withOpacity(0.5)
-                      : AppColors.middenblauw.withOpacity(0.5),
-                ),
-              ),
+              // Unread badge + arrow indicator
+              _buildUnreadBadgeAndArrow(item),
             ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildUnreadBadgeAndArrow(ActivityItem item) {
+    final userId = context.read<AuthProvider>().currentUser?.uid;
+
+    if (userId == null) {
+      return Padding(
+        padding: const EdgeInsets.only(right: 12),
+        child: Icon(
+          Icons.chevron_right,
+          color: item.isPiscine
+              ? const Color(0xFF0083B0).withOpacity(0.5)
+              : AppColors.middenblauw.withOpacity(0.5),
+        ),
+      );
+    }
+
+    late final Stream<int> unreadStream;
+
+    if (item.isOperation) {
+      unreadStream = EventMessageService().getUnreadCountStream(
+        clubId: _clubId,
+        operationId: item.id,
+        userId: userId,
+      );
+    } else if (item.isPiscine && item.piscineSession != null) {
+      final sessionMessageService = SessionMessageService();
+      final groups = sessionMessageService.getAvailableGroups(
+        session: item.piscineSession!,
+        userId: userId,
+      );
+      if (groups.isEmpty) {
+        unreadStream = Stream.value(0);
+      } else {
+        unreadStream = sessionMessageService.getTotalUnreadCountStream(
+          clubId: _clubId,
+          sessionId: item.id,
+          userId: userId,
+          groups: groups,
+        );
+      }
+    } else {
+      unreadStream = Stream.value(0);
+    }
+
+    return StreamBuilder<int>(
+      stream: unreadStream,
+      builder: (context, snapshot) {
+        final unreadCount = snapshot.data ?? 0;
+        return Padding(
+          padding: const EdgeInsets.only(right: 12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (unreadCount > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    unreadCount > 99 ? '99+' : unreadCount.toString(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              if (unreadCount > 0) const SizedBox(width: 6),
+              Icon(
+                Icons.chevron_right,
+                color: item.isPiscine
+                    ? const Color(0xFF0083B0).withOpacity(0.5)
+                    : AppColors.middenblauw.withOpacity(0.5),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

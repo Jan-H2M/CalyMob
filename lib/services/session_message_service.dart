@@ -201,6 +201,39 @@ class SessionMessageService {
     return groups;
   }
 
+  /// Stream du nombre TOTAL de messages non lus pour une session (tous les groupes)
+  /// Utilisé pour afficher un badge global sur la carte de session dans la liste
+  Stream<int> getTotalUnreadCountStream({
+    required String clubId,
+    required String sessionId,
+    required String userId,
+    required List<SessionChatGroup> groups,
+  }) {
+    return _messagesCollection(clubId, sessionId)
+        .snapshots()
+        .map((snapshot) {
+      int total = 0;
+
+      for (final group in groups) {
+        final groupMessages = snapshot.docs.where((doc) {
+          final data = doc.data();
+          if (data['group_type'] != group.type.value) return false;
+          if (group.type == SessionGroupType.niveau) {
+            return data['group_level'] == group.level;
+          }
+          return true;
+        });
+
+        total += groupMessages.where((doc) {
+          final readBy = List<String>.from(doc.data()['read_by'] ?? []);
+          return !readBy.contains(userId);
+        }).length;
+      }
+
+      return total;
+    });
+  }
+
   /// Stream du nombre de messages non lus pour tous les groupes d'un utilisateur
   Stream<Map<String, int>> getUnreadCountsStream({
     required String clubId,

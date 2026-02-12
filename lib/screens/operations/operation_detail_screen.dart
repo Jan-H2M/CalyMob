@@ -29,6 +29,7 @@ import 'add_guest_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import '../../utils/fiche_palanquee_pdf.dart';
+import 'palanquee_screen.dart';
 
 /// Écran de détail d'une opération avec bouton inscription
 class OperationDetailScreen extends StatefulWidget {
@@ -902,53 +903,39 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          // Fiche de palanquée button - only for dive events with participants
+          // Palanquées button - only for dive events with participants
           if (isPlongeeEvent && (operationProvider.selectedOperationParticipants.isNotEmpty))
             Padding(
               padding: const EdgeInsets.only(right: 2),
-              child: SizedBox(
-                width: 32,
-                height: 32,
-                child: IconButton(
-                  onPressed: () async {
-                    final op = operationProvider.selectedOperation;
-                    final participants = operationProvider.selectedOperationParticipants;
-                    if (op == null || participants.isEmpty) return;
+              child: IconButton(
+                onPressed: () {
+                  final op = operationProvider.selectedOperation;
+                  final participants = operationProvider.selectedOperationParticipants;
+                  if (op == null || participants.isEmpty) return;
 
-                    try {
-                      await FichePalanqueePdf.generateAndShare(
+                  final authProvider = context.read<AuthProvider>();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PalanqueeScreen(
                         operation: op,
                         participants: participants,
                         clubId: widget.clubId,
-                      );
-                    } catch (e) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Erreur PDF: $e'), backgroundColor: Colors.red),
-                        );
-                      }
-                    }
-                  },
-                  padding: EdgeInsets.zero,
-                  iconSize: 18,
-                  icon: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.25),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Text(
-                      'FP',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.5,
+                        userId: authProvider.currentUser?.uid ?? '',
                       ),
                     ),
+                  );
+                },
+                padding: EdgeInsets.zero,
+                icon: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.25),
+                    borderRadius: BorderRadius.circular(6),
                   ),
-                  tooltip: 'Fiche de palanquée (PDF)',
+                  child: const Icon(Icons.groups, color: Colors.white, size: 18),
                 ),
+                tooltip: 'Palanquées',
               ),
             ),
           // Scanner button - always visible for all logged-in users
@@ -1420,7 +1407,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
       stream: messageProvider.watchMessages(widget.clubId, widget.operationId),
       builder: (context, snapshot) {
         final messages = snapshot.data ?? [];
-        final messageCount = messages.length;
+        final unreadCount = messages.where((m) => !m.isReadBy(currentUserId)).length;
 
         return Container(
           decoration: BoxDecoration(
@@ -1460,20 +1447,37 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (messageCount > 0)
+                  if (unreadCount > 0)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       margin: const EdgeInsets.only(right: 8),
                       decoration: BoxDecoration(
-                        color: AppColors.lichtblauw.withOpacity(0.5),
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        unreadCount > 99 ? '99+' : '$unreadCount',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    )
+                  else if (messages.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.lichtblauw.withOpacity(0.3),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        '$messageCount',
+                        '${messages.length}',
                         style: TextStyle(
                           fontSize: 14,
                           color: AppColors.donkerblauw,
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),

@@ -86,7 +86,7 @@ void main() async {
     // Configurer les handlers pour les notifications en foreground
     if (!kIsWeb) {
       notificationService.setupForegroundNotifications();
-      // Note: clearBadge() est appelé dans _MyAppState.initState()
+      // Note: le badge est mis à jour (pas effacé) dans _MyAppState.initState()
       // et NON ici, car la platform channel n'est pas encore prête avant runApp()
     }
     debugPrint('✅ Notifications initialisées');
@@ -121,8 +121,11 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _setupDeepLinkListener();
     _setupNotificationTapHandlers();
-    // Effacer le badge au démarrage — ici la platform channel est prête
-    _notificationService.clearBadge();
+    // Mettre à jour le badge au démarrage avec le nombre réel de non-lus
+    // (post-frame car le Provider n'est pas encore prêt dans initState)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateBadgeFromUnreadCounts();
+    });
   }
 
   /// Configure les handlers pour la navigation quand l'utilisateur tape sur une notification
@@ -283,8 +286,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // Effacer le badge quand l'app revient au premier plan
-      _notificationService.clearBadge();
+      // Mettre à jour le badge avec le nombre réel de non-lus
+      _updateBadgeFromUnreadCounts();
     } else if (state == AppLifecycleState.paused) {
       // Mettre à jour le badge avec le nombre d'éléments non lus
       // quand l'app passe en arrière-plan

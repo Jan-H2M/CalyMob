@@ -5,6 +5,7 @@ import '../../models/piscine_session.dart';
 import '../../services/piscine_session_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../config/firebase_config.dart';
+import '../../services/session_message_service.dart';
 import '../../widgets/piscine_animated_background.dart';
 import '../../theme/calypso_theme.dart';
 import 'session_detail_screen.dart';
@@ -251,7 +252,13 @@ class _SessionCard extends StatelessWidget {
                         ),
                       ],
                     ),
-                    _buildStatusBadge(),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildUnreadBadge(),
+                        _buildStatusBadge(),
+                      ],
+                    ),
                   ],
                 ),
 
@@ -347,6 +354,47 @@ class _SessionCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildUnreadBadge() {
+    final sessionMessageService = SessionMessageService();
+    final clubId = FirebaseConfig.defaultClubId;
+    final groups = sessionMessageService.getAvailableGroups(
+      session: session,
+      userId: userId,
+    );
+
+    if (groups.isEmpty) return const SizedBox.shrink();
+
+    return StreamBuilder<int>(
+      stream: sessionMessageService.getTotalUnreadCountStream(
+        clubId: clubId,
+        sessionId: session.id,
+        userId: userId,
+        groups: groups,
+      ),
+      builder: (context, snapshot) {
+        final unreadCount = snapshot.data ?? 0;
+        if (unreadCount == 0) return const SizedBox.shrink();
+
+        return Container(
+          margin: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.red,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            unreadCount > 99 ? '99+' : unreadCount.toString(),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        );
+      },
     );
   }
 

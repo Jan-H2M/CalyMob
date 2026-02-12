@@ -64,7 +64,10 @@ class AnnouncementCard extends StatelessWidget {
         elevation: 2,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: color.withOpacity(0.3), width: 1),
+          side: BorderSide(
+            color: isRead ? color.withOpacity(0.3) : color.withOpacity(0.6),
+            width: isRead ? 1 : 2,
+          ),
         ),
         child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -81,6 +84,16 @@ class AnnouncementCard extends StatelessWidget {
             ),
             child: Row(
               children: [
+                if (!isRead)
+                  Container(
+                    width: 10,
+                    height: 10,
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
                 Icon(_getTypeIcon(), color: color, size: 20),
                 const SizedBox(width: 8),
                 Text(
@@ -113,9 +126,10 @@ class AnnouncementCard extends StatelessWidget {
                 // Title
                 Text(
                   announcement.title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 18,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: isRead ? FontWeight.w500 : FontWeight.bold,
+                    color: isRead ? Colors.grey[800] : Colors.black,
                   ),
                 ),
                 const SizedBox(height: 8),

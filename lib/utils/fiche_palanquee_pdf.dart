@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/operation.dart';
 import '../models/participant_operation.dart';
+import '../models/palanquee.dart';
 
 /// Génère et partage la Fiche de Palanquée (PDF) depuis CalyMob.
 ///
@@ -29,10 +30,12 @@ class FichePalanqueePdf {
   static const List<double> _colFlex = [3.2, 0.8, 0.8, 0.9, 1.1, 1.1, 1.0, 1.6, 2.5];
 
   /// Point d'entrée : génère le PDF et l'ouvre dans le viewer système.
+  /// Si [palanqueeAssignments] est fourni, les grilles sont remplies avec les noms/niveaux.
   static Future<void> generateAndShare({
     required Operation operation,
     required List<ParticipantOperation> participants,
     required String clubId,
+    PalanqueeAssignments? palanqueeAssignments,
   }) async {
     // Récupérer les niveaux de plongée depuis Firestore
     final memberLevels = await _fetchMemberLevels(
@@ -48,10 +51,29 @@ class FichePalanqueePdf {
         ? '${operation.dateDebut!.day.toString().padLeft(2, '0')}/${operation.dateDebut!.month.toString().padLeft(2, '0')}/${operation.dateDebut!.year}'
         : '___/___/______';
 
+    // Build a map of palanquée number → participants for pre-filling
+    final assignmentMap = <int, List<PalanqueeParticipant>>{};
+    if (palanqueeAssignments != null) {
+      for (final pal in palanqueeAssignments.palanquees) {
+        assignmentMap[pal.numero] = pal.participants;
+      }
+    }
+    final hasAssignments = assignmentMap.isNotEmpty;
+
     // Nombre de palanquées
-    final minNeeded = (sortedParticipants.length / 4).ceil().clamp(1, 100);
-    final rawTotal = (minNeeded + (minNeeded <= 2 ? 3 : 2)).clamp(4, 100);
-    final totalPalanquees = rawTotal.isOdd ? rawTotal + 1 : rawTotal;
+    int totalPalanquees;
+    if (hasAssignments) {
+      // Use assigned palanquées count + a few extra empty ones
+      final assignedCount = assignmentMap.length;
+      final extra = (assignedCount <= 2) ? 2 : 1;
+      totalPalanquees = assignedCount + extra;
+      if (totalPalanquees.isOdd) totalPalanquees++;
+      if (totalPalanquees < 4) totalPalanquees = 4;
+    } else {
+      final minNeeded = (sortedParticipants.length / 4).ceil().clamp(1, 100);
+      final rawTotal = (minNeeded + (minNeeded <= 2 ? 3 : 2)).clamp(4, 100);
+      totalPalanquees = rawTotal.isOdd ? rawTotal + 1 : rawTotal;
+    }
 
     // Créer le PDF
     final pdf = pw.Document(
@@ -115,7 +137,7 @@ class FichePalanqueePdf {
                 pw.Divider(color: _navy, thickness: 0.3),
                 pw.SizedBox(height: 2),
                 pw.Expanded(
-                  child: _buildPalanqueeGrid(1, palsOnPage1, totalPalanquees),
+                  child: _buildPalanqueeGrid(1, palsOnPage1, totalPalanquees, assignmentMap),
                 ),
               ],
 
@@ -174,7 +196,7 @@ class FichePalanqueePdf {
 
                 // Palanquée grid
                 pw.Expanded(
-                  child: _buildPalanqueeGrid(startNum, palsThisPage, totalPalanquees),
+                  child: _buildPalanqueeGrid(startNum, palsThisPage, totalPalanquees, assignmentMap),
                 ),
 
                 // Footer
@@ -425,7 +447,7 @@ class FichePalanqueePdf {
     );
   }
 
-  static pw.Widget _buildPalanqueeGrid(int startNum, int count, int total) {
+  static pw.Widget _buildPalanqueeGrid(int startNum, int count, int total, Map<int, List<PalanqueeParticipant>> assignmentMap) {
     final rows = <pw.Widget>[];
     int num = startNum;
     final end = startNum + count - 1;
@@ -438,11 +460,11 @@ class FichePalanqueePdf {
         pw.Row(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-            pw.Expanded(child: _buildSinglePalanquee(leftNum)),
+            pw.Expanded(child: _buildSinglePalanquee(leftNum, assignmentMap[leftNum])),
             pw.SizedBox(width: 6),
             pw.Expanded(
               child: rightNum != null
-                  ? _buildSinglePalanquee(rightNum)
+                  ? _buildSinglePalanquee(rightNum, assignmentMap[rightNum])
                   : pw.Container(), // Empty placeholder
             ),
           ],
@@ -455,8 +477,10 @@ class FichePalanqueePdf {
     return pw.Column(children: rows);
   }
 
-  static pw.Widget _buildSinglePalanquee(int num) {
-    final totalFlex = _colFlex.reduce((a, b) => a + b);
+  static pw.Widget _buildSinglePalanquee(int num, [List<PalanqueeParticipant>? assigned]) {
+    // Determine how many rows to show (minimum _palRowsBody)
+    final assignedCount = assigned?.length ?? 0;
+    final totalRows = assignedCount > _palRowsBody ? assignedCount : _palRowsBody;
 
     return pw.Column(
       children: [
@@ -520,18 +544,33 @@ class FichePalanqueePdf {
           ),
         ),
 
-        // Body rows (4 empty rows)
-        ...List.generate(_palRowsBody, (r) {
+        // Body rows — pre-filled with assigned participants or empty
+        ...List.generate(totalRows, (r) {
+          final participant = (assigned != null && r < assigned.length) ? assigned[r] : null;
+          final nomPrenom = participant != null
+              ? '${participant.membreNom.toUpperCase()} ${participant.membrePrenom}'
+              : '';
+          final niveau = participant != null ? _formatLevel(participant.niveau) : '';
+
           return pw.Container(
             decoration: pw.BoxDecoration(
               border: pw.Border.all(color: PdfColors.grey400, width: 0.15),
             ),
             child: pw.Row(
               children: List.generate(_colHeaders.length, (i) {
+                String cellText = '';
+                if (participant != null) {
+                  if (i == 0) cellText = nomPrenom;        // Nom Prénom
+                  if (i == 1) cellText = niveau;            // Niv.
+                  if (i == 3) cellText = 'Air';             // Gaz
+                } else {
+                  if (i == 3) cellText = 'Air';             // Gaz (default for empty)
+                }
+
                 return pw.Expanded(
                   flex: (_colFlex[i] * 10).round(),
                   child: pw.Container(
-                    height: 14, // Row height for handwriting
+                    height: 14,
                     padding: const pw.EdgeInsets.symmetric(horizontal: 1),
                     decoration: i > 0
                         ? const pw.BoxDecoration(
@@ -541,9 +580,15 @@ class FichePalanqueePdf {
                           )
                         : null,
                     alignment: pw.Alignment.centerLeft,
-                    child: i == 3 // Gaz column
-                        ? pw.Text('Air',
-                            style: const pw.TextStyle(fontSize: 6.5, color: PdfColors.grey500))
+                    child: cellText.isNotEmpty
+                        ? pw.Text(
+                            cellText,
+                            style: pw.TextStyle(
+                              fontSize: participant != null ? 6.5 : 6.5,
+                              color: participant != null ? PdfColors.black : PdfColors.grey500,
+                              font: (i == 0 && participant != null) ? pw.Font.helveticaBold() : null,
+                            ),
+                          )
                         : pw.Container(),
                   ),
                 );
@@ -553,6 +598,13 @@ class FichePalanqueePdf {
         }),
       ],
     );
+  }
+
+  /// Format niveau for PDF display (e.g., "2" → "2*", "MC" → "MC")
+  static String _formatLevel(String niveau) {
+    if (niveau.isEmpty) return '';
+    if (RegExp(r'^\d$').hasMatch(niveau)) return '$niveau*';
+    return niveau;
   }
 
   static pw.Widget _buildFooter(int page, int totalPages) {

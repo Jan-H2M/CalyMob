@@ -186,6 +186,24 @@ class EventMessageService {
     }
   }
 
+  /// Stream du nombre de messages non lus pour un événement (temps réel)
+  Stream<int> getUnreadCountStream({
+    required String clubId,
+    required String operationId,
+    required String userId,
+  }) {
+    return _firestore
+        .collection('clubs/$clubId/operations/$operationId/messages')
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs.where((doc) {
+        final readBy =
+            List<String>.from(doc.data()['read_by'] ?? []);
+        return !readBy.contains(userId);
+      }).length;
+    });
+  }
+
   /// Vérifier si l'utilisateur est inscrit à l'événement
   Future<bool> isUserParticipant({
     required String clubId,
