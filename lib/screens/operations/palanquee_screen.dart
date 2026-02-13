@@ -268,12 +268,10 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
   Future<void> _generatePdf() async {
     try {
       await FichePalanqueePdf.generateAndShare(
+        context: context,
         operation: widget.operation,
         participants: widget.participants,
         clubId: widget.clubId,
-        palanqueeAssignments: _palanquees.isNotEmpty
-            ? PalanqueeAssignments(palanquees: _palanquees)
-            : null,
       );
     } catch (e) {
       if (mounted) {
