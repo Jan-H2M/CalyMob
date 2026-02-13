@@ -190,6 +190,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                             // Description
                             TextFormField(
                               controller: _descriptionController,
+                              textCapitalization: TextCapitalization.sentences,
                               maxLines: 2,
                               textInputAction: TextInputAction.done,
                               onFieldSubmitted: (_) => FocusScope.of(context).unfocus(),

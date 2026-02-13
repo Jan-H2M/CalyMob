@@ -498,6 +498,7 @@ class ExpenseDetailScreen extends StatelessWidget {
             Text('Refuser la demande de ${CurrencyFormatter.format(expense.montant)} de ${expense.demandeurNom} ?'),
             const SizedBox(height: 16),
             TextField(
+              textCapitalization: TextCapitalization.sentences,
               decoration: const InputDecoration(
                 labelText: 'Raison (optionnel)',
                 border: OutlineInputBorder(),

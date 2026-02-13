@@ -281,6 +281,7 @@ class _AddAttendeeDialogState extends State<AddAttendeeDialog> {
           const SizedBox(height: 16),
           TextField(
             controller: _guestPrenomController,
+            textCapitalization: TextCapitalization.words,
             style: const TextStyle(color: Colors.black),
             decoration: InputDecoration(
               hintText: 'Prénom',
@@ -295,6 +296,7 @@ class _AddAttendeeDialogState extends State<AddAttendeeDialog> {
           const SizedBox(height: 12),
           TextField(
             controller: _guestNomController,
+            textCapitalization: TextCapitalization.words,
             style: const TextStyle(color: Colors.black),
             decoration: InputDecoration(
               hintText: 'Nom',

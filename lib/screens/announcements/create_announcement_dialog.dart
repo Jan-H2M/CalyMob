@@ -104,6 +104,7 @@ class _CreateAnnouncementDialogState extends State<CreateAnnouncementDialog> {
                     TextFormField(
                       controller: _titleController,
                       focusNode: _titleFocusNode,
+                      textCapitalization: TextCapitalization.words,
                       style: const TextStyle(
                         color: AppColors.donkerblauw,
                         fontSize: 16,
@@ -170,6 +171,7 @@ class _CreateAnnouncementDialogState extends State<CreateAnnouncementDialog> {
                     TextFormField(
                       controller: _messageController,
                       focusNode: _messageFocusNode,
+                      textCapitalization: TextCapitalization.sentences,
                       style: const TextStyle(
                         color: AppColors.donkerblauw,
                         fontSize: 15,

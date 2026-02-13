@@ -487,6 +487,7 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
               Expanded(
                 child: TextField(
                   controller: _messageController,
+                  textCapitalization: TextCapitalization.sentences,
                   decoration: InputDecoration(
                     hintText: _replyingTo != null
                         ? 'Repondre...'

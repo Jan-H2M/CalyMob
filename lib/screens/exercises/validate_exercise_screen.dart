@@ -335,6 +335,7 @@ class _ValidateExerciseScreenState extends State<ValidateExerciseScreen> {
                   // Notes (optional)
                   TextFormField(
                     controller: _notesController,
+                    textCapitalization: TextCapitalization.sentences,
                     maxLines: 3,
                     decoration: const InputDecoration(
                       labelText: 'Notes (optionnel)',
