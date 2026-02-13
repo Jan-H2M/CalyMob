@@ -8,6 +8,7 @@ class AnnouncementCard extends StatelessWidget {
   final VoidCallback? onTap;
   final bool isAdmin;
   final String? currentUserId;
+  final int unreadReplyCount;
 
   const AnnouncementCard({
     super.key,
@@ -16,6 +17,7 @@ class AnnouncementCard extends StatelessWidget {
     this.onTap,
     this.isAdmin = false,
     this.currentUserId,
+    this.unreadReplyCount = 0,
   });
 
   Color _getTypeColor() {
@@ -206,28 +208,41 @@ class AnnouncementCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
 
-                    // Reply count
+                    // Reply count (rood als ongelezen, blauw als alles gelezen)
                     if (announcement.hasReplies)
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Colors.blue.shade50,
+                          color: unreadReplyCount > 0
+                              ? Colors.red.shade50
+                              : Colors.blue.shade50,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              Icons.chat_bubble_outline,
+                              unreadReplyCount > 0
+                                  ? Icons.chat_bubble
+                                  : Icons.chat_bubble_outline,
                               size: 14,
-                              color: Colors.blue.shade700,
+                              color: unreadReplyCount > 0
+                                  ? Colors.red.shade700
+                                  : Colors.blue.shade700,
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              '${announcement.replyCount}',
+                              unreadReplyCount > 0
+                                  ? '$unreadReplyCount nouveau${unreadReplyCount > 1 ? 'x' : ''}'
+                                  : '${announcement.replyCount}',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Colors.blue.shade700,
+                                fontWeight: unreadReplyCount > 0
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                                color: unreadReplyCount > 0
+                                    ? Colors.red.shade700
+                                    : Colors.blue.shade700,
                               ),
                             ),
                           ],

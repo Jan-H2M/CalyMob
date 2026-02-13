@@ -10,6 +10,7 @@ import '../../models/session_message.dart' show MessageAttachment;
 import '../../models/event_message.dart' show ReplyPreview;
 import '../../services/announcement_service.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/unread_count_provider.dart';
 import '../../widgets/attachment_display.dart';
 import '../../widgets/attachment_picker.dart';
 
@@ -57,11 +58,30 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
     final userId = authProvider.currentUser?.uid;
     if (userId == null) return;
 
+    // 1. Marquer l'annonce elle-même comme lue
     await _announcementService.markAnnouncementAsRead(
       clubId: widget.clubId,
       announcementId: widget.announcement.id,
       userId: userId,
     );
+
+    // 2. Marquer TOUTES les réponses existantes comme lues
+    final repliesMarked = await _announcementService.markAllRepliesAsRead(
+      clubId: widget.clubId,
+      announcementId: widget.announcement.id,
+      userId: userId,
+    );
+
+    // 3. Décrémenter le compteur de non-lus sur le member doc
+    if (repliesMarked > 0 && mounted) {
+      final unreadProvider = Provider.of<UnreadCountProvider>(context, listen: false);
+      await unreadProvider.decrementCategory(
+        clubId: widget.clubId,
+        userId: userId,
+        category: 'announcements',
+        amount: repliesMarked,
+      );
+    }
   }
 
   Future<void> _sendReply() async {

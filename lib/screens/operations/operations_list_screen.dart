@@ -572,7 +572,13 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
 
     late final Stream<int> unreadStream;
 
-    if (item.isOperation) {
+    // Skip unread badge voor verlopen events (date_fin + 5 dagen)
+    final eventEndDate = item.operation?.dateFin ?? item.date;
+    final isExpired = DateTime.now().difference(eventEndDate).inDays > 5;
+
+    if (isExpired) {
+      unreadStream = Stream.value(0);
+    } else if (item.isOperation) {
       unreadStream = EventMessageService().getUnreadCountStream(
         clubId: _clubId,
         operationId: item.id,

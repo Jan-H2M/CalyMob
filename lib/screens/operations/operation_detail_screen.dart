@@ -7,6 +7,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../providers/operation_provider.dart';
 import '../../providers/event_message_provider.dart';
+import '../../providers/unread_count_provider.dart';
 import '../../widgets/loading_widget.dart';
 import '../../utils/date_formatter.dart';
 import '../../utils/currency_formatter.dart';
@@ -1420,7 +1421,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
       stream: messageProvider.watchMessages(widget.clubId, widget.operationId),
       builder: (context, snapshot) {
         final messages = snapshot.data ?? [];
-        final messageCount = messages.length;
+        // Toon alleen ONGELEZEN berichten als badge (niet totaal)
+        final unreadCount = messages.where((msg) => !msg.readBy.contains(currentUserId)).length;
 
         return Container(
           decoration: BoxDecoration(
@@ -1437,10 +1439,12 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                 });
                 // Mark messages as read when opening discussion
                 if (expanded && currentUserId.isNotEmpty) {
+                  final unreadProvider = context.read<UnreadCountProvider>();
                   messageProvider.markAsRead(
                     clubId: widget.clubId,
                     operationId: widget.operationId,
                     userId: currentUserId,
+                    unreadProvider: unreadProvider,
                   );
                 }
               },
@@ -1459,19 +1463,19 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (messageCount > 0)
+                  if (unreadCount > 0)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       margin: const EdgeInsets.only(right: 8),
                       decoration: BoxDecoration(
-                        color: AppColors.lichtblauw.withOpacity(0.5),
-                        borderRadius: BorderRadius.circular(8),
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        '$messageCount',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: AppColors.donkerblauw,
+                        '$unreadCount',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.white,
                           fontWeight: FontWeight.bold,
                         ),
                       ),

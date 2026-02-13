@@ -41,6 +41,10 @@ exports.checkNodaPaymentStatus = checkNodaPaymentStatus;
 const { onNewEventMessage } = require('./src/notifications/onNewEventMessage');
 exports.onNewEventMessage = onNewEventMessage;
 
+// Clean up unread counts when event is closed/cancelled
+const { onEventStatusChange } = require('./src/notifications/onEventStatusChange');
+exports.onEventStatusChange = onEventStatusChange;
+
 // Push notifications for club announcements
 const { onNewAnnouncement } = require('./src/notifications/onNewAnnouncement');
 exports.onNewAnnouncement = onNewAnnouncement;

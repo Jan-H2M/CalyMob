@@ -213,8 +213,51 @@ async function sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload
   return { successCount: totalSuccess, failureCount: totalFailure };
 }
 
+/**
+ * Decrement de unread counter voor één member
+ *
+ * @param {string} clubId - Club ID
+ * @param {string} memberId - Member ID
+ * @param {string} category - De categorie ('event_messages', etc.)
+ * @param {number} amount - Hoeveel te verlagen
+ */
+async function decrementUnreadCounts(clubId, memberId, category, amount) {
+  if (!memberId || amount <= 0) return;
+
+  const db = admin.firestore();
+  const memberRef = db
+    .collection('clubs')
+    .doc(clubId)
+    .collection('members')
+    .doc(memberId);
+
+  try {
+    // Haal huidige waarde op om niet onder 0 te gaan
+    const doc = await memberRef.get();
+    if (!doc.exists) return;
+
+    const counts = doc.data()?.unread_counts || {};
+    const currentValue = (counts[category] || 0);
+    const currentTotal = (counts.total || 0);
+    const actualDecrement = Math.min(amount, currentValue);
+
+    if (actualDecrement <= 0) return;
+
+    await memberRef.update({
+      [`unread_counts.${category}`]: admin.firestore.FieldValue.increment(-actualDecrement),
+      'unread_counts.total': admin.firestore.FieldValue.increment(-Math.min(actualDecrement, currentTotal)),
+      'unread_counts.last_updated': admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    console.log(`📉 Unread counts decremented for ${memberId}: ${category} -${actualDecrement}`);
+  } catch (error) {
+    console.error(`❌ Error decrementing unread counts for ${memberId}: ${error.message}`);
+  }
+}
+
 module.exports = {
   incrementUnreadCounts,
+  decrementUnreadCounts,
   getBadgeCount,
   collectTokensAndMembers,
   sendNotificationsWithBadge,

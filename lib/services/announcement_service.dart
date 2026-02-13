@@ -311,6 +311,60 @@ class AnnouncementService {
     }
   }
 
+  /// Marquer TOUTES les réponses comme lues pour un utilisateur (batch)
+  /// Suit le même pattern que EventMessageService.markMessagesAsRead()
+  Future<int> markAllRepliesAsRead({
+    required String clubId,
+    required String announcementId,
+    required String userId,
+  }) async {
+    try {
+      final snapshot = await _firestore
+          .collection('clubs/$clubId/announcements/$announcementId/replies')
+          .get();
+
+      final batch = _firestore.batch();
+      int updated = 0;
+
+      for (final doc in snapshot.docs) {
+        final readBy = (doc.data()['read_by'] as List<dynamic>?)?.cast<String>() ?? [];
+        if (!readBy.contains(userId)) {
+          batch.update(doc.reference, {
+            'read_by': FieldValue.arrayUnion([userId]),
+          });
+          updated++;
+        }
+      }
+
+      if (updated > 0) {
+        await batch.commit();
+        debugPrint('✅ $updated réponses marquées comme lues par $userId');
+      }
+
+      return updated;
+    } catch (e) {
+      debugPrint('❌ Erreur marquage réponses lues: $e');
+      return 0;
+    }
+  }
+
+  /// Stream du nombre de réponses non lues pour une annonce (temps réel)
+  Stream<int> getUnreadRepliesCountStream({
+    required String clubId,
+    required String announcementId,
+    required String userId,
+  }) {
+    return _firestore
+        .collection('clubs/$clubId/announcements/$announcementId/replies')
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs.where((doc) {
+        final readBy = List<String>.from(doc.data()['read_by'] ?? []);
+        return !readBy.contains(userId);
+      }).length;
+    });
+  }
+
   // ==================== ATTACHMENTS ====================
 
   /// Upload une pièce jointe pour une annonce

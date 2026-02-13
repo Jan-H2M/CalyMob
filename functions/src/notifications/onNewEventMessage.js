@@ -42,6 +42,18 @@ exports.onNewEventMessage = onDocumentCreated(
       const operation = operationDoc.data();
       const eventTitle = operation.titre || operation.title || 'Événement';
 
+      // Check of event verlopen is (date_fin + 5 dagen)
+      const dateFin = operation.date_fin?.toDate ? operation.date_fin.toDate() : operation.date_fin;
+      let eventExpired = false;
+      if (dateFin) {
+        const expiryDate = new Date(dateFin);
+        expiryDate.setDate(expiryDate.getDate() + 5);
+        eventExpired = new Date() > expiryDate;
+        if (eventExpired) {
+          console.log(`Event ${operationId} verlopen sinds ${expiryDate.toISOString()}, skip unread increment`);
+        }
+      }
+
       // 2. Get participants of the event (inscriptions subcollection)
       const participantsSnapshot = await admin.firestore()
         .collection('clubs')
@@ -151,7 +163,10 @@ exports.onNewEventMessage = onDocumentCreated(
       };
 
       // 5. Increment unread counts FIRST (zodat badge-getal correct is bij verzending)
-      await incrementUnreadCounts(clubId, recipientIds, 'event_messages');
+      // Skip increment voor verlopen events (date_fin + 5 dagen)
+      if (!eventExpired) {
+        await incrementUnreadCounts(clubId, recipientIds, 'event_messages');
+      }
 
       // 6. Send notifications with dynamic badge counts
       const { successCount, failureCount } = await sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload, 'event_messages');

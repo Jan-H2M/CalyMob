@@ -9,6 +9,7 @@ import '../../providers/auth_provider.dart';
 import '../../utils/permission_helper.dart';
 import '../../widgets/announcement_card.dart';
 import '../../widgets/glossy_button.dart';
+import '../../services/announcement_service.dart';
 import 'announcement_detail_screen.dart';
 import 'create_announcement_dialog.dart';
 
@@ -21,6 +22,7 @@ class AnnouncementsScreen extends StatefulWidget {
 
 class _AnnouncementsScreenState extends State<AnnouncementsScreen>
     with TickerProviderStateMixin {
+  final AnnouncementService _announcementService = AnnouncementService();
   List<String>? _clubStatuten;
   String? _appRole;
 
@@ -456,14 +458,26 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen>
                         itemCount: announcements.length,
                         itemBuilder: (context, index) {
                           final announcement = announcements[index];
-                          return AnnouncementCard(
-                            announcement: announcement,
-                            isAdmin: isAdmin,
-                            currentUserId: currentUser.uid,
-                            onDelete: isAdmin
-                                ? () => _deleteAnnouncement(announcement.id)
-                                : null,
-                            onTap: () => _navigateToDetail(announcement),
+                          // StreamBuilder pour les réponses non lues par annonce
+                          return StreamBuilder<int>(
+                            stream: _announcementService.getUnreadRepliesCountStream(
+                              clubId: clubId,
+                              announcementId: announcement.id,
+                              userId: currentUser!.uid,
+                            ),
+                            builder: (context, unreadSnapshot) {
+                              final unreadReplyCount = unreadSnapshot.data ?? 0;
+                              return AnnouncementCard(
+                                announcement: announcement,
+                                isAdmin: isAdmin,
+                                currentUserId: currentUser.uid,
+                                unreadReplyCount: unreadReplyCount,
+                                onDelete: isAdmin
+                                    ? () => _deleteAnnouncement(announcement.id)
+                                    : null,
+                                onTap: () => _navigateToDetail(announcement),
+                              );
+                            },
                           );
                         },
                       ),
