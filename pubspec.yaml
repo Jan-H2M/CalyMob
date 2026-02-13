@@ -1,7 +1,7 @@
 name: calymob
 description: Calypso DC Mobile Application
 publish_to: 'none'
-version: 1.0.24+86
+version: 1.0.28+90
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -78,6 +78,9 @@ dependencies:
 
   # QR/Barcode Scanner
   mobile_scanner: ^6.0.2
+
+  # App Badge (icon badge count)
+  app_badge_plus: ^1.1.4
 
   # Share/Export
   share_plus: ^10.1.4
