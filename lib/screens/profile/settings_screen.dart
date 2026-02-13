@@ -551,9 +551,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               );
             },
           ),
-          // Biometric toggle (only show if biometric is available)
-          if (_biometricAvailable) ...[
-            const Divider(height: 1),
+          // Biometric toggle (always visible, disabled with message if not available)
+          const Divider(height: 1),
+          if (_biometricAvailable)
             SwitchListTile(
               value: _biometricEnabled,
               onChanged: _toggleBiometric,
@@ -572,8 +572,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 color: _biometricEnabled ? Colors.green : Colors.grey,
                 size: 28,
               ),
+            )
+          else
+            ListTile(
+              leading: const Icon(
+                Icons.fingerprint,
+                color: Colors.grey,
+                size: 28,
+              ),
+              title: const Text(
+                'Connexion biométrique',
+                style: TextStyle(color: Colors.grey),
+              ),
+              subtitle: const Text(
+                'Aucune biométrie détectée. Configurez d\'abord '
+                'une empreinte digitale ou la reconnaissance faciale '
+                'dans les Paramètres de votre appareil, puis relancez l\'application.',
+                style: TextStyle(fontSize: 12, color: Colors.orange),
+              ),
+              trailing: IconButton(
+                icon: const Icon(Icons.refresh, color: Colors.blue),
+                tooltip: 'Vérifier à nouveau',
+                onPressed: _checkBiometricStatus,
+              ),
             ),
-          ],
         ],
       ),
     );
