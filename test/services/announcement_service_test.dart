@@ -539,7 +539,7 @@ void main() {
           'reply_count': 0,
         });
 
-        // Phase 2: Cloud Function increments badge
+        // Phase 2: Cloud Function increments badge (+1 for announcement)
         await firestore.collection(memberPath).doc(userId).update({
           'unread_counts.announcements': FieldValue.increment(1),
           'unread_counts.total': FieldValue.increment(1),
@@ -552,7 +552,16 @@ void main() {
                 as Map<String, dynamic>)['announcements'],
             1);
 
-        // Phase 3: User opens announcement → marks as read
+        // Phase 3: User opens announcement → check if already read
+        final annDoc = await firestore
+            .collection(announcementsPath)
+            .doc(announcementRef.id)
+            .get();
+        final readBy = List<String>.from(annDoc.data()!['read_by'] ?? []);
+        final wasUnread = !readBy.contains(userId);
+        expect(wasUnread, isTrue, reason: 'Announcement should be unread');
+
+        // Mark announcement as read
         await firestore
             .collection(announcementsPath)
             .doc(announcementRef.id)
@@ -560,10 +569,151 @@ void main() {
           'read_by': FieldValue.arrayUnion([userId]),
         });
 
-        // Phase 4: Decrement badge
+        // Phase 4: Decrement badge (announcement itself = 1, replies = 0)
+        final totalToDecrement = (wasUnread ? 1 : 0) + 0; // 0 replies
+        expect(totalToDecrement, 1);
+
         await firestore.collection(memberPath).doc(userId).update({
-          'unread_counts.announcements': FieldValue.increment(-1),
-          'unread_counts.total': FieldValue.increment(-1),
+          'unread_counts.announcements':
+              FieldValue.increment(-totalToDecrement),
+          'unread_counts.total': FieldValue.increment(-totalToDecrement),
+        });
+
+        final afterRead =
+            await firestore.collection(memberPath).doc(userId).get();
+        expect(
+            (afterRead.data()!['unread_counts']
+                as Map<String, dynamic>)['announcements'],
+            0);
+        expect(
+            (afterRead.data()!['unread_counts']
+                as Map<String, dynamic>)['total'],
+            0);
+      });
+
+      test('announcement already read → no double decrement', () async {
+        final memberPath = 'clubs/$clubId/members';
+
+        await firestore.collection(memberPath).doc(userId).set({
+          'unread_counts': {
+            'total': 0,
+            'announcements': 0,
+          },
+        });
+
+        // Create announcement that user has ALREADY read
+        await firestore.collection(announcementsPath).add({
+          'title': 'Already read',
+          'message': 'Details',
+          'sender_id': adminId,
+          'sender_name': 'Admin',
+          'type': 'info',
+          'created_at': Timestamp.now(),
+          'read_by': [adminId, userId], // userId already in read_by
+          'reply_count': 0,
+        });
+
+        // User opens it again → check if already read
+        final annDoc = (await firestore.collection(announcementsPath).get())
+            .docs
+            .first;
+        final readBy =
+            List<String>.from(annDoc.data()['read_by'] ?? []);
+        final wasUnread = !readBy.contains(userId);
+        expect(wasUnread, isFalse, reason: 'Should already be read');
+
+        // totalToDecrement = 0 (already read) + 0 (no unread replies)
+        final totalToDecrement = (wasUnread ? 1 : 0) + 0;
+        expect(totalToDecrement, 0, reason: 'Nothing to decrement');
+
+        // Badge should stay at 0
+        final memberDoc =
+            await firestore.collection(memberPath).doc(userId).get();
+        expect(
+            (memberDoc.data()!['unread_counts']
+                as Map<String, dynamic>)['announcements'],
+            0);
+      });
+
+      test('announcement + replies → total decrement is correct', () async {
+        final memberPath = 'clubs/$clubId/members';
+
+        await firestore.collection(memberPath).doc(userId).set({
+          'unread_counts': {
+            'total': 4,
+            'announcements': 4, // 1 announcement + 3 replies
+          },
+        });
+
+        // Create unread announcement with 3 unread replies
+        final announcementRef =
+            await firestore.collection(announcementsPath).add({
+          'title': 'With replies',
+          'message': 'Discussion topic',
+          'sender_id': adminId,
+          'sender_name': 'Admin',
+          'type': 'info',
+          'created_at': Timestamp.now(),
+          'read_by': [adminId], // userId NOT in read_by
+          'reply_count': 3,
+        });
+
+        final repliesPath =
+            '$announcementsPath/${announcementRef.id}/replies';
+        for (int i = 0; i < 3; i++) {
+          await firestore.collection(repliesPath).add({
+            'sender_id': 'other$i',
+            'sender_name': 'Other $i',
+            'message': 'Reply $i',
+            'created_at': Timestamp.now(),
+            'read_by': ['other$i'], // userId NOT in read_by
+          });
+        }
+
+        // Step 1: Check if announcement was unread
+        final annDoc = await firestore
+            .collection(announcementsPath)
+            .doc(announcementRef.id)
+            .get();
+        final readBy = List<String>.from(annDoc.data()!['read_by'] ?? []);
+        final announcementWasUnread = !readBy.contains(userId);
+        expect(announcementWasUnread, isTrue);
+
+        // Step 2: Mark announcement as read
+        await firestore
+            .collection(announcementsPath)
+            .doc(announcementRef.id)
+            .update({
+          'read_by': FieldValue.arrayUnion([userId]),
+        });
+
+        // Step 3: Mark all replies as read, count how many
+        final repliesSnapshot =
+            await firestore.collection(repliesPath).get();
+        final batch = firestore.batch();
+        int repliesMarked = 0;
+        for (final doc in repliesSnapshot.docs) {
+          final replyReadBy =
+              List<String>.from(doc.data()['read_by'] ?? []);
+          if (!replyReadBy.contains(userId)) {
+            batch.update(doc.reference, {
+              'read_by': FieldValue.arrayUnion([userId]),
+            });
+            repliesMarked++;
+          }
+        }
+        await batch.commit();
+        expect(repliesMarked, 3);
+
+        // Step 4: Total decrement = announcement (1) + replies (3) = 4
+        final totalToDecrement =
+            (announcementWasUnread ? 1 : 0) + repliesMarked;
+        expect(totalToDecrement, 4);
+
+        await firestore.collection(memberPath).doc(userId).update({
+          'unread_counts.announcements':
+              FieldValue.increment(-totalToDecrement),
+          'unread_counts.total': FieldValue.increment(-totalToDecrement),
         });
 
         final afterRead =

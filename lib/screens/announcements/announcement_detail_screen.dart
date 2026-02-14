@@ -58,8 +58,8 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
     final userId = authProvider.currentUser?.uid;
     if (userId == null) return;
 
-    // 1. Marquer l'annonce elle-même comme lue
-    await _announcementService.markAnnouncementAsRead(
+    // 1. Marquer l'annonce elle-même comme lue (retourne true si c'était un nouveau read)
+    final announcementWasUnread = await _announcementService.markAnnouncementAsRead(
       clubId: widget.clubId,
       announcementId: widget.announcement.id,
       userId: userId,
@@ -73,13 +73,15 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
     );
 
     // 3. Décrémenter le compteur de non-lus sur le member doc
-    if (repliesMarked > 0 && mounted) {
+    // Inclut l'annonce elle-même + les réponses non lues
+    final totalToDecrement = (announcementWasUnread ? 1 : 0) + repliesMarked;
+    if (totalToDecrement > 0 && mounted) {
       final unreadProvider = Provider.of<UnreadCountProvider>(context, listen: false);
       await unreadProvider.decrementCategory(
         clubId: widget.clubId,
         userId: userId,
         category: 'announcements',
-        amount: repliesMarked,
+        amount: totalToDecrement,
       );
     }
   }

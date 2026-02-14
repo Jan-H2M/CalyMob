@@ -148,21 +148,40 @@ class AnnouncementService {
   // ==================== READ TRACKING ====================
 
   /// Marquer une annonce comme lue par un utilisateur
-  Future<void> markAnnouncementAsRead({
+  /// Retourne true si l'annonce n'était PAS encore lue (= nouveau read)
+  Future<bool> markAnnouncementAsRead({
     required String clubId,
     required String announcementId,
     required String userId,
   }) async {
     try {
-      await _firestore
+      // Vérifier si l'utilisateur a déjà lu cette annonce
+      final doc = await _firestore
           .collection('clubs/$clubId/announcements')
           .doc(announcementId)
-          .update({
-        'read_by': FieldValue.arrayUnion([userId]),
-      });
-      debugPrint('✅ Annonce marquée comme lue: $announcementId');
+          .get();
+
+      if (!doc.exists) return false;
+
+      final readBy = List<String>.from(doc.data()?['read_by'] ?? []);
+      final wasAlreadyRead = readBy.contains(userId);
+
+      if (!wasAlreadyRead) {
+        await _firestore
+            .collection('clubs/$clubId/announcements')
+            .doc(announcementId)
+            .update({
+          'read_by': FieldValue.arrayUnion([userId]),
+        });
+        debugPrint('✅ Annonce marquée comme lue: $announcementId');
+      } else {
+        debugPrint('ℹ️ Annonce déjà lue: $announcementId');
+      }
+
+      return !wasAlreadyRead;
     } catch (e) {
       debugPrint('❌ Erreur marquage annonce lue: $e');
+      return false;
     }
   }
 
