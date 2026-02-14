@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'crashlytics_service.dart';
 
 /// Service d'authentification Firebase
 class AuthService {
@@ -27,7 +28,8 @@ class AuthService {
 
       debugPrint('✅ Login réussi: ${userCredential.user!.uid}');
       return userCredential.user!;
-    } on FirebaseAuthException catch (e) {
+    } on FirebaseAuthException catch (e, stack) {
+      CrashlyticsService.authError(e, stack, 'login FirebaseAuth ${e.code}');
       debugPrint('❌ Erreur login: ${e.code} - ${e.message}');
 
       switch (e.code) {
@@ -44,7 +46,8 @@ class AuthService {
         default:
           throw Exception('Erreur d\'authentification: ${e.message}');
       }
-    } catch (e) {
+    } catch (e, stack) {
+      CrashlyticsService.authError(e, stack, 'login unexpected error');
       debugPrint('❌ Erreur inattendue login: $e');
       throw Exception('Erreur de connexion: $e');
     }
@@ -56,7 +59,8 @@ class AuthService {
       debugPrint('👋 Déconnexion...');
       await _auth.signOut();
       debugPrint('✅ Déconnexion réussie');
-    } catch (e) {
+    } catch (e, stack) {
+      CrashlyticsService.authError(e, stack, 'logout failed');
       debugPrint('❌ Erreur logout: $e');
       throw Exception('Erreur de déconnexion: $e');
     }
