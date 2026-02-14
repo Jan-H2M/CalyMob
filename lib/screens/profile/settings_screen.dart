@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
@@ -50,9 +51,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         enabled = await _biometricService.isBiometricLoginEnabled();
         hasCredentials = await _biometricService.hasStoredCredentials();
         typeName = await _biometricService.getBiometricTypeName();
-      } catch (_) {
+      } catch (e, stack) {
         // SecureStorage failed - show toggle but as disabled
         // User can re-enable by logging out and back in
+        FirebaseCrashlytics.instance.recordError(
+          e, stack,
+          reason: 'settings_screen: SecureStorage read failed (KeyStore issue?)',
+        );
       }
 
       if (mounted) {
@@ -62,8 +67,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _biometricTypeName = typeName;
         });
       }
-    } catch (_) {
+    } catch (e, stack) {
       // isBiometricAvailable itself failed - update state to show diagnostic
+      FirebaseCrashlytics.instance.recordError(
+        e, stack,
+        reason: 'settings_screen: _checkBiometricStatus completely failed',
+      );
       if (mounted) {
         setState(() {
           _biometricAvailable = false;
