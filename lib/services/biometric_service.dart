@@ -4,6 +4,7 @@ import 'package:local_auth/local_auth.dart';
 import 'package:local_auth_android/local_auth_android.dart';
 import 'package:local_auth_darwin/local_auth_darwin.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 
 /// Service for biometric authentication (Face ID / Touch ID / Fingerprint)
 class BiometricService {
@@ -50,12 +51,28 @@ class BiometricService {
           'types: ${biometrics.map((b) => b.name).join(', ')}, '
           'result: $available';
 
+      // Log biometric status to Crashlytics for remote debugging
+      if (!kIsWeb) {
+        FirebaseCrashlytics.instance.setCustomKey('biometric_canCheck', canCheck);
+        FirebaseCrashlytics.instance.setCustomKey('biometric_deviceSupported', isDeviceSupported);
+        FirebaseCrashlytics.instance.setCustomKey('biometric_types', biometrics.map((b) => b.name).join(', '));
+        FirebaseCrashlytics.instance.setCustomKey('biometric_available', available);
+      }
+
       return available;
-    } on PlatformException catch (e) {
+    } on PlatformException catch (e, stack) {
       _lastDiagnostic = 'PlatformException: ${e.code} - ${e.message}';
+      FirebaseCrashlytics.instance.recordError(
+        e, stack,
+        reason: 'BiometricService.isBiometricAvailable PlatformException',
+      );
       return false;
-    } catch (e) {
+    } catch (e, stack) {
       _lastDiagnostic = 'Exception: $e';
+      FirebaseCrashlytics.instance.recordError(
+        e, stack,
+        reason: 'BiometricService.isBiometricAvailable unexpected error',
+      );
       return false;
     }
   }
@@ -119,7 +136,11 @@ class BiometricService {
           ),
         ],
       );
-    } on PlatformException {
+    } on PlatformException catch (e, stack) {
+      FirebaseCrashlytics.instance.recordError(
+        e, stack,
+        reason: 'BiometricService.authenticate failed: ${e.code}',
+      );
       return false;
     }
   }
