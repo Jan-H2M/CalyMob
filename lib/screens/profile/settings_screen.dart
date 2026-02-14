@@ -568,7 +568,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               secondary: Icon(
-                _biometricTypeName == 'Face ID' ? Icons.face : Icons.fingerprint,
+                _biometricTypeName == 'Face ID'
+                    ? Icons.face
+                    : _biometricTypeName == 'Biométrie'
+                        ? Icons.lock
+                        : Icons.fingerprint,
                 color: _biometricEnabled ? Colors.green : Colors.grey,
                 size: 28,
               ),

@@ -35,10 +35,15 @@ class BiometricService {
       final isDeviceSupported = await _localAuth.isDeviceSupported();
       final biometrics = await _localAuth.getAvailableBiometrics();
 
-      // More robust check: some Android devices return false for
-      // canCheckBiometrics but still list available biometric types.
-      // Accept biometrics if EITHER check says they're available.
-      final available = (canCheck || biometrics.isNotEmpty) && isDeviceSupported;
+      // Use isDeviceSupported() as the primary check.
+      // Known bug (flutter/flutter#117309): on Samsung and other Android
+      // devices with face unlock enabled (without fingerprint),
+      // canCheckBiometrics returns false AND getAvailableBiometrics()
+      // returns empty. But isDeviceSupported() correctly returns true
+      // because the device supports authentication (biometric or PIN).
+      // Combined with biometricOnly: false in authenticate(), this
+      // ensures the biometric prompt appears on all capable devices.
+      final available = isDeviceSupported;
 
       _lastDiagnostic = 'canCheckBiometrics: $canCheck, '
           'isDeviceSupported: $isDeviceSupported, '
@@ -163,11 +168,13 @@ class BiometricService {
   }
 
   /// Get a human-readable name for the biometric type
+  /// Falls back to 'Biométrie' when specific type can't be detected
+  /// (known issue on Samsung with face unlock - flutter/flutter#117309)
   Future<String> getBiometricTypeName() async {
     if (await isFaceIdAvailable()) {
       return 'Face ID';
     } else if (await isFingerprintAvailable()) {
-      return 'Touch ID';
+      return 'Empreinte digitale';
     }
     return 'Biométrie';
   }
