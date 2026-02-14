@@ -18,18 +18,33 @@ class BiometricService {
   static const String _passwordKey = 'biometric_password';
   static const String _enabledKey = 'biometric_enabled';
 
+  /// Last diagnostic info (for debugging biometric issues)
+  String _lastDiagnostic = '';
+  String get lastDiagnostic => _lastDiagnostic;
+
   /// Check if biometric authentication is available on this device
   Future<bool> isBiometricAvailable() async {
     // Biometrics not supported on web
-    if (kIsWeb) return false;
+    if (kIsWeb) {
+      _lastDiagnostic = 'Web platform - non supporté';
+      return false;
+    }
 
     try {
       final canCheck = await _localAuth.canCheckBiometrics;
       final isDeviceSupported = await _localAuth.isDeviceSupported();
+      final biometrics = await _localAuth.getAvailableBiometrics();
+
+      _lastDiagnostic = 'canCheckBiometrics: $canCheck, '
+          'isDeviceSupported: $isDeviceSupported, '
+          'types: ${biometrics.map((b) => b.name).join(', ')}';
+
       return canCheck && isDeviceSupported;
-    } on PlatformException {
+    } on PlatformException catch (e) {
+      _lastDiagnostic = 'PlatformException: ${e.code} - ${e.message}';
       return false;
     } catch (e) {
+      _lastDiagnostic = 'Exception: $e';
       return false;
     }
   }

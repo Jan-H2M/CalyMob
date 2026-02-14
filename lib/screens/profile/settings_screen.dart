@@ -574,27 +574,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             )
           else
-            ListTile(
-              leading: const Icon(
-                Icons.fingerprint,
-                color: Colors.grey,
-                size: 28,
-              ),
-              title: const Text(
-                'Connexion biométrique',
-                style: TextStyle(color: Colors.grey),
-              ),
-              subtitle: const Text(
-                'Aucune biométrie détectée. Configurez d\'abord '
-                'une empreinte digitale ou la reconnaissance faciale '
-                'dans les Paramètres de votre appareil, puis relancez l\'application.',
-                style: TextStyle(fontSize: 12, color: Colors.orange),
-              ),
-              trailing: IconButton(
-                icon: const Icon(Icons.refresh, color: Colors.blue),
-                tooltip: 'Vérifier à nouveau',
-                onPressed: _checkBiometricStatus,
-              ),
+            Column(
+              children: [
+                ListTile(
+                  leading: const Icon(
+                    Icons.fingerprint,
+                    color: Colors.grey,
+                    size: 28,
+                  ),
+                  title: const Text(
+                    'Connexion biométrique',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                  subtitle: const Text(
+                    'Aucune biométrie détectée. Configurez d\'abord '
+                    'une empreinte digitale ou la reconnaissance faciale '
+                    'dans les Paramètres de votre appareil, puis relancez l\'application.',
+                    style: TextStyle(fontSize: 12, color: Colors.orange),
+                  ),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.refresh, color: Colors.blue),
+                    tooltip: 'Vérifier à nouveau',
+                    onPressed: _checkBiometricStatus,
+                  ),
+                ),
+                // Diagnostic info for debugging
+                if (_biometricService.lastDiagnostic.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Text(
+                      'Diagnostic: ${_biometricService.lastDiagnostic}',
+                      style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                    ),
+                  ),
+              ],
             ),
         ],
       ),
