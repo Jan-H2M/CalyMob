@@ -9,6 +9,7 @@
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithBadge } = require('../utils/badge-helper');
+const { EVENT_EXPIRY_GRACE_DAYS } = require('../utils/constants');
 
 /**
  * Firestore trigger for new event messages (Gen2)
@@ -42,12 +43,12 @@ exports.onNewEventMessage = onDocumentCreated(
       const operation = operationDoc.data();
       const eventTitle = operation.titre || operation.title || 'Événement';
 
-      // Check of event verlopen is (date_fin + 5 dagen)
+      // Check of event verlopen is (date_fin + grace period)
       const dateFin = operation.date_fin?.toDate ? operation.date_fin.toDate() : operation.date_fin;
       let eventExpired = false;
       if (dateFin) {
         const expiryDate = new Date(dateFin);
-        expiryDate.setDate(expiryDate.getDate() + 5);
+        expiryDate.setDate(expiryDate.getDate() + EVENT_EXPIRY_GRACE_DAYS);
         eventExpired = new Date() > expiryDate;
         if (eventExpired) {
           console.log(`Event ${operationId} verlopen sinds ${expiryDate.toISOString()}, skip unread increment`);

@@ -8,6 +8,7 @@
  */
 
 const admin = require('firebase-admin');
+const { FIRESTORE_BATCH_LIMIT } = require('./constants');
 
 /**
  * Increment de unread counter voor een lijst van ontvangers
@@ -21,8 +22,7 @@ async function incrementUnreadCounts(clubId, recipientIds, category) {
 
   const db = admin.firestore();
 
-  // Firestore batch limiet is 500 writes
-  const batchSize = 500;
+  const batchSize = FIRESTORE_BATCH_LIMIT;
   for (let i = 0; i < recipientIds.length; i += batchSize) {
     const batch = db.batch();
     const batchIds = recipientIds.slice(i, i + batchSize);
@@ -70,8 +70,10 @@ async function getBadgeCount(clubId, memberId) {
     if (!memberDoc.exists) return 1; // Fallback
 
     const data = memberDoc.data();
-    const unreadCounts = data?.unread_counts || {};
-    return (unreadCounts.total || 0);
+    const unreadCounts = (data && typeof data.unread_counts === 'object' && data.unread_counts !== null)
+      ? data.unread_counts
+      : {};
+    return Number(unreadCounts.total) || 0;
   } catch (error) {
     console.error(`❌ Error getting badge count for ${memberId}: ${error.message}`);
     return 1; // Fallback bij fout
@@ -236,9 +238,12 @@ async function decrementUnreadCounts(clubId, memberId, category, amount) {
     const doc = await memberRef.get();
     if (!doc.exists) return;
 
-    const counts = doc.data()?.unread_counts || {};
-    const currentValue = (counts[category] || 0);
-    const currentTotal = (counts.total || 0);
+    const docData = doc.data();
+    const counts = (docData && typeof docData.unread_counts === 'object' && docData.unread_counts !== null)
+      ? docData.unread_counts
+      : {};
+    const currentValue = Number(counts[category]) || 0;
+    const currentTotal = Number(counts.total) || 0;
     const actualDecrement = Math.min(amount, currentValue);
 
     if (actualDecrement <= 0) return;

@@ -77,9 +77,33 @@ class AnnouncementService {
     }
   }
 
-  /// Supprimer une annonce (admin uniquement)
+  /// Supprimer une annonce et ses réponses (admin uniquement)
+  ///
+  /// Firestore ne supprime pas automatiquement les sous-collections.
+  /// On supprime d'abord toutes les réponses, puis l'annonce elle-même.
   Future<void> deleteAnnouncement(String clubId, String announcementId) async {
     try {
+      // 1. Supprimer toutes les réponses (sous-collection)
+      final repliesRef = _firestore
+          .collection('clubs/$clubId/announcements/$announcementId/replies');
+      final repliesSnapshot = await repliesRef.get();
+
+      if (repliesSnapshot.docs.isNotEmpty) {
+        // Firestore batch limiet = 500 opérations
+        const batchLimit = 500;
+        for (var i = 0; i < repliesSnapshot.docs.length; i += batchLimit) {
+          final batch = _firestore.batch();
+          final chunk = repliesSnapshot.docs.skip(i).take(batchLimit);
+          for (final doc in chunk) {
+            batch.delete(doc.reference);
+          }
+          await batch.commit();
+        }
+        debugPrint(
+            '✅ ${repliesSnapshot.docs.length} réponses supprimées pour annonce $announcementId');
+      }
+
+      // 2. Supprimer l'annonce elle-même
       await _firestore
           .collection('clubs/$clubId/announcements')
           .doc(announcementId)
