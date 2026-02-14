@@ -117,6 +117,9 @@ class AuthProvider with ChangeNotifier {
       );
       CrashlyticsService.log('Login réussi pour $email');
 
+      // 5. Configurer BiometricService avec l'ID utilisateur pour les diagnostics Firestore
+      _biometricService.setUserId(user.uid);
+
       debugPrint('✅ Login, session et FCM token OK');
 
       _isLoading = false;
@@ -148,6 +151,7 @@ class AuthProvider with ChangeNotifier {
       _isLoading = false;
       _errorMessage = null;
       CrashlyticsService.clearUserContext();
+      _biometricService.setUserId(null);
       notifyListeners();
 
       debugPrint('✅ Logout complet');
