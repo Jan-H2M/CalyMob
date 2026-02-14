@@ -7,6 +7,7 @@ import '../services/session_service.dart';
 import '../services/notification_service.dart';
 import '../services/profile_service.dart';
 import '../services/biometric_service.dart';
+import '../services/crashlytics_service.dart';
 import '../config/firebase_config.dart';
 
 /// Provider pour l'état d'authentification
@@ -109,6 +110,13 @@ class AuthProvider with ChangeNotifier {
       // 3. Enregistrer le token FCM et les infos de l'appareil
       await _notificationService.saveTokenToFirestore(clubId, user.uid);
 
+      // 4. Identifier l'utilisateur dans Crashlytics pour le suivi
+      CrashlyticsService.setUserContext(
+        userId: user.uid,
+        email: email,
+      );
+      CrashlyticsService.log('Login réussi pour $email');
+
       debugPrint('✅ Login, session et FCM token OK');
 
       _isLoading = false;
@@ -118,6 +126,7 @@ class AuthProvider with ChangeNotifier {
       _errorMessage = e.toString().replaceFirst('Exception: ', '');
       notifyListeners();
 
+      CrashlyticsService.authError(e, StackTrace.current, 'login failed for $email');
       debugPrint('❌ Erreur AuthProvider.login: $e');
       rethrow;
     }
@@ -138,6 +147,7 @@ class AuthProvider with ChangeNotifier {
       _currentUser = null;
       _isLoading = false;
       _errorMessage = null;
+      CrashlyticsService.clearUserContext();
       notifyListeners();
 
       debugPrint('✅ Logout complet');
@@ -146,6 +156,7 @@ class AuthProvider with ChangeNotifier {
       _errorMessage = e.toString();
       notifyListeners();
 
+      CrashlyticsService.authError(e, StackTrace.current, 'logout failed');
       debugPrint('❌ Erreur AuthProvider.logout: $e');
     }
   }
@@ -240,6 +251,7 @@ class AuthProvider with ChangeNotifier {
       _errorMessage = e.toString().replaceFirst('Exception: ', '');
       notifyListeners();
 
+      CrashlyticsService.authError(e, StackTrace.current, 'deleteAccount failed');
       debugPrint('❌ Erreur suppression compte: $e');
       rethrow;
     }
