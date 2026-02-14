@@ -35,11 +35,17 @@ class BiometricService {
       final isDeviceSupported = await _localAuth.isDeviceSupported();
       final biometrics = await _localAuth.getAvailableBiometrics();
 
+      // More robust check: some Android devices return false for
+      // canCheckBiometrics but still list available biometric types.
+      // Accept biometrics if EITHER check says they're available.
+      final available = (canCheck || biometrics.isNotEmpty) && isDeviceSupported;
+
       _lastDiagnostic = 'canCheckBiometrics: $canCheck, '
           'isDeviceSupported: $isDeviceSupported, '
-          'types: ${biometrics.map((b) => b.name).join(', ')}';
+          'types: ${biometrics.map((b) => b.name).join(', ')}, '
+          'result: $available';
 
-      return canCheck && isDeviceSupported;
+      return available;
     } on PlatformException catch (e) {
       _lastDiagnostic = 'PlatformException: ${e.code} - ${e.message}';
       return false;
@@ -84,7 +90,7 @@ class BiometricService {
         localizedReason: reason,
         options: const AuthenticationOptions(
           stickyAuth: true,
-          biometricOnly: true,
+          biometricOnly: false,  // Allow device credentials fallback on Android
         ),
         authMessages: const <AuthMessages>[
           AndroidAuthMessages(
