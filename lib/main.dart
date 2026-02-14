@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -70,6 +72,13 @@ void main() async {
       debugPrint('ℹ️ Firebase déjà initialisé');
     }
 
+    // Initialiser Firebase Crashlytics (pas sur web)
+    if (!kIsWeb) {
+      // Envoyer les erreurs Flutter non-attrapées à Crashlytics
+      FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+      debugPrint('✅ Crashlytics initialisé');
+    }
+
     // Initialiser les données de locale pour le français
     await initializeDateFormatting('fr_FR', null);
     Intl.defaultLocale = 'fr_FR';
@@ -100,7 +109,17 @@ void main() async {
     debugPrint('Stack trace: ${StackTrace.current}');
   }
 
-  runApp(const MyApp());
+  // Wrapper runApp dans runZonedGuarded pour capturer les erreurs async
+  // non-attrapées et les envoyer à Crashlytics
+  if (kIsWeb) {
+    runApp(const MyApp());
+  } else {
+    runZonedGuarded<Future<void>>(() async {
+      runApp(const MyApp());
+    }, (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    });
+  }
 }
 
 class MyApp extends StatefulWidget {
