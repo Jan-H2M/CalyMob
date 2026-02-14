@@ -1,6 +1,7 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import '../models/payment_response.dart';
+import 'crashlytics_service.dart';
 
 /// Service for managing payments
 ///
@@ -66,14 +67,16 @@ class PaymentService {
       }
 
       return success;
-    } on FirebaseFunctionsException catch (e) {
+    } on FirebaseFunctionsException catch (e, stack) {
+      CrashlyticsService.paymentError(e, stack, 'sendPaymentQrEmail CF error ${e.code}');
       debugPrint('❌ Firebase Functions error: ${e.code} - ${e.message}');
       throw PaymentException(
         _getFriendlyErrorMessage(e.code),
         code: e.code,
         details: e.details,
       );
-    } catch (e) {
+    } catch (e, stack) {
+      CrashlyticsService.paymentError(e, stack, 'sendPaymentQrEmail unexpected');
       debugPrint('❌ Error sending EPC QR payment email: $e');
       throw PaymentException(
         'Erreur lors de l\'envoi de l\'email de paiement. Veuillez réessayer.',
@@ -119,14 +122,16 @@ class PaymentService {
       debugPrint('✅ Noda payment created successfully: ${result.data}');
 
       return PaymentResponse.fromJson(Map<String, dynamic>.from(result.data));
-    } on FirebaseFunctionsException catch (e) {
+    } on FirebaseFunctionsException catch (e, stack) {
+      CrashlyticsService.paymentError(e, stack, 'createNodaPayment CF error ${e.code}');
       debugPrint('❌ Firebase Functions error: ${e.code} - ${e.message}');
       throw PaymentException(
         _getFriendlyErrorMessage(e.code),
         code: e.code,
         details: e.details,
       );
-    } catch (e) {
+    } catch (e, stack) {
+      CrashlyticsService.paymentError(e, stack, 'createNodaPayment unexpected');
       debugPrint('❌ Error creating Noda payment: $e');
       throw PaymentException(
         'Erreur lors de la creation du paiement. Veuillez reessayer.',
@@ -163,14 +168,16 @@ class PaymentService {
       debugPrint('📊 Noda payment status: ${status.status}, paye: ${status.paye}');
 
       return status;
-    } on FirebaseFunctionsException catch (e) {
+    } on FirebaseFunctionsException catch (e, stack) {
+      CrashlyticsService.paymentError(e, stack, 'checkNodaPaymentStatus CF error ${e.code}');
       debugPrint('❌ Firebase Functions error: ${e.code} - ${e.message}');
       throw PaymentException(
         'Impossible de verifier le statut du paiement',
         code: e.code,
         details: e.details,
       );
-    } catch (e) {
+    } catch (e, stack) {
+      CrashlyticsService.paymentError(e, stack, 'checkNodaPaymentStatus unexpected');
       debugPrint('❌ Error checking Noda payment status: $e');
       throw PaymentException(
         'Erreur lors de la verification du paiement',
