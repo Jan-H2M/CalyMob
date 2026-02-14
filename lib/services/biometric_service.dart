@@ -5,6 +5,7 @@ import 'package:local_auth_android/local_auth_android.dart';
 import 'package:local_auth_darwin/local_auth_darwin.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'diagnostic_service.dart';
 
 /// Service for biometric authentication (Face ID / Touch ID / Fingerprint)
 class BiometricService {
@@ -18,6 +19,14 @@ class BiometricService {
   static const String _emailKey = 'biometric_email';
   static const String _passwordKey = 'biometric_password';
   static const String _enabledKey = 'biometric_enabled';
+
+  /// Current user ID — set via setUserId() so diagnostics can be written to Firestore.
+  String? _currentUserId;
+
+  /// Stel de huidige user in zodat diagnostics naar Firestore geschreven worden.
+  void setUserId(String? userId) {
+    _currentUserId = userId;
+  }
 
   /// Last diagnostic info (for debugging biometric issues)
   String _lastDiagnostic = '';
@@ -59,6 +68,17 @@ class BiometricService {
         FirebaseCrashlytics.instance.setCustomKey('biometric_available', available);
       }
 
+      // Write to Firestore so admins can see it in CalyCompta
+      if (_currentUserId != null) {
+        DiagnosticService.saveBiometricStatus(
+          userId: _currentUserId!,
+          available: available,
+          canCheck: canCheck,
+          deviceSupported: isDeviceSupported,
+          types: biometrics.map((b) => b.name).join(', '),
+        );
+      }
+
       return available;
     } on PlatformException catch (e, stack) {
       _lastDiagnostic = 'PlatformException: ${e.code} - ${e.message}';
@@ -66,6 +86,19 @@ class BiometricService {
         e, stack,
         reason: 'BiometricService.isBiometricAvailable PlatformException',
       );
+      if (_currentUserId != null) {
+        DiagnosticService.saveBiometricStatus(
+          userId: _currentUserId!,
+          available: false, canCheck: false, deviceSupported: false, types: '',
+          error: 'PlatformException: ${e.code} - ${e.message}',
+        );
+        DiagnosticService.logError(
+          userId: _currentUserId!,
+          domain: 'biometric',
+          message: 'PlatformException in isBiometricAvailable',
+          detail: '${e.code}: ${e.message}',
+        );
+      }
       return false;
     } catch (e, stack) {
       _lastDiagnostic = 'Exception: $e';
@@ -73,6 +106,19 @@ class BiometricService {
         e, stack,
         reason: 'BiometricService.isBiometricAvailable unexpected error',
       );
+      if (_currentUserId != null) {
+        DiagnosticService.saveBiometricStatus(
+          userId: _currentUserId!,
+          available: false, canCheck: false, deviceSupported: false, types: '',
+          error: '$e',
+        );
+        DiagnosticService.logError(
+          userId: _currentUserId!,
+          domain: 'biometric',
+          message: 'Unexpected error in isBiometricAvailable',
+          detail: '$e',
+        );
+      }
       return false;
     }
   }
