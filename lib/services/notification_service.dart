@@ -6,6 +6,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:app_badge_plus/app_badge_plus.dart';
+import 'crashlytics_service.dart';
 
 // Import dart:io only on non-web platforms
 import 'notification_service_io.dart' if (dart.library.html) 'notification_service_web.dart' as platform_helper;
@@ -59,8 +60,9 @@ class NotificationService {
       }
 
       debugPrint('⚠️  Notifications non autorisées');
-    } catch (e) {
+    } catch (e, stack) {
       debugPrint('❌ Erreur initialisation notifications: $e');
+      CrashlyticsService.notificationError(e, stack, 'initialize failed');
     }
   }
 
@@ -189,8 +191,9 @@ class NotificationService {
       await androidPlugin.createNotificationChannel(piscineMessagesChannel);
 
       debugPrint('✅ Canaux de notification Android créés');
-    } catch (e) {
+    } catch (e, stack) {
       debugPrint('❌ Erreur création canaux notification: $e');
+      CrashlyticsService.notificationError(e, stack, 'createNotificationChannel failed');
     }
   }
 
@@ -198,8 +201,9 @@ class NotificationService {
   Future<String?> getToken() async {
     try {
       return await _messaging.getToken();
-    } catch (e) {
+    } catch (e, stack) {
       debugPrint('❌ Erreur récupération token FCM: $e');
+      CrashlyticsService.notificationError(e, stack, 'getToken failed');
       return null;
     }
   }
@@ -259,8 +263,9 @@ class NotificationService {
       debugPrint('✅ Token FCM et infos appareil sauvegardés dans Firestore');
       debugPrint('   Platform: ${deviceInfo['platform']}, Model: ${deviceInfo['model']}');
       debugPrint('   App version: ${appInfo['version']} (${appInfo['buildNumber']})');
-    } catch (e) {
+    } catch (e, stack) {
       debugPrint('❌ Erreur sauvegarde token FCM: $e');
+      CrashlyticsService.notificationError(e, stack, 'saveTokenToFirestore failed');
     }
   }
 
@@ -293,8 +298,9 @@ class NotificationService {
         model = 'unknown';
         osVersion = 'unknown';
       }
-    } catch (e) {
+    } catch (e, stack) {
       debugPrint('❌ Erreur récupération device info: $e');
+      CrashlyticsService.notificationError(e, stack, 'getDeviceInfo failed');
       platform = platform_helper.isIOS ? 'ios' : (platform_helper.isAndroid ? 'android' : 'unknown');
       model = 'unknown';
       osVersion = 'unknown';
@@ -340,8 +346,9 @@ class NotificationService {
         'version': packageInfo.version, // Ex: "1.0.6"
         'buildNumber': packageInfo.buildNumber, // Ex: "22"
       };
-    } catch (e) {
+    } catch (e, stack) {
       debugPrint('❌ Erreur récupération app info: $e');
+      CrashlyticsService.notificationError(e, stack, 'getAppInfo failed');
       return {
         'version': 'unknown',
         'buildNumber': 'unknown',
@@ -377,8 +384,9 @@ class NotificationService {
       }
 
       debugPrint('✅ Token FCM supprimé de Firestore');
-    } catch (e) {
+    } catch (e, stack) {
       debugPrint('❌ Erreur suppression token FCM: $e');
+      CrashlyticsService.notificationError(e, stack, 'removeTokenFromFirestore failed');
     }
   }
 
@@ -406,8 +414,9 @@ class NotificationService {
     try {
       await _messaging.subscribeToTopic(topic);
       debugPrint('✅ Souscrit au topic: $topic');
-    } catch (e) {
+    } catch (e, stack) {
       debugPrint('❌ Erreur souscription topic: $e');
+      CrashlyticsService.notificationError(e, stack, 'subscribeToTopic $topic');
     }
   }
 
@@ -416,8 +425,9 @@ class NotificationService {
     try {
       await _messaging.unsubscribeFromTopic(topic);
       debugPrint('✅ Désabonné du topic: $topic');
-    } catch (e) {
+    } catch (e, stack) {
       debugPrint('❌ Erreur désabonnement topic: $e');
+      CrashlyticsService.notificationError(e, stack, 'unsubscribeFromTopic $topic');
     }
   }
 
@@ -426,8 +436,9 @@ class NotificationService {
     try {
       final settings = await _messaging.getNotificationSettings();
       return settings.authorizationStatus == AuthorizationStatus.authorized;
-    } catch (e) {
+    } catch (e, stack) {
       debugPrint('❌ Erreur vérification permissions: $e');
+      CrashlyticsService.notificationError(e, stack, 'areNotificationsEnabled check failed');
       return false;
     }
   }
@@ -446,8 +457,9 @@ class NotificationService {
       );
 
       return settings.authorizationStatus == AuthorizationStatus.authorized;
-    } catch (e) {
+    } catch (e, stack) {
       debugPrint('❌ Erreur demande permission: $e');
+      CrashlyticsService.notificationError(e, stack, 'requestPermission failed');
       return false;
     }
   }
