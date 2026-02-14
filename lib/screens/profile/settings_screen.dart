@@ -38,17 +38,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _checkBiometricStatus() async {
-    final available = await _biometricService.isBiometricAvailable();
-    final enabled = await _biometricService.isBiometricLoginEnabled();
-    final hasCredentials = await _biometricService.hasStoredCredentials();
-    final typeName = await _biometricService.getBiometricTypeName();
+    try {
+      final available = await _biometricService.isBiometricAvailable();
 
-    if (mounted) {
-      setState(() {
-        _biometricAvailable = available;
-        _biometricEnabled = enabled && hasCredentials;
-        _biometricTypeName = typeName;
-      });
+      // Read secure storage separately - can fail after app reinstall
+      // on some Android devices (KeyStore issues)
+      bool enabled = false;
+      bool hasCredentials = false;
+      String typeName = 'Biométrie';
+      try {
+        enabled = await _biometricService.isBiometricLoginEnabled();
+        hasCredentials = await _biometricService.hasStoredCredentials();
+        typeName = await _biometricService.getBiometricTypeName();
+      } catch (_) {
+        // SecureStorage failed - show toggle but as disabled
+        // User can re-enable by logging out and back in
+      }
+
+      if (mounted) {
+        setState(() {
+          _biometricAvailable = available;
+          _biometricEnabled = enabled && hasCredentials;
+          _biometricTypeName = typeName;
+        });
+      }
+    } catch (_) {
+      // isBiometricAvailable itself failed - update state to show diagnostic
+      if (mounted) {
+        setState(() {
+          _biometricAvailable = false;
+        });
+      }
     }
   }
 
