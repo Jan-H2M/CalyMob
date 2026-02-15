@@ -23,9 +23,31 @@ class BiometricService {
   /// Current user ID — set via setUserId() so diagnostics can be written to Firestore.
   String? _currentUserId;
 
+  /// Buffered errors from pre-login biometric checks (when _currentUserId is null).
+  /// These get flushed to Firestore when setUserId() is called.
+  final List<_BufferedError> _bufferedErrors = [];
+
   /// Stel de huidige user in zodat diagnostics naar Firestore geschreven worden.
+  /// Flusht ook eventueel gebufferde errors naar Firestore.
   void setUserId(String? userId) {
     _currentUserId = userId;
+    if (userId != null && _bufferedErrors.isNotEmpty) {
+      _flushBufferedErrors(userId);
+    }
+  }
+
+  /// Flush buffered pre-login errors to Firestore
+  void _flushBufferedErrors(String userId) {
+    final errors = List<_BufferedError>.from(_bufferedErrors);
+    _bufferedErrors.clear();
+    for (final error in errors) {
+      DiagnosticService.logError(
+        userId: userId,
+        domain: error.domain,
+        message: error.message,
+        detail: error.detail,
+      );
+    }
   }
 
   /// Last diagnostic info (for debugging biometric issues)
@@ -80,11 +102,12 @@ class BiometricService {
       }
 
       return available;
-    } on PlatformException catch (e, stack) {
+    } on PlatformException catch (e) {
       _lastDiagnostic = 'PlatformException: ${e.code} - ${e.message}';
-      FirebaseCrashlytics.instance.recordError(
-        e, stack,
-        reason: 'BiometricService.isBiometricAvailable PlatformException',
+      // Use .log instead of .recordError — PlatformExceptions are expected on
+      // devices without biometrics, and recordError triggers false crash alerts.
+      FirebaseCrashlytics.instance.log(
+        'BiometricService.isBiometricAvailable PlatformException: ${e.code} - ${e.message}',
       );
       if (_currentUserId != null) {
         DiagnosticService.saveBiometricStatus(
@@ -98,10 +121,17 @@ class BiometricService {
           message: 'PlatformException in isBiometricAvailable',
           detail: '${e.code}: ${e.message}',
         );
+      } else {
+        _bufferedErrors.add(_BufferedError(
+          domain: 'biometric',
+          message: 'PlatformException in isBiometricAvailable (pre-login)',
+          detail: '${e.code}: ${e.message}',
+        ));
       }
       return false;
     } catch (e, stack) {
       _lastDiagnostic = 'Exception: $e';
+      // Unexpected errors DO get recorded as crashes
       FirebaseCrashlytics.instance.recordError(
         e, stack,
         reason: 'BiometricService.isBiometricAvailable unexpected error',
@@ -118,6 +148,12 @@ class BiometricService {
           message: 'Unexpected error in isBiometricAvailable',
           detail: '$e',
         );
+      } else {
+        _bufferedErrors.add(_BufferedError(
+          domain: 'biometric',
+          message: 'Unexpected error in isBiometricAvailable (pre-login)',
+          detail: '$e',
+        ));
       }
       return false;
     }
@@ -182,11 +218,36 @@ class BiometricService {
           ),
         ],
       );
-    } on PlatformException catch (e, stack) {
-      FirebaseCrashlytics.instance.recordError(
-        e, stack,
-        reason: 'BiometricService.authenticate failed: ${e.code}',
+    } on PlatformException catch (e) {
+      // Log to Crashlytics (use .log instead of .recordError to avoid false crash alerts)
+      FirebaseCrashlytics.instance.log(
+        'BiometricService.authenticate PlatformException: ${e.code} - ${e.message}',
       );
+
+      // Write to Firestore so admins can see it in CalyCompta
+      if (_currentUserId != null) {
+        DiagnosticService.saveBiometricStatus(
+          userId: _currentUserId!,
+          available: true, // Device supports biometrics, but authenticate() failed
+          canCheck: true,
+          deviceSupported: true,
+          types: '', // We don't re-query here to avoid extra calls
+          error: 'authenticate() failed: ${e.code} - ${e.message}',
+        );
+        DiagnosticService.logError(
+          userId: _currentUserId!,
+          domain: 'biometric',
+          message: 'authenticate() PlatformException',
+          detail: '${e.code}: ${e.message}',
+        );
+      } else {
+        // Pre-login: buffer the error for later flush
+        _bufferedErrors.add(_BufferedError(
+          domain: 'biometric',
+          message: 'authenticate() PlatformException (pre-login)',
+          detail: '${e.code}: ${e.message}',
+        ));
+      }
       return false;
     }
   }
@@ -197,15 +258,14 @@ class BiometricService {
       await _secureStorage.write(key: _emailKey, value: email);
       await _secureStorage.write(key: _passwordKey, value: password);
       await _secureStorage.write(key: _enabledKey, value: 'true');
-    } on PlatformException catch (e, stack) {
-      FirebaseCrashlytics.instance.recordError(
-        e, stack,
-        reason: 'BiometricService.saveCredentials PlatformException',
+    } on PlatformException catch (e) {
+      FirebaseCrashlytics.instance.log(
+        'BiometricService.saveCredentials PlatformException: ${e.code} - ${e.message}',
       );
       if (_currentUserId != null) {
         DiagnosticService.logError(
           userId: _currentUserId!,
-          domain: 'biometric',
+          domain: 'secure_storage',
           message: 'PlatformException in saveCredentials',
           detail: '${e.code}: ${e.message}',
         );
@@ -223,18 +283,23 @@ class BiometricService {
         return {'email': email, 'password': password};
       }
       return null;
-    } on PlatformException catch (e, stack) {
-      FirebaseCrashlytics.instance.recordError(
-        e, stack,
-        reason: 'BiometricService.getCredentials PlatformException',
+    } on PlatformException catch (e) {
+      FirebaseCrashlytics.instance.log(
+        'BiometricService.getCredentials PlatformException: ${e.code} - ${e.message}',
       );
       if (_currentUserId != null) {
         DiagnosticService.logError(
           userId: _currentUserId!,
-          domain: 'biometric',
+          domain: 'secure_storage',
           message: 'PlatformException in getCredentials',
           detail: '${e.code}: ${e.message}',
         );
+      } else {
+        _bufferedErrors.add(_BufferedError(
+          domain: 'secure_storage',
+          message: 'PlatformException in getCredentials (pre-login)',
+          detail: '${e.code}: ${e.message}',
+        ));
       }
       return null;
     }
@@ -245,11 +310,24 @@ class BiometricService {
     try {
       final enabled = await _secureStorage.read(key: _enabledKey);
       return enabled == 'true';
-    } on PlatformException catch (e, stack) {
-      FirebaseCrashlytics.instance.recordError(
-        e, stack,
-        reason: 'BiometricService.isBiometricLoginEnabled PlatformException',
+    } on PlatformException catch (e) {
+      FirebaseCrashlytics.instance.log(
+        'BiometricService.isBiometricLoginEnabled PlatformException: ${e.code} - ${e.message}',
       );
+      if (_currentUserId != null) {
+        DiagnosticService.logError(
+          userId: _currentUserId!,
+          domain: 'secure_storage',
+          message: 'PlatformException in isBiometricLoginEnabled',
+          detail: '${e.code}: ${e.message}',
+        );
+      } else {
+        _bufferedErrors.add(_BufferedError(
+          domain: 'secure_storage',
+          message: 'PlatformException in isBiometricLoginEnabled (pre-login)',
+          detail: '${e.code}: ${e.message}',
+        ));
+      }
       return false;
     }
   }
@@ -260,11 +338,24 @@ class BiometricService {
       final email = await _secureStorage.read(key: _emailKey);
       final password = await _secureStorage.read(key: _passwordKey);
       return email != null && password != null;
-    } on PlatformException catch (e, stack) {
-      FirebaseCrashlytics.instance.recordError(
-        e, stack,
-        reason: 'BiometricService.hasStoredCredentials PlatformException',
+    } on PlatformException catch (e) {
+      FirebaseCrashlytics.instance.log(
+        'BiometricService.hasStoredCredentials PlatformException: ${e.code} - ${e.message}',
       );
+      if (_currentUserId != null) {
+        DiagnosticService.logError(
+          userId: _currentUserId!,
+          domain: 'secure_storage',
+          message: 'PlatformException in hasStoredCredentials',
+          detail: '${e.code}: ${e.message}',
+        );
+      } else {
+        _bufferedErrors.add(_BufferedError(
+          domain: 'secure_storage',
+          message: 'PlatformException in hasStoredCredentials (pre-login)',
+          detail: '${e.code}: ${e.message}',
+        ));
+      }
       return false;
     }
   }
@@ -275,11 +366,18 @@ class BiometricService {
       await _secureStorage.delete(key: _emailKey);
       await _secureStorage.delete(key: _passwordKey);
       await _secureStorage.write(key: _enabledKey, value: 'false');
-    } on PlatformException catch (e, stack) {
-      FirebaseCrashlytics.instance.recordError(
-        e, stack,
-        reason: 'BiometricService.disableBiometricLogin PlatformException',
+    } on PlatformException catch (e) {
+      FirebaseCrashlytics.instance.log(
+        'BiometricService.disableBiometricLogin PlatformException: ${e.code} - ${e.message}',
       );
+      if (_currentUserId != null) {
+        DiagnosticService.logError(
+          userId: _currentUserId!,
+          domain: 'secure_storage',
+          message: 'PlatformException in disableBiometricLogin',
+          detail: '${e.code}: ${e.message}',
+        );
+      }
     }
   }
 
@@ -287,11 +385,18 @@ class BiometricService {
   Future<void> clearCredentials() async {
     try {
       await _secureStorage.deleteAll();
-    } on PlatformException catch (e, stack) {
-      FirebaseCrashlytics.instance.recordError(
-        e, stack,
-        reason: 'BiometricService.clearCredentials PlatformException',
+    } on PlatformException catch (e) {
+      FirebaseCrashlytics.instance.log(
+        'BiometricService.clearCredentials PlatformException: ${e.code} - ${e.message}',
       );
+      if (_currentUserId != null) {
+        DiagnosticService.logError(
+          userId: _currentUserId!,
+          domain: 'secure_storage',
+          message: 'PlatformException in clearCredentials',
+          detail: '${e.code}: ${e.message}',
+        );
+      }
     }
   }
 
@@ -306,4 +411,13 @@ class BiometricService {
     }
     return 'Biométrie';
   }
+}
+
+/// Helper class for buffering errors during pre-login biometric checks
+class _BufferedError {
+  final String domain;
+  final String message;
+  final String? detail;
+
+  _BufferedError({required this.domain, required this.message, this.detail});
 }

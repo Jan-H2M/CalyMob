@@ -3,8 +3,10 @@ import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../config/app_assets.dart';
+import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/operation.dart';
+import '../../services/event_message_service.dart';
 import '../operations/event_discussion_screen.dart';
 import '../../utils/date_formatter.dart';
 
@@ -106,32 +108,42 @@ class MessagesScreen extends StatelessWidget {
   }
 
   /// Charger tous les événements auxquels l'utilisateur est inscrit
+  /// Utilise collectionGroup('inscriptions') pour trouver toutes les inscriptions,
+  /// puis charge les opérations parentes (cohérent avec OperationService)
   Future<List<Operation>> _loadUserEvents(String userId) async {
+    final clubId = FirebaseConfig.defaultClubId;
     try {
-      // 1. Récupérer toutes les opérations (sans filtre)
-      final operationsSnapshot = await FirebaseFirestore.instance
-          .collection('clubs/calypso/operations')
+      // 1. Trouver toutes les inscriptions de l'utilisateur via collectionGroup
+      final inscriptionsSnapshot = await FirebaseFirestore.instance
+          .collectionGroup('inscriptions')
+          .where('membre_id', isEqualTo: userId)
           .get();
 
       final List<Operation> userOperations = [];
 
-      // 2. Pour chaque opération, vérifier si c'est un événement et si l'utilisateur est inscrit
-      for (final opDoc in operationsSnapshot.docs) {
-        final data = opDoc.data();
+      // 2. Pour chaque inscription, charger l'opération parente
+      for (final inscDoc in inscriptionsSnapshot.docs) {
+        try {
+          // Vérifier que l'inscription appartient au bon club
+          final path = inscDoc.reference.path;
+          if (!path.startsWith('clubs/$clubId/')) continue;
 
-        // Filtrer seulement les événements
-        if (data['type'] != 'evenement') continue;
+          // Remonter vers le document operation parent
+          final operationRef = inscDoc.reference.parent.parent;
+          if (operationRef == null) continue;
 
-        // Vérifier si l'utilisateur est inscrit (via operation_participants)
-        final inscriptionSnapshot = await FirebaseFirestore.instance
-            .collection('operation_participants')
-            .where('operation_id', isEqualTo: opDoc.id)
-            .where('user_id', isEqualTo: userId)
-            .limit(1)
-            .get();
+          final operationDoc = await operationRef.get();
+          if (!operationDoc.exists) continue;
 
-        if (inscriptionSnapshot.docs.isNotEmpty) {
-          userOperations.add(Operation.fromFirestore(opDoc));
+          final data = operationDoc.data() as Map<String, dynamic>?;
+          if (data == null) continue;
+
+          // Filtrer seulement les événements
+          if (data['type'] != 'evenement') continue;
+
+          userOperations.add(Operation.fromFirestore(operationDoc));
+        } catch (e) {
+          debugPrint('⚠️ Erreur parsing inscription: $e');
         }
       }
 
@@ -150,6 +162,49 @@ class MessagesScreen extends StatelessWidget {
     }
   }
 
+  Widget _buildUnreadBadge(BuildContext context, Operation operation) {
+    final authProvider = context.read<AuthProvider>();
+    final userId = authProvider.currentUser?.uid;
+
+    if (userId == null) {
+      return Icon(Icons.chevron_right, color: Colors.grey[400]);
+    }
+
+    return StreamBuilder<int>(
+      stream: EventMessageService().getUnreadCountStream(
+        clubId: FirebaseConfig.defaultClubId,
+        operationId: operation.id,
+        userId: userId,
+      ),
+      builder: (context, snapshot) {
+        final unreadCount = snapshot.data ?? 0;
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (unreadCount > 0)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  unreadCount > 99 ? '99+' : unreadCount.toString(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            if (unreadCount > 0) const SizedBox(width: 6),
+            Icon(Icons.chevron_right, color: Colors.grey[400]),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildEventCard(BuildContext context, Operation operation) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -161,7 +216,7 @@ class MessagesScreen extends StatelessWidget {
             context,
             MaterialPageRoute(
               builder: (_) => EventDiscussionScreen(
-                clubId: 'calypso',
+                clubId: FirebaseConfig.defaultClubId,
                 operationId: operation.id,
                 operationTitle: operation.titre,
               ),
@@ -213,7 +268,7 @@ class MessagesScreen extends StatelessWidget {
                     const SizedBox(height: 4),
                     StreamBuilder<QuerySnapshot>(
                       stream: FirebaseFirestore.instance
-                          .collection('clubs/calypso/operations/${operation.id}/messages')
+                          .collection('clubs/${FirebaseConfig.defaultClubId}/operations/${operation.id}/messages')
                           .orderBy('created_at', descending: true)
                           .limit(1)
                           .snapshots(),
@@ -265,11 +320,8 @@ class MessagesScreen extends StatelessWidget {
                 ),
               ),
 
-              // Flèche
-              Icon(
-                Icons.chevron_right,
-                color: Colors.grey[400],
-              ),
+              // Unread badge + flèche
+              _buildUnreadBadge(context, operation),
             ],
           ),
         ),

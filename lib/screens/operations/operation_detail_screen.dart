@@ -1061,10 +1061,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                         const SizedBox(height: 12),
                       ],
 
-                      // 2. Discussion accordion (chat entre participants)
-                      _buildDiscussionAccordion(isRegistered),
+                      // 2. Discussion accordion (chat entre participants - ouvert à tous)
+                      _buildDiscussionAccordion(true),
                       // Input field OUTSIDE ExpansionTile for iOS compatibility
-                      if (_isDiscussionExpanded && isRegistered)
+                      if (_isDiscussionExpanded)
                         _buildStandaloneMessageInput(),
                       const SizedBox(height: 12),
 

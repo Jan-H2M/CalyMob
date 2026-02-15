@@ -55,43 +55,24 @@ exports.onNewEventMessage = onDocumentCreated(
         }
       }
 
-      // 2. Get participants of the event (inscriptions subcollection)
-      const participantsSnapshot = await admin.firestore()
-        .collection('clubs')
-        .doc(clubId)
-        .collection('operations')
-        .doc(operationId)
-        .collection('inscriptions')
-        .get();
-
-      if (participantsSnapshot.empty) {
-        console.log('No participants found, skipping notification');
-        return null;
-      }
-
-      // 3. Get FCM tokens for all participants except the sender
+      // 2. Get ALL club members (iedereen kan berichten zien en ontvangen)
       const senderId = message.sender_id;
       const senderName = message.sender_name || 'Quelqu\'un';
       const messageText = message.message || '';
 
-      const tokenPromises = [];
-      participantsSnapshot.forEach(doc => {
-        const inscriptionData = doc.data();
-        const participantId = inscriptionData.membre_id; // Get member ID from inscription data
-        // Don't notify the sender
-        if (participantId && participantId !== senderId) {
-          tokenPromises.push(
-            admin.firestore()
-              .collection('clubs')
-              .doc(clubId)
-              .collection('members')
-              .doc(participantId)
-              .get()
-          );
-        }
-      });
+      const membersSnapshot = await admin.firestore()
+        .collection('clubs')
+        .doc(clubId)
+        .collection('members')
+        .where('app_installed', '==', true)
+        .get();
 
-      const memberDocs = await Promise.all(tokenPromises);
+      if (membersSnapshot.empty) {
+        console.log('No members with app installed found, skipping notification');
+        return null;
+      }
+
+      const memberDocs = membersSnapshot.docs;
 
       // Collect tokens and members using helper function
       const { tokens, memberTokenGroups, recipientIds } = collectTokensAndMembers(memberDocs, senderId);

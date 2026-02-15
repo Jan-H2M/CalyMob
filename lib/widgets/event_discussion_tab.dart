@@ -5,6 +5,7 @@ import '../models/event_message.dart';
 import '../models/session_message.dart' show MessageAttachment;
 import '../providers/event_message_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/unread_count_provider.dart';
 import 'package:intl/intl.dart';
 import 'attachment_display.dart';
 import 'attachment_picker.dart';
@@ -38,6 +39,7 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
   void initState() {
     super.initState();
     _checkParticipation();
+    _markMessagesAsRead();
   }
 
   @override
@@ -57,6 +59,22 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
       clubId: widget.clubId,
       operationId: widget.operationId,
       userId: userId,
+    );
+  }
+
+  /// Marquer tous les messages comme lus quand on ouvre la discussion
+  Future<void> _markMessagesAsRead() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final messageProvider = Provider.of<EventMessageProvider>(context, listen: false);
+    final unreadProvider = Provider.of<UnreadCountProvider>(context, listen: false);
+    final userId = authProvider.currentUser?.uid ?? '';
+    if (userId.isEmpty) return;
+
+    await messageProvider.markAsRead(
+      clubId: widget.clubId,
+      operationId: widget.operationId,
+      userId: userId,
+      unreadProvider: unreadProvider,
     );
   }
 
@@ -215,9 +233,7 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        isParticipant
-                            ? 'Soyez le premier à poser une question'
-                            : 'Les participants peuvent discuter ici',
+                        'Soyez le premier à poser une question',
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.grey[500],
@@ -252,34 +268,8 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
           ),
         ),
 
-        // Input bar
-        if (isParticipant)
-          _buildMessageInput()
-        else
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.grey[100],
-              border: Border(
-                top: BorderSide(color: Colors.grey[300]!),
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.info_outline, color: Colors.grey[600], size: 20),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Inscrivez-vous à l\'événement pour participer à la discussion',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[700],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+        // Input bar - tous les membres authentifiés peuvent envoyer des messages
+        _buildMessageInput(),
       ],
     );
   }

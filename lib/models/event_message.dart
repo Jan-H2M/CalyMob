@@ -59,7 +59,7 @@ class EventMessage {
       senderId: data['sender_id'] ?? '',
       senderName: data['sender_name'] ?? '',
       message: data['message'] ?? '',
-      createdAt: (data['created_at'] as Timestamp).toDate(),
+      createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
       readBy: (data['read_by'] as List<dynamic>?)?.cast<String>() ?? [],
       replyToId: data['reply_to_id'],
       replyToPreview: data['reply_to_preview'] != null
