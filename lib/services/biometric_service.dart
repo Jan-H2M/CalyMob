@@ -193,45 +193,106 @@ class BiometricService {
 
   /// Save credentials securely for biometric login
   Future<void> saveCredentials(String email, String password) async {
-    await _secureStorage.write(key: _emailKey, value: email);
-    await _secureStorage.write(key: _passwordKey, value: password);
-    await _secureStorage.write(key: _enabledKey, value: 'true');
+    try {
+      await _secureStorage.write(key: _emailKey, value: email);
+      await _secureStorage.write(key: _passwordKey, value: password);
+      await _secureStorage.write(key: _enabledKey, value: 'true');
+    } on PlatformException catch (e, stack) {
+      FirebaseCrashlytics.instance.recordError(
+        e, stack,
+        reason: 'BiometricService.saveCredentials PlatformException',
+      );
+      if (_currentUserId != null) {
+        DiagnosticService.logError(
+          userId: _currentUserId!,
+          domain: 'biometric',
+          message: 'PlatformException in saveCredentials',
+          detail: '${e.code}: ${e.message}',
+        );
+      }
+    }
   }
 
   /// Get saved credentials
   Future<Map<String, String>?> getCredentials() async {
-    final email = await _secureStorage.read(key: _emailKey);
-    final password = await _secureStorage.read(key: _passwordKey);
+    try {
+      final email = await _secureStorage.read(key: _emailKey);
+      final password = await _secureStorage.read(key: _passwordKey);
 
-    if (email != null && password != null) {
-      return {'email': email, 'password': password};
+      if (email != null && password != null) {
+        return {'email': email, 'password': password};
+      }
+      return null;
+    } on PlatformException catch (e, stack) {
+      FirebaseCrashlytics.instance.recordError(
+        e, stack,
+        reason: 'BiometricService.getCredentials PlatformException',
+      );
+      if (_currentUserId != null) {
+        DiagnosticService.logError(
+          userId: _currentUserId!,
+          domain: 'biometric',
+          message: 'PlatformException in getCredentials',
+          detail: '${e.code}: ${e.message}',
+        );
+      }
+      return null;
     }
-    return null;
   }
 
   /// Check if biometric login is enabled
   Future<bool> isBiometricLoginEnabled() async {
-    final enabled = await _secureStorage.read(key: _enabledKey);
-    return enabled == 'true';
+    try {
+      final enabled = await _secureStorage.read(key: _enabledKey);
+      return enabled == 'true';
+    } on PlatformException catch (e, stack) {
+      FirebaseCrashlytics.instance.recordError(
+        e, stack,
+        reason: 'BiometricService.isBiometricLoginEnabled PlatformException',
+      );
+      return false;
+    }
   }
 
   /// Check if credentials are saved
   Future<bool> hasStoredCredentials() async {
-    final email = await _secureStorage.read(key: _emailKey);
-    final password = await _secureStorage.read(key: _passwordKey);
-    return email != null && password != null;
+    try {
+      final email = await _secureStorage.read(key: _emailKey);
+      final password = await _secureStorage.read(key: _passwordKey);
+      return email != null && password != null;
+    } on PlatformException catch (e, stack) {
+      FirebaseCrashlytics.instance.recordError(
+        e, stack,
+        reason: 'BiometricService.hasStoredCredentials PlatformException',
+      );
+      return false;
+    }
   }
 
   /// Disable biometric login and clear credentials
   Future<void> disableBiometricLogin() async {
-    await _secureStorage.delete(key: _emailKey);
-    await _secureStorage.delete(key: _passwordKey);
-    await _secureStorage.write(key: _enabledKey, value: 'false');
+    try {
+      await _secureStorage.delete(key: _emailKey);
+      await _secureStorage.delete(key: _passwordKey);
+      await _secureStorage.write(key: _enabledKey, value: 'false');
+    } on PlatformException catch (e, stack) {
+      FirebaseCrashlytics.instance.recordError(
+        e, stack,
+        reason: 'BiometricService.disableBiometricLogin PlatformException',
+      );
+    }
   }
 
   /// Clear all stored credentials
   Future<void> clearCredentials() async {
-    await _secureStorage.deleteAll();
+    try {
+      await _secureStorage.deleteAll();
+    } on PlatformException catch (e, stack) {
+      FirebaseCrashlytics.instance.recordError(
+        e, stack,
+        reason: 'BiometricService.clearCredentials PlatformException',
+      );
+    }
   }
 
   /// Get a human-readable name for the biometric type
