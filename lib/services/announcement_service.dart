@@ -13,7 +13,7 @@ class AnnouncementService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
 
-  /// Stream de toutes les annonces (temps réel)
+  /// Stream de toutes les annonces actives (non supprimées, temps réel)
   Stream<List<Announcement>> getAnnouncementsStream(String clubId) {
     return _firestore
         .collection('clubs/$clubId/announcements')
@@ -22,6 +22,7 @@ class AnnouncementService {
         .map((snapshot) {
       return snapshot.docs
           .map((doc) => Announcement.fromFirestore(doc))
+          .where((a) => !a.isDeleted) // Filtrer les soft-deleted
           .toList();
     });
   }
@@ -36,6 +37,7 @@ class AnnouncementService {
 
       final announcements = snapshot.docs
           .map((doc) => Announcement.fromFirestore(doc))
+          .where((a) => !a.isDeleted) // Filtrer les soft-deleted
           .toList();
 
       debugPrint('✅ ${announcements.length} annonces chargées');
@@ -77,41 +79,41 @@ class AnnouncementService {
     }
   }
 
-  /// Supprimer une annonce et ses réponses (admin uniquement)
+  /// Soft-delete une annonce (admin uniquement)
   ///
-  /// Firestore ne supprime pas automatiquement les sous-collections.
-  /// On supprime d'abord toutes les réponses, puis l'annonce elle-même.
-  Future<void> deleteAnnouncement(String clubId, String announcementId) async {
+  /// Au lieu de supprimer physiquement le document, on ajoute un champ deleted_at.
+  /// Cela permet de restaurer l'annonce si elle a été supprimée par erreur.
+  Future<void> deleteAnnouncement(String clubId, String announcementId, {String? deletedByUserId}) async {
     try {
-      // 1. Supprimer toutes les réponses (sous-collection)
-      final repliesRef = _firestore
-          .collection('clubs/$clubId/announcements/$announcementId/replies');
-      final repliesSnapshot = await repliesRef.get();
-
-      if (repliesSnapshot.docs.isNotEmpty) {
-        // Firestore batch limiet = 500 opérations
-        const batchLimit = 500;
-        for (var i = 0; i < repliesSnapshot.docs.length; i += batchLimit) {
-          final batch = _firestore.batch();
-          final chunk = repliesSnapshot.docs.skip(i).take(batchLimit);
-          for (final doc in chunk) {
-            batch.delete(doc.reference);
-          }
-          await batch.commit();
-        }
-        debugPrint(
-            '✅ ${repliesSnapshot.docs.length} réponses supprimées pour annonce $announcementId');
-      }
-
-      // 2. Supprimer l'annonce elle-même
       await _firestore
           .collection('clubs/$clubId/announcements')
           .doc(announcementId)
-          .delete();
+          .update({
+        'deleted_at': FieldValue.serverTimestamp(),
+        'deleted_by': deletedByUserId ?? 'unknown',
+      });
 
-      debugPrint('✅ Annonce supprimée: $announcementId');
+      debugPrint('✅ Annonce soft-deleted: $announcementId');
     } catch (e) {
       debugPrint('❌ Erreur suppression annonce: $e');
+      rethrow;
+    }
+  }
+
+  /// Restaurer une annonce soft-deleted (admin uniquement)
+  Future<void> restoreAnnouncement(String clubId, String announcementId) async {
+    try {
+      await _firestore
+          .collection('clubs/$clubId/announcements')
+          .doc(announcementId)
+          .update({
+        'deleted_at': FieldValue.delete(),
+        'deleted_by': FieldValue.delete(),
+      });
+
+      debugPrint('✅ Annonce restaurée: $announcementId');
+    } catch (e) {
+      debugPrint('❌ Erreur restauration annonce: $e');
       rethrow;
     }
   }
@@ -196,8 +198,11 @@ class AnnouncementService {
           .get();
 
       return snapshot.docs.where((doc) {
+        final data = doc.data();
+        // Filtrer les soft-deleted
+        if (data['deleted_at'] != null) return false;
         final readBy =
-            (doc.data()['read_by'] as List<dynamic>?)?.cast<String>() ?? [];
+            (data['read_by'] as List<dynamic>?)?.cast<String>() ?? [];
         return !readBy.contains(userId);
       }).length;
     } catch (e) {

@@ -246,9 +246,11 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen>
       const clubId = 'calypso';
 
       try {
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
         await announcementProvider.deleteAnnouncement(
           clubId,
           announcementId,
+          deletedByUserId: authProvider.currentUser?.uid,
         );
 
         if (mounted) {

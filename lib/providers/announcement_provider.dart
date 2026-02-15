@@ -65,10 +65,10 @@ class AnnouncementProvider with ChangeNotifier {
     }
   }
 
-  /// Supprimer une annonce
-  Future<void> deleteAnnouncement(String clubId, String announcementId) async {
+  /// Supprimer une annonce (soft-delete)
+  Future<void> deleteAnnouncement(String clubId, String announcementId, {String? deletedByUserId}) async {
     try {
-      await _announcementService.deleteAnnouncement(clubId, announcementId);
+      await _announcementService.deleteAnnouncement(clubId, announcementId, deletedByUserId: deletedByUserId);
 
       // Retirer de la liste locale
       _announcements.removeWhere((a) => a.id == announcementId);

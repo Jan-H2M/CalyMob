@@ -20,6 +20,8 @@ class Announcement {
   final List<String> readBy;
   final List<MessageAttachment> attachments;
   final int replyCount;
+  final DateTime? deletedAt;
+  final String? deletedBy;
 
   Announcement({
     required this.id,
@@ -32,6 +34,8 @@ class Announcement {
     this.readBy = const [],
     this.attachments = const [],
     this.replyCount = 0,
+    this.deletedAt,
+    this.deletedBy,
   });
 
   /// Créer depuis Firestore
@@ -45,13 +49,19 @@ class Announcement {
       senderId: data['sender_id'] ?? '',
       senderName: data['sender_name'] ?? '',
       type: _parseType(data['type']),
-      createdAt: (data['created_at'] as Timestamp).toDate(),
+      createdAt: data['created_at'] != null
+          ? (data['created_at'] as Timestamp).toDate()
+          : DateTime.now(),
       readBy: (data['read_by'] as List<dynamic>?)?.cast<String>() ?? [],
       attachments: (data['attachments'] as List<dynamic>?)
               ?.map((a) => MessageAttachment.fromMap(a as Map<String, dynamic>))
               .toList() ??
           [],
       replyCount: data['reply_count'] ?? 0,
+      deletedAt: data['deleted_at'] != null
+          ? (data['deleted_at'] as Timestamp).toDate()
+          : null,
+      deletedBy: data['deleted_by'] as String?,
     );
   }
 
@@ -94,6 +104,8 @@ class Announcement {
     List<String>? readBy,
     List<MessageAttachment>? attachments,
     int? replyCount,
+    DateTime? deletedAt,
+    String? deletedBy,
   }) {
     return Announcement(
       id: id,
@@ -106,8 +118,13 @@ class Announcement {
       readBy: readBy ?? this.readBy,
       attachments: attachments ?? this.attachments,
       replyCount: replyCount ?? this.replyCount,
+      deletedAt: deletedAt ?? this.deletedAt,
+      deletedBy: deletedBy ?? this.deletedBy,
     );
   }
+
+  /// Is soft-deleted
+  bool get isDeleted => deletedAt != null;
 
   /// Vérifier si l'annonce a été lue par un utilisateur
   bool isReadBy(String userId) => readBy.contains(userId);
