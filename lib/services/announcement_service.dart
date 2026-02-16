@@ -79,26 +79,7 @@ class AnnouncementService {
     }
   }
 
-  /// Soft-delete une annonce (admin uniquement)
-  ///
-  /// Au lieu de supprimer physiquement le document, on ajoute un champ deleted_at.
-  /// Cela permet de restaurer l'annonce si elle a été supprimée par erreur.
-  Future<void> deleteAnnouncement(String clubId, String announcementId, {String? deletedByUserId}) async {
-    try {
-      await _firestore
-          .collection('clubs/$clubId/announcements')
-          .doc(announcementId)
-          .update({
-        'deleted_at': FieldValue.serverTimestamp(),
-        'deleted_by': deletedByUserId ?? 'unknown',
-      });
-
-      debugPrint('✅ Annonce soft-deleted: $announcementId');
-    } catch (e) {
-      debugPrint('❌ Erreur suppression annonce: $e');
-      rethrow;
-    }
-  }
+  // deleteAnnouncement verwijderd — beheer via CalyCompta
 
   /// Restaurer une annonce soft-deleted (admin uniquement)
   Future<void> restoreAnnouncement(String clubId, String announcementId) async {
@@ -147,69 +128,8 @@ class AnnouncementService {
     }
   }
 
-  // ==================== READ TRACKING ====================
-
-  /// Marquer une annonce comme lue par un utilisateur
-  /// Retourne true si l'annonce n'était PAS encore lue (= nouveau read)
-  Future<bool> markAnnouncementAsRead({
-    required String clubId,
-    required String announcementId,
-    required String userId,
-  }) async {
-    try {
-      // Vérifier si l'utilisateur a déjà lu cette annonce
-      final doc = await _firestore
-          .collection('clubs/$clubId/announcements')
-          .doc(announcementId)
-          .get();
-
-      if (!doc.exists) return false;
-
-      final readBy = List<String>.from(doc.data()?['read_by'] ?? []);
-      final wasAlreadyRead = readBy.contains(userId);
-
-      if (!wasAlreadyRead) {
-        await _firestore
-            .collection('clubs/$clubId/announcements')
-            .doc(announcementId)
-            .update({
-          'read_by': FieldValue.arrayUnion([userId]),
-        });
-        debugPrint('✅ Annonce marquée comme lue: $announcementId');
-      } else {
-        debugPrint('ℹ️ Annonce déjà lue: $announcementId');
-      }
-
-      return !wasAlreadyRead;
-    } catch (e) {
-      debugPrint('❌ Erreur marquage annonce lue: $e');
-      return false;
-    }
-  }
-
-  /// Compter les annonces non lues
-  Future<int> getUnreadCount({
-    required String clubId,
-    required String userId,
-  }) async {
-    try {
-      final snapshot = await _firestore
-          .collection('clubs/$clubId/announcements')
-          .get();
-
-      return snapshot.docs.where((doc) {
-        final data = doc.data();
-        // Filtrer les soft-deleted
-        if (data['deleted_at'] != null) return false;
-        final readBy =
-            (data['read_by'] as List<dynamic>?)?.cast<String>() ?? [];
-        return !readBy.contains(userId);
-      }).length;
-    } catch (e) {
-      debugPrint('❌ Erreur comptage annonces non lues: $e');
-      return 0;
-    }
-  }
+  // markAnnouncementAsRead, getUnreadCount verwijderd
+  // → read tracking gaat nu via LocalReadTracker + UnreadCountService
 
   // ==================== REPLIES ====================
 
@@ -276,7 +196,6 @@ class AnnouncementService {
         senderName: senderName,
         message: message,
         createdAt: DateTime.now(),
-        readBy: [senderId],
         replyToId: replyToId,
         replyToPreview: replyToPreview,
         attachments: attachments ?? [],
@@ -340,78 +259,8 @@ class AnnouncementService {
     }
   }
 
-  /// Marquer une réponse comme lue
-  Future<void> markReplyAsRead({
-    required String clubId,
-    required String announcementId,
-    required String replyId,
-    required String userId,
-  }) async {
-    try {
-      await _firestore
-          .collection('clubs/$clubId/announcements/$announcementId/replies')
-          .doc(replyId)
-          .update({
-        'read_by': FieldValue.arrayUnion([userId]),
-      });
-    } catch (e) {
-      debugPrint('❌ Erreur marquage réponse lue: $e');
-    }
-  }
-
-  /// Marquer TOUTES les réponses comme lues pour un utilisateur (batch)
-  /// Suit le même pattern que EventMessageService.markMessagesAsRead()
-  Future<int> markAllRepliesAsRead({
-    required String clubId,
-    required String announcementId,
-    required String userId,
-  }) async {
-    try {
-      final snapshot = await _firestore
-          .collection('clubs/$clubId/announcements/$announcementId/replies')
-          .get();
-
-      final batch = _firestore.batch();
-      int updated = 0;
-
-      for (final doc in snapshot.docs) {
-        final readBy = (doc.data()['read_by'] as List<dynamic>?)?.cast<String>() ?? [];
-        if (!readBy.contains(userId)) {
-          batch.update(doc.reference, {
-            'read_by': FieldValue.arrayUnion([userId]),
-          });
-          updated++;
-        }
-      }
-
-      if (updated > 0) {
-        await batch.commit();
-        debugPrint('✅ $updated réponses marquées comme lues par $userId');
-      }
-
-      return updated;
-    } catch (e) {
-      debugPrint('❌ Erreur marquage réponses lues: $e');
-      return 0;
-    }
-  }
-
-  /// Stream du nombre de réponses non lues pour une annonce (temps réel)
-  Stream<int> getUnreadRepliesCountStream({
-    required String clubId,
-    required String announcementId,
-    required String userId,
-  }) {
-    return _firestore
-        .collection('clubs/$clubId/announcements/$announcementId/replies')
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.where((doc) {
-        final readBy = List<String>.from(doc.data()['read_by'] ?? []);
-        return !readBy.contains(userId);
-      }).length;
-    });
-  }
+  // markReplyAsRead, markAllRepliesAsRead, getUnreadRepliesCountStream verwijderd
+  // → read tracking gaat nu via LocalReadTracker + UnreadCountService
 
   // ==================== ATTACHMENTS ====================
 

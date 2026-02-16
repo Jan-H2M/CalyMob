@@ -358,44 +358,8 @@ class _SessionCard extends StatelessWidget {
   }
 
   Widget _buildUnreadBadge() {
-    final sessionMessageService = SessionMessageService();
-    final clubId = FirebaseConfig.defaultClubId;
-    final groups = sessionMessageService.getAvailableGroups(
-      session: session,
-      userId: userId,
-    );
-
-    if (groups.isEmpty) return const SizedBox.shrink();
-
-    return StreamBuilder<int>(
-      stream: sessionMessageService.getTotalUnreadCountStream(
-        clubId: clubId,
-        sessionId: session.id,
-        userId: userId,
-        groups: groups,
-      ),
-      builder: (context, snapshot) {
-        final unreadCount = snapshot.data ?? 0;
-        if (unreadCount == 0) return const SizedBox.shrink();
-
-        return Container(
-          margin: const EdgeInsets.only(right: 8),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(
-            color: Colors.red,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            unreadCount > 99 ? '99+' : unreadCount.toString(),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        );
-      },
-    );
+    // Unread badges worden nu globaal afgehandeld via UnreadCountProvider
+    return const SizedBox.shrink();
   }
 
   Widget _buildStatusBadge() {

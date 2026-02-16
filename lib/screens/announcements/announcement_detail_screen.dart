@@ -9,6 +9,7 @@ import '../../models/announcement_reply.dart';
 import '../../models/session_message.dart' show MessageAttachment;
 import '../../models/event_message.dart' show ReplyPreview;
 import '../../services/announcement_service.dart';
+import '../../services/local_read_tracker.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/unread_count_provider.dart';
 import '../../widgets/attachment_display.dart';
@@ -54,35 +55,14 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
   }
 
   Future<void> _markAsRead() async {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final userId = authProvider.currentUser?.uid;
-    if (userId == null) return;
+    // Lokaal markeren als gelezen + badge refresh
+    final tracker = LocalReadTracker();
+    await tracker.init();
+    await tracker.markAsRead('announcements');
 
-    // 1. Marquer l'annonce elle-même comme lue (retourne true si c'était un nouveau read)
-    final announcementWasUnread = await _announcementService.markAnnouncementAsRead(
-      clubId: widget.clubId,
-      announcementId: widget.announcement.id,
-      userId: userId,
-    );
-
-    // 2. Marquer TOUTES les réponses existantes comme lues
-    final repliesMarked = await _announcementService.markAllRepliesAsRead(
-      clubId: widget.clubId,
-      announcementId: widget.announcement.id,
-      userId: userId,
-    );
-
-    // 3. Décrémenter le compteur de non-lus sur le member doc
-    // Inclut l'annonce elle-même + les réponses non lues
-    final totalToDecrement = (announcementWasUnread ? 1 : 0) + repliesMarked;
-    if (totalToDecrement > 0 && mounted) {
+    if (mounted) {
       final unreadProvider = Provider.of<UnreadCountProvider>(context, listen: false);
-      await unreadProvider.decrementCategory(
-        clubId: widget.clubId,
-        userId: userId,
-        category: 'announcements',
-        amount: totalToDecrement,
-      );
+      await unreadProvider.refresh();
     }
   }
 
@@ -387,14 +367,6 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
                 style: TextStyle(fontSize: 13, color: Colors.grey[600]),
               ),
               const Spacer(),
-              if (widget.announcement.readCount > 0) ...[
-                Icon(Icons.visibility, size: 16, color: Colors.grey[600]),
-                const SizedBox(width: 4),
-                Text(
-                  '${widget.announcement.readCount}',
-                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-                ),
-              ],
             ],
           ),
         ],
@@ -455,23 +427,9 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
 
               // Footer
               const SizedBox(height: 4),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    DateFormat('HH:mm').format(reply.createdAt),
-                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                  ),
-                  if (reply.readCount > 1) ...[
-                    const SizedBox(width: 8),
-                    Icon(Icons.done_all, size: 14, color: Colors.blue[400]),
-                    const SizedBox(width: 2),
-                    Text(
-                      '${reply.readCount}',
-                      style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                    ),
-                  ],
-                ],
+              Text(
+                DateFormat('HH:mm').format(reply.createdAt),
+                style: TextStyle(fontSize: 11, color: Colors.grey[600]),
               ),
             ],
           ),
@@ -538,12 +496,6 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
                   _startReplyTo(reply);
                 },
               ),
-              if (reply.readCount > 0)
-                ListTile(
-                  leading: const Icon(Icons.visibility),
-                  title: Text('Lu par ${reply.readCount} personne${reply.readCount > 1 ? 's' : ''}'),
-                  enabled: false,
-                ),
             ],
           ),
         ),

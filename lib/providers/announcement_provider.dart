@@ -65,20 +65,7 @@ class AnnouncementProvider with ChangeNotifier {
     }
   }
 
-  /// Supprimer une annonce (soft-delete)
-  Future<void> deleteAnnouncement(String clubId, String announcementId, {String? deletedByUserId}) async {
-    try {
-      await _announcementService.deleteAnnouncement(clubId, announcementId, deletedByUserId: deletedByUserId);
-
-      // Retirer de la liste locale
-      _announcements.removeWhere((a) => a.id == announcementId);
-      notifyListeners();
-    } catch (e) {
-      _error = e.toString();
-      debugPrint('❌ Erreur suppression annonce: $e');
-      rethrow;
-    }
-  }
+  // deleteAnnouncement verwijderd — beheer via CalyCompta
 
   /// Mettre à jour une annonce
   Future<void> updateAnnouncement({

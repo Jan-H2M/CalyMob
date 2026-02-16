@@ -126,7 +126,6 @@ class TeamChannelService {
       senderName: senderName,
       message: message,
       attachments: attachments ?? [],
-      readBy: [senderId],
       createdAt: DateTime.now(),
     );
 
@@ -136,100 +135,8 @@ class TeamChannelService {
     return docRef.id;
   }
 
-  /// Marquer un message comme lu
-  Future<void> markAsRead({
-    required String clubId,
-    required String channelId,
-    required String messageId,
-    required String userId,
-  }) async {
-    await _messagesCollection(clubId, channelId).doc(messageId).update({
-      'read_by': FieldValue.arrayUnion([userId]),
-    });
-  }
-
-  /// Marquer tous les messages comme lus
-  Future<void> markAllAsRead({
-    required String clubId,
-    required String channelId,
-    required String userId,
-  }) async {
-    final snapshot = await _messagesCollection(clubId, channelId).get();
-
-    final batch = _firestore.batch();
-    for (final doc in snapshot.docs) {
-      final readBy = List<String>.from(doc.data()['read_by'] ?? []);
-      if (!readBy.contains(userId)) {
-        batch.update(doc.reference, {
-          'read_by': FieldValue.arrayUnion([userId]),
-        });
-      }
-    }
-
-    await batch.commit();
-  }
-
-  /// Compter les messages non lus
-  Future<int> getUnreadCount({
-    required String clubId,
-    required String channelId,
-    required String userId,
-  }) async {
-    final snapshot = await _messagesCollection(clubId, channelId).get();
-
-    return snapshot.docs.where((doc) {
-      final readBy = List<String>.from(doc.data()['read_by'] ?? []);
-      return !readBy.contains(userId);
-    }).length;
-  }
-
-  /// Stream du nombre de messages non lus pour un canal
-  Stream<int> getUnreadCountStream({
-    required String clubId,
-    required String channelId,
-    required String userId,
-  }) {
-    return _messagesCollection(clubId, channelId)
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.where((doc) {
-        final readBy = List<String>.from(doc.data()['read_by'] ?? []);
-        return !readBy.contains(userId);
-      }).length;
-    });
-  }
-
-  /// Stream du nombre de messages non lus pour tous les canaux
-  Stream<Map<String, int>> getAllUnreadCountsStream({
-    required String clubId,
-    required String userId,
-    required List<TeamChannel> channels,
-  }) {
-    if (channels.isEmpty) {
-      return Stream.value({});
-    }
-
-    // Combiner les streams de tous les canaux
-    final streams = channels.map((channel) {
-      return getUnreadCountStream(
-        clubId: clubId,
-        channelId: channel.id,
-        userId: userId,
-      ).map((count) => MapEntry(channel.id, count));
-    });
-
-    return Stream.periodic(const Duration(seconds: 1)).asyncMap((_) async {
-      final counts = <String, int>{};
-      for (final channel in channels) {
-        counts[channel.id] = await getUnreadCount(
-          clubId: clubId,
-          channelId: channel.id,
-          userId: userId,
-        );
-      }
-      return counts;
-    });
-  }
+  // markAsRead, markAllAsRead, getUnreadCount, getUnreadCountStream, getAllUnreadCountsStream verwijderd
+  // → read tracking gaat nu via LocalReadTracker + UnreadCountService
 
   /// Upload une pièce jointe
   Future<TeamMessageAttachment> uploadAttachment({

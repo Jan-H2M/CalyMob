@@ -1421,8 +1421,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
       stream: messageProvider.watchMessages(widget.clubId, widget.operationId),
       builder: (context, snapshot) {
         final messages = snapshot.data ?? [];
-        // Toon alleen ONGELEZEN berichten als badge (niet totaal)
-        final unreadCount = messages.where((msg) => !msg.readBy.contains(currentUserId)).length;
 
         return Container(
           decoration: BoxDecoration(
@@ -1439,13 +1437,13 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                 });
                 // Mark messages as read when opening discussion
                 if (expanded && currentUserId.isNotEmpty) {
-                  final unreadProvider = context.read<UnreadCountProvider>();
                   messageProvider.markAsRead(
-                    clubId: widget.clubId,
                     operationId: widget.operationId,
-                    userId: currentUserId,
-                    unreadProvider: unreadProvider,
                   );
+                  // Refresh unread badges
+                  if (context.mounted) {
+                    Provider.of<UnreadCountProvider>(context, listen: false).refresh();
+                  }
                 }
               },
               backgroundColor: AppColors.lichtblauw.withOpacity(0.2),
@@ -1460,29 +1458,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                   color: AppColors.donkerblauw,
                 ),
               ),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (unreadCount > 0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      margin: const EdgeInsets.only(right: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.red,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        '$unreadCount',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  const Icon(Icons.expand_more),
-                ],
-              ),
+              trailing: const Icon(Icons.expand_more),
               children: [
                 // Messages list only - input is outside ExpansionTile
                 Container(
@@ -1641,11 +1617,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
   Widget _buildMessageBubble(EventMessage message, bool isOwnMessage, int totalParticipants) {
     final dateFormat = DateFormat('HH:mm');
 
-    // Check if all participants (except sender) have read the message
-    // readBy includes sender, so we compare with totalParticipants
-    final readByAll = isOwnMessage && message.readBy.length >= totalParticipants && totalParticipants > 1;
 
-    return Align(
+    return GestureDetector(
+      onLongPress: isOwnMessage ? () => _confirmDeleteEventMessage(message) : null,
+      child: Align(
       alignment: isOwnMessage ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.only(bottom: 4),
@@ -1684,9 +1659,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                 if (isOwnMessage) ...[
                   const SizedBox(width: 2),
                   Icon(
-                    Icons.done_all,
+                    Icons.done,
                     size: 14,
-                    color: readByAll ? Colors.green : Colors.grey[400],
+                    color: Colors.grey[400],
                   ),
                 ],
               ],
@@ -1694,7 +1669,46 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
           ],
         ),
       ),
+    ),
     );
+  }
+
+  Future<void> _confirmDeleteEventMessage(EventMessage message) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer le message'),
+        content: const Text('Êtes-vous sûr de vouloir supprimer ce message ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      try {
+        final messageProvider = Provider.of<EventMessageProvider>(context, listen: false);
+        await messageProvider.deleteMessage(
+          clubId: widget.clubId,
+          operationId: widget.operationId,
+          messageId: message.id,
+        );
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red),
+          );
+        }
+      }
+    }
   }
 
   /// Inscribed members accordion (closed by default)

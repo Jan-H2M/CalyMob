@@ -305,12 +305,26 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // Mettre à jour le badge avec le nombre réel de non-lus
+      // Refresh unread counts bij terugkeer naar app
+      _refreshUnreadCounts();
       _updateBadgeFromUnreadCounts();
     } else if (state == AppLifecycleState.paused) {
-      // Mettre à jour le badge avec le nombre d'éléments non lus
-      // quand l'app passe en arrière-plan
+      // Badge updaten bij vertrek uit app
       _updateBadgeFromUnreadCounts();
+    }
+  }
+
+  /// Refresh de unread counts wanneer de app resumed wordt
+  void _refreshUnreadCounts() {
+    try {
+      final unreadProvider = _navigatorKey.currentContext != null
+          ? Provider.of<UnreadCountProvider>(_navigatorKey.currentContext!, listen: false)
+          : null;
+      if (unreadProvider != null && unreadProvider.isListening) {
+        unreadProvider.refresh();
+      }
+    } catch (e) {
+      debugPrint('⚠️ Could not refresh unread counts: $e');
     }
   }
 

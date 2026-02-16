@@ -33,7 +33,6 @@ class EventMessage {
   final String senderName;
   final String message;
   final DateTime createdAt;
-  final List<String> readBy;
   final String? replyToId;
   final ReplyPreview? replyToPreview;
   final List<MessageAttachment> attachments;
@@ -44,7 +43,6 @@ class EventMessage {
     required this.senderName,
     required this.message,
     required this.createdAt,
-    this.readBy = const [],
     this.replyToId,
     this.replyToPreview,
     this.attachments = const [],
@@ -60,7 +58,6 @@ class EventMessage {
       senderName: data['sender_name'] ?? '',
       message: data['message'] ?? '',
       createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      readBy: (data['read_by'] as List<dynamic>?)?.cast<String>() ?? [],
       replyToId: data['reply_to_id'],
       replyToPreview: data['reply_to_preview'] != null
           ? ReplyPreview.fromMap(data['reply_to_preview'] as Map<String, dynamic>)
@@ -79,7 +76,6 @@ class EventMessage {
       'sender_name': senderName,
       'message': message,
       'created_at': Timestamp.fromDate(createdAt),
-      'read_by': readBy,
       if (replyToId != null) 'reply_to_id': replyToId,
       if (replyToPreview != null) 'reply_to_preview': replyToPreview!.toMap(),
       if (attachments.isNotEmpty)
@@ -90,7 +86,6 @@ class EventMessage {
   /// Copier avec modifications
   EventMessage copyWith({
     String? message,
-    List<String>? readBy,
     String? replyToId,
     ReplyPreview? replyToPreview,
     List<MessageAttachment>? attachments,
@@ -101,18 +96,11 @@ class EventMessage {
       senderName: senderName,
       message: message ?? this.message,
       createdAt: createdAt,
-      readBy: readBy ?? this.readBy,
       replyToId: replyToId ?? this.replyToId,
       replyToPreview: replyToPreview ?? this.replyToPreview,
       attachments: attachments ?? this.attachments,
     );
   }
-
-  /// Vérifier si le message a été lu par un utilisateur
-  bool isReadBy(String userId) => readBy.contains(userId);
-
-  /// Nombre de lecteurs
-  int get readCount => readBy.length;
 
   /// A des pièces jointes
   bool get hasAttachments => attachments.isNotEmpty;

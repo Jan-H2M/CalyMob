@@ -212,45 +212,10 @@ class _ChannelCard extends StatelessWidget {
                   ),
                 ),
 
-                // Unread badge and arrow
-                StreamBuilder<int>(
-                  stream: channelService.getUnreadCountStream(
-                    clubId: clubId,
-                    channelId: channel.id,
-                    userId: userId,
-                  ),
-                  builder: (context, snapshot) {
-                    final unreadCount = snapshot.data ?? 0;
-
-                    return Row(
-                      children: [
-                        if (unreadCount > 0)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.red,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              unreadCount > 99 ? '99+' : unreadCount.toString(),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        const SizedBox(width: 8),
-                        Icon(
-                          Icons.chevron_right,
-                          color: Colors.grey.shade400,
-                        ),
-                      ],
-                    );
-                  },
+                // Arrow indicator
+                Icon(
+                  Icons.chevron_right,
+                  color: Colors.grey.shade400,
                 ),
               ],
             ),

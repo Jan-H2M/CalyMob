@@ -506,90 +506,52 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
               ),
             ],
           ),
-          child: StreamBuilder<Map<String, int>>(
-            stream: _messageService.getUnreadCountsStream(
-              clubId: clubId,
-              sessionId: session.id,
-              userId: userId,
-              groups: _chatGroups,
-            ),
-            builder: (context, snapshot) {
-              final unreadCounts = snapshot.data ?? {};
+          child: Column(
+            children: _chatGroups.asMap().entries.map((entry) {
+              final index = entry.key;
+              final group = entry.value;
 
               return Column(
-                children: _chatGroups.asMap().entries.map((entry) {
-                  final index = entry.key;
-                  final group = entry.value;
-                  final unreadCount = unreadCounts[group.id] ?? 0;
-
-                  return Column(
-                    children: [
-                      if (index > 0) const Divider(height: 1),
-                      ListTile(
-                        leading: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: AppColors.lichtblauw.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(
-                            Icons.chat_bubble_outline,
-                            color: AppColors.middenblauw,
-                            size: 20,
-                          ),
-                        ),
-                        title: Text(
-                          group.displayName,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (unreadCount > 0)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.red,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Text(
-                                  unreadCount.toString(),
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            const SizedBox(width: 8),
-                            Icon(
-                              Icons.chevron_right,
-                              color: Colors.grey.shade400,
-                            ),
-                          ],
-                        ),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => SessionChatScreen(
-                                session: session,
-                                chatGroup: group,
-                              ),
-                            ),
-                          );
-                        },
+                children: [
+                  if (index > 0) const Divider(height: 1),
+                  ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.lichtblauw.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                    ],
-                  );
-                }).toList(),
+                      child: Icon(
+                        Icons.chat_bubble_outline,
+                        color: AppColors.middenblauw,
+                        size: 20,
+                      ),
+                    ),
+                    title: Text(
+                      group.displayName,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    trailing: Icon(
+                      Icons.chevron_right,
+                      color: Colors.grey.shade400,
+                    ),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => SessionChatScreen(
+                            session: session,
+                            chatGroup: group,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
               );
-            },
+            }).toList(),
           ),
         ),
       ],

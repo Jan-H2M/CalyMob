@@ -219,60 +219,6 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen>
     );
   }
 
-  Future<void> _deleteAnnouncement(String announcementId) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Supprimer l\'annonce'),
-        content:
-            const Text('Êtes-vous sûr de vouloir supprimer cette annonce?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Annuler'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Supprimer'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true && mounted) {
-      final announcementProvider =
-          Provider.of<AnnouncementProvider>(context, listen: false);
-      const clubId = 'calypso';
-
-      try {
-        final authProvider = Provider.of<AuthProvider>(context, listen: false);
-        await announcementProvider.deleteAnnouncement(
-          clubId,
-          announcementId,
-          deletedByUserId: authProvider.currentUser?.uid,
-        );
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ Annonce supprimée'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('❌ Erreur: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -460,26 +406,10 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen>
                         itemCount: announcements.length,
                         itemBuilder: (context, index) {
                           final announcement = announcements[index];
-                          // StreamBuilder pour les réponses non lues par annonce
-                          return StreamBuilder<int>(
-                            stream: _announcementService.getUnreadRepliesCountStream(
-                              clubId: clubId,
-                              announcementId: announcement.id,
-                              userId: currentUser!.uid,
-                            ),
-                            builder: (context, unreadSnapshot) {
-                              final unreadReplyCount = unreadSnapshot.data ?? 0;
-                              return AnnouncementCard(
-                                announcement: announcement,
-                                isAdmin: isAdmin,
-                                currentUserId: currentUser.uid,
-                                unreadReplyCount: unreadReplyCount,
-                                onDelete: isAdmin
-                                    ? () => _deleteAnnouncement(announcement.id)
-                                    : null,
-                                onTap: () => _navigateToDetail(announcement),
-                              );
-                            },
+                          return AnnouncementCard(
+                            announcement: announcement,
+                            currentUserId: currentUser!.uid,
+                            onTap: () => _navigateToDetail(announcement),
                           );
                         },
                       ),

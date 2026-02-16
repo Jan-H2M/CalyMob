@@ -4,18 +4,14 @@ import 'package:intl/intl.dart';
 
 class AnnouncementCard extends StatelessWidget {
   final Announcement announcement;
-  final VoidCallback? onDelete;
   final VoidCallback? onTap;
-  final bool isAdmin;
   final String? currentUserId;
   final int unreadReplyCount;
 
   const AnnouncementCard({
     super.key,
     required this.announcement,
-    this.onDelete,
     this.onTap,
-    this.isAdmin = false,
     this.currentUserId,
     this.unreadReplyCount = 0,
   });
@@ -57,7 +53,6 @@ class AnnouncementCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = _getTypeColor();
     final dateFormat = DateFormat('dd/MM/yyyy HH:mm');
-    final isRead = currentUserId != null && announcement.isReadBy(currentUserId!);
 
     return GestureDetector(
       onTap: onTap,
@@ -67,8 +62,8 @@ class AnnouncementCard extends StatelessWidget {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
           side: BorderSide(
-            color: isRead ? color.withOpacity(0.3) : color.withOpacity(0.6),
-            width: isRead ? 1 : 2,
+            color: color.withOpacity(0.3),
+            width: 1,
           ),
         ),
         child: Column(
@@ -86,16 +81,6 @@ class AnnouncementCard extends StatelessWidget {
             ),
             child: Row(
               children: [
-                if (!isRead)
-                  Container(
-                    width: 10,
-                    height: 10,
-                    margin: const EdgeInsets.only(right: 8),
-                    decoration: const BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
                 Icon(_getTypeIcon(), color: color, size: 20),
                 const SizedBox(width: 8),
                 Text(
@@ -107,14 +92,6 @@ class AnnouncementCard extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
-                if (isAdmin && onDelete != null)
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline, size: 20),
-                    color: Colors.grey[600],
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    onPressed: onDelete,
-                  ),
               ],
             ),
           ),
@@ -130,8 +107,8 @@ class AnnouncementCard extends StatelessWidget {
                   announcement.title,
                   style: TextStyle(
                     fontSize: 18,
-                    fontWeight: isRead ? FontWeight.w500 : FontWeight.bold,
-                    color: isRead ? Colors.grey[800] : Colors.black,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey[800],
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -180,34 +157,6 @@ class AnnouncementCard extends StatelessWidget {
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    // Read count
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: isRead ? Colors.green.shade50 : Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            isRead ? Icons.visibility : Icons.visibility_outlined,
-                            size: 14,
-                            color: isRead ? Colors.green.shade700 : Colors.grey[600],
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Lu par ${announcement.readCount}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: isRead ? Colors.green.shade700 : Colors.grey[600],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-
                     // Reply count (rood als ongelezen, blauw als alles gelezen)
                     if (announcement.hasReplies)
                       Container(

@@ -62,7 +62,6 @@ class SessionMessageService {
       groupType: groupType,
       groupLevel: groupLevel,
       attachments: attachments ?? [],
-      readBy: [senderId], // L'expéditeur a lu son propre message
       createdAt: DateTime.now(),
     );
 
@@ -72,70 +71,8 @@ class SessionMessageService {
     return docRef.id;
   }
 
-  /// Marquer un message comme lu
-  Future<void> markAsRead({
-    required String clubId,
-    required String sessionId,
-    required String messageId,
-    required String userId,
-  }) async {
-    await _messagesCollection(clubId, sessionId).doc(messageId).update({
-      'read_by': FieldValue.arrayUnion([userId]),
-    });
-  }
-
-  /// Marquer tous les messages d'un groupe comme lus
-  Future<void> markAllAsRead({
-    required String clubId,
-    required String sessionId,
-    required SessionGroupType groupType,
-    String? groupLevel,
-    required String userId,
-  }) async {
-    Query<Map<String, dynamic>> query = _messagesCollection(clubId, sessionId)
-        .where('group_type', isEqualTo: groupType.value);
-
-    if (groupType == SessionGroupType.niveau && groupLevel != null) {
-      query = query.where('group_level', isEqualTo: groupLevel);
-    }
-
-    final snapshot = await query.get();
-
-    final batch = _firestore.batch();
-    for (final doc in snapshot.docs) {
-      final readBy = List<String>.from(doc.data()['read_by'] ?? []);
-      if (!readBy.contains(userId)) {
-        batch.update(doc.reference, {
-          'read_by': FieldValue.arrayUnion([userId]),
-        });
-      }
-    }
-
-    await batch.commit();
-  }
-
-  /// Compter les messages non lus pour un groupe
-  Future<int> getUnreadCount({
-    required String clubId,
-    required String sessionId,
-    required SessionGroupType groupType,
-    String? groupLevel,
-    required String userId,
-  }) async {
-    Query<Map<String, dynamic>> query = _messagesCollection(clubId, sessionId)
-        .where('group_type', isEqualTo: groupType.value);
-
-    if (groupType == SessionGroupType.niveau && groupLevel != null) {
-      query = query.where('group_level', isEqualTo: groupLevel);
-    }
-
-    final snapshot = await query.get();
-
-    return snapshot.docs.where((doc) {
-      final readBy = List<String>.from(doc.data()['read_by'] ?? []);
-      return !readBy.contains(userId);
-    }).length;
-  }
+  // markAsRead, markAllAsRead, getUnreadCount verwijderd
+  // → read tracking gaat nu via LocalReadTracker + UnreadCountService
 
   /// Upload une pièce jointe et retourner l'URL
   Future<MessageAttachment> uploadAttachment({
@@ -201,68 +138,6 @@ class SessionMessageService {
     return groups;
   }
 
-  /// Stream du nombre TOTAL de messages non lus pour une session (tous les groupes)
-  /// Utilisé pour afficher un badge global sur la carte de session dans la liste
-  Stream<int> getTotalUnreadCountStream({
-    required String clubId,
-    required String sessionId,
-    required String userId,
-    required List<SessionChatGroup> groups,
-  }) {
-    return _messagesCollection(clubId, sessionId)
-        .snapshots()
-        .map((snapshot) {
-      int total = 0;
-
-      for (final group in groups) {
-        final groupMessages = snapshot.docs.where((doc) {
-          final data = doc.data();
-          if (data['group_type'] != group.type.value) return false;
-          if (group.type == SessionGroupType.niveau) {
-            return data['group_level'] == group.level;
-          }
-          return true;
-        });
-
-        total += groupMessages.where((doc) {
-          final readBy = List<String>.from(doc.data()['read_by'] ?? []);
-          return !readBy.contains(userId);
-        }).length;
-      }
-
-      return total;
-    });
-  }
-
-  /// Stream du nombre de messages non lus pour tous les groupes d'un utilisateur
-  Stream<Map<String, int>> getUnreadCountsStream({
-    required String clubId,
-    required String sessionId,
-    required String userId,
-    required List<SessionChatGroup> groups,
-  }) {
-    return _messagesCollection(clubId, sessionId)
-        .snapshots()
-        .map((snapshot) {
-      final counts = <String, int>{};
-
-      for (final group in groups) {
-        final groupMessages = snapshot.docs.where((doc) {
-          final data = doc.data();
-          if (data['group_type'] != group.type.value) return false;
-          if (group.type == SessionGroupType.niveau) {
-            return data['group_level'] == group.level;
-          }
-          return true;
-        });
-
-        counts[group.id] = groupMessages.where((doc) {
-          final readBy = List<String>.from(doc.data()['read_by'] ?? []);
-          return !readBy.contains(userId);
-        }).length;
-      }
-
-      return counts;
-    });
-  }
+  // getTotalUnreadCountStream, getUnreadCountsStream verwijderd
+  // → read tracking gaat nu via LocalReadTracker + UnreadCountService
 }

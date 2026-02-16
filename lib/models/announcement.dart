@@ -17,7 +17,6 @@ class Announcement {
   final String senderName;
   final AnnouncementType type;
   final DateTime createdAt;
-  final List<String> readBy;
   final List<MessageAttachment> attachments;
   final int replyCount;
   final DateTime? deletedAt;
@@ -31,7 +30,6 @@ class Announcement {
     required this.senderName,
     required this.type,
     required this.createdAt,
-    this.readBy = const [],
     this.attachments = const [],
     this.replyCount = 0,
     this.deletedAt,
@@ -52,7 +50,6 @@ class Announcement {
       createdAt: data['created_at'] != null
           ? (data['created_at'] as Timestamp).toDate()
           : DateTime.now(),
-      readBy: (data['read_by'] as List<dynamic>?)?.cast<String>() ?? [],
       attachments: (data['attachments'] as List<dynamic>?)
               ?.map((a) => MessageAttachment.fromMap(a as Map<String, dynamic>))
               .toList() ??
@@ -74,7 +71,6 @@ class Announcement {
       'sender_name': senderName,
       'type': type.name,
       'created_at': Timestamp.fromDate(createdAt),
-      'read_by': readBy,
       if (attachments.isNotEmpty)
         'attachments': attachments.map((a) => a.toMap()).toList(),
       'reply_count': replyCount,
@@ -101,7 +97,6 @@ class Announcement {
     String? title,
     String? message,
     AnnouncementType? type,
-    List<String>? readBy,
     List<MessageAttachment>? attachments,
     int? replyCount,
     DateTime? deletedAt,
@@ -115,7 +110,6 @@ class Announcement {
       senderName: senderName,
       type: type ?? this.type,
       createdAt: createdAt,
-      readBy: readBy ?? this.readBy,
       attachments: attachments ?? this.attachments,
       replyCount: replyCount ?? this.replyCount,
       deletedAt: deletedAt ?? this.deletedAt,
@@ -126,11 +120,6 @@ class Announcement {
   /// Is soft-deleted
   bool get isDeleted => deletedAt != null;
 
-  /// Vérifier si l'annonce a été lue par un utilisateur
-  bool isReadBy(String userId) => readBy.contains(userId);
-
-  /// Nombre de lecteurs
-  int get readCount => readBy.length;
 
   /// A des pièces jointes
   bool get hasAttachments => attachments.isNotEmpty;

@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../models/event_message.dart';
 import '../models/session_message.dart' show MessageAttachment;
 import '../services/event_message_service.dart';
-import '../providers/unread_count_provider.dart';
+import '../services/local_read_tracker.dart';
 
 /// Provider pour la gestion des messages d'événement
 class EventMessageProvider with ChangeNotifier {
@@ -176,35 +176,13 @@ class EventMessageProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Marquer tous les messages comme lus et décrémenter les compteurs
+  /// Markeer lokaal als gelezen (via LocalReadTracker)
   Future<void> markAsRead({
-    required String clubId,
     required String operationId,
-    required String userId,
-    UnreadCountProvider? unreadProvider,
   }) async {
-    // D'abord compter combien sont non lus avant de les marquer
-    final unreadCount = await _eventMessageService.getUnreadCount(
-      clubId: clubId,
-      operationId: operationId,
-      userId: userId,
-    );
-
-    await _eventMessageService.markMessagesAsRead(
-      clubId: clubId,
-      operationId: operationId,
-      userId: userId,
-    );
-
-    // Décrémenter le compteur Firestore
-    if (unreadCount > 0 && unreadProvider != null) {
-      await unreadProvider.decrementCategory(
-        clubId: clubId,
-        userId: userId,
-        category: 'event_messages',
-        amount: unreadCount,
-      );
-    }
+    final tracker = LocalReadTracker();
+    await tracker.init();
+    await tracker.markAsRead('operation_$operationId');
   }
 
   /// Nettoyer les données d'un événement

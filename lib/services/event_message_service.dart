@@ -68,7 +68,6 @@ class EventMessageService {
         senderName: senderName,
         message: message,
         createdAt: DateTime.now(),
-        readBy: [senderId], // L'expéditeur a lu son propre message
         replyToId: replyToId,
         replyToPreview: replyToPreview,
         attachments: attachments ?? [],
@@ -145,64 +144,8 @@ class EventMessageService {
     }
   }
 
-  /// Marquer un seul message comme lu
-  Future<void> markMessageAsRead({
-    required String clubId,
-    required String operationId,
-    required String messageId,
-    required String userId,
-  }) async {
-    try {
-      await _firestore
-          .collection('clubs/$clubId/operations/$operationId/messages')
-          .doc(messageId)
-          .update({
-        'read_by': FieldValue.arrayUnion([userId]),
-      });
-    } catch (e) {
-      debugPrint('❌ Erreur marquage message lu: $e');
-    }
-  }
-
-  /// Compter les messages non lus pour un événement
-  Future<int> getUnreadCount({
-    required String clubId,
-    required String operationId,
-    required String userId,
-  }) async {
-    try {
-      final snapshot = await _firestore
-          .collection('clubs/$clubId/operations/$operationId/messages')
-          .get();
-
-      return snapshot.docs.where((doc) {
-        final readBy =
-            (doc.data()['read_by'] as List<dynamic>?)?.cast<String>() ?? [];
-        return !readBy.contains(userId);
-      }).length;
-    } catch (e) {
-      debugPrint('❌ Erreur comptage messages non lus: $e');
-      return 0;
-    }
-  }
-
-  /// Stream du nombre de messages non lus pour un événement (temps réel)
-  Stream<int> getUnreadCountStream({
-    required String clubId,
-    required String operationId,
-    required String userId,
-  }) {
-    return _firestore
-        .collection('clubs/$clubId/operations/$operationId/messages')
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.where((doc) {
-        final readBy =
-            List<String>.from(doc.data()['read_by'] ?? []);
-        return !readBy.contains(userId);
-      }).length;
-    });
-  }
+  // markMessageAsRead, getUnreadCount, getUnreadCountStream verwijderd
+  // → read tracking gaat nu via LocalReadTracker + UnreadCountService
 
   /// Vérifier si l'utilisateur est inscrit à l'événement
   Future<bool> isUserParticipant({
@@ -247,36 +190,5 @@ class EventMessageService {
     }
   }
 
-  /// Marquer les messages comme lus par un utilisateur
-  Future<void> markMessagesAsRead({
-    required String clubId,
-    required String operationId,
-    required String userId,
-  }) async {
-    try {
-      final snapshot = await _firestore
-          .collection('clubs/$clubId/operations/$operationId/messages')
-          .get();
-
-      final batch = _firestore.batch();
-      int updated = 0;
-
-      for (final doc in snapshot.docs) {
-        final readBy = (doc.data()['read_by'] as List<dynamic>?)?.cast<String>() ?? [];
-        if (!readBy.contains(userId)) {
-          batch.update(doc.reference, {
-            'read_by': FieldValue.arrayUnion([userId]),
-          });
-          updated++;
-        }
-      }
-
-      if (updated > 0) {
-        await batch.commit();
-        debugPrint('✅ $updated messages marqués comme lus par $userId');
-      }
-    } catch (e) {
-      debugPrint('❌ Erreur marquage messages lus: $e');
-    }
-  }
+  // markMessagesAsRead verwijderd → LocalReadTracker.markAsRead('operation_$opId')
 }

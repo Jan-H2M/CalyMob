@@ -327,35 +327,13 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
                   compact: true,
                 ),
 
-              // Footer: timestamp + read count
               const SizedBox(height: 4),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    dateFormat.format(message.createdAt),
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                  if (message.readCount > 1) ...[
-                    const SizedBox(width: 8),
-                    Icon(
-                      Icons.done_all,
-                      size: 14,
-                      color: Colors.blue[400],
-                    ),
-                    const SizedBox(width: 2),
-                    Text(
-                      '${message.readCount}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                  ],
-                ],
+              Text(
+                dateFormat.format(message.createdAt),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey[600],
+                ),
               ),
             ],
           ),
@@ -419,23 +397,75 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
             children: [
               ListTile(
                 leading: const Icon(Icons.reply),
-                title: const Text('Repondre'),
+                title: const Text('Répondre'),
                 onTap: () {
                   Navigator.pop(context);
                   _startReplyTo(message);
                 },
               ),
-              if (message.readCount > 0)
+              if (isOwnMessage)
                 ListTile(
-                  leading: const Icon(Icons.visibility),
-                  title: Text('Lu par ${message.readCount} personne${message.readCount > 1 ? 's' : ''}'),
-                  enabled: false,
+                  leading: const Icon(Icons.delete_outline, color: Colors.red),
+                  title: const Text('Supprimer', style: TextStyle(color: Colors.red)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _confirmDeleteMessage(message);
+                  },
                 ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _confirmDeleteMessage(EventMessage message) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Supprimer le message'),
+        content: const Text('Êtes-vous sûr de vouloir supprimer ce message ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      try {
+        final messageProvider = Provider.of<EventMessageProvider>(context, listen: false);
+        await messageProvider.deleteMessage(
+          clubId: widget.clubId,
+          operationId: widget.operationId,
+          messageId: message.id,
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Message supprimé'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Erreur: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
   }
 
   Widget _buildMessageInput() {

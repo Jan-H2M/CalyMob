@@ -100,7 +100,6 @@ class SessionMessage {
   final SessionGroupType groupType;
   final String? groupLevel; // Uniquement si groupType = niveau
   final List<MessageAttachment> attachments;
-  final List<String> readBy;
   final DateTime createdAt;
 
   SessionMessage({
@@ -111,7 +110,6 @@ class SessionMessage {
     required this.groupType,
     this.groupLevel,
     this.attachments = const [],
-    this.readBy = const [],
     required this.createdAt,
   });
 
@@ -129,7 +127,6 @@ class SessionMessage {
               ?.map((a) => MessageAttachment.fromMap(a as Map<String, dynamic>))
               .toList() ??
           [],
-      readBy: List<String>.from(data['read_by'] ?? []),
       createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
@@ -142,7 +139,6 @@ class SessionMessage {
       'group_type': groupType.value,
       if (groupLevel != null) 'group_level': groupLevel,
       'attachments': attachments.map((a) => a.toMap()).toList(),
-      'read_by': readBy,
       'created_at': Timestamp.fromDate(createdAt),
     };
   }
@@ -154,9 +150,6 @@ class SessionMessage {
     return '$hour:$minute';
   }
 
-  /// Vérifier si le message a été lu par un utilisateur
-  bool isReadBy(String userId) => readBy.contains(userId);
-
   /// Copie avec modifications
   SessionMessage copyWith({
     String? id,
@@ -166,7 +159,6 @@ class SessionMessage {
     SessionGroupType? groupType,
     String? groupLevel,
     List<MessageAttachment>? attachments,
-    List<String>? readBy,
     DateTime? createdAt,
   }) {
     return SessionMessage(
@@ -177,7 +169,6 @@ class SessionMessage {
       groupType: groupType ?? this.groupType,
       groupLevel: groupLevel ?? this.groupLevel,
       attachments: attachments ?? this.attachments,
-      readBy: readBy ?? this.readBy,
       createdAt: createdAt ?? this.createdAt,
     );
   }

@@ -576,33 +576,9 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
     final eventEndDate = item.operation?.dateFin ?? item.date;
     final isExpired = DateTime.now().difference(eventEndDate).inDays > 5;
 
-    if (isExpired) {
-      unreadStream = Stream.value(0);
-    } else if (item.isOperation) {
-      unreadStream = EventMessageService().getUnreadCountStream(
-        clubId: _clubId,
-        operationId: item.id,
-        userId: userId,
-      );
-    } else if (item.isPiscine && item.piscineSession != null) {
-      final sessionMessageService = SessionMessageService();
-      final groups = sessionMessageService.getAvailableGroups(
-        session: item.piscineSession!,
-        userId: userId,
-      );
-      if (groups.isEmpty) {
-        unreadStream = Stream.value(0);
-      } else {
-        unreadStream = sessionMessageService.getTotalUnreadCountStream(
-          clubId: _clubId,
-          sessionId: item.id,
-          userId: userId,
-          groups: groups,
-        );
-      }
-    } else {
-      unreadStream = Stream.value(0);
-    }
+    // Unread badges worden nu globaal afgehandeld via UnreadCountProvider
+    // Individuele stream-based counts zijn verwijderd
+    unreadStream = Stream.value(0);
 
     return StreamBuilder<int>(
       stream: unreadStream,

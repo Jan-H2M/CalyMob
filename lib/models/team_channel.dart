@@ -133,7 +133,6 @@ class TeamMessage {
   final String senderName;
   final String message;
   final List<TeamMessageAttachment> attachments;
-  final List<String> readBy;
   final DateTime createdAt;
 
   TeamMessage({
@@ -142,7 +141,6 @@ class TeamMessage {
     required this.senderName,
     required this.message,
     this.attachments = const [],
-    this.readBy = const [],
     required this.createdAt,
   });
 
@@ -158,7 +156,6 @@ class TeamMessage {
               ?.map((a) => TeamMessageAttachment.fromMap(a as Map<String, dynamic>))
               .toList() ??
           [],
-      readBy: List<String>.from(data['read_by'] ?? []),
       createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
@@ -169,7 +166,6 @@ class TeamMessage {
       'sender_name': senderName,
       'message': message,
       'attachments': attachments.map((a) => a.toMap()).toList(),
-      'read_by': readBy,
       'created_at': Timestamp.fromDate(createdAt),
     };
   }
@@ -181,8 +177,6 @@ class TeamMessage {
     return '$hour:$minute';
   }
 
-  /// Vérifier si le message a été lu par un utilisateur
-  bool isReadBy(String userId) => readBy.contains(userId);
 }
 
 /// Pièce jointe dans un message d'équipe
