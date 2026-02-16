@@ -40,6 +40,7 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
 
   // Store replies locally to prevent flickering
   List<AnnouncementReply> _cachedReplies = [];
+  int _lastKnownReplyCount = 0;
 
   @override
   void initState() {
@@ -234,7 +235,18 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
 
                           // Use cached replies while waiting for stream data to prevent flickering
                           if (snapshot.hasData) {
-                            _cachedReplies = snapshot.data!;
+                            final newReplies = snapshot.data!;
+                            // Detect new replies arriving while screen is open
+                            // _lastKnownReplyCount > 0 prevents double-trigger on initial load
+                            // (initState already calls _markAsRead)
+                            if (newReplies.length > _lastKnownReplyCount && _lastKnownReplyCount > 0) {
+                              debugPrint('🔔 New replies detected (${_lastKnownReplyCount} → ${newReplies.length}), re-marking as read');
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                _markAsRead();
+                              });
+                            }
+                            _lastKnownReplyCount = newReplies.length;
+                            _cachedReplies = newReplies;
                             debugPrint('📝 Updated cache with ${_cachedReplies.length} replies');
                           }
                           final replies = _cachedReplies;

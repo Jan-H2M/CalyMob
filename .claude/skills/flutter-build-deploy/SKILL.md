@@ -14,7 +14,7 @@ This skill automates the CalyMob Flutter app build and deployment to both Google
 2. **Version Bump** (optional) - Increment version in pubspec.yaml + sync to Firestore
 3. **Build AAB** - Run `flutter build appbundle --release`
 4. **Upload to Play Store** - `fastlane supply` uploads AAB via Google Play Developer API
-5. **Submit for Review** - Fastlane creates a draft production release automatically
+5. **Submit for Review** - Browser automation in Play Console: Edit draft → Next → Save → Send for review
 
 ### iOS Workflow (fully automated)
 1. **Environment Check** - Verify Xcode, Flutter, CocoaPods are ready
@@ -246,6 +246,50 @@ To test the service account connection without uploading:
 cd /Users/jan/Documents/GitHub/Calypso/CalyMob/android
 /opt/homebrew/bin/fastlane validate
 ```
+
+## Phase 5: Submit for Google Play Review (Browser automation)
+
+After fastlane uploads the AAB as a draft, submit it for review via Chrome browser automation.
+
+### Play Console gegevens
+- Developer ID: `4868133097597517725`
+- App ID: `4975215339505656603`
+- Production URL: `https://play.google.com/console/u/0/developers/4868133097597517725/app/4975215339505656603/tracks/production`
+- Managed publishing: **Uit** (auto-publish na goedkeuring)
+
+### Step 1: Find Play Console tab
+
+```
+mcp__Claude_in_Chrome__tabs_context_mcp → look for "play.google.com/console" tab
+```
+
+If not open, navigate to the Production URL above.
+
+### Step 2: Go to Production → Releases tab
+
+Look for the **Draft** release created by fastlane. Click **"Edit release"**.
+
+### Step 3: Complete the release wizard
+
+**Page 1 — Create release:**
+- Verify app bundle is uploaded (version visible in table)
+- Verify release name is filled in
+- Verify release notes are present (in `<fr-FR>...</fr-FR>` tags)
+- Click **"Next"** button
+
+**Page 2 — Preview and confirm:**
+- Review delivery info (size, download time)
+- Click **"Save"** button
+
+### Step 4: Send for review
+
+After Save, the **Publishing overview** page loads showing:
+"Changes not yet sent for review"
+
+Click the blue **"Send 1 change for review"** button.
+
+Status changes to **"Changes in review"** — Google runs quick checks (~15 min),
+then auto-publishes since managed publishing is off.
 
 ## Android Important Notes
 
@@ -532,5 +576,5 @@ xcrun altool --upload-app -f build/ios/ipa/calymob.ipa --apiKey BHUKT6FFGF --api
 # 6. Submit iOS for review (browser automation in App Store Connect)
 ```
 
-**Android**: Fully automated end-to-end (build → upload → draft release)
-**iOS**: Build + upload automated; only App Store Connect review submission needs browser
+**Android**: Build + upload automated via CLI; Play Console review submission via browser automation
+**iOS**: Build + upload automated via CLI; App Store Connect review submission via browser automation
