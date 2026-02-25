@@ -4,6 +4,7 @@ import '../models/operation.dart';
 import '../models/member_profile.dart';
 import '../models/participant_operation.dart';
 import '../models/supplement.dart';
+import '../models/tariff.dart';
 import '../models/user_event_registration.dart';
 import '../utils/tariff_utils.dart';
 
@@ -512,6 +513,115 @@ class OperationService {
       
       return participants;
     });
+  }
+
+  // ============================================================
+  // EVENT CREATION
+  // ============================================================
+
+  /// Créer une opération/événement dans Firestore
+  /// Returns the document ID of the created operation
+  Future<String> createOperation({
+    required String clubId,
+    required Map<String, dynamic> data,
+  }) async {
+    try {
+      final docRef = await _firestore
+          .collection('clubs/$clubId/operations')
+          .add({
+        ...data,
+        'created_at': FieldValue.serverTimestamp(),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      debugPrint('✅ Opération créée: ${docRef.id} - ${data['titre']}');
+      return docRef.id;
+    } catch (e) {
+      debugPrint('❌ Erreur création opération: $e');
+      rethrow;
+    }
+  }
+
+  /// Generate a unique event number for bank reconciliation
+  /// Format: PXXXX for dive events (plongee), SXXXX for other events (sortie)
+  /// Uses base-26 letter encoding (A-Z, 4 digits)
+  /// Examples: PAAAB (dive #1), PAAAG (dive #6), SAAAE (sortie #4)
+  Future<String> generateEventNumber(String clubId, bool isDiveEvent) async {
+    final prefix = isDiveEvent ? 'P' : 'S';
+
+    try {
+      // Query all operations with event_number in this prefix range
+      final snapshot = await _firestore
+          .collection('clubs/$clubId/operations')
+          .where('event_number', isGreaterThanOrEqualTo: '${prefix}AAAA')
+          .where('event_number', isLessThanOrEqualTo: '${prefix}ZZZZ')
+          .orderBy('event_number', descending: true)
+          .limit(1)
+          .get();
+
+      if (snapshot.docs.isEmpty) {
+        // First event of this type - start at 1 (AAAB)
+        return prefix + _numberToLetterCode(1);
+      }
+
+      // Get the highest event_number and increment
+      final lastNumber = snapshot.docs.first.data()['event_number'] as String;
+      final lastCode = lastNumber.substring(1); // Remove prefix
+      final nextNumber = _letterCodeToNumber(lastCode) + 1;
+
+      return prefix + _numberToLetterCode(nextNumber);
+    } catch (e) {
+      debugPrint('⚠️ Error generating event number, using fallback: $e');
+      // Fallback: timestamp-based
+      final ts = DateTime.now().millisecondsSinceEpoch % 456976; // max for 4 letters
+      return prefix + _numberToLetterCode(ts);
+    }
+  }
+
+  /// Convert number to 4-letter base-26 code (AAAA = 0, AAAB = 1, etc.)
+  static String _numberToLetterCode(int number) {
+    final d = number % 26;
+    final c = (number ~/ 26) % 26;
+    final b = (number ~/ (26 * 26)) % 26;
+    final a = (number ~/ (26 * 26 * 26)) % 26;
+
+    return String.fromCharCodes([
+      65 + a, // A=65
+      65 + b,
+      65 + c,
+      65 + d,
+    ]);
+  }
+
+  /// Convert 4-letter base-26 code back to number
+  static int _letterCodeToNumber(String code) {
+    if (code.length != 4) return 0;
+    return (code.codeUnitAt(0) - 65) * 26 * 26 * 26 +
+        (code.codeUnitAt(1) - 65) * 26 * 26 +
+        (code.codeUnitAt(2) - 65) * 26 +
+        (code.codeUnitAt(3) - 65);
+  }
+
+  /// Copy tariffs from a location with new unique IDs
+  static List<Map<String, dynamic>> copyTariffsFromLocation(List<Tariff> locationTariffs) {
+    return locationTariffs.map((tariff) {
+      return {
+        'id': 'tariff_${DateTime.now().millisecondsSinceEpoch}_${locationTariffs.indexOf(tariff)}',
+        'label': tariff.label,
+        'category': tariff.category,
+        'price': tariff.price,
+        'is_default': tariff.isDefault,
+        'display_order': tariff.displayOrder,
+      };
+    }).toList();
+  }
+
+  /// Compute budget prévisionnel from tariffs and capacity
+  static double computeBudgetPrevu(List<Tariff> tariffs, int? capaciteMax) {
+    if (tariffs.isEmpty || capaciteMax == null || capaciteMax <= 0) return 0;
+    final totalPrice = tariffs.fold<double>(0, (sum, t) => sum + t.price);
+    final avgPrice = totalPrice / tariffs.length;
+    return (avgPrice * capaciteMax * 100).roundToDouble() / 100;
   }
 
   /// Async variant voor refresh (one-time load)

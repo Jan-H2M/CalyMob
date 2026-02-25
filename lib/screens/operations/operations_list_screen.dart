@@ -7,11 +7,14 @@ import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../models/activity_item.dart';
 import '../../providers/activity_provider.dart';
+import '../../providers/member_provider.dart';
 import '../../widgets/loading_widget.dart';
 import '../../services/event_message_service.dart';
 import '../../services/session_message_service.dart';
 import '../../providers/auth_provider.dart';
 import 'operation_detail_screen.dart';
+import 'event_type_selector.dart';
+import 'create_event_wizard.dart';
 import '../piscine/session_detail_screen.dart';
 
 /// Liste des événements avec filtre (Tout / Plongées / Piscine / Sorties)
@@ -38,6 +41,31 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
 
   Future<void> _refreshActivities() async {
     await context.read<ActivityProvider>().refresh(_clubId);
+  }
+
+  /// Open the activity creation flow (Stap 0: type selection)
+  void _openCreateActivity() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EventTypeSelector(
+          onClose: () => Navigator.pop(context),
+          onCategorySelected: (category) {
+            // Pop the type selector
+            Navigator.pop(context);
+            // Open the wizard with selected category
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => CreateEventWizard(
+                  eventCategory: category,
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
   }
 
   /// Group activities by month
@@ -89,9 +117,20 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
   @override
   Widget build(BuildContext context) {
     final activityProvider = context.watch<ActivityProvider>();
+    final memberProvider = context.watch<MemberProvider>();
+    final isEncadrant = memberProvider.isEncadrant;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
+      // FAB: alleen zichtbaar voor encadrants
+      floatingActionButton: isEncadrant
+          ? FloatingActionButton(
+              onPressed: _openCreateActivity,
+              backgroundColor: AppColors.middenblauw,
+              elevation: 4,
+              child: const Icon(Icons.add, color: Colors.white, size: 28),
+            )
+          : null,
       appBar: AppBar(
         title: const Text(
           'Événements',

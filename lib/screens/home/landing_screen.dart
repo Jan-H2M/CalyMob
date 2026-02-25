@@ -52,11 +52,8 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
     // Load version info
     _loadVersionInfo();
 
-    // Load member info for piscine access
-    _loadMemberInfo();
-
-    // Start luisteren naar ongelezen berichten
-    _startUnreadCountListener();
+    // Load member info for piscine access + start unread listener
+    _loadMemberInfoAndStartUnreadListener();
   }
 
   Future<void> _loadVersionInfo() async {
@@ -72,23 +69,14 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
     }
   }
 
-  void _startUnreadCountListener() {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final uid = authProvider.currentUser?.uid;
-    if (uid == null) return;
-
-    final unreadProvider = Provider.of<UnreadCountProvider>(context, listen: false);
-    if (!unreadProvider.isListening) {
-      unreadProvider.listen(FirebaseConfig.defaultClubId, uid);
-    }
-  }
-
-  Future<void> _loadMemberInfo() async {
+  Future<void> _loadMemberInfoAndStartUnreadListener() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final uid = authProvider.currentUser?.uid;
     if (uid == null) return;
 
     const clubId = 'calypso';
+    List<String> roles = [];
+
     try {
       final doc = await FirebaseFirestore.instance
           .collection('clubs/$clubId/members')
@@ -101,9 +89,18 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
           _clubStatuten =
               (data?['clubStatuten'] as List<dynamic>?)?.cast<String>();
         });
+        roles = _clubStatuten ?? [];
       }
     } catch (e) {
       debugPrint('Error loading member info: $e');
+    }
+
+    // Start unread count listener met roles (na member info laden)
+    if (mounted) {
+      final unreadProvider = Provider.of<UnreadCountProvider>(context, listen: false);
+      if (!unreadProvider.isListening) {
+        unreadProvider.listen(FirebaseConfig.defaultClubId, uid, roles: roles);
+      }
     }
   }
 

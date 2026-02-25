@@ -40,6 +40,8 @@ dependencies:
 
   # Utilities
   url_launcher: ^6.1.14
+  flutter_linkify: ^6.0.0
+  linkify: ^5.0.0
   shared_preferences: ^2.2.2
   path_provider: ^2.1.1
   image_picker: ^1.0.4

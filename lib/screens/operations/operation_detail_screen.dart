@@ -27,6 +27,7 @@ import '../../widgets/scanner_modal_sheet.dart';
 import '../../widgets/documents_accordion.dart';
 import 'add_guest_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter_linkify/flutter_linkify.dart';
 import 'package:intl/intl.dart';
 import '../../utils/fiche_palanquee_pdf.dart';
 
@@ -1283,12 +1284,24 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Description text
-                  Text(
-                    description,
+                  // Description text (with clickable links)
+                  Linkify(
+                    onOpen: (link) async {
+                      final uri = Uri.parse(link.url);
+                      if (await canLaunchUrl(uri)) {
+                        await launchUrl(uri, mode: LaunchMode.externalApplication);
+                      }
+                    },
+                    text: description,
                     style: TextStyle(
                       fontSize: 14,
                       color: AppColors.donkerblauw,
+                      height: 1.5,
+                    ),
+                    linkStyle: TextStyle(
+                      fontSize: 14,
+                      color: Colors.blue,
+                      decoration: TextDecoration.underline,
                       height: 1.5,
                     ),
                   ),
@@ -1394,11 +1407,23 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
               width: double.infinity,
               color: Colors.white.withOpacity(0.95),
               padding: const EdgeInsets.all(16),
-              child: Text(
-                operation.communication ?? '',
+              child: Linkify(
+                onOpen: (link) async {
+                  final uri = Uri.parse(link.url);
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  }
+                },
+                text: operation.communication ?? '',
                 style: TextStyle(
                   fontSize: 14,
                   color: AppColors.donkerblauw,
+                  height: 1.5,
+                ),
+                linkStyle: TextStyle(
+                  fontSize: 14,
+                  color: Colors.blue,
+                  decoration: TextDecoration.underline,
                   height: 1.5,
                 ),
               ),
