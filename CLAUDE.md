@@ -36,11 +36,12 @@ flutter build ios                    # Build iOS release (then archive in Xcode)
 flutter build appbundle              # Build Android release
 flutter analyze                      # Run static analysis
 
-# Release APK met versienummer (GEBRUIK DEZE SCRIPTS!)
+# Release APK/AAB met versienummer (GEBRUIK DEZE SCRIPTS!)
 ./scripts/build_release.sh           # Bouw APK met versienummer in bestandsnaam
-./scripts/build_release.sh --bump patch  # Verhoog versie + bouw (patch: 1.0.10→1.0.11)
+./scripts/build_release.sh --bump patch  # Verhoog versie + bouw APK (patch: 1.0.10→1.0.11)
 ./scripts/build_release.sh --bump minor  # Minor bump (1.0.10→1.1.0)
 ./scripts/build_release.sh --bump major  # Major bump (1.0.10→2.0.0)
+./scripts/build_release_aab.sh       # Bouw AAB (Android App Bundle) voor Play Store
 ./scripts/bump_version.sh patch      # Alleen versie verhogen zonder te bouwen
 
 # Versie synchronisatie
@@ -72,30 +73,65 @@ firebase emulators:start --only functions  # Local testing
 ```
 lib/
 ├── main.dart                    # Entry point, providers setup, notification handlers
+├── firebase_options.dart        # Firebase configuration (auto-generated)
 ├── config/                      # Firebase config, app colors, account codes
-├── models/                      # Data classes (Operation, ExpenseClaim, Tariff, etc.)
-├── services/                    # Firebase interactions (AuthService, OperationService, etc.)
-├── providers/                   # State management (AuthProvider, OperationProvider, etc.)
-├── screens/                     # UI organized by feature (auth/, expenses/, operations/, etc.)
-├── widgets/                     # Reusable UI components
-└── utils/                       # Formatters, helpers (date_formatter, currency_formatter)
+├── models/                      # 27 data classes (Operation, ExpenseClaim, Palanquee, etc.)
+├── services/                    # 37 Firebase services (see Key Services below)
+├── providers/                   # 11 state providers (see Key Providers below)
+├── screens/                     # UI organized by feature (12 folders, see below)
+│   ├── auth/                   # Login, registration
+│   ├── announcements/          # Club announcements
+│   ├── exercises/              # LIFRAS exercise validation
+│   ├── expenses/               # Expense claims
+│   ├── home/                   # Landing/dashboard
+│   ├── messages/               # Chat/messaging
+│   ├── operations/             # Events, payment flow
+│   ├── piscine/                # Pool sessions
+│   ├── profile/                # User profile
+│   ├── scanner/                # QR code member validation
+│   └── teams/                  # Team channels (encadrants, accueil, gonflage)
+├── widgets/                     # 22 reusable UI components
+├── theme/                       # Theme configuration
+└── utils/                       # 8 formatters/helpers
 ```
 
-**Key Providers** (in `lib/providers/`):
+**Key Providers** (in `lib/providers/` — 11 total):
 - `AuthProvider` - Firebase Auth state, login/logout, session management
 - `MemberProvider` - **Cached member data** including `clubStatuten` (user roles). Loaded after login, cleared on logout.
 - `OperationProvider` - Event operations state
 - `ExpenseProvider` - Expense claims state
 - `AnnouncementProvider` - Club announcements
 - `PaymentProvider` - Payment state management
+- `ActivityProvider` - Activity feed/tracking
+- `AvailabilityProvider` - Member availability for pool sessions
+- `EventMessageProvider` - Event discussion messages state
+- `ExerciceValideProvider` - LIFRAS exercise validation tracking
+- `UnreadCountProvider` - Notification badge/unread message counts
 
-**Key Services** (in `lib/services/`):
-- `NotificationService` - FCM push notifications with foreground/background handlers
+**Key Services** (in `lib/services/` — 37 total):
+- `NotificationService` - FCM push notifications (platform-specific: `notification_service_io.dart`, `notification_service_web.dart`)
 - `OperationService` - Event operations and participant management
-- `PaymentService` - Noda payment integration via Cloud Functions
+- `PaymentService` - Payment integration via Cloud Functions (Mollie, Ponto, EPC QR)
 - `BiometricService` - Face detection for profile photos
 - `SessionService` - Firestore session management for security rules
 - `TeamChannelService` - Team chat channels (encadrants, accueil, gonflage)
+- `ActivityService` - Activity feed tracking
+- `AttendanceService` - Attendance records
+- `AvailabilityService` - Pool session availability
+- `CalendarService` - Calendar feed integration
+- `CrashlyticsService` - Firebase Crashlytics remote crash monitoring
+- `DeepLinkService` - Deep link handling
+- `DiveLocationService` - Dive site management
+- `EventMessageService` - Event discussion messages
+- `ExerciceValideService` / `LifrasService` / `LifrasValidationService` - LIFRAS exercise tracking
+- `LocalReadTracker` - Local unread message tracking (replaced server-side read_by)
+- `MedicalCertificationService` - Medical certificate management
+- `PalanqueeService` / `PalanqueeAutoAssignService` - Dive team assignment
+- `PiscineSessionService` / `SessionMessageService` - Pool session management
+- `UnreadCountService` - Badge/notification counts
+- `CompatibilityService` - App version compatibility checks
+- `DiagnosticService` - Biometric/system diagnostics
+- `PasswordService` / `ProfileService` - User account management
 
 ### Cloud Functions (functions/)
 
@@ -106,29 +142,66 @@ functions/
 ├── index.js                     # Entry point, exports all functions
 └── src/
     ├── payment/
-    │   ├── createPayment.js         # createNodaPayment - onCall
-    │   ├── webhook.js               # nodaWebhook - onRequest (HTTP POST)
-    │   └── checkStatus.js           # checkNodaPaymentStatus - onCall
+    │   ├── createMolliePayment.js   # Mollie payment creation - onCall (ACTIVE)
+    │   ├── mollieWebhook.js         # Mollie webhook - onRequest
+    │   ├── checkMollieStatus.js     # Mollie status check - onCall
+    │   ├── createPontoPayment.js    # Ponto payment creation - onCall (ACTIVE)
+    │   ├── pontoWebhook.js          # Ponto webhook - onRequest
+    │   ├── checkPontoStatus.js      # Ponto status check - onCall
+    │   ├── sendPaymentQrEmail.js    # EPC QR code email for bank transfers
+    │   ├── createPayment.js         # createNodaPayment (DEPRECATED)
+    │   ├── webhook.js               # nodaWebhook (DEPRECATED)
+    │   └── checkStatus.js           # checkNodaPaymentStatus (DEPRECATED)
     ├── notifications/
-    │   └── onNewEventMessage.js     # Firestore trigger for push notifications
+    │   ├── onNewEventMessage.js     # Event discussion messages
+    │   ├── onEventStatusChange.js   # Event status updates
+    │   ├── onExpenseCreated.js      # New expense submitted
+    │   ├── onExpenseStatusChange.js # Expense approval/rejection
+    │   ├── onMedicalCertStatusChange.js # Medical cert approval
+    │   ├── onNewAnnouncement.js     # New club announcement
+    │   ├── onNewAnnouncementReply.js # Announcement replies
+    │   ├── onNewSessionMessage.js   # Pool session messages
+    │   ├── onNewTeamMessage.js      # Team channel messages
+    │   └── sessionReminder.js       # Daily pool session reminders
     └── utils/
-        └── noda-client.js           # Axios client for Noda API
+        ├── mollie-client.js         # Axios client for Mollie API (ACTIVE)
+        ├── ponto-client.js          # Axios client for Ponto API (ACTIVE)
+        ├── noda-client.js           # Axios client for Noda API (DEPRECATED)
+        ├── badge-helper.js          # Push notification badge management
+        └── constants.js             # Shared constants
 ```
 
 **Environment Variables** (set via `firebase functions:config:set` or `.env` file):
-- `NODA_API_KEY`, `NODA_API_SECRET`, `NODA_BASE_URL`, `NODA_WEBHOOK_SECRET`
+- Mollie: `MOLLIE_API_KEY`, `MOLLIE_WEBHOOK_SECRET`
+- Ponto: `PONTO_API_KEY`, `PONTO_API_SECRET`
+- Noda (deprecated): `NODA_API_KEY`, `NODA_API_SECRET`, `NODA_BASE_URL`, `NODA_WEBHOOK_SECRET`
 
 ### Firestore Structure
 
 ```
 clubs/{clubId}/
-├── members/{memberId}           # User profiles, FCM tokens
-├── operations/{operationId}/    # Events/operations
-│   ├── participants/            # Event participants
-│   └── messages/                # Event discussion messages
-├── operation_participants/      # Registration records with payment status
-├── expense_claims/              # Expense submissions
-└── announcements/               # Club announcements
+├── members/{memberId}/              # User profiles, FCM tokens
+│   ├── exercices_valides/           # Validated LIFRAS exercises
+│   └── medical_certificates/        # Medical certifications
+├── operations/{operationId}/        # Events/operations
+│   ├── participants/                # Event participants (legacy)
+│   ├── inscriptions/                # Event registrations (current)
+│   └── messages/                    # Event discussion messages
+├── operation_participants/          # Registration records with payment status
+├── expense_claims/                  # Expense submissions
+├── announcements/                   # Club announcements
+│   └── replies/                     # Announcement replies
+├── team_channels/                   # Team chat (Accueil, Encadrants, Gonflage)
+│   └── messages/                    # Channel messages
+├── piscine_sessions/                # Pool training sessions
+│   ├── messages/                    # Session messages
+│   └── attendees/                   # Session participants
+├── availabilities/                  # Member availability for pool
+├── attendance/                      # Attendance records
+├── dive_locations/                  # Dive site management
+├── exercices_lifras/                # LIFRAS exercise catalog
+├── palanquees/                      # Dive teams (3-diver groups)
+└── settings/                        # Club configuration
 ```
 
 ## Platform Requirements
@@ -139,11 +212,19 @@ clubs/{clubId}/
 
 ## Key Integration Points
 
-1. **Push Notifications**: `onNewEventMessage` trigger sends FCM notifications when messages are posted in event discussions. The Flutter app handles navigation to the relevant screen via `navigatorKey`.
+1. **Push Notifications**: 10 Firestore triggers send FCM notifications for events, expenses, announcements, team messages, pool sessions, and medical certificates. Badge counts managed via `badge-helper.js`. The Flutter app handles navigation via `navigatorKey`.
 
-2. **Payments (Noda)**: Payment provider via Open Banking. Flow: `createNodaPayment` -> User redirected to Noda checkout -> `nodaWebhook` receives confirmation -> Firestore `paye` field updated.
+2. **Payments (Mollie + EPC QR)**: Mollie for online payments, EPC QR codes for bank transfers. Noda integration is DEPRECATED. Flow: `createMolliePayment` -> User redirected to Mollie checkout -> `mollieWebhook` receives confirmation -> Firestore `paye` field updated.
 
 3. **Tariff System**: Flexible pricing with member/guest rates, optional pricing, and calculated totals in `pricing_calculator.dart` and `tariff_utils.dart`.
+
+4. **LIFRAS Exercise System**: Exercise catalog + validation tracking per member. Services: `lifras_service.dart`, `exercice_valide_service.dart`.
+
+5. **Palanquée System**: Dive team management with auto-assignment algorithm. Services: `palanquee_service.dart`, `palanquee_auto_assign_service.dart`.
+
+6. **Medical Certifications**: Upload, track, and approve medical certificates. Notification on status change.
+
+7. **Unread Tracking**: Local read tracker (replaced server-side `read_by` field) with `UnreadCountProvider` for badge management.
 
 ## iOS Build Issues & Solutions
 
@@ -230,6 +311,12 @@ allow read: if hasValidSession(clubId);  // Vereist web sessie
 - `announcements` + `replies` - Clubmededelingen
 - `operations` + `messages`, `inscriptions` - Events
 - `availabilities` - Beschikbaarheden
+- `attendance` - Aanwezigheidsregistratie
+- `dive_locations` - Duiklocaties
+- `exercices_lifras` - LIFRAS oefeningen catalogus
+- `members/{id}/exercices_valides` - Gevalideerde oefeningen per lid
+- `members/{id}/medical_certificates` - Medische attesten
+- `palanquees` - Duikteams (palanquées)
 
 ## Provider Patronen - BELANGRIJK
 

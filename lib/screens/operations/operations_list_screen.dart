@@ -11,6 +11,7 @@ import '../../providers/member_provider.dart';
 import '../../widgets/loading_widget.dart';
 import '../../services/event_message_service.dart';
 import '../../services/session_message_service.dart';
+import '../../services/unread_count_service.dart';
 import '../../providers/auth_provider.dart';
 import 'operation_detail_screen.dart';
 import 'event_type_selector.dart';
@@ -614,9 +615,17 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
     final eventEndDate = item.operation?.dateFin ?? item.date;
     final isExpired = DateTime.now().difference(eventEndDate).inDays > 5;
 
-    // Unread badges worden nu globaal afgehandeld via UnreadCountProvider
-    // Individuele stream-based counts zijn verwijderd
-    unreadStream = Stream.value(0);
+    // Individuele unread count per operatie via UnreadCountService
+    final clubId = FirebaseConfig.defaultClubId;
+    final opId = item.operation?.id;
+
+    if (isExpired || opId == null) {
+      unreadStream = Stream.value(0);
+    } else {
+      unreadStream = Stream.fromFuture(
+        UnreadCountService().countUnreadForOperation(clubId, opId),
+      );
+    }
 
     return StreamBuilder<int>(
       stream: unreadStream,

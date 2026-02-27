@@ -255,14 +255,15 @@ class PiscineSession {
 
   /// Parse gonflage data avec rétrocompatibilité
   /// - Ancien format (Array): [{membre_id, ...}] → migré en Map vide par slot avec données legacy
-  /// - Nouveau format (Map): {19h45: [...], 20h15: [...], 21h30: [...]}
+  /// - Nouveau format (Map): {19h45: [...], 20h15: [...], 21h15: [...]}
+  /// - Rétrocompatibilité: ancien slot '21h30' est lu et mappé vers '21h15'
   /// - Absent/null: slots vides
   static Map<String, List<SessionAssignment>> _parseGonflage(dynamic rawData) {
     // Créer les slots vides par défaut
     final defaultSlots = <String, List<SessionAssignment>>{
       '19h45': [],
       '20h15': [],
-      '21h30': [],
+      '21h15': [],
     };
 
     if (rawData == null) return defaultSlots;
@@ -282,10 +283,20 @@ class PiscineSession {
 
     // Nouveau format: Map par slot
     if (rawData is Map<String, dynamic>) {
-      for (final slot in ['19h45', '20h15', '21h30']) {
+      for (final slot in ['19h45', '20h15', '21h15']) {
         final slotData = rawData[slot];
         if (slotData is List) {
           defaultSlots[slot] = slotData
+              .whereType<Map<String, dynamic>>()
+              .map((e) => SessionAssignment.fromMap(e))
+              .toList();
+        }
+      }
+      // Rétrocompatibilité: lire l'ancien slot '21h30' et le mapper vers '21h15'
+      if (rawData.containsKey('21h30') && defaultSlots['21h15']!.isEmpty) {
+        final legacySlotData = rawData['21h30'];
+        if (legacySlotData is List) {
+          defaultSlots['21h15'] = legacySlotData
               .whereType<Map<String, dynamic>>()
               .map((e) => SessionAssignment.fromMap(e))
               .toList();

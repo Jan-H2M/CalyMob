@@ -6,7 +6,7 @@ import '../../config/app_assets.dart';
 import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/operation.dart';
-import '../../services/event_message_service.dart';
+import '../../services/local_read_tracker.dart';
 import '../operations/event_discussion_screen.dart';
 import '../../utils/date_formatter.dart';
 
@@ -163,21 +163,21 @@ class MessagesScreen extends StatelessWidget {
   }
 
   Widget _buildUnreadBadge(BuildContext context, Operation operation) {
-    final authProvider = context.read<AuthProvider>();
-    final userId = authProvider.currentUser?.uid;
+    final clubId = FirebaseConfig.defaultClubId;
+    final tracker = LocalReadTracker();
+    final epoch = DateTime(2024, 1, 1);
 
-    if (userId == null) {
-      return Icon(Icons.chevron_right, color: Colors.grey[400]);
-    }
+    // Gebruik LocalReadTracker timestamp om ongelezen te berekenen
+    final lastRead = tracker.getLastRead('operation_${operation.id}') ?? epoch;
 
-    return StreamBuilder<int>(
-      stream: EventMessageService().getUnreadCountStream(
-        clubId: FirebaseConfig.defaultClubId,
-        operationId: operation.id,
-        userId: userId,
-      ),
+    return StreamBuilder<QuerySnapshot>(
+      // Luister naar nieuwe messages na lastRead (real-time)
+      stream: FirebaseFirestore.instance
+          .collection('clubs/$clubId/operations/${operation.id}/messages')
+          .where('created_at', isGreaterThan: Timestamp.fromDate(lastRead))
+          .snapshots(),
       builder: (context, snapshot) {
-        final unreadCount = snapshot.data ?? 0;
+        final unreadCount = snapshot.data?.docs.length ?? 0;
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [

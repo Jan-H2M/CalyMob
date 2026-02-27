@@ -4,17 +4,28 @@ import 'local_read_tracker.dart';
 
 /// Service die ongelezen tellingen berekent via lokale timestamps
 /// + Firestore count() queries. Geen read_by arrays meer.
+///
+/// Logica: als lastRead == null (nooit geopend), gebruiken we een fallback.
+/// Bij verse installatie: baseline = NOW (alles is "gelezen").
+/// Bij bestaande installatie: baseline = epoch 2024-01-01.
 class UnreadCountService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final LocalReadTracker _tracker = LocalReadTracker();
+
+  /// Standaard epoch voor bestaande installaties.
+  static final DateTime _defaultEpoch = DateTime(2024, 1, 1);
+
+  /// Fallback datum: als er een installBaseline is (verse install),
+  /// gebruik die. Anders de standaard epoch.
+  DateTime get _epoch => _tracker.installBaseline ?? _defaultEpoch;
 
   // ============================================================
   // ANNOUNCEMENTS
   // ============================================================
 
   Future<int> countUnreadAnnouncements(String clubId) async {
-    final lastRead = _tracker.getLastRead('announcements');
-    if (lastRead == null) return 0; // Nooit geopend → default alles gelezen
+    // Als null (nooit geopend): tel alles sinds epoch als ongelezen
+    final lastRead = _tracker.getLastRead('announcements') ?? _epoch;
 
     try {
       final query = _firestore
@@ -44,8 +55,9 @@ class UnreadCountService {
 
       int total = 0;
       for (final opDoc in opsSnapshot.docs) {
-        final lastRead = _tracker.getLastRead('operation_${opDoc.id}');
-        if (lastRead == null) continue; // Nooit geopend → 0 ongelezen
+        // Als null (nooit geopend): tel alles sinds epoch als ongelezen
+        final lastRead =
+            _tracker.getLastRead('operation_${opDoc.id}') ?? _epoch;
 
         final query = _firestore
             .collection('clubs/$clubId/operations/${opDoc.id}/messages')
@@ -57,6 +69,29 @@ class UnreadCountService {
       return total;
     } catch (e) {
       debugPrint('❌ countUnreadEventMessages error: $e');
+      return 0;
+    }
+  }
+
+  // ============================================================
+  // EVENT MESSAGES — per individuele operatie
+  // ============================================================
+
+  /// Tel ongelezen berichten voor EEN specifieke operatie.
+  /// Gebruikt door de operations list voor individuele badges.
+  Future<int> countUnreadForOperation(String clubId, String operationId) async {
+    try {
+      final lastRead =
+          _tracker.getLastRead('operation_$operationId') ?? _epoch;
+
+      final query = _firestore
+          .collection('clubs/$clubId/operations/$operationId/messages')
+          .where('created_at', isGreaterThan: Timestamp.fromDate(lastRead));
+
+      final snapshot = await query.count().get();
+      return snapshot.count ?? 0;
+    } catch (e) {
+      debugPrint('❌ countUnreadForOperation error: $e');
       return 0;
     }
   }
@@ -86,8 +121,8 @@ class UnreadCountService {
     try {
       int total = 0;
       for (final channelId in channelIds) {
-        final lastRead = _tracker.getLastRead('team_$channelId');
-        if (lastRead == null) continue;
+        // Als null (nooit geopend): tel alles sinds epoch als ongelezen
+        final lastRead = _tracker.getLastRead('team_$channelId') ?? _epoch;
 
         final query = _firestore
             .collection('clubs/$clubId/team_channels/$channelId/messages')
@@ -135,8 +170,8 @@ class UnreadCountService {
 
         for (final groupType in groupTypes) {
           final key = 'session_${sessionDoc.id}_$groupType';
-          final lastRead = _tracker.getLastRead(key);
-          if (lastRead == null) continue;
+          // Als null (nooit geopend): tel alles sinds epoch als ongelezen
+          final lastRead = _tracker.getLastRead(key) ?? _epoch;
 
           final query = _firestore
               .collection(

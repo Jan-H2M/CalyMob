@@ -69,7 +69,21 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
     }
   }
 
-  Future<void> _loadMemberInfoAndStartUnreadListener() async {
+  void _startUnreadCountListener() {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final memberProvider = Provider.of<MemberProvider>(context, listen: false);
+    final uid = authProvider.currentUser?.uid;
+    if (uid == null) return;
+
+    final unreadProvider = Provider.of<UnreadCountProvider>(context, listen: false);
+    if (!unreadProvider.isListening) {
+      // Rôles uit MemberProvider (al geladen na login)
+      final roles = memberProvider.clubStatuten ?? [];
+      unreadProvider.listen(FirebaseConfig.defaultClubId, uid, roles: roles);
+    }
+  }
+
+  Future<void> _loadMemberInfo() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final uid = authProvider.currentUser?.uid;
     if (uid == null) return;

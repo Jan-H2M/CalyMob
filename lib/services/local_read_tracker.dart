@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///   lastRead_session_{sessionId}_{groupType}_{groupLevel}
 class LocalReadTracker {
   static const _prefix = 'lastRead_';
+  static const _firstLaunchKey = 'localReadTracker_initialized';
   SharedPreferences? _prefs;
 
   /// Singleton instance
@@ -18,9 +19,27 @@ class LocalReadTracker {
   factory LocalReadTracker() => _instance;
   LocalReadTracker._internal();
 
+  /// Baseline timestamp: bij verse installatie wordt dit op NOW gezet
+  /// zodat bestaande berichten niet als ongelezen tellen.
+  DateTime? _installBaseline;
+
+  /// Haal de baseline op (null = niet eerste launch, gebruik gewoon _epoch)
+  DateTime? get installBaseline => _installBaseline;
+
   /// Initialiseer SharedPreferences. Moet 1x aangeroepen worden bij app start.
   Future<void> init() async {
     _prefs ??= await SharedPreferences.getInstance();
+
+    // Detecteer verse installatie: als _firstLaunchKey niet bestaat,
+    // sla dan NOW op als baseline zodat alle bestaande berichten
+    // als "gelezen" worden beschouwd.
+    if (_prefs?.getBool(_firstLaunchKey) != true) {
+      _installBaseline = DateTime.now();
+      await _prefs?.setBool(_firstLaunchKey, true);
+      debugPrint(
+          '🆕 LocalReadTracker: verse installatie gedetecteerd, baseline=$_installBaseline');
+    }
+
     debugPrint('✅ LocalReadTracker: geïnitialiseerd');
   }
 
