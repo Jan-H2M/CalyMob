@@ -54,7 +54,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
     DateTime.now().year, DateTime.now().month, DateTime.now().day, 14, 0,
   );
   DateTime? _dateFin;
-  String _statut = 'brouillon';
+  String _statut = 'ouvert';
   List<Tariff> _eventTariffs = [];
   bool _saving = false;
 
@@ -123,65 +123,15 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
   }
 
   void _onCreateManual() {
-    // Identique à CalyCompta: "Créer manuellement"
-    // Crée un événement directement avec category='sortie'
-    _createManualEvent();
-  }
-
-  Future<void> _createManualEvent() async {
-    setState(() => _saving = true);
-
-    try {
-      final authProvider = context.read<AuthProvider>();
-      final memberProvider = context.read<MemberProvider>();
-      final userId = authProvider.currentUser?.uid ?? '';
-
-      // Generate event_number (sortie = non-dive)
-      final eventNumber = await _operationService.generateEventNumber(_clubId, false);
-
-      final data = {
-        'type': 'evenement',
-        'titre': 'Nouvel événement',
-        'description': '',
-        'montant_prevu': 0,
-        'montant_reel': 0,
-        'date_debut': Timestamp.fromDate(_dateDebut),
-        'statut': 'ouvert',
-        'event_category': 'sortie',
-        'event_number': eventNumber,
-        'lieu': '',
-        'organisateur_nom': memberProvider.displayName,
-        'organisateur_id': userId,
-        'event_tariffs': [],
-        'club_id': _clubId,
-        'created_by': 'manual',
-      };
-
-      await _operationService.createOperation(clubId: _clubId, data: data);
-
-      // Refresh activity list
-      if (mounted) {
-        context.read<ActivityProvider>().refresh(_clubId);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Événement créé avec succès'),
-            backgroundColor: AppColors.success,
-          ),
-        );
-        Navigator.of(context).pop(); // Return to list
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erreur: $e'),
-            backgroundColor: AppColors.error,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
+    // Passer directement à l'étape détails sans lieu sélectionné
+    // L'utilisateur pourra remplir le titre et les détails manuellement
+    setState(() {
+      _selectedLocation = null;
+      _titreController.text = '';
+      _descriptionController.text = '';
+      _eventTariffs = [];
+      _currentStep = 2;
+    });
   }
 
   void _recalculateBudget() {
@@ -193,6 +143,17 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
   Future<void> _handleSubmit() async {
     if (!_formKey.currentState!.validate()) return;
     if (_titreController.text.trim().isEmpty) return;
+
+    // Validation: date_fin doit être après date_debut
+    if (_dateFin != null && _dateFin!.isBefore(_dateDebut)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('La date de fin doit être après la date de début'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
 
     setState(() => _saving = true);
 
@@ -269,19 +230,21 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          if (_currentStep == 2 && widget.eventCategory == 'plongee' && _selectedLocation != null)
-            IconButton(
-              icon: const Icon(Icons.arrow_back),
-              tooltip: 'Retour',
-              onPressed: () {
-                setState(() {
-                  _currentStep = 1;
-                  _selectedLocation = null;
-                });
-              },
-            ),
-        ],
+        leading: _currentStep == 2 && widget.eventCategory == 'plongee' && _selectedLocation != null
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                tooltip: 'Retour au choix du lieu',
+                onPressed: () {
+                  setState(() {
+                    _currentStep = 1;
+                    _selectedLocation = null;
+                  });
+                },
+              )
+            : IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
       ),
       body: Container(
         decoration: BoxDecoration(

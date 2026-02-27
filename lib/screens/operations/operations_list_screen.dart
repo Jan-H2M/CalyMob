@@ -118,19 +118,10 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
   Widget build(BuildContext context) {
     final activityProvider = context.watch<ActivityProvider>();
     final memberProvider = context.watch<MemberProvider>();
-    final isEncadrant = memberProvider.isEncadrant;
+    final canCreateEvents = memberProvider.canCreateEvents;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
-      // FAB: alleen zichtbaar voor encadrants
-      floatingActionButton: isEncadrant
-          ? FloatingActionButton(
-              onPressed: _openCreateActivity,
-              backgroundColor: AppColors.middenblauw,
-              elevation: 4,
-              child: const Icon(Icons.add, color: Colors.white, size: 28),
-            )
-          : null,
       appBar: AppBar(
         title: const Text(
           'Événements',
@@ -139,6 +130,14 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          if (canCreateEvents)
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline, size: 28),
+              tooltip: 'Créer un événement',
+              onPressed: _openCreateActivity,
+            ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(60),
           child: Container(

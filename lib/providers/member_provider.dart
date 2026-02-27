@@ -45,8 +45,17 @@ class MemberProvider with ChangeNotifier {
     );
   }
 
-  /// Check if user is an encadrant
-  bool get isEncadrant => hasClubFunction('encadrant') || hasClubFunction('Encadrant');
+  /// Check if user is an encadrant (also matches 'Encadrants' plural form)
+  bool get isEncadrant =>
+      hasClubFunction('encadrant') ||
+      hasClubFunction('Encadrants') ||
+      clubStatuten.any((s) => s.toLowerCase().startsWith('encadrant'));
+
+  /// Check if user is member of CA (Conseil d'Administration)
+  bool get isCA => hasClubFunction('CA');
+
+  /// Check if user can create events (encadrant or CA)
+  bool get canCreateEvents => isEncadrant || isCA;
 
   /// Check if user is accueil
   bool get isAccueil => hasClubFunction('accueil') || hasClubFunction('Accueil');

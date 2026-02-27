@@ -17,6 +17,7 @@ import '../../services/profile_service.dart';
 import '../../services/lifras_service.dart';
 import '../../services/operation_service.dart';
 import '../../services/payment_service.dart';
+import '../../models/operation.dart';
 import '../../models/member_profile.dart';
 import '../../models/exercice_lifras.dart';
 import '../../models/participant_operation.dart';
@@ -26,6 +27,7 @@ import '../../widgets/participant_payment_card.dart';
 import '../../widgets/scanner_modal_sheet.dart';
 import '../../widgets/documents_accordion.dart';
 import 'add_guest_dialog.dart';
+import 'edit_event_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
 import 'package:intl/intl.dart';
@@ -58,6 +60,13 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
   ParticipantOperation? _userInscription;
   final TextEditingController _messageController = TextEditingController();
   bool _isDiscussionExpanded = false;
+
+  /// Check if the current user is the creator (organisateur) of the event
+  bool _isCurrentUserCreator(Operation operation) {
+    final authProvider = context.read<AuthProvider>();
+    final currentUserId = authProvider.currentUser?.uid;
+    return currentUserId != null && operation.organisateurId == currentUserId;
+  }
 
   @override
   void initState() {
@@ -903,6 +912,27 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          // Edit button - only visible to the event creator
+          if (operation != null && _isCurrentUserCreator(operation))
+            IconButton(
+              icon: const Icon(Icons.edit, color: Colors.white, size: 22),
+              tooltip: 'Modifier l\'événement',
+              onPressed: () async {
+                final result = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => EditEventScreen(
+                      operation: operation,
+                      clubId: widget.clubId,
+                    ),
+                  ),
+                );
+                // Refresh si des changements ont été enregistrés
+                if (result == true && mounted) {
+                  _loadOperation();
+                }
+              },
+            ),
           // Fiche de palanquée button - only for dive events with participants
           if (isPlongeeEvent && (operationProvider.selectedOperationParticipants.isNotEmpty))
             Padding(

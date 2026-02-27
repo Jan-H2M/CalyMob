@@ -516,8 +516,29 @@ class OperationService {
   }
 
   // ============================================================
-  // EVENT CREATION
+  // EVENT CREATION & UPDATE
   // ============================================================
+
+  /// Mettre à jour une opération/événement dans Firestore
+  Future<void> updateOperation({
+    required String clubId,
+    required String operationId,
+    required Map<String, dynamic> data,
+  }) async {
+    try {
+      await _firestore
+          .collection('clubs/$clubId/operations')
+          .doc(operationId)
+          .update({
+        ...data,
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+      debugPrint('✅ Opération mise à jour: $operationId');
+    } catch (e) {
+      debugPrint('❌ Erreur mise à jour opération: $e');
+      rethrow;
+    }
+  }
 
   /// Créer une opération/événement dans Firestore
   /// Returns the document ID of the created operation
@@ -604,9 +625,12 @@ class OperationService {
 
   /// Copy tariffs from a location with new unique IDs
   static List<Map<String, dynamic>> copyTariffsFromLocation(List<Tariff> locationTariffs) {
-    return locationTariffs.map((tariff) {
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    return locationTariffs.asMap().entries.map((entry) {
+      final index = entry.key;
+      final tariff = entry.value;
       return {
-        'id': 'tariff_${DateTime.now().millisecondsSinceEpoch}_${locationTariffs.indexOf(tariff)}',
+        'id': 'tariff_${ts}_$index',
         'label': tariff.label,
         'category': tariff.category,
         'price': tariff.price,
