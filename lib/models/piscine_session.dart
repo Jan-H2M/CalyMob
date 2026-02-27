@@ -154,17 +154,24 @@ class PiscineSessionStatus {
   }
 }
 
-/// Configuration complète d'une séance piscine
+/// Configuration complète d'une séance piscine (ou théorie)
+///
+/// Le champ [type] distingue une séance piscine d'une séance théorie autonome.
+/// Le champ [gonflage] est un Map indexé par créneau horaire (19h45, 20h15, 21h30).
+/// Le champ [theorie] est optionnel et contient les séances théorie par créneau.
 class PiscineSession {
   final String id;
   final String operationId;
+  final String type; // 'piscine' | 'theorie' (défaut: 'piscine')
   final DateTime date;
   final String lieu;
   final String horaireDebut;
   final String horaireFin;
   final List<SessionAssignment> accueil;
   final List<SessionAssignment> baptemes;
+  final Map<String, List<SessionAssignment>> gonflage; // Indexé par slot horaire
   final Map<String, LevelAssignment> niveaux;
+  final Map<String, LevelAssignment>? theorie; // Indexé par slot horaire (19h30, 21h45)
   final String statut;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -173,13 +180,16 @@ class PiscineSession {
   PiscineSession({
     required this.id,
     required this.operationId,
+    this.type = 'piscine',
     required this.date,
     required this.lieu,
     required this.horaireDebut,
     required this.horaireFin,
     required this.accueil,
     required this.baptemes,
+    required this.gonflage,
     required this.niveaux,
+    this.theorie,
     required this.statut,
     required this.createdAt,
     required this.updatedAt,
@@ -197,14 +207,28 @@ class PiscineSession {
         niveaux[level] =
             LevelAssignment.fromMap(niveauxData[level] as Map<String, dynamic>);
       } else {
-        // Créer un niveau vide si pas présent
         niveaux[level] = LevelAssignment(encadrants: []);
+      }
+    }
+
+    // Parser gonflage — rétrocompatible (ancien format: Array, nouveau: Map)
+    final gonflage = _parseGonflage(data['gonflage']);
+
+    // Parser théorie (optionnel)
+    final theorieData = data['theorie'] as Map<String, dynamic>?;
+    Map<String, LevelAssignment>? theorie;
+    if (theorieData != null) {
+      theorie = {};
+      for (final entry in theorieData.entries) {
+        theorie[entry.key] =
+            LevelAssignment.fromMap(entry.value as Map<String, dynamic>);
       }
     }
 
     return PiscineSession(
       id: doc.id,
       operationId: data['operation_id'] ?? '',
+      type: data['type'] ?? 'piscine',
       date: (data['date'] as Timestamp?)?.toDate() ?? DateTime.now(),
       lieu: data['lieu'] ?? '',
       horaireDebut: data['horaire_debut'] ?? '20:30',
@@ -217,7 +241,9 @@ class PiscineSession {
               ?.map((e) => SessionAssignment.fromMap(e as Map<String, dynamic>))
               .toList() ??
           [],
+      gonflage: gonflage,
       niveaux: niveaux,
+      theorie: theorie,
       statut: data['statut'] ?? PiscineSessionStatus.brouillon,
       createdAt:
           (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
@@ -227,16 +253,65 @@ class PiscineSession {
     );
   }
 
+  /// Parse gonflage data avec rétrocompatibilité
+  /// - Ancien format (Array): [{membre_id, ...}] → migré en Map vide par slot avec données legacy
+  /// - Nouveau format (Map): {19h45: [...], 20h15: [...], 21h30: [...]}
+  /// - Absent/null: slots vides
+  static Map<String, List<SessionAssignment>> _parseGonflage(dynamic rawData) {
+    // Créer les slots vides par défaut
+    final defaultSlots = <String, List<SessionAssignment>>{
+      '19h45': [],
+      '20h15': [],
+      '21h30': [],
+    };
+
+    if (rawData == null) return defaultSlots;
+
+    // Ancien format: Array de SessionAssignment
+    if (rawData is List) {
+      // Placer les anciennes assignations dans le premier slot par défaut
+      final legacyAssignments = rawData
+          .whereType<Map<String, dynamic>>()
+          .map((e) => SessionAssignment.fromMap(e))
+          .toList();
+      if (legacyAssignments.isNotEmpty) {
+        defaultSlots['19h45'] = legacyAssignments;
+      }
+      return defaultSlots;
+    }
+
+    // Nouveau format: Map par slot
+    if (rawData is Map<String, dynamic>) {
+      for (final slot in ['19h45', '20h15', '21h30']) {
+        final slotData = rawData[slot];
+        if (slotData is List) {
+          defaultSlots[slot] = slotData
+              .whereType<Map<String, dynamic>>()
+              .map((e) => SessionAssignment.fromMap(e))
+              .toList();
+        }
+      }
+    }
+
+    return defaultSlots;
+  }
+
   Map<String, dynamic> toFirestore() {
     return {
       'operation_id': operationId,
+      'type': type,
       'date': Timestamp.fromDate(date),
       'lieu': lieu,
       'horaire_debut': horaireDebut,
       'horaire_fin': horaireFin,
       'accueil': accueil.map((e) => e.toMap()).toList(),
       'baptemes': baptemes.map((e) => e.toMap()).toList(),
+      'gonflage': gonflage.map(
+        (slot, members) => MapEntry(slot, members.map((e) => e.toMap()).toList()),
+      ),
       'niveaux': niveaux.map((key, value) => MapEntry(key, value.toMap())),
+      if (theorie != null)
+        'theorie': theorie!.map((key, value) => MapEntry(key, value.toMap())),
       'statut': statut,
       'created_at': Timestamp.fromDate(createdAt),
       'updated_at': Timestamp.fromDate(DateTime.now()),
@@ -271,6 +346,35 @@ class PiscineSession {
     return baptemes.any((e) => e.membreId == membreId);
   }
 
+  /// Vérifier si un membre est assigné au gonflage (tous slots confondus)
+  bool isGonflage(String membreId) {
+    return gonflage.values.any(
+      (slotMembers) => slotMembers.any((e) => e.membreId == membreId),
+    );
+  }
+
+  /// Vérifier si un membre est assigné au gonflage pour un slot spécifique
+  bool isGonflageForSlot(String membreId, String slot) {
+    return gonflage[slot]?.any((e) => e.membreId == membreId) ?? false;
+  }
+
+  /// Obtenir tous les gonfleurs (tous slots confondus)
+  List<SessionAssignment> get allGonfleurs {
+    final all = <SessionAssignment>[];
+    for (final slotMembers in gonflage.values) {
+      all.addAll(slotMembers);
+    }
+    return all;
+  }
+
+  /// Vérifier si un membre est encadrant théorie
+  bool isTheorieEncadrant(String membreId) {
+    if (theorie == null) return false;
+    return theorie!.values.any(
+      (slot) => slot.encadrants.any((e) => e.membreId == membreId),
+    );
+  }
+
   /// Obtenir tous les encadrants (tous niveaux confondus)
   List<SessionAssignment> get allEncadrants {
     final all = <SessionAssignment>[];
@@ -280,6 +384,15 @@ class PiscineSession {
     all.addAll(baptemes);
     return all;
   }
+
+  /// Vérifier si c'est une session de type théorie
+  bool get isTheorieSession => type == 'theorie';
+
+  /// Vérifier si c'est une session de type piscine
+  bool get isPiscineSession => type == 'piscine';
+
+  /// Vérifier si la session contient une section théorie
+  bool get hasTheorie => theorie != null && theorie!.isNotEmpty;
 
   /// Date formatée pour l'affichage
   String get formattedDate {
@@ -297,13 +410,16 @@ class PiscineSession {
   PiscineSession copyWith({
     String? id,
     String? operationId,
+    String? type,
     DateTime? date,
     String? lieu,
     String? horaireDebut,
     String? horaireFin,
     List<SessionAssignment>? accueil,
     List<SessionAssignment>? baptemes,
+    Map<String, List<SessionAssignment>>? gonflage,
     Map<String, LevelAssignment>? niveaux,
+    Map<String, LevelAssignment>? theorie,
     String? statut,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -312,13 +428,16 @@ class PiscineSession {
     return PiscineSession(
       id: id ?? this.id,
       operationId: operationId ?? this.operationId,
+      type: type ?? this.type,
       date: date ?? this.date,
       lieu: lieu ?? this.lieu,
       horaireDebut: horaireDebut ?? this.horaireDebut,
       horaireFin: horaireFin ?? this.horaireFin,
       accueil: accueil ?? this.accueil,
       baptemes: baptemes ?? this.baptemes,
+      gonflage: gonflage ?? this.gonflage,
       niveaux: niveaux ?? this.niveaux,
+      theorie: theorie ?? this.theorie,
       statut: statut ?? this.statut,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,

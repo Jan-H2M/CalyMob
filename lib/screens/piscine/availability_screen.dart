@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../config/app_colors.dart';
+import '../../config/piscine_slots.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/availability_provider.dart';
 import '../../widgets/piscine_animated_background.dart';
@@ -106,6 +107,8 @@ class _AvailabilityScreenState extends State<AvailabilityScreen>
         return 'Encadrant';
       case 'gonflage':
         return 'Gonflage';
+      case 'theorie':
+        return 'Théorie';
       default:
         return role;
     }
@@ -305,7 +308,6 @@ class _AvailabilityScreenState extends State<AvailabilityScreen>
 
   Widget _buildCalendar(AvailabilityProvider provider) {
     final tuesdays = provider.currentMonthTuesdays;
-    final dateFormat = DateFormat('d MMMM', 'fr_FR');
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -358,15 +360,18 @@ class _AvailabilityScreenState extends State<AvailabilityScreen>
     );
   }
 
+  /// Whether the current role uses time slots (encadrant or gonflage)
+  bool get _roleHasSlots => roleHasSlots(_currentRole);
+
   Widget _buildTuesdayTile(DateTime tuesday, AvailabilityProvider provider) {
     final availability = provider.getAvailabilityForDate(tuesday);
     final isAvailable = availability?.available ?? false;
     final isNotIndicated = availability == null;
     final isPast = tuesday.isBefore(DateTime.now().subtract(const Duration(days: 1)));
+    final selectedSlots = availability?.timeSlots ?? [];
 
     final dateFormat = DateFormat('EEEE d MMMM', 'fr_FR');
     final formattedDate = dateFormat.format(tuesday);
-    // Capitalize first letter
     final displayDate =
         formattedDate[0].toUpperCase() + formattedDate.substring(1);
 
@@ -376,27 +381,40 @@ class _AvailabilityScreenState extends State<AvailabilityScreen>
         onTap: isPast
             ? null
             : () async {
-                final authProvider =
-                    Provider.of<AuthProvider>(context, listen: false);
-                final displayName = authProvider.displayName ?? 'Membre';
-                final nameParts = displayName.split(' ');
-                final prenom = nameParts.first;
-                final nom = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
-
-                try {
-                  await provider.toggleAvailability(
+                if (_roleHasSlots) {
+                  // Open slot selection bottom sheet for encadrant/gonflage
+                  await _showSlotSelectionSheet(
+                    context: context,
                     date: tuesday,
-                    userNom: nom,
-                    userPrenom: prenom,
+                    provider: provider,
+                    currentAvailability: availability,
                   );
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Erreur: $e'),
-                        backgroundColor: Colors.red,
-                      ),
+                } else {
+                  // Simple toggle cycle for accueil
+                  final authProvider =
+                      Provider.of<AuthProvider>(context, listen: false);
+                  final displayName = authProvider.displayName ?? 'Membre';
+                  final nameParts = displayName.split(' ');
+                  final prenom = nameParts.first;
+                  final nom = nameParts.length > 1
+                      ? nameParts.sublist(1).join(' ')
+                      : '';
+
+                  try {
+                    await provider.toggleAvailability(
+                      date: tuesday,
+                      userNom: nom,
+                      userPrenom: prenom,
                     );
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Erreur: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
                   }
                 }
               },
@@ -423,72 +441,218 @@ class _AvailabilityScreenState extends State<AvailabilityScreen>
               width: 1.5,
             ),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(
-                isPast
-                    ? Icons.event_busy
-                    : isAvailable
-                        ? Icons.check_circle
-                        : isNotIndicated
-                            ? Icons.help_outline
-                            : Icons.cancel,
-                color: isPast
-                    ? Colors.grey
-                    : isAvailable
-                        ? AppColors.success
-                        : isNotIndicated
-                            ? Colors.grey
-                            : Colors.red,
-                size: 28,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      displayDate,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: isPast
-                            ? Colors.grey
-                            : AppColors.donkerblauw,
-                      ),
+              Row(
+                children: [
+                  Icon(
+                    isPast
+                        ? Icons.event_busy
+                        : isAvailable
+                            ? Icons.check_circle
+                            : isNotIndicated
+                                ? Icons.help_outline
+                                : Icons.cancel,
+                    color: isPast
+                        ? Colors.grey
+                        : isAvailable
+                            ? AppColors.success
+                            : isNotIndicated
+                                ? Colors.grey
+                                : Colors.red,
+                    size: 28,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          displayDate,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: isPast
+                                ? Colors.grey
+                                : AppColors.donkerblauw,
+                          ),
+                        ),
+                        Text(
+                          isPast
+                              ? 'Passé'
+                              : isAvailable
+                                  ? 'Disponible'
+                                  : isNotIndicated
+                                      ? 'Pas encore indiqué'
+                                      : 'Non disponible',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: isPast
+                                ? Colors.grey
+                                : isAvailable
+                                    ? AppColors.success
+                                    : isNotIndicated
+                                        ? Colors.grey
+                                        : Colors.red,
+                          ),
+                        ),
+                      ],
                     ),
-                    Text(
-                      isPast
-                          ? 'Passé'
-                          : isAvailable
-                              ? 'Disponible'
-                              : isNotIndicated
-                                  ? 'Pas encore indiqué'
-                                  : 'Non disponible',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: isPast
-                            ? Colors.grey
-                            : isAvailable
-                                ? AppColors.success
-                                : isNotIndicated
-                                    ? Colors.grey
-                                    : Colors.red,
-                      ),
+                  ),
+                  if (!isPast)
+                    Icon(
+                      _roleHasSlots ? Icons.edit : Icons.touch_app,
+                      color: Colors.grey.withOpacity(0.5),
+                      size: 20,
                     ),
-                  ],
-                ),
+                ],
               ),
-              if (!isPast)
-                Icon(
-                  Icons.touch_app,
-                  color: Colors.grey.withOpacity(0.5),
-                  size: 20,
+              // Show selected time slots chips when available and role has slots
+              if (!isPast && isAvailable && _roleHasSlots && selectedSlots.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: selectedSlots.map((slot) {
+                    final label = getSlotLabel(_currentRole, slot);
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: AppColors.success.withOpacity(0.5),
+                        ),
+                      ),
+                      child: Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.success,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    );
+                  }).toList(),
                 ),
+              ],
+              // Show "tous créneaux" hint when available but no slots selected (legacy)
+              if (!isPast && isAvailable && _roleHasSlots && selectedSlots.isEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Appuyer pour préciser les créneaux',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey.shade600,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
       ),
+    );
+  }
+
+  /// Bottom sheet for selecting time slots (encadrant / gonflage roles)
+  Future<void> _showSlotSelectionSheet({
+    required BuildContext context,
+    required DateTime date,
+    required AvailabilityProvider provider,
+    required dynamic currentAvailability, // Availability?
+  }) async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final displayName = authProvider.displayName ?? 'Membre';
+    final nameParts = displayName.split(' ');
+    final prenom = nameParts.first;
+    final nom = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+
+    final slots = getSlotsForRole(_currentRole);
+    final dateFormat = DateFormat('EEEE d MMMM', 'fr_FR');
+    final formattedDate = dateFormat.format(date);
+    final displayDate =
+        formattedDate[0].toUpperCase() + formattedDate.substring(1);
+
+    // Pre-fill selected slots from existing availability
+    final initialSlots = (currentAvailability?.timeSlots as List<String>?) ?? [];
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            final selectedSlots = List<String>.from(initialSlots);
+
+            return _SlotSelectionSheet(
+              date: displayDate,
+              role: _currentRole,
+              slots: slots,
+              initialSelectedSlots: initialSlots,
+              currentAvailability: currentAvailability,
+              onConfirmAvailable: (chosenSlots) async {
+                Navigator.pop(ctx);
+                try {
+                  await provider.setAvailability(
+                    date: date,
+                    userNom: nom,
+                    userPrenom: prenom,
+                    available: true,
+                    timeSlots: chosenSlots.isEmpty ? null : chosenSlots,
+                  );
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                          content: Text('Erreur: $e'),
+                          backgroundColor: Colors.red),
+                    );
+                  }
+                }
+              },
+              onMarkUnavailable: () async {
+                Navigator.pop(ctx);
+                try {
+                  await provider.setAvailability(
+                    date: date,
+                    userNom: nom,
+                    userPrenom: prenom,
+                    available: false,
+                  );
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                          content: Text('Erreur: $e'),
+                          backgroundColor: Colors.red),
+                    );
+                  }
+                }
+              },
+              onDelete: currentAvailability != null
+                  ? () async {
+                      Navigator.pop(ctx);
+                      try {
+                        await provider.removeAvailability(date: date);
+                      } catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                                content: Text('Erreur: $e'),
+                                backgroundColor: Colors.red),
+                          );
+                        }
+                      }
+                    }
+                  : null,
+            );
+          },
+        );
+      },
     );
   }
 
@@ -582,6 +746,12 @@ class _AvailabilityScreenState extends State<AvailabilityScreen>
   }
 
   Widget _buildHelpText() {
+    final hint = _roleHasSlots
+        ? 'Appuyez sur une date pour sélectionner vos créneaux. '
+            'Les administrateurs verront vos disponibilités lors de la planification.'
+        : 'Appuyez sur une date pour changer votre disponibilité. '
+            'Les administrateurs verront vos disponibilités lors de la planification.';
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -597,8 +767,7 @@ class _AvailabilityScreenState extends State<AvailabilityScreen>
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'Appuyez sur une date pour changer votre disponibilité. '
-              'Les administrateurs verront vos disponibilités lors de la planification.',
+              hint,
               style: TextStyle(
                 color: Colors.white.withOpacity(0.9),
                 fontSize: 13,
@@ -619,7 +788,7 @@ class _AvailabilityScreenState extends State<AvailabilityScreen>
           children: [
             Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
             const SizedBox(height: 16),
-            Text(
+            const Text(
               'Erreur',
               style: TextStyle(
                 color: Colors.white,
@@ -651,6 +820,284 @@ class _AvailabilityScreenState extends State<AvailabilityScreen>
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Slot Selection Bottom Sheet (stateful widget)
+// ---------------------------------------------------------------------------
+
+class _SlotSelectionSheet extends StatefulWidget {
+  final String date;
+  final String role;
+  final List<String> slots;
+  final List<String> initialSelectedSlots;
+  final dynamic currentAvailability; // Availability?
+  final Future<void> Function(List<String> selectedSlots) onConfirmAvailable;
+  final Future<void> Function() onMarkUnavailable;
+  final Future<void> Function()? onDelete;
+
+  const _SlotSelectionSheet({
+    required this.date,
+    required this.role,
+    required this.slots,
+    required this.initialSelectedSlots,
+    required this.currentAvailability,
+    required this.onConfirmAvailable,
+    required this.onMarkUnavailable,
+    this.onDelete,
+  });
+
+  @override
+  State<_SlotSelectionSheet> createState() => _SlotSelectionSheetState();
+}
+
+class _SlotSelectionSheetState extends State<_SlotSelectionSheet> {
+  late List<String> _selectedSlots;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedSlots = List<String>.from(widget.initialSelectedSlots);
+  }
+
+  void _toggleSlot(String slot) {
+    setState(() {
+      if (_selectedSlots.contains(slot)) {
+        _selectedSlots.remove(slot);
+      } else {
+        _selectedSlots.add(slot);
+      }
+    });
+  }
+
+  String _getRoleTitle() {
+    switch (widget.role) {
+      case 'encadrant':
+        return 'Disponibilité Encadrant';
+      case 'gonflage':
+        return 'Disponibilité Gonflage';
+      default:
+        return 'Disponibilité';
+    }
+  }
+
+  String _getSlotHint() {
+    switch (widget.role) {
+      case 'encadrant':
+        return 'Sélectionnez les heures où vous serez disponible';
+      case 'gonflage':
+        return 'Sélectionnez les créneaux de gonflage';
+      default:
+        return 'Sélectionnez vos créneaux';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isCurrentlyAvailable =
+        widget.currentAvailability?.available == true;
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.only(
+        left: 24,
+        right: 24,
+        top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Handle bar
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Title
+          Text(
+            _getRoleTitle(),
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: AppColors.donkerblauw,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            widget.date,
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Slot selection section
+          Text(
+            _getSlotHint(),
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: AppColors.donkerblauw,
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Slot chips
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: widget.slots.map((slot) {
+              final isSelected = _selectedSlots.contains(slot);
+              final label = getSlotLabel(widget.role, slot);
+              return GestureDetector(
+                onTap: () => _toggleSlot(slot),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? AppColors.middenblauw
+                        : Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: isSelected
+                          ? AppColors.middenblauw
+                          : Colors.grey.shade300,
+                      width: 2,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (isSelected) ...[
+                        const Icon(Icons.check, color: Colors.white, size: 16),
+                        const SizedBox(width: 6),
+                      ],
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: isSelected
+                              ? Colors.white
+                              : Colors.grey.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+
+          const SizedBox(height: 8),
+          Text(
+            _selectedSlots.isEmpty
+                ? 'Aucun créneau sélectionné — sera enregistré sans préférence'
+                : '${_selectedSlots.length} créneau(x) sélectionné(s)',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey.shade500,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // Action buttons
+          if (_isSaving)
+            const Center(child: CircularProgressIndicator())
+          else
+            Column(
+              children: [
+                // Confirm available button
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      setState(() => _isSaving = true);
+                      await widget.onConfirmAvailable(_selectedSlots);
+                    },
+                    icon: const Icon(Icons.check_circle),
+                    label: Text(
+                      isCurrentlyAvailable
+                          ? 'Mettre à jour les créneaux'
+                          : 'Je suis disponible',
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.success,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+
+                // Mark unavailable button
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      setState(() => _isSaving = true);
+                      await widget.onMarkUnavailable();
+                    },
+                    icon: const Icon(Icons.cancel),
+                    label: const Text(
+                      'Non disponible',
+                      style: TextStyle(fontSize: 16),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      side: const BorderSide(color: Colors.red),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Delete button (only if availability exists)
+                if (widget.onDelete != null) ...[
+                  const SizedBox(height: 10),
+                  TextButton.icon(
+                    onPressed: () async {
+                      setState(() => _isSaving = true);
+                      await widget.onDelete!();
+                    },
+                    icon: Icon(Icons.delete_outline,
+                        color: Colors.grey.shade500),
+                    label: Text(
+                      'Supprimer (retour à "pas encore indiqué")',
+                      style: TextStyle(color: Colors.grey.shade500),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+        ],
       ),
     );
   }

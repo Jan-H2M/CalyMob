@@ -132,6 +132,10 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
     if (roles.contains('gonflage')) {
       piscineRoles.add('gonflage');
     }
+    // Check théorie — tous les encadrants peuvent donner des cours théoriques
+    if (roles.contains('encadrant') || roles.contains('encadrants')) {
+      piscineRoles.add('theorie');
+    }
     return piscineRoles;
   }
 

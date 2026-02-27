@@ -256,6 +256,10 @@ class _SessionCard extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         _buildUnreadBadge(),
+                        if (session.type == 'theorie') ...[
+                          _buildTypeBadge(),
+                          const SizedBox(width: 6),
+                        ],
                         _buildStatusBadge(),
                       ],
                     ),
@@ -357,6 +361,32 @@ class _SessionCard extends StatelessWidget {
     );
   }
 
+  Widget _buildTypeBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.orange.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.menu_book, size: 13, color: Colors.orange.shade700),
+          const SizedBox(width: 4),
+          Text(
+            'Théorie',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.orange.shade700,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildUnreadBadge() {
     // Unread badges worden nu globaal afgehandeld via UnreadCountProvider
     return const SizedBox.shrink();
@@ -441,6 +471,23 @@ class _SessionCard extends StatelessWidget {
   }
 
   Widget _buildLevelsSummary() {
+    // For théorie sessions, show théorie slot summary
+    if (session.type == 'theorie') {
+      final theorieSlots = session.theorie?.entries
+          .where((e) => e.value.encadrants.isNotEmpty)
+          .length ?? 0;
+      return Text(
+        theorieSlots > 0
+            ? '$theorieSlots créneau(x) théorie configuré(s)'
+            : 'Séance théorie',
+        style: TextStyle(
+          fontSize: 13,
+          color: Colors.orange.shade700,
+          fontStyle: theorieSlots == 0 ? FontStyle.italic : FontStyle.normal,
+        ),
+      );
+    }
+
     // Count active levels (with at least one encadrant)
     final activeLevels = session.niveaux.entries
         .where((e) => e.value.encadrants.isNotEmpty)

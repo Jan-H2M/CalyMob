@@ -146,6 +146,7 @@ class AvailabilityService {
     required DateTime date,
     required String role,
     required bool available,
+    List<String>? timeSlots,
   }) async {
     try {
       // Normaliser la date au début du jour
@@ -163,15 +164,21 @@ class AvailabilityService {
           .where('date', isLessThan: Timestamp.fromDate(endOfDay))
           .get();
 
+      final updateData = <String, dynamic>{
+        'available': available,
+        'updated_at': Timestamp.now(),
+      };
+      if (timeSlots != null && timeSlots.isNotEmpty) {
+        updateData['time_slots'] = timeSlots;
+      } else if (timeSlots != null) {
+        // Explicitly empty list = remove time_slots field
+        updateData['time_slots'] = null;
+      }
+
       if (snapshot.docs.isNotEmpty) {
-        // Mettre à jour l'entrée existante
-        await snapshot.docs.first.reference.update({
-          'available': available,
-          'updated_at': Timestamp.now(),
-        });
-        debugPrint('✅ Disponibilité mise à jour: $available pour $normalizedDate');
+        await snapshot.docs.first.reference.update(updateData);
+        debugPrint('✅ Disponibilité mise à jour: $available${timeSlots != null ? " slots=$timeSlots" : ""} pour $normalizedDate');
       } else {
-        // Créer une nouvelle entrée
         final availability = Availability(
           id: '',
           membreId: userId,
@@ -180,6 +187,7 @@ class AvailabilityService {
           date: normalizedDate,
           role: role,
           available: available,
+          timeSlots: timeSlots ?? [],
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
         );

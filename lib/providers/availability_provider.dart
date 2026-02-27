@@ -142,7 +142,7 @@ class AvailabilityProvider with ChangeNotifier {
     }
   }
 
-  /// Basculer la disponibilité pour une date
+  /// Basculer la disponibilité pour une date (pour rôle accueil — cycle simple)
   /// Cycle: null (pas indiqué) → true (disponible) → false (non disponible) → null
   Future<void> toggleAvailability({
     required DateTime date,
@@ -154,7 +154,6 @@ class AvailabilityProvider with ChangeNotifier {
     }
 
     try {
-      // Trouver l'état actuel
       final currentAvailability = getAvailabilityForDate(date);
 
       if (currentAvailability == null) {
@@ -197,6 +196,63 @@ class AvailabilityProvider with ChangeNotifier {
       _error = e.toString();
       notifyListeners();
       debugPrint('❌ Erreur toggle disponibilité: $e');
+      rethrow;
+    }
+  }
+
+  /// Définir explicitement la disponibilité avec créneaux optionnels
+  /// Utilisé pour les rôles encadrant et gonflage qui ont des créneaux spécifiques
+  Future<void> setAvailability({
+    required DateTime date,
+    required String userNom,
+    required String userPrenom,
+    required bool available,
+    List<String>? timeSlots,
+  }) async {
+    if (_currentClubId == null || _currentUserId == null || _userRole == null) {
+      return;
+    }
+
+    try {
+      await _availabilityService.toggleAvailability(
+        clubId: _currentClubId!,
+        userId: _currentUserId!,
+        userNom: userNom,
+        userPrenom: userPrenom,
+        date: date,
+        role: _userRole!,
+        available: available,
+        timeSlots: timeSlots,
+      );
+      debugPrint('✅ Disponibilité définie: $available, slots=$timeSlots pour $date');
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      debugPrint('❌ Erreur set disponibilité: $e');
+      rethrow;
+    }
+  }
+
+  /// Supprimer la disponibilité pour une date (retour à "pas encore indiqué")
+  Future<void> removeAvailability({
+    required DateTime date,
+  }) async {
+    if (_currentClubId == null || _currentUserId == null || _userRole == null) {
+      return;
+    }
+
+    try {
+      await _availabilityService.deleteAvailabilityForDate(
+        clubId: _currentClubId!,
+        userId: _currentUserId!,
+        date: date,
+        role: _userRole!,
+      );
+      debugPrint('✅ Disponibilité supprimée pour $date');
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      debugPrint('❌ Erreur suppression disponibilité: $e');
       rethrow;
     }
   }

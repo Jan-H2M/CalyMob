@@ -12,6 +12,7 @@ import '../../utils/permission_helper.dart';
 import '../../widgets/piscine_animated_background.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
+import '../../config/piscine_slots.dart';
 import '../../widgets/scanner_modal_sheet.dart';
 import 'theme_edit_dialog.dart';
 import 'session_chat_screen.dart';
@@ -244,10 +245,22 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                       ],
                     ),
 
+                    const SizedBox(height: 16),
+
+                    // Gonflage section (per slot)
+                    _buildGonflageSection(session, userId),
+
+                    // Théorie section (if applicable)
+                    if (session.theorie != null && session.theorie!.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      _buildTheorieSection(session, userId, clubId),
+                    ],
+
                     const SizedBox(height: 24),
 
-                    // Niveaux section
-                    _buildNiveauxSection(session, userId, clubId),
+                    // Niveaux section (only for piscine sessions)
+                    if (session.type != 'theorie')
+                      _buildNiveauxSection(session, userId, clubId),
 
                     // Attendees section - visible for all logged-in users
                     const SizedBox(height: 24),
@@ -259,6 +272,292 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildGonflageSection(PiscineSession session, String userId) {
+    final gonflage = session.gonflage;
+    final totalCount = gonflage.values.fold<int>(0, (sum, list) => sum + list.length);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 12),
+          child: Row(
+            children: [
+              Text(
+                'Gonflage',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white.withOpacity(0.9),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '$totalCount membre(s)',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        // One card per slot
+        ...GonflageSlots.all.map((slot) {
+          final members = gonflage[slot] ?? [];
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.95),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Slot header
+                Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.deepPurple.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.air,
+                            color: Colors.deepPurple, size: 18),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Gonflage $slot',
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: members.isEmpty
+                              ? Colors.grey.shade200
+                              : Colors.deepPurple.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${members.length}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: members.isEmpty
+                                ? Colors.grey
+                                : Colors.deepPurple,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (members.isNotEmpty) ...[
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      children: members
+                          .map((m) => _MemberTile(
+                                name: m.fullName,
+                                isCurrentUser: m.membreId == userId,
+                              ))
+                          .toList(),
+                    ),
+                  ),
+                ] else
+                  Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    child: Text(
+                      'Aucun membre assigné',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade500,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildTheorieSection(
+      PiscineSession session, String userId, String clubId) {
+    final theorie = session.theorie!;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 12),
+          child: Row(
+            children: [
+              Text(
+                'Théorie',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white.withOpacity(0.9),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Text(
+                  '📖',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+        ),
+        ...TheorieSlots.all.map((slot) {
+          final slotData = theorie[slot];
+          if (slotData == null) return const SizedBox.shrink();
+          final members = slotData.encadrants;
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.95),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Slot header
+                Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.menu_book,
+                            color: Colors.orange, size: 18),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        TheorieSlots.displayName(slot),
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Theme if set
+                if (slotData.theme != null &&
+                    slotData.theme!.isNotEmpty) ...[
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                    child: Row(
+                      children: [
+                        Icon(Icons.topic,
+                            size: 16, color: Colors.grey.shade500),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            slotData.theme!,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                // Encadrants
+                if (members.isNotEmpty) ...[
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Encadrants',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade500,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        ...members.map((m) => _MemberTile(
+                              name: m.fullName,
+                              isCurrentUser: m.membreId == userId,
+                            )),
+                      ],
+                    ),
+                  ),
+                ] else
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
+                    child: Text(
+                      'Aucun encadrant assigné',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade500,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        }),
+      ],
     );
   }
 
@@ -683,8 +982,10 @@ class _SessionInfoCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
-                  Icons.pool,
-                  color: AppColors.donkerblauw,
+                  session.type == 'theorie' ? Icons.menu_book : Icons.pool,
+                  color: session.type == 'theorie'
+                      ? Colors.orange
+                      : AppColors.donkerblauw,
                   size: 28,
                 ),
               ),
@@ -693,13 +994,45 @@ class _SessionInfoCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Séance Piscine',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.donkerblauw,
-                      ),
+                    Row(
+                      children: [
+                        Text(
+                          session.type == 'theorie'
+                              ? 'Séance Théorie'
+                              : 'Séance Piscine',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.donkerblauw,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: session.type == 'theorie'
+                                ? Colors.orange.withOpacity(0.15)
+                                : AppColors.lichtblauw.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: session.type == 'theorie'
+                                  ? Colors.orange.withOpacity(0.4)
+                                  : AppColors.lichtblauw.withOpacity(0.4),
+                            ),
+                          ),
+                          child: Text(
+                            session.type == 'theorie' ? '📖 Théorie' : '🏊 Piscine',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: session.type == 'theorie'
+                                  ? Colors.orange.shade700
+                                  : AppColors.middenblauw,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 4),
                     Text(
