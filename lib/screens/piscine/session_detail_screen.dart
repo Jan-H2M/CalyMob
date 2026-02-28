@@ -1286,6 +1286,18 @@ class _LevelCard extends StatelessWidget {
     this.onEditTheme,
   });
 
+  /// Effectief thema: combineert per-uur thema's of valt terug op globaal thema
+  String? get _effectiveTheme {
+    final t1 = assignment.theme1ereHeure;
+    final t2 = assignment.theme2emeHeure;
+    final hasT1 = t1 != null && t1.isNotEmpty;
+    final hasT2 = t2 != null && t2.isNotEmpty;
+    if (hasT1 && hasT2) return '1ère h: $t1\n2ème h: $t2';
+    if (hasT1) return '1ère h: $t1';
+    if (hasT2) return '2ème h: $t2';
+    return assignment.theme;
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasEncadrants = assignment.encadrants.isNotEmpty;
@@ -1402,26 +1414,26 @@ class _LevelCard extends StatelessWidget {
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: assignment.theme != null && assignment.theme!.isNotEmpty
+                    color: _effectiveTheme != null && _effectiveTheme!.isNotEmpty
                         ? AppColors.lichtblauw.withOpacity(0.1)
                         : Colors.grey.shade100,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: assignment.theme != null && assignment.theme!.isNotEmpty
+                      color: _effectiveTheme != null && _effectiveTheme!.isNotEmpty
                           ? AppColors.lichtblauw.withOpacity(0.3)
                           : Colors.grey.shade200,
                     ),
                   ),
                   child: Text(
-                    assignment.theme?.isNotEmpty == true
-                        ? assignment.theme!
+                    _effectiveTheme?.isNotEmpty == true
+                        ? _effectiveTheme!
                         : 'Pas encore défini',
                     style: TextStyle(
                       fontSize: 14,
-                      color: assignment.theme?.isNotEmpty == true
+                      color: _effectiveTheme?.isNotEmpty == true
                           ? Colors.black87
                           : Colors.grey.shade500,
-                      fontStyle: assignment.theme?.isNotEmpty == true
+                      fontStyle: _effectiveTheme?.isNotEmpty == true
                           ? FontStyle.normal
                           : FontStyle.italic,
                     ),
