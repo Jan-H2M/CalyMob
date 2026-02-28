@@ -37,12 +37,17 @@ class LevelAssignment {
   final String? theme;
   final String? themeUpdatedBy;
   final DateTime? themeUpdatedAt;
+  // Per-uur thema's (1ere_heure / 2eme_heure)
+  final String? theme1ereHeure;
+  final String? theme2emeHeure;
 
   LevelAssignment({
     required this.encadrants,
     this.theme,
     this.themeUpdatedBy,
     this.themeUpdatedAt,
+    this.theme1ereHeure,
+    this.theme2emeHeure,
   });
 
   factory LevelAssignment.fromMap(Map<String, dynamic> map) {
@@ -54,7 +59,20 @@ class LevelAssignment {
       theme: map['theme'],
       themeUpdatedBy: map['theme_updated_by'],
       themeUpdatedAt: (map['theme_updated_at'] as Timestamp?)?.toDate(),
+      theme1ereHeure: map['theme_1ere_heure'],
+      theme2emeHeure: map['theme_2eme_heure'],
     );
+  }
+
+  /// Obtenir le thème effectif: per-uur thema heeft voorrang op globaal thema
+  String? getEffectiveTheme({String? heure}) {
+    if (heure == '1ere_heure' && theme1ereHeure != null && theme1ereHeure!.isNotEmpty) {
+      return theme1ereHeure;
+    }
+    if (heure == '2eme_heure' && theme2emeHeure != null && theme2emeHeure!.isNotEmpty) {
+      return theme2emeHeure;
+    }
+    return theme;
   }
 
   Map<String, dynamic> toMap() {
@@ -64,6 +82,8 @@ class LevelAssignment {
       if (themeUpdatedBy != null) 'theme_updated_by': themeUpdatedBy,
       if (themeUpdatedAt != null)
         'theme_updated_at': Timestamp.fromDate(themeUpdatedAt!),
+      if (theme1ereHeure != null) 'theme_1ere_heure': theme1ereHeure,
+      if (theme2emeHeure != null) 'theme_2eme_heure': theme2emeHeure,
     };
   }
 
@@ -72,12 +92,16 @@ class LevelAssignment {
     String? theme,
     String? themeUpdatedBy,
     DateTime? themeUpdatedAt,
+    String? theme1ereHeure,
+    String? theme2emeHeure,
   }) {
     return LevelAssignment(
       encadrants: encadrants ?? this.encadrants,
       theme: theme ?? this.theme,
       themeUpdatedBy: themeUpdatedBy ?? this.themeUpdatedBy,
       themeUpdatedAt: themeUpdatedAt ?? this.themeUpdatedAt,
+      theme1ereHeure: theme1ereHeure ?? this.theme1ereHeure,
+      theme2emeHeure: theme2emeHeure ?? this.theme2emeHeure,
     );
   }
 }
@@ -255,15 +279,15 @@ class PiscineSession {
 
   /// Parse gonflage data avec rétrocompatibilité
   /// - Ancien format (Array): [{membre_id, ...}] → migré en Map vide par slot avec données legacy
-  /// - Nouveau format (Map): {19h45: [...], 20h15: [...], 21h15: [...]}
-  /// - Rétrocompatibilité: ancien slot '21h30' est lu et mappé vers '21h15'
+  /// - Nouveau format (Map): {19h45: [...], 20h15: [...], 21h30: [...]}
+  /// - Rétrocompatibilité: ancien slot '21h15' est lu et mappé vers '21h30'
   /// - Absent/null: slots vides
   static Map<String, List<SessionAssignment>> _parseGonflage(dynamic rawData) {
     // Créer les slots vides par défaut
     final defaultSlots = <String, List<SessionAssignment>>{
       '19h45': [],
       '20h15': [],
-      '21h15': [],
+      '21h30': [],
     };
 
     if (rawData == null) return defaultSlots;
@@ -283,7 +307,7 @@ class PiscineSession {
 
     // Nouveau format: Map par slot
     if (rawData is Map<String, dynamic>) {
-      for (final slot in ['19h45', '20h15', '21h15']) {
+      for (final slot in ['19h45', '20h15', '21h30']) {
         final slotData = rawData[slot];
         if (slotData is List) {
           defaultSlots[slot] = slotData
@@ -292,15 +316,12 @@ class PiscineSession {
               .toList();
         }
       }
-      // Rétrocompatibilité: lire l'ancien slot '21h30' et le mapper vers '21h15'
-      if (rawData.containsKey('21h30') && defaultSlots['21h15']!.isEmpty) {
-        final legacySlotData = rawData['21h30'];
-        if (legacySlotData is List) {
-          defaultSlots['21h15'] = legacySlotData
-              .whereType<Map<String, dynamic>>()
-              .map((e) => SessionAssignment.fromMap(e))
-              .toList();
-        }
+      // Rétrocompatibilité: lire l'ancien slot '21h15' et le mapper vers '21h30'
+      if (rawData.containsKey('21h15') && rawData['21h15'] is List && defaultSlots['21h30']!.isEmpty) {
+        defaultSlots['21h30'] = (rawData['21h15'] as List)
+            .whereType<Map<String, dynamic>>()
+            .map((e) => SessionAssignment.fromMap(e))
+            .toList();
       }
     }
 
