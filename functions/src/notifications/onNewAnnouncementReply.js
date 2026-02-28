@@ -43,49 +43,21 @@ exports.onNewAnnouncementReply = onDocumentCreated(
       const announcementTitle = announcement.title || 'Annonce';
       const announcementSenderId = announcement.sender_id;
 
-      // 2. Get all club members to notify
-      // For announcements, we notify:
-      // - The announcement author (if not the replier)
-      // - Members who have read the announcement or replied to it
-      const membersToNotify = new Set();
+      // 2. Get ALL club members with the app installed (same approach as onNewEventMessage)
+      // Previously used read_by array, but read tracking moved to local storage
+      const membersSnapshot = await admin.firestore()
+        .collection('clubs')
+        .doc(clubId)
+        .collection('members')
+        .where('app_installed', '==', true)
+        .get();
 
-      // Always notify the announcement author
-      if (announcementSenderId && announcementSenderId !== reply.sender_id) {
-        membersToNotify.add(announcementSenderId);
-      }
-
-      // Add members who have read the announcement
-      if (announcement.read_by && Array.isArray(announcement.read_by)) {
-        announcement.read_by.forEach(userId => {
-          if (userId !== reply.sender_id) {
-            membersToNotify.add(userId);
-          }
-        });
-      }
-
-      // If replying to a specific reply, also notify that person
-      if (reply.reply_to_id && reply.reply_to_preview) {
-        // The person being replied to should definitely be notified
-        // We don't have their ID directly, but they're likely in read_by
-      }
-
-      if (membersToNotify.size === 0) {
-        console.log('No members to notify, skipping notification');
+      if (membersSnapshot.empty) {
+        console.log('No members with app installed found, skipping notification');
         return null;
       }
 
-      // 3. Get FCM tokens for members to notify
-      const memberIds = Array.from(membersToNotify);
-      const tokenPromises = memberIds.map(memberId =>
-        admin.firestore()
-          .collection('clubs')
-          .doc(clubId)
-          .collection('members')
-          .doc(memberId)
-          .get()
-      );
-
-      const memberDocs = await Promise.all(tokenPromises);
+      const memberDocs = membersSnapshot.docs;
 
       // Collect tokens and members using helper function
       const { tokens, memberTokenGroups, recipientIds } = collectTokensAndMembers(memberDocs, reply.sender_id);

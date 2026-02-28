@@ -196,7 +196,7 @@ async function sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload
                   .collection('members')
                   .doc(memberId)
                   .update({
-                    fcm_tokens: admin.firestore.FieldValue.arrayRemove([failedToken])
+                    fcm_tokens: admin.firestore.FieldValue.arrayRemove(failedToken)
                   })
                   .catch(err => console.error(`Failed to remove token: ${err.message}`));
               }

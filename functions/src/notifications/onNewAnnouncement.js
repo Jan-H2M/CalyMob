@@ -32,16 +32,16 @@ exports.onNewAnnouncement = onDocumentCreated(
       const senderId = announcement.sender_id;
       const type = announcement.type || 'info'; // info, warning, urgent
 
-      // 1. Get all members of the club with valid FCM tokens
+      // 1. Get all club members with the app installed (same query as onNewEventMessage)
       const membersSnapshot = await admin.firestore()
         .collection('clubs')
         .doc(clubId)
         .collection('members')
-        .where('notifications_enabled', '!=', false)
+        .where('app_installed', '==', true)
         .get();
 
       if (membersSnapshot.empty) {
-        console.log('No members found, skipping notification');
+        console.log('No members with app installed found, skipping notification');
         return null;
       }
 
