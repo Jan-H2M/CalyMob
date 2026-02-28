@@ -35,9 +35,9 @@ class SessionType {
 class GonflageSlots {
   static const String h1945 = '19h45';
   static const String h2015 = '20h15';
-  static const String h2115 = '21h15';
+  static const String h2130 = '21h30';
 
-  static const List<String> all = [h1945, h2015, h2115];
+  static const List<String> all = [h1945, h2015, h2130];
 
   static String displayName(String slot) {
     // Les noms de slots sont déjà lisibles
@@ -68,9 +68,8 @@ class EncadrantSlots {
 class TheorieSlots {
   static const String h1930 = '19h30';
   static const String h2145 = '21h45';
-  static const String h2230 = '22h30';
 
-  static const List<String> all = [h1930, h2145, h2230];
+  static const List<String> all = [h1930, h2145];
 
   static String displayName(String slot) {
     switch (slot) {
@@ -78,8 +77,6 @@ class TheorieSlots {
         return 'Théorie 19h30';
       case h2145:
         return 'Théorie 21h45';
-      case h2230:
-        return 'Théorie 22h30';
       default:
         return slot;
     }
