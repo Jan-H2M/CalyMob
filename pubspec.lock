@@ -37,10 +37,10 @@ packages:
     dependency: "direct main"
     description:
       name: app_badge_plus
-      sha256: "152c22866f4b6d0d4eb3c8fe6916a77bbc0e3939da11b51cce38a4a26738dd60"
+      sha256: ce3d8fdfcf39a1552cc8dea499ee3b4a86273ccf04c8de29e7960c739b045ae6
       url: "https://pub.dev"
     source: hosted
-    version: "1.2.6"
+    version: "1.2.7"
   app_links:
     dependency: "direct main"
     description:

@@ -1,7 +1,7 @@
 name: calymob
 description: Calypso DC Mobile Application
 publish_to: 'none'
-version: 1.0.37+102
+version: 1.1.0+103
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -82,7 +82,7 @@ dependencies:
   mobile_scanner: ^6.0.2
 
   # App Badge (icon badge count)
-  app_badge_plus: ^1.1.4
+  app_badge_plus: ^1.2.7
 
   # Share/Export
   share_plus: ^10.1.4

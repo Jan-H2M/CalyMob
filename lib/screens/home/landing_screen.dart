@@ -53,7 +53,7 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
     _loadVersionInfo();
 
     // Load member info for piscine access + start unread listener
-    _loadMemberInfoAndStartUnreadListener();
+    _loadMemberInfo();
   }
 
   Future<void> _loadVersionInfo() async {
