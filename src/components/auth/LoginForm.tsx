@@ -83,7 +83,7 @@ export function LoginForm() {
         errorMessage = 'Aucun compte trouvé avec cette adresse email';
       } else if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
         // Message spécifique pour mot de passe incorrect ou credentials invalides
-        errorMessage = 'Mot de passe incorrect. Si votre mot de passe a été réinitialisé récemment par un administrateur, veuillez utiliser le mot de passe temporaire qui vous a été envoyé par email.';
+        errorMessage = 'Mot de passe incorrect. Utilisez votre mot de passe le plus récent ou relancez la procédure via "Mot de passe oublié". Si un administrateur a réinitialisé votre accès, vérifiez aussi le dernier email reçu.';
       } else if (error.code === 'auth/invalid-email') {
         errorMessage = 'Adresse email invalide';
       } else if (error.code === 'auth/too-many-requests') {

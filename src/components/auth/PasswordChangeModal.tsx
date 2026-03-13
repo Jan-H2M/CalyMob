@@ -89,8 +89,8 @@ export default function PasswordChangeModal({
 
         <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
           <p className="text-sm text-amber-800">
-            <span className="font-semibold">⚠️ Sécurité:</span> Votre compte utilise un mot de passe temporaire.
-            Vous devez le changer avant de continuer.
+            <span className="font-semibold">⚠️ Sécurité:</span> Votre accès doit être sécurisé avec un mot de passe personnel.
+            Vous devez définir un mot de passe conforme avant de continuer.
           </p>
         </div>
 

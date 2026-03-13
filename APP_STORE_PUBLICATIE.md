@@ -203,7 +203,7 @@ FUNCTIES:
 VEILIG & PRIVÉ:
 • Beveiligde login met Face ID/Touch ID
 • GDPR-compliant dataverwerking
-• Geen advertenties of tracking
+• Geen advertenties; beperkte technische diagnostiek en notificatiegegevens voor werking en support
 
 Exclusief voor leden van Calypso Diving Club.
 ```
@@ -659,7 +659,7 @@ Bienvenue dans CalyMob, votre compagnon numérique pour toutes les activités du
 • Connexion sécurisée avec authentification biométrique (Face ID / Touch ID)
 • Vos données sont protégées et hébergées en Europe
 • Conforme au RGPD (Règlement Général sur la Protection des Données)
-• Aucune publicité, aucun tracking
+• Aucune publicité; des données techniques limitées sont utilisées pour le diagnostic, les notifications et le support
 
 📱 FONCTIONNALITÉS PRATIQUES
 • Interface intuitive et moderne
@@ -707,7 +707,7 @@ Welkom bij CalyMob, jouw digitale partner voor alle activiteiten van de Calypso 
 • Beveiligde login met biometrische authenticatie (Face ID / Touch ID)
 • Je gegevens worden beschermd en gehost in Europa
 • GDPR-conform
-• Geen advertenties, geen tracking
+• Geen advertenties; beperkte technische diagnostiek en notificatiegegevens voor werking en support
 
 Deze app is voorbehouden aan leden van Calypso Diving Club ASBL (België).
 ```
@@ -1000,6 +1000,8 @@ Apple vraagt per data type 3 vragen:
 1. **Purpose**: Waarvoor gebruik je deze data?
 2. **Linked to User**: Is deze data gekoppeld aan de gebruiker?
 3. **Tracking**: Wordt deze data gebruikt voor tracking?
+
+Opmerking: in App Store-termen blijft het antwoord op tracking **No** zolang data niet wordt gebruikt voor cross-app advertising of profiling. Diagnostiek, crash reporting en productanalytics voor werking en support kunnen wel nog aanwezig zijn.
 
 #### Stap 1: Do you or your third-party partners collect data from this app?
 **Antwoord: Yes**

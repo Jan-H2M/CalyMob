@@ -123,7 +123,7 @@ export function SendUserEmailModal({
     }
 
     if (!temporaryPassword.trim()) {
-      toast.error('Le mot de passe temporaire est requis');
+      toast.error('Le mot de passe temporaire administratif est requis');
       return;
     }
 
@@ -162,7 +162,7 @@ export function SendUserEmailModal({
                 </div>
                 <div>
                   <h2 className="text-xl font-semibold text-gray-900 dark:text-dark-text-primary">
-                    Envoyer un Email à {user.prenom} {user.nom}
+                    Envoyer un email administratif à {user.prenom} {user.nom}
                   </h2>
                   <p className="text-sm text-gray-600 dark:text-dark-text-secondary">
                     {user.email}
@@ -196,6 +196,14 @@ export function SendUserEmailModal({
                 </div>
               ) : (
                 <>
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+                    <p className="text-sm text-blue-900">
+                      Le flux standard d'invitation CalyMob passe par <strong>Paramètres &gt; Communication &gt; Invitation CalyMob</strong>
+                      et envoie un lien sécurisé côté serveur. Cette fenêtre sert uniquement aux cas administratifs manuels
+                      qui utilisent encore un mot de passe temporaire.
+                    </p>
+                  </div>
+
                   {/* Template Selection */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-2">
@@ -207,8 +215,8 @@ export function SendUserEmailModal({
                       disabled={loading}
                       className="w-full px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg bg-white dark:bg-dark-bg-tertiary text-gray-900 dark:text-dark-text-primary focus:ring-2 focus:ring-calypso-blue dark:focus:ring-calypso-aqua focus:border-transparent"
                     >
-                      <option value="account_activated">Compte activé</option>
-                      <option value="password_reset">Mot de passe réinitialisé</option>
+                      <option value="account_activated">Activation manuelle</option>
+                      <option value="password_reset">Réinitialisation administrateur</option>
                     </select>
                     {selectedTemplate && (
                       <p className="mt-1 text-xs text-gray-500 dark:text-dark-text-tertiary">
@@ -220,7 +228,7 @@ export function SendUserEmailModal({
                   {/* Temporary Password */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-2">
-                      Mot de passe temporaire *
+                      Mot de passe temporaire administratif *
                     </label>
                     <div className="relative">
                       <input
@@ -229,7 +237,7 @@ export function SendUserEmailModal({
                         onChange={(e) => setTemporaryPassword(e.target.value)}
                         disabled={loading}
                         className="w-full px-4 py-2 pr-10 border border-gray-300 dark:border-dark-border rounded-lg bg-white dark:bg-dark-bg-tertiary text-gray-900 dark:text-dark-text-primary focus:ring-2 focus:ring-calypso-blue dark:focus:ring-calypso-aqua focus:border-transparent font-mono"
-                        placeholder="CalyCompta2025-01"
+                        placeholder="CalyCompta2026-03"
                       />
                       <button
                         type="button"

@@ -1,5 +1,7 @@
 # Vercel Deployment Setup
 
+> Historical notice: ancien guide de déploiement conservé pour référence. Les URLs, variables et flux décrits ici peuvent être obsolètes.
+
 This guide explains how to set up environment variables for the Vercel deployment to fix the SSL certificate error with the activate-user API endpoint.
 
 ## Problem

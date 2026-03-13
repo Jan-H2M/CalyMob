@@ -3,7 +3,7 @@ import { User, UserRole, AuditLog } from '@/types/user.types';
 import { PermissionService } from '@/services/permissionService';
 import { PasswordService } from '@/services/passwordService';
 import { UserService } from '@/services/userService';
-import { GoogleMailService } from '@/services/googleMailService';
+import { ClubEmailService } from '@/services/clubEmailService';
 import { AuditLogList } from './AuditLogList';
 import { SendUserEmailModal } from './SendUserEmailModal';
 import type { EmailTemplateType } from '@/types/emailTemplates';
@@ -271,7 +271,7 @@ export function UserDetailView({
   const handleSendEmail = async (templateType: string, templateId: string, password: string) => {
     if (!user || !clubId || !currentUser || !firebaseAuthUser) return;
 
-    await GoogleMailService.sendUserEmail(
+    await ClubEmailService.sendUserEmail(
       clubId,
       user,
       templateId,

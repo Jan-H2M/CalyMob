@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { aiProviderService } from '@/services/aiProviderService';
 import { FirebaseSettingsService } from '@/services/firebaseSettingsService';
-import { GoogleMailService } from '@/services/googleMailService';
+import { ClubEmailService } from '@/services/clubEmailService';
 import { SettingsHeader } from './SettingsHeader';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
@@ -222,7 +222,7 @@ export default function IntegrationsSettings() {
     setIsTestingGoogle(true);
     try {
       // Send test email to the current user
-      const result = await GoogleMailService.sendTestEmail(clubId, user.email);
+      const result = await ClubEmailService.sendTestEmail(clubId, user.email);
 
       if (result.success) {
         toast.success(`✅ Email de test envoyé avec succès à ${user.email}`, { duration: 5000 });

@@ -16,7 +16,7 @@ interface InitResult {
 
 /**
  * Initialize default user email templates
- * This creates the "Compte Activé" and "Mot de Passe Réinitialisé" templates
+ * This creates the default manual activation and admin password reset templates
  * if they don't already exist
  */
 export async function initializeUserEmailTemplates(
@@ -32,19 +32,19 @@ export async function initializeUserEmailTemplates(
 
   const templates = [
     {
-      name: 'Compte Activé',
-      description: 'Email envoyé automatiquement lorsqu\'un compte utilisateur est activé',
+      name: 'Activation Manuelle',
+      description: 'Email administratif envoyé lorsqu\'un accès CalyMob est activé manuellement avec un mot de passe temporaire',
       emailType: 'account_activated' as const,
-      subject: '🎉 Votre compte {{clubName}} a été activé',
+      subject: '📱 Activation manuelle de votre accès CalyMob {{clubName}}',
       htmlContent: DEFAULT_ACCOUNT_ACTIVATED_TEMPLATE,
       variables: [
         { name: 'recipientName', type: 'string', required: true, description: 'Nom complet du destinataire', example: 'Jean Dupont' },
         { name: 'firstName', type: 'string', required: false, description: 'Prénom du destinataire', example: 'Jean' },
         { name: 'lastName', type: 'string', required: false, description: 'Nom de famille du destinataire', example: 'Dupont' },
         { name: 'email', type: 'string', required: true, description: 'Email du destinataire', example: 'jean.dupont@example.com' },
-        { name: 'temporaryPassword', type: 'string', required: true, description: 'Mot de passe temporaire', example: 'CalyCompta2025-01' },
+        { name: 'temporaryPassword', type: 'string', required: true, description: 'Mot de passe temporaire pour une activation manuelle', example: 'CalyCompta2026-03' },
         { name: 'clubName', type: 'string', required: true, description: 'Nom du club', example: 'Calypso Diving Club' },
-        { name: 'appUrl', type: 'string', required: true, description: 'URL de l\'application', example: 'https://calycompta.vercel.app' },
+        { name: 'appUrl', type: 'string', required: true, description: 'URL de l\'application', example: 'https://caly.club' },
       ],
       styles: {
         primaryColor: '#3B82F6',
@@ -59,19 +59,19 @@ export async function initializeUserEmailTemplates(
       usageCount: 0,
     },
     {
-      name: 'Mot de Passe Réinitialisé',
-      description: 'Email envoyé lorsqu\'un mot de passe utilisateur est réinitialisé',
+      name: 'Réinitialisation Administrateur',
+      description: 'Email administratif envoyé lorsqu\'un administrateur définit un nouveau mot de passe temporaire',
       emailType: 'password_reset' as const,
-      subject: '🔑 Votre mot de passe {{clubName}} a été réinitialisé',
+      subject: '🔑 Réinitialisation administrateur de votre accès {{clubName}}',
       htmlContent: DEFAULT_PASSWORD_RESET_TEMPLATE,
       variables: [
         { name: 'recipientName', type: 'string', required: true, description: 'Nom complet du destinataire', example: 'Jean Dupont' },
         { name: 'firstName', type: 'string', required: false, description: 'Prénom du destinataire', example: 'Jean' },
         { name: 'lastName', type: 'string', required: false, description: 'Nom de famille du destinataire', example: 'Dupont' },
         { name: 'email', type: 'string', required: true, description: 'Email du destinataire', example: 'jean.dupont@example.com' },
-        { name: 'temporaryPassword', type: 'string', required: true, description: 'Nouveau mot de passe temporaire', example: 'CalyCompta2025-01' },
+        { name: 'temporaryPassword', type: 'string', required: true, description: 'Nouveau mot de passe temporaire défini par un administrateur', example: 'CalyCompta2026-03' },
         { name: 'clubName', type: 'string', required: true, description: 'Nom du club', example: 'Calypso Diving Club' },
-        { name: 'appUrl', type: 'string', required: true, description: 'URL de l\'application', example: 'https://calycompta.vercel.app' },
+        { name: 'appUrl', type: 'string', required: true, description: 'URL de l\'application', example: 'https://caly.club' },
       ],
       styles: {
         primaryColor: '#3B82F6',

@@ -1,5 +1,7 @@
 # État Actuel du Projet - 16 Novembre 2025
 
+> Historical notice: état de projet conservé pour contexte uniquement. Ne pas utiliser comme description actuelle du produit.
+
 ## 📊 Solde Actuel
 
 **Solde Firestore:** 5,749.98 €

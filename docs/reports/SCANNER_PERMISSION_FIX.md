@@ -1,5 +1,7 @@
 # Correction du Scanner de Documents - Gestion des Permissions Caméra
 
+> Historical report: note technique conservée pour contexte. Vérifier l'implémentation actuelle avant hergebruik.
+
 **Date**: 2 décembre 2025
 **Statut**: Implémenté
 **Fichiers modifiés**: `pubspec.yaml`, `lib/services/camera_permission_service.dart`, `lib/screens/expenses/create_expense_screen.dart`

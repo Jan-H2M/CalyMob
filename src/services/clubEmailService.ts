@@ -7,13 +7,12 @@ import type { User } from '@/types/user.types';
 import Handlebars from 'handlebars';
 
 /**
- * Service pour envoyer des emails via Google Mail API (Gmail)
- * Uses Vercel Serverless Function instead of Firebase Callable Function
- * to avoid Cloud Build infrastructure issues
+ * Service pour envoyer des emails via le fournisseur configure pour le club
+ * Uses Vercel Serverless Functions instead of Firebase Callable Functions.
  */
-export class GoogleMailService {
+export class ClubEmailService {
   /**
-   * Envoyer un email via Google Mail API
+   * Envoyer un email via le fournisseur email configure pour le club
    *
    * @param clubId - ID du club
    * @param to - Adresse email du destinataire

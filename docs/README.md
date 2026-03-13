@@ -1,32 +1,23 @@
-# CalyCompta Documentation
+# CalyMob Documentation
 
-This directory contains all project documentation organized by category.
+Derniere mise a jour: 13 mars 2026
 
-## Directory Structure
+Cette documentation est reservee aux sujets specifiques au projet mobile.
 
-### `/migration`
-Contains all migration guides and documentation from the project consolidation:
-- Moving from `calycompta-app/` subdirectory to root
-- Renaming from `caly-compta` to `calycompta`
-- Migration analysis and file lists
+## Source de verite partagee
 
-### `/setup`
-Setup and configuration guides:
-- Vercel deployment setup
-- Google Mail configuration
-- Firebase setup
+Pour les sujets fonctionnels partages avec CalyCompta, utiliser les documents canoniques dans:
 
-### `/reports`
-Analysis reports and project documentation:
-- Account code automation analysis
-- Communication system reports
-- Cron verification reports
-- Project overview documentation
+- `/Users/jan/Documents/GitHub/Calypso/CalyCompta/docs/public`
+- `/Users/jan/Documents/GitHub/Calypso/CalyCompta/docs/product`
+- `/Users/jan/Documents/GitHub/Calypso/CalyCompta/docs/setup`
+- `/Users/jan/Documents/GitHub/Calypso/CalyCompta/docs/testing`
 
-### `/archive`
-Deprecated and old files that are no longer in use.
+## Ce qui reste ici
 
-## Main Documentation
-
-- For project overview, see the main [README.md](../README.md) in the root directory
-- For privacy policy, see [PRIVACY_POLICY.md](./PRIVACY_POLICY.md)
+- publication mobile
+- build Android / iOS
+- CodeMagic
+- deep links
+- biometrie
+- autres notes strictement mobiles

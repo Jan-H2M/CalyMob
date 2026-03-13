@@ -37,8 +37,8 @@ type TabType = 'content' | 'ai' | 'styling' | 'preview';
 const EMAIL_TYPE_OPTIONS: { value: EmailTemplateType; label: string }[] = [
   { value: 'pending_demands', label: 'Demandes en attente' },
   { value: 'accounting_codes', label: 'Codes comptables quotidiens' },
-  { value: 'account_activated', label: 'Activation de compte' },
-  { value: 'password_reset', label: 'Réinitialisation mot de passe' },
+  { value: 'account_activated', label: 'Activation manuelle' },
+  { value: 'password_reset', label: 'Réinitialisation administrateur' },
   { value: 'events', label: 'Événements' },
   { value: 'transactions', label: 'Transactions' },
   { value: 'members', label: 'Membres' },

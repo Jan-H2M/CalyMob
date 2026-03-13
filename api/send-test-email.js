@@ -311,7 +311,7 @@ export default async function handler(req, res) {
     const htmlContent = rendered.html;
     const subject = `[TEST] ${rendered.subject}`;
 
-    // Load email configuration from Firestore (same as GoogleMailService)
+    // Load email configuration from Firestore (same logic as ClubEmailService)
     console.log('📧 [TEST-EMAIL] Loading email configuration...');
     const settingsRef = db.collection('clubs').doc(clubId).collection('settings').doc('email_config');
     const settingsSnap = await settingsRef.get();

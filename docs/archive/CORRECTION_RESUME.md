@@ -1,5 +1,7 @@
 # Résumé de la Correction - 16 Novembre 2025
 
+> Historical notice: document mobile historique, conservé pour traceabilité. La documentation canonique vit désormais dans `CalyCompta/docs`.
+
 ## ✅ Ce qui a été fait
 
 ### 1. Analyse Complète

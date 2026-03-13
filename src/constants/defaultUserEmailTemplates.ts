@@ -21,8 +21,8 @@ export const DEFAULT_ACCOUNT_ACTIVATED_TEMPLATE = `
     {{#if logoUrl}}
     <img src="{{logoUrl}}" alt="{{clubName}}" style="max-width: 200px; height: auto; margin-bottom: 20px;">
     {{/if}}
-    <h1 style="margin: 0; font-size: 28px;">🎉 Bienvenue !</h1>
-    <p style="margin: 10px 0 0 0; opacity: 0.95; font-size: 16px;">Votre compte a été activé</p>
+    <h1 style="margin: 0; font-size: 28px;">📱 Activation manuelle de votre accès CalyMob</h1>
+    <p style="margin: 10px 0 0 0; opacity: 0.95; font-size: 16px;">Un administrateur a préparé un accès temporaire pour vous</p>
   </div>
 
   <!-- Body -->
@@ -30,7 +30,7 @@ export const DEFAULT_ACCOUNT_ACTIVATED_TEMPLATE = `
     <p style="font-size: 16px; margin-bottom: 20px;">Bonjour <strong>{{recipientName}}</strong>,</p>
 
     <p style="font-size: 16px; margin-bottom: 20px;">
-      Votre compte pour <strong>{{clubName}}</strong> a été activé avec succès ! Vous pouvez maintenant accéder à l'application CalyCompta.
+      Un administrateur a activé manuellement votre accès pour <strong>{{clubName}}</strong>. Vous pouvez maintenant accéder à l'application avec les identifiants temporaires ci-dessous.
     </p>
 
     <!-- Credentials Box -->
@@ -107,8 +107,8 @@ export const DEFAULT_PASSWORD_RESET_TEMPLATE = `
     {{#if logoUrl}}
     <img src="{{logoUrl}}" alt="{{clubName}}" style="max-width: 200px; height: auto; margin-bottom: 20px;">
     {{/if}}
-    <h1 style="margin: 0; font-size: 28px;">🔑 Réinitialisation de mot de passe</h1>
-    <p style="margin: 10px 0 0 0; opacity: 0.95; font-size: 16px;">Votre mot de passe a été réinitialisé</p>
+    <h1 style="margin: 0; font-size: 28px;">🔑 Réinitialisation administrateur</h1>
+    <p style="margin: 10px 0 0 0; opacity: 0.95; font-size: 16px;">Un administrateur a défini un nouveau mot de passe temporaire</p>
   </div>
 
   <!-- Body -->
@@ -116,7 +116,7 @@ export const DEFAULT_PASSWORD_RESET_TEMPLATE = `
     <p style="font-size: 16px; margin-bottom: 20px;">Bonjour <strong>{{recipientName}}</strong>,</p>
 
     <p style="font-size: 16px; margin-bottom: 20px;">
-      Votre mot de passe pour <strong>{{clubName}}</strong> a été réinitialisé par un administrateur. Vous pouvez maintenant vous reconnecter avec le nouveau mot de passe temporaire.
+      Un administrateur a réinitialisé votre accès pour <strong>{{clubName}}</strong>. Vous pouvez maintenant vous reconnecter avec le nouveau mot de passe temporaire ci-dessous.
     </p>
 
     <!-- Credentials Box -->

@@ -15,8 +15,8 @@ import {
 export type EmailTemplateType =
   | 'pending_demands'      // Rappel demandes en attente
   | 'accounting_codes'     // Codes comptables quotidiens
-  | 'account_activated'    // Compte utilisateur activé
-  | 'password_reset'       // Mot de passe réinitialisé
+  | 'account_activated'    // Activation manuelle
+  | 'password_reset'       // Réinitialisation administrateur
   | 'events'               // Événements
   | 'transactions'         // Transactions
   | 'members'              // Membres
@@ -238,8 +238,8 @@ export const ACCOUNT_ACTIVATED_VARIABLES: EmailTemplateVariable[] = [
     name: 'temporaryPassword',
     type: 'string',
     required: true,
-    description: 'Mot de passe temporaire',
-    example: 'CalyCompta2025-01',
+    description: 'Mot de passe temporaire utilise dans le flux d\'activation manuelle',
+    example: 'CalyCompta2026-03',
   },
   {
     name: 'clubName',
@@ -260,7 +260,7 @@ export const ACCOUNT_ACTIVATED_VARIABLES: EmailTemplateVariable[] = [
     type: 'string',
     required: true,
     description: 'URL de l\'application',
-    example: 'https://calycompta.vercel.app',
+    example: 'https://caly.club',
   },
 ];
 
@@ -300,8 +300,8 @@ export const PASSWORD_RESET_VARIABLES: EmailTemplateVariable[] = [
     name: 'temporaryPassword',
     type: 'string',
     required: true,
-    description: 'Nouveau mot de passe temporaire',
-    example: 'CalyCompta2025-01',
+    description: 'Nouveau mot de passe temporaire defini par un administrateur',
+    example: 'CalyCompta2026-03',
   },
   {
     name: 'clubName',
@@ -322,7 +322,7 @@ export const PASSWORD_RESET_VARIABLES: EmailTemplateVariable[] = [
     type: 'string',
     required: true,
     description: 'URL de l\'application',
-    example: 'https://calycompta.vercel.app',
+    example: 'https://caly.club',
   },
 ];
 

@@ -22,8 +22,8 @@ type EmailTemplateType = 'pending_demands' | 'accounting_codes' | 'account_activ
 const EMAIL_TYPE_LABELS: Record<EmailTemplateType, string> = {
   pending_demands: 'Demandes en attente',
   accounting_codes: 'Codes comptables',
-  account_activated: 'Activation de compte',
-  password_reset: 'Réinitialisation mot de passe',
+  account_activated: 'Activation manuelle',
+  password_reset: 'Réinitialisation administrateur',
   events: 'Événements',
   transactions: 'Transactions',
   members: 'Membres',

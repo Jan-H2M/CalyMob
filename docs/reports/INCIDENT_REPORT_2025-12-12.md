@@ -1,5 +1,7 @@
 # Incident Report: Verloren Code - 12 december 2025
 
+> Historical report: incidentnotitie bewaard voor traceerbaarheid. Geen actuele productspecificatie.
+
 ## Samenvatting
 Na ~12 uur werk aan maritieme thema-verbeteringen voor CalyMob is een significant deel van de code verloren gegaan door een combinatie van factoren.
 
