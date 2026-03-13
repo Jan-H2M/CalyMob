@@ -120,11 +120,11 @@ class _SectionCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.94),
+        color: Colors.white.withValues(alpha: 0.94),
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withValues(alpha: 0.08),
             blurRadius: 18,
             offset: const Offset(0, 8),
           ),
