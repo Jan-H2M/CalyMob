@@ -52,12 +52,23 @@ class EncadrantSlots {
 
   static const List<String> all = [premiereHeure, deuxiemeHeure];
 
+  /// Niveaux qui ne font que le 1er créneau (20h15-21h15)
+  static const List<String> levelsFirstHourOnly = ['1*'];
+  /// Niveaux qui ne font que le 2e créneau (21h15-22h30)
+  static const List<String> levelsSecondHourOnly = ['2*', '3*', '4*', 'AM', 'MC'];
+
+  /// Obtenir le créneau horaire d'un niveau (pour affichage)
+  static String timeForLevel(String level) {
+    if (levelsFirstHourOnly.contains(level)) return '20h15';
+    return '21h15';
+  }
+
   static String displayName(String slot) {
     switch (slot) {
       case premiereHeure:
-        return '1ère heure';
+        return '20h15';
       case deuxiemeHeure:
-        return '2ème heure';
+        return '21h15';
       default:
         return slot;
     }
@@ -85,13 +96,14 @@ class TheorieSlots {
 
 // --- Créneaux accueil ---
 class AccueilSlots {
-  static const String h2015 = '20h15';
-  static const String h2115 = '21h15';
+  static const String h2000 = '20h00';
 
-  static const List<String> all = [h2015, h2115];
+  static const List<String> all = [h2000];
+
+  /// Heure de début affichée pour l'accueil
+  static const String startTime = '20h00';
 
   static String displayName(String slot) {
-    // Les noms de slots sont déjà lisibles
     return slot;
   }
 }

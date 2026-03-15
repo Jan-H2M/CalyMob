@@ -213,7 +213,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
                     // Accueil section
                     _SectionCard(
-                      title: 'Équipe Accueil',
+                      title: 'Équipe Accueil 20h00',
                       icon: Icons.badge,
                       iconColor: Colors.blue,
                       children: [
@@ -231,7 +231,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
                     // Baptêmes section
                     _SectionCard(
-                      title: 'Baptêmes',
+                      title: 'Baptêmes 20h15',
                       icon: Icons.pool,
                       iconColor: Colors.teal,
                       children: [
@@ -1292,9 +1292,9 @@ class _LevelCard extends StatelessWidget {
     final t2 = assignment.theme2emeHeure;
     final hasT1 = t1 != null && t1.isNotEmpty;
     final hasT2 = t2 != null && t2.isNotEmpty;
-    if (hasT1 && hasT2) return '1ère h: $t1\n2ème h: $t2';
-    if (hasT1) return '1ère h: $t1';
-    if (hasT2) return '2ème h: $t2';
+    if (hasT1 && hasT2) return '20h15: $t1\n21h15: $t2';
+    if (hasT1) return '20h15: $t1';
+    if (hasT2) return '21h15: $t2';
     return assignment.theme;
   }
 
@@ -1343,7 +1343,7 @@ class _LevelCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        PiscineLevel.displayName(level),
+                        '${PiscineLevel.displayName(level)} ${EncadrantSlots.timeForLevel(level)}',
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
