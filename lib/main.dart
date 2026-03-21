@@ -38,6 +38,7 @@ import 'screens/operations/operation_detail_screen.dart';
 import 'screens/announcements/announcement_detail_screen.dart';
 import 'screens/teams/team_chat_screen.dart';
 import 'screens/piscine/session_chat_screen.dart';
+import 'screens/piscine/session_detail_screen.dart';
 
 // Models (pour la navigation depuis les notifications)
 import 'models/announcement.dart';
@@ -51,6 +52,10 @@ import 'config/firebase_config.dart';
 
 // Firestore (pour fetch depuis notifications)
 import 'package:cloud_firestore/cloud_firestore.dart';
+
+// Sentry & PostHog
+import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:posthog_flutter/posthog_flutter.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -75,7 +80,10 @@ void main() async {
     // Initialiser Firebase Crashlytics (pas sur web)
     if (!kIsWeb) {
       // Envoyer les erreurs Flutter non-attrapées à Crashlytics
-      FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+      FlutterError.onError = (FlutterErrorDetails details) {
+        FirebaseCrashlytics.instance.recordFlutterFatalError(details);
+        Sentry.captureException(details.exception, stackTrace: details.stack);
+      };
       debugPrint('✅ Crashlytics initialisé');
     }
 
@@ -109,17 +117,33 @@ void main() async {
     debugPrint('Stack trace: ${StackTrace.current}');
   }
 
-  // Wrapper runApp dans runZonedGuarded pour capturer les erreurs async
-  // non-attrapées et les envoyer à Crashlytics
-  if (kIsWeb) {
-    runApp(const MyApp());
-  } else {
-    runZonedGuarded<Future<void>>(() async {
-      runApp(const MyApp());
-    }, (error, stack) {
-      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-    });
-  }
+  // Initialize Sentry and wrap runApp
+  await SentryFlutter.init(
+    (options) {
+      options.dsn = 'https://c6c7e5f63f5700bf5cb4f2b02a6ea0b5@o4510996349386752.ingest.de.sentry.io/4510996559429712';
+      options.tracesSampleRate = 1.0;
+      options.environment = const String.fromEnvironment('ENV', defaultValue: 'production');
+    },
+    appRunner: () {
+      // Initialize PostHog
+      Posthog().setup(
+        PosthogConfig('***REMOVED***')
+          ..host = 'https://eu.i.posthog.com',
+      );
+      debugPrint('✅ Sentry & PostHog initialisés');
+
+      if (kIsWeb) {
+        runApp(const MyApp());
+      } else {
+        runZonedGuarded<Future<void>>(() async {
+          runApp(const MyApp());
+        }, (error, stack) {
+          FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+          Sentry.captureException(error, stackTrace: stack);
+        });
+      }
+    },
+  );
 }
 
 class MyApp extends StatefulWidget {
@@ -179,6 +203,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     try {
       switch (type) {
         case 'event_message':
+        case 'new_operation':
           final operationId = data['operation_id'] as String?;
           if (operationId != null) {
             _navigatorKey.currentState!.push(
@@ -270,6 +295,26 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                     session: session,
                     chatGroup: chatGroup,
                   ),
+                ),
+              );
+            }
+          }
+          break;
+
+        case 'piscine_task_assigned':
+          final sessionId = data['session_id'] as String?;
+          if (sessionId != null) {
+            final doc = await FirebaseFirestore.instance
+                .collection('clubs')
+                .doc(clubId)
+                .collection('piscine_sessions')
+                .doc(sessionId)
+                .get();
+            if (doc.exists) {
+              final session = PiscineSession.fromFirestore(doc);
+              _navigatorKey.currentState!.push(
+                MaterialPageRoute(
+                  builder: (_) => SessionDetailScreen(session: session),
                 ),
               );
             }

@@ -81,6 +81,14 @@ exports.onNewTeamMessage = onNewTeamMessage;
 const { sessionReminder } = require('./src/notifications/sessionReminder');
 exports.sessionReminder = sessionReminder;
 
+// Push notification when a new outdoor event/dive is created
+const { onNewOperation } = require('./src/notifications/onNewOperation');
+exports.onNewOperation = onNewOperation;
+
+// Push notification when a member is assigned to a pool session task
+const { onPiscineTaskAssigned } = require('./src/notifications/onPiscineTaskAssigned');
+exports.onPiscineTaskAssigned = onPiscineTaskAssigned;
+
 // =============================================================================
 // MEDICAL CERTIFICATE NOTIFICATIONS (Gen2)
 // =============================================================================

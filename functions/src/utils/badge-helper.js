@@ -260,10 +260,31 @@ async function decrementUnreadCounts(clubId, memberId, category, amount) {
   }
 }
 
+/**
+ * Filter member documents based on their notification preferences
+ * If a member has no preferences set, all notifications are enabled (backward compatible)
+ *
+ * @param {Array} memberDocs - Array of Firestore document snapshots
+ * @param {string} preferenceKey - The preference key to check (e.g. 'event_messages', 'new_events')
+ * @returns {Array} Filtered array of member documents
+ */
+function filterByPreference(memberDocs, preferenceKey) {
+  return memberDocs.filter(doc => {
+    const data = doc.data();
+    const prefs = data.notification_preferences;
+    // No preferences set = all enabled (backward compatible)
+    if (!prefs || typeof prefs !== 'object') return true;
+    // Specific preference not set = enabled by default
+    if (prefs[preferenceKey] === undefined) return true;
+    return prefs[preferenceKey] === true;
+  });
+}
+
 module.exports = {
   incrementUnreadCounts,
   decrementUnreadCounts,
   getBadgeCount,
   collectTokensAndMembers,
   sendNotificationsWithBadge,
+  filterByPreference,
 };

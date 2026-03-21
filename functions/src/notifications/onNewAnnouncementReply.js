@@ -8,7 +8,7 @@
 
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
-const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithBadge } = require('../utils/badge-helper');
+const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithBadge, filterByPreference } = require('../utils/badge-helper');
 
 /**
  * Firestore trigger for new announcement replies (Gen2)
@@ -43,8 +43,40 @@ exports.onNewAnnouncementReply = onDocumentCreated(
       const announcementTitle = announcement.title || 'Annonce';
       const announcementSenderId = announcement.sender_id;
 
-      // 2. Get ALL club members with the app installed (same approach as onNewEventMessage)
-      // Previously used read_by array, but read tracking moved to local storage
+      // 2. Build list of thread participants (announcement author + all who replied)
+      const threadParticipantIds = new Set();
+
+      // 2a. The announcement author always gets reply notifications
+      if (announcementSenderId) {
+        threadParticipantIds.add(announcementSenderId);
+      }
+
+      // 2b. All previous reply authors are thread participants
+      const repliesSnapshot = await admin.firestore()
+        .collection('clubs')
+        .doc(clubId)
+        .collection('announcements')
+        .doc(announcementId)
+        .collection('replies')
+        .select('sender_id')
+        .get();
+
+      repliesSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.sender_id) threadParticipantIds.add(data.sender_id);
+      });
+
+      // 2c. Remove the current reply sender (no self-notification)
+      threadParticipantIds.delete(reply.sender_id);
+
+      if (threadParticipantIds.size === 0) {
+        console.log('No thread participants to notify, skipping notification');
+        return null;
+      }
+
+      console.log(`Found ${threadParticipantIds.size} thread participants for announcement ${announcementId}`);
+
+      // 3. Get member docs and filter to only thread participants
       const membersSnapshot = await admin.firestore()
         .collection('clubs')
         .doc(clubId)
@@ -57,7 +89,10 @@ exports.onNewAnnouncementReply = onDocumentCreated(
         return null;
       }
 
-      const memberDocs = membersSnapshot.docs;
+      const threadDocs = membersSnapshot.docs.filter(doc => threadParticipantIds.has(doc.id));
+
+      // Filter by notification preferences
+      const memberDocs = filterByPreference(threadDocs, 'announcement_replies');
 
       // Collect tokens and members using helper function
       const { tokens, memberTokenGroups, recipientIds } = collectTokensAndMembers(memberDocs, reply.sender_id);

@@ -10,6 +10,7 @@ import '../../services/notification_service.dart';
 import '../../services/biometric_service.dart';
 import 'privacy_policy_screen.dart';
 import 'change_password_screen.dart';
+import 'notification_preferences_screen.dart';
 
 /// Écran des paramètres
 class SettingsScreen extends StatefulWidget {
@@ -660,6 +661,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: const Text('Recevoir des notifications sur les événements'),
             secondary: const Icon(Icons.notifications, color: Colors.orange),
           ),
+          if (_notificationsEnabled) ...[
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.tune, color: AppColors.middenblauw),
+              title: const Text('Préférences de notifications'),
+              subtitle: const Text(
+                'Choisir quels types de notifications recevoir',
+                style: TextStyle(fontSize: 12),
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const NotificationPreferencesScreen(),
+                  ),
+                );
+              },
+            ),
+          ],
         ],
       ),
     );

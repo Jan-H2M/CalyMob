@@ -8,7 +8,7 @@
 
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
-const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithBadge } = require('../utils/badge-helper');
+const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithBadge, filterByPreference } = require('../utils/badge-helper');
 const { EVENT_EXPIRY_GRACE_DAYS } = require('../utils/constants');
 
 /**
@@ -55,11 +55,35 @@ exports.onNewEventMessage = onDocumentCreated(
         }
       }
 
-      // 2. Get ALL club members (iedereen kan berichten zien en ontvangen)
+      // 2. Get only PARTICIPANTS of this event (not all club members)
       const senderId = message.sender_id;
       const senderName = message.sender_name || 'Quelqu\'un';
       const messageText = message.message || '';
 
+      // 2a. Get inscriptions to find participant IDs
+      const inscriptionsSnapshot = await admin.firestore()
+        .collection('clubs')
+        .doc(clubId)
+        .collection('operations')
+        .doc(operationId)
+        .collection('inscriptions')
+        .get();
+
+      if (inscriptionsSnapshot.empty) {
+        console.log('No inscriptions found for this event, skipping notification');
+        return null;
+      }
+
+      const participantIds = new Set();
+      inscriptionsSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        const membreId = data.membre_id;
+        if (membreId) participantIds.add(membreId);
+      });
+
+      console.log(`Found ${participantIds.size} participants for event ${operationId}`);
+
+      // 2b. Get members with app installed, then filter to only participants
       const membersSnapshot = await admin.firestore()
         .collection('clubs')
         .doc(clubId)
@@ -72,7 +96,10 @@ exports.onNewEventMessage = onDocumentCreated(
         return null;
       }
 
-      const memberDocs = membersSnapshot.docs;
+      const participantDocs = membersSnapshot.docs.filter(doc => participantIds.has(doc.id));
+
+      // Filter by notification preferences
+      const memberDocs = filterByPreference(participantDocs, 'event_messages');
 
       // Collect tokens and members using helper function
       const { tokens, memberTokenGroups, recipientIds } = collectTokensAndMembers(memberDocs, senderId);

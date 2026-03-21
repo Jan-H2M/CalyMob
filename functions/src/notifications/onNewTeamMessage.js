@@ -8,7 +8,7 @@
 
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
-const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithBadge } = require('../utils/badge-helper');
+const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithBadge, filterByPreference } = require('../utils/badge-helper');
 
 /**
  * Firestore trigger for new team channel messages (Gen2)
@@ -80,8 +80,9 @@ exports.onNewTeamMessage = onDocumentCreated(
       const senderId = message.sender_id;
 
       // 3. Collect FCM tokens using helper function
-      // Convert memberMap to array for the helper function
-      const memberDocs = Array.from(memberMap.values());
+      // Convert memberMap to array for the helper function, then filter by preference
+      const allMemberDocs = Array.from(memberMap.values());
+      const memberDocs = filterByPreference(allMemberDocs, 'team_messages');
       const { tokens, memberTokenGroups, recipientIds } = collectTokensAndMembers(memberDocs, senderId);
 
       if (tokens.length === 0) {

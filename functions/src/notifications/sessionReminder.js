@@ -8,7 +8,7 @@
 
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const admin = require('firebase-admin');
-const { getBadgeCount } = require('../utils/badge-helper');
+const { getBadgeCount, filterByPreference } = require('../utils/badge-helper');
 
 /**
  * Scheduled function to send session reminders (Gen2)
@@ -102,7 +102,10 @@ exports.sessionReminder = onSchedule(
               .get()
           );
 
-          const memberDocs = await Promise.all(memberPromises);
+          const allMemberDocs = await Promise.all(memberPromises);
+
+          // Filter by session_reminders preference
+          const memberDocs = filterByPreference(allMemberDocs, 'session_reminders');
 
           memberDocs.forEach(doc => {
             if (!doc.exists) return;

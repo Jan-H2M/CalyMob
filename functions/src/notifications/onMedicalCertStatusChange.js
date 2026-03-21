@@ -82,6 +82,13 @@ exports.onMedicalCertStatusChange = onDocumentUpdated(
         return null;
       }
 
+      // Check medical_certificates preference
+      const prefs = member.notification_preferences;
+      if (prefs && typeof prefs === 'object' && prefs.medical_certificates === false) {
+        console.log(`⚠️ [onMedicalCertStatusChange] Medical cert notifications disabled for member ${memberId}`);
+        return null;
+      }
+
       // 2. Prepare notification content based on status
       let title, body;
       const reviewerName = afterData.reviewed_by_nom || 'Un administrateur';

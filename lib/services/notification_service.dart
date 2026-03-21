@@ -99,6 +99,12 @@ class NotificationService {
     } else if (type == 'session_message') {
       channelId = 'piscine_messages';
       channelName = 'Messages de piscine';
+    } else if (type == 'piscine_task_assigned') {
+      channelId = 'piscine_tasks';
+      channelName = 'Tâches de piscine';
+    } else if (type == 'new_operation') {
+      channelId = 'event_messages';
+      channelName = 'Nouvelles sorties';
     } else {
       channelId = 'announcements';
       channelName = 'Annonces du club';
@@ -189,6 +195,17 @@ class NotificationService {
         enableVibration: true,
       );
       await androidPlugin.createNotificationChannel(piscineMessagesChannel);
+
+      // Canal pour les tâches de piscine (assignation accueil, gonflage, encadrant)
+      const piscineTasksChannel = AndroidNotificationChannel(
+        'piscine_tasks',
+        'Tâches de piscine',
+        description: 'Notifications quand tu es assigné(e) à une tâche de piscine',
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+      );
+      await androidPlugin.createNotificationChannel(piscineTasksChannel);
 
       debugPrint('✅ Canaux de notification Android créés');
     } catch (e, stack) {

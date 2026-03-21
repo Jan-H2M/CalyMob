@@ -8,7 +8,7 @@
 
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
-const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithBadge } = require('../utils/badge-helper');
+const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithBadge, filterByPreference } = require('../utils/badge-helper');
 
 /**
  * Firestore trigger for new piscine session messages (Gen2)
@@ -106,7 +106,10 @@ exports.onNewSessionMessage = onDocumentCreated(
           .get()
       );
 
-      const memberDocs = await Promise.all(tokenPromises);
+      const allMemberDocs = await Promise.all(tokenPromises);
+
+      // Filter by notification preferences
+      const memberDocs = filterByPreference(allMemberDocs, 'session_messages');
 
       // Collect tokens and members using helper function
       const { tokens, memberTokenGroups, recipientIds: helperRecipientIds } = collectTokensAndMembers(memberDocs, senderId);
