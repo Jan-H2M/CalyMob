@@ -53,9 +53,8 @@ import 'config/firebase_config.dart';
 // Firestore (pour fetch depuis notifications)
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-// Sentry & PostHog
+// Sentry
 import 'package:sentry_flutter/sentry_flutter.dart';
-import 'package:posthog_flutter/posthog_flutter.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -125,12 +124,7 @@ void main() async {
       options.environment = const String.fromEnvironment('ENV', defaultValue: 'production');
     },
     appRunner: () {
-      // Initialize PostHog
-      Posthog().setup(
-        PosthogConfig('***REMOVED***')
-          ..host = 'https://eu.i.posthog.com',
-      );
-      debugPrint('✅ Sentry & PostHog initialisés');
+      debugPrint('✅ Sentry initialisé');
 
       if (kIsWeb) {
         runApp(const MyApp());
