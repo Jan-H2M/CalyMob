@@ -17,6 +17,7 @@ import 'firebase_options.dart';
 // Services
 import 'services/notification_service.dart';
 import 'services/deep_link_service.dart';
+import 'services/local_read_tracker.dart';
 
 // Providers
 import 'providers/auth_provider.dart';
@@ -85,6 +86,11 @@ void main() async {
       };
       debugPrint('✅ Crashlytics initialisé');
     }
+
+    // Pré-initialiser LocalReadTracker (SharedPreferences) pour éviter ANR
+    // Fait avant tout le reste pour que les providers n'attendent pas
+    await LocalReadTracker().init();
+    debugPrint('✅ LocalReadTracker pré-initialisé');
 
     // Initialiser les données de locale pour le français
     await initializeDateFormatting('fr_FR', null);

@@ -1,6 +1,15 @@
 {
   "indexes": [
     {
+      "collectionGroup": "operations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "type", "order": "ASCENDING" },
+        { "fieldPath": "statut", "order": "ASCENDING" },
+        { "fieldPath": "date_debut", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "availabilities",
       "queryScope": "COLLECTION",
       "fields": [
@@ -23,6 +32,14 @@
       "fields": [
         { "fieldPath": "statut", "order": "ASCENDING" },
         { "fieldPath": "date", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "piscine_sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "statut", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
       ]
     },
     {

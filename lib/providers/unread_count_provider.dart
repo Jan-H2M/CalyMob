@@ -1,10 +1,16 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/unread_count_service.dart';
 import '../services/local_read_tracker.dart';
 
 /// Provider die ongelezen tellingen berekent via lokale timestamps
 /// + Firestore count() queries. Periodic refresh elke 60 seconden.
+///
+/// ANR-preventie:
+/// - Cached counts worden direct getoond bij app start
+/// - Firestore refresh gebeurt non-blocking na eerste frame
+/// - Queries zijn gelimiteerd (max 10 operaties, max 5 sessies)
 class UnreadCountProvider extends ChangeNotifier {
   final UnreadCountService _service = UnreadCountService();
   final LocalReadTracker _tracker = LocalReadTracker();
@@ -19,6 +25,13 @@ class UnreadCountProvider extends ChangeNotifier {
   Timer? _refreshTimer;
   String? _clubId;
   List<String> _roles = const [];
+
+  // === Cache keys voor SharedPreferences ===
+  static const _cachePrefix = 'unread_cache_';
+  static const _cacheTimestampKey = '${_cachePrefix}timestamp';
+
+  /// Cache geldigheid: 5 minuten
+  static const Duration _cacheTTL = Duration(minutes: 5);
 
   // === Getters (zelfde API als voorheen) ===
 
@@ -49,8 +62,11 @@ class UnreadCountProvider extends ChangeNotifier {
     // Initialiseer LocalReadTracker
     await _tracker.init();
 
-    // Eerste refresh direct
-    await refresh();
+    // Laad cached counts direct (geen netwerk nodig, instant)
+    await _loadCachedCounts();
+
+    // Refresh in achtergrond (niet blocking)
+    unawaited(refresh());
 
     // Periodic refresh elke 60 seconden
     _refreshTimer = Timer.periodic(const Duration(seconds: 60), (_) {
@@ -58,8 +74,46 @@ class UnreadCountProvider extends ChangeNotifier {
     });
   }
 
+  /// Laad cached counts uit SharedPreferences (instant, geen netwerk)
+  Future<void> _loadCachedCounts() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final timestamp = prefs.getInt(_cacheTimestampKey) ?? 0;
+      final cacheAge = DateTime.now().millisecondsSinceEpoch - timestamp;
+
+      // Gebruik cache als die niet te oud is
+      if (cacheAge < _cacheTTL.inMilliseconds) {
+        _announcements = prefs.getInt('${_cachePrefix}announcements') ?? 0;
+        _eventMessages = prefs.getInt('${_cachePrefix}event_messages') ?? 0;
+        _teamMessages = prefs.getInt('${_cachePrefix}team_messages') ?? 0;
+        _sessionMessages = prefs.getInt('${_cachePrefix}session_messages') ?? 0;
+        debugPrint(
+            '💾 Cached counts geladen: ann=$_announcements evt=$_eventMessages team=$_teamMessages sess=$_sessionMessages');
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('⚠️ Cache load error (niet erg): $e');
+    }
+  }
+
+  /// Sla huidige counts op in SharedPreferences cache
+  Future<void> _saveCachedCounts() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await Future.wait([
+        prefs.setInt('${_cachePrefix}announcements', _announcements),
+        prefs.setInt('${_cachePrefix}event_messages', _eventMessages),
+        prefs.setInt('${_cachePrefix}team_messages', _teamMessages),
+        prefs.setInt('${_cachePrefix}session_messages', _sessionMessages),
+        prefs.setInt(_cacheTimestampKey, DateTime.now().millisecondsSinceEpoch),
+      ]);
+    } catch (e) {
+      debugPrint('⚠️ Cache save error (niet erg): $e');
+    }
+  }
+
   /// Herbereken alle counts. Wordt aangeroepen:
-  /// - Bij app start (via listen)
+  /// - Bij app start (via listen, non-blocking)
   /// - Elke 60 seconden (periodic timer)
   /// - Na markAsRead in een chat screen
   /// - Bij app resume
@@ -87,6 +141,9 @@ class UnreadCountProvider extends ChangeNotifier {
         debugPrint(
             '📊 Unread counts: ann=$_announcements evt=$_eventMessages team=$_teamMessages sess=$_sessionMessages (total: $total)');
         notifyListeners();
+
+        // Cache bijwerken in achtergrond
+        unawaited(_saveCachedCounts());
       }
     } catch (e) {
       debugPrint('❌ UnreadCountProvider refresh error: $e');
@@ -113,7 +170,21 @@ class UnreadCountProvider extends ChangeNotifier {
     _teamMessages = 0;
     _sessionMessages = 0;
     _tracker.resetAll();
+    _clearCache();
     notifyListeners();
+  }
+
+  /// Wis de cached counts (bij logout)
+  Future<void> _clearCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final keys = prefs.getKeys().where((k) => k.startsWith(_cachePrefix));
+      for (final key in keys) {
+        await prefs.remove(key);
+      }
+    } catch (e) {
+      debugPrint('⚠️ Cache clear error: $e');
+    }
   }
 
   @override

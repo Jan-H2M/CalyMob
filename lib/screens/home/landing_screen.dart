@@ -16,7 +16,7 @@ import '../profile/profile_screen.dart';
 import '../profile/who_is_who_screen.dart';
 import '../announcements/announcements_screen.dart';
 import '../piscine/availability_screen.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+// cloud_firestore import removed — member data now comes from MemberProvider
 
 /// Landing page avec thème maritime et boutons ronds
 class LandingScreen extends StatefulWidget {
@@ -52,8 +52,11 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
     // Load version info
     _loadVersionInfo();
 
-    // Load member info for piscine access + start unread listener
-    _loadMemberInfo();
+    // Load member roles from MemberProvider (already cached after login)
+    // and defer unread count listener to after first frame to prevent ANR
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initFromMemberProvider();
+    });
   }
 
   Future<void> _loadVersionInfo() async {
@@ -69,52 +72,27 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
     }
   }
 
-  void _startUnreadCountListener() {
+  /// Gebruik MemberProvider (al gecached na login) in plaats van opnieuw
+  /// uit Firestore te lezen. Start unread listener pas NA eerste frame
+  /// om ANR te voorkomen (geen blocking Firestore calls op main thread).
+  void _initFromMemberProvider() {
+    if (!mounted) return;
+
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final memberProvider = Provider.of<MemberProvider>(context, listen: false);
     final uid = authProvider.currentUser?.uid;
     if (uid == null) return;
 
+    // Gebruik cached data uit MemberProvider (geen Firestore call nodig)
+    final roles = memberProvider.clubStatuten ?? [];
+    setState(() {
+      _clubStatuten = roles.isNotEmpty ? roles : null;
+    });
+
+    // Start unread count listener (deferred, dus UI is al gerenderd)
     final unreadProvider = Provider.of<UnreadCountProvider>(context, listen: false);
     if (!unreadProvider.isListening) {
-      // Rôles uit MemberProvider (al geladen na login)
-      final roles = memberProvider.clubStatuten ?? [];
       unreadProvider.listen(FirebaseConfig.defaultClubId, uid, roles: roles);
-    }
-  }
-
-  Future<void> _loadMemberInfo() async {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final uid = authProvider.currentUser?.uid;
-    if (uid == null) return;
-
-    const clubId = 'calypso';
-    List<String> roles = [];
-
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('clubs/$clubId/members')
-          .doc(uid)
-          .get();
-
-      if (doc.exists && mounted) {
-        final data = doc.data();
-        setState(() {
-          _clubStatuten =
-              (data?['clubStatuten'] as List<dynamic>?)?.cast<String>();
-        });
-        roles = _clubStatuten ?? [];
-      }
-    } catch (e) {
-      debugPrint('Error loading member info: $e');
-    }
-
-    // Start unread count listener met roles (na member info laden)
-    if (mounted) {
-      final unreadProvider = Provider.of<UnreadCountProvider>(context, listen: false);
-      if (!unreadProvider.isListening) {
-        unreadProvider.listen(FirebaseConfig.defaultClubId, uid, roles: roles);
-      }
     }
   }
 

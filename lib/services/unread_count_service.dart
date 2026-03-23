@@ -44,18 +44,22 @@ class UnreadCountService {
   // EVENT MESSAGES — over alle open operaties
   // ============================================================
 
+  /// Max aantal operaties om te tellen (voorkomt ANR bij veel open events)
+  static const int _maxOperationsToCount = 10;
+
   Future<int> countUnreadEventMessages(String clubId) async {
     try {
-      // Haal open evenementen op
+      // Haal max N meest recente open evenementen op (beperkt queries)
       final opsSnapshot = await _firestore
           .collection('clubs/$clubId/operations')
           .where('type', isEqualTo: 'evenement')
           .where('statut', isEqualTo: 'ouvert')
+          .orderBy('date_debut', descending: true)
+          .limit(_maxOperationsToCount)
           .get();
 
-      int total = 0;
-      for (final opDoc in opsSnapshot.docs) {
-        // Als null (nooit geopend): tel alles sinds epoch als ongelezen
+      // Tel ongelezen berichten per operatie parallel (sneller dan sequentieel)
+      final futures = opsSnapshot.docs.map((opDoc) async {
         final lastRead =
             _tracker.getLastRead('operation_${opDoc.id}') ?? _epoch;
 
@@ -64,9 +68,11 @@ class UnreadCountService {
             .where('created_at', isGreaterThan: Timestamp.fromDate(lastRead));
 
         final snapshot = await query.count().get();
-        total += snapshot.count ?? 0;
-      }
-      return total;
+        return snapshot.count ?? 0;
+      });
+
+      final counts = await Future.wait(futures);
+      return counts.fold<int>(0, (sum, c) => sum + c);
     } catch (e) {
       debugPrint('❌ countUnreadEventMessages error: $e');
       return 0;
@@ -142,6 +148,9 @@ class UnreadCountService {
   // SESSION MESSAGES — per actieve sessie
   // ============================================================
 
+  /// Max aantal sessies om te tellen (voorkomt ANR bij veel gepubliceerde sessies)
+  static const int _maxSessionsToCount = 5;
+
   Future<int> countUnreadSessionMessages(
       String clubId, List<String> roles) async {
     final normalizedRoles = roles.map((r) => r.toLowerCase()).toList();
@@ -152,41 +161,56 @@ class UnreadCountService {
     if (!hasAccueil && !hasEncadrant) return 0;
 
     try {
-      // Haal gepubliceerde sessies op
+      // Haal max N meest recente gepubliceerde sessies op (beperkt queries)
       final sessionsSnapshot = await _firestore
           .collection('clubs/$clubId/piscine_sessions')
           .where('statut', isEqualTo: 'publie')
+          .orderBy('date', descending: true)
+          .limit(_maxSessionsToCount)
           .get();
 
-      int total = 0;
+      // Bepaal welke group types de user kan zien
+      final groupTypes = <String>[];
+      if (hasAccueil) groupTypes.add('accueil');
+      if (hasEncadrant) {
+        groupTypes.add('encadrants');
+        groupTypes.add('niveau');
+      }
+
+      // Tel ongelezen berichten per sessie+group parallel
+      final futures = <Future<int>>[];
       for (final sessionDoc in sessionsSnapshot.docs) {
-        // Voor elke sessie: tel messages per group die de user kan zien
-        final groupTypes = <String>[];
-        if (hasAccueil) groupTypes.add('accueil');
-        if (hasEncadrant) {
-          groupTypes.add('encadrants');
-          groupTypes.add('niveau');
-        }
-
         for (final groupType in groupTypes) {
-          final key = 'session_${sessionDoc.id}_$groupType';
-          // Als null (nooit geopend): tel alles sinds epoch als ongelezen
-          final lastRead = _tracker.getLastRead(key) ?? _epoch;
-
-          final query = _firestore
-              .collection(
-                  'clubs/$clubId/piscine_sessions/${sessionDoc.id}/messages')
-              .where('group_type', isEqualTo: groupType)
-              .where('created_at',
-                  isGreaterThan: Timestamp.fromDate(lastRead));
-
-          final snapshot = await query.count().get();
-          total += snapshot.count ?? 0;
+          futures.add(_countUnreadForSessionGroup(
+              clubId, sessionDoc.id, groupType));
         }
       }
-      return total;
+
+      final counts = await Future.wait(futures);
+      return counts.fold<int>(0, (sum, c) => sum + c);
     } catch (e) {
       debugPrint('❌ countUnreadSessionMessages error: $e');
+      return 0;
+    }
+  }
+
+  /// Helper: tel ongelezen berichten voor één sessie+group combinatie
+  Future<int> _countUnreadForSessionGroup(
+      String clubId, String sessionId, String groupType) async {
+    try {
+      final key = 'session_${sessionId}_$groupType';
+      final lastRead = _tracker.getLastRead(key) ?? _epoch;
+
+      final query = _firestore
+          .collection(
+              'clubs/$clubId/piscine_sessions/$sessionId/messages')
+          .where('group_type', isEqualTo: groupType)
+          .where('created_at',
+              isGreaterThan: Timestamp.fromDate(lastRead));
+
+      final snapshot = await query.count().get();
+      return snapshot.count ?? 0;
+    } catch (e) {
       return 0;
     }
   }
