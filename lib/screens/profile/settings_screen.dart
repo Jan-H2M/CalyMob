@@ -8,6 +8,7 @@ import '../../models/member_profile.dart';
 import '../../services/profile_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/biometric_service.dart';
+import '../../services/app_update_service.dart';
 import 'privacy_policy_screen.dart';
 import 'change_password_screen.dart';
 import 'notification_preferences_screen.dart';
@@ -32,11 +33,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _biometricAvailable = false;
   bool _biometricEnabled = false;
   String _biometricTypeName = 'Biométrie';
+  AppUpdateStatus? _updateStatus;
 
   @override
   void initState() {
     super.initState();
     _checkBiometricStatus();
+    _checkForUpdate();
+  }
+
+  Future<void> _checkForUpdate() async {
+    try {
+      final status = await AppUpdateService.checkForUpdate();
+      if (mounted) {
+        setState(() => _updateStatus = status);
+      }
+    } catch (e) {
+      debugPrint('⚠️ Settings: Failed to check for update: $e');
+    }
   }
 
   Future<void> _checkBiometricStatus() async {
@@ -497,6 +511,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                         const SizedBox(height: 24),
 
+                        // Application
+                        _buildSectionHeader('Application'),
+                        _buildApplicationSection(),
+
+                        const SizedBox(height: 24),
+
                         // Mon compte
                         _buildSectionHeader('Mon compte'),
                         _buildAccountSection(profile),
@@ -775,6 +795,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               );
             },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildApplicationSection() {
+    final hasUpdate = _updateStatus?.updateAvailable ?? false;
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Column(
+        children: [
+          ListTile(
+            leading: Icon(
+              hasUpdate ? Icons.system_update : Icons.check_circle,
+              color: hasUpdate ? Colors.orange : Colors.green,
+            ),
+            title: Text(
+              _updateStatus != null
+                  ? 'Version ${_updateStatus!.currentVersion}'
+                  : 'Version ...',
+            ),
+            subtitle: Text(
+              hasUpdate
+                  ? 'Version ${_updateStatus!.latestVersion} disponible'
+                  : 'Vous êtes à jour',
+              style: TextStyle(
+                fontSize: 12,
+                color: hasUpdate ? Colors.orange.shade700 : Colors.green.shade700,
+              ),
+            ),
+            trailing: hasUpdate
+                ? ElevatedButton.icon(
+                    onPressed: () => AppUpdateService.openStore(),
+                    icon: const Icon(Icons.download, size: 16),
+                    label: const Text('Mettre à jour'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                  )
+                : null,
           ),
         ],
       ),

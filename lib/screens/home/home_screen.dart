@@ -11,6 +11,7 @@ import '../../providers/operation_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../services/profile_service.dart';
 import '../../services/compatibility_service.dart';
+import '../../services/app_update_service.dart';
 import '../../models/compatibility_settings.dart';
 import '../../utils/permission_helper.dart';
 import '../../widgets/operation_card.dart';
@@ -52,7 +53,135 @@ class _HomeScreenState extends State<HomeScreen> {
 
       // Check device compatibility
       _checkDeviceCompatibility(userId);
+
+      // Check for app update
+      _checkForAppUpdate();
     });
+  }
+
+  Future<void> _checkForAppUpdate() async {
+    try {
+      final status = await AppUpdateService.checkForUpdate();
+
+      if (!status.updateAvailable || !mounted) return;
+
+      if (status.forceUpdate) {
+        // Verplichte update: dialog die niet weg te klikken is
+        _showForceUpdateDialog(status);
+      } else {
+        // Optionele update: vriendelijke banner
+        _showUpdateDialog(status);
+      }
+    } catch (e) {
+      print('⚠️ Failed to check for app update: $e');
+    }
+  }
+
+  void _showUpdateDialog(AppUpdateStatus status) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.system_update, color: Colors.blue, size: 28),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text('Nouvelle version disponible'),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Version ${status.latestVersion} est disponible. '
+              'Vous utilisez la version ${status.currentVersion}.',
+            ),
+            if (status.message != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                status.message!,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Plus tard'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              AppUpdateService.openStore();
+            },
+            icon: const Icon(Icons.download, size: 18),
+            label: const Text('Mettre à jour'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.middenblauw,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showForceUpdateDialog(AppUpdateStatus status) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text('Mise à jour obligatoire'),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Une mise à jour importante est nécessaire pour continuer à utiliser CalyMob. '
+                'Veuillez installer la version ${status.latestVersion}.',
+              ),
+              if (status.message != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  status.message!,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            ElevatedButton.icon(
+              onPressed: () => AppUpdateService.openStore(),
+              icon: const Icon(Icons.download, size: 18),
+              label: const Text('Mettre à jour maintenant'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _checkDeviceCompatibility(String userId) async {

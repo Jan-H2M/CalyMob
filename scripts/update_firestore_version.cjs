@@ -85,12 +85,25 @@ async function updateVersionInFirestore(version, buildNumber) {
     const displayVersion = buildNumber ? `${version} (build ${buildNumber})` : version;
     console.log(`\n📱 Updating Firestore version to ${displayVersion}...`);
 
+    // Eerst bestaand document lezen om minSupportedVersion te behouden
+    let existingData = {};
+    try {
+      const existingDoc = await db.collection('settings').doc('app_version').get();
+      if (existingDoc.exists) {
+        existingData = existingDoc.data();
+      }
+    } catch (e) {
+      // Geen probleem, we maken een nieuw document
+    }
+
     const versionData = {
       version: version,
       forceRefresh: false,
       message: null,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      source: 'mobile_build_script'
+      source: 'mobile_build_script',
+      // Bewaar minSupportedVersion als die al bestond
+      minSupportedVersion: existingData.minSupportedVersion || null,
     };
 
     // Add build number if provided
