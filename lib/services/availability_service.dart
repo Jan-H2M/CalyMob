@@ -84,7 +84,8 @@ class AvailabilityService {
     try {
       // Normaliser la date au début du jour
       final startOfDay = DateTime(date.year, date.month, date.day);
-      final endOfDay = startOfDay.add(const Duration(days: 1));
+      // Utilise DateTime au lieu de Duration pour éviter les bugs DST
+      final endOfDay = DateTime(date.year, date.month, date.day + 1);
 
       final snapshot = await _firestore
           .collection(_collectionPath(clubId))
@@ -153,8 +154,9 @@ class AvailabilityService {
       final normalizedDate = DateTime(date.year, date.month, date.day);
 
       // Chercher une entrée existante pour cette date, utilisateur et rôle
+      // Utilise DateTime au lieu de Duration pour éviter les bugs DST
       final startOfDay = normalizedDate;
-      final endOfDay = normalizedDate.add(const Duration(days: 1));
+      final endOfDay = DateTime(date.year, date.month, date.day + 1);
 
       final snapshot = await _firestore
           .collection(_collectionPath(clubId))
@@ -233,7 +235,8 @@ class AvailabilityService {
     try {
       final normalizedDate = DateTime(date.year, date.month, date.day);
       final startOfDay = normalizedDate;
-      final endOfDay = normalizedDate.add(const Duration(days: 1));
+      // Utilise DateTime au lieu de Duration pour éviter les bugs DST
+      final endOfDay = DateTime(date.year, date.month, date.day + 1);
 
       final snapshot = await _firestore
           .collection(_collectionPath(clubId))
@@ -254,21 +257,22 @@ class AvailabilityService {
   }
 
   /// Obtenir tous les mardis d'un mois donné
+  /// Note: utilise DateTime(year, month, day) au lieu de Duration(days: 7)
+  /// pour éviter les bugs liés au changement d'heure (DST).
   static List<DateTime> getTuesdaysOfMonth(int year, int month) {
     final tuesdays = <DateTime>[];
-    final firstDay = DateTime(year, month, 1);
-    final lastDay = DateTime(year, month + 1, 0); // Dernier jour du mois
+    final daysInMonth = DateTime(year, month + 1, 0).day;
 
     // Trouver le premier mardi
-    var current = firstDay;
-    while (current.weekday != DateTime.tuesday) {
-      current = current.add(const Duration(days: 1));
+    var day = 1;
+    while (DateTime(year, month, day).weekday != DateTime.tuesday) {
+      day++;
     }
 
-    // Ajouter tous les mardis du mois
-    while (current.isBefore(lastDay) || current.isAtSameMomentAs(lastDay)) {
-      tuesdays.add(current);
-      current = current.add(const Duration(days: 7));
+    // Ajouter tous les mardis du mois (en avançant de 7 jours calendrier)
+    while (day <= daysInMonth) {
+      tuesdays.add(DateTime(year, month, day));
+      day += 7;
     }
 
     return tuesdays;
