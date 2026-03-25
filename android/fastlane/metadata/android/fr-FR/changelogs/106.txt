@@ -1,0 +1,1 @@
+Corrections de bugs liés au changement d'heure (DST) pour l'affichage des disponibilités piscine.

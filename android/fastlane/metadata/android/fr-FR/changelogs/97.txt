@@ -1,0 +1,2 @@
+- Correction du badge de notifications pour les annonces
+- Améliorations de stabilité

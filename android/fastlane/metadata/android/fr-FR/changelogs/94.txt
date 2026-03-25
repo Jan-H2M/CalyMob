@@ -1,0 +1,1 @@
+Correction du badge de notifications: les annonces sont maintenant correctement marquées comme lues.

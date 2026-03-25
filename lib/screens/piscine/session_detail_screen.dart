@@ -879,6 +879,13 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           final levelAssignment = session.niveaux[level];
           if (levelAssignment == null) return const SizedBox.shrink();
 
+          // Cacher les niveaux vides (pas d'encadrants et pas de thème)
+          final hasNoContent = levelAssignment.encadrants.isEmpty &&
+              (levelAssignment.theme == null || levelAssignment.theme!.isEmpty) &&
+              (levelAssignment.theme1ereHeure == null || levelAssignment.theme1ereHeure!.isEmpty) &&
+              (levelAssignment.theme2emeHeure == null || levelAssignment.theme2emeHeure!.isEmpty);
+          if (hasNoContent) return const SizedBox.shrink();
+
           final isUserLevel = userEncadrantLevel == level;
           final canEditTheme = isUserLevel;
 

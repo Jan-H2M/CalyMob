@@ -41,6 +41,16 @@ subprojects {
             }
         }
     }
+
+    // Fix for plugins that use flutter.compileSdkVersion (e.g. app_badge_plus)
+    // which fails with newer AGP where flutter extension is not available in libraries
+    project.plugins.withId('com.android.library') {
+        project.afterEvaluate {
+            if (project.android.compileSdkVersion == null) {
+                project.android.compileSdk = 36
+            }
+        }
+    }
 }
 
 tasks.register("clean", Delete) {

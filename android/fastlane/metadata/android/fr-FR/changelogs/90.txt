@@ -1,0 +1,7 @@
+Nouveautés :
+- Système de palanquées : consultez et générez les fiches de palanquée directement depuis l&apos;app
+- Notifications améliorées : les badges affichent le nombre de messages non lus et un tap sur la notification vous amène directement au bon écran
+
+Corrections :
+- La fiche de palanquée PDF s&apos;ouvre maintenant dans le lecteur PDF du système
+- Amélioration de la stabilité des notifications au démarrage

@@ -123,3 +123,4 @@ android/fastlane/README.md
 # IDE project files
 *.code-workspace
 .metadata
+functions/service-account-*.json
