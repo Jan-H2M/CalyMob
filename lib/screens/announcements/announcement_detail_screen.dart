@@ -42,6 +42,9 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
   List<AnnouncementReply> _cachedReplies = [];
   int _lastKnownReplyCount = 0;
 
+  // Timestamp de dernière lecture (pour le divider "Nouveaux messages")
+  DateTime? _lastReadBeforeOpen;
+
   @override
   void initState() {
     super.initState();
@@ -56,9 +59,15 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
   }
 
   Future<void> _markAsRead() async {
-    // Lokaal markeren als gelezen + badge refresh
+    // Sauvegarder l'ancien lastRead AVANT de marquer comme lu
+    // pour pouvoir afficher le divider "Nouveaux messages"
     final tracker = LocalReadTracker();
     await tracker.init();
+    if (_lastReadBeforeOpen == null) {
+      _lastReadBeforeOpen = tracker.getLastRead('announcements')
+          ?? tracker.installBaseline
+          ?? DateTime(2024);
+    }
     await tracker.markAsRead('announcements');
 
     if (mounted) {
@@ -252,19 +261,46 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
                           final replies = _cachedReplies;
                           debugPrint('📋 Displaying ${replies.length} replies (cached: ${_cachedReplies.length})');
 
+                          // Chercher l'index du premier reply non lu
+                          int? newMessagesDividerIndex;
+                          if (_lastReadBeforeOpen != null) {
+                            for (int i = 0; i < replies.length; i++) {
+                              if (replies[i].createdAt.isAfter(_lastReadBeforeOpen!)) {
+                                newMessagesDividerIndex = i;
+                                break;
+                              }
+                            }
+                          }
+
+                          // Calculer le nombre total d'items (header + replies + divider éventuel)
+                          final hasNewDivider = newMessagesDividerIndex != null;
+                          // +1 for header at index 0
+                          final totalItems = 1 + replies.length + (hasNewDivider ? 1 : 0);
+
                           return ListView.builder(
                             controller: _scrollController,
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            // +1 for the announcement header at index 0
-                            itemCount: replies.length + 1,
+                            itemCount: totalItems,
                             itemBuilder: (context, index) {
                               // First item is the announcement header
                               if (index == 0) {
                                 return _buildAnnouncementHeader(dateFormat);
                               }
 
-                              // Replies start at index 1
-                              final reply = replies[index - 1];
+                              // Adjust index for replies (subtract 1 for header)
+                              final replyIndex = index - 1;
+
+                              // Insérer le divider "Nouveaux messages" à la bonne position
+                              if (hasNewDivider && replyIndex == newMessagesDividerIndex) {
+                                return _buildNewMessagesDivider();
+                              }
+
+                              // Ajuster l'index pour les replies après le divider
+                              final actualReplyIndex = hasNewDivider && replyIndex > newMessagesDividerIndex!
+                                  ? replyIndex - 1
+                                  : replyIndex;
+
+                              final reply = replies[actualReplyIndex];
                               final isOwnReply = reply.senderId == currentUserId;
                               return _buildReplyBubble(reply, isOwnReply, dateFormat);
                             },
@@ -381,6 +417,29 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
               const Spacer(),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNewMessagesDivider() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: [
+          Expanded(child: Divider(color: Colors.red.shade300, thickness: 1)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              'Nouveaux messages',
+              style: TextStyle(
+                color: Colors.red.shade400,
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          Expanded(child: Divider(color: Colors.red.shade300, thickness: 1)),
         ],
       ),
     );

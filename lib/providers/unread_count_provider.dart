@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/unread_count_service.dart';
 import '../services/local_read_tracker.dart';
 
@@ -11,6 +12,9 @@ import '../services/local_read_tracker.dart';
 /// - Cached counts worden direct getoond bij app start
 /// - Firestore refresh gebeurt non-blocking na eerste frame
 /// - Queries zijn gelimiteerd (max 10 operaties, max 5 sessies)
+///
+/// Na elke refresh worden de counts teruggeschreven naar het member document
+/// zodat de Cloud Functions het correcte badge-aantal gebruiken bij push notifications.
 class UnreadCountProvider extends ChangeNotifier {
   final UnreadCountService _service = UnreadCountService();
   final LocalReadTracker _tracker = LocalReadTracker();
@@ -24,6 +28,7 @@ class UnreadCountProvider extends ChangeNotifier {
 
   Timer? _refreshTimer;
   String? _clubId;
+  String? _userId;
   List<String> _roles = const [];
 
   // === Cache keys voor SharedPreferences ===
@@ -56,6 +61,7 @@ class UnreadCountProvider extends ChangeNotifier {
     debugPrint(
         '🔔 UnreadCountProvider: start periodic refresh (roles: $roles)');
     _clubId = clubId;
+    _userId = userId;
     _roles = roles;
     _isListening = true;
 
@@ -117,6 +123,7 @@ class UnreadCountProvider extends ChangeNotifier {
   /// - Elke 60 seconden (periodic timer)
   /// - Na markAsRead in een chat screen
   /// - Bij app resume
+  /// Na berekening worden de counts naar Firestore geschreven (badge sync).
   Future<void> refresh() async {
     if (_clubId == null || _isRefreshing) return;
 
@@ -145,10 +152,49 @@ class UnreadCountProvider extends ChangeNotifier {
         // Cache bijwerken in achtergrond
         unawaited(_saveCachedCounts());
       }
+
+      // Sync counts terug naar Firestore member document
+      // zodat Cloud Functions het correcte badge-aantal gebruiken
+      await _syncCountsToFirestore(
+        newAnnouncements, newEventMessages, newTeamMessages, newSessionMessages,
+      );
     } catch (e) {
       debugPrint('❌ UnreadCountProvider refresh error: $e');
     } finally {
       _isRefreshing = false;
+    }
+  }
+
+  /// Schrijf de lokaal berekende counts terug naar het Firestore member document.
+  /// Dit synchroniseert de server-side unread_counts (gebruikt door Cloud Functions
+  /// voor APNs badge) met de client-side LocalReadTracker counts.
+  Future<void> _syncCountsToFirestore(
+    int announcements, int eventMessages, int teamMessages, int sessionMessages,
+  ) async {
+    if (_clubId == null || _userId == null) return;
+
+    try {
+      final memberRef = FirebaseFirestore.instance
+          .collection('clubs')
+          .doc(_clubId!)
+          .collection('members')
+          .doc(_userId!);
+
+      final newTotal = announcements + eventMessages + teamMessages + sessionMessages;
+
+      await memberRef.update({
+        'unread_counts': {
+          'announcements': announcements,
+          'event_messages': eventMessages,
+          'team_messages': teamMessages,
+          'session_messages': sessionMessages,
+          'total': newTotal,
+          'last_updated': FieldValue.serverTimestamp(),
+        },
+      });
+      debugPrint('🔄 Badge sync: wrote unread_counts to Firestore (total: $newTotal)');
+    } catch (e) {
+      debugPrint('⚠️ Badge sync failed: $e');
     }
   }
 
@@ -164,6 +210,7 @@ class UnreadCountProvider extends ChangeNotifier {
   void clear() {
     stopListening();
     _clubId = null;
+    _userId = null;
     _roles = const [];
     _announcements = 0;
     _eventMessages = 0;

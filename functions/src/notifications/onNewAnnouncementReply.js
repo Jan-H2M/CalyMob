@@ -43,6 +43,15 @@ exports.onNewAnnouncementReply = onDocumentCreated(
       const announcementTitle = announcement.title || 'Annonce';
       const announcementSenderId = announcement.sender_id;
 
+      // Update last_reply_at on the announcement doc so client-side
+      // unread count queries can detect new replies (not just new announcements)
+      await admin.firestore()
+        .collection('clubs')
+        .doc(clubId)
+        .collection('announcements')
+        .doc(announcementId)
+        .update({ last_reply_at: admin.firestore.FieldValue.serverTimestamp() });
+
       // 2. Build list of thread participants (announcement author + all who replied)
       const threadParticipantIds = new Set();
 

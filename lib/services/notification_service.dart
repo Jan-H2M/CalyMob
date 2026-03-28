@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
@@ -17,8 +18,12 @@ class NotificationService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
 
+  /// Callback pour quand l'utilisateur tape sur une notification locale
+  void Function(String? payload)? onLocalNotificationTap;
+
   /// Initialiser les notifications
-  Future<void> initialize() async {
+  Future<void> initialize({void Function(String? payload)? onNotificationTap}) async {
+    onLocalNotificationTap = onNotificationTap;
     // Skip initialization on web - not supported
     if (kIsWeb) {
       debugPrint('⚠️ Notifications non supportées sur web');
@@ -35,7 +40,15 @@ class NotificationService {
       const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
       const iosSettings = DarwinInitializationSettings();
       const initSettings = InitializationSettings(android: androidSettings, iOS: iosSettings);
-      await _localNotifications.initialize(initSettings);
+      await _localNotifications.initialize(
+        initSettings,
+        onDidReceiveNotificationResponse: (NotificationResponse response) {
+          debugPrint('🔔 Local notification tapped, payload: ${response.payload}');
+          if (onLocalNotificationTap != null && response.payload != null) {
+            onLocalNotificationTap!(response.payload);
+          }
+        },
+      );
 
       // Demander la permission (iOS uniquement, Android 13+ demande aussi)
       final settings = await _messaging.requestPermission(
@@ -110,6 +123,9 @@ class NotificationService {
       channelName = 'Annonces du club';
     }
 
+    // Encoder toute la data du message comme JSON pour la navigation au tap
+    final payloadJson = jsonEncode(message.data);
+
     // Afficher la notification localement
     await _localNotifications.show(
       notification.hashCode,
@@ -129,7 +145,7 @@ class NotificationService {
           presentSound: true,
         ),
       ),
-      payload: message.data['operation_id'],
+      payload: payloadJson,
     );
   }
 

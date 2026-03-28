@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -164,6 +165,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _setupDeepLinkListener();
     _setupNotificationTapHandlers();
+    // Connecter le callback pour les taps sur notifications locales (foreground)
+    _notificationService.onLocalNotificationTap = _handleLocalNotificationTap;
     // Mettre à jour le badge au démarrage avec le nombre réel de non-lus
     // (post-frame car le Provider n'est pas encore prêt dans initState)
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -185,6 +188,41 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         });
       }
     });
+
+    // Handler pour les messages en foreground: rafraîchir les badges immédiatement
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      debugPrint('🔔 Foreground message received — scheduling badge refresh');
+      // Petit délai pour laisser Firestore se mettre à jour côté serveur
+      Future.delayed(const Duration(seconds: 2), () {
+        _refreshUnreadCounts();
+        // Mettre à jour le badge de l'icône app après refresh
+        Future.delayed(const Duration(seconds: 1), () {
+          _updateBadgeFromUnreadCounts();
+        });
+      });
+    });
+  }
+
+  /// Handler quand l'utilisateur tape sur une notification locale (foreground)
+  void _handleLocalNotificationTap(String? payload) {
+    if (payload == null || payload.isEmpty) return;
+
+    try {
+      final data = jsonDecode(payload) as Map<String, dynamic>;
+      final type = data['type'] as String?;
+
+      debugPrint('🔔 Local notification tap - type: $type, data: $data');
+
+      if (type == null || _navigatorKey.currentState == null) return;
+
+      // Construire un RemoteMessage avec les mêmes data pour réutiliser _handleNotificationTap
+      final message = RemoteMessage(
+        data: data.map((k, v) => MapEntry(k, v.toString())),
+      );
+      _handleNotificationTap(message);
+    } catch (e) {
+      debugPrint('❌ Error handling local notification tap: $e');
+    }
   }
 
   /// Gère la navigation quand l'utilisateur tape sur une notification push

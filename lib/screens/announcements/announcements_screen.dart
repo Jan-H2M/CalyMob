@@ -10,6 +10,8 @@ import '../../utils/permission_helper.dart';
 import '../../widgets/announcement_card.dart';
 import '../../widgets/glossy_button.dart';
 import '../../services/announcement_service.dart';
+import '../../services/local_read_tracker.dart';
+import '../../providers/unread_count_provider.dart';
 import 'announcement_detail_screen.dart';
 import 'create_announcement_dialog.dart';
 
@@ -86,6 +88,10 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadAnnouncements();
       _loadMemberInfo();
+      // Marquer comme lu après 2 secondes (pour que l'utilisateur voie d'abord les badges NOUVEAU)
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) _markAnnouncementsAsRead();
+      });
     });
   }
 
@@ -217,6 +223,27 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen>
         ),
       ),
     );
+  }
+
+  /// Marque les annonces comme lues et rafraîchit le badge
+  Future<void> _markAnnouncementsAsRead() async {
+    final tracker = LocalReadTracker();
+    await tracker.markAsRead('announcements');
+    // Refresh unread counts so badge disappears
+    if (mounted) {
+      try {
+        final unreadProvider = Provider.of<UnreadCountProvider>(context, listen: false);
+        unreadProvider.refresh();
+      } catch (_) {}
+    }
+  }
+
+  /// Vérifie si une annonce est non lue (créée après lastRead)
+  bool _isAnnouncementUnread(Announcement announcement) {
+    final tracker = LocalReadTracker();
+    final lastRead = tracker.getLastRead('announcements');
+    if (lastRead == null) return true; // Jamais ouvert = tout est nouveau
+    return announcement.createdAt.isAfter(lastRead);
   }
 
 
@@ -409,6 +436,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen>
                           return AnnouncementCard(
                             announcement: announcement,
                             currentUserId: currentUser!.uid,
+                            isUnread: _isAnnouncementUnread(announcement),
                             onTap: () => _navigateToDetail(announcement),
                           );
                         },

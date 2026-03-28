@@ -17,6 +17,7 @@ import '../../services/profile_service.dart';
 import '../../services/lifras_service.dart';
 import '../../services/operation_service.dart';
 import '../../services/payment_service.dart';
+import '../../services/local_read_tracker.dart';
 import '../../models/operation.dart';
 import '../../models/member_profile.dart';
 import '../../models/exercice_lifras.dart';
@@ -60,6 +61,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
   ParticipantOperation? _userInscription;
   final TextEditingController _messageController = TextEditingController();
   bool _isDiscussionExpanded = false;
+  DateTime? _discussionLastReadBeforeOpen;
 
   /// Check if the current user is the creator (organisateur) of the event
   bool _isCurrentUserCreator(Operation operation) {
@@ -1492,6 +1494,12 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                 });
                 // Mark messages as read when opening discussion
                 if (expanded && currentUserId.isNotEmpty) {
+                  // Sauvegarder l'ancien lastRead AVANT markAsRead pour le divider
+                  final tracker = LocalReadTracker();
+                  _discussionLastReadBeforeOpen = tracker.getLastRead('operation_${widget.operationId}')
+                      ?? tracker.installBaseline
+                      ?? DateTime(2024);
+
                   messageProvider.markAsRead(
                     operationId: widget.operationId,
                   );
@@ -1547,14 +1555,40 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                         );
                       }
 
+                      // Chercher l'index du premier message non lu
+                      int? newMsgIdx;
+                      if (_discussionLastReadBeforeOpen != null) {
+                        for (int i = 0; i < messages.length; i++) {
+                          if (messages[i].createdAt.isAfter(_discussionLastReadBeforeOpen!)) {
+                            newMsgIdx = i;
+                            break;
+                          }
+                        }
+                      }
+
+                      final hasDivider = newMsgIdx != null;
+                      final totalItems = messages.length + (hasDivider ? 1 : 0);
+
                       // Use reverse: true to auto-scroll to bottom (like WhatsApp)
                       return ListView.builder(
                         padding: const EdgeInsets.all(12),
                         reverse: true,
-                        itemCount: messages.length,
-                        itemBuilder: (context, index) {
-                          // Since list is reversed, access messages from the end
-                          final message = messages[messages.length - 1 - index];
+                        itemCount: totalItems,
+                        itemBuilder: (context, revIndex) {
+                          // Convert reversed index to forward index
+                          final fwdIndex = totalItems - 1 - revIndex;
+
+                          // Show divider at the right position
+                          if (hasDivider && fwdIndex == newMsgIdx) {
+                            return _buildNewMessagesDivider();
+                          }
+
+                          // Adjust message index for items after divider
+                          final msgIndex = hasDivider && fwdIndex > newMsgIdx!
+                              ? fwdIndex - 1
+                              : fwdIndex;
+
+                          final message = messages[msgIndex];
                           final isOwnMessage = message.senderId == currentUserId;
                           return _buildMessageBubble(message, isOwnMessage, totalParticipants);
                         },
@@ -1669,6 +1703,29 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
   }
 
   /// Message bubble for chat - compact style with time on the right
+  Widget _buildNewMessagesDivider() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Expanded(child: Divider(color: Colors.red.shade300, thickness: 1)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Text(
+              'Nouveaux messages',
+              style: TextStyle(
+                color: Colors.red.shade400,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          Expanded(child: Divider(color: Colors.red.shade300, thickness: 1)),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMessageBubble(EventMessage message, bool isOwnMessage, int totalParticipants) {
     final dateFormat = DateFormat('HH:mm');
 

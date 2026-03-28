@@ -7,6 +7,7 @@ class AnnouncementCard extends StatelessWidget {
   final VoidCallback? onTap;
   final String? currentUserId;
   final int unreadReplyCount;
+  final bool isUnread;
 
   const AnnouncementCard({
     super.key,
@@ -14,6 +15,7 @@ class AnnouncementCard extends StatelessWidget {
     this.onTap,
     this.currentUserId,
     this.unreadReplyCount = 0,
+    this.isUnread = false,
   });
 
   Color _getTypeColor() {
@@ -58,18 +60,18 @@ class AnnouncementCard extends StatelessWidget {
       onTap: onTap,
       child: Card(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        elevation: 2,
+        elevation: isUnread ? 4 : 2,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
           side: BorderSide(
-            color: color.withOpacity(0.3),
-            width: 1,
+            color: isUnread ? Colors.red : color.withOpacity(0.3),
+            width: isUnread ? 2 : 1,
           ),
         ),
         child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header with type badge
+          // Header with type badge + NOUVEAU indicator
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -92,6 +94,22 @@ class AnnouncementCard extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
+                if (isUnread)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Text(
+                      'NOUVEAU',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),

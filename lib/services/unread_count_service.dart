@@ -26,14 +26,29 @@ class UnreadCountService {
   Future<int> countUnreadAnnouncements(String clubId) async {
     // Als null (nooit geopend): tel alles sinds epoch als ongelezen
     final lastRead = _tracker.getLastRead('announcements') ?? _epoch;
+    final ts = Timestamp.fromDate(lastRead);
 
     try {
-      final query = _firestore
-          .collection('clubs/$clubId/announcements')
-          .where('created_at', isGreaterThan: Timestamp.fromDate(lastRead));
+      // Twee queries: nieuwe aankondigingen + aankondigingen met nieuwe replies
+      // We halen doc IDs op (geen data) en dedupliceren
+      final results = await Future.wait([
+        // 1. Nieuwe aankondigingen (created_at > lastRead)
+        _firestore
+            .collection('clubs/$clubId/announcements')
+            .where('created_at', isGreaterThan: ts)
+            .get(),
+        // 2. Aankondigingen met nieuwe replies (last_reply_at > lastRead)
+        _firestore
+            .collection('clubs/$clubId/announcements')
+            .where('last_reply_at', isGreaterThan: ts)
+            .get(),
+      ]);
 
-      final snapshot = await query.count().get();
-      return snapshot.count ?? 0;
+      // Dedupliceer op doc ID (een nieuw announcement met reply telt maar 1x)
+      final unreadIds = <String>{};
+      for (final doc in results[0].docs) unreadIds.add(doc.id);
+      for (final doc in results[1].docs) unreadIds.add(doc.id);
+      return unreadIds.length;
     } catch (e) {
       debugPrint('❌ countUnreadAnnouncements error: $e');
       return 0;

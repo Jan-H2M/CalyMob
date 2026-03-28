@@ -6,6 +6,7 @@ import '../models/session_message.dart' show MessageAttachment;
 import '../providers/event_message_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/unread_count_provider.dart';
+import '../services/local_read_tracker.dart';
 import 'package:intl/intl.dart';
 import 'attachment_display.dart';
 import 'attachment_picker.dart';
@@ -34,6 +35,9 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
   // État pour les pièces jointes
   final List<_PendingAttachment> _pendingAttachments = [];
   bool _isUploading = false;
+
+  // Timestamp de dernière lecture (pour le divider "Nouveaux messages")
+  DateTime? _lastReadBeforeOpen;
 
   @override
   void initState() {
@@ -64,6 +68,14 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
 
   /// Marquer tous les messages comme lus quand on ouvre la discussion
   Future<void> _markMessagesAsRead() async {
+    // Sauvegarder l'ancien lastRead AVANT de marquer comme lu
+    // pour pouvoir afficher le divider "Nouveaux messages"
+    final tracker = LocalReadTracker();
+    final key = 'operation_${widget.operationId}';
+    _lastReadBeforeOpen = tracker.getLastRead(key)
+        ?? tracker.installBaseline
+        ?? DateTime(2024);
+
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final messageProvider = Provider.of<EventMessageProvider>(context, listen: false);
     final unreadProvider = Provider.of<UnreadCountProvider>(context, listen: false);
@@ -253,12 +265,37 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
                 }
               });
 
+              // Chercher l'index du premier message non lu
+              int? newMessagesDividerIndex;
+              if (_lastReadBeforeOpen != null) {
+                for (int i = 0; i < messages.length; i++) {
+                  if (messages[i].createdAt.isAfter(_lastReadBeforeOpen!)) {
+                    newMessagesDividerIndex = i;
+                    break;
+                  }
+                }
+              }
+
+              // Calculer le nombre total d'items (messages + divider éventuel)
+              final hasNewDivider = newMessagesDividerIndex != null;
+              final totalItems = messages.length + (hasNewDivider ? 1 : 0);
+
               return ListView.builder(
                 controller: _scrollController,
                 padding: const EdgeInsets.all(16),
-                itemCount: messages.length,
+                itemCount: totalItems,
                 itemBuilder: (context, index) {
-                  final message = messages[index];
+                  // Insérer le divider "Nouveaux messages" à la bonne position
+                  if (hasNewDivider && index == newMessagesDividerIndex) {
+                    return _buildNewMessagesDivider();
+                  }
+
+                  // Ajuster l'index pour les messages après le divider
+                  final messageIndex = hasNewDivider && index > newMessagesDividerIndex!
+                      ? index - 1
+                      : index;
+
+                  final message = messages[messageIndex];
                   final isOwnMessage = message.senderId == currentUserId;
 
                   return _buildMessageBubble(message, isOwnMessage);
@@ -271,6 +308,29 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
         // Input bar - tous les membres authentifiés peuvent envoyer des messages
         _buildMessageInput(),
       ],
+    );
+  }
+
+  Widget _buildNewMessagesDivider() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: [
+          Expanded(child: Divider(color: Colors.red.shade300, thickness: 1)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              'Nouveaux messages',
+              style: TextStyle(
+                color: Colors.red.shade400,
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          Expanded(child: Divider(color: Colors.red.shade300, thickness: 1)),
+        ],
+      ),
     );
   }
 
