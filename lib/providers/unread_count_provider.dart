@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:app_badge_plus/app_badge_plus.dart';
 import '../services/unread_count_service.dart';
 import '../services/local_read_tracker.dart';
 
@@ -149,6 +150,9 @@ class UnreadCountProvider extends ChangeNotifier {
             '📊 Unread counts: ann=$_announcements evt=$_eventMessages team=$_teamMessages sess=$_sessionMessages (total: $total)');
         notifyListeners();
 
+        // Badge direct bijwerken (iOS/Android app icon)
+        _updateBadge(total);
+
         // Cache bijwerken in achtergrond
         unawaited(_saveCachedCounts());
       }
@@ -195,6 +199,16 @@ class UnreadCountProvider extends ChangeNotifier {
       debugPrint('🔄 Badge sync: wrote unread_counts to Firestore (total: $newTotal)');
     } catch (e) {
       debugPrint('⚠️ Badge sync failed: $e');
+    }
+  }
+
+  /// Update iOS/Android app icon badge direct
+  void _updateBadge(int count) {
+    try {
+      AppBadgePlus.updateBadge(count);
+      debugPrint('🔴 Badge updated: $count');
+    } catch (e) {
+      debugPrint('⚠️ Badge update failed: $e');
     }
   }
 

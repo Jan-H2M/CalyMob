@@ -1502,11 +1502,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
 
                   messageProvider.markAsRead(
                     operationId: widget.operationId,
+                    unreadProvider: Provider.of<UnreadCountProvider>(context, listen: false),
                   );
-                  // Refresh unread badges
-                  if (context.mounted) {
-                    Provider.of<UnreadCountProvider>(context, listen: false).refresh();
-                  }
                 }
               },
               backgroundColor: AppColors.lichtblauw.withOpacity(0.2),

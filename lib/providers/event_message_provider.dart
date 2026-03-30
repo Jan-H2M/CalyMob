@@ -4,6 +4,7 @@ import '../models/event_message.dart';
 import '../models/session_message.dart' show MessageAttachment;
 import '../services/event_message_service.dart';
 import '../services/local_read_tracker.dart';
+import 'unread_count_provider.dart';
 
 /// Provider pour la gestion des messages d'événement
 class EventMessageProvider with ChangeNotifier {
@@ -177,12 +178,20 @@ class EventMessageProvider with ChangeNotifier {
   }
 
   /// Markeer lokaal als gelezen (via LocalReadTracker)
+  /// Als [unreadProvider] wordt meegegeven, wordt direct een refresh getriggerd
+  /// zodat badges/counts meteen bijwerken (niet wachten op 60s timer).
   Future<void> markAsRead({
     required String operationId,
+    UnreadCountProvider? unreadProvider,
   }) async {
     final tracker = LocalReadTracker();
     await tracker.init();
     await tracker.markAsRead('operation_$operationId');
+
+    // Trigger onmiddellijke refresh van unread counts + badge
+    if (unreadProvider != null) {
+      await unreadProvider.refresh();
+    }
   }
 
   /// Nettoyer les données d'un événement

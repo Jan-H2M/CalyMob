@@ -83,9 +83,7 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
     if (userId.isEmpty) return;
 
     await messageProvider.markAsRead(
-      clubId: widget.clubId,
       operationId: widget.operationId,
-      userId: userId,
       unreadProvider: unreadProvider,
     );
   }
