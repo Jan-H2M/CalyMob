@@ -10,6 +10,7 @@ import '../services/member_service.dart';
 import '../services/piscine_session_service.dart';
 import '../services/operation_service.dart';
 import '../config/firebase_config.dart';
+import '../screens/piscine/add_attendee_dialog.dart';
 import 'alarm_overlay.dart';
 
 /// Scanner modal that shows compact scanner + live attendee list
@@ -65,6 +66,13 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
   String? _successMessage;
   String? _lastAddedName;
 
+  // Manual search state
+  bool _showSearch = false;
+  bool _isSearching = false;
+  List<MemberProfile> _searchResults = [];
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+
   @override
   void initState() {
     super.initState();
@@ -78,6 +86,8 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
   @override
   void dispose() {
     _scannerController.dispose();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -257,6 +267,105 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
     );
   }
 
+  void _toggleSearch() {
+    setState(() {
+      _showSearch = !_showSearch;
+      if (_showSearch) {
+        _searchController.clear();
+        _searchResults.clear();
+        // Pause scanner when searching
+        _scannerController.stop();
+        Future.microtask(() => _searchFocusNode.requestFocus());
+      } else {
+        _searchFocusNode.unfocus();
+        _scannerController.start();
+      }
+    });
+  }
+
+  Future<void> _searchMembers(String query) async {
+    if (query.length < 2) {
+      setState(() => _searchResults = []);
+      return;
+    }
+
+    setState(() => _isSearching = true);
+
+    try {
+      final results = await _memberService.searchMembers(widget.clubId, query);
+      if (mounted) {
+        setState(() {
+          _searchResults = results;
+          _isSearching = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isSearching = false);
+    }
+  }
+
+  Future<void> _selectMember(MemberProfile member) async {
+    setState(() {
+      _showSearch = false;
+      _isProcessing = true;
+    });
+
+    try {
+      await _processScannedMember(member.id);
+    } catch (e) {
+      _showErrorToast(e.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _isProcessing = false);
+        _scannerController.start();
+      }
+    }
+  }
+
+  /// Ouvrir le dialog pour ajouter un invité (non-membre)
+  Future<void> _showAddAttendeeDialog() async {
+    final authProvider = context.read<AuthProvider>();
+    final currentUser = authProvider.currentUser;
+    if (currentUser == null) return;
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => AddAttendeeDialog(clubId: widget.clubId),
+    );
+
+    if (result != null && mounted) {
+      try {
+        if (widget.isPiscine) {
+          await _piscineService.addAttendee(
+            clubId: widget.clubId,
+            sessionId: widget.operationId,
+            memberId: result['memberId'] as String,
+            memberName: result['memberName'] as String,
+            scannedBy: currentUser.uid,
+            isGuest: result['isGuest'] as bool,
+          );
+        } else {
+          final member = await _memberService.getMemberById(
+            widget.clubId, result['memberId'] as String);
+          if (member != null) {
+            final displayName = authProvider.displayName ?? 'Inconnu';
+            await _operationService.createWalkInInscription(
+              clubId: widget.clubId,
+              operationId: widget.operationId,
+              operationTitle: widget.operationTitle,
+              member: member,
+              markedByUserId: currentUser.uid,
+              markedByUserName: displayName,
+            );
+          }
+        }
+        _showSuccessToast(result['memberName'] as String);
+      } catch (e) {
+        _showErrorToast(e.toString());
+      }
+    }
+  }
+
   void _showErrorToast(String error) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -283,10 +392,10 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
           // Header with close button and title
           _buildHeader(),
 
-          // Compact Scanner (~35%)
+          // Compact Scanner or Manual Search (~35%)
           Expanded(
             flex: 35,
-            child: _buildCompactScanner(),
+            child: _showSearch ? _buildSearchView() : _buildCompactScanner(),
           ),
 
           // Divider with count
@@ -329,6 +438,24 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
                 fontWeight: FontWeight.bold,
               ),
             ),
+          ),
+
+          // Manual search toggle
+          IconButton(
+            onPressed: _toggleSearch,
+            icon: Icon(
+              _showSearch ? Icons.qr_code_scanner : Icons.search,
+              color: _showSearch ? AppColors.oranje : Colors.white,
+              size: 28,
+            ),
+            tooltip: _showSearch ? 'Scanner' : 'Recherche manuelle',
+          ),
+
+          // Ajouter un participant (membre ou invité)
+          IconButton(
+            onPressed: _showAddAttendeeDialog,
+            icon: const Icon(Icons.person_add, color: Colors.white, size: 26),
+            tooltip: 'Ajouter un participant',
           ),
 
           // Torch toggle
@@ -477,6 +604,106 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
             ),
           ),
       ],
+    );
+  }
+
+  Widget _buildSearchView() {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          // Search field
+          TextField(
+            controller: _searchController,
+            focusNode: _searchFocusNode,
+            onChanged: _searchMembers,
+            decoration: InputDecoration(
+              hintText: 'Rechercher un membre...',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _searchController.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _searchController.clear();
+                        _searchMembers('');
+                      },
+                    )
+                  : null,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              filled: true,
+              fillColor: Colors.grey[100],
+              contentPadding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          // Results
+          Expanded(
+            child: _isSearching
+                ? const Center(child: CircularProgressIndicator())
+                : _searchResults.isEmpty
+                    ? Center(
+                        child: Text(
+                          _searchController.text.length < 2
+                              ? 'Tapez au moins 2 caractères'
+                              : 'Aucun résultat',
+                          style: TextStyle(color: Colors.grey[500], fontSize: 14),
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: _searchResults.length,
+                        itemBuilder: (context, index) {
+                          final member = _searchResults[index];
+                          final cotisationOk = member.cotisationStatus == ValidationStatus.valid;
+                          final certificatOk = member.certificatStatus == ValidationStatus.valid;
+                          return ListTile(
+                            dense: true,
+                            leading: CircleAvatar(
+                              backgroundColor: AppColors.middenblauw,
+                              radius: 18,
+                              child: Text(
+                                member.fullName.isNotEmpty
+                                    ? member.fullName[0].toUpperCase()
+                                    : '?',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                            title: Text(
+                              member.fullName,
+                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                            ),
+                            subtitle: Row(
+                              children: [
+                                Icon(
+                                  cotisationOk ? Icons.check_circle : Icons.cancel,
+                                  size: 14,
+                                  color: cotisationOk ? AppColors.success : Colors.red,
+                                ),
+                                const SizedBox(width: 4),
+                                Text('Cotisation', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                                const SizedBox(width: 10),
+                                Icon(
+                                  certificatOk ? Icons.check_circle : Icons.cancel,
+                                  size: 14,
+                                  color: certificatOk ? AppColors.success : Colors.red,
+                                ),
+                                const SizedBox(width: 4),
+                                Text('Certificat', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                              ],
+                            ),
+                            onTap: () => _selectMember(member),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
     );
   }
 

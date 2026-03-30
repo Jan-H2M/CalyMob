@@ -1,0 +1,5 @@
+Nouveautés version 1.2.0 :
+• Vérification automatique des mises à jour au lancement
+• Section version dans les paramètres avec bouton de mise à jour
+• Correction de l'affichage des niveaux vides en piscine
+• Améliorations de compatibilité Android

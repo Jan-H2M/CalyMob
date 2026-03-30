@@ -45,6 +45,11 @@ class AuthProvider with ChangeNotifier {
           FirebaseConfig.defaultClubId,
           user.uid,
         );
+        // Ensure Firestore session is active (refresh expired session on app restart)
+        _sessionService.createSession(
+          userId: user.uid,
+          clubId: FirebaseConfig.defaultClubId,
+        );
       } else {
         _displayName = null;
       }

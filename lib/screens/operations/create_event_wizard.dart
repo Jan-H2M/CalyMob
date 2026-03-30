@@ -11,6 +11,7 @@ import '../../providers/member_provider.dart';
 import '../../providers/activity_provider.dart';
 import '../../services/dive_location_service.dart';
 import '../../services/operation_service.dart';
+import '../../services/session_service.dart';
 
 /// Wizard de création d'événement en 2 étapes
 /// Identique fonctionnellement à CreateEventWizard de CalyCompta
@@ -161,6 +162,9 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
       final authProvider = context.read<AuthProvider>();
       final userId = authProvider.currentUser?.uid ?? '';
       final isDive = widget.eventCategory == 'plongee' || _selectedLocation != null;
+
+      // Refresh session to prevent permission-denied on expired session
+      await SessionService().touchActivity();
 
       // Generate event number
       final eventNumber = await _operationService.generateEventNumber(_clubId, isDive);

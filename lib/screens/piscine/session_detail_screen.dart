@@ -167,12 +167,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
-          // Scanner buttons - always visible for all logged-in users
-          IconButton(
-            onPressed: _showAddAttendeeDialog,
-            icon: const Icon(Icons.person_add, color: Colors.white),
-            tooltip: 'Ajouter manuellement',
-          ),
+          // Scanner button - add participant is now inside the scanner modal
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: IconButton(

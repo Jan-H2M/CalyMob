@@ -27,10 +27,17 @@ service cloud.firestore {
 
     // Check if user has a valid session (timeout enforcement)
     // Simplified to avoid circular dependencies during login
+    // NOTE: Returns true if session doesn't exist (for when autoLogoutEnabled is disabled)
+    // SECURITY: Now also checks expiresAt timestamp to prevent expired session exploitation
     function hasValidSession(clubId) {
-      // Vérifier si la session existe et est active
-      return exists(/databases/$(database)/documents/clubs/$(clubId)/sessions/$(request.auth.uid))
-        && get(/databases/$(database)/documents/clubs/$(clubId)/sessions/$(request.auth.uid)).data.isActive == true;
+      let sessionPath = /databases/$(database)/documents/clubs/$(clubId)/sessions/$(request.auth.uid);
+      // If session doesn't exist, allow access (auto-logout may be disabled)
+      // If session exists, verify it's active AND not expired
+      return !exists(sessionPath)
+        || (
+          get(sessionPath).data.isActive == true
+          && get(sessionPath).data.expiresAt > request.time
+        );
     }
 
     // Check if fiscal year data can be modified based on its status
