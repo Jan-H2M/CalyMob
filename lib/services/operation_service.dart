@@ -409,8 +409,9 @@ class OperationService {
     required String addedByUserName,
   }) async {
     try {
-      // Generate unique guest ID
-      final guestId = 'guest_${DateTime.now().millisecondsSinceEpoch}';
+      // Generate unique guest ID (timestamp + random suffix to avoid collisions)
+      final random = (DateTime.now().microsecond * 1000 + DateTime.now().millisecond).toString().padLeft(6, '0');
+      final guestId = 'guest_${DateTime.now().millisecondsSinceEpoch}_$random';
 
       final inscriptionData = {
         'operation_id': operationId,

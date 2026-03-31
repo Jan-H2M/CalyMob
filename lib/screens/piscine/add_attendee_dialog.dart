@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../config/app_colors.dart';
 import '../../services/member_service.dart';
@@ -59,7 +60,8 @@ class _AddAttendeeDialogState extends State<AddAttendeeDialog> {
         id: data['id'] as String? ?? '',
         prenom: data['prenom'] as String? ?? '',
         nom: data['nom'] as String? ?? '',
-      )).toList();
+      )).toList()
+        ..sort((a, b) => a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()));
       setState(() {
         _allMembers = members;
         _filteredMembers = members;
@@ -112,8 +114,10 @@ class _AddAttendeeDialogState extends State<AddAttendeeDialog> {
       return;
     }
 
+    // Gebruik timestamp + random suffix om ID collisions te voorkomen
+    final random = Random().nextInt(999999).toString().padLeft(6, '0');
     Navigator.of(context).pop({
-      'memberId': 'guest_${DateTime.now().millisecondsSinceEpoch}',
+      'memberId': 'guest_${DateTime.now().millisecondsSinceEpoch}_$random',
       'memberName': '$prenom $nom',
       'isGuest': true,
     });
