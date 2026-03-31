@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_assets.dart';
+import '../../config/app_colors.dart';
 import '../../models/expense_claim.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -277,7 +278,7 @@ class ExpenseDetailScreen extends StatelessWidget {
                       icon: const Icon(Icons.check, color: Colors.white),
                       label: const Text('Approuver', style: TextStyle(color: Colors.white, fontSize: 16)),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF4CAF50),
+                        backgroundColor: AppColors.success,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
@@ -443,7 +444,7 @@ class ExpenseDetailScreen extends StatelessWidget {
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4CAF50),
+              backgroundColor: AppColors.success,
               foregroundColor: Colors.white,
             ),
             child: const Text('Approuver'),

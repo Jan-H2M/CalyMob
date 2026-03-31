@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/firebase_config.dart';
 import '../../config/app_assets.dart';
+import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/member_provider.dart';
@@ -150,11 +151,11 @@ class _ApprovalListScreenState extends State<ApprovalListScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: isOwnExpense ? Colors.grey[400]!.withOpacity(0.3) : const Color(0xFF4CAF50).withOpacity(0.1),
+                      color: isOwnExpense ? Colors.grey[400]!.withOpacity(0.3) : AppColors.success.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: isOwnExpense ? Colors.grey[500]! : const Color(0xFF4CAF50), width: 1),
+                      border: Border.all(color: isOwnExpense ? Colors.grey[500]! : AppColors.success, width: 1),
                     ),
-                    child: Text(expense.demandeurNom ?? '', style: TextStyle(color: isOwnExpense ? Colors.grey[600] : const Color(0xFF4CAF50), fontSize: 12, fontWeight: FontWeight.bold)),
+                    child: Text(expense.demandeurNom ?? '', style: TextStyle(color: isOwnExpense ? Colors.grey[600] : AppColors.success, fontSize: 12, fontWeight: FontWeight.bold)),
                   ),
                   if (!isOwnExpense) IconButton(
                     icon: const Icon(Icons.visibility, size: 20),

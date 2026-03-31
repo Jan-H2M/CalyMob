@@ -415,8 +415,8 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                     end: Alignment.bottomCenter,
                     colors: item.isPiscine
                         ? [
-                            const Color(0xFF00B4DB), // Piscine blauw
-                            const Color(0xFF0083B0),
+                            AppColors.piscineBlauwLight, // Piscine blauw
+                            AppColors.piscineBlauw,
                           ]
                         : [
                             AppColors.middenblauw,
@@ -480,7 +480,7 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                             icon,
                             size: 18,
                             color: item.isPiscine
-                                ? const Color(0xFF0083B0)
+                                ? AppColors.piscineBlauw
                                 : AppColors.middenblauw,
                           ),
                           const SizedBox(width: 8),
@@ -532,7 +532,7 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                             Icon(
                               Icons.group,
                               size: 14,
-                              color: const Color(0xFF0083B0).withOpacity(0.7),
+                              color: AppColors.piscineBlauw.withOpacity(0.7),
                             ),
                             const SizedBox(width: 4),
                             Text(
@@ -603,7 +603,7 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
         child: Icon(
           Icons.chevron_right,
           color: item.isPiscine
-              ? const Color(0xFF0083B0).withOpacity(0.5)
+              ? AppColors.piscineBlauw.withOpacity(0.5)
               : AppColors.middenblauw.withOpacity(0.5),
         ),
       );
@@ -659,7 +659,7 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
               Icon(
                 Icons.chevron_right,
                 color: item.isPiscine
-                    ? const Color(0xFF0083B0).withOpacity(0.5)
+                    ? AppColors.piscineBlauw.withOpacity(0.5)
                     : AppColors.middenblauw.withOpacity(0.5),
               ),
             ],

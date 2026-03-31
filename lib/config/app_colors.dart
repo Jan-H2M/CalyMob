@@ -19,6 +19,10 @@ class AppColors {
   static const Color secondary = oranje;                 // Orange
   static const Color tertiary = Color(0xFF4CAF50);       // Vert (approvals)
 
+  // === Couleurs piscine ===
+  static const Color piscineBlauw = Color(0xFF0083B0);   // Bleu piscine foncé
+  static const Color piscineBlauwLight = Color(0xFF00B4DB); // Bleu piscine clair
+
   // === Couleurs de statut (restent fonctionnelles) ===
   static const Color success = Color(0xFF4CAF50);        // Vert
   static const Color warning = Colors.orange;

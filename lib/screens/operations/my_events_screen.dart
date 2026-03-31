@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../config/app_assets.dart';
+import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/operation_provider.dart';
 import '../../models/user_event_registration.dart';
@@ -250,7 +251,7 @@ class _MyEventsScreenState extends State<MyEventsScreen> with SingleTickerProvid
                       icon: const Icon(Icons.payment, size: 16),
                       label: const Text('Payer'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1976D2),
+                        backgroundColor: AppColors.middenblauw,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       ),
