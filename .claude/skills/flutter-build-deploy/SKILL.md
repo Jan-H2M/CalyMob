@@ -1,9 +1,56 @@
 ---
 name: flutter-build-deploy
-description: Build CalyMob Flutter app and deploy to Google Play Store and/or Apple App Store. Use this skill whenever the user asks to build the app, deploy to Play Store or App Store, release a new version, bump the version, or publish CalyMob. Also trigger when the user mentions "build", "release", "deploy", "play store", "app store", "apple", "ios", "android", "aab", "appbundle", "ipa", or "nieuwe versie".
+description: Build CalyMob Flutter app and deploy to Google Play Store and/or Apple App Store. Use this skill whenever the user asks to build the app, deploy to Play Store or App Store, release a new version, bump the version, or publish CalyMob. Also trigger when the user mentions "build", "release", "deploy", "play store", "app store", "apple", "ios", "android", "aab", "appbundle", "ipa", "nieuwe versie", "store status", "état des stores", "verifi store", or "check store".
 ---
 
 # Flutter Build & Deploy (Android + iOS) — Fully Automated
+
+## IMPORTANT: Store Verification / Checking Store Status
+
+When the user asks to check the store status ("vérifie l'état des stores", "check store status", etc.):
+
+### Step 1: App Store Connect — LOGIN FIRST!
+**CRITICAL: App Store Connect requires Apple ID login. ALWAYS navigate to App Store Connect first and verify the user is logged in before trying to access any ASC pages. The Apple login iframe CANNOT be automated — you must ask the user to sign in manually.**
+
+1. Navigate to `https://appstoreconnect.apple.com` (NOT directly to the app page)
+2. Read the page — check if "Sign In" link is visible or if user name "Jan Andriessens" appears
+3. If NOT logged in → tell user to sign in, wait for confirmation, then proceed
+4. Once logged in → navigate to `https://appstoreconnect.apple.com/apps/6755293289/distribution`
+5. Read the sidebar navigation (ref for "Distribution" nav) to find:
+   - Version number + status (Waiting for Review, In Review, Ready for Sale, etc.)
+   - Look for "Waiting for Review" or "Ready for Distribution" links in the iOS App section
+6. Also check for **License Agreement** warnings on the ASC homepage — these can block reviews!
+
+### Step 2: Google Play Console
+1. Navigate to `https://play.google.com/console/u/0/developers/4868133097597517725/app/4975215339505656603/tracks/production`
+2. Read the page to check: active version, draft releases, installs, review status
+3. **CRITICAL: If there is a Draft release, ask the user if it should be submitted for review!** Don't leave drafts unsubmitted.
+
+### Step 3: Compare with local version
+```bash
+grep "^version:" /Users/jan/Documents/GitHub/Calypso/CalyMob/pubspec.yaml
+```
+
+Present a summary table with both stores side by side.
+
+### Step 4: Action items
+Always list pending actions:
+- Draft releases that need submitting
+- License agreements that need accepting
+- Versions that are mismatched between stores
+
+## IMPORTANT: After uploading to Play Store, ALWAYS submit for review!
+
+**NEVER leave a draft release unsubmitted.** After fastlane uploads, ALWAYS complete the full submission flow:
+1. Go to Production → Releases tab → click **Edit release** on the draft
+2. Click **Next** (Step 1 → Step 2)
+3. Click **Save** (confirms the release)
+4. In the "Go to Publishing overview?" dialog → click **Go to overview**
+5. Click **"Send 1 change for review"**
+6. Confirm with **"Send changes for review"**
+7. Verify status shows **"Changes in review"**
+
+If you skip this, the release stays as a draft and never gets published!
 
 This skill automates the CalyMob Flutter app build and deployment to both Google Play Console (Android) and Apple App Store (iOS). **Both platforms are fully automated via CLI — no browser interaction required for uploads.**
 
