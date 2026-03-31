@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -224,5 +224,115 @@ class AppUpdateService {
   static void clearCache() {
     _cachedStatus = null;
     _lastCheck = null;
+  }
+
+  /// Check voor update en toon dialoog indien nodig.
+  /// Kan vanuit elke screen aangeroepen worden — dialoog-logica zit hier centraal.
+  static Future<void> showUpdateDialogIfNeeded(BuildContext context) async {
+    try {
+      final status = await checkForUpdate();
+      if (!status.updateAvailable) return;
+
+      if (!context.mounted) return;
+
+      if (status.forceUpdate) {
+        _showForceUpdateDialog(context, status);
+      } else {
+        _showUpdateDialog(context, status);
+      }
+    } catch (e) {
+      debugPrint('⚠️ AppUpdateService: Failed to check for update: $e');
+    }
+  }
+
+  static void _showUpdateDialog(BuildContext context, AppUpdateStatus status) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.system_update, color: Colors.blue, size: 28),
+            SizedBox(width: 12),
+            Expanded(child: Text('Nouvelle version disponible')),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Version ${status.latestVersion} est disponible. '
+              'Vous utilisez la version ${status.currentVersion}.',
+            ),
+            if (status.message != null) ...[
+              const SizedBox(height: 12),
+              Text(status.message!, style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Plus tard'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(ctx);
+              openStore();
+            },
+            icon: const Icon(Icons.download, size: 18),
+            label: const Text('Mettre à jour'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1565C0),
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static void _showForceUpdateDialog(BuildContext context, AppUpdateStatus status) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
+              SizedBox(width: 12),
+              Expanded(child: Text('Mise à jour obligatoire')),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Une mise à jour importante est nécessaire pour continuer à utiliser CalyMob. '
+                'Veuillez installer la version ${status.latestVersion}.',
+              ),
+              if (status.message != null) ...[
+                const SizedBox(height: 12),
+                Text(status.message!, style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
+              ],
+            ],
+          ),
+          actions: [
+            ElevatedButton.icon(
+              onPressed: () => openStore(),
+              icon: const Icon(Icons.download, size: 18),
+              label: const Text('Mettre à jour maintenant'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

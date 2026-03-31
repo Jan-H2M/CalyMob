@@ -801,6 +801,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _forceCheckForUpdate() async {
+    AppUpdateService.clearCache();
+    await _checkForUpdate();
+  }
+
   Widget _buildApplicationSection() {
     final hasUpdate = _updateStatus?.updateAvailable ?? false;
 
@@ -840,7 +845,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       textStyle: const TextStyle(fontSize: 12),
                     ),
                   )
-                : null,
+                : IconButton(
+                    icon: const Icon(Icons.refresh, size: 20),
+                    tooltip: 'Vérifier les mises à jour',
+                    onPressed: _forceCheckForUpdate,
+                  ),
           ),
         ],
       ),

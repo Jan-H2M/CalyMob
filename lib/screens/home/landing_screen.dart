@@ -9,6 +9,7 @@ import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../providers/unread_count_provider.dart';
+import '../../services/app_update_service.dart';
 import '../auth/login_screen.dart';
 import '../operations/operations_list_screen.dart';
 import '../expenses/financial_screen.dart';
@@ -56,6 +57,7 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
     // and defer unread count listener to after first frame to prevent ANR
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initFromMemberProvider();
+      _checkForAppUpdate();
     });
   }
 
@@ -129,6 +131,11 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
       piscineRoles.add('theorie');
     }
     return piscineRoles;
+  }
+
+  Future<void> _checkForAppUpdate() async {
+    if (!mounted) return;
+    await AppUpdateService.showUpdateDialogIfNeeded(context);
   }
 
   void _startFishWithDelay(int index, int delayMs) {
