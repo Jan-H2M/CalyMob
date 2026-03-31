@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:app_badge_plus/app_badge_plus.dart';
@@ -202,14 +203,18 @@ class UnreadCountProvider extends ChangeNotifier {
     }
   }
 
-  /// Update iOS/Android app icon badge direct
+  /// Update iOS/Android app icon badge na de huidige UI frame.
+  /// Deferred via addPostFrameCallback om de main thread niet te blokkeren
+  /// tijdens zware Firestore refresh operaties (voorkomt ANR).
   void _updateBadge(int count) {
-    try {
-      AppBadgePlus.updateBadge(count);
-      debugPrint('🔴 Badge updated: $count');
-    } catch (e) {
-      debugPrint('⚠️ Badge update failed: $e');
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      try {
+        AppBadgePlus.updateBadge(count);
+        debugPrint('🔴 Badge updated: $count');
+      } catch (e) {
+        debugPrint('⚠️ Badge update failed: $e');
+      }
+    });
   }
 
   /// Stop periodic refresh

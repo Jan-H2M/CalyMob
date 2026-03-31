@@ -19,6 +19,7 @@ import 'firebase_options.dart';
 import 'services/notification_service.dart';
 import 'services/deep_link_service.dart';
 import 'services/local_read_tracker.dart';
+import 'services/app_update_service.dart';
 
 // Providers
 import 'providers/auth_provider.dart';
@@ -225,7 +226,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     }
   }
 
-  /// Gère la navigation quand l'utilisateur tape sur une notification push
+  /// Timeout for Firestore reads during notification tap handling.
+  /// Prevents ANR if network is slow or Firestore is unresponsive.
+  static const Duration _notificationTapTimeout = Duration(seconds: 5);
+
+  /// Gère la navigation quand l'utilisateur tape sur une notification push.
+  /// Uses timeouts on all Firestore reads to prevent ANR.
   Future<void> _handleNotificationTap(RemoteMessage message) async {
     final data = message.data;
     final type = data['type'] as String?;
@@ -264,7 +270,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                 .doc(clubId)
                 .collection('announcements')
                 .doc(announcementId)
-                .get();
+                .get()
+                .timeout(_notificationTapTimeout);
             if (doc.exists) {
               final announcement = Announcement.fromFirestore(doc);
               _navigatorKey.currentState!.push(
@@ -287,7 +294,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                 .doc(clubId)
                 .collection('team_channels')
                 .doc(channelId)
-                .get();
+                .get()
+                .timeout(_notificationTapTimeout);
             if (doc.exists) {
               final channel = TeamChannel.fromFirestore(doc);
               _navigatorKey.currentState!.push(
@@ -309,7 +317,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                 .doc(clubId)
                 .collection('piscine_sessions')
                 .doc(sessionId)
-                .get();
+                .get()
+                .timeout(_notificationTapTimeout);
             if (doc.exists) {
               final session = PiscineSession.fromFirestore(doc);
               // Déterminer le type de groupe
@@ -347,7 +356,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                 .doc(clubId)
                 .collection('piscine_sessions')
                 .doc(sessionId)
-                .get();
+                .get()
+                .timeout(_notificationTapTimeout);
             if (doc.exists) {
               final session = PiscineSession.fromFirestore(doc);
               _navigatorKey.currentState!.push(
@@ -362,6 +372,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         default:
           debugPrint('⚠️ Unknown notification type: $type');
       }
+    } on TimeoutException {
+      debugPrint('⚠️ Notification tap: Firestore read timed out for type=$type');
     } catch (e) {
       debugPrint('❌ Error handling notification tap: $e');
     }
@@ -391,10 +403,123 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       // Refresh unread counts bij terugkeer naar app
       _refreshUnreadCounts();
       _updateBadgeFromUnreadCounts();
+      // Check voor app update (cache wordt gecleared zodat er opnieuw gecheckt wordt)
+      AppUpdateService.clearCache();
+      _checkForAppUpdate();
     } else if (state == AppLifecycleState.paused) {
       // Badge updaten bij vertrek uit app
       _updateBadgeFromUnreadCounts();
     }
+  }
+
+  /// Check voor een app update en toon dialoog indien nodig.
+  Future<void> _checkForAppUpdate() async {
+    try {
+      final status = await AppUpdateService.checkForUpdate();
+      if (!status.updateAvailable) return;
+
+      final context = _navigatorKey.currentContext;
+      if (context == null) return;
+
+      if (status.forceUpdate) {
+        _showForceUpdateDialog(context, status);
+      } else {
+        _showUpdateDialog(context, status);
+      }
+    } catch (e) {
+      debugPrint('⚠️ Failed to check for app update on resume: $e');
+    }
+  }
+
+  void _showUpdateDialog(BuildContext context, AppUpdateStatus status) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.system_update, color: Colors.blue, size: 28),
+            SizedBox(width: 12),
+            Expanded(child: Text('Nouvelle version disponible')),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Version ${status.latestVersion} est disponible. '
+              'Vous utilisez la version ${status.currentVersion}.',
+            ),
+            if (status.message != null) ...[
+              const SizedBox(height: 12),
+              Text(status.message!, style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Plus tard'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(ctx);
+              AppUpdateService.openStore();
+            },
+            icon: const Icon(Icons.download, size: 18),
+            label: const Text('Mettre à jour'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.middenblauw,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showForceUpdateDialog(BuildContext context, AppUpdateStatus status) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
+              SizedBox(width: 12),
+              Expanded(child: Text('Mise à jour obligatoire')),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Une mise à jour importante est nécessaire pour continuer à utiliser CalyMob. '
+                'Veuillez installer la version ${status.latestVersion}.',
+              ),
+              if (status.message != null) ...[
+                const SizedBox(height: 12),
+                Text(status.message!, style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
+              ],
+            ],
+          ),
+          actions: [
+            ElevatedButton.icon(
+              onPressed: () => AppUpdateService.openStore(),
+              icon: const Icon(Icons.download, size: 18),
+              label: const Text('Mettre à jour maintenant'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// Refresh de unread counts wanneer de app resumed wordt

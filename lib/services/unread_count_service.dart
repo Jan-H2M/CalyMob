@@ -15,6 +15,9 @@ class UnreadCountService {
   /// Standaard epoch voor bestaande installaties.
   static final DateTime _defaultEpoch = DateTime(2024, 1, 1);
 
+  /// Timeout voor individuele Firestore queries (voorkomt ANR)
+  static const Duration _queryTimeout = Duration(seconds: 8);
+
   /// Fallback datum: als er een installBaseline is (verse install),
   /// gebruik die. Anders de standaard epoch.
   DateTime get _epoch => _tracker.installBaseline ?? _defaultEpoch;
@@ -36,12 +39,14 @@ class UnreadCountService {
         _firestore
             .collection('clubs/$clubId/announcements')
             .where('created_at', isGreaterThan: ts)
-            .get(),
+            .get()
+            .timeout(_queryTimeout),
         // 2. Aankondigingen met nieuwe replies (last_reply_at > lastRead)
         _firestore
             .collection('clubs/$clubId/announcements')
             .where('last_reply_at', isGreaterThan: ts)
-            .get(),
+            .get()
+            .timeout(_queryTimeout),
       ]);
 
       // Dedupliceer op doc ID (een nieuw announcement met reply telt maar 1x)
@@ -71,7 +76,8 @@ class UnreadCountService {
           .where('statut', isEqualTo: 'ouvert')
           .orderBy('date_debut', descending: true)
           .limit(_maxOperationsToCount)
-          .get();
+          .get()
+          .timeout(_queryTimeout);
 
       // Tel ongelezen berichten per operatie parallel (sneller dan sequentieel)
       final futures = opsSnapshot.docs.map((opDoc) async {
@@ -82,7 +88,7 @@ class UnreadCountService {
             .collection('clubs/$clubId/operations/${opDoc.id}/messages')
             .where('created_at', isGreaterThan: Timestamp.fromDate(lastRead));
 
-        final snapshot = await query.count().get();
+        final snapshot = await query.count().get().timeout(_queryTimeout);
         return snapshot.count ?? 0;
       });
 
@@ -109,7 +115,7 @@ class UnreadCountService {
           .collection('clubs/$clubId/operations/$operationId/messages')
           .where('created_at', isGreaterThan: Timestamp.fromDate(lastRead));
 
-      final snapshot = await query.count().get();
+      final snapshot = await query.count().get().timeout(_queryTimeout);
       return snapshot.count ?? 0;
     } catch (e) {
       debugPrint('❌ countUnreadForOperation error: $e');
@@ -140,19 +146,20 @@ class UnreadCountService {
     if (channelIds.isEmpty) return 0;
 
     try {
-      int total = 0;
-      for (final channelId in channelIds) {
-        // Als null (nooit geopend): tel alles sinds epoch als ongelezen
+      // Parallel queries per channel (sneller dan sequentieel)
+      final futures = channelIds.map((channelId) async {
         final lastRead = _tracker.getLastRead('team_$channelId') ?? _epoch;
 
         final query = _firestore
             .collection('clubs/$clubId/team_channels/$channelId/messages')
             .where('created_at', isGreaterThan: Timestamp.fromDate(lastRead));
 
-        final snapshot = await query.count().get();
-        total += snapshot.count ?? 0;
-      }
-      return total;
+        final snapshot = await query.count().get().timeout(_queryTimeout);
+        return snapshot.count ?? 0;
+      });
+
+      final counts = await Future.wait(futures);
+      return counts.fold<int>(0, (sum, c) => sum + c);
     } catch (e) {
       debugPrint('❌ countUnreadTeamMessages error: $e');
       return 0;
@@ -182,7 +189,8 @@ class UnreadCountService {
           .where('statut', isEqualTo: 'publie')
           .orderBy('date', descending: true)
           .limit(_maxSessionsToCount)
-          .get();
+          .get()
+          .timeout(_queryTimeout);
 
       // Bepaal welke group types de user kan zien
       final groupTypes = <String>[];
@@ -223,7 +231,7 @@ class UnreadCountService {
           .where('created_at',
               isGreaterThan: Timestamp.fromDate(lastRead));
 
-      final snapshot = await query.count().get();
+      final snapshot = await query.count().get().timeout(_queryTimeout);
       return snapshot.count ?? 0;
     } catch (e) {
       return 0;

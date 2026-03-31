@@ -1,6 +1,10 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Status van een app update check
@@ -10,6 +14,8 @@ class AppUpdateStatus {
   final String currentVersion;
   final String latestVersion;
   final String? message;
+  /// True als het resultaat van een lokale cache komt (Firestore was niet bereikbaar)
+  final bool fromLocalCache;
 
   AppUpdateStatus({
     required this.updateAvailable,
@@ -17,6 +23,7 @@ class AppUpdateStatus {
     required this.currentVersion,
     required this.latestVersion,
     this.message,
+    this.fromLocalCache = false,
   });
 
   factory AppUpdateStatus.upToDate(String currentVersion) {
@@ -27,6 +34,25 @@ class AppUpdateStatus {
       latestVersion: currentVersion,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'updateAvailable': updateAvailable,
+    'forceUpdate': forceUpdate,
+    'currentVersion': currentVersion,
+    'latestVersion': latestVersion,
+    'message': message,
+  };
+
+  factory AppUpdateStatus.fromJson(Map<String, dynamic> json, {bool fromCache = false}) {
+    return AppUpdateStatus(
+      updateAvailable: json['updateAvailable'] as bool? ?? false,
+      forceUpdate: json['forceUpdate'] as bool? ?? false,
+      currentVersion: json['currentVersion'] as String? ?? '?',
+      latestVersion: json['latestVersion'] as String? ?? '?',
+      message: json['message'] as String?,
+      fromLocalCache: fromCache,
+    );
+  }
 }
 
 /// Service die controleert of er een nieuwe versie van CalyMob beschikbaar is.
@@ -34,12 +60,24 @@ class AppUpdateStatus {
 /// Vergelijkt de huidige app-versie met de versie in Firestore
 /// (settings/app_version), die automatisch wordt bijgewerkt door
 /// bump_version.sh bij elke nieuwe build.
+///
+/// Features:
+/// - In-memory cache (1 uur) om Firestore reads te beperken
+/// - Lokale SharedPreferences fallback bij offline/timeout
+/// - Timeout op Firestore reads om ANR te voorkomen
 class AppUpdateService {
   static AppUpdateStatus? _cachedStatus;
   static DateTime? _lastCheck;
 
   // Cache geldig voor 1 uur (voorkomt onnodige Firestore reads)
   static const _cacheDuration = Duration(hours: 1);
+
+  // Timeout voor Firestore read
+  static const _firestoreTimeout = Duration(seconds: 8);
+
+  // SharedPreferences keys
+  static const _prefKeyLastStatus = 'app_update_last_status';
+  static const _prefKeyLastCheckTime = 'app_update_last_check_time';
 
   // Store URLs
   static const _playStoreUrl =
@@ -51,8 +89,9 @@ class AppUpdateService {
   ///
   /// Leest settings/app_version uit Firestore en vergelijkt met de
   /// geïnstalleerde versie via package_info_plus.
+  /// Bij timeout/offline wordt de lokale cache gebruikt als fallback.
   static Future<AppUpdateStatus> checkForUpdate({bool forceCheck = false}) async {
-    // Return cache als die nog geldig is
+    // Return in-memory cache als die nog geldig is
     if (!forceCheck &&
         _cachedStatus != null &&
         _lastCheck != null &&
@@ -63,16 +102,19 @@ class AppUpdateService {
     try {
       // Huidige app versie ophalen
       final packageInfo = await PackageInfo.fromPlatform();
-      final currentVersion = packageInfo.version; // bijv. "1.1.3"
+      final currentVersion = packageInfo.version;
 
-      // Firestore versie ophalen
+      // Firestore versie ophalen met timeout
       final doc = await FirebaseFirestore.instance
           .collection('settings')
           .doc('app_version')
-          .get();
+          .get()
+          .timeout(_firestoreTimeout);
 
       if (!doc.exists || doc.data() == null) {
-        return AppUpdateStatus.upToDate(currentVersion);
+        final status = AppUpdateStatus.upToDate(currentVersion);
+        _updateCaches(status);
+        return status;
       }
 
       final data = doc.data()!;
@@ -94,20 +136,59 @@ class AppUpdateService {
         message: message,
       );
 
-      // Cache bijwerken
-      _cachedStatus = status;
-      _lastCheck = DateTime.now();
+      // Beide caches bijwerken
+      _updateCaches(status);
 
       return status;
+    } on TimeoutException {
+      debugPrint('⚠️ AppUpdateService: Firestore timeout — falling back to local cache');
+      return _getLocalCacheFallback();
     } catch (e) {
-      print('⚠️ AppUpdateService: Fout bij het controleren op updates: $e');
-      // Bij een fout, return "up to date" zodat de gebruiker niet geblokkeerd wordt
-      try {
+      debugPrint('⚠️ AppUpdateService: Fout bij het controleren op updates: $e');
+      return _getLocalCacheFallback();
+    }
+  }
+
+  /// Update zowel in-memory als lokale SharedPreferences cache.
+  static void _updateCaches(AppUpdateStatus status) {
+    _cachedStatus = status;
+    _lastCheck = DateTime.now();
+    _saveToLocalCache(status);
+  }
+
+  /// Sla status op in SharedPreferences als offline fallback.
+  static Future<void> _saveToLocalCache(AppUpdateStatus status) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefKeyLastStatus, jsonEncode(status.toJson()));
+      await prefs.setInt(_prefKeyLastCheckTime, DateTime.now().millisecondsSinceEpoch);
+    } catch (e) {
+      debugPrint('⚠️ AppUpdateService: Could not save to local cache: $e');
+    }
+  }
+
+  /// Haal laatste bekende status op uit SharedPreferences.
+  /// Returns "up to date" als er geen lokale cache is.
+  static Future<AppUpdateStatus> _getLocalCacheFallback() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final statusJson = prefs.getString(_prefKeyLastStatus);
+
+      if (statusJson != null) {
+        final data = jsonDecode(statusJson) as Map<String, dynamic>;
+        // Update currentVersion met de werkelijke geïnstalleerde versie
         final packageInfo = await PackageInfo.fromPlatform();
-        return AppUpdateStatus.upToDate(packageInfo.version);
-      } catch (_) {
-        return AppUpdateStatus.upToDate('?');
+        data['currentVersion'] = packageInfo.version;
+        // Herbereken updateAvailable met de huidige versie
+        final latestVersion = data['latestVersion'] as String? ?? packageInfo.version;
+        data['updateAvailable'] = _isNewer(latestVersion, packageInfo.version);
+        return AppUpdateStatus.fromJson(data, fromCache: true);
       }
+
+      final packageInfo = await PackageInfo.fromPlatform();
+      return AppUpdateStatus.upToDate(packageInfo.version);
+    } catch (_) {
+      return AppUpdateStatus.upToDate('?');
     }
   }
 
@@ -138,7 +219,8 @@ class AppUpdateService {
     return false; // gelijk
   }
 
-  /// Reset de cache (bijv. na een pull-to-refresh)
+  /// Reset de in-memory cache (bijv. na een pull-to-refresh).
+  /// De lokale SharedPreferences cache blijft intact als offline fallback.
   static void clearCache() {
     _cachedStatus = null;
     _lastCheck = null;
