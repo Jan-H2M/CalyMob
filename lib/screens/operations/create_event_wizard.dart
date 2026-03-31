@@ -192,6 +192,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
         'organisateur_id': userId,
         'event_tariffs': tariffsData,
         'club_id': _clubId,
+        'fiscal_year_id': 'FY${_dateDebut.year}',
         'created_by': 'manual',
       };
 
