@@ -1,9 +1,13 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
+import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/member_provider.dart';
 import '../../models/member_profile.dart';
 import '../../services/profile_service.dart';
 import '../../services/notification_service.dart';
@@ -515,6 +519,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         _buildSectionHeader('Application'),
                         _buildApplicationSection(),
 
+                        // Admin: Version publishing (alleen zichtbaar voor admin/superadmin)
+                        _buildVersionPublishSection(),
+
                         const SizedBox(height: 24),
 
                         // Mon compte
@@ -854,6 +861,147 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
+  }
+
+  /// Admin-only: Knop om de huidige app-versie te publiceren in Firestore.
+  /// Dit activeert de update-melding voor alle gebruikers.
+  /// Gebruik: na goedkeuring door Apple/Google.
+  Widget _buildVersionPublishSection() {
+    final memberProvider = context.watch<MemberProvider>();
+    final appRole = memberProvider.appRole?.toLowerCase() ?? '';
+    final isAdmin = appRole == 'admin' || appRole == 'superadmin';
+
+    // Alleen tonen voor admins
+    if (!isAdmin) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Card(
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: ListTile(
+          leading: const Icon(Icons.publish, color: AppColors.middenblauw),
+          title: const Text('Publier la version'),
+          subtitle: Text(
+            _updateStatus != null
+                ? 'Version installée: ${_updateStatus!.currentVersion}\n'
+                  'Version publiée: ${_updateStatus!.latestVersion}'
+                : 'Chargement...',
+            style: const TextStyle(fontSize: 12),
+          ),
+          isThreeLine: true,
+          trailing: ElevatedButton(
+            onPressed: _publishingVersion ? null : _publishCurrentVersion,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.middenblauw,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+            child: _publishingVersion
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
+                  )
+                : const Text('Publier'),
+          ),
+        ),
+      ),
+    );
+  }
+
+  bool _publishingVersion = false;
+
+  /// Publiceer de huidige geïnstalleerde versie naar Firestore
+  /// zodat alle gebruikers de update-melding zien.
+  Future<void> _publishCurrentVersion() async {
+    final packageInfo = await PackageInfo.fromPlatform();
+    final currentVersion = packageInfo.version;
+    final buildNumber = int.tryParse(packageInfo.buildNumber) ?? 0;
+
+    // Bevestigingsdialoog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Publier cette version ?'),
+        content: Text(
+          'Vous allez publier la version $currentVersion.\n\n'
+          'Tous les utilisateurs avec une version plus ancienne '
+          'verront une notification de mise à jour.\n\n'
+          'Assurez-vous que cette version est disponible sur '
+          'l\'App Store et le Play Store.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.middenblauw,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Publier'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _publishingVersion = true);
+
+    try {
+      // Lees bestaande data om minSupportedVersion te bewaren
+      final doc = await FirebaseFirestore.instance
+          .collection('settings')
+          .doc('app_version')
+          .get();
+
+      final existingData = doc.exists ? doc.data() ?? {} : {};
+
+      await FirebaseFirestore.instance
+          .collection('settings')
+          .doc('app_version')
+          .set({
+        'version': currentVersion,
+        'buildNumber': buildNumber,
+        'forceRefresh': false,
+        'message': null,
+        'updatedAt': FieldValue.serverTimestamp(),
+        'source': 'calymob_admin_publish',
+        'minSupportedVersion': existingData['minSupportedVersion'],
+      });
+
+      // Clear cache zodat de nieuwe status direct zichtbaar is
+      AppUpdateService.clearCache();
+      await _checkForUpdate();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Version $currentVersion publiée avec succès !'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _publishingVersion = false);
+    }
   }
 
   Widget _buildAccountSection(MemberProfile profile) {

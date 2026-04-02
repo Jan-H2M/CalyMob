@@ -1,0 +1,1 @@
+Correction du bug de création d'événements (permission refusée). Améliorations de stabilité.

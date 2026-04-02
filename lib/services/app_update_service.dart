@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -61,10 +62,15 @@ class AppUpdateStatus {
 /// (settings/app_version), die automatisch wordt bijgewerkt door
 /// bump_version.sh bij elke nieuwe build.
 ///
+/// Vervolgens wordt via de iTunes Lookup API (iOS) gecontroleerd of de
+/// nieuwe versie daadwerkelijk beschikbaar is op de store, zodat de
+/// update-melding niet verschijnt terwijl de app nog in review is.
+///
 /// Features:
 /// - In-memory cache (1 uur) om Firestore reads te beperken
 /// - Lokale SharedPreferences fallback bij offline/timeout
 /// - Timeout op Firestore reads om ANR te voorkomen
+/// - iTunes Lookup API check voor iOS store beschikbaarheid
 class AppUpdateService {
   static AppUpdateStatus? _cachedStatus;
   static DateTime? _lastCheck;
@@ -75,6 +81,9 @@ class AppUpdateService {
   // Timeout voor Firestore read
   static const _firestoreTimeout = Duration(seconds: 8);
 
+  // Timeout voor store API check
+  static const _storeApiTimeout = Duration(seconds: 5);
+
   // SharedPreferences keys
   static const _prefKeyLastStatus = 'app_update_last_status';
   static const _prefKeyLastCheckTime = 'app_update_last_check_time';
@@ -83,12 +92,22 @@ class AppUpdateService {
   static const _playStoreUrl =
       'https://play.google.com/store/apps/details?id=club.caly.calymob';
   static const _appStoreUrl =
-      'https://apps.apple.com/app/calymob/id6744917498';
+      'https://apps.apple.com/app/calymob/id6755293289';
+
+  // iTunes Lookup API — gebruikt om te checken of een versie echt live is
+  // country=be voor België (primaire markt)
+  static const _iTunesLookupUrl =
+      'https://itunes.apple.com/lookup?bundleId=club.caly.calymob&country=be';
+
+  // Android bundle ID voor Play Store check
+  static const _androidBundleId = 'club.caly.calymob';
 
   /// Check of er een update beschikbaar is.
   ///
   /// Leest settings/app_version uit Firestore en vergelijkt met de
   /// geïnstalleerde versie via package_info_plus.
+  /// Vervolgens checkt het via de store API of de versie daadwerkelijk
+  /// beschikbaar is voor download (voorkomt melding bij app in review).
   /// Bij timeout/offline wordt de lokale cache gebruikt als fallback.
   static Future<AppUpdateStatus> checkForUpdate({bool forceCheck = false}) async {
     // Return in-memory cache als die nog geldig is
@@ -123,8 +142,29 @@ class AppUpdateService {
       final forceRefresh = data['forceRefresh'] as bool? ?? false;
       final message = data['message'] as String?;
 
-      // Vergelijk versies
-      final hasUpdate = _isNewer(latestVersion, currentVersion);
+      // Vergelijk versies met Firestore
+      final hasUpdateInFirestore = _isNewer(latestVersion, currentVersion);
+
+      // Als Firestore zegt dat er een update is, check dan of die versie
+      // ook echt beschikbaar is op de store (voorkomt melding bij review)
+      bool hasUpdate = hasUpdateInFirestore;
+      if (hasUpdateInFirestore) {
+        final storeVersion = await _getStoreVersion();
+        if (storeVersion != null) {
+          // Alleen update tonen als de store-versie nieuwer is dan de
+          // geïnstalleerde versie. Dit voorkomt dat de melding verschijnt
+          // als de nieuwe build wel in Firestore staat maar nog in review is.
+          hasUpdate = _isNewer(storeVersion, currentVersion);
+          debugPrint('📱 AppUpdateService: Store versie=$storeVersion, '
+              'current=$currentVersion, Firestore=$latestVersion, '
+              'showUpdate=$hasUpdate');
+        } else {
+          // Store API niet bereikbaar — val terug op Firestore
+          debugPrint('📱 AppUpdateService: Store API niet bereikbaar, '
+              'val terug op Firestore versie');
+        }
+      }
+
       final mustUpdate = minSupportedVersion != null &&
           _isNewer(minSupportedVersion, currentVersion);
 
@@ -146,6 +186,85 @@ class AppUpdateService {
     } catch (e) {
       debugPrint('⚠️ AppUpdateService: Fout bij het controleren op updates: $e');
       return _getLocalCacheFallback();
+    }
+  }
+
+  /// Haal de huidige versie op uit de App Store (iOS) of Play Store (Android).
+  /// Returns null als de API niet bereikbaar is of de app niet gevonden wordt.
+  static Future<String?> _getStoreVersion() async {
+    try {
+      if (Platform.isIOS) {
+        return await _getAppStoreVersion();
+      } else if (Platform.isAndroid) {
+        return await _getPlayStoreVersion();
+      }
+      return null;
+    } catch (e) {
+      debugPrint('⚠️ AppUpdateService: Store version check failed: $e');
+      return null;
+    }
+  }
+
+  /// Haal de huidige versie op uit de Apple App Store via iTunes Lookup API.
+  /// API response: { "resultCount": 1, "results": [{ "version": "1.2.4", ... }] }
+  static Future<String?> _getAppStoreVersion() async {
+    try {
+      final response = await http.get(Uri.parse(_iTunesLookupUrl))
+          .timeout(_storeApiTimeout);
+
+      if (response.statusCode != 200) return null;
+
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      final resultCount = json['resultCount'] as int? ?? 0;
+
+      if (resultCount == 0) {
+        debugPrint('📱 AppUpdateService: App niet gevonden op App Store (BE)');
+        return null;
+      }
+
+      final results = json['results'] as List<dynamic>;
+      if (results.isEmpty) return null;
+
+      final appInfo = results[0] as Map<String, dynamic>;
+      return appInfo['version'] as String?;
+    } on TimeoutException {
+      debugPrint('⚠️ AppUpdateService: iTunes Lookup API timeout');
+      return null;
+    } catch (e) {
+      debugPrint('⚠️ AppUpdateService: iTunes Lookup API error: $e');
+      return null;
+    }
+  }
+
+  /// Haal de huidige versie op uit de Google Play Store.
+  /// Google Play heeft geen officiële publieke API, dus we parsen de
+  /// Play Store webpagina. Als dit faalt, returnen we null en vallen
+  /// we terug op de Firestore versie (Play Store review is snel).
+  static Future<String?> _getPlayStoreVersion() async {
+    try {
+      final url = Uri.parse(
+          'https://play.google.com/store/apps/details?id=$_androidBundleId&hl=en');
+      final response = await http.get(url, headers: {
+        'User-Agent': 'Mozilla/5.0',
+      }).timeout(_storeApiTimeout);
+
+      if (response.statusCode != 200) return null;
+
+      // Zoek versie in de HTML — Google Play toont het in een specifiek patroon
+      // Format: [[[" X.Y.Z"]]] in de page data
+      final versionMatch = RegExp(r'\[\[\["(\d+\.\d+\.\d+)"\]\]')
+          .firstMatch(response.body);
+      if (versionMatch != null) {
+        return versionMatch.group(1);
+      }
+
+      return null;
+    } on TimeoutException {
+      debugPrint('⚠️ AppUpdateService: Play Store check timeout');
+      return null;
+    } catch (e) {
+      debugPrint('⚠️ AppUpdateService: Play Store check error: $e');
+      return null;
     }
   }
 

@@ -56,7 +56,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
   );
   DateTime? _dateFin;
   String _statut = 'ouvert';
-  List<Tariff> _eventTariffs = [];
+  List<_EditableTariff> _editableTariffs = [];
   bool _saving = false;
 
   @override
@@ -113,7 +113,10 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
       // Pré-remplir avec les données du lieu (identique à CalyCompta)
       _titreController.text = location.name;
       _descriptionController.text = location.description ?? '';
-      _eventTariffs = location.tariffs;
+      // Convertir locatie-tarieven naar bewerkbare tarieven
+      _editableTariffs = location.tariffs
+          .map((t) => _EditableTariff.fromTariff(t))
+          .toList();
 
       // Recalculer budget
       _recalculateBudget();
@@ -130,14 +133,26 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
       _selectedLocation = null;
       _titreController.text = '';
       _descriptionController.text = '';
-      _eventTariffs = [];
+      _editableTariffs = [];
       _currentStep = 2;
     });
   }
 
   void _recalculateBudget() {
     final capacity = int.tryParse(_capaciteController.text);
-    final budget = OperationService.computeBudgetPrevu(_eventTariffs, capacity);
+    // Converteer editeerbare tarieven naar Tariff objecten voor de berekening
+    final tariffObjects = _editableTariffs
+        .where((t) => t.label.trim().isNotEmpty)
+        .map((t) => Tariff(
+              id: t.id,
+              label: t.label,
+              category: t.category,
+              price: t.price,
+              isDefault: t.isDefault,
+              displayOrder: t.displayOrder,
+            ))
+        .toList();
+    final budget = OperationService.computeBudgetPrevu(tariffObjects, capacity);
     _budgetController.text = budget.toStringAsFixed(2);
   }
 
@@ -169,8 +184,18 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
       // Generate event number
       final eventNumber = await _operationService.generateEventNumber(_clubId, isDive);
 
-      // Build tariffs data
-      final tariffsData = OperationService.copyTariffsFromLocation(_eventTariffs);
+      // Build tariffs data vanuit editeerbare tarieven
+      final tariffsData = _editableTariffs
+          .where((t) => t.label.trim().isNotEmpty)
+          .map((t) => {
+                'id': t.id,
+                'label': t.label.trim(),
+                'category': t.category,
+                'price': t.price,
+                'is_default': t.isDefault,
+                'display_order': t.displayOrder,
+              })
+          .toList();
 
       final data = {
         'type': 'evenement',
@@ -793,12 +818,9 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
           ),
           const SizedBox(height: 16),
 
-          // Tarifs (read-only preview)
-          if (_eventTariffs.isNotEmpty)
-            _buildTariffsPreview(),
-
-          if (_eventTariffs.isNotEmpty)
-            const SizedBox(height: 16),
+          // Tarifs (éditables — pré-remplis depuis le lieu si applicable)
+          _buildTariffsSection(),
+          const SizedBox(height: 16),
 
           // Statut
           _buildSectionCard(
@@ -854,58 +876,196 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
     );
   }
 
-  Widget _buildTariffsPreview() {
+  // ============================================================
+  // TARIFF MANAGEMENT (identiek aan edit_event_screen)
+  // ============================================================
+
+  void _addTariff() {
+    setState(() {
+      _editableTariffs.add(_EditableTariff(
+        id: 'tariff_${DateTime.now().millisecondsSinceEpoch}_${_editableTariffs.length}',
+        label: '',
+        category: 'membre',
+        price: 0,
+        isDefault: _editableTariffs.isEmpty,
+        displayOrder: _editableTariffs.length,
+      ));
+    });
+  }
+
+  void _removeTariff(int index) {
+    setState(() {
+      _editableTariffs.removeAt(index);
+      _recalculateBudget();
+    });
+  }
+
+  void _updateTariffLabel(int index, String label) {
+    _editableTariffs[index].label = label;
+    _editableTariffs[index].category = _deriveCategoryFromLabel(label);
+  }
+
+  void _updateTariffPrice(int index, String priceStr) {
+    _editableTariffs[index].price = double.tryParse(priceStr) ?? 0;
+    _recalculateBudget();
+  }
+
+  String _deriveCategoryFromLabel(String label) {
+    final normalized = label.toLowerCase().trim();
+    if (normalized.contains('encadrant')) return 'encadrant';
+    if (normalized.contains('ca') || normalized.contains('comité')) return 'ca';
+    if (normalized.contains('junior')) return 'junior';
+    if (normalized.contains('non-membre') || normalized.contains('non membre')) return 'non_membre';
+    if (normalized.contains('membre')) return 'membre';
+    return normalized;
+  }
+
+  Widget _buildTariffsSection() {
     return _buildSectionCard(
       children: [
-        _buildLabel('Tarifs pour cet événement', icon: Icons.receipt_long),
-        const SizedBox(height: 10),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: AppColors.lichtblauw.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AppColors.lichtblauw.withOpacity(0.2)),
-          ),
-          child: Column(
-            children: [
-              ..._eventTariffs.map((tariff) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        tariff.label,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: AppColors.donkerblauw,
-                        ),
-                      ),
-                      Text(
-                        '${tariff.price.toStringAsFixed(2)} €',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.middenblauw,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-              const SizedBox(height: 8),
-              Text(
-                'Ces tarifs ont été copiés depuis le lieu. Vous pourrez les modifier après la création.',
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _buildLabel('Tarifs', icon: Icons.receipt_long),
+            TextButton.icon(
+              onPressed: _addTariff,
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Ajouter'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.middenblauw,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+
+        if (_editableTariffs.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.grey[200]!),
+            ),
+            child: Center(
+              child: Text(
+                'Aucun tarif défini.\nAppuyez sur "Ajouter" pour créer un tarif.',
+                textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: 13,
                   color: Colors.grey[500],
                   fontStyle: FontStyle.italic,
                 ),
               ),
-            ],
+            ),
           ),
-        ),
+
+        // Liste des tarifs éditables
+        ...List.generate(_editableTariffs.length, (index) {
+          return _buildTariffRow(index);
+        }),
+
+        if (_selectedLocation != null && _editableTariffs.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Tarifs pré-remplis depuis le lieu. Vous pouvez les modifier.',
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.grey[500],
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ],
       ],
+    );
+  }
+
+  Widget _buildTariffRow(int index) {
+    final tariff = _editableTariffs[index];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.lichtblauw.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.lichtblauw.withOpacity(0.2)),
+      ),
+      child: Row(
+        children: [
+          // Label input
+          Expanded(
+            flex: 3,
+            child: TextFormField(
+              initialValue: tariff.label,
+              decoration: InputDecoration(
+                hintText: 'Label (ex: Membre)',
+                hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
+                filled: true,
+                fillColor: Colors.white,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 10),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: Colors.grey[300]!),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: Colors.grey[300]!),
+                ),
+              ),
+              style: const TextStyle(fontSize: 14),
+              onChanged: (v) => _updateTariffLabel(index, v),
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // Price input
+          Expanded(
+            flex: 2,
+            child: TextFormField(
+              initialValue: tariff.price > 0 ? tariff.price.toStringAsFixed(2) : '',
+              decoration: InputDecoration(
+                hintText: '0.00',
+                hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
+                suffixText: '€',
+                suffixStyle: TextStyle(
+                  color: AppColors.middenblauw,
+                  fontWeight: FontWeight.bold,
+                ),
+                filled: true,
+                fillColor: Colors.white,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 10),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: Colors.grey[300]!),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: Colors.grey[300]!),
+                ),
+              ),
+              style: const TextStyle(fontSize: 14),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              onChanged: (v) => _updateTariffPrice(index, v),
+            ),
+          ),
+          const SizedBox(width: 4),
+
+          // Delete button
+          IconButton(
+            icon: Icon(Icons.close, size: 20, color: Colors.red[400]),
+            onPressed: () => _removeTariff(index),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1161,6 +1321,36 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
         borderSide: BorderSide(color: AppColors.middenblauw, width: 2),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    );
+  }
+}
+
+/// Classe helper voor bewerkbare tarieven (mutable versie van Tariff)
+class _EditableTariff {
+  String id;
+  String label;
+  String category;
+  double price;
+  bool isDefault;
+  int displayOrder;
+
+  _EditableTariff({
+    required this.id,
+    required this.label,
+    required this.category,
+    required this.price,
+    this.isDefault = false,
+    this.displayOrder = 0,
+  });
+
+  factory _EditableTariff.fromTariff(Tariff t) {
+    return _EditableTariff(
+      id: t.id,
+      label: t.label,
+      category: t.category,
+      price: t.price,
+      isDefault: t.isDefault,
+      displayOrder: t.displayOrder,
     );
   }
 }

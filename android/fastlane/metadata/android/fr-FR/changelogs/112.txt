@@ -1,0 +1,5 @@
+Améliorations de stabilité et corrections de bugs :
+• Prévention des blocages (ANR) lors de la reprise de l'app
+• Correction de la fermeture prématurée des sessions piscine
+• Amélioration du tri alphabétique des membres
+• Vérification des mises à jour améliorée

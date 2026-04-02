@@ -114,6 +114,38 @@ class _AvailabilityScreenState extends State<AvailabilityScreen>
     }
   }
 
+  /// Korte afkorting voor tabs wanneer er veel rollen zijn
+  String _getRoleShortName(String role) {
+    switch (role.toLowerCase()) {
+      case 'accueil':
+        return 'Acc.';
+      case 'encadrant':
+        return 'Enc.';
+      case 'gonflage':
+        return 'Gonf.';
+      case 'theorie':
+        return 'Théo.';
+      default:
+        return role.length > 4 ? '${role.substring(0, 4)}.' : role;
+    }
+  }
+
+  /// Icoon per rol
+  IconData _getRoleIcon(String role) {
+    switch (role.toLowerCase()) {
+      case 'accueil':
+        return Icons.badge;
+      case 'encadrant':
+        return Icons.school;
+      case 'gonflage':
+        return Icons.air;
+      case 'theorie':
+        return Icons.menu_book;
+      default:
+        return Icons.person;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -189,6 +221,9 @@ class _AvailabilityScreenState extends State<AvailabilityScreen>
   }
 
   Widget _buildTabBar() {
+    // Gebruik afkortingen als er 3+ rollen zijn om overflow te voorkomen
+    final useShortNames = widget.userRoles.length >= 3;
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
@@ -205,30 +240,38 @@ class _AvailabilityScreenState extends State<AvailabilityScreen>
         indicatorPadding: const EdgeInsets.all(4),
         labelColor: AppColors.donkerblauw,
         unselectedLabelColor: Colors.white,
-        labelStyle: const TextStyle(
+        labelStyle: TextStyle(
           fontWeight: FontWeight.bold,
-          fontSize: 14,
+          fontSize: useShortNames ? 12 : 14,
         ),
-        unselectedLabelStyle: const TextStyle(
+        unselectedLabelStyle: TextStyle(
           fontWeight: FontWeight.w500,
-          fontSize: 14,
+          fontSize: useShortNames ? 12 : 14,
         ),
         dividerColor: Colors.transparent,
+        labelPadding: useShortNames
+            ? const EdgeInsets.symmetric(horizontal: 4)
+            : null,
         tabs: widget.userRoles.map((role) {
+          final icon = _getRoleIcon(role);
+          final label = useShortNames
+              ? _getRoleShortName(role)
+              : _getRoleDisplayName(role);
+
           return Tab(
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  role == 'accueil'
-                      ? Icons.badge
-                      : role == 'gonflage'
-                          ? Icons.air
-                          : Icons.school,
-                  size: 18,
+                Icon(icon, size: useShortNames ? 16 : 18),
+                SizedBox(width: useShortNames ? 4 : 8),
+                Flexible(
+                  child: Text(
+                    label,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
                 ),
-                const SizedBox(width: 8),
-                Text(_getRoleDisplayName(role)),
               ],
             ),
           );

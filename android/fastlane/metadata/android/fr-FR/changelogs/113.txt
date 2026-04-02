@@ -1,0 +1,9 @@
+Version 1.3.0 — Nouveautés et améliorations
+
+• Suivi des messages non lus dans les discussions d'événements avec séparateur "Nouveaux messages"
+• Recherche manuelle au scanner et ajout d'invités directement depuis l'écran de scan
+• Badges de notifications push corrigés — le compteur se met à jour correctement
+• Meilleures performances — correction des blocages grâce à des optimisations de chargement
+• Correction des doublons d'invités et tri alphabétique de la liste des membres
+• Correction de l'année fiscale lors de la création d'événements
+• Système de vérification de mise à jour intégré

@@ -1,0 +1,60 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Upload IPA to App Store Connect (TestFlight)"
+  lane :deploy do
+    api_key = app_store_connect_api_key(
+      key_id: "BHUKT6FFGF",
+      issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"] || "280e011a-f492-43fb-b0eb-727ddaa8c6c9",
+      key_filepath: "~/.private_keys/AuthKey_BHUKT6FFGF.p8",
+      in_house: false
+    )
+
+    upload_to_testflight(
+      api_key: api_key,
+      ipa: "../build/ios/ipa/calymob.ipa",
+      skip_waiting_for_build_processing: true,
+      skip_submission: true
+    )
+  end
+
+  desc "Upload IPA directly to App Store for review"
+  lane :release do
+    api_key = app_store_connect_api_key(
+      key_id: "BHUKT6FFGF",
+      issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"] || "280e011a-f492-43fb-b0eb-727ddaa8c6c9",
+      key_filepath: "~/.private_keys/AuthKey_BHUKT6FFGF.p8",
+      in_house: false
+    )
+
+    upload_to_app_store(
+      api_key: api_key,
+      ipa: "../build/ios/ipa/calymob.ipa",
+      skip_metadata: true,
+      skip_screenshots: true,
+      submit_for_review: false,
+      automatic_release: true,
+      precheck_include_in_app_purchases: false
+    )
+  end
+
+  desc "Validate API key connection"
+  lane :validate do
+    api_key = app_store_connect_api_key(
+      key_id: "BHUKT6FFGF",
+      issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"] || "280e011a-f492-43fb-b0eb-727ddaa8c6c9",
+      key_filepath: "~/.private_keys/AuthKey_BHUKT6FFGF.p8",
+      in_house: false
+    )
+
+    # Probeer app info op te halen als validatie
+    deliver(
+      api_key: api_key,
+      skip_binary_upload: true,
+      skip_metadata: true,
+      skip_screenshots: true,
+      precheck_include_in_app_purchases: false,
+      run_precheck_before_submit: false
+    )
+  end
+end

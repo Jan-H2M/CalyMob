@@ -45,13 +45,15 @@ sed -i '' "s/^version: .*/version: $NEW_VERSION/" pubspec.yaml
 
 echo "Version bumped: $CURRENT_VERSION → $NEW_VERSION"
 
-# Update Firestore version (CalyCompta maintenance page)
+# ⚠️  Firestore version wordt NIET meer automatisch bijgewerkt!
+# De versie wordt pas gepubliceerd als je op "Publier" drukt in CalyMob > Mon Profil > Paramètres.
+# Dit voorkomt dat gebruikers een update-melding zien terwijl de app nog in review staat.
+#
+# Om manueel te publishen:
+#   node scripts/update_firestore_version.cjs "$NEW_VERSION_NAME" "$BUILD_NUMBER"
+#   of gebruik de knop in CalyMob settings (admin only)
 echo ""
-echo "📱 Syncing version to Firestore..."
-if node scripts/update_firestore_version.cjs "$NEW_VERSION_NAME" "$BUILD_NUMBER"; then
-  echo "✅ Firestore version synced successfully"
-else
-  echo "⚠️  Warning: Could not update Firestore version"
-  echo "   Mobile version updated, but web admin maintenance page may be out of sync"
-  echo "   You can manually update it in CalyCompta > Paramètres > Maintenance"
-fi
+echo "ℹ️  Firestore versie wordt NIET automatisch bijgewerkt."
+echo "   Publiceer de versie pas na goedkeuring door Apple/Google:"
+echo "   → CalyMob > Mon Profil > Paramètres > Publier la version"
+echo "   → Of: node scripts/update_firestore_version.cjs \"$NEW_VERSION_NAME\" \"$BUILD_NUMBER\""
