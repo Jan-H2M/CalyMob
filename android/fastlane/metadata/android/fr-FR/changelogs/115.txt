@@ -1,0 +1,6 @@
+v1.3.1 — Corrections et améliorations
+
+- Événements gratuits : le statut de paiement est masqué et remplacé par le label « Gratuit »
+- Authentification biométrique : l'app ne redemande plus la configuration après un refus
+- Signalement de bugs : les rapports envoyés depuis l'app apparaissent maintenant directement dans l'interface d'administration
+- Corrections de stabilité et améliorations des règles de sécurité
