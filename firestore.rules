@@ -380,7 +380,13 @@ service cloud.firestore {
             'consent_internal_photo', 'consent_internal_photo_date',
             'consent_external_photo', 'consent_external_photo_date',
             'share_email', 'share_phone', 'phone_number',
-            'notifications_enabled', 'fcm_token', 'fcm_tokens', 'fcm_token_updated_at'
+            'notifications_enabled', 'fcm_token', 'fcm_tokens', 'fcm_token_updated_at',
+            // App installation tracking (written by CalyMob on login)
+            'app_installed', 'app_platform', 'app_version', 'app_build_number',
+            'device_model', 'device_os_version', 'app_last_opened', 'app_first_installed',
+            // Device debug info (written by CalyMob notification_service)
+            'device_brand', 'device_is_physical', 'device_locale', 'device_timezone',
+            'device_screen_width', 'device_screen_height', 'device_pixel_ratio'
           ]);
 
         // Admins can create new members (for user management UI)
@@ -659,6 +665,12 @@ service cloud.firestore {
         && hasValidSession(clubId)
         && (isAdmin(clubId) || getUserData(clubId).app_role == 'validateur')
         && resource.data.type == 'club';
+    }
+
+    // Top-level settings (used by CalyCompta dashboard for app_version, version publishing etc.)
+    match /settings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated(); // Written by CalyCompta admin UI (version publishing)
     }
 
     // Default deny for everything else
