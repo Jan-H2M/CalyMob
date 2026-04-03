@@ -1231,10 +1231,21 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
               ),
             ),
           ],
+        ] else if (displayPrice == null || displayPrice == 0) ...[
+          const Icon(Icons.check_circle_outline, size: 18, color: Colors.white70),
+          const SizedBox(width: 6),
+          const Text(
+            'Gratuit',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
         ],
 
-        // Separator (only show if both price and level are visible)
-        if (displayPrice != null && displayPrice > 0 && userLevel != null && isPlongee) ...[
+        // Separator (only show if both price/gratuit and level are visible)
+        if (userLevel != null && isPlongee) ...[
           const SizedBox(width: 16),
           const Text('|', style: TextStyle(color: Colors.white54)),
           const SizedBox(width: 16),
@@ -2001,18 +2012,19 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // Payment status text
-                              Padding(
-                                padding: const EdgeInsets.only(top: 2),
-                                child: Text(
-                                  paymentInfo['text'] as String,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: paymentInfo['color'] as Color,
-                                    fontWeight: FontWeight.w500,
+                              // Payment status text (hide for free events)
+                              if (participant.totalPrix > 0)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Text(
+                                    paymentInfo['text'] as String,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: paymentInfo['color'] as Color,
+                                      fontWeight: FontWeight.w500,
+                                    ),
                                   ),
                                 ),
-                              ),
                               // Supplements (if any)
                               if (participant.selectedSupplements.isNotEmpty)
                                 Padding(
@@ -2041,7 +2053,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                                 ),
                             ],
                           ),
-                          trailing: _buildPaymentBadge(participant),
+                          trailing: participant.totalPrix > 0
+                              ? _buildPaymentBadge(participant)
+                              : null,
                         );
                       }).toList(),
                     ),
