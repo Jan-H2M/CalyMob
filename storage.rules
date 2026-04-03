@@ -151,6 +151,18 @@ service firebase.storage {
       allow delete: if hasRole(clubId, ['admin']);
     }
 
+    // ============================================
+    // Bug report screenshots (uploaded by any member)
+    // Path: clubs/{clubId}/bug_reports/{reportId}/screenshot.png
+    // ============================================
+    match /clubs/{clubId}/bug_reports/{reportId}/{fileName} {
+      allow read: if hasRole(clubId, ['admin', 'superadmin']);
+      allow create: if isClubMember(clubId) &&
+                      isValidImageSize() &&
+                      isValidFileType('image/.*');
+      allow delete: if hasRole(clubId, ['admin', 'superadmin']);
+    }
+
     // Bank statement imports
     match /clubs/{clubId}/imports/bank/{fileName} {
       allow read: if hasRole(clubId, ['admin', 'validateur']);

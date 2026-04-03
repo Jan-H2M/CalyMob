@@ -639,6 +639,21 @@ service cloud.firestore {
           && (!('fiscal_year_id' in request.resource.data) || canModifyFiscalYearData(clubId, request.resource.data.fiscal_year_id));
         allow delete: if isSuperAdmin(clubId) && hasValidSession(clubId);
       }
+
+      // ========== BUG REPORTING MODULE ==========
+
+      // Bug reports — signalements de bugs par les utilisateurs
+      match /bug_reports/{reportId} {
+        // Lecture: admin uniquement (pour voir tous les signalements)
+        allow read: if isAdmin(clubId) && hasValidSession(clubId);
+        // Création: tout membre authentifié peut signaler un bug
+        allow create: if isAuthenticated()
+          && request.resource.data.reporter.uid == request.auth.uid;
+        // Modification: admin uniquement (pour mettre à jour le statut, linearIssueId)
+        allow update: if isAdmin(clubId) && hasValidSession(clubId);
+        // Suppression: admin uniquement
+        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
+      }
     }
 
     // User profiles (global, not club-specific)

@@ -16,6 +16,7 @@ import '../../services/app_update_service.dart';
 import 'privacy_policy_screen.dart';
 import 'change_password_screen.dart';
 import 'notification_preferences_screen.dart';
+import '../../widgets/bug_report_widget.dart';
 
 /// Écran des paramètres
 class SettingsScreen extends StatefulWidget {
@@ -813,6 +814,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await _checkForUpdate();
   }
 
+  /// Active le mode bug report: affiche les instructions, puis l'icône 🐛 flottante.
+  void _startBugReportMode() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Text('🐛', style: TextStyle(fontSize: 24)),
+            SizedBox(width: 8),
+            Text('Signaler un bug'),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '1. Une petite icône va apparaître sur votre écran\n\n'
+              '2. Allez à l\'écran où vous avez constaté le problème\n\n'
+              '3. Appuyez sur l\'icône pour prendre une capture et décrire le problème',
+              style: TextStyle(fontSize: 14, height: 1.4),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx); // Fermer le dialog
+              Navigator.pop(context); // Quitter les Settings
+              bugReportController.activate(timeoutSeconds: 60);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.middenblauw,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Commencer'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildApplicationSection() {
     final hasUpdate = _updateStatus?.updateAvailable ?? false;
 
@@ -821,6 +869,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Column(
         children: [
+          // Bouton "Signaler un bug"
+          ListTile(
+            leading: const Text('🐛', style: TextStyle(fontSize: 20)),
+            title: const Text('Signaler un bug'),
+            subtitle: const Text(
+              'Prenez une capture et décrivez le problème',
+              style: TextStyle(fontSize: 12),
+            ),
+            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            onTap: () => _startBugReportMode(),
+          ),
+          const Divider(height: 1),
           ListTile(
             leading: Icon(
               hasUpdate ? Icons.system_update : Icons.check_circle,

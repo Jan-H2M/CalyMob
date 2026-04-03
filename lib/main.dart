@@ -34,6 +34,9 @@ import 'providers/availability_provider.dart';
 import 'providers/activity_provider.dart';
 import 'providers/unread_count_provider.dart';
 
+// Bug Report
+import 'widgets/bug_report_widget.dart';
+
 // Screens
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/reset_password_screen.dart';
@@ -130,6 +133,10 @@ void main() async {
       options.dsn = 'https://c6c7e5f63f5700bf5cb4f2b02a6ea0b5@o4510996349386752.ingest.de.sentry.io/4510996559429712';
       options.tracesSampleRate = 1.0;
       options.environment = const String.fromEnvironment('ENV', defaultValue: 'production');
+
+      // Session Replay — pour bug reporting (capture vidéo des sessions)
+      options.replay.sessionSampleRate = 0.1;   // 10% des sessions normales
+      options.replay.onErrorSampleRate = 1.0;   // 100% des sessions avec erreur
     },
     appRunner: () {
       debugPrint('✅ Sentry initialisé');
@@ -463,7 +470,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         ChangeNotifierProvider(create: (_) => ActivityProvider()),
         ChangeNotifierProvider(create: (_) => UnreadCountProvider()),
       ],
-      child: MaterialApp(
+      child: RepaintBoundary(
+        key: repaintBoundaryKey,
+        child: BugReportOverlay(
+          child: MaterialApp(
         navigatorKey: _navigatorKey,
         title: 'CalyMob',
         debugShowCheckedModeBanner: false,
@@ -527,6 +537,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           ),
         ),
         home: const LoginScreen(),
+      ),
+        ),
       ),
     );
   }
