@@ -332,6 +332,33 @@ class BiometricService {
     }
   }
 
+  /// Check if user has explicitly declined or disabled biometric login.
+  /// Returns true when _enabledKey is 'false' (user said "Non merci" or
+  /// toggled off in settings). Returns false when _enabledKey is null
+  /// (first-time user, never asked) or 'true' (enabled).
+  Future<bool> hasExplicitlyDeclinedBiometric() async {
+    try {
+      final enabled = await _secureStorage.read(key: _enabledKey);
+      return enabled == 'false';
+    } on PlatformException catch (e) {
+      FirebaseCrashlytics.instance.log(
+        'BiometricService.hasExplicitlyDeclinedBiometric PlatformException: ${e.code} - ${e.message}',
+      );
+      return false;
+    }
+  }
+
+  /// Mark biometric as declined (user chose "Non merci")
+  Future<void> declineBiometric() async {
+    try {
+      await _secureStorage.write(key: _enabledKey, value: 'false');
+    } on PlatformException catch (e) {
+      FirebaseCrashlytics.instance.log(
+        'BiometricService.declineBiometric PlatformException: ${e.code} - ${e.message}',
+      );
+    }
+  }
+
   /// Check if credentials are saved
   Future<bool> hasStoredCredentials() async {
     try {

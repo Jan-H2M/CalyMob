@@ -29,6 +29,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
   bool _biometricAvailable = false;
   bool _hasStoredCredentials = false;
+  bool _biometricDeclined = false;
   String _biometricTypeName = 'Biométrie';
 
   @override
@@ -40,12 +41,14 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _checkBiometricAvailability() async {
     final available = await _biometricService.isBiometricAvailable();
     final hasCredentials = await _biometricService.hasStoredCredentials();
+    final declined = await _biometricService.hasExplicitlyDeclinedBiometric();
     final typeName = await _biometricService.getBiometricTypeName();
 
     if (mounted) {
       setState(() {
         _biometricAvailable = available;
         _hasStoredCredentials = hasCredentials;
+        _biometricDeclined = declined;
         _biometricTypeName = typeName;
       });
 
@@ -195,8 +198,9 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleLoginWithBiometricSetup() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (_biometricAvailable && !_hasStoredCredentials) {
+    if (_biometricAvailable && !_hasStoredCredentials && !_biometricDeclined) {
       // Ask user if they want to enable biometric login
+      // Skip if user previously declined or disabled in settings
       final enableBiometric = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
@@ -216,6 +220,14 @@ class _LoginScreenState extends State<LoginScreen> {
           ],
         ),
       );
+
+      // Save the user's choice so we don't ask again
+      if (enableBiometric == false) {
+        await _biometricService.declineBiometric();
+        setState(() {
+          _biometricDeclined = true;
+        });
+      }
 
       await _handleLogin(saveBiometric: enableBiometric ?? false);
     } else {
