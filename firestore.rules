@@ -381,6 +381,8 @@ service cloud.firestore {
             'consent_external_photo', 'consent_external_photo_date',
             'share_email', 'share_phone', 'phone_number',
             'notifications_enabled', 'fcm_token', 'fcm_tokens', 'fcm_token_updated_at',
+            // Notification preferences (CalyMob) - granular per-type toggle
+            'notification_preferences',
             // App installation tracking (written by CalyMob on login)
             'app_installed', 'app_platform', 'app_version', 'app_build_number',
             'device_model', 'device_os_version', 'app_last_opened', 'app_first_installed',
@@ -394,6 +396,40 @@ service cloud.firestore {
 
         // Admins can update and delete members
         allow update, delete: if isAdmin(clubId) && hasValidSession(clubId);
+
+        // Exercices validés par membre (suivi des formations LIFRAS)
+        match /exercices_valides/{exerciceValideId} {
+          // Lecture : le membre lui-même, ou admin/superadmin
+          allow read: if isAuthenticated() && (
+            request.auth.uid == memberId ||
+            isAdmin(clubId)
+          );
+
+          // Écriture : admin/superadmin (mobile app: pas de session requise)
+          allow create, update, delete: if isAdmin(clubId);
+        }
+
+        // ========== MEDICAL CERTIFICATES (Certificats médicaux - CalyMob) ==========
+        // Members upload their medical certificates, admins validate them
+        match /medical_certificates/{certId} {
+          // Read: Member can read their own certificates, admins can read all
+          allow read: if isAuthenticated() && (
+            request.auth.uid == memberId ||
+            isAdmin(clubId)
+          );
+
+          // Create: Member can upload their own certificate (mobile app - no session required)
+          allow create: if isAuthenticated()
+            && request.auth.uid == memberId
+            && request.resource.data.member_id == memberId
+            && request.resource.data.status == 'pending';
+
+          // Update: Admin only - for approving/rejecting certificates
+          allow update: if isAdmin(clubId);
+
+          // Delete: Admin only - for removing old/invalid certificates
+          allow delete: if isAdmin(clubId);
+        }
       }
 
       // Fiscal years - can be read without session check (needed for reports page load)
