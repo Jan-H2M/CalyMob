@@ -47,12 +47,13 @@ class BugReportService {
       }
 
       // 3. Préparer le document Firestore
+      // Compatible avec CalyCompta bugReportManagementService (format screenshots[])
       final reportData = {
         'app': 'CalyMob',
         'title': title,
         'description': description ?? '',
         'priority': priority,
-        'status': 'open',
+        'status': 'nouveau', // Même valeur que CalyCompta (pas 'open')
         'reporter': {
           'uid': userId,
           'name': userName,
@@ -71,8 +72,11 @@ class BugReportService {
             ? 'https://h2m-ai.sentry.io/replays/?query=$sentryReplayId'
             : null,
         'linearIssueId': null, // Rempli par la Cloud Function
-        'screenshotUrl': null, // Rempli ci-dessous si screenshot fourni
+        'linearIssueUrl': null,
+        'screenshotUrl': null, // Backward compat — rempli ci-dessous
+        'screenshots': <Map<String, dynamic>>[], // Format CalyCompta
         'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
       };
 
       // 4. Écrire dans Firestore
@@ -83,11 +87,12 @@ class BugReportService {
       debugPrint('🐛 Bug report créé: ${docRef.id}');
 
       // 5. Uploader la capture d'écran (si fournie)
+      // Format compatible CalyCompta: screenshots[] array avec storagePath
       if (screenshotBytes != null && screenshotBytes.isNotEmpty) {
         try {
-          final storageRef = _storage
-              .ref()
-              .child('clubs/$clubId/bug_reports/${docRef.id}/screenshot.png');
+          final storagePath =
+              'clubs/$clubId/bug_reports/${docRef.id}/screenshot_0.png';
+          final storageRef = _storage.ref().child(storagePath);
 
           await storageRef.putData(
             screenshotBytes,
@@ -96,8 +101,19 @@ class BugReportService {
 
           final downloadUrl = await storageRef.getDownloadURL();
 
-          // Mettre à jour le document avec l'URL de la capture
-          await docRef.update({'screenshotUrl': downloadUrl});
+          // Mettre à jour avec les deux formats (nouveau + backward compat)
+          await docRef.update({
+            'screenshotUrl': downloadUrl,
+            'screenshots': [
+              {
+                'url': downloadUrl,
+                'page': currentRoute ?? '',
+                'capturedAt': DateTime.now().toIso8601String(),
+                'storagePath': storagePath,
+              }
+            ],
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
           debugPrint('📸 Screenshot uploadé: $downloadUrl');
         } catch (e) {
           debugPrint('❌ Erreur upload screenshot: $e');
