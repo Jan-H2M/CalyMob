@@ -7,6 +7,11 @@ import 'epc_qr_code_widget.dart';
 ///
 /// Utilisé par les organisateurs/encadrants pour montrer le QR code
 /// de paiement à un participant qui doit encore payer.
+///
+/// Flow UX:
+/// 1. La fiche s'ouvre avec le QR code + instruction "Le membre scanne ce QR"
+/// 2. L'organisateur attend que le membre scanne avec son app bancaire
+/// 3. L'organisateur appuie "Confirmer la réception" pour valider
 class ParticipantPaymentCard extends StatelessWidget {
   /// Prénom du participant
   final String participantFirstName;
@@ -236,12 +241,40 @@ class ParticipantPaymentCard extends StatelessWidget {
               ),
             ),
 
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
 
-            // Mark as paid button
+            // Step indicator for organizer
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.phone_android, size: 20, color: Colors.orange.shade700),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Le membre scanne ce QR code avec son app bancaire',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.orange.shade800,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // Confirm payment button — outline style, not filled green
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton.icon(
+              child: OutlinedButton.icon(
                 onPressed: isProcessing ? null : onMarkAsPaid,
                 icon: isProcessing
                     ? SizedBox(
@@ -249,17 +282,17 @@ class ParticipantPaymentCard extends StatelessWidget {
                         height: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.green.shade600),
                         ),
                       )
-                    : const Icon(Icons.check_circle, size: 20),
+                    : Icon(Icons.check, size: 20, color: Colors.green.shade600),
                 label: Text(
-                  isProcessing ? 'Enregistrement...' : 'Paiement reçu',
-                  style: const TextStyle(fontSize: 16),
+                  isProcessing ? 'Enregistrement...' : 'Confirmer la réception du paiement',
+                  style: TextStyle(fontSize: 14),
                 ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green.shade600,
-                  foregroundColor: Colors.white,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.green.shade700,
+                  side: BorderSide(color: Colors.green.shade400, width: 1.5),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -268,25 +301,21 @@ class ParticipantPaymentCard extends StatelessWidget {
               ),
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
 
-            // Cancel button - red outlined for visibility
+            // Close button — neutral, not alarming red
             SizedBox(
               width: double.infinity,
-              child: OutlinedButton(
+              child: TextButton(
                 onPressed: isProcessing ? null : () => Navigator.of(context).pop(),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.red.shade600,
-                  side: BorderSide(color: Colors.red.shade400, width: 1.5),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.grey.shade600,
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
                 ),
                 child: Text(
-                  'Annuler',
+                  'Fermer',
                   style: TextStyle(
-                    fontSize: 15,
+                    fontSize: 14,
                     fontWeight: FontWeight.w500,
                   ),
                 ),

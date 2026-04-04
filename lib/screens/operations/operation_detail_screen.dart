@@ -1944,22 +1944,50 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                                     operation: operationProvider.selectedOperation!,
                                   )
                               : null,
-                          leading: CircleAvatar(
-                            backgroundColor: isGuest
-                                ? AppColors.oranje.withOpacity(0.3)
-                                : (isCurrentUser ? AppColors.lichtblauw.withOpacity(0.5) : AppColors.lichtblauw.withOpacity(0.3)),
-                            radius: 20,
-                            child: isGuest
-                                ? Icon(Icons.person_outline, size: 20, color: AppColors.oranje)
-                                : Text(
-                                    prenom.isNotEmpty ? prenom[0].toUpperCase() : (displayNom.isNotEmpty ? displayNom[0].toUpperCase() : '?'),
-                                    style: TextStyle(
-                                      color: isCurrentUser ? AppColors.donkerblauw : AppColors.middenblauw,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
+                          // Show QR icon hint for tappable rows
+                          contentPadding: canShowPaymentCard
+                              ? const EdgeInsets.only(left: 8, right: 16)
+                              : null,
+                          leading: canShowPaymentCard
+                              ? Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.qr_code_2, size: 16, color: Colors.blueGrey.shade400),
+                                    const SizedBox(width: 4),
+                                    CircleAvatar(
+                                      backgroundColor: isGuest
+                                          ? AppColors.oranje.withOpacity(0.3)
+                                          : (isCurrentUser ? AppColors.lichtblauw.withOpacity(0.5) : AppColors.lichtblauw.withOpacity(0.3)),
+                                      radius: 20,
+                                      child: isGuest
+                                          ? Icon(Icons.person_outline, size: 20, color: AppColors.oranje)
+                                          : Text(
+                                              prenom.isNotEmpty ? prenom[0].toUpperCase() : (displayNom.isNotEmpty ? displayNom[0].toUpperCase() : '?'),
+                                              style: TextStyle(
+                                                color: isCurrentUser ? AppColors.donkerblauw : AppColors.middenblauw,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 16,
+                                              ),
+                                            ),
                                     ),
-                                  ),
-                          ),
+                                  ],
+                                )
+                              : CircleAvatar(
+                                  backgroundColor: isGuest
+                                      ? AppColors.oranje.withOpacity(0.3)
+                                      : (isCurrentUser ? AppColors.lichtblauw.withOpacity(0.5) : AppColors.lichtblauw.withOpacity(0.3)),
+                                  radius: 20,
+                                  child: isGuest
+                                      ? Icon(Icons.person_outline, size: 20, color: AppColors.oranje)
+                                      : Text(
+                                          prenom.isNotEmpty ? prenom[0].toUpperCase() : (displayNom.isNotEmpty ? displayNom[0].toUpperCase() : '?'),
+                                          style: TextStyle(
+                                            color: isCurrentUser ? AppColors.donkerblauw : AppColors.middenblauw,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                ),
                           title: Row(
                             children: [
                               Expanded(
