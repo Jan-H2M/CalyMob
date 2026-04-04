@@ -243,15 +243,11 @@ class NotificationService {
 
   /// Sauvegarder le token FCM et les infos de l'appareil dans Firestore
   /// Supporte plusieurs appareils en utilisant un array de tokens
+  /// Note: app_installed et device info worden ALTIJD gezet, ook zonder FCM token.
+  /// Zo tellen gebruikers die notificaties weigeren toch mee in de adoptiecijfers.
   Future<void> saveTokenToFirestore(String clubId, String userId) async {
     try {
-      final token = await getToken();
-      if (token == null) {
-        debugPrint('⚠️  Aucun token FCM disponible');
-        return;
-      }
-
-      // Récupérer les informations de l'appareil et de l'app
+      // Récupérer les informations de l'appareil et de l'app (altijd nodig)
       final deviceInfo = await _getDeviceInfo();
       final appInfo = await _getAppInfo();
 
@@ -261,14 +257,9 @@ class NotificationService {
       final doc = await memberRef.get();
       final isFirstInstall = doc.data()?['app_first_installed'] == null;
 
-      // Préparer les données à mettre à jour
+      // Préparer les données de base (ALTIJD gezet, onafhankelijk van FCM)
       final updateData = <String, dynamic>{
-        // FCM tokens
-        'fcm_tokens': FieldValue.arrayUnion([token]),
-        'fcm_token': token, // Garder pour compatibilité
-        'fcm_token_updated_at': FieldValue.serverTimestamp(),
-        'notifications_enabled': true,
-        // App installation tracking
+        // App installation tracking — altijd zetten
         'app_installed': true,
         'app_platform': deviceInfo['platform'],
         'app_version': appInfo['version'],
@@ -276,7 +267,7 @@ class NotificationService {
         'device_model': deviceInfo['model'],
         'device_os_version': deviceInfo['osVersion'],
         'app_last_opened': FieldValue.serverTimestamp(),
-        // Nieuwe debug velden
+        // Device debug velden
         'device_brand': deviceInfo['brand'],
         'device_is_physical': deviceInfo['isPhysicalDevice'],
         'device_locale': deviceInfo['locale'],
@@ -291,13 +282,24 @@ class NotificationService {
         updateData['app_first_installed'] = FieldValue.serverTimestamp();
       }
 
+      // FCM token: alleen toevoegen als beschikbaar
+      final token = await getToken();
+      if (token != null) {
+        updateData['fcm_tokens'] = FieldValue.arrayUnion([token]);
+        updateData['fcm_token'] = token; // Garder pour compatibilité
+        updateData['fcm_token_updated_at'] = FieldValue.serverTimestamp();
+        updateData['notifications_enabled'] = true;
+      } else {
+        debugPrint('⚠️  Aucun token FCM disponible — app_installed quand même mis à jour');
+      }
+
       await memberRef.update(updateData);
 
-      debugPrint('✅ Token FCM et infos appareil sauvegardés dans Firestore');
+      debugPrint('✅ App info${token != null ? ' + FCM token' : ''} sauvegardés dans Firestore');
       debugPrint('   Platform: ${deviceInfo['platform']}, Model: ${deviceInfo['model']}');
       debugPrint('   App version: ${appInfo['version']} (${appInfo['buildNumber']})');
     } catch (e, stack) {
-      debugPrint('❌ Erreur sauvegarde token FCM: $e');
+      debugPrint('❌ Erreur sauvegarde app info/token FCM: $e');
       CrashlyticsService.notificationError(e, stack, 'saveTokenToFirestore failed');
     }
   }
