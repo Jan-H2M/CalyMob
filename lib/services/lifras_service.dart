@@ -35,46 +35,32 @@ class LifrasService {
     try {
       debugPrint('🔍 Recherche exercices pour niveau: ${niveau.code} (${niveau.label})');
 
+      // Strategy: load all exercises and filter client-side.
+      // This avoids composite index requirements (niveau + code)
+      // and handles both 'P3' and '3' formats stored in Firestore.
+      final allExercices = await getAllExercices(clubId);
+
+      if (allExercices.isEmpty) {
+        debugPrint('⚠️ Aucun exercice LIFRAS trouvé dans le club $clubId');
+        return [];
+      }
+
       final exercices = <ExerciceLIFRAS>[];
 
       // 1. Get TN (Tous Niveaux) exercises - accessible to everyone
-      final tnSnapshot = await _firestore
-          .collection('clubs/$clubId/exercices_lifras')
-          .where('niveau', isEqualTo: 'TN')
-          .orderBy('code')
-          .get();
-
-      exercices.addAll(
-        tnSnapshot.docs.map((doc) => ExerciceLIFRAS.fromFirestore(doc)),
-      );
-      debugPrint('📚 ${tnSnapshot.docs.length} exercices TN (Tous Niveaux) trouvés');
+      final tnExercices = allExercices.where((ex) => ex.niveau == NiveauLIFRAS.tn).toList();
+      exercices.addAll(tnExercices);
+      debugPrint('📚 ${tnExercices.length} exercices TN (Tous Niveaux) trouvés');
 
       // 2. Get exercises for the specific niveau (if not TN)
       if (niveau != NiveauLIFRAS.tn) {
-        // First try with standard code (P4)
-        var snapshot = await _firestore
-            .collection('clubs/$clubId/exercices_lifras')
-            .where('niveau', isEqualTo: niveau.code)
-            .orderBy('code')
-            .get();
-
-        // If no results, try with just the number (e.g., "4" instead of "P4")
-        if (snapshot.docs.isEmpty) {
-          final numericCode = niveau.code.replaceAll(RegExp(r'[^0-9]'), '');
-          if (numericCode.isNotEmpty) {
-            debugPrint('🔍 Essai avec code numérique: $numericCode');
-            snapshot = await _firestore
-                .collection('clubs/$clubId/exercices_lifras')
-                .where('niveau', isEqualTo: numericCode)
-                .orderBy('code')
-                .get();
-          }
-        }
-
-        exercices.addAll(
-          snapshot.docs.map((doc) => ExerciceLIFRAS.fromFirestore(doc)),
-        );
+        final niveauExercices = allExercices.where((ex) => ex.niveau == niveau).toList();
+        exercices.addAll(niveauExercices);
+        debugPrint('📚 ${niveauExercices.length} exercices pour niveau ${niveau.label}');
       }
+
+      // Sort by code for consistent display
+      exercices.sort((a, b) => a.code.compareTo(b.code));
 
       debugPrint('📚 ${exercices.length} exercices LIFRAS total pour niveau ${niveau.label}');
       return exercices;

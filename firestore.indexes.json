@@ -66,6 +66,14 @@
         { "fieldPath": "group_level", "order": "ASCENDING" },
         { "fieldPath": "created_at", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "exercices_lifras",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "niveau", "order": "ASCENDING" },
+        { "fieldPath": "code", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
