@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
@@ -11,7 +12,7 @@ import '../providers/member_provider.dart';
 import '../services/bug_report_service.dart';
 
 /// Clé globale pour la RepaintBoundary (screenshot capture).
-/// Doit envelopper le widget racine de l'app (dans MyApp).
+/// Doit envelopper le widget racine de l'app (dans MyApp.builder).
 final GlobalKey repaintBoundaryKey = GlobalKey();
 
 /// Contrôleur global du mode bug report.
@@ -49,18 +50,20 @@ class BugReportController extends ChangeNotifier {
 }
 
 /// Widget overlay qui affiche l'icône 🐛 flottante quand le mode est actif.
-/// Doit être placé comme enfant de l'arbre widget principal (ex: dans Stack de MyApp).
+/// IMPORTANT: Doit être placé DANS le MaterialApp (via MaterialApp.builder)
+/// pour avoir accès au Navigator, MediaQuery, et Theme.
 class BugReportOverlay extends StatefulWidget {
   final Widget child;
+  final GlobalKey<NavigatorState>? navigatorKey;
 
-  const BugReportOverlay({super.key, required this.child});
+  const BugReportOverlay({super.key, required this.child, this.navigatorKey});
 
   @override
   State<BugReportOverlay> createState() => _BugReportOverlayState();
 }
 
 class _BugReportOverlayState extends State<BugReportOverlay> {
-  // Position initiale de l'icône (en bas à droite)
+  // Position de l'icône (persistée entre activations)
   double _xPos = -1; // -1 = pas encore initialisé
   double _yPos = -1;
 
@@ -69,20 +72,31 @@ class _BugReportOverlayState extends State<BugReportOverlay> {
     return ChangeNotifierProvider.value(
       value: bugReportController,
       child: Consumer<BugReportController>(
-        builder: (context, controller, _) {
+        // Optimisation: widget.child ne sera PAS reconstruit quand le
+        // contrôleur notifie, car il est passé comme child du Consumer.
+        child: widget.child,
+        builder: (context, controller, child) {
+          if (!controller.isActive) {
+            // Pas en mode bug report → afficher uniquement l'enfant
+            return child!;
+          }
           return Stack(
             children: [
-              widget.child,
-              if (controller.isActive)
-                _BugIconOverlay(
-                  xPos: _xPos,
-                  yPos: _yPos,
-                  onPositionChanged: (x, y) {
-                    _xPos = x;
-                    _yPos = y;
-                  },
-                  onTap: () => _captureAndShowForm(context),
-                ),
+              child!,
+              _BugIconOverlay(
+                xPos: _xPos,
+                yPos: _yPos,
+                onPositionChanged: (x, y) {
+                  _xPos = x;
+                  _yPos = y;
+                },
+                onTap: () {
+                  // Utiliser le navigatorKey context (DANS le Navigator)
+                  // au lieu du Consumer context (AU-DESSUS du Navigator)
+                  final navContext = widget.navigatorKey?.currentContext;
+                  _captureAndShowForm(navContext ?? context);
+                },
+              ),
             ],
           );
         },
@@ -94,24 +108,30 @@ class _BugReportOverlayState extends State<BugReportOverlay> {
   Future<void> _captureAndShowForm(BuildContext context) async {
     Uint8List? screenshotBytes;
 
-    try {
-      // Capturer le screenshot VIA RepaintBoundary
-      final boundary = repaintBoundaryKey.currentContext?.findRenderObject()
-          as RenderRepaintBoundary?;
+    // Sur le web, toImage() n'est pas fiable (assertion errors).
+    // Ne capturer le screenshot que sur mobile.
+    if (!kIsWeb) {
+      try {
+        final boundary = repaintBoundaryKey.currentContext?.findRenderObject()
+            as RenderRepaintBoundary?;
 
-      if (boundary != null) {
-        final image = await boundary.toImage(pixelRatio: 2.0);
-        final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-        screenshotBytes = byteData?.buffer.asUint8List();
-        debugPrint('📸 Screenshot capturé: ${screenshotBytes?.length ?? 0} bytes');
+        if (boundary != null) {
+          final image = await boundary.toImage(pixelRatio: 2.0);
+          final byteData =
+              await image.toByteData(format: ui.ImageByteFormat.png);
+          screenshotBytes = byteData?.buffer.asUint8List();
+          debugPrint(
+              '📸 Screenshot capturé: ${screenshotBytes?.length ?? 0} bytes');
+        }
+      } catch (e) {
+        debugPrint('⚠️ Impossible de capturer le screenshot: $e');
       }
-    } catch (e) {
-      debugPrint('⚠️ Impossible de capturer le screenshot: $e');
     }
 
     if (!context.mounted) return;
 
     // Ouvrir le formulaire dans un bottom sheet
+    // Le context doit avoir un Navigator ancestor (via navigatorKey)
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -143,8 +163,9 @@ class _BugIconOverlay extends StatefulWidget {
 
 class _BugIconOverlayState extends State<_BugIconOverlay>
     with SingleTickerProviderStateMixin {
-  late double _x;
-  late double _y;
+  double _x = 0;
+  double _y = 0;
+  bool _initialized = false;
   late AnimationController _pulseController;
 
   @override
@@ -164,21 +185,31 @@ class _BugIconOverlayState extends State<_BugIconOverlay>
 
   @override
   Widget build(BuildContext context) {
-    final screenSize = MediaQuery.of(context).size;
+    final mediaQuery = MediaQuery.maybeOf(context);
+    if (mediaQuery == null) {
+      // Pas de MediaQuery disponible — ne rien afficher
+      debugPrint('⚠️ BugIconOverlay: pas de MediaQuery disponible');
+      return const SizedBox.shrink();
+    }
+    final screenSize = mediaQuery.size;
 
-    // Position par défaut: en bas à droite
-    if (widget.xPos < 0) {
-      _x = screenSize.width - 64;
-      _y = screenSize.height - 160;
-    } else {
-      _x = widget.xPos;
-      _y = widget.yPos;
+    // Initialiser la position une seule fois (ou depuis les props du parent)
+    if (!_initialized) {
+      if (widget.xPos < 0) {
+        _x = screenSize.width - 64;
+        _y = screenSize.height - 160;
+      } else {
+        _x = widget.xPos;
+        _y = widget.yPos;
+      }
+      _initialized = true;
     }
 
     return Positioned(
       left: _x,
       top: _y,
       child: GestureDetector(
+        // Drag pour repositionner l'icône
         onPanUpdate: (details) {
           setState(() {
             _x = (_x + details.delta.dx).clamp(0, screenSize.width - 48);
@@ -186,7 +217,9 @@ class _BugIconOverlayState extends State<_BugIconOverlay>
           });
           widget.onPositionChanged(_x, _y);
         },
-        onTap: widget.onTap,
+        // onTapUp au lieu de onTap: évite le conflit avec onPanUpdate
+        // dans la gesture arena (surtout sur web/desktop)
+        onTapUp: (_) => widget.onTap(),
         child: AnimatedBuilder(
           animation: _pulseController,
           builder: (context, child) {
@@ -379,6 +412,27 @@ class _BugReportFormState extends State<_BugReportForm> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Bouton annuler
+                  SizedBox(
+                    width: double.infinity,
+                    height: 44,
+                    child: OutlinedButton(
+                      onPressed: _isSending ? null : () {
+                        bugReportController.deactivate();
+                        Navigator.of(context).pop();
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.grey[700],
+                        side: BorderSide(color: Colors.grey[400]!),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Annuler', style: TextStyle(fontSize: 15)),
                     ),
                   ),
                   const SizedBox(height: 12),

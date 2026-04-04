@@ -63,71 +63,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  // Register Syncfusion license
-  SyncfusionLicense.registerLicense(
-    'Ngo9BigBOggjHTQxAR8/V1JFaF1cXGFCf1FpRGpGfV5ycUVHYVZQRXxeQE0SNHVRdkdmWH1fcnVUR2FdU0J+W0pWYEg='
-  );
-
-  try {
-    // Initialiser Firebase avec les options de configuration
-    // Si déjà initialisé (par exemple après app restart), ne pas réinitialiser
-    if (Firebase.apps.isEmpty) {
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
-      debugPrint('✅ Firebase initialisé');
-    } else {
-      debugPrint('ℹ️ Firebase déjà initialisé');
-    }
-
-    // Initialiser Firebase Crashlytics (pas sur web)
-    if (!kIsWeb) {
-      // Envoyer les erreurs Flutter non-attrapées à Crashlytics
-      FlutterError.onError = (FlutterErrorDetails details) {
-        FirebaseCrashlytics.instance.recordFlutterFatalError(details);
-        Sentry.captureException(details.exception, stackTrace: details.stack);
-      };
-      debugPrint('✅ Crashlytics initialisé');
-    }
-
-    // Pré-initialiser LocalReadTracker (SharedPreferences) pour éviter ANR
-    // Fait avant tout le reste pour que les providers n'attendent pas
-    await LocalReadTracker().init();
-    debugPrint('✅ LocalReadTracker pré-initialisé');
-
-    // Initialiser les données de locale pour le français
-    await initializeDateFormatting('fr_FR', null);
-    Intl.defaultLocale = 'fr_FR';
-    debugPrint('✅ Locale initialisée (fr_FR)');
-
-    // Initialiser le service de notifications (pas sur web)
-    // Note: Le handler en arrière-plan doit être enregistré avant runApp
-    if (!kIsWeb) {
-      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-    }
-
-    final notificationService = NotificationService();
-    await notificationService.initialize();
-    // Configurer les handlers pour les notifications en foreground
-    if (!kIsWeb) {
-      notificationService.setupForegroundNotifications();
-      // Note: le badge est mis à jour (pas effacé) dans _MyAppState.initState()
-      // et NON ici, car la platform channel n'est pas encore prête avant runApp()
-    }
-    debugPrint('✅ Notifications initialisées');
-
-    // Initialiser le service de deep links (pour les retours de paiement Mollie)
-    final deepLinkService = DeepLinkService();
-    await deepLinkService.initialize();
-    debugPrint('✅ Deep links initialisés');
-  } catch (e) {
-    debugPrint('❌ Erreur initialisation: $e');
-    debugPrint('Stack trace: ${StackTrace.current}');
-  }
-
-  // Initialize Sentry and wrap runApp
+  // Initialize Sentry FIRST — all other init happens inside appRunner
+  // to ensure WidgetsFlutterBinding and runApp share the same zone.
+  // SentryFlutter.init calls ensureInitialized() internally in its zone,
+  // so we must NOT call it before — that causes a zone mismatch on web.
   await SentryFlutter.init(
     (options) {
       options.dsn = 'https://c6c7e5f63f5700bf5cb4f2b02a6ea0b5@o4510996349386752.ingest.de.sentry.io/4510996559429712';
@@ -138,8 +77,63 @@ void main() async {
       options.replay.sessionSampleRate = 0.1;   // 10% des sessions normales
       options.replay.onErrorSampleRate = 1.0;   // 100% des sessions avec erreur
     },
-    appRunner: () {
+    appRunner: () async {
       debugPrint('✅ Sentry initialisé');
+
+      // Register Syncfusion license
+      SyncfusionLicense.registerLicense(
+        'Ngo9BigBOggjHTQxAR8/V1JFaF1cXGFCf1FpRGpGfV5ycUVHYVZQRXxeQE0SNHVRdkdmWH1fcnVUR2FdU0J+W0pWYEg='
+      );
+
+      try {
+        // Initialiser Firebase avec les options de configuration
+        if (Firebase.apps.isEmpty) {
+          await Firebase.initializeApp(
+            options: DefaultFirebaseOptions.currentPlatform,
+          );
+          debugPrint('✅ Firebase initialisé');
+        } else {
+          debugPrint('ℹ️ Firebase déjà initialisé');
+        }
+
+        // Initialiser Firebase Crashlytics (pas sur web)
+        if (!kIsWeb) {
+          FlutterError.onError = (FlutterErrorDetails details) {
+            FirebaseCrashlytics.instance.recordFlutterFatalError(details);
+            Sentry.captureException(details.exception, stackTrace: details.stack);
+          };
+          debugPrint('✅ Crashlytics initialisé');
+        }
+
+        // Pré-initialiser LocalReadTracker (SharedPreferences) pour éviter ANR
+        await LocalReadTracker().init();
+        debugPrint('✅ LocalReadTracker pré-initialisé');
+
+        // Initialiser les données de locale pour le français
+        await initializeDateFormatting('fr_FR', null);
+        Intl.defaultLocale = 'fr_FR';
+        debugPrint('✅ Locale initialisée (fr_FR)');
+
+        // Initialiser le service de notifications (pas sur web)
+        if (!kIsWeb) {
+          FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+        }
+
+        final notificationService = NotificationService();
+        await notificationService.initialize();
+        if (!kIsWeb) {
+          notificationService.setupForegroundNotifications();
+        }
+        debugPrint('✅ Notifications initialisées');
+
+        // Initialiser le service de deep links (pour les retours de paiement Mollie)
+        final deepLinkService = DeepLinkService();
+        await deepLinkService.initialize();
+        debugPrint('✅ Deep links initialisés');
+      } catch (e) {
+        debugPrint('❌ Erreur initialisation: $e');
+        debugPrint('Stack trace: ${StackTrace.current}');
+      }
 
       if (kIsWeb) {
         runApp(const MyApp());
@@ -470,11 +464,19 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         ChangeNotifierProvider(create: (_) => ActivityProvider()),
         ChangeNotifierProvider(create: (_) => UnreadCountProvider()),
       ],
-      child: RepaintBoundary(
-        key: repaintBoundaryKey,
-        child: BugReportOverlay(
-          child: MaterialApp(
+      child: MaterialApp(
         navigatorKey: _navigatorKey,
+        // BugReportOverlay est maintenant DANS le MaterialApp via builder,
+        // pour avoir accès au Navigator, MediaQuery, et Theme.
+        builder: (context, child) {
+          return RepaintBoundary(
+            key: repaintBoundaryKey,
+            child: BugReportOverlay(
+              navigatorKey: _navigatorKey,
+              child: child ?? const SizedBox(),
+            ),
+          );
+        },
         title: 'CalyMob',
         debugShowCheckedModeBanner: false,
         // Localisation française pour Syncfusion Calendar
@@ -537,8 +539,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           ),
         ),
         home: const LoginScreen(),
-      ),
-        ),
       ),
     );
   }
