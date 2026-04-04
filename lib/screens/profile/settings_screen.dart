@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
@@ -144,12 +145,122 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }
       }
     } else {
-      // Pour activer, l'utilisateur doit se reconnecter avec email/mot de passe
+      // Activer la biométrie : demander le mot de passe pour sauvegarder les credentials
+      await _enableBiometricFromSettings();
+    }
+  }
+
+  Future<void> _enableBiometricFromSettings() async {
+    final passwordController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    final password = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Activer $_biometricTypeName'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Entrez votre mot de passe pour activer $_biometricTypeName.',
+                style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: passwordController,
+                obscureText: true,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Mot de passe',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.lock_outline),
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Veuillez entrer votre mot de passe';
+                  }
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(context, passwordController.text);
+              }
+            },
+            child: const Text('Activer'),
+          ),
+        ],
+      ),
+    );
+
+    passwordController.dispose();
+
+    if (password == null || !mounted) return;
+
+    // Vérifier le mot de passe via Firebase reauthentication
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null || user.email == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Erreur : utilisateur non connecté'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      final credential = EmailAuthProvider.credential(
+        email: user.email!,
+        password: password,
+      );
+      await user.reauthenticateWithCredential(credential);
+
+      // Mot de passe vérifié — sauvegarder les credentials et activer la biométrie
+      await _biometricService.saveCredentials(user.email!, password);
+
+      if (mounted) {
+        setState(() => _biometricEnabled = true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$_biometricTypeName activé'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        String message;
+        if (e.code == 'wrong-password' || e.code == 'invalid-credential') {
+          message = 'Mot de passe incorrect';
+        } else if (e.code == 'too-many-requests') {
+          message = 'Trop de tentatives. Réessayez plus tard.';
+        } else {
+          message = 'Erreur d\'authentification : ${e.message}';
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), backgroundColor: Colors.red),
+        );
+      }
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Déconnectez-vous et reconnectez-vous pour activer la biométrie'),
-            backgroundColor: Colors.blue,
+          SnackBar(
+            content: Text('Erreur inattendue : $e'),
+            backgroundColor: Colors.red,
           ),
         );
       }
@@ -626,7 +737,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               subtitle: Text(
                 _biometricEnabled
                     ? 'Connectez-vous rapidement avec $_biometricTypeName'
-                    : 'Reconnectez-vous pour activer cette option',
+                    : 'Activez pour vous connecter rapidement',
                 style: TextStyle(
                   fontSize: 12,
                   color: _biometricEnabled ? Colors.green.shade700 : Colors.grey.shade600,

@@ -408,6 +408,18 @@ class BiometricService {
     }
   }
 
+  /// Reset the biometric preference so the user can re-enable biometrics.
+  /// Sets _enabledKey back to null (first-time state) without clearing credentials.
+  Future<void> resetBiometricPreference() async {
+    try {
+      await _secureStorage.delete(key: _enabledKey);
+    } on PlatformException catch (e) {
+      FirebaseCrashlytics.instance.log(
+        'BiometricService.resetBiometricPreference PlatformException: ${e.code} - ${e.message}',
+      );
+    }
+  }
+
   /// Clear all stored credentials
   Future<void> clearCredentials() async {
     try {
