@@ -1,0 +1,3 @@
+• Correction de plusieurs crashs signalés par les utilisateurs
+• Amélioration de la stabilité du signalement de bugs dans l'app
+• Meilleure gestion des notifications push et des badges de messages non lus

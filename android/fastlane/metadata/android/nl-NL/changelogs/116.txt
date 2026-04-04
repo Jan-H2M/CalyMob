@@ -1,0 +1,3 @@
+• Oplossing van meerdere crashes gemeld door gebruikers
+• Verbeterde stabiliteit van bugmeldingen in de app
+• Betere afhandeling van pushmeldingen en ongelezen berichtenbadges
