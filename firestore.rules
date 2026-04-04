@@ -370,17 +370,21 @@ service cloud.firestore {
           && request.auth.uid == memberId
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastLogin', 'updatedAt']);
 
-        // Allow users to update their own profile fields (photo, consents, contact sharing)
-        // These fields can be updated by the user with a valid session
+        // Allow users to update their own profile fields (needed during login/app usage, before session exists)
+        // Includes: login timestamp, FCM tokens for push notifications, app installation tracking,
+        // and unread_counts for badge management (decremented by the mobile app when reading messages)
         allow update: if isAuthenticated()
-          && hasValidSession(clubId)
           && request.auth.uid == memberId
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            // Login tracking
+            'lastLogin', 'updatedAt',
+            // Profile editing (CalyMob)
             'photo_url', 'photo_uploaded_at', 'updated_at',
             'consent_internal_photo', 'consent_internal_photo_date',
             'consent_external_photo', 'consent_external_photo_date',
             'share_email', 'share_phone', 'phone_number',
-            'notifications_enabled', 'fcm_token', 'fcm_tokens', 'fcm_token_updated_at',
+            // Push notifications (CalyMob)
+            'fcm_token', 'fcm_tokens', 'fcm_token_updated_at', 'notifications_enabled',
             // Notification preferences (CalyMob) - granular per-type toggle
             'notification_preferences',
             // App installation tracking (written by CalyMob on login)
@@ -388,7 +392,13 @@ service cloud.firestore {
             'device_model', 'device_os_version', 'app_last_opened', 'app_first_installed',
             // Device debug info (written by CalyMob notification_service)
             'device_brand', 'device_is_physical', 'device_locale', 'device_timezone',
-            'device_screen_width', 'device_screen_height', 'device_pixel_ratio'
+            'device_screen_width', 'device_screen_height', 'device_pixel_ratio',
+            // Diagnostics (CalyMob) - biometric status, error logs, health checks
+            'diag_biometric', 'diag_errors', 'diag_last_error_at', 'diag_health',
+            // Badge management (CalyMob) - unread message counters
+            'unread_counts',
+            // Medical certificate flag (CalyMob) - set when member uploads a new certificate
+            'has_pending_medical'
           ]);
 
         // Admins can create new members (for user management UI)
