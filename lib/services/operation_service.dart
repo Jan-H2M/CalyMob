@@ -347,7 +347,7 @@ class OperationService {
   }
 
   /// Mark a participant's payment as received (by organizer on site)
-  /// Sets paye=true with timestamp and user info
+  /// Sets paye=true with timestamp, updates payment_status for data consistency
   Future<void> markParticipantAsPaid({
     required String clubId,
     required String operationId,
@@ -361,6 +361,8 @@ class OperationService {
         'paye': true,
         'paye_at': FieldValue.serverTimestamp(),
         'paye_method': 'epc_qr_onsite', // Payment collected on site via EPC QR
+        'payment_status': 'paid', // Sync payment_status with paye for data consistency
+        'date_paiement': FieldValue.serverTimestamp(),
         'updated_at': FieldValue.serverTimestamp(),
       });
 
