@@ -1,0 +1,6 @@
+v1.3.3 — Corrections et améliorations :
+• Exercices LIFRAS : tous les niveaux affichent correctement leurs exercices
+• Paiement sur site : interface améliorée pour les QR codes EPC
+• Synchronisation du statut de paiement entre l'app et l'administration
+• Authentification biométrique : activation directe depuis les paramètres
+• Corrections de compatibilité d'affichage

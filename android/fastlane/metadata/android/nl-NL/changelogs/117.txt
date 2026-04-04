@@ -1,0 +1,6 @@
+v1.3.3 — Fixes en verbeteringen:
+• LIFRAS oefeningen: alle niveaus tonen nu correct hun oefeningen
+• Betaling ter plaatse: verbeterde interface voor EPC QR-codes
+• Synchronisatie van betalingsstatus tussen app en administratie
+• Biometrische authenticatie: direct activeerbaar vanuit instellingen
+• Weergave-compatibiliteit verbeterd
