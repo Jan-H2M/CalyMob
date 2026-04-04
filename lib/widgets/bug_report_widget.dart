@@ -423,7 +423,7 @@ class _BugReportFormState extends State<_BugReportForm> {
                     child: OutlinedButton(
                       onPressed: _isSending ? null : () {
                         bugReportController.deactivate();
-                        Navigator.of(context).pop();
+                        Navigator.maybeOf(context)?.pop(); // fixes CALYMOB-E
                       },
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.grey[700],
@@ -585,11 +585,11 @@ class _BugReportFormState extends State<_BugReportForm> {
 
       if (!mounted) return;
 
-      // Fermer le bottom sheet
-      Navigator.of(context).pop();
+      // Fermer le bottom sheet (maybeOf to handle missing Navigator on web — fixes CALYMOB-E)
+      Navigator.maybeOf(context)?.pop();
 
       // Afficher confirmation
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
         const SnackBar(
           content: Row(
             children: [

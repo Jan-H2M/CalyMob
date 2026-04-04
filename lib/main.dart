@@ -135,16 +135,16 @@ void main() async {
         debugPrint('Stack trace: ${StackTrace.current}');
       }
 
-      if (kIsWeb) {
+      // Use runZonedGuarded on ALL platforms to ensure zone consistency
+      // (fixes CALYMOB-D zone mismatch on web)
+      runZonedGuarded<Future<void>>(() async {
         runApp(const MyApp());
-      } else {
-        runZonedGuarded<Future<void>>(() async {
-          runApp(const MyApp());
-        }, (error, stack) {
+      }, (error, stack) {
+        if (!kIsWeb) {
           FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-          Sentry.captureException(error, stackTrace: stack);
-        });
-      }
+        }
+        Sentry.captureException(error, stackTrace: stack);
+      });
     },
   );
 }
@@ -436,6 +436,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   /// Met à jour le badge iOS/Android avec le total des non-lus depuis le provider
   void _updateBadgeFromUnreadCounts() {
+    if (kIsWeb) return; // app_badge_plus not available on web (fixes CALYMOB-F)
     try {
       final unreadProvider = _navigatorKey.currentContext != null
           ? Provider.of<UnreadCountProvider>(_navigatorKey.currentContext!, listen: false)
@@ -450,21 +451,26 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => AuthProvider()),
-        ChangeNotifierProvider(create: (_) => MemberProvider()),
-        ChangeNotifierProvider(create: (_) => OperationProvider()),
-        ChangeNotifierProvider(create: (_) => ExpenseProvider()),
-        ChangeNotifierProvider(create: (_) => AnnouncementProvider()),
-        ChangeNotifierProvider(create: (_) => EventMessageProvider()),
-        ChangeNotifierProvider(create: (_) => PaymentProvider()),
-        ChangeNotifierProvider(create: (_) => ExerciceValideProvider()),
-        ChangeNotifierProvider(create: (_) => AvailabilityProvider()),
-        ChangeNotifierProvider(create: (_) => ActivityProvider()),
-        ChangeNotifierProvider(create: (_) => UnreadCountProvider()),
-      ],
-      child: MaterialApp(
+    // Directionality wrapper ensures TextDirection is always available,
+    // even during the warm-up frame before MaterialApp is fully built.
+    // Fixes CALYMOB-A / CALYMOB-9 (AlignmentDirectional.resolve null check)
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => AuthProvider()),
+          ChangeNotifierProvider(create: (_) => MemberProvider()),
+          ChangeNotifierProvider(create: (_) => OperationProvider()),
+          ChangeNotifierProvider(create: (_) => ExpenseProvider()),
+          ChangeNotifierProvider(create: (_) => AnnouncementProvider()),
+          ChangeNotifierProvider(create: (_) => EventMessageProvider()),
+          ChangeNotifierProvider(create: (_) => PaymentProvider()),
+          ChangeNotifierProvider(create: (_) => ExerciceValideProvider()),
+          ChangeNotifierProvider(create: (_) => AvailabilityProvider()),
+          ChangeNotifierProvider(create: (_) => ActivityProvider()),
+          ChangeNotifierProvider(create: (_) => UnreadCountProvider()),
+        ],
+        child: MaterialApp(
         navigatorKey: _navigatorKey,
         // BugReportOverlay est maintenant DANS le MaterialApp via builder,
         // pour avoir accès au Navigator, MediaQuery, et Theme.
@@ -539,6 +545,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           ),
         ),
         home: const LoginScreen(),
+        ),
       ),
     );
   }

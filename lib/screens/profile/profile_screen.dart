@@ -375,6 +375,13 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
   Widget build(BuildContext context) {
     final userId = context.watch<AuthProvider>().currentUser?.uid ?? '';
 
+    // Guard: don't render if user is not logged in (prevents Firestore empty path error)
+    if (userId.isEmpty) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(

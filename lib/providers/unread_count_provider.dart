@@ -207,6 +207,8 @@ class UnreadCountProvider extends ChangeNotifier {
   /// Deferred via addPostFrameCallback om de main thread niet te blokkeren
   /// tijdens zware Firestore refresh operaties (voorkomt ANR).
   void _updateBadge(int count) {
+    // app_badge_plus has no web implementation — skip on web (fixes CALYMOB-F)
+    if (kIsWeb) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       try {
         AppBadgePlus.updateBadge(count);
