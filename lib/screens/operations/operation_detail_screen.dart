@@ -32,7 +32,7 @@ import 'edit_event_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
 import 'package:intl/intl.dart';
-import '../../utils/fiche_palanquee_pdf.dart';
+import 'palanquee_screen.dart';
 
 /// Écran de détail d'une opération avec bouton inscription
 class OperationDetailScreen extends StatefulWidget {
@@ -68,6 +68,15 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
     final authProvider = context.read<AuthProvider>();
     final currentUserId = authProvider.currentUser?.uid;
     return currentUserId != null && operation.organisateurId == currentUserId;
+  }
+
+  /// Check if user can manage palanquées (creator or encadrant)
+  bool _canManagePalanquees(Operation operation) {
+    if (_isCurrentUserCreator(operation)) return true;
+    final memberProvider = context.read<MemberProvider>();
+    final statuten = memberProvider.clubStatuten;
+    final normalised = statuten.map((s) => s.toLowerCase().trim()).toList();
+    return normalised.contains('encadrant') || normalised.contains('encadrants');
   }
 
   @override
@@ -904,7 +913,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
   Widget build(BuildContext context) {
     final operationProvider = context.watch<OperationProvider>();
     final operation = operationProvider.selectedOperation;
-    final isPlongeeEvent = operation?.categorie == 'plongee';
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -934,56 +942,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                   _loadOperation();
                 }
               },
-            ),
-          // Fiche de palanquée button - only for dive events with participants
-          if (isPlongeeEvent && (operationProvider.selectedOperationParticipants.isNotEmpty))
-            Padding(
-              padding: const EdgeInsets.only(right: 2),
-              child: SizedBox(
-                width: 32,
-                height: 32,
-                child: IconButton(
-                  onPressed: () async {
-                    final op = operationProvider.selectedOperation;
-                    final participants = operationProvider.selectedOperationParticipants;
-                    if (op == null || participants.isEmpty) return;
-
-                    try {
-                      await FichePalanqueePdf.generateAndShare(
-                        context: context,
-                        operation: op,
-                        participants: participants,
-                        clubId: widget.clubId,
-                      );
-                    } catch (e) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Erreur PDF: $e'), backgroundColor: Colors.red),
-                        );
-                      }
-                    }
-                  },
-                  padding: EdgeInsets.zero,
-                  iconSize: 18,
-                  icon: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.25),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Text(
-                      'FP',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ),
-                  tooltip: 'Fiche de palanquée (PDF)',
-                ),
-              ),
             ),
           // Scanner button - always visible for all logged-in users
           Padding(
@@ -1105,7 +1063,15 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                       _buildInscribedMembersAccordion(operationProvider),
                       const SizedBox(height: 12),
 
-                      // 4. Course selection (only if registered AND plongee event) - exercises last
+                      // 4. Palanquées button (plongee events — creator + encadrants only)
+                      if (operation.categorie == 'plongee' &&
+                          operationProvider.selectedOperationParticipants.isNotEmpty &&
+                          _canManagePalanquees(operation)) ...[
+                        _buildPalanqueeButton(operationProvider),
+                        const SizedBox(height: 12),
+                      ],
+
+                      // 5. Course selection (only if registered AND plongee event) - exercises last
                       if (isRegistered && operation.categorie == 'plongee') ...[
                         _buildCourseSelection(operationProvider),
                       ],
@@ -1944,35 +1910,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                                     operation: operationProvider.selectedOperation!,
                                   )
                               : null,
-                          // Show QR icon hint for tappable rows
-                          contentPadding: canShowPaymentCard
-                              ? const EdgeInsets.only(left: 8, right: 16)
-                              : null,
-                          leading: canShowPaymentCard
-                              ? Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.qr_code_2, size: 16, color: Colors.blueGrey.shade400),
-                                    const SizedBox(width: 4),
-                                    CircleAvatar(
-                                      backgroundColor: isGuest
-                                          ? AppColors.oranje.withOpacity(0.3)
-                                          : (isCurrentUser ? AppColors.lichtblauw.withOpacity(0.5) : AppColors.lichtblauw.withOpacity(0.3)),
-                                      radius: 20,
-                                      child: isGuest
-                                          ? Icon(Icons.person_outline, size: 20, color: AppColors.oranje)
-                                          : Text(
-                                              prenom.isNotEmpty ? prenom[0].toUpperCase() : (displayNom.isNotEmpty ? displayNom[0].toUpperCase() : '?'),
-                                              style: TextStyle(
-                                                color: isCurrentUser ? AppColors.donkerblauw : AppColors.middenblauw,
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 16,
-                                              ),
-                                            ),
-                                    ),
-                                  ],
-                                )
-                              : CircleAvatar(
+                          leading: CircleAvatar(
                                   backgroundColor: isGuest
                                       ? AppColors.oranje.withOpacity(0.3)
                                       : (isCurrentUser ? AppColors.lichtblauw.withOpacity(0.5) : AppColors.lichtblauw.withOpacity(0.3)),
@@ -2082,7 +2020,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                             ],
                           ),
                           trailing: participant.totalPrix > 0
-                              ? _buildPaymentBadge(participant)
+                              ? (canShowPaymentCard
+                                  ? Icon(Icons.qr_code_2, size: 22, color: Colors.blueGrey.shade400)
+                                  : _buildPaymentBadge(participant))
                               : null,
                         );
                       }).toList(),
@@ -2265,6 +2205,75 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           elevation: 8,
           shadowColor: AppColors.middenblauw.withOpacity(0.5),
+        ),
+      ),
+    );
+  }
+
+  /// Button to navigate to palanquée composition screen
+  Widget _buildPalanqueeButton(OperationProvider operationProvider) {
+    final operation = operationProvider.selectedOperation;
+    final participants = operationProvider.selectedOperationParticipants;
+    if (operation == null) return const SizedBox.shrink();
+
+    return GestureDetector(
+      onTap: () async {
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        final userId = authProvider.currentUser?.uid ?? '';
+        final result = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PalanqueeScreen(
+              operation: operation,
+              participants: participants,
+              clubId: widget.clubId,
+              userId: userId,
+            ),
+          ),
+        );
+        // Refresh si des changements ont été enregistrés
+        if (result == true && mounted) {
+          _loadOperation();
+        }
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Icon(Icons.groups, color: AppColors.primary, size: 22),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Palanquées',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1A1A1A),
+                ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '${participants.length}',
+                style: TextStyle(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(Icons.chevron_right, color: Colors.grey[400], size: 22),
+          ],
         ),
       ),
     );

@@ -83,6 +83,7 @@ async function getBadgeCount(clubId, memberId) {
 /**
  * Verzamel FCM tokens en groepeer per member ID
  * Retourneert een Map van memberId -> { tokens: string[], badgeCount: number }
+ * Logt ook warnings voor members met stale tokens (>30 dagen niet vernieuwd)
  *
  * @param {string} clubId - Club ID
  * @param {Array} memberDocs - Array van Firestore document snapshots
@@ -94,6 +95,10 @@ function collectTokensAndMembers(memberDocs, senderId) {
   const tokenToMember = new Map(); // token -> { memberId, index }
   const memberTokenGroups = new Map(); // memberId -> [tokens]
   const recipientIds = [];
+  const staleTokenMembers = []; // Members met tokens ouder dan 30 dagen
+
+  const STALE_TOKEN_DAYS = 30;
+  const staleThreshold = Date.now() - (STALE_TOKEN_DAYS * 24 * 60 * 60 * 1000);
 
   memberDocs.forEach(doc => {
     if (!doc.exists) return;
@@ -101,6 +106,15 @@ function collectTokensAndMembers(memberDocs, senderId) {
     const memberData = doc.data();
     if (doc.id === senderId) return;
     if (memberData.notifications_enabled === false) return;
+
+    // Check voor stale tokens (fcm_token_updated_at > 30 dagen geleden)
+    const tokenUpdatedAt = memberData.fcm_token_updated_at?.toDate
+      ? memberData.fcm_token_updated_at.toDate()
+      : memberData.fcm_token_updated_at;
+    if (tokenUpdatedAt && tokenUpdatedAt.getTime() < staleThreshold) {
+      const daysSince = Math.floor((Date.now() - tokenUpdatedAt.getTime()) / (1000 * 60 * 60 * 24));
+      staleTokenMembers.push({ id: doc.id, name: `${memberData.prenom || ''} ${memberData.nom || ''}`.trim(), daysSince });
+    }
 
     const memberTokens = [];
 
@@ -126,6 +140,14 @@ function collectTokensAndMembers(memberDocs, senderId) {
       recipientIds.push(doc.id);
     }
   });
+
+  // Log warning voor stale tokens zodat het zichtbaar is in Cloud Function logs
+  if (staleTokenMembers.length > 0) {
+    console.warn(`⚠️ STALE TOKENS: ${staleTokenMembers.length} member(s) met FCM token ouder dan ${STALE_TOKEN_DAYS} dagen:`);
+    staleTokenMembers.forEach(m => {
+      console.warn(`   - ${m.name} (${m.id}): token ${m.daysSince} dagen oud`);
+    });
+  }
 
   return { tokens, tokenToMember, memberTokenGroups, recipientIds };
 }

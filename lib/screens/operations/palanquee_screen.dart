@@ -15,7 +15,6 @@ class PalanqueeScreen extends StatefulWidget {
   final List<ParticipantOperation> participants;
   final String clubId;
   final String userId;
-
   const PalanqueeScreen({
     Key? key,
     required this.operation,

@@ -45,6 +45,12 @@ class AuthProvider with ChangeNotifier {
           FirebaseConfig.defaultClubId,
           user.uid,
         );
+        // Écouter les rafraîchissements de token FCM (crucial pour iOS!)
+        // Sans ça, quand iOS rotent le token, les notifications s'arrêtent.
+        _notificationService.listenForTokenRefresh(
+          FirebaseConfig.defaultClubId,
+          user.uid,
+        );
         // Ensure Firestore session is active (refresh expired session on app restart)
         _sessionService.createSession(
           userId: user.uid,
@@ -52,6 +58,7 @@ class AuthProvider with ChangeNotifier {
         );
       } else {
         _displayName = null;
+        _notificationService.stopListeningForTokenRefresh();
       }
       notifyListeners();
     });
@@ -60,6 +67,7 @@ class AuthProvider with ChangeNotifier {
   @override
   void dispose() {
     _authStateSubscription?.cancel();
+    _notificationService.stopListeningForTokenRefresh();
     super.dispose();
   }
 

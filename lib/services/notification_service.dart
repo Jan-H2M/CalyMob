@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
@@ -17,6 +18,9 @@ class NotificationService {
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
+
+  /// Subscription pour FCM token refresh events
+  StreamSubscription<String>? _tokenRefreshSubscription;
 
   /// Callback pour quand l'utilisateur tape sur une notification locale
   void Function(String? payload)? onLocalNotificationTap;
@@ -85,6 +89,40 @@ class NotificationService {
     // Écouter les messages quand l'app est au premier plan
     FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
     debugPrint('✅ Foreground notification handler configuré');
+  }
+
+  /// Écouter les rafraîchissements de token FCM et sauvegarder automatiquement
+  /// Quand iOS/Android rotent le token (après update OS, app update, ou périodiquement),
+  /// le nouveau token doit être sauvegardé dans Firestore sinon les notifications arrêtent.
+  void listenForTokenRefresh(String clubId, String userId) {
+    if (kIsWeb) return;
+
+    // Annuler l'ancienne subscription si elle existe
+    _tokenRefreshSubscription?.cancel();
+
+    _tokenRefreshSubscription = _messaging.onTokenRefresh.listen((newToken) async {
+      debugPrint('🔄 FCM Token refreshed, saving to Firestore...');
+      try {
+        final memberRef = _firestore.collection('clubs/$clubId/members').doc(userId);
+        await memberRef.update({
+          'fcm_tokens': FieldValue.arrayUnion([newToken]),
+          'fcm_token': newToken,
+          'fcm_token_updated_at': FieldValue.serverTimestamp(),
+        });
+        debugPrint('✅ Refreshed FCM token saved to Firestore');
+      } catch (e, stack) {
+        debugPrint('❌ Error saving refreshed FCM token: $e');
+        CrashlyticsService.notificationError(e, stack, 'onTokenRefresh save failed');
+      }
+    });
+
+    debugPrint('✅ FCM token refresh listener actif');
+  }
+
+  /// Arrêter d'écouter les rafraîchissements de token
+  void stopListeningForTokenRefresh() {
+    _tokenRefreshSubscription?.cancel();
+    _tokenRefreshSubscription = null;
   }
 
   /// Afficher une notification quand l'app est au premier plan

@@ -407,9 +407,30 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       // Check voor app update (cache wordt gecleared zodat er opnieuw gecheckt wordt)
       AppUpdateService.clearCache();
       _checkForAppUpdate();
+      // Re-save FCM token bij elke app resume (vangt geroteerde tokens op
+      // die veranderd zijn terwijl de app in de achtergrond was)
+      _refreshFcmToken();
     } else if (state == AppLifecycleState.paused) {
       // Badge updaten bij vertrek uit app
       _updateBadgeFromUnreadCounts();
+    }
+  }
+
+  /// Re-save FCM token bij app resume om geroteerde tokens op te vangen
+  void _refreshFcmToken() {
+    try {
+      final context = _navigatorKey.currentContext;
+      if (context == null) return;
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final user = authProvider.currentUser;
+      if (user != null) {
+        _notificationService.saveTokenToFirestore(
+          FirebaseConfig.defaultClubId,
+          user.uid,
+        );
+      }
+    } catch (e) {
+      debugPrint('⚠️ FCM token refresh on resume failed (non-fatal): $e');
     }
   }
 
