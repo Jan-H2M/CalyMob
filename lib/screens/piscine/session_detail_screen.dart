@@ -8,6 +8,7 @@ import '../../services/piscine_session_service.dart';
 import '../../services/session_message_service.dart';
 import '../../services/profile_service.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/member_provider.dart';
 import '../../utils/permission_helper.dart';
 import '../../widgets/piscine_animated_background.dart';
 import '../../config/app_colors.dart';
@@ -17,6 +18,8 @@ import '../../widgets/scanner_modal_sheet.dart';
 import 'theme_edit_dialog.dart';
 import 'session_chat_screen.dart';
 import 'add_attendee_dialog.dart';
+import 'session_evaluation_screen.dart';
+import '../../services/feature_flag_service.dart';
 
 class SessionDetailScreen extends StatefulWidget {
   final PiscineSession session;
@@ -642,6 +645,45 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                       ],
                     ),
                   ),
+                  // Évaluer button — behind feature flag
+                  if (attendees.isNotEmpty)
+                    StreamBuilder<bool>(
+                      stream: FeatureFlagService().isCarnetFormationEnabled(
+                        FirebaseConfig.defaultClubId,
+                      ),
+                      builder: (context, flagSnap) {
+                        if (flagSnap.data != true) return const SizedBox.shrink();
+                        final memberProvider = Provider.of<MemberProvider>(context, listen: false);
+                        final statuten = memberProvider.clubStatuten;
+                        final isEncadrant = PermissionHelper.isAdmin(statuten) ||
+                            statuten.contains('encadrant');
+                        if (!isEncadrant) return const SizedBox.shrink();
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                Navigator.push(context, MaterialPageRoute(
+                                  builder: (_) => SessionEvaluationScreen(
+                                    session: widget.session,
+                                  ),
+                                ));
+                              },
+                              icon: const Icon(Icons.grading, size: 18),
+                              label: const Text('Évaluer la session'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.primary,
+                                side: BorderSide(color: AppColors.primary.withOpacity(0.5)),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                   const Divider(height: 1),
                   // List of attendees
                   if (attendees.isEmpty)

@@ -105,3 +105,11 @@ exports.onMedicalCertCreated = onMedicalCertCreated;
 // Sync new bug reports to Linear as issues
 const { onNewBugReport } = require('./src/integrations/onBugReportCreated');
 exports.onNewBugReport = onNewBugReport;
+
+// =============================================================================
+// CARNET DE FORMATION — PROGRESSION (Gen2)
+// =============================================================================
+
+// Auto-validate LIFRAS exercise when observation result is 'acquis'
+const { onObservationAcquis } = require('./src/progression/onObservationAcquis');
+exports.onObservationAcquis = onObservationAcquis;
