@@ -21,6 +21,8 @@ import '../operations/operation_detail_screen.dart';
 import '../expenses/expense_list_screen.dart';
 // scan_page.dart is used from operation_detail_screen, not here
 import '../auth/login_screen.dart';
+import '../formation/my_progression_screen.dart';
+import '../../services/feature_flag_service.dart';
 
 /// Écran d'accueil avec navigation tabs (événements + demandes)
 class HomeScreen extends StatefulWidget {
@@ -309,6 +311,24 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
+          // Ma Progression — behind feature flag
+          StreamBuilder<bool>(
+            stream: FeatureFlagService().isCarnetFormationEnabled(
+              FirebaseConfig.defaultClubId,
+            ),
+            builder: (context, flagSnap) {
+              if (flagSnap.data != true) return const SizedBox.shrink();
+              return IconButton(
+                icon: const Icon(Icons.school_outlined, color: Colors.white),
+                onPressed: () {
+                  Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => const MyProgressionScreen(),
+                  ));
+                },
+                tooltip: 'Ma Progression',
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.white),
             onPressed: _handleLogout,
