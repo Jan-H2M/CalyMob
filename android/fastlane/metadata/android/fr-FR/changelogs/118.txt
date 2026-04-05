@@ -1,0 +1,1 @@
+Notifications push plus fiables : l'app rafraîchit automatiquement la connexion aux serveurs de notification. Nouveau bouton Palanquées dans le détail des plongées (visible pour les encadrants). Correction : le statut d'installation est maintenant toujours mis à jour à la connexion.
