@@ -6,13 +6,13 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:lottie/lottie.dart';
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/member_profile.dart';
 import '../../services/profile_service.dart';
 import '../../services/member_service.dart';
 import '../../utils/permission_helper.dart';
 import '../exercises/member_exercises_screen.dart';
-import '../../widgets/ocean/ocean_gradient_background.dart';
 
 /// Écran "Who's Who" - Annuaire des membres
 class WhoIsWhoScreen extends StatefulWidget {
@@ -377,8 +377,7 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
           ),
         ],
       ),
-          ),
-        ],
+        ),
       ),
     );
   }

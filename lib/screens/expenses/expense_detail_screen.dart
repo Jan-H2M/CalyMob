@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_assets.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../config/app_colors.dart';
 import '../../models/expense_claim.dart';
 import '../../providers/expense_provider.dart';
@@ -8,7 +9,6 @@ import '../../providers/auth_provider.dart';
 import '../../utils/currency_formatter.dart';
 import '../../utils/date_formatter.dart';
 import '../../widgets/expense_photo_gallery.dart';
-import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'edit_expense_screen.dart';
 
 class ExpenseDetailScreen extends StatelessWidget {
@@ -86,12 +86,12 @@ class ExpenseDetailScreen extends StatelessWidget {
         creatures: CreatureSet.bubbles,
         opacity: 0.6,
         child: SafeArea(
-          bottom: false,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+            bottom: false,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
             // Status Badge
             Center(
               child: _buildStatusBadge(expense.statut),
