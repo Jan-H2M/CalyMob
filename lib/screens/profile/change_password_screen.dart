@@ -6,7 +6,7 @@ import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/password_service.dart';
 import '../../services/biometric_service.dart';
-import '../../widgets/ocean_gradient_background.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 
 /// Voluntary password change screen
 ///

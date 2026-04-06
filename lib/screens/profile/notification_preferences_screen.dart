@@ -5,7 +5,7 @@ import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
-import '../../widgets/ocean_gradient_background.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 
 /// Écran de préférences de notifications granulaires
 /// Permet de choisir quels types de notifications recevoir

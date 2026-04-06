@@ -6,7 +6,7 @@ import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../models/calendar_feed.dart';
 import '../../services/calendar_service.dart';
-import '../../widgets/ocean_gradient_background.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 
 /// Écran de configuration du calendrier iCal
 /// Permet aux membres de synchroniser les événements du club avec leur agenda

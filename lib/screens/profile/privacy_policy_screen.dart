@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../config/app_assets.dart';
-import '../../widgets/ocean_gradient_background.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 
 class PrivacyPolicyScreen extends StatelessWidget {
   const PrivacyPolicyScreen({super.key});
