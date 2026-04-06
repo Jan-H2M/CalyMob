@@ -366,7 +366,7 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
                             _GlossyButton(
                               title: 'Piscine',
                               icon: Icons.pool,
-                              badgeCount: unreadProvider.sessionMessages + unreadProvider.teamMessages,
+                              badgeCount: 0, // Badge désactivé — les messages ne sont pas accessibles depuis cet écran
                               onTap: () {
                                 final roles = _getPiscineRoles();
                                 if (roles.isNotEmpty) {
