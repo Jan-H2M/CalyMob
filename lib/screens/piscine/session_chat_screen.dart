@@ -6,7 +6,7 @@ import '../../services/session_message_service.dart';
 import '../../services/local_read_tracker.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/unread_count_provider.dart';
-import '../../widgets/piscine_animated_background.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 
@@ -152,10 +152,9 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
-      body: PiscineAnimatedBackground(
-        showJellyfish: false,
-        showSeaweed: false,
-        showBubbles: false,
+      body: OceanGradientBackground(
+        creatures: CreatureSet.bubbles,
+        opacity: 0.6,
         child: SafeArea(
           child: Column(
             children: [

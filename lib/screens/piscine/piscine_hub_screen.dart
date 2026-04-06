@@ -9,7 +9,7 @@ import '../../models/piscine_session.dart';
 import '../../models/team_channel.dart';
 import '../../services/piscine_session_service.dart';
 import '../../services/team_channel_service.dart';
-import '../../widgets/piscine_animated_background.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 
 import 'availability_screen.dart';
 import 'session_detail_screen.dart';
@@ -49,11 +49,8 @@ class _PiscineHubScreenState extends State<PiscineHubScreen>
     final unreadSeances = unreadProvider.sessionMessages + unreadProvider.teamMessages;
 
     return Scaffold(
-      body: PiscineAnimatedBackground(
-        showJellyfish: true,
-        showSeaweed: false,
-        showBubbles: false,
-        jellyfishCount: 2,
+      body: OceanGradientBackground(
+        creatures: CreatureSet.jellyfishAndBubbles,
         child: SafeArea(
           child: Column(
             children: [

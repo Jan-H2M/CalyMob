@@ -5,7 +5,7 @@ import '../../config/app_colors.dart';
 import '../../config/piscine_slots.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/availability_provider.dart';
-import '../../widgets/piscine_animated_background.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/glossy_button.dart';
 
 /// Écran de gestion des disponibilités pour les séances piscine
@@ -149,11 +149,8 @@ class _AvailabilityScreenState extends State<AvailabilityScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: PiscineAnimatedBackground(
-        showJellyfish: true,
-        showSeaweed: true,
-        showBubbles: false,
-        jellyfishCount: 2,
+      body: OceanGradientBackground(
+        creatures: CreatureSet.bubbles,
         child: SafeArea(
           child: Column(
             children: [

@@ -8,6 +8,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../services/password_service.dart';
 import '../home/landing_screen.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 
 /// Forced password change screen
 ///
@@ -117,60 +118,17 @@ class _ForcePasswordChangeScreenState extends State<ForcePasswordChangeScreen> {
       canPop: false,
       child: Scaffold(
         backgroundColor: Colors.white,
-        body: Stack(
-          children: [
-            // Ocean background
-            Positioned.fill(
-              child: Image.asset(
-                AppAssets.backgroundFull,
-                fit: BoxFit.cover,
+        body: OceanGradientBackground(
+          creatures: CreatureSet.bubbles,
+          opacity: 0.7,
+          child: SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24.0),
+                child: _buildFormContent(),
               ),
             ),
-
-            // Bubbles animation
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 200,
-              child: IgnorePointer(
-                child: Lottie.asset(
-                  'assets/animations/bubbles.json',
-                  fit: BoxFit.cover,
-                  repeat: true,
-                ),
-              ),
-            ),
-
-            // Swimming fish animation
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: IgnorePointer(
-                child: Opacity(
-                  opacity: 0.9,
-                  child: Lottie.asset(
-                    'assets/animations/swimming_fish.json',
-                    width: double.infinity,
-                    height: 250,
-                    fit: BoxFit.cover,
-                    repeat: true,
-                  ),
-                ),
-              ),
-            ),
-
-            // Content
-            SafeArea(
-              child: Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(24.0),
-                  child: _buildFormContent(),
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

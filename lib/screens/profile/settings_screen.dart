@@ -14,10 +14,12 @@ import '../../services/profile_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/biometric_service.dart';
 import '../../services/app_update_service.dart';
+import 'ocean_settings_screen.dart';
 import 'privacy_policy_screen.dart';
 import 'change_password_screen.dart';
 import 'notification_preferences_screen.dart';
 import '../../widgets/bug_report_widget.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 
 /// Écran des paramètres
 class SettingsScreen extends StatefulWidget {
@@ -576,92 +578,89 @@ class _SettingsScreenState extends State<SettingsScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: Stack(
-        children: [
-          // Ocean background
-          Positioned.fill(
-            child: Image.asset(
-              AppAssets.backgroundFull,
-              fit: BoxFit.cover,
-            ),
-          ),
-          // Content
-          SafeArea(
-            child: StreamBuilder<MemberProfile?>(
-              stream: _profileService.watchProfile(_clubId, userId),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator(color: Colors.white));
-                }
+      body: OceanGradientBackground(
+        creatures: CreatureSet.bubbles,
+        child: SafeArea(
+          child: StreamBuilder<MemberProfile?>(
+            stream: _profileService.watchProfile(_clubId, userId),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator(color: Colors.white));
+              }
 
-                if (!snapshot.hasData || snapshot.data == null) {
-                  return const Center(
-                    child: Text('Erreur de chargement du profil', style: TextStyle(color: Colors.white)),
-                  );
-                }
-
-                final profile = snapshot.data!;
-                // Alleen notificatie status syncen als we niet bezig zijn met een update
-                if (!_isLoading) {
-                  _notificationsEnabled = profile.notificationsEnabled;
-                }
-
-                return Stack(
-                  children: [
-                    ListView(
-                      padding: const EdgeInsets.all(16),
-                      children: [
-                        // Contact
-                        _buildSectionHeader('Contact'),
-                        _buildContactSection(profile),
-
-                        const SizedBox(height: 24),
-
-                        // Sécurité
-                        _buildSectionHeader('Sécurité'),
-                        _buildSecuritySection(),
-                        const SizedBox(height: 24),
-
-                        // Notifications
-                        _buildSectionHeader('Notifications'),
-                        _buildNotificationsSection(profile),
-
-                        const SizedBox(height: 24),
-
-                        // Vie privée
-                        _buildSectionHeader('Vie privée'),
-                        _buildPrivacySection(profile),
-
-                        const SizedBox(height: 24),
-
-                        // Application
-                        _buildSectionHeader('Application'),
-                        _buildApplicationSection(),
-
-                        // Admin: Version publishing (alleen zichtbaar voor admin/superadmin)
-                        _buildVersionPublishSection(),
-
-                        const SizedBox(height: 24),
-
-                        // Mon compte
-                        _buildSectionHeader('Mon compte'),
-                        _buildAccountSection(profile),
-                      ],
-                    ),
-
-                    if (_isLoading)
-                      Container(
-                        color: Colors.black54,
-                        child: const Center(
-                          child: CircularProgressIndicator(color: Colors.white),
-                        ),
-                      ),
-                  ],
+              if (!snapshot.hasData || snapshot.data == null) {
+                return const Center(
+                  child: Text('Erreur de chargement du profil', style: TextStyle(color: Colors.white)),
                 );
-              },
-            ),
+              }
+
+              final profile = snapshot.data!;
+              // Alleen notificatie status syncen als we niet bezig zijn met een update
+              if (!_isLoading) {
+                _notificationsEnabled = profile.notificationsEnabled;
+              }
+
+              return Stack(
+                children: [
+                  ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      // Contact
+                      _buildSectionHeader('Contact'),
+                      _buildContactSection(profile),
+
+                      const SizedBox(height: 24),
+
+                      // Sécurité
+                      _buildSectionHeader('Sécurité'),
+                      _buildSecuritySection(),
+                      const SizedBox(height: 24),
+
+                      // Notifications
+                      _buildSectionHeader('Notifications'),
+                      _buildNotificationsSection(profile),
+
+                      const SizedBox(height: 24),
+
+                      // Vie privée
+                      _buildSectionHeader('Vie privée'),
+                      _buildPrivacySection(profile),
+
+                      const SizedBox(height: 24),
+
+                      // Fond océan
+                      _buildSectionHeader('Apparence'),
+                      _buildAppearanceSection(),
+
+                      const SizedBox(height: 24),
+
+                      // Application
+                      _buildSectionHeader('Application'),
+                      _buildApplicationSection(),
+
+                      // Admin: Version publishing (alleen zichtbaar voor admin/superadmin)
+                      _buildVersionPublishSection(),
+
+                      const SizedBox(height: 24),
+
+                      // Mon compte
+                      _buildSectionHeader('Mon compte'),
+                      _buildAccountSection(profile),
+                    ],
+                  ),
+
+                  if (_isLoading)
+                    Container(
+                      color: Colors.black54,
+                      child: const Center(
+                        child: CircularProgressIndicator(color: Colors.white),
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
-        ],
+        ),
       ),
     );
   }
@@ -975,6 +974,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: const Text('Commencer'),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildAppearanceSection() {
+    return Card(
+      child: ListTile(
+        leading: const Icon(Icons.water, color: AppColors.lichtblauw),
+        title: const Text('Fond océan'),
+        subtitle: const Text('Personnaliser l\'animation de fond'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const OceanSettingsScreen()),
+          );
+        },
       ),
     );
   }

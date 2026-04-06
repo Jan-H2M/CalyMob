@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../config/firebase_config.dart';
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../models/activity_item.dart';
 import '../../providers/activity_provider.dart';
 import '../../providers/member_provider.dart';
@@ -160,55 +161,14 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
           ),
         ),
       ),
-      body: Stack(
-        children: [
-          // Ocean background
-          Positioned.fill(
-            child: Image.asset(
-              AppAssets.backgroundFull,
-              fit: BoxFit.cover,
-            ),
+      body: OceanGradientBackground(
+        creatures: CreatureSet.jellyfish,
+        child: SafeArea(
+          child: RefreshIndicator(
+            onRefresh: _refreshActivities,
+            child: _buildActivityList(activityProvider),
           ),
-          // Content
-          SafeArea(
-            child: RefreshIndicator(
-              onRefresh: _refreshActivities,
-              child: _buildActivityList(activityProvider),
-            ),
-          ),
-          // Seaweed 1 - far left, smaller and transparent
-          Positioned(
-            bottom: -30,
-            left: -40,
-            child: IgnorePointer(
-              child: Opacity(
-                opacity: 0.3,
-                child: Lottie.asset(
-                  'assets/animations/seaweed.json',
-                  width: 150,
-                  height: 300,
-                  fit: BoxFit.contain,
-                ),
-              ),
-            ),
-          ),
-          // Seaweed 2 - right side
-          Positioned(
-            bottom: -20,
-            right: -30,
-            child: IgnorePointer(
-              child: Opacity(
-                opacity: 0.3,
-                child: Lottie.asset(
-                  'assets/animations/seaweed.json',
-                  width: 120,
-                  height: 250,
-                  fit: BoxFit.contain,
-                ),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

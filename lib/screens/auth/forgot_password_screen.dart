@@ -3,6 +3,7 @@ import 'package:lottie/lottie.dart';
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../services/auth_service.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 
 /// Écran de réinitialisation du mot de passe
 class ForgotPasswordScreen extends StatefulWidget {
@@ -58,79 +59,41 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: Stack(
-        children: [
-          // Fond océan
-          Positioned.fill(
-            child: Image.asset(
-              AppAssets.backgroundFull,
-              fit: BoxFit.cover,
-            ),
-          ),
-
-          // Bubbles animatie
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 200,
-            child: IgnorePointer(
-              child: Lottie.asset(
-                'assets/animations/bubbles.json',
-                fit: BoxFit.cover,
-                repeat: true,
-              ),
-            ),
-          ),
-
-          // Swimming fish animatie
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: IgnorePointer(
-              child: Opacity(
-                opacity: 0.9,
-                child: Lottie.asset(
-                  'assets/animations/swimming_fish.json',
-                  width: double.infinity,
-                  height: 250,
-                  fit: BoxFit.cover,
-                  repeat: true,
+      body: OceanGradientBackground(
+        creatures: CreatureSet.bubbles,
+        opacity: 0.8,
+        child: Stack(
+          children: [
+            // Contenu
+            SafeArea(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24.0),
+                  child: _emailSent ? _buildSuccessContent() : _buildFormContent(),
                 ),
               ),
             ),
-          ),
 
-          // Contenu
-          SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24.0),
-                child: _emailSent ? _buildSuccessContent() : _buildFormContent(),
-              ),
-            ),
-          ),
-
-          // Bouton retour
-          Positioned(
-            top: 0,
-            left: 0,
-            child: SafeArea(
-              child: IconButton(
-                icon: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.9),
-                    shape: BoxShape.circle,
+            // Bouton retour
+            Positioned(
+              top: 0,
+              left: 0,
+              child: SafeArea(
+                child: IconButton(
+                  icon: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.9),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.arrow_back, color: AppColors.middenblauw),
                   ),
-                  child: const Icon(Icons.arrow_back, color: AppColors.middenblauw),
+                  onPressed: () => Navigator.pop(context),
                 ),
-                onPressed: () => Navigator.pop(context),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

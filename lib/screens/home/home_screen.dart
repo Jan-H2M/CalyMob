@@ -17,6 +17,7 @@ import '../../utils/permission_helper.dart';
 import '../../widgets/operation_card.dart';
 import '../../widgets/loading_widget.dart';
 import '../../widgets/empty_state_widget.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../operations/operation_detail_screen.dart';
 import '../expenses/expense_list_screen.dart';
 // scan_page.dart is used from operation_detail_screen, not here
@@ -336,30 +337,21 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          // Ocean background
-          Positioned.fill(
-            child: Image.asset(
-              AppAssets.backgroundFull,
-              fit: BoxFit.cover,
-            ),
+      body: OceanGradientBackground(
+        creatures: CreatureSet.fishAndBubbles,
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Compatibility warning banner
+              if (_compatibilityStatus != null && _compatibilityStatus!.warningLevel != 'none')
+                _buildCompatibilityBanner(),
+              // Main content
+              Expanded(
+                child: _buildContent(operationProvider, authProvider),
+              ),
+            ],
           ),
-          // Content
-          SafeArea(
-            child: Column(
-              children: [
-                // Compatibility warning banner
-                if (_compatibilityStatus != null && _compatibilityStatus!.warningLevel != 'none')
-                  _buildCompatibilityBanner(),
-                // Main content
-                Expanded(
-                  child: _buildContent(operationProvider, authProvider),
-                ),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,

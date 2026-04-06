@@ -14,6 +14,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../utils/date_formatter.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 
 /// Écran de création d'une demande de remboursement
 class CreateExpenseScreen extends StatefulWidget {
@@ -310,13 +311,9 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        image: DecorationImage(
-          image: AssetImage(AppAssets.backgroundFull),
-          fit: BoxFit.cover,
-        ),
-      ),
+    return OceanGradientBackground(
+      creatures: CreatureSet.bubbles,
+      opacity: 0.5,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         extendBodyBehindAppBar: true,

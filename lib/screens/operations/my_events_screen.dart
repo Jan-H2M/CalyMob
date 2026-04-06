@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/operation_provider.dart';
 import '../../models/user_event_registration.dart';
@@ -78,29 +79,20 @@ class _MyEventsScreenState extends State<MyEventsScreen> with SingleTickerProvid
           ],
         ),
       ),
-      body: Stack(
-        children: [
-          // Ocean background
-          Positioned.fill(
-            child: Image.asset(
-              AppAssets.backgroundFull,
-              fit: BoxFit.cover,
+      body: OceanGradientBackground(
+        creatures: CreatureSet.fish,
+        child: SafeArea(
+          child: RefreshIndicator(
+            onRefresh: _refreshRegistrations,
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildEventsList(operationProvider.upcomingEvents, isUpcoming: true),
+                _buildEventsList(operationProvider.pastEvents, isUpcoming: false),
+              ],
             ),
           ),
-          // Content
-          SafeArea(
-            child: RefreshIndicator(
-              onRefresh: _refreshRegistrations,
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildEventsList(operationProvider.upcomingEvents, isUpcoming: true),
-                  _buildEventsList(operationProvider.pastEvents, isUpcoming: false),
-                ],
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

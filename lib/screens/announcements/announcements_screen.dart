@@ -9,6 +9,7 @@ import '../../providers/auth_provider.dart';
 import '../../utils/permission_helper.dart';
 import '../../widgets/announcement_card.dart';
 import '../../widgets/glossy_button.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../services/announcement_service.dart';
 import '../../services/local_read_tracker.dart';
 import '../../providers/unread_count_provider.dart';
@@ -22,68 +23,14 @@ class AnnouncementsScreen extends StatefulWidget {
   State<AnnouncementsScreen> createState() => _AnnouncementsScreenState();
 }
 
-class _AnnouncementsScreenState extends State<AnnouncementsScreen>
-    with TickerProviderStateMixin {
+class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   final AnnouncementService _announcementService = AnnouncementService();
   List<String>? _clubStatuten;
   String? _appRole;
 
-  late AnimationController _jellyfishController1;
-  late AnimationController _jellyfishController2;
-  late AnimationController _jellyfishController3;
-  late Animation<double> _jellyfishPosition1;
-  late Animation<double> _jellyfishPosition2;
-  late Animation<double> _jellyfishPosition3;
-
   @override
   void initState() {
     super.initState();
-
-    // Jellyfish 1: medium, rechts, 25 seconden
-    _jellyfishController1 = AnimationController(
-      duration: const Duration(seconds: 25),
-      vsync: this,
-    );
-    _jellyfishPosition1 = Tween<double>(
-      begin: 1.2,
-      end: -0.3,
-    ).animate(CurvedAnimation(
-      parent: _jellyfishController1,
-      curve: Curves.easeInOut,
-    ));
-    _jellyfishController1.repeat();
-
-    // Jellyfish 2: groter, links, 30 seconden, start na 8 sec
-    _jellyfishController2 = AnimationController(
-      duration: const Duration(seconds: 30),
-      vsync: this,
-    );
-    _jellyfishPosition2 = Tween<double>(
-      begin: 1.3,
-      end: -0.4,
-    ).animate(CurvedAnimation(
-      parent: _jellyfishController2,
-      curve: Curves.easeInOut,
-    ));
-    Future.delayed(const Duration(seconds: 8), () {
-      if (mounted) _jellyfishController2.repeat();
-    });
-
-    // Jellyfish 3: kleiner, midden, 20 seconden, start na 15 sec
-    _jellyfishController3 = AnimationController(
-      duration: const Duration(seconds: 20),
-      vsync: this,
-    );
-    _jellyfishPosition3 = Tween<double>(
-      begin: 1.1,
-      end: -0.2,
-    ).animate(CurvedAnimation(
-      parent: _jellyfishController3,
-      curve: Curves.easeInOut,
-    ));
-    Future.delayed(const Duration(seconds: 15), () {
-      if (mounted) _jellyfishController3.repeat();
-    });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadAnnouncements();
@@ -93,14 +40,6 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen>
         if (mounted) _markAnnouncementsAsRead();
       });
     });
-  }
-
-  @override
-  void dispose() {
-    _jellyfishController1.dispose();
-    _jellyfishController2.dispose();
-    _jellyfishController3.dispose();
-    super.dispose();
   }
 
   Future<void> _loadMemberInfo() async {
@@ -258,13 +197,8 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen>
 
     if (currentUser == null) {
       return Scaffold(
-        body: Container(
-          decoration: const BoxDecoration(
-            image: DecorationImage(
-              image: AssetImage(AppAssets.backgroundLight),
-              fit: BoxFit.cover,
-            ),
-          ),
+        body: OceanGradientBackground(
+          creatures: CreatureSet.jellyfish,
           child: const Center(
             child: Text('Veuillez vous connecter', style: TextStyle(color: Colors.white)),
           ),
@@ -273,66 +207,9 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen>
     }
 
     return Scaffold(
-      body: Stack(
-        children: [
-          // Achtergrond
-          Container(
-            width: double.infinity,
-            height: double.infinity,
-            decoration: const BoxDecoration(
-              image: DecorationImage(
-                image: AssetImage(AppAssets.backgroundLight),
-                fit: BoxFit.cover,
-              ),
-            ),
-          ),
-
-          // Jellyfish 1: medium, rechts - ACHTER de cards
-          AnimatedBuilder(
-            animation: _jellyfishPosition1,
-            builder: (context, child) {
-              return Positioned(
-                top: MediaQuery.of(context).size.height * _jellyfishPosition1.value,
-                right: 20,
-                child: IgnorePointer(
-                  child: Opacity(
-                    opacity: 0.7,
-                    child: Lottie.asset(
-                      'assets/animations/jellyfish.json',
-                      width: 120,
-                      height: 120,
-                      repeat: true,
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-
-          // Jellyfish 3: kleiner, midden - ACHTER de cards
-          AnimatedBuilder(
-            animation: _jellyfishPosition3,
-            builder: (context, child) {
-              return Positioned(
-                top: MediaQuery.of(context).size.height * _jellyfishPosition3.value,
-                left: MediaQuery.of(context).size.width * 0.4,
-                child: IgnorePointer(
-                  child: Opacity(
-                    opacity: 0.5,
-                    child: Lottie.asset(
-                      'assets/animations/jellyfish.json',
-                      width: 80,
-                      height: 80,
-                      repeat: true,
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-
-          // Inhoud
-          SafeArea(
+      body: OceanGradientBackground(
+        creatures: CreatureSet.jellyfish,
+        child: SafeArea(
           child: Column(
             children: [
               // Header
@@ -447,30 +324,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen>
               ),
             ],
           ),
-          ),
-
-          // Jellyfish 2: groter, links - VOOR de cards
-          AnimatedBuilder(
-            animation: _jellyfishPosition2,
-            builder: (context, child) {
-              return Positioned(
-                top: MediaQuery.of(context).size.height * _jellyfishPosition2.value,
-                left: 15,
-                child: IgnorePointer(
-                  child: Opacity(
-                    opacity: 0.6,
-                    child: Lottie.asset(
-                      'assets/animations/jellyfish.json',
-                      width: 160,
-                      height: 160,
-                      repeat: true,
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ],
+        ),
       ),
     );
   }

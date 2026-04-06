@@ -11,6 +11,7 @@ import '../../utils/date_formatter.dart';
 import '../../utils/currency_formatter.dart';
 import '../../widgets/loading_widget.dart';
 import '../../widgets/empty_state_widget.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'expense_detail_screen.dart';
 
 /// Écran liste des demandes à approuver
@@ -50,20 +51,11 @@ class _ApprovalListScreenState extends State<ApprovalListScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: Stack(
-        children: [
-          // Ocean background
-          Positioned.fill(
-            child: Image.asset(
-              AppAssets.backgroundFull,
-              fit: BoxFit.cover,
-            ),
-          ),
-          // Content
-          SafeArea(
-            child: _buildBody(expenseProvider, expenses),
-          ),
-        ],
+      body: OceanGradientBackground(
+        creatures: CreatureSet.jellyfish,
+        child: SafeArea(
+          child: _buildBody(expenseProvider, expenses),
+        ),
       ),
     );
   }

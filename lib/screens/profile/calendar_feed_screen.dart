@@ -6,6 +6,7 @@ import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../models/calendar_feed.dart';
 import '../../services/calendar_service.dart';
+import '../../widgets/ocean_gradient_background.dart';
 
 /// Écran de configuration du calendrier iCal
 /// Permet aux membres de synchroniser les événements du club avec leur agenda
@@ -180,26 +181,18 @@ class _CalendarFeedScreenState extends State<CalendarFeedScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: Stack(
-        children: [
-          // Ocean background
-          Positioned.fill(
-            child: Image.asset(
-              AppAssets.backgroundFull,
-              fit: BoxFit.cover,
-            ),
-          ),
-          // Content
-          SafeArea(
-            child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
-                  )
-                : _error != null
-                    ? _buildErrorView()
-                    : _buildContent(),
-          ),
-        ],
+      body: OceanGradientBackground(
+        creatures: CreatureSet.bubbles,
+        opacity: 0.6,
+        child: SafeArea(
+          child: _isLoading
+              ? const Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                )
+              : _error != null
+                  ? _buildErrorView()
+                  : _buildContent(),
+        ),
       ),
     );
   }

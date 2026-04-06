@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:lottie/lottie.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
@@ -10,6 +8,8 @@ import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../providers/unread_count_provider.dart';
 import '../../services/app_update_service.dart';
+import '../../widgets/ocean_background.dart';
+import '../../widgets/ocean/ocean_config.dart';
 import '../auth/login_screen.dart';
 import '../operations/operations_list_screen.dart';
 import '../expenses/financial_screen.dart';
@@ -17,9 +17,8 @@ import '../profile/profile_screen.dart';
 import '../profile/who_is_who_screen.dart';
 import '../announcements/announcements_screen.dart';
 import '../piscine/availability_screen.dart';
-// cloud_firestore import removed — member data now comes from MemberProvider
 
-/// Landing page avec thème maritime et boutons ronds
+/// Landing page avec thème maritime animé et boutons ronds
 class LandingScreen extends StatefulWidget {
   const LandingScreen({Key? key}) : super(key: key);
 
@@ -27,34 +26,16 @@ class LandingScreen extends StatefulWidget {
   State<LandingScreen> createState() => _LandingScreenState();
 }
 
-class _LandingScreenState extends State<LandingScreen> with TickerProviderStateMixin {
-  // Delayed fish controllers
-  late List<AnimationController> _fishControllers;
-  late List<bool> _fishVisible;
-
-  // Version info
+class _LandingScreenState extends State<LandingScreen> {
   String _versionString = '';
-
-  // User roles for piscine access
   List<String>? _clubStatuten;
+  OceanParams? _oceanParams;
 
   @override
   void initState() {
     super.initState();
-    _fishVisible = [false, false, false, false];
-    _fishControllers = [];
-
-    // Start elke vis met een andere delay
-    _startFishWithDelay(0, 0);      // Vis 1: direct
-    _startFishWithDelay(1, 1200);   // Vis 2: 1.2s delay (changed from 0.8s)
-    _startFishWithDelay(2, 1600);   // Vis 3: 1.6s delay
-    _startFishWithDelay(3, 2400);   // Vis 4: 2.4s delay
-
-    // Load version info
     _loadVersionInfo();
-
-    // Load member roles from MemberProvider (already cached after login)
-    // and defer unread count listener to after first frame to prevent ANR
+    _loadOceanParams();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initFromMemberProvider();
       _checkForAppUpdate();
@@ -74,9 +55,13 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
     }
   }
 
-  /// Gebruik MemberProvider (al gecached na login) in plaats van opnieuw
-  /// uit Firestore te lezen. Start unread listener pas NA eerste frame
-  /// om ANR te voorkomen (geen blocking Firestore calls op main thread).
+  Future<void> _loadOceanParams() async {
+    final params = await OceanParams.load();
+    if (mounted) {
+      setState(() => _oceanParams = params);
+    }
+  }
+
   void _initFromMemberProvider() {
     if (!mounted) return;
 
@@ -85,20 +70,17 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
     final uid = authProvider.currentUser?.uid;
     if (uid == null) return;
 
-    // Gebruik cached data uit MemberProvider (geen Firestore call nodig)
     final roles = memberProvider.clubStatuten ?? [];
     setState(() {
       _clubStatuten = roles.isNotEmpty ? roles : null;
     });
 
-    // Start unread count listener (deferred, dus UI is al gerenderd)
     final unreadProvider = Provider.of<UnreadCountProvider>(context, listen: false);
     if (!unreadProvider.isListening) {
       unreadProvider.listen(FirebaseConfig.defaultClubId, uid, roles: roles);
     }
   }
 
-  /// Check if user has piscine role (accueil, encadrant/encadrants, or gonflage)
   bool _hasPiscineRole() {
     if (_clubStatuten == null) return false;
     final roles = _clubStatuten!.map((s) => s.toLowerCase()).toList();
@@ -108,25 +90,15 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
            roles.contains('gonflage');
   }
 
-  /// Get all piscine roles the user has
   List<String> _getPiscineRoles() {
     if (_clubStatuten == null) return [];
     final roles = _clubStatuten!.map((s) => s.toLowerCase()).toList();
     final piscineRoles = <String>[];
-
-    // Check encadrant (both singular and plural forms)
     if (roles.contains('encadrant') || roles.contains('encadrants')) {
       piscineRoles.add('encadrant');
     }
-    // Check accueil
-    if (roles.contains('accueil')) {
-      piscineRoles.add('accueil');
-    }
-    // Check gonflage
-    if (roles.contains('gonflage')) {
-      piscineRoles.add('gonflage');
-    }
-    // Check théorie — tous les encadrants peuvent donner des cours théoriques
+    if (roles.contains('accueil')) piscineRoles.add('accueil');
+    if (roles.contains('gonflage')) piscineRoles.add('gonflage');
     if (roles.contains('encadrant') || roles.contains('encadrants')) {
       piscineRoles.add('theorie');
     }
@@ -136,24 +108,6 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
   Future<void> _checkForAppUpdate() async {
     if (!mounted) return;
     await AppUpdateService.showUpdateDialogIfNeeded(context);
-  }
-
-  void _startFishWithDelay(int index, int delayMs) {
-    Future.delayed(Duration(milliseconds: delayMs), () {
-      if (mounted) {
-        setState(() {
-          _fishVisible[index] = true;
-        });
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    for (var controller in _fishControllers) {
-      controller.dispose();
-    }
-    super.dispose();
   }
 
   Future<void> _handleLogout(BuildContext context) async {
@@ -194,252 +148,160 @@ class _LandingScreenState extends State<LandingScreen> with TickerProviderStateM
     final authProvider = context.watch<AuthProvider>();
     final unreadProvider = context.watch<UnreadCountProvider>();
     final userName = authProvider.displayName ?? 'Utilisateur';
-    final screenHeight = MediaQuery.of(context).size.height;
 
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: Stack(
-        children: [
-          // Ocean wave achtergrond - nieuwe grote wave afbeelding
-          Positioned(
-            left: 0,
-            right: 0,
-            top: screenHeight * 0.07,
-            bottom: 0,
-            child: Image.asset(
-              AppAssets.backgroundWaveBig,
-              fit: BoxFit.cover,
-              width: double.infinity,
-              alignment: Alignment.topCenter,
-            ),
-          ),
-
-          // Springende vissen - 4 stuks met verschillende delays en diepte-effect
-          // Vis 1 - klein, achteraan (links)
-          if (_fishVisible[0])
-            Positioned(
-              left: 30,
-              top: screenHeight * 0.38,
-              child: IgnorePointer(
-                child: Opacity(
-                  opacity: 0.5,
-                  child: Lottie.asset(
-                    'assets/animations/jumping_fish.json',
-                    width: 60,
-                    height: 60,
-                    repeat: true,
-                  ),
+      backgroundColor: Colors.black,
+      body: OceanBackground(
+        params: _oceanParams,
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Top bar met logout
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.logout, color: Colors.white),
+                      onPressed: () => _handleLogout(context),
+                      tooltip: 'Déconnexion',
+                    ),
+                  ],
                 ),
               ),
-            ),
-          // Vis 2 - medium, midden-achter (rechts)
-          if (_fishVisible[1])
-            Positioned(
-              right: 50,
-              top: screenHeight * 0.48,
-              child: IgnorePointer(
-                child: Opacity(
-                  opacity: 0.6,
-                  child: Lottie.asset(
-                    'assets/animations/jumping_fish.json',
-                    width: 80,
-                    height: 80,
-                    repeat: true,
-                  ),
-                ),
+
+              // Logo is now rendered as sun/moon in the ocean shader layer
+              const SizedBox(height: 170), // maintain spacing where logo was
+
+              // Welcome text
+              Text(
+                'Bienvenue',
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      color: Colors.white70,
+                    ),
+                textAlign: TextAlign.center,
               ),
-            ),
-          // Vis 3 - groter, midden-voor (links)
-          if (_fishVisible[2])
-            Positioned(
-              left: 100,
-              top: screenHeight * 0.36,
-              child: IgnorePointer(
-                child: Opacity(
-                  opacity: 0.75,
-                  child: Lottie.asset(
-                    'assets/animations/jumping_fish.json',
-                    width: 100,
-                    height: 100,
-                    repeat: true,
-                  ),
-                ),
+              const SizedBox(height: 4),
+              Text(
+                userName,
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      shadows: [
+                        const Shadow(offset: Offset(0, 1), blurRadius: 4, color: Colors.black38),
+                      ],
+                    ),
+                textAlign: TextAlign.center,
               ),
-            ),
-          // Vis 4 - grootste, vooraan (rechts)
-          if (_fishVisible[3])
-            Positioned(
-              right: 80,
-              top: screenHeight * 0.40,
-              child: IgnorePointer(
-                child: Opacity(
-                  opacity: 0.9,
-                  child: Lottie.asset(
-                    'assets/animations/jumping_fish.json',
-                    width: 120,
-                    height: 120,
-                    repeat: true,
-                  ),
-                ),
-              ),
-            ),
 
-          // Content
-          SafeArea(
-            child: Column(
-              children: [
-                // Top bar met logout
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.logout, color: Colors.white),
-                        onPressed: () => _handleLogout(context),
-                        tooltip: 'Déconnexion',
-                      ),
-                    ],
-                  ),
-                ),
+              const Spacer(),
 
-                // Groot logo
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  child: Image.asset(
-                    AppAssets.logoVerticalPng,
-                    height: 150,
-                    fit: BoxFit.contain,
-                  ),
-                ),
-
-                // Welkom tekst - Bienvenue klein, naam groot en vet
-                Text(
-                  'Bienvenue',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: AppColors.middenblauw,
-                      ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  userName,
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.donkerblauw,
-                      ),
-                  textAlign: TextAlign.center,
-                ),
-
-                const Spacer(),
-
-                // Ronde knoppen met ButtonBlue - onderaan in het blauwe deel
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      // Rij 1: Événements, Communication, (optioneel Piscine)
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          _GlossyButton(
-                            title: 'Événements',
-                            icon: Icons.event,
-                            badgeCount: unreadProvider.eventMessages,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => const OperationsListScreen()),
-                            ),
+              // Navigation buttons
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    // Row 1
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _GlossyButton(
+                          title: 'Événements',
+                          icon: Icons.event,
+                          badgeCount: unreadProvider.eventMessages,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const OperationsListScreen()),
                           ),
-                          _GlossyButton(
-                            title: 'Communication',
-                            icon: Icons.campaign,
-                            badgeCount: unreadProvider.announcements,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => const AnnouncementsScreen()),
-                            ),
-                          ),
-                          // Piscine button - only for accueil/encadrant
-                          if (_hasPiscineRole())
-                            _GlossyButton(
-                              title: 'Piscine',
-                              icon: Icons.pool,
-                              badgeCount: 0, // Badge désactivé — les messages ne sont pas accessibles depuis cet écran
-                              onTap: () {
-                                final roles = _getPiscineRoles();
-                                if (roles.isNotEmpty) {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => AvailabilityScreen(userRoles: roles),
-                                    ),
-                                  );
-                                }
-                              },
-                            ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 20),
-
-                      // Rij 2: Who is Who, Finances, Mon Profil
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          _GlossyButton(
-                            title: 'Who is Who',
-                            icon: Icons.people,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => const WhoIsWhoScreen()),
-                            ),
-                          ),
-                          _GlossyButton(
-                            title: 'Finances',
-                            icon: Icons.account_balance_wallet,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => const FinancialScreen()),
-                            ),
-                          ),
-                          _GlossyButton(
-                            title: 'Mon Profil',
-                            icon: Icons.person,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => const ProfileScreen()),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 40),
-
-                // Version footer
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: Text(
-                    _versionString,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.white70,
                         ),
-                  ),
+                        _GlossyButton(
+                          title: 'Communication',
+                          icon: Icons.campaign,
+                          badgeCount: unreadProvider.announcements,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const AnnouncementsScreen()),
+                          ),
+                        ),
+                        if (_hasPiscineRole())
+                          _GlossyButton(
+                            title: 'Piscine',
+                            icon: Icons.pool,
+                            badgeCount: 0,
+                            onTap: () {
+                              final roles = _getPiscineRoles();
+                              if (roles.isNotEmpty) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => AvailabilityScreen(userRoles: roles),
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    // Row 2
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _GlossyButton(
+                          title: 'Who is Who',
+                          icon: Icons.people,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const WhoIsWhoScreen()),
+                          ),
+                        ),
+                        _GlossyButton(
+                          title: 'Finances',
+                          icon: Icons.account_balance_wallet,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const FinancialScreen()),
+                          ),
+                        ),
+                        _GlossyButton(
+                          title: 'Mon Profil',
+                          icon: Icons.person,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+
+              const SizedBox(height: 40),
+
+              // Version footer
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Text(
+                  _versionString,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.white70,
+                      ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 }
 
-/// Widget voor een glossy blauwe knop met ButtonBlue.png
+/// Glossy button — now with frosted glass effect instead of PNG
 class _GlossyButton extends StatelessWidget {
   final String title;
   final IconData icon;
@@ -461,26 +323,33 @@ class _GlossyButton extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            decoration: const BoxDecoration(
+            width: 90,
+            height: 90,
+            decoration: BoxDecoration(
               shape: BoxShape.circle,
+              gradient: RadialGradient(
+                center: const Alignment(-0.3, -0.4),
+                colors: [
+                  Colors.white.withOpacity( 0.25),
+                  AppColors.middenblauw.withOpacity( 0.6),
+                  AppColors.donkerblauw.withOpacity( 0.8),
+                ],
+                stops: const [0.0, 0.5, 1.0],
+              ),
+              border: Border.all(color: Colors.white.withOpacity( 0.2), width: 1),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.donkerblauw.withOpacity( 0.4),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
             child: Stack(
               clipBehavior: Clip.none,
               alignment: Alignment.center,
               children: [
-                // ButtonBlue.png als achtergrond
-                Image.asset(
-                  AppAssets.buttonBlue,
-                  width: 110,
-                  height: 110,
-                ),
-                // Icoon erop
-                Icon(
-                  icon,
-                  size: 46,
-                  color: Colors.white,
-                ),
-                // Badge indicator (rood bolletje met getal)
+                Icon(icon, size: 40, color: Colors.white),
                 if (badgeCount > 0)
                   Positioned(
                     top: -2,
@@ -493,22 +362,17 @@ class _GlossyButton extends StatelessWidget {
                         border: Border.all(color: Colors.white, width: 2),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.3),
+                            color: Colors.black.withOpacity( 0.3),
                             blurRadius: 4,
                             offset: const Offset(0, 2),
                           ),
                         ],
                       ),
-                      constraints: const BoxConstraints(
-                        minWidth: 22,
-                        minHeight: 22,
-                      ),
+                      constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
                       child: Text(
                         badgeCount > 99 ? '99+' : badgeCount.toString(),
                         style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
+                          color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold,
                         ),
                         textAlign: TextAlign.center,
                       ),
@@ -524,6 +388,9 @@ class _GlossyButton extends StatelessWidget {
               fontSize: 14,
               fontWeight: FontWeight.w600,
               color: Colors.white,
+              shadows: [
+                Shadow(offset: Offset(0, 1), blurRadius: 3, color: Colors.black45),
+              ],
             ),
             textAlign: TextAlign.center,
           ),

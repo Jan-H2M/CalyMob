@@ -5,6 +5,7 @@ import '../../config/app_colors.dart';
 import '../../models/expense_claim.dart';
 import '../../providers/expense_provider.dart';
 import '../../utils/date_formatter.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 
 /// Écran d'édition d'une demande de remboursement
 class EditExpenseScreen extends StatefulWidget {
@@ -123,13 +124,9 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        image: DecorationImage(
-          image: AssetImage(AppAssets.backgroundFull),
-          fit: BoxFit.cover,
-        ),
-      ),
+    return OceanGradientBackground(
+      creatures: CreatureSet.bubbles,
+      opacity: 0.5,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         extendBodyBehindAppBar: true,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../config/app_assets.dart';
+import '../../widgets/ocean_gradient_background.dart';
 
 class PrivacyPolicyScreen extends StatelessWidget {
   const PrivacyPolicyScreen({super.key});
@@ -35,66 +36,60 @@ class PrivacyPolicyScreen extends StatelessWidget {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: Image.asset(
-              AppAssets.backgroundFull,
-              fit: BoxFit.cover,
+      body: OceanGradientBackground(
+        creatures: CreatureSet.bubbles,
+        opacity: 0.5,
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SectionCard(
+                  title: ‘Version officielle’,
+                  icon: Icons.verified,
+                  content:
+                      ‘La version complete et a jour de la politique de confidentialite est publiee sur caly.club. ‘
+                      ‘Cet ecran mobile en donne uniquement un resume.’,
+                  actionLabel: ‘Ouvrir la politique complete’,
+                  onPressed: () => _openPolicy(context),
+                ),
+                const SizedBox(height: 16),
+                const _SectionCard(
+                  title: ‘Donnees traitees’,
+                  icon: Icons.storage,
+                  content:
+                      ‘CalyMob traite les donnees de compte, certaines donnees de membre, les inscriptions aux activites, ‘
+                      ‘les demandes de remboursement, les pieces justificatives, les notifications, ainsi que des donnees techniques utiles au support et a la securite.’,
+                ),
+                const SizedBox(height: 16),
+                const _SectionCard(
+                  title: ‘Diagnostics et support’,
+                  icon: Icons.bug_report,
+                  content:
+                      ‘L’application utilise aussi des rapports de crash, des diagnostics techniques et certains evenements analytics ‘
+                      ‘pour le suivi du service et la resolution d’incidents.’,
+                ),
+                const SizedBox(height: 16),
+                const _SectionCard(
+                  title: ‘Biometrie’,
+                  icon: Icons.fingerprint,
+                  content:
+                      ‘Si vous activez la connexion biometrique, la verification est geree par votre appareil. ‘
+                      ‘Le club ne maintient pas de base biometrie centralisee.’,
+                ),
+                const SizedBox(height: 16),
+                const _SectionCard(
+                  title: ‘Contact’,
+                  icon: Icons.mail_outline,
+                  content:
+                      ‘Pour toute question relative a vos donnees, contactez le club a l’adresse calypsodivingclub@gmail.com ‘
+                      ‘ou consultez la version complete de la politique.’,
+                ),
+              ],
             ),
           ),
-          SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _SectionCard(
-                    title: 'Version officielle',
-                    icon: Icons.verified,
-                    content:
-                        'La version complete et a jour de la politique de confidentialite est publiee sur caly.club. '
-                        'Cet ecran mobile en donne uniquement un resume.',
-                    actionLabel: 'Ouvrir la politique complete',
-                    onPressed: () => _openPolicy(context),
-                  ),
-                  const SizedBox(height: 16),
-                  const _SectionCard(
-                    title: 'Donnees traitees',
-                    icon: Icons.storage,
-                    content:
-                        'CalyMob traite les donnees de compte, certaines donnees de membre, les inscriptions aux activites, '
-                        'les demandes de remboursement, les pieces justificatives, les notifications, ainsi que des donnees techniques utiles au support et a la securite.',
-                  ),
-                  const SizedBox(height: 16),
-                  const _SectionCard(
-                    title: 'Diagnostics et support',
-                    icon: Icons.bug_report,
-                    content:
-                        'L’application utilise aussi des rapports de crash, des diagnostics techniques et certains evenements analytics '
-                        'pour le suivi du service et la resolution d’incidents.',
-                  ),
-                  const SizedBox(height: 16),
-                  const _SectionCard(
-                    title: 'Biometrie',
-                    icon: Icons.fingerprint,
-                    content:
-                        'Si vous activez la connexion biometrique, la verification est geree par votre appareil. '
-                        'Le club ne maintient pas de base biometrie centralisee.',
-                  ),
-                  const SizedBox(height: 16),
-                  const _SectionCard(
-                    title: 'Contact',
-                    icon: Icons.mail_outline,
-                    content:
-                        'Pour toute question relative a vos donnees, contactez le club a l’adresse calypsodivingclub@gmail.com '
-                        'ou consultez la version complete de la politique.',
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

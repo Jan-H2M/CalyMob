@@ -10,7 +10,7 @@ import '../../services/profile_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../utils/permission_helper.dart';
-import '../../widgets/piscine_animated_background.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../config/piscine_slots.dart';
@@ -182,10 +182,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           ),
         ],
       ),
-      body: PiscineAnimatedBackground(
-        showJellyfish: true,
-        showSeaweed: true,
-        jellyfishCount: 1,
+      body: OceanGradientBackground(
+        creatures: CreatureSet.jellyfish,
+        opacity: 0.7,
         child: SafeArea(
           child: StreamBuilder<PiscineSession?>(
             stream: _sessionStream,

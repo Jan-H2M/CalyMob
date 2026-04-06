@@ -14,6 +14,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/unread_count_provider.dart';
 import '../../widgets/attachment_display.dart';
 import '../../widgets/attachment_picker.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 
 class AnnouncementDetailScreen extends StatefulWidget {
   final Announcement announcement;
@@ -193,13 +194,9 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
     final dateFormat = DateFormat('dd/MM/yyyy HH:mm');
 
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          image: DecorationImage(
-            image: AssetImage(AppAssets.backgroundLight),
-            fit: BoxFit.cover,
-          ),
-        ),
+      body: OceanGradientBackground(
+        creatures: CreatureSet.bubbles,
+        opacity: 0.6,
         child: SafeArea(
           child: Column(
             children: [

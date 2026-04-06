@@ -8,6 +8,7 @@ import '../../services/exercice_valide_service.dart';
 import '../../services/lifras_service.dart';
 import '../../services/member_service.dart';
 import '../../utils/date_formatter.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 
 /// Écran pour valider un exercice pour un membre
 class ValidateExerciseScreen extends StatefulWidget {
@@ -226,24 +227,17 @@ class _ValidateExerciseScreenState extends State<ValidateExerciseScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: Stack(
-        children: [
-          // Ocean background
-          Positioned.fill(
-            child: Image.asset(
-              AppAssets.backgroundFull,
-              fit: BoxFit.cover,
-            ),
-          ),
-          // Content
-          SafeArea(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator(color: Colors.white))
-                : Form(
-                    key: _formKey,
-                    child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
+      body: OceanGradientBackground(
+        creatures: CreatureSet.bubbles,
+        opacity: 0.5,
+        child: SafeArea(
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator(color: Colors.white))
+              : Form(
+                  key: _formKey,
+                  child: ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
                   // Exercise selection
                   _buildExerciseSelection(),
 
@@ -380,8 +374,7 @@ class _ValidateExerciseScreenState extends State<ValidateExerciseScreen> {
                     ],
                   ),
                 ),
-          ),
-        ],
+        ),
       ),
     );
   }

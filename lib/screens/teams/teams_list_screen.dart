@@ -5,7 +5,7 @@ import '../../services/team_channel_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../config/firebase_config.dart';
-import '../../widgets/piscine_animated_background.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../theme/calypso_theme.dart';
 import 'team_chat_screen.dart';
 
@@ -50,10 +50,8 @@ class _TeamsListScreenState extends State<TeamsListScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
-      body: PiscineAnimatedBackground(
-        showJellyfish: true,
-        showBubbles: true,
-        jellyfishCount: 2,
+      body: OceanGradientBackground(
+        creatures: CreatureSet.fishAndBubbles,
         child: SafeArea(
           child: StreamBuilder<List<TeamChannel>>(
             stream: _channelService.getChannelsForUser(clubId, userRoles),

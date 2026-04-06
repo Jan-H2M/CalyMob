@@ -12,6 +12,7 @@ import '../../services/profile_service.dart';
 import '../../services/member_service.dart';
 import '../../utils/permission_helper.dart';
 import '../exercises/member_exercises_screen.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 
 /// Écran "Who's Who" - Annuaire des membres
 class WhoIsWhoScreen extends StatefulWidget {
@@ -199,46 +200,9 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          // Donkerblauwe achtergrond
-          Container(
-            width: double.infinity,
-            height: double.infinity,
-            decoration: const BoxDecoration(
-              image: DecorationImage(
-                image: AssetImage(AppAssets.backgroundFull),
-                fit: BoxFit.cover,
-              ),
-            ),
-          ),
-
-          // Bubbels animatie - ACHTER de cards
-          AnimatedBuilder(
-            animation: _bubblesPosition,
-            builder: (context, child) {
-              return Positioned(
-                top: MediaQuery.of(context).size.height * _bubblesPosition.value,
-                left: 0,
-                right: 0,
-                child: IgnorePointer(
-                  child: Opacity(
-                    opacity: 0.5,
-                    child: Lottie.asset(
-                      'assets/animations/bubbles2.json',
-                      width: MediaQuery.of(context).size.width,
-                      height: MediaQuery.of(context).size.height,
-                      fit: BoxFit.cover,
-                      repeat: true,
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-
-          // Hoofdinhoud
-          SafeArea(
+      body: OceanGradientBackground(
+        creatures: CreatureSet.fish,
+        child: SafeArea(
             child: Column(
         children: [
           // Barre de recherche - glass effect

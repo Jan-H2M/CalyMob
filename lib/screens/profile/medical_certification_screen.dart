@@ -77,7 +77,6 @@ class _MedicalCertificationScreenState extends State<MedicalCertificationScreen>
         ),
       ),
       body: OceanBackground(
-        useFullBackground: true,
         child: SafeArea(
           child: _isLoading
               ? const Center(

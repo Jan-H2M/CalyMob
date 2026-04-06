@@ -6,6 +6,7 @@ import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/glossy_button.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'expense_list_screen.dart';
 import 'approval_list_screen.dart';
 
@@ -46,34 +47,25 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
     final waterLinePosition = screenHeight * 0.35;
 
     return Scaffold(
-      body: Stack(
-        children: [
-          // Achtergrond
-          Container(
-            width: double.infinity,
-            height: double.infinity,
-            decoration: const BoxDecoration(
-              image: DecorationImage(
-                image: AssetImage(AppAssets.backgroundFull),
-                fit: BoxFit.cover,
+      backgroundColor: Colors.transparent,
+      body: OceanGradientBackground(
+        creatures: CreatureSet.jellyfishAndBubbles,
+        child: Stack(
+          children: [
+            // Springende vis op de waterlijn
+            Positioned(
+              top: waterLinePosition - 50, // Vis springt boven de waterlijn
+              left: 20,
+              child: Lottie.asset(
+                'assets/animations/jumping_fish.json',
+                width: 100,
+                height: 100,
+                repeat: true,
               ),
             ),
-          ),
 
-          // Springende vis op de waterlijn
-          Positioned(
-            top: waterLinePosition - 50, // Vis springt boven de waterlijn
-            left: 20,
-            child: Lottie.asset(
-              'assets/animations/jumping_fish.json',
-              width: 100,
-              height: 100,
-              repeat: true,
-            ),
-          ),
-
-          // Hoofdinhoud
-          SafeArea(
+            // Hoofdinhoud
+            SafeArea(
             child: Column(
               children: [
                 // Header met terug knop

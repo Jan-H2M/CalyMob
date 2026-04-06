@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../config/app_assets.dart';
 import '../../providers/auth_provider.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'expense_list_screen.dart';
 import 'approval_list_screen.dart';
 
@@ -56,96 +57,91 @@ class _FinancialScreenState extends State<FinancialScreen> {
     final screenHeight = MediaQuery.of(context).size.height;
 
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: Stack(
-        children: [
-          // Ocean achtergrond - volledige blauwe ocean
-          Positioned.fill(
-            child: Image.asset(
-              AppAssets.backgroundFull,
-              fit: BoxFit.cover,
-            ),
-          ),
-
-          // Content
-          SafeArea(
-            child: Column(
-              children: [
-                // Back button
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back, color: Colors.white),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Titel
-                const SizedBox(height: 40),
-                Text(
-                  'Finances',
-                  style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                  textAlign: TextAlign.center,
-                ),
-
-                const Spacer(),
-
-                // Knoppen
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 40),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _GlossyButton(
-                        title: 'Mes demandes',
-                        icon: Icons.receipt_long,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const ExpenseListScreen()),
+      backgroundColor: Colors.transparent,
+      body: OceanGradientBackground(
+        creatures: CreatureSet.fishAndBubbles,
+        child: Stack(
+          children: [
+            // Content
+            SafeArea(
+              child: Column(
+                children: [
+                  // Back button
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back, color: Colors.white),
+                          onPressed: () => Navigator.pop(context),
                         ),
-                      ),
-                      if (_hasCaRole)
+                      ],
+                    ),
+                  ),
+
+                  // Titel
+                  const SizedBox(height: 40),
+                  Text(
+                    'Finances',
+                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+
+                  const Spacer(),
+
+                  // Knoppen
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 40),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
                         _GlossyButton(
-                          title: 'Approbations',
-                          icon: Icons.approval,
+                          title: 'Mes demandes',
+                          icon: Icons.receipt_long,
                           onTap: () => Navigator.push(
                             context,
-                            MaterialPageRoute(builder: (_) => const ApprovalListScreen()),
+                            MaterialPageRoute(builder: (_) => const ExpenseListScreen()),
                           ),
                         ),
-                    ],
+                        if (_hasCaRole)
+                          _GlossyButton(
+                            title: 'Approbations',
+                            icon: Icons.approval,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const ApprovalListScreen()),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                ),
 
-                const Spacer(),
+                  const Spacer(),
 
-                // Ruimte voor de krab
-                const SizedBox(height: 150),
-              ],
-            ),
-          ),
-
-          // Krab animatie rechtsonder
-          Positioned(
-            right: 20,
-            bottom: 20,
-            child: IgnorePointer(
-              child: Lottie.asset(
-                'assets/animations/Crabbuty.json',
-                width: 150,
-                height: 150,
-                repeat: true,
+                  // Ruimte voor de krab
+                  const SizedBox(height: 150),
+                ],
               ),
             ),
-          ),
-        ],
+
+            // Krab animatie rechtsonder
+            Positioned(
+              right: 20,
+              bottom: 20,
+              child: IgnorePointer(
+                child: Lottie.asset(
+                  'assets/animations/Crabbuty.json',
+                  width: 150,
+                  height: 150,
+                  repeat: true,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

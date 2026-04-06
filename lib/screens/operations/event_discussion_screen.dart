@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../config/app_assets.dart';
 import '../../widgets/event_discussion_tab.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 
 class EventDiscussionScreen extends StatelessWidget {
   final String clubId;
@@ -41,24 +42,16 @@ class EventDiscussionScreen extends StatelessWidget {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: Stack(
-        children: [
-          // Ocean background
-          Positioned.fill(
-            child: Image.asset(
-              AppAssets.backgroundFull,
-              fit: BoxFit.cover,
-            ),
+      body: OceanGradientBackground(
+        creatures: CreatureSet.bubbles,
+        opacity: 0.6,
+        child: SafeArea(
+          bottom: false, // Let the input bar handle its own padding
+          child: EventDiscussionTab(
+            clubId: clubId,
+            operationId: operationId,
           ),
-          // Content
-          SafeArea(
-            bottom: false, // Let the input bar handle its own padding
-            child: EventDiscussionTab(
-              clubId: clubId,
-              operationId: operationId,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

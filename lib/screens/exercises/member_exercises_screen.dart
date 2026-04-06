@@ -6,6 +6,7 @@ import '../../models/exercice_lifras.dart';
 import '../../services/exercice_valide_service.dart';
 import '../../utils/date_formatter.dart';
 import 'validate_exercise_screen.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 
 /// Écran affichant les exercices validés d'un membre
 class MemberExercisesScreen extends StatefulWidget {
@@ -159,40 +160,31 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
             ),
         ],
       ),
-      body: Stack(
-        children: [
-          // Ocean background
-          Positioned.fill(
-            child: Image.asset(
-              AppAssets.backgroundFull,
-              fit: BoxFit.cover,
-            ),
-          ),
-          // Content
-          SafeArea(
-            child: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _errorMessage != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
-                      const SizedBox(height: 16),
-                      Text(_errorMessage!, textAlign: TextAlign.center),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _loadExercices,
-                        child: const Text('Réessayer'),
+      body: OceanGradientBackground(
+        creatures: CreatureSet.fish,
+        child: SafeArea(
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _errorMessage != null
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
+                          const SizedBox(height: 16),
+                          Text(_errorMessage!, textAlign: TextAlign.center),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: _loadExercices,
+                            child: const Text('Réessayer'),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                )
-              : _exercices.isEmpty
-                  ? _buildEmptyState()
-                  : _buildContent(),
-          ),
-        ],
+                    )
+                  : _exercices.isEmpty
+                      ? _buildEmptyState()
+                      : _buildContent(),
+        ),
       ),
     );
   }

@@ -11,6 +11,7 @@ import '../../utils/currency_formatter.dart';
 import '../../utils/document_utils.dart';
 import '../../widgets/loading_widget.dart';
 import '../../widgets/empty_state_widget.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'create_expense_screen.dart';
 import 'expense_detail_screen.dart';
 import 'edit_expense_screen.dart';
@@ -51,20 +52,11 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: Stack(
-        children: [
-          // Ocean background
-          Positioned.fill(
-            child: Image.asset(
-              AppAssets.backgroundFull,
-              fit: BoxFit.cover,
-            ),
-          ),
-          // Content
-          SafeArea(
-            child: _buildBody(expenseProvider, expenses),
-          ),
-        ],
+      body: OceanGradientBackground(
+        creatures: CreatureSet.fish,
+        child: SafeArea(
+          child: _buildBody(expenseProvider, expenses),
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {

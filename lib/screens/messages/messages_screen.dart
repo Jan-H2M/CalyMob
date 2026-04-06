@@ -9,6 +9,7 @@ import '../../models/operation.dart';
 import '../../services/local_read_tracker.dart';
 import '../operations/event_discussion_screen.dart';
 import '../../utils/date_formatter.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 
 /// Écran listant toutes les discussions des événements auxquels l'utilisateur est inscrit
 class MessagesScreen extends StatelessWidget {
@@ -30,79 +31,70 @@ class MessagesScreen extends StatelessWidget {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: Stack(
-        children: [
-          // Ocean background
-          Positioned.fill(
-            child: Image.asset(
-              AppAssets.backgroundFull,
-              fit: BoxFit.cover,
-            ),
-          ),
-          // Content
-          SafeArea(
-            child: FutureBuilder<List<Operation>>(
-        future: _loadUserEvents(userId),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: OceanGradientBackground(
+        creatures: CreatureSet.fishAndBubbles,
+        child: SafeArea(
+          child: FutureBuilder<List<Operation>>(
+            future: _loadUserEvents(userId),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
 
-          if (snapshot.hasError) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error_outline, size: 64, color: Colors.red),
-                  const SizedBox(height: 16),
-                  Text('Erreur: ${snapshot.error}'),
-                ],
-              ),
-            );
-          }
-
-          final operations = snapshot.data ?? [];
-
-          if (operations.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.chat_bubble_outline, size: 80, color: Colors.grey[400]),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Aucune discussion',
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: Colors.grey[600],
-                    ),
+              if (snapshot.hasError) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                      const SizedBox(height: 16),
+                      Text('Erreur: ${snapshot.error}'),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Inscrivez-vous à un événement pour participer aux discussions',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[500],
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            );
-          }
+                );
+              }
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: operations.length,
-            itemBuilder: (context, index) {
-              final operation = operations[index];
-              return _buildEventCard(context, operation);
+              final operations = snapshot.data ?? [];
+
+              if (operations.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.chat_bubble_outline, size: 80, color: Colors.grey[400]),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Aucune discussion',
+                        style: TextStyle(
+                          fontSize: 18,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Inscrivez-vous à un événement pour participer aux discussions',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[500],
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              return ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: operations.length,
+                itemBuilder: (context, index) {
+                  final operation = operations[index];
+                  return _buildEventCard(context, operation);
+                },
+              );
             },
-          );
-        },
-      ),
           ),
-        ],
+        ),
       ),
     );
   }

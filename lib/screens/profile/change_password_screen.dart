@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:lottie/lottie.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
@@ -7,6 +6,7 @@ import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/password_service.dart';
 import '../../services/biometric_service.dart';
+import '../../widgets/ocean_gradient_background.dart';
 
 /// Voluntary password change screen
 ///
@@ -122,60 +122,17 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: Stack(
-        children: [
-          // Ocean background
-          Positioned.fill(
-            child: Image.asset(
-              AppAssets.backgroundFull,
-              fit: BoxFit.cover,
+      body: OceanGradientBackground(
+        creatures: CreatureSet.bubbles,
+        opacity: 0.6,
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24.0),
+              child: _buildFormContent(),
             ),
           ),
-
-          // Bubbles animation
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 200,
-            child: IgnorePointer(
-              child: Lottie.asset(
-                'assets/animations/bubbles.json',
-                fit: BoxFit.cover,
-                repeat: true,
-              ),
-            ),
-          ),
-
-          // Swimming fish animation
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: IgnorePointer(
-              child: Opacity(
-                opacity: 0.9,
-                child: Lottie.asset(
-                  'assets/animations/swimming_fish.json',
-                  width: double.infinity,
-                  height: 250,
-                  fit: BoxFit.cover,
-                  repeat: true,
-                ),
-              ),
-            ),
-          ),
-
-          // Content
-          SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24.0),
-                child: _buildFormContent(),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

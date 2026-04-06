@@ -8,6 +8,7 @@ import '../../providers/auth_provider.dart';
 import '../../utils/currency_formatter.dart';
 import '../../utils/date_formatter.dart';
 import '../../widgets/expense_photo_gallery.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'edit_expense_screen.dart';
 
 class ExpenseDetailScreen extends StatelessWidget {
@@ -81,23 +82,16 @@ class ExpenseDetailScreen extends StatelessWidget {
           ],
         ],
       ),
-      body: Stack(
-        children: [
-          // Ocean background
-          Positioned.fill(
-            child: Image.asset(
-              AppAssets.backgroundFull,
-              fit: BoxFit.cover,
-            ),
-          ),
-          // Content
-          SafeArea(
-            bottom: false,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+      body: OceanGradientBackground(
+        creatures: CreatureSet.bubbles,
+        opacity: 0.6,
+        child: SafeArea(
+          bottom: false,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
             // Status Badge
             Center(
               child: _buildStatusBadge(expense.statut),
@@ -305,7 +299,7 @@ class ExpenseDetailScreen extends StatelessWidget {
               ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }

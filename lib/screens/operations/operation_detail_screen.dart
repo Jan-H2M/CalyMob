@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../providers/operation_provider.dart';
@@ -955,18 +956,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          // Ocean background
-          Positioned.fill(
-            child: Image.asset(
-              AppAssets.backgroundFull,
-              fit: BoxFit.cover,
-            ),
-          ),
-          // Content
-          SafeArea(
-            child: Consumer<OperationProvider>(
+      body: OceanGradientBackground(
+        creatures: CreatureSet.bubbles,
+        opacity: 0.7,
+        child: SafeArea(
+          child: Consumer<OperationProvider>(
         builder: (context, operationProvider, child) {
           final operation = operationProvider.selectedOperation;
 
@@ -1095,8 +1089,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
           );
         },
       ),
-          ),
-        ],
+        ),
       ),
     );
   }

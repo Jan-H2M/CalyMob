@@ -6,7 +6,7 @@ import '../../services/piscine_session_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../config/firebase_config.dart';
 import '../../services/session_message_service.dart';
-import '../../widgets/piscine_animated_background.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../theme/calypso_theme.dart';
 import 'session_detail_screen.dart';
 
@@ -66,10 +66,8 @@ class _PiscineListScreenState extends State<PiscineListScreen>
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
-      body: PiscineAnimatedBackground(
-        showJellyfish: true,
-        showBubbles: true,
-        jellyfishCount: 2,
+      body: OceanGradientBackground(
+        creatures: CreatureSet.fish,
         child: SafeArea(
           child: StreamBuilder<List<PiscineSession>>(
             stream: _sessionService.getPublishedSessions(clubId),
