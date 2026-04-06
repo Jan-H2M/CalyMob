@@ -7,16 +7,19 @@ import '../../providers/auth_provider.dart';
 import '../../providers/availability_provider.dart';
 import '../../widgets/piscine_animated_background.dart';
 import '../../widgets/glossy_button.dart';
+import 'session_availability_page.dart';
 
 /// Écran de gestion des disponibilités pour les séances piscine
 /// Permet aux Accueil et Encadrants d'indiquer leurs disponibilités
 /// Supporte plusieurs rôles avec tabs si l'utilisateur a les deux
 class AvailabilityScreen extends StatefulWidget {
   final List<String> userRoles; // ['accueil', 'encadrant'] ou ['accueil']
+  final bool embedded; // true = sans Scaffold/background (pour PiscineHubScreen)
 
   const AvailabilityScreen({
     super.key,
     required this.userRoles,
+    this.embedded = false,
   });
 
   @override
@@ -148,6 +151,23 @@ class _AvailabilityScreenState extends State<AvailabilityScreen>
 
   @override
   Widget build(BuildContext context) {
+    // En mode embedded (dans PiscineHubScreen), pas de Scaffold/background/header
+    if (widget.embedded) {
+      return Column(
+        children: [
+          // Tab bar if multiple roles
+          if (widget.userRoles.length > 1) _buildTabBar(),
+          Expanded(
+            child: _isInitialized
+                ? _buildContent()
+                : const Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ),
+          ),
+        ],
+      );
+    }
+
     return Scaffold(
       body: PiscineAnimatedBackground(
         showJellyfish: true,
@@ -424,42 +444,86 @@ class _AvailabilityScreenState extends State<AvailabilityScreen>
         onTap: isPast
             ? null
             : () async {
-                if (_roleHasSlots) {
-                  // Open slot selection bottom sheet for encadrant/gonflage
-                  await _showSlotSelectionSheet(
-                    context: context,
-                    date: tuesday,
-                    provider: provider,
-                    currentAvailability: availability,
-                  );
-                } else {
-                  // Simple toggle cycle for accueil
-                  final authProvider =
-                      Provider.of<AuthProvider>(context, listen: false);
-                  final displayName = authProvider.displayName ?? 'Membre';
-                  final nameParts = displayName.split(' ');
-                  final prenom = nameParts.first;
-                  final nom = nameParts.length > 1
-                      ? nameParts.sublist(1).join(' ')
-                      : '';
+                // Navigate to full session page (availability + discussion)
+                final authProvider =
+                    Provider.of<AuthProvider>(context, listen: false);
+                final displayName = authProvider.displayName ?? 'Membre';
+                final nameParts = displayName.split(' ');
+                final prenom = nameParts.first;
+                final nom = nameParts.length > 1
+                    ? nameParts.sublist(1).join(' ')
+                    : '';
 
-                  try {
-                    await provider.toggleAvailability(
+                final slots = _roleHasSlots ? getSlotsForRole(_currentRole) : <String>[];
+                final initialSlots = (availability?.timeSlots as List<String>?) ?? [];
+
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => SessionAvailabilityPage(
                       date: tuesday,
-                      userNom: nom,
-                      userPrenom: prenom,
-                    );
-                  } catch (e) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Erreur: $e'),
-                          backgroundColor: Colors.red,
-                        ),
-                      );
-                    }
-                  }
-                }
+                      role: _currentRole,
+                      slots: slots,
+                      initialSelectedSlots: initialSlots,
+                      currentAvailability: availability,
+                      onConfirmAvailable: (chosenSlots) async {
+                        try {
+                          await provider.setAvailability(
+                            date: tuesday,
+                            userNom: nom,
+                            userPrenom: prenom,
+                            available: true,
+                            timeSlots: chosenSlots.isEmpty ? null : chosenSlots,
+                          );
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Erreur: $e'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                      onMarkUnavailable: () async {
+                        try {
+                          await provider.setAvailability(
+                            date: tuesday,
+                            userNom: nom,
+                            userPrenom: prenom,
+                            available: false,
+                          );
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Erreur: $e'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                      onDelete: availability != null
+                          ? () async {
+                              try {
+                                await provider.removeAvailability(date: tuesday);
+                              } catch (e) {
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Erreur: $e'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              }
+                            }
+                          : null,
+                    ),
+                  ),
+                );
               },
         borderRadius: BorderRadius.circular(12),
         child: Container(
