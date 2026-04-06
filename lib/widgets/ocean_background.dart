@@ -86,7 +86,12 @@ class _OceanBackgroundState extends State<OceanBackground>
         });
       }
     } catch (e) {
-      debugPrint('Ocean shader load failed: $e — using gradient fallback');
+      debugPrint('❌ Ocean shader load failed: $e — using gradient fallback');
+    }
+    if (!_shaderReady) {
+      debugPrint('⚠️ Shader NOT ready — fallback gradient active');
+    } else {
+      debugPrint('✅ Ocean shader loaded successfully');
     }
   }
 
@@ -180,26 +185,22 @@ class _OceanBackgroundState extends State<OceanBackground>
               ),
             )
           else
-            Container(
-              width: size.width,
-              height: size.height,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Color.fromRGBO(
-                      (tc.skyTopR * 255).round(), (tc.skyTopG * 255).round(),
-                      (tc.skyTopB * 255).round(), 1),
-                    Color.fromRGBO(
-                      (tc.waterSurfR * 255).round(), (tc.waterSurfG * 255).round(),
-                      (tc.waterSurfB * 255).round(), 1),
-                    Color.fromRGBO(
-                      (tc.waterDeepR * 255).round(), (tc.waterDeepG * 255).round(),
-                      (tc.waterDeepB * 255).round(), 1),
-                  ],
-                  stops: const [0.0, 0.44, 1.0],
-                ),
+            CustomPaint(
+              size: size,
+              painter: _OceanFallbackPainter(
+                time: _time,
+                skyTop: Color.fromRGBO(
+                  (tc.skyTopR * 255).round(), (tc.skyTopG * 255).round(),
+                  (tc.skyTopB * 255).round(), 1),
+                skyBot: Color.fromRGBO(
+                  (tc.skyBotR * 255).round(), (tc.skyBotG * 255).round(),
+                  (tc.skyBotB * 255).round(), 1),
+                waterSurf: Color.fromRGBO(
+                  (tc.waterSurfR * 255).round(), (tc.waterSurfG * 255).round(),
+                  (tc.waterSurfB * 255).round(), 1),
+                waterDeep: Color.fromRGBO(
+                  (tc.waterDeepR * 255).round(), (tc.waterDeepG * 255).round(),
+                  (tc.waterDeepB * 255).round(), 1),
               ),
             ),
 
@@ -270,13 +271,11 @@ class _LogoSunMoonPainter extends CustomPainter {
     final isNight = nightFactor > 0.7;
     final isDusk = nightFactor > 0.3 && nightFactor <= 0.7;
 
-    // Logo display size (diameter of the circular area)
-    final logoDisplaySize = isNight
-        ? 55.0 + sunIntensity * 25.0
-        : 65.0 + sunIntensity * 30.0;
+    // Logo display size (diameter of the circular area) — constant size
+    const logoDisplaySize = 120.0;
 
     // === GLOW BEHIND LOGO (always perfectly circular) ===
-    final glowRadius = logoDisplaySize * (isNight ? 1.6 : 2.0);
+    final glowRadius = logoDisplaySize * (isNight ? 1.4 : 1.8);
 
     if (isNight) {
       // Moon glow: silvery blue, subtle
@@ -473,4 +472,101 @@ class _OceanShaderPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _OceanShaderPainter old) => true;
+}
+
+/// Fallback painter when GLSL shader is not available (e.g. Flutter web).
+/// Draws sky gradient + water gradient with a sharp, smooth wave line.
+class _OceanFallbackPainter extends CustomPainter {
+  final double time;
+  final Color skyTop;
+  final Color skyBot;
+  final Color waterSurf;
+  final Color waterDeep;
+
+  _OceanFallbackPainter({
+    required this.time,
+    required this.skyTop,
+    required this.skyBot,
+    required this.waterSurf,
+    required this.waterDeep,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+
+    // Water line at 44% from top (= 56% from bottom)
+    final baseY = h * 0.44;
+
+    // Build wave path — one smooth flowing curve
+    final wavePath = Path();
+    wavePath.moveTo(0, 0);
+    wavePath.lineTo(0, baseY + _wave(0, w, time));
+    const steps = 80;
+    for (int i = 1; i <= steps; i++) {
+      final x = w * i / steps;
+      final y = baseY + _wave(x, w, time);
+      wavePath.lineTo(x, y);
+    }
+    wavePath.lineTo(w, 0);
+    wavePath.close();
+
+    // Sky gradient — fills the wave path (above the wave line)
+    final skyPaint = Paint()
+      ..shader = ui.Gradient.linear(
+        Offset(0, 0),
+        Offset(0, baseY),
+        [skyTop, skyBot],
+      );
+    canvas.drawPath(wavePath, skyPaint);
+
+    // Water path — everything below the wave line
+    final waterPath = Path();
+    waterPath.moveTo(0, baseY + _wave(0, w, time));
+    for (int i = 1; i <= steps; i++) {
+      final x = w * i / steps;
+      final y = baseY + _wave(x, w, time);
+      waterPath.lineTo(x, y);
+    }
+    waterPath.lineTo(w, h);
+    waterPath.lineTo(0, h);
+    waterPath.close();
+
+    // Water gradient
+    final waterPaint = Paint()
+      ..shader = ui.Gradient.linear(
+        Offset(0, baseY),
+        Offset(0, h),
+        [waterSurf, waterDeep],
+      );
+    canvas.drawPath(waterPath, waterPaint);
+
+    // White foam/glow line exactly at the wave surface
+    final foamPath = Path();
+    foamPath.moveTo(0, baseY + _wave(0, w, time));
+    for (int i = 1; i <= steps; i++) {
+      final x = w * i / steps;
+      final y = baseY + _wave(x, w, time);
+      foamPath.lineTo(x, y);
+    }
+    final foamPaint = Paint()
+      ..color = const Color.fromRGBO(255, 255, 255, 0.6)
+      ..strokeWidth = 2.0
+      ..style = PaintingStyle.stroke
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5);
+    canvas.drawPath(foamPath, foamPaint);
+  }
+
+  /// Smooth sine wave — matches the GLSL waveSurface() function
+  double _wave(double x, double width, double t) {
+    final xNorm = (x / width) * 6.2831; // 0..2π
+    final speed = t * 0.4; // slow animation
+    return (sin(xNorm * 0.8 + speed * 0.3) * 0.6 +
+            sin(xNorm * 1.5 + speed * 0.5 + 1.2) * 0.2) *
+        8.0; // 8px amplitude
+  }
+
+  @override
+  bool shouldRepaint(covariant _OceanFallbackPainter old) => true;
 }

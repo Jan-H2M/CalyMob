@@ -92,12 +92,11 @@ float sunRays(vec2 uv, float t, float wY, vec2 sunPos, float sunIntensity) {
 }
 
 // === Wave surface ===
+// One smooth flowing curve — no noise, like a real calm ocean horizon.
 float waveSurface(float x, float t) {
   float w = 0.0;
-  w += sin(x * 1.8 + t * 0.7) * 0.5;
-  w += sin(x * 2.5 - t * 0.4 + 1.5) * 0.3;
-  w += snoise(vec2(x * 0.8, t * 0.25)) * 0.35;
-  w += snoise(vec2(x * 1.5, t * 0.35 + 5.0)) * 0.15;
+  w += sin(x * 0.8 + t * 0.3) * 0.6;      // one broad gentle swell
+  w += sin(x * 1.5 + t * 0.5 + 1.2) * 0.2; // subtle secondary
   return w;
 }
 
@@ -112,8 +111,8 @@ void main() {
   float waterLine = 0.56;
   float waveVal = waveSurface(uv.x * 6.2831, t);
   float waterY = waterLine + waveVal * u_waveAmp;
-  float edgeW = 0.02;
-  float uwMask = smoothstep(waterY + edgeW * 0.5, waterY - edgeW, uv.y);
+  float edgeW = 0.001;  // razor-sharp water surface edge
+  float uwMask = smoothstep(waterY + edgeW, waterY - edgeW, uv.y);
 
   // SKY
   float skyN = clamp((uv.y - waterY) / (1.0 - waterY), 0.0, 1.0);
@@ -122,7 +121,7 @@ void main() {
   // Sun glow
   if (u_sun.w > 0.01) {
     vec2 sunUV = vec2(u_sun.x, u_sun.y);
-    float sunDist = length((uv - sunUV) * vec2(1.0, aspect));
+    float sunDist = length((uv - sunUV) * vec2(aspect, 1.0));
     float sunGlow = exp(-sunDist * sunDist / (u_sun.z * u_sun.z + 0.001)) * u_sun.w;
     vec3 sunColor = mix(vec3(1.0, 0.95, 0.85), vec3(1.0, 0.6, 0.3), u_nightFactor * 0.5);
     if (u_nightFactor > 0.7) sunColor = vec3(0.7, 0.75, 0.9);
@@ -174,7 +173,7 @@ void main() {
   // Depth fog
   water = mix(water, u_waterDeep * 0.6, depthN * 0.08);
 
-  // COMBINE
+  // COMBINE — sharp edge between sky and water
   vec3 col = mix(sky, water, uwMask);
 
   // Stars

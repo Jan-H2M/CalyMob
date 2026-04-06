@@ -78,7 +78,7 @@ class _OceanGradientBackgroundState extends State<OceanGradientBackground>
     _init = true;
     final w = size.width;
     final h = size.height;
-    final waterY = 0.30; // water starts higher on gradient-only screens
+    final waterY = 0.55; // creatures live below the wave line (~55%)
 
     final cs = widget.creatures;
     if (cs == CreatureSet.fish || cs == CreatureSet.fishAndBubbles) {
@@ -117,22 +117,18 @@ class _OceanGradientBackgroundState extends State<OceanGradientBackground>
       final hour = _currentHour();
       final tc = OceanTimeColors.forHour(hour);
 
-      // Build gradient colors from the same time-of-day tables
-      final skyTop = Color.fromRGBO(
-        (tc.skyTopR * 255).round(), (tc.skyTopG * 255).round(), (tc.skyTopB * 255).round(), 1);
-      final skyBot = Color.fromRGBO(
-        (tc.skyBotR * 255).round(), (tc.skyBotG * 255).round(), (tc.skyBotB * 255).round(), 1);
-      final waterSurf = Color.fromRGBO(
-        (tc.waterSurfR * 255).round(), (tc.waterSurfG * 255).round(), (tc.waterSurfB * 255).round(), 1);
-      final waterDeep = Color.fromRGBO(
-        (tc.waterDeepR * 255).round(), (tc.waterDeepG * 255).round(), (tc.waterDeepB * 255).round(), 1);
-
-      // Very subtle wave animation in gradient stops — keeps horizon crisp
-      final waveOffset = sin(_time * 0.5) * 0.003;
+      // Fixed bright azure colors matching the v1.2.3 design.
+      // The old version always looked bright blue regardless of time.
+      // We keep the day/night cycle ONLY for nightFactor (affects creatures).
+      const skyTop = Color.fromRGBO(140, 185, 240, 1);   // light pastel blue sky
+      const skyBot = Color.fromRGBO(95, 170, 230, 1);    // brighter azure horizon
+      const waterSurf = Color.fromRGBO(40, 130, 195, 1); // azure water surface
+      const waterDeep = Color.fromRGBO(10, 45, 90, 1);   // deep ocean blue
 
       return Stack(
         children: [
-          // 1) Animated gradient — sharp horizon line like real ocean
+          // 1) Full-screen gradient: sky at top → water at bottom
+          //    The wave painter will overlay the transition zone.
           Opacity(
             opacity: widget.opacity,
             child: Container(
@@ -143,24 +139,26 @@ class _OceanGradientBackgroundState extends State<OceanGradientBackground>
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [skyTop, skyBot, waterSurf, waterDeep],
-                  stops: [0.0, 0.28 + waveOffset, 0.30, 1.0],
+                  stops: const [0.0, 0.40, 0.60, 1.0],
                 ),
               ),
             ),
           ),
 
-          // 2) Subtle wave line at water surface
-          if (widget.opacity > 0.3)
+          // 2) Smooth white wave surface — one broad flowing curve
+          //    like the original v1.2.3 design. White glow fading
+          //    into the water below.
+          if (widget.opacity > 0.2)
             CustomPaint(
               size: size,
-              painter: _WaveLinePainter(
+              painter: _WaveSurfacePainter(
                 time: _time,
-                waterY: size.height * 0.30,
-                color: waterSurf.withOpacity(0.3 * widget.opacity),
+                waveY: size.height * 0.56, // wave at ~56% — like v1.2.3
+                opacity: widget.opacity,
               ),
             ),
 
-          // 3) Creatures overlay
+          // 3) Creatures overlay (below the wave line only)
           if (widget.creatures != CreatureSet.none && widget.opacity > 0.2)
             Opacity(
               opacity: widget.opacity,
@@ -184,31 +182,149 @@ class _OceanGradientBackgroundState extends State<OceanGradientBackground>
   }
 }
 
-/// Draws a subtle animated wave line where sky meets water
-class _WaveLinePainter extends CustomPainter {
+/// Draws a smooth, wide, white wave surface — matching the v1.2.3 design.
+///
+/// The wave is ONE broad smooth curve (not choppy ripples).
+/// It creates a white-to-transparent gradient that fades from the wave
+/// line downward into the water, like light refracting through the surface.
+class _WaveSurfacePainter extends CustomPainter {
   final double time;
-  final double waterY;
-  final Color color;
+  final double waveY;     // center Y of the wave
+  final double opacity;
 
-  _WaveLinePainter({required this.time, required this.waterY, required this.color});
+  _WaveSurfacePainter({
+    required this.time,
+    required this.waveY,
+    required this.opacity,
+  });
 
-  @override
-  void paint(Canvas canvas, Size size) {
-    final path = Path();
-    path.moveTo(0, waterY);
-    for (double x = 0; x <= size.width; x += 4) {
-      // Very flat wave — barely visible ripple, not a cloud
-      final y = waterY + sin(x * 0.015 + time * 0.3) * 0.8;
-      path.lineTo(x, y);
-    }
-    canvas.drawPath(path, Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0
-      ..color = color);
+  /// One broad, smooth wave — a single flowing curve like v1.2.3.
+  /// The wave is essentially ONE gentle arc across the screen width,
+  /// with the tiniest secondary ripple for organic feel.
+  double _wave(double x, double w) {
+    final norm = x / w; // 0..1
+    // One dominant wide arc — slow, gentle, like a real ocean swell
+    return waveY
+        + sin(norm * pi * 0.8 + time * 0.06) * 14.0   // one big smooth arc
+        + sin(norm * pi * 1.6 + time * 0.10) * 3.0;    // very subtle secondary
   }
 
   @override
-  bool shouldRepaint(covariant _WaveLinePainter old) => true;
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+
+    // --- Prominent white glow band — like v1.2.3's bright water surface ---
+    // A wide, bright white-to-transparent gradient band centered on the wave.
+    // This is the key visual element that creates the "light hitting water" look.
+
+    final glowPath = Path();
+    final glowTop = waveY - 80; // very wide glow
+    final glowBot = waveY + 50; // shorter below
+
+    glowPath.moveTo(0, glowTop);
+    glowPath.lineTo(w, glowTop);
+    glowPath.lineTo(w, glowBot);
+    glowPath.lineTo(0, glowBot);
+    glowPath.close();
+
+    // Very bright, prominent white glow — the key visual feature
+    final glowGradient = ui.Gradient.linear(
+      Offset(w / 2, glowTop),
+      Offset(w / 2, glowBot),
+      [
+        Colors.white.withOpacity(0.0 * opacity),   // transparent above
+        Colors.white.withOpacity(0.30 * opacity),  // building up
+        Colors.white.withOpacity(0.70 * opacity),  // very bright approaching wave
+        Colors.white.withOpacity(0.80 * opacity),  // brightest AT the wave line
+        Colors.white.withOpacity(0.50 * opacity),  // still bright just below
+        Colors.white.withOpacity(0.0 * opacity),   // fades to transparent
+      ],
+      [0.0, 0.25, 0.55, 0.65, 0.80, 1.0],
+    );
+
+    canvas.drawPath(glowPath, Paint()
+      ..style = PaintingStyle.fill
+      ..shader = glowGradient);
+
+    // --- Main wave line: one smooth bright white curve ---
+    final wavePath = Path();
+    wavePath.moveTo(0, _wave(0, w));
+    for (double x = 0; x < w; x += 3) {
+      final xMid = x + 1.5;
+      final xEnd = x + 3;
+      wavePath.quadraticBezierTo(xMid, _wave(xMid, w), xEnd, _wave(xEnd, w));
+    }
+
+    // Wide soft white glow behind the line — very prominent
+    canvas.drawPath(wavePath, Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 12.0
+      ..strokeCap = StrokeCap.round
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8.0)
+      ..color = Colors.white.withOpacity(0.50 * opacity));
+
+    // Medium glow ring
+    canvas.drawPath(wavePath, Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 5.0
+      ..strokeCap = StrokeCap.round
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3.0)
+      ..color = Colors.white.withOpacity(0.55 * opacity));
+
+    // Crisp white wave line on top
+    canvas.drawPath(wavePath, Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round
+      ..color = Colors.white.withOpacity(0.75 * opacity));
+
+    // --- Secondary wave line (slightly below, fainter) ---
+    final wave2Path = Path();
+    final off2 = 12.0;
+    wave2Path.moveTo(0, _wave(0, w) + off2);
+    for (double x = 0; x < w; x += 3) {
+      final xMid = x + 1.5;
+      final xEnd = x + 3;
+      wave2Path.quadraticBezierTo(
+        xMid, _wave(xMid, w) + off2 + sin(xMid * 0.02 + time * 0.3) * 1.5,
+        xEnd, _wave(xEnd, w) + off2 + sin(xEnd * 0.02 + time * 0.3) * 1.5,
+      );
+    }
+
+    canvas.drawPath(wave2Path, Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3.0)
+      ..color = Colors.white.withOpacity(0.18 * opacity));
+
+    canvas.drawPath(wave2Path, Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0
+      ..color = Colors.white.withOpacity(0.30 * opacity));
+
+    // --- Third wave line (deeper, very faint — light caustics) ---
+    final wave3Path = Path();
+    final off3 = 28.0;
+    wave3Path.moveTo(0, _wave(0, w) + off3);
+    for (double x = 0; x < w; x += 4) {
+      final xMid = x + 2;
+      final xEnd = x + 4;
+      wave3Path.quadraticBezierTo(
+        xMid, _wave(xMid, w) + off3 + sin(xMid * 0.025 + time * 0.35) * 2.0,
+        xEnd, _wave(xEnd, w) + off3 + sin(xEnd * 0.025 + time * 0.35) * 2.0,
+      );
+    }
+
+    canvas.drawPath(wave3Path, Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3.5)
+      ..color = Colors.white.withOpacity(0.10 * opacity));
+  }
+
+  @override
+  bool shouldRepaint(covariant _WaveSurfacePainter old) => true;
 }
 
 /// Lightweight creature painter — only draws the creature subsets passed in

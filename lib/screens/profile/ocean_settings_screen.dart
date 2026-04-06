@@ -14,7 +14,6 @@ class OceanSettingsScreen extends StatefulWidget {
 class _OceanSettingsScreenState extends State<OceanSettingsScreen> {
   OceanParams _params = OceanParams();
   bool _loaded = false;
-  double _previewHour = 12;
 
   @override
   void initState() {
@@ -28,9 +27,6 @@ class _OceanSettingsScreenState extends State<OceanSettingsScreen> {
       setState(() {
         _params = p;
         _loaded = true;
-        // Set preview hour to current time
-        final now = DateTime.now();
-        _previewHour = now.hour + now.minute / 60.0;
       });
     }
   }
@@ -69,6 +65,14 @@ class _OceanSettingsScreenState extends State<OceanSettingsScreen> {
     }
   }
 
+  /// Apply a time preset: rebuilds with new params copy to force widget update
+  void _applyPreset(double hour) {
+    setState(() {
+      _params.useRealTime = false;
+      _params.fixedHour = hour;
+    });
+  }
+
   String _hourLabel(double h) {
     final hours = h.floor();
     final minutes = ((h - hours) * 60).round();
@@ -89,8 +93,21 @@ class _OceanSettingsScreenState extends State<OceanSettingsScreen> {
         children: [
           // Live preview behind the controls
           OceanBackground(
-            params: _params,
-            fixedHour: _params.useRealTime ? null : _previewHour,
+            key: ValueKey('ocean_${_params.waveAmp}_${_params.caustics}_${_params.rays}_${_params.fishCount}_${_params.jellyfishCount}'),
+            params: OceanParams(
+              waveAmp: _params.waveAmp,
+              waveSpeed: _params.waveSpeed,
+              caustics: _params.caustics,
+              rays: _params.rays,
+              rayCount: _params.rayCount,
+              fishCount: _params.fishCount,
+              jellyfishCount: _params.jellyfishCount,
+              bubbleCount: _params.bubbleCount,
+              mantaCount: _params.mantaCount,
+              useRealTime: _params.useRealTime,
+              fixedHour: _params.fixedHour,
+            ),
+            fixedHour: _params.useRealTime ? null : _params.fixedHour,
             child: const SizedBox.expand(),
           ),
 
@@ -102,9 +119,9 @@ class _OceanSettingsScreenState extends State<OceanSettingsScreen> {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.black.withOpacity( 0.3),
-                    Colors.black.withOpacity( 0.6),
-                    Colors.black.withOpacity( 0.8),
+                    Colors.black.withOpacity(0.3),
+                    Colors.black.withOpacity(0.6),
+                    Colors.black.withOpacity(0.8),
                   ],
                   stops: const [0.0, 0.4, 1.0],
                 ),
@@ -157,15 +174,32 @@ class _OceanSettingsScreenState extends State<OceanSettingsScreen> {
                         (val) => setState(() => _params.useRealTime = val),
                       ),
 
-                      // Manual hour slider (only when not following real time)
+                      // Time presets (when not following real time)
                       if (!_params.useRealTime) ...[
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            _presetButton('Matin', Icons.wb_twilight, 7.5,
+                              _params.fixedHour >= 6 && _params.fixedHour < 10),
+                            const SizedBox(width: 8),
+                            _presetButton('Midi', Icons.wb_sunny, 13.0,
+                              _params.fixedHour >= 10 && _params.fixedHour < 17),
+                            const SizedBox(width: 8),
+                            _presetButton('Soir', Icons.wb_twilight, 18.5,
+                              _params.fixedHour >= 17 && _params.fixedHour < 21),
+                            const SizedBox(width: 8),
+                            _presetButton('Nuit', Icons.nightlight_round, 0.0,
+                              _params.fixedHour >= 21 || _params.fixedHour < 6),
+                          ],
+                        ),
                         const SizedBox(height: 8),
+                        // Fine-tune slider
                         _sliderRow(
-                          'Heure',
-                          _previewHour,
+                          'Heure exacte',
+                          _params.fixedHour,
                           0, 24,
-                          _hourLabel(_previewHour),
-                          (v) => setState(() => _previewHour = v),
+                          _hourLabel(_params.fixedHour),
+                          (v) => setState(() => _params.fixedHour = v),
                         ),
                       ],
 
@@ -239,13 +273,51 @@ class _OceanSettingsScreenState extends State<OceanSettingsScreen> {
     );
   }
 
+  Widget _presetButton(String label, IconData icon, double hour, bool isActive) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => _applyPreset(hour),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: isActive
+              ? AppColors.lichtblauw.withOpacity(0.3)
+              : Colors.white.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isActive
+                ? AppColors.lichtblauw.withOpacity(0.6)
+                : Colors.white.withOpacity(0.15),
+              width: isActive ? 1.5 : 1,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: isActive ? AppColors.lichtblauw : Colors.white54, size: 22),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isActive ? Colors.white : Colors.white60,
+                  fontSize: 11,
+                  fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _sectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10, top: 4),
       child: Text(
         title,
         style: TextStyle(
-          color: AppColors.lichtblauw.withOpacity( 0.7),
+          color: AppColors.lichtblauw.withOpacity(0.7),
           fontSize: 12,
           fontWeight: FontWeight.w600,
           letterSpacing: 1.2,
@@ -270,7 +342,7 @@ class _OceanSettingsScreenState extends State<OceanSettingsScreen> {
                 activeTrackColor: AppColors.lichtblauw,
                 inactiveTrackColor: Colors.white12,
                 thumbColor: Colors.white,
-                overlayColor: AppColors.lichtblauw.withOpacity( 0.2),
+                overlayColor: AppColors.lichtblauw.withOpacity(0.2),
                 trackHeight: 3,
               ),
               child: Slider(
@@ -299,9 +371,9 @@ class _OceanSettingsScreenState extends State<OceanSettingsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity( 0.05),
+        color: Colors.white.withOpacity(0.05),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white.withOpacity( 0.1)),
+        border: Border.all(color: Colors.white.withOpacity(0.1)),
       ),
       child: Row(
         children: [

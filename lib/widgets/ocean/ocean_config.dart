@@ -13,6 +13,7 @@ class OceanParams {
   int bubbleCount;
   int mantaCount;
   bool useRealTime; // true = device clock, false = manual hour
+  double fixedHour; // hour to use when useRealTime is false
 
   OceanParams({
     this.waveAmp = 0.045,
@@ -25,6 +26,7 @@ class OceanParams {
     this.bubbleCount = 12,
     this.mantaCount = 1,
     this.useRealTime = true,
+    this.fixedHour = 12,
   });
 
   /// Named presets
@@ -56,6 +58,7 @@ class OceanParams {
     p.setInt('ocean_bubbleCount', bubbleCount);
     p.setInt('ocean_mantaCount', mantaCount);
     p.setBool('ocean_useRealTime', useRealTime);
+    p.setDouble('ocean_fixedHour', fixedHour);
   }
 
   /// Load from SharedPreferences
@@ -72,6 +75,7 @@ class OceanParams {
       bubbleCount: p.getInt('ocean_bubbleCount') ?? 12,
       mantaCount: p.getInt('ocean_mantaCount') ?? 1,
       useRealTime: p.getBool('ocean_useRealTime') ?? true,
+      fixedHour: p.getDouble('ocean_fixedHour') ?? 12,
     );
   }
 }
@@ -127,17 +131,21 @@ class OceanTimeColors {
   }
 
   // Sky table: [hour, topR, topG, topB, botR, botG, botB]
+  // Day: almost white/very light blue. Night: black. Dawn/dusk: warm colors.
   static final List<List<double>> _skyTable = [
-    [0,    0.02, 0.02, 0.08, 0.04, 0.04, 0.12],
-    [6,    0.15, 0.15, 0.30, 0.85, 0.50, 0.35],
-    [7.5,  0.35, 0.55, 0.85, 0.95, 0.80, 0.65],
-    [10,   0.40, 0.65, 0.95, 0.72, 0.85, 0.95],
-    [12,   0.35, 0.60, 0.92, 0.68, 0.82, 0.94],
-    [16,   0.38, 0.62, 0.93, 0.70, 0.83, 0.94],
-    [18,   0.20, 0.25, 0.55, 0.90, 0.55, 0.30],
-    [19.5, 0.10, 0.10, 0.25, 0.50, 0.25, 0.20],
-    [21,   0.03, 0.03, 0.10, 0.06, 0.06, 0.15],
-    [24,   0.02, 0.02, 0.08, 0.04, 0.04, 0.12],
+    [0,    0.02, 0.02, 0.06, 0.03, 0.03, 0.08],   // midnight — black
+    [5,    0.02, 0.02, 0.06, 0.03, 0.03, 0.08],   // pre-dawn — still black
+    [6,    0.15, 0.12, 0.25, 0.85, 0.45, 0.30],   // dawn — warm horizon
+    [7,    0.55, 0.60, 0.80, 0.90, 0.70, 0.55],   // sunrise — warming up
+    [8,    0.75, 0.82, 0.95, 0.80, 0.87, 0.95],   // morning — light blue
+    [10,   0.82, 0.88, 0.97, 0.78, 0.86, 0.96],   // late morning — very light
+    [12,   0.85, 0.90, 0.98, 0.80, 0.88, 0.97],   // midday — almost white
+    [16,   0.82, 0.88, 0.97, 0.78, 0.86, 0.96],   // afternoon — very light
+    [18,   0.60, 0.55, 0.70, 0.90, 0.50, 0.35],   // sunset — warm orange horizon
+    [19,   0.25, 0.20, 0.40, 0.60, 0.30, 0.20],   // dusk — deep warm
+    [20,   0.08, 0.06, 0.15, 0.12, 0.08, 0.15],   // twilight — almost dark
+    [21,   0.03, 0.03, 0.08, 0.04, 0.04, 0.10],   // night — near black
+    [24,   0.02, 0.02, 0.06, 0.03, 0.03, 0.08],   // midnight — matches hour 0
   ];
 
   // Water table: [hour, surfR,G,B, deepR,G,B]
@@ -159,28 +167,28 @@ class OceanTimeColors {
   // IMPORTANT: waterLine = 0.56, so rise/set Y must be >= 0.58 to stay above water
   // Zenith Y = 0.88 = high in sky, Horizon Y = 0.58 = just above waterline
   static final List<List<double>> _sunTable = [
-    // === MOON ===
-    [0,    0.5, 0.88, 0.03, 0.25],    // midnight — center, ZENITH (high!)
-    [2,    0.65, 0.82, 0.03, 0.22],   // descending right
-    [3.5,  0.78, 0.74, 0.03, 0.2],    // lower right
-    [5,    0.88, 0.62, 0.03, 0.15],   // moon setting — near horizon
-    [5.5,  0.92, 0.58, 0.03, 0.08],   // moon almost gone — AT waterline
+    // === MOON === (size always 0.045 for consistent round disc)
+    [0,    0.5, 0.88, 0.045, 0.25],   // midnight — center, ZENITH (high!)
+    [2,    0.65, 0.82, 0.045, 0.22],  // descending right
+    [3.5,  0.78, 0.74, 0.045, 0.2],   // lower right
+    [5,    0.88, 0.62, 0.045, 0.15],  // moon setting — near horizon
+    [5.5,  0.92, 0.58, 0.045, 0.08],  // moon almost gone — AT waterline
     // === DAWN ===
-    [6,    0.08, 0.58, 0.03, 0.15],   // sun appears — AT waterline left
-    [6.5,  0.10, 0.64, 0.03, 0.8],    // sunrise — climbing
-    // === SUN ===
-    [9,    0.25, 0.78, 0.035, 0.9],   // morning — rising high
-    [12,   0.5, 0.88, 0.03, 1.0],     // midday — center, ZENITH (high!)
-    [15,   0.72, 0.78, 0.035, 0.9],   // afternoon — still high
-    [18,   0.88, 0.62, 0.035, 0.85],  // sunset — near horizon
+    [6,    0.08, 0.58, 0.045, 0.15],  // sun appears — AT waterline left
+    [6.5,  0.10, 0.64, 0.045, 0.8],   // sunrise — climbing
+    // === SUN === (size always 0.045)
+    [9,    0.25, 0.78, 0.045, 0.9],   // morning — rising high
+    [12,   0.5, 0.88, 0.045, 1.0],    // midday — center, ZENITH (high!)
+    [15,   0.72, 0.78, 0.045, 0.9],   // afternoon — still high
+    [18,   0.88, 0.62, 0.045, 0.85],  // sunset — near horizon
     // === DUSK ===
-    [18.5, 0.92, 0.58, 0.03, 0.3],    // sun almost gone — AT waterline
-    [19,   0.08, 0.58, 0.03, 0.08],   // moon appears — AT waterline left
+    [18.5, 0.92, 0.58, 0.045, 0.3],   // sun almost gone — AT waterline
+    [19,   0.08, 0.58, 0.045, 0.08],  // moon appears — AT waterline left
     // === MOON ===
-    [19.5, 0.10, 0.64, 0.03, 0.18],   // moonrise — climbing
-    [20.5, 0.20, 0.72, 0.03, 0.22],   // moon rising
-    [22,   0.35, 0.82, 0.03, 0.25],   // moon climbing high
-    [24,   0.5, 0.88, 0.03, 0.25],    // midnight — center, ZENITH (high!)
+    [19.5, 0.10, 0.64, 0.045, 0.18],  // moonrise — climbing
+    [20.5, 0.20, 0.72, 0.045, 0.22],  // moon rising
+    [22,   0.35, 0.82, 0.045, 0.25],  // moon climbing high
+    [24,   0.5, 0.88, 0.045, 0.25],   // midnight — center, ZENITH (high!)
   ];
 
   /// Generic table interpolation

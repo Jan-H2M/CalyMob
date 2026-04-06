@@ -153,6 +153,7 @@ class _LandingScreenState extends State<LandingScreen> {
       backgroundColor: Colors.black,
       body: OceanBackground(
         params: _oceanParams,
+        fixedHour: (_oceanParams != null && !_oceanParams!.useRealTime) ? _oceanParams!.fixedHour : null,
         child: SafeArea(
           child: Column(
             children: [
