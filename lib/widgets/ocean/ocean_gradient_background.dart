@@ -231,7 +231,7 @@ class _LightCreaturesPainter extends CustomPainter {
     // Update and draw bubbles
     for (final b in bubbles) {
       b.update(time, size.width, size.height);
-      b.draw(canvas, time, nightFactor);
+      b.draw(canvas, time);
     }
 
     // Update and draw fish

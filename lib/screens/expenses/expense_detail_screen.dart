@@ -300,7 +300,6 @@ class ExpenseDetailScreen extends StatelessWidget {
             ),
           ),
         ),
-      ),
     );
   }
 

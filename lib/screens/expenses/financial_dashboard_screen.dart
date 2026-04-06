@@ -142,6 +142,7 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
           ),
         ],
       ),
+      ),
     );
   }
 

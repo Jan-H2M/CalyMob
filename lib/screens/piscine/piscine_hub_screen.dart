@@ -147,7 +147,6 @@ class _PiscineHubScreenState extends State<PiscineHubScreen>
                     // Tab 1: Disponibilités
                     AvailabilityScreen(
                       userRoles: widget.userRoles,
-                      embedded: true,
                     ),
                     // Tab 2: Séances & Discussions
                     _SeancesTab(userRoles: widget.userRoles),
