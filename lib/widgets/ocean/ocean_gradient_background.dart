@@ -127,12 +127,12 @@ class _OceanGradientBackgroundState extends State<OceanGradientBackground>
       final waterDeep = Color.fromRGBO(
         (tc.waterDeepR * 255).round(), (tc.waterDeepG * 255).round(), (tc.waterDeepB * 255).round(), 1);
 
-      // Subtle wave animation in gradient stops
-      final waveOffset = sin(_time * 0.5) * 0.02;
+      // Very subtle wave animation in gradient stops — keeps horizon crisp
+      final waveOffset = sin(_time * 0.5) * 0.003;
 
       return Stack(
         children: [
-          // 1) Animated gradient
+          // 1) Animated gradient — sharp horizon line like real ocean
           Opacity(
             opacity: widget.opacity,
             child: Container(
@@ -143,7 +143,7 @@ class _OceanGradientBackgroundState extends State<OceanGradientBackground>
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [skyTop, skyBot, waterSurf, waterDeep],
-                  stops: [0.0, 0.25 + waveOffset, 0.35, 1.0],
+                  stops: [0.0, 0.28 + waveOffset, 0.30, 1.0],
                 ),
               ),
             ),
@@ -197,12 +197,13 @@ class _WaveLinePainter extends CustomPainter {
     final path = Path();
     path.moveTo(0, waterY);
     for (double x = 0; x <= size.width; x += 4) {
-      final y = waterY + sin(x * 0.02 + time * 0.8) * 3 + sin(x * 0.01 + time * 0.5) * 2;
+      // Very flat wave — barely visible ripple, not a cloud
+      final y = waterY + sin(x * 0.015 + time * 0.3) * 0.8;
       path.lineTo(x, y);
     }
     canvas.drawPath(path, Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
+      ..strokeWidth = 1.0
       ..color = color);
   }
 
