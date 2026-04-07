@@ -1,0 +1,1 @@
+Amélioration de l'écran détail d'opération avec gestion des palanquées intégrée. Nouveau sélecteur d'exercices amélioré pour le carnet de formation. Corrections de bugs et améliorations de stabilité.
