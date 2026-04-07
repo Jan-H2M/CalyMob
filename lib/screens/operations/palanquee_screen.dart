@@ -537,7 +537,6 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
     try {
       final stream = MemberObservationService().getObservationsForSession(
         widget.clubId,
-        'operation',
         widget.operation.id,
       );
       
@@ -548,7 +547,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
             for (final obs in observations) {
               final key = obs.memberId;
               _exerciceObservations.putIfAbsent(key, () => {});
-              _exerciceObservations[key]![obs.exerciceCode] = obs;
+              _exerciceObservations[key]![obs.exerciceCode ?? 'unknown'] = obs;
             }
           });
         }
@@ -710,7 +709,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                           await MemberObservationService().updateObservation(
                             widget.clubId,
                             existing!.id,
-                            obs,
+                            obs.toMap(),
                           );
                         }
                         if (mounted) {
@@ -1008,7 +1007,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                                       '${(p.membreNom ?? "").toUpperCase()} ${p.membrePrenom ?? ""}',
                                       code,
                                       exercice.description,
-                                      p.membreNiveau,
+                                      _getLevelForMember(p.membreId),
                                     );
                                   },
                                   child: Container(
@@ -1254,7 +1253,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                             '${p.membreNom.toUpperCase()} ${p.membrePrenom}',
                             code,
                             exercice.description,
-                            p.membreNiveau,
+                            p.niveau,
                           );
                         },
                         child: Container(

@@ -1188,7 +1188,7 @@ PODS:
     - abseil/meta/type_traits
     - abseil/xcprivacy
   - abseil/xcprivacy (1.20240722.0)
-  - app_badge_plus (1.2.7):
+  - app_badge_plus (1.2.8):
     - Flutter
   - app_links (6.4.1):
     - Flutter
@@ -1794,7 +1794,7 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   abseil: a05cc83bf02079535e17169a73c5be5ba47f714b
-  app_badge_plus: f2c3391ddd4a207254871e3d6fe41d879fea1d1a
+  app_badge_plus: 673e70e563287e12bc7f41f386e673047537e83a
   app_links: 3dbc685f76b1693c66a6d9dd1e9ab6f73d97dc0a
   BoringSSL-GRPC: dded2a44897e45f28f08ae87a55ee4bcd19bc508
   camera_avfoundation: 5675ca25298b6f81fa0a325188e7df62cc217741

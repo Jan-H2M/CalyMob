@@ -2664,6 +2664,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
     required ParticipantOperation participant,
     required Operation operation,
   }) {
+    final authProvider = context.read<AuthProvider>();
+    final memberProvider = context.read<MemberProvider>();
+    final currentUserId = authProvider.currentUser?.uid ?? '';
+    final currentUserName = '${memberProvider.prenom ?? ''} ${memberProvider.nom ?? ''}'.trim();
+    
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -2671,13 +2676,13 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         clubId: FirebaseConfig.defaultClubId,
         memberId: participant.membreId,
         memberName: '${participant.membrePrenom ?? ''} ${participant.membreNom ?? ''}'.trim(),
-        operationId: operation.id,
+        memberNiveau: '', // Level not available from ParticipantOperation
+        sessionId: operation.id,
+        sessionTitle: operation.titre,
+        sessionDate: operation.dateDebut ?? DateTime.now(),
+        observerId: currentUserId,
+        observerName: currentUserName,
         contextType: 'plongee', // Dive operation context
-        onSave: () {
-          // Refresh observations after save
-          _loadExerciceObservations();
-          Navigator.pop(context);
-        },
       ),
     );
   }
