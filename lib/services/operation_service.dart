@@ -12,6 +12,30 @@ import '../utils/tariff_utils.dart';
 class OperationService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  /// Remove diacritics for locale-aware sorting (é→e, è→e, ü→u, etc.)
+  static String _removeDiacritics(String str) {
+    const diacritics = 'ÀÁÂÃÄÅàáâãäåÒÓÔÕÖØòóôõöøÈÉÊËèéêëÇçÌÍÎÏìíîïÙÚÛÜùúûüÿÑñŠšŽžÐðÝýÞþ';
+    const replacements = 'AAAAAAaaaaaaOOOOOOooooooEEEEeeeeCcIIIIiiiiUUUUuuuuyNnSsZzDdYyTt';
+    for (int i = 0; i < diacritics.length; i++) {
+      str = str.replaceAll(diacritics[i], replacements[i]);
+    }
+    return str;
+  }
+
+  /// Sort participants by first name (prénom), then last name as tiebreaker
+  /// Uses diacritics-insensitive comparison for proper French name sorting
+  static void sortParticipantsByName(List<ParticipantOperation> participants) {
+    participants.sort((a, b) {
+      final aPrenom = _removeDiacritics((a.membrePrenom ?? '').toLowerCase());
+      final bPrenom = _removeDiacritics((b.membrePrenom ?? '').toLowerCase());
+      final firstNameCompare = aPrenom.compareTo(bPrenom);
+      if (firstNameCompare != 0) return firstNameCompare;
+      final aNom = _removeDiacritics((a.membreNom ?? '').toLowerCase());
+      final bNom = _removeDiacritics((b.membreNom ?? '').toLowerCase());
+      return aNom.compareTo(bNom);
+    });
+  }
+
   /// Stream des événements ouverts
   Stream<List<Operation>> getOpenEventsStream(String clubId) {
     return _firestore
@@ -202,12 +226,8 @@ class OperationService {
           .map((doc) => ParticipantOperation.fromFirestore(doc))
           .toList();
 
-      // Sort by first name (prénom), then last name as tiebreaker
-      participants.sort((a, b) {
-        final firstNameCompare = (a.membrePrenom ?? '').toLowerCase().compareTo((b.membrePrenom ?? '').toLowerCase());
-        if (firstNameCompare != 0) return firstNameCompare;
-        return (a.membreNom ?? '').toLowerCase().compareTo((b.membreNom ?? '').toLowerCase());
-      });
+      // Sort by first name (prénom), then last name — diacritics-insensitive
+      sortParticipantsByName(participants);
 
       debugPrint('👥 ${participants.length} participants chargés pour $operationId');
       return participants;
@@ -231,12 +251,8 @@ class OperationService {
           .map((doc) => ParticipantOperation.fromFirestore(doc))
           .toList();
 
-      // Sort by first name (prénom), then last name as tiebreaker
-      participants.sort((a, b) {
-        final firstNameCompare = (a.membrePrenom ?? '').toLowerCase().compareTo((b.membrePrenom ?? '').toLowerCase());
-        if (firstNameCompare != 0) return firstNameCompare;
-        return (a.membreNom ?? '').toLowerCase().compareTo((b.membreNom ?? '').toLowerCase());
-      });
+      // Sort by first name (prénom), then last name — diacritics-insensitive
+      sortParticipantsByName(participants);
 
       debugPrint('👥 [Stream] ${participants.length} participants mis à jour pour $operationId');
       return participants;

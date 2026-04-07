@@ -5,6 +5,7 @@ import '../services/member_observation_service.dart';
 
 /// Bottom sheet voor het toevoegen van observaties per lid.
 /// Drie modi: LIFRAS exercice, Thème de session, Libre (tekst).
+/// contextType bepaalt het type context: 'piscine' (zwembad) of 'plongee' (duiken)
 class ObservationBottomSheet extends StatefulWidget {
   final String clubId;
   final String memberId;
@@ -17,6 +18,7 @@ class ObservationBottomSheet extends StatefulWidget {
   final String observerName;
   final String? defaultThemeTitle;
   final List<String>? suggestedExerciceCodes;
+  final String contextType;  // 'piscine' or 'plongee'
 
   const ObservationBottomSheet({
     super.key,
@@ -26,10 +28,12 @@ class ObservationBottomSheet extends StatefulWidget {
     required this.memberNiveau,
     required this.sessionId,
     required this.sessionTitle,
-    required this.sessionDate,    required this.observerId,
+    required this.sessionDate,
+    required this.observerId,
     required this.observerName,
     this.defaultThemeTitle,
     this.suggestedExerciceCodes,
+    this.contextType = 'piscine',
   });
 
   @override
@@ -97,7 +101,7 @@ class _ObservationBottomSheetState extends State<ObservationBottomSheet> {
         memberId: widget.memberId,
         memberName: widget.memberName,
         memberNiveau: widget.memberNiveau,
-        contextType: 'piscine',
+        contextType: widget.contextType,
         contextId: widget.sessionId,
         contextDate: widget.sessionDate,
         contextTitle: widget.sessionTitle,

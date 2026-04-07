@@ -8,6 +8,10 @@ import '../../services/palanquee_service.dart';
 import '../../services/lifras_validation_service.dart';
 import '../../services/palanquee_auto_assign_service.dart';
 import '../../utils/fiche_palanquee_pdf.dart';
+import '../../models/exercice_lifras.dart';
+import '../../services/lifras_service.dart';
+import '../../models/member_observation.dart';
+import '../../services/member_observation_service.dart';
 
 /// Écran de composition des palanquées (tap-to-assign)
 class PalanqueeScreen extends StatefulWidget {
@@ -33,16 +37,19 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
   List<Palanquee> _palanquees = [];
   Map<String, String> _memberLevels = {};
   Map<int, ValidationResult> _validationResults = {};
+  Map<String, ExerciceLIFRAS> _exerciceCatalog = {};
 
   bool _isLoading = true;
   bool _isSaving = false;
   bool _hasChanges = false;
   bool _unassignedExpanded = true;
+  Map<String, Map<String, MemberObservation>> _exerciceObservations = {};
 
   @override
   void initState() {
     super.initState();
     _loadData();
+    _loadExerciceObservations();
   }
 
   Future<void> _loadData() async {
@@ -62,6 +69,10 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
         _palanquees = assignments.palanquees;
       }
 
+
+      // Load exercise catalog
+      final allExercices = await LifrasService().getAllExercices(widget.clubId);
+      _exerciceCatalog = {for (var ex in allExercices) ex.id: ex};
       _revalidate();
     } catch (e) {
       debugPrint('❌ Erreur chargement palanquées: $e');
@@ -131,6 +142,19 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
     return level;
   }
 
+
+  List<String> _getExerciseCodesForMember(String membreId) {
+    try {
+      final participant = widget.participants.firstWhere((p) => p.membreId == membreId);
+      return participant.exercices
+          .map((exId) => _exerciceCatalog[exId]?.code)
+          .where((code) => code != null)
+          .cast<String>()
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
   void _revalidate() {
     _validationResults = validateAllPalanquees(
       _palanquees,
@@ -508,6 +532,300 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
   // Build
   // ============================================================
 
+
+  Future<void> _loadExerciceObservations() async {
+    try {
+      final stream = MemberObservationService().getObservationsForSession(
+        widget.clubId,
+        'operation',
+        widget.operation.id,
+      );
+      
+      stream.listen((observations) {
+        if (mounted) {
+          setState(() {
+            _exerciceObservations.clear();
+            for (final obs in observations) {
+              final key = obs.memberId;
+              _exerciceObservations.putIfAbsent(key, () => {});
+              _exerciceObservations[key]![obs.exerciceCode] = obs;
+            }
+          });
+        }
+      });
+    } catch (e) {
+      debugPrint('❌ Erreur chargement observations: $e');
+    }
+  }
+
+  void _showExerciseEvaluationSheet(
+    String memberId,
+    String memberName,
+    String exerciceCode,
+    String exerciceDescription,
+  ) {
+    final existing = _exerciceObservations[memberId]?[exerciceCode];
+    String result = existing?.result ?? 'en_progres';
+    String remarks = existing?.note ?? '';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setModalState) => SingleChildScrollView(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(context).viewInsets.bottom + 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header
+                Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  memberName,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.donkerblauw,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  exerciceCode,
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  exerciceDescription,
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                ),
+                const SizedBox(height: 16),
+                const Divider(),
+                const SizedBox(height: 12),
+
+                // Status buttons
+                const Text(
+                  'Evaluation',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: AppColors.donkerblauw,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _buildResultButton(
+                      'Acquis',
+                      Colors.green,
+                      result == 'acquis',
+                      () => setModalState(() => result = 'acquis'),
+                    ),
+                    _buildResultButton(
+                      'En progrès',
+                      Colors.orange,
+                      result == 'en_progres',
+                      () => setModalState(() => result = 'en_progres'),
+                    ),
+                    _buildResultButton(
+                      'À revoir',
+                      Colors.red,
+                      result == 'a_revoir',
+                      () => setModalState(() => result = 'a_revoir'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Remarks
+                const Text(
+                  'Remarques (optionnel)',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: AppColors.donkerblauw,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: TextEditingController(text: remarks),
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    hintText: 'Ajouter des notes...',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                  ),
+                  onChanged: (v) => remarks = v,
+                ),
+                const SizedBox(height: 16),
+
+                // Save button
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      final obs = MemberObservation(
+                        id: existing?.id ?? '',
+                        memberId: memberId,
+                        memberName: memberName,
+                        contextType: 'operation',
+                        contextId: widget.operation.id,
+                        category: 'lifras',
+                        exerciceCode: exerciceCode,
+                        exerciceDescription: exerciceDescription,
+                        result: result,
+                        note: remarks,
+                        observerId: widget.userId,
+                        observerName: '',
+                        createdAt: existing?.createdAt ?? DateTime.now(),
+                      );
+
+                      try {
+                        if (existing?.id.isEmpty ?? true) {
+                          await MemberObservationService().addObservation(
+                            widget.clubId,
+                            obs,
+                          );
+                        } else {
+                          await MemberObservationService().updateObservation(
+                            widget.clubId,
+                            existing!.id,
+                            obs,
+                          );
+                        }
+                        if (mounted) {
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Evaluation sauvegardée ✓'),
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Erreur: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.middenblauw,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text('Sauvegarder'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildResultButton(
+    String label,
+    Color color,
+    bool selected,
+    VoidCallback onTap,
+  ) {
+    return Flexible(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: selected ? color.withOpacity(0.2) : Colors.transparent,
+            border: Border.all(
+              color: selected ? color : Colors.grey[300]!,
+              width: selected ? 2 : 1,
+            ),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            children: [
+              Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: selected ? color : Colors.transparent,
+                  border: Border.all(color: color, width: 2),
+                  shape: BoxShape.circle,
+                ),
+                child: selected
+                    ? Icon(Icons.check, size: 14, color: Colors.white)
+                    : null,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                  color: selected ? color : Colors.grey,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _getObservationColor(String? result) {
+    switch (result) {
+      case 'acquis':
+        return Colors.green;
+      case 'en_progres':
+        return Colors.orange;
+      case 'a_revoir':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  IconData _getObservationIcon(String? result) {
+    switch (result) {
+      case 'acquis':
+        return Icons.check_circle;
+      case 'en_progres':
+        return Icons.schedule;
+      case 'a_revoir':
+        return Icons.cancel;
+      default:
+        return Icons.help;
+    }
+  }
+
+
+  // ============================================================
+  // Build
+  // ============================================================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -669,6 +987,59 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                     '${(p.membreNom ?? '').toUpperCase()} ${p.membrePrenom ?? ''}',
                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
                   ),
+                  subtitle: _getExerciseCodesForMember(p.membreId).isNotEmpty
+                      ? Wrap(
+                          spacing: 4,
+                          runSpacing: 2,
+                          children: _getExerciseCodesForMember(p.membreId)
+                              .map((code) {
+                                final obs = _exerciceObservations[p.membreId]?[code];
+                                final color = _getObservationColor(obs?.result);
+                                return GestureDetector(
+                                  onTap: () {
+                                    final exercice = _exerciceCatalog.values
+                                        .firstWhere((ex) => ex.code == code, orElse: () => ExerciceLIFRAS(id: '', code: code, nom: code));
+                                    _showExerciseEvaluationSheet(
+                                      p.membreId,
+                                      '${(p.membreNom ?? "").toUpperCase()} ${p.membrePrenom ?? ""}',
+                                      code,
+                                      exercice.nom,
+                                    );
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: color.withOpacity(0.15),
+                                      border: obs != null ? Border.all(color: color, width: 1) : null,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          code,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: color,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        if (obs != null) ...[
+                                          const SizedBox(width: 2),
+                                          Icon(
+                                            _getObservationIcon(obs.result),
+                                            size: 8,
+                                            color: color,
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              })
+                              .toList(),
+                        )
+                      : null,
                   trailing: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
@@ -861,6 +1232,59 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
           '${p.membreNom.toUpperCase()} ${p.membrePrenom}',
           style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
         ),
+        subtitle: _getExerciseCodesForMember(p.membreId).isNotEmpty
+            ? Wrap(
+                spacing: 4,
+                runSpacing: 2,
+                children: _getExerciseCodesForMember(p.membreId)
+                    .map((code) {
+                      final obs = _exerciceObservations[p.membreId]?[code];
+                      final color = _getObservationColor(obs?.result);
+                      return GestureDetector(
+                        onTap: () {
+                          final exercice = _exerciceCatalog.values
+                              .firstWhere((ex) => ex.code == code, orElse: () => ExerciceLIFRAS(id: '', code: code, nom: code));
+                          _showExerciseEvaluationSheet(
+                            p.membreId,
+                            '${p.membreNom.toUpperCase()} ${p.membrePrenom}',
+                            code,
+                            exercice.nom,
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: color.withOpacity(0.15),
+                            border: obs != null ? Border.all(color: color, width: 1) : null,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                code,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: color,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              if (obs != null) ...[
+                                const SizedBox(width: 2),
+                                Icon(
+                                  _getObservationIcon(obs.result),
+                                  size: 8,
+                                  color: color,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      );
+                    })
+                    .toList(),
+              )
+            : null,
         trailing: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
           decoration: BoxDecoration(

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
+import '../config/firebase_config.dart';
+import '../models/exercice_lifras.dart';
+import '../services/lifras_service.dart';
 
 /// Gegevens van een LIFRAS exercice.
 class LIFRASExercice {
@@ -10,6 +13,7 @@ class LIFRASExercice {
 
 /// Widget voor het selecteren van een LIFRAS exercice, gefilterd op niveau.
 /// Toont de exercices als doorzoekbare lijst.
+/// Laadt dynamisch uit Firestore, met fallback naar hardcoded data voor 1*.
 class ExercisePickerWidget extends StatefulWidget {
   final String niveau;
   final Function(String code, String description) onSelected;
@@ -27,10 +31,74 @@ class ExercisePickerWidget extends StatefulWidget {
 class _ExercisePickerWidgetState extends State<ExercisePickerWidget> {
   String _search = '';
   late List<LIFRASExercice> _exercises;
+  bool _isLoading = false;
+
   @override
   void initState() {
     super.initState();
-    _exercises = _getExercisesForNiveau(widget.niveau);
+    _loadExercises();
+  }
+
+  Future<void> _loadExercises() async {
+    setState(() => _isLoading = true);
+
+    // Try to map niveau string to NiveauLIFRAS enum
+    final niveau = _mapNiveauStringToEnum(widget.niveau);
+
+    if (niveau != null) {
+      // Load from Firestore
+      final lifrasService = LifrasService();
+      try {
+        final firebaseExercices = await lifrasService.getExercicesByNiveau(
+          FirebaseConfig.defaultClubId,
+          niveau,
+        );
+
+        if (mounted) {
+          setState(() {
+            _exercises = firebaseExercices
+                .map((ex) => LIFRASExercice(code: ex.code, description: ex.description))
+                .toList();
+            _isLoading = false;
+          });
+        }
+        return;
+      } catch (e) {
+        debugPrint('Error loading exercises from Firestore: $e');
+      }
+    }
+
+    // Fallback to hardcoded data
+    setState(() {
+      _exercises = _getExercisesForNiveau(widget.niveau);
+      _isLoading = false;
+    });
+  }
+
+  /// Map niveau string ('1*', '2*', etc.) to NiveauLIFRAS enum
+  NiveauLIFRAS? _mapNiveauStringToEnum(String niveau) {
+    switch (niveau) {
+      case '1*':
+      case '1':
+        return null; // No enum for 1*, keep hardcoded
+      case '2*':
+      case '2':
+        return NiveauLIFRAS.p2;
+      case '3*':
+      case '3':
+        return NiveauLIFRAS.p3;
+      case '4*':
+      case '4':
+        return NiveauLIFRAS.p4;
+      case 'AM':
+      case 'am':
+        return NiveauLIFRAS.am;
+      case 'MC':
+      case 'mc':
+        return NiveauLIFRAS.mc;
+      default:
+        return null;
+    }
   }
 
   List<LIFRASExercice> get _filtered {
@@ -44,6 +112,15 @@ class _ExercisePickerWidgetState extends State<ExercisePickerWidget> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -56,7 +133,8 @@ class _ExercisePickerWidgetState extends State<ExercisePickerWidget> {
             isDense: true,
           ),
           onChanged: (v) => setState(() => _search = v),
-        ),        const SizedBox(height: 8),
+        ),
+        const SizedBox(height: 8),
         ..._filtered.map((ex) => ListTile(
           dense: true,
           contentPadding: const EdgeInsets.symmetric(horizontal: 4),

@@ -61,4 +61,14 @@ class MemberObservationService {
     }
     await batch.commit();
   }
+
+  /// Bestaande observation updaten.
+  Future<void> updateObservation(
+    String clubId,
+    String observationId,
+    Map<String, dynamic> data,
+  ) async {
+    data['updatedAt'] = Timestamp.now();
+    await _collection(clubId).doc(observationId).update(data);
+  }
 }

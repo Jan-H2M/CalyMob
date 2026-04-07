@@ -33,7 +33,11 @@ import 'edit_event_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
 import 'package:intl/intl.dart';
+import '../../models/member_observation.dart';
+import '../../services/member_observation_service.dart';
 import 'palanquee_screen.dart';
+import '../../config/firebase_config.dart';
+import '../../widgets/observation_bottom_sheet.dart';
 
 /// Écran de détail d'une opération avec bouton inscription
 class OperationDetailScreen extends StatefulWidget {
@@ -57,6 +61,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
 
   MemberProfile? _userProfile;
   List<ExerciceLIFRAS> _availableExercices = [];
+  Map<String, ExerciceLIFRAS> _allExercicesMap = {};
+  Map<String, Map<String, MemberObservation>> _exerciceObservations = {}; // memberId -> exerciceCode -> observation
   List<String> _selectedExercices = [];
   bool _isLoadingExercices = false;
   ParticipantOperation? _userInscription;
@@ -78,6 +84,22 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
     final statuten = memberProvider.clubStatuten;
     final normalised = statuten.map((s) => s.toLowerCase().trim()).toList();
     return normalised.contains('encadrant') || normalised.contains('encadrants');
+  }
+
+  /// Check if operation date is today or in the past
+  bool _isOperationTodayOrPast(Operation operation) {
+    if (operation.dateDebut == null) return false;
+    final today = DateTime(
+      DateTime.now().year,
+      DateTime.now().month,
+      DateTime.now().day,
+    );
+    final operationDate = DateTime(
+      operation.dateDebut!.year,
+      operation.dateDebut!.month,
+      operation.dateDebut!.day,
+    );
+    return operationDate.isBefore(today) || operationDate.isAtSameMomentAs(today);
   }
 
   @override
@@ -120,6 +142,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
       });
       // Load exercices after profile is loaded
       _loadExercices();
+      // Load complete exercise catalog for displaying other participants's choices
+      _loadAllExercices();
+      // Load exercise observations for event
+      _loadExerciceObservations();
     }
   }
 
@@ -165,6 +191,19 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
       setState(() {
         _isLoadingExercices = false;
       });
+    }
+  }
+
+  Future<void> _loadAllExercices() async {
+    try {
+      final allExercices = await _lifrasService.getAllExercices(widget.clubId);
+      if (mounted) {
+        setState(() {
+          _allExercicesMap = {for (var ex in allExercices) ex.id: ex};
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading all exercises: $e');
     }
   }
 
@@ -998,9 +1037,19 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
           return Column(
             children: [
               Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
+                child: RefreshIndicator(
+                  onRefresh: () async {
+                    // Force reload participants and operation data
+                    await operationProvider.reloadParticipants(
+                      widget.clubId,
+                      widget.operationId,
+                    );
+                  },
+                  color: AppColors.primary,
+                  child: SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // Titre
@@ -1071,6 +1120,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                       ],
                     ],
                   ),
+                ),
                 ),
               ),
 
@@ -1822,6 +1872,28 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Refresh button for payment status updates
+              GestureDetector(
+                onTap: () async {
+                  await context.read<OperationProvider>().reloadParticipants(
+                    widget.clubId,
+                    widget.operationId,
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  margin: const EdgeInsets.only(right: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.middenblauw.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.refresh,
+                    size: 20,
+                    color: AppColors.middenblauw,
+                  ),
+                ),
+              ),
               // Add guest button (only for admins/encadrants)
               if (_canAddGuest)
                 GestureDetector(
@@ -2010,13 +2082,101 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                                         .toList(),
                                   ),
                                 ),
+                              // Exercices souhaités (tappable for evaluation by monitors)
+                              if (participant.exercices.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Wrap(
+                                    spacing: 4,
+                                    runSpacing: 4,
+                                    children: participant.exercices
+                                        .map((exId) {
+                                          final ex = _allExercicesMap[exId];
+                                          final code = ex?.code ?? exId;
+                                          // Look up observation for this member + exercise
+                                          final obs = _exerciceObservations[participant.membreId]?[code];
+                                          final statusColor = _getObservationColor(obs?.result);
+                                          final isMonitor = _canManagePalanquees(
+                                            context.read<OperationProvider>().selectedOperation!,
+                                          );
+                                          return GestureDetector(
+                                            onTap: isMonitor ? () => _showExerciseEvaluationSheet(
+                                              memberId: participant.membreId,
+                                              memberName: '${participant.membrePrenom ?? ''} ${participant.membreNom ?? ''}'.trim(),
+                                              exerciceId: exId,
+                                              exerciceCode: code,
+                                              exerciceDescription: ex?.description ?? '',
+                                              existingObservation: obs,
+                                            ) : null,
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: statusColor.withOpacity(0.15),
+                                                borderRadius: BorderRadius.circular(4),
+                                                border: Border.all(color: statusColor.withOpacity(0.4), width: 1),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  if (obs?.result != null)
+                                                    Padding(
+                                                      padding: const EdgeInsets.only(right: 3),
+                                                      child: Icon(
+                                                        _getObservationIcon(obs?.result),
+                                                        size: 12,
+                                                        color: statusColor,
+                                                      ),
+                                                    ),
+                                                  Text(
+                                                    code,
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      color: statusColor,
+                                                      fontWeight: FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          );
+                                        })
+                                        .toList(),
+                                  ),
+                                ),
                             ],
                           ),
-                          trailing: participant.totalPrix > 0
-                              ? (canShowPaymentCard
-                                  ? Icon(Icons.qr_code_2, size: 22, color: Colors.blueGrey.shade400)
-                                  : _buildPaymentBadge(participant))
-                              : null,
+                          trailing: SizedBox(
+                            width: 80,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                // Evaluate participant button (feature-flagged)
+                                if (_canManagePalanquees(operationProvider.selectedOperation!) &&
+                                    _isOperationTodayOrPast(operationProvider.selectedOperation!))
+                                  Tooltip(
+                                    message: 'Évaluer le participant',
+                                    child: IconButton(
+                                      icon: Icon(Icons.assessment, size: 20, color: AppColors.middenblauw),
+                                      onPressed: () => _showObservationBottomSheet(
+                                        participant: participant,
+                                        operation: operationProvider.selectedOperation!,
+                                      ),
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                    ),
+                                  ),
+                                // Payment info
+                                if (participant.totalPrix > 0) ...[
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: canShowPaymentCard
+                                        ? Icon(Icons.qr_code_2, size: 22, color: Colors.blueGrey.shade400)
+                                        : _buildPaymentBadge(participant),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
                         );
                       }).toList(),
                     ),
@@ -2606,5 +2766,275 @@ class _SupplementSelectionDialogState extends State<_SupplementSelectionDialog> 
         ),
       ],
     );
+  }
+
+  Future<void> _loadExerciceObservations() async {
+    final operation = context.read<OperationProvider>().selectedOperation;
+    if (operation == null) return;
+    
+    final service = MemberObservationService();
+    final stream = service.getObservationsForSession(
+      widget.clubId,
+      operation.id,
+    );
+    
+    stream.listen((observations) {
+      if (!mounted) return;
+      final map = <String, Map<String, MemberObservation>>{};
+      for (final obs in observations) {
+        if (obs.category == 'exercice_lifras' && obs.exerciceCode != null) {
+          map.putIfAbsent(obs.memberId, () => {});
+          map[obs.memberId]![obs.exerciceCode!] = obs;
+        }
+      }
+      setState(() {
+        _exerciceObservations = map;
+      });
+    });
+  }
+
+  /// Show observation bottom sheet for participant evaluation during plongee (dive operation)
+  void _showObservationBottomSheet({
+    required ParticipantOperation participant,
+    required Operation operation,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => ObservationBottomSheet(
+        clubId: FirebaseConfig.defaultClubId,
+        memberId: participant.membreId,
+        memberName: '${participant.membrePrenom ?? ''} ${participant.membreNom ?? ''}'.trim(),
+        operationId: operation.id,
+        contextType: 'plongee', // Dive operation context
+        onSave: () {
+          // Refresh observations after save
+          _loadExerciceObservations();
+          Navigator.pop(context);
+        },
+      ),
+    );
+  }
+
+  void _showExerciseEvaluationSheet({
+    required String memberId,
+    required String memberName,
+    required String exerciceId,
+    required String exerciceCode,
+    required String exerciceDescription,
+    MemberObservation? existingObservation,
+  }) {
+    final operation = context.read<OperationProvider>().selectedOperation;
+    if (operation == null) return;
+    
+    final authProvider = context.read<AuthProvider>();
+    final memberProvider = context.read<MemberProvider>();
+    final currentUserId = authProvider.currentUser?.uid ?? '';
+    final currentUserName = '${memberProvider.prenom ?? ''} ${memberProvider.nom ?? ''}'.trim();
+    
+    String? selectedResult = existingObservation?.result;
+    final noteController = TextEditingController(text: existingObservation?.note ?? '');
+    
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          return Container(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(ctx).viewInsets.bottom,
+            ),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Handle bar
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Title
+                  Text(
+                    'Évaluer: $exerciceCode',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '$memberName — $exerciceDescription',
+                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                  ),
+                  const SizedBox(height: 20),
+                  
+                  // Status buttons
+                  Text('Résultat', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.grey[700])),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      _buildResultButton('acquis', 'Acquis', Colors.green, selectedResult, (val) {
+                        setSheetState(() => selectedResult = val);
+                      }),
+                      const SizedBox(width: 8),
+                      _buildResultButton('en_progres', 'En progrès', Colors.orange, selectedResult, (val) {
+                        setSheetState(() => selectedResult = val);
+                      }),
+                      const SizedBox(width: 8),
+                      _buildResultButton('a_revoir', 'À revoir', Colors.red, selectedResult, (val) {
+                        setSheetState(() => selectedResult = val);
+                      }),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Note field
+                  Text('Remarque', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.grey[700])),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: noteController,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      hintText: 'Ajouter une remarque...',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      contentPadding: const EdgeInsets.all(12),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  
+                  // Save button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: selectedResult == null ? null : () async {
+                        final service = MemberObservationService();
+                        
+                        if (existingObservation != null) {
+                          // Update existing
+                          await service.updateObservation(
+                            widget.clubId,
+                            existingObservation.id,
+                            {
+                              'result': selectedResult,
+                              'note': noteController.text.trim(),
+                              'updatedAt': DateTime.now(),
+                            },
+                          );
+                        } else {
+                          // Create new observation
+                          final participants = context.read<OperationProvider>()
+                              .selectedOperationParticipants;
+                          
+                          final obs = MemberObservation(
+                            id: '',
+                            memberId: memberId,
+                            memberName: memberName,
+                            memberNiveau: '',
+                            contextType: operation.categorie == 'plongee' ? 'plongee' : 'piscine',
+                            contextId: operation.id,
+                            contextDate: operation.dateDebut ?? DateTime.now(),
+                            contextTitle: operation.titre,
+                            category: 'exercice_lifras',
+                            exerciceCode: exerciceCode,
+                            exerciceDescription: exerciceDescription,
+                            result: selectedResult,
+                            note: noteController.text.trim(),
+                            observerId: currentUserId,
+                            observerName: currentUserName,
+                            createdAt: DateTime.now(),
+                          );
+                          await service.addObservation(widget.clubId, obs);
+                        }
+                        
+                        if (mounted) Navigator.pop(ctx);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.teal,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: Text(
+                        existingObservation != null ? 'Modifier' : 'Enregistrer',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+  
+  Widget _buildResultButton(String value, String label, Color color, String? selected, Function(String) onTap) {
+    final isSelected = selected == value;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => onTap(value),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected ? color.withOpacity(0.2) : Colors.grey[100],
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isSelected ? color : Colors.grey[300]!,
+              width: isSelected ? 2 : 1,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                color: isSelected ? color : Colors.grey[600],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _getObservationColor(String? result) {
+    switch (result) {
+      case 'acquis':
+        return Colors.green;
+      case 'en_progres':
+        return Colors.orange;
+      case 'a_revoir':
+        return Colors.red;
+      default:
+        return Colors.teal; // No evaluation yet
+    }
+  }
+  
+  IconData _getObservationIcon(String? result) {
+    switch (result) {
+      case 'acquis':
+        return Icons.check_circle;
+      case 'en_progres':
+        return Icons.timelapse;
+      case 'a_revoir':
+        return Icons.replay;
+      default:
+        return Icons.circle_outlined;
+    }
   }
 }
