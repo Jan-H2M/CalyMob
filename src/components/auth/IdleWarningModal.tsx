@@ -1,5 +1,4 @@
-import React from 'react';
-import { Clock, AlertTriangle, X } from 'lucide-react';
+import { Clock, AlertTriangle } from 'lucide-react';
 
 interface IdleWarningModalProps {
   /**

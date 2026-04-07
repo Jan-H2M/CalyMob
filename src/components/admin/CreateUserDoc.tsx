@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { doc, setDoc, Timestamp } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
 import type { User } from 'firebase/auth';
+import { logger } from '@/utils/logger';
 
 export function CreateUserDoc() {
   const [user, setUser] = useState<User | null>(null);
@@ -28,9 +29,9 @@ export function CreateUserDoc() {
       const clubId = 'calypso';
       const userDocPath = `clubs/${clubId}/members/${user.uid}`;
 
-      console.log('🔍 Current user UID:', user.uid);
-      console.log('🔍 Current user email:', user.email);
-      console.log('📝 Creating document at:', userDocPath);
+      logger.debug('🔍 Current user UID:', user.uid);
+      logger.debug('🔍 Current user email:', user.email);
+      logger.debug('📝 Creating document at:', userDocPath);
 
       const userDoc = {
         email: user.email,
@@ -47,10 +48,10 @@ export function CreateUserDoc() {
       await setDoc(doc(db, userDocPath), userDoc, { merge: true });
 
       setStatus('✅ SUCCESS! User document created. Please reload the page (F5)');
-      console.log('✅ User document created successfully');
+      logger.debug('✅ User document created successfully');
     } catch (error: any) {
       setStatus(`❌ Error: ${error.message}`);
-      console.error('❌ Error creating user document:', error);
+      logger.error('❌ Error creating user document:', error);
     } finally {
       setLoading(false);
     }

@@ -92,7 +92,7 @@ export default function ColorPicker({ value, onChange, disabled }: ColorPickerPr
         className={`
           flex items-center gap-2 px-3 py-2 rounded-lg border
           ${disabled
-            ? 'bg-gray-100 dark:bg-dark-bg-secondary border-gray-300 dark:border-dark-border cursor-not-allowed opacity-50'
+            ? 'bg-gray-100 dark:bg-dark-bg-tertiary dark:bg-dark-bg-secondary border-gray-300 dark:border-dark-border cursor-not-allowed opacity-50'
             : 'bg-white dark:bg-dark-bg-primary border-gray-300 dark:border-dark-border hover:border-blue-500 cursor-pointer'
           }
           text-sm text-gray-700 dark:text-dark-text-primary
@@ -109,8 +109,8 @@ export default function ColorPicker({ value, onChange, disabled }: ColorPickerPr
           </>
         ) : (
           <>
-            <Palette className="w-4 h-4 text-gray-400 dark:text-dark-text-tertiary" />
-            <span className="text-gray-400 dark:text-dark-text-tertiary">Choisir une couleur</span>
+            <Palette className="w-4 h-4 text-gray-400 dark:text-dark-text-muted dark:text-dark-text-tertiary" />
+            <span className="text-gray-400 dark:text-dark-text-muted dark:text-dark-text-tertiary">Choisir une couleur</span>
           </>
         )}
         <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${isOpen ? 'rotate-180' : ''}`} />
@@ -121,7 +121,7 @@ export default function ColorPicker({ value, onChange, disabled }: ColorPickerPr
         <div className="absolute z-50 mt-2 w-80 bg-white dark:bg-dark-bg-primary border border-gray-200 dark:border-dark-border rounded-lg shadow-lg">
           {/* Preset Colors */}
           <div className="p-4">
-            <div className="text-xs font-medium text-gray-500 dark:text-dark-text-secondary mb-3">
+            <div className="text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary mb-3">
               Couleurs prédéfinies
             </div>
 
@@ -151,13 +151,13 @@ export default function ColorPicker({ value, onChange, disabled }: ColorPickerPr
 
             {/* Custom Hex Input */}
             <div className="border-t border-gray-200 dark:border-dark-border pt-4">
-              <div className="text-xs font-medium text-gray-500 dark:text-dark-text-secondary mb-2">
+              <div className="text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary mb-2">
                 Ou entrez un code hex:
               </div>
 
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-dark-text-tertiary">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-dark-text-muted dark:text-dark-text-tertiary">
                     #
                   </span>
                   <input

@@ -5,6 +5,7 @@ import { Checklist, ChecklistItem, ItemType } from '@/types/inventory';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { cn } from '@/utils/utils';
+import { logger } from '@/utils/logger';
 
 export function ChecklistsConfig() {
   const { clubId } = useAuth();
@@ -37,7 +38,7 @@ export function ChecklistsConfig() {
       setChecklists(checklistsData);
       setItemTypes(typesData);
     } catch (error) {
-      console.error('Erreur chargement données:', error);
+      logger.error('Erreur chargement données:', error);
       toast.error('Erreur lors du chargement des données');
     } finally {
       setLoading(false);
@@ -103,7 +104,7 @@ export function ChecklistsConfig() {
       await loadData();
       handleCancel();
     } catch (error) {
-      console.error('Erreur sauvegarde checklist:', error);
+      logger.error('Erreur sauvegarde checklist:', error);
       toast.error('Erreur lors de la sauvegarde');
     }
   };
@@ -122,7 +123,7 @@ export function ChecklistsConfig() {
       toast.success('Checklist supprimée');
       await loadData();
     } catch (error: any) {
-      console.error('Erreur suppression checklist:', error);
+      logger.error('Erreur suppression checklist:', error);
       toast.error(error.message || 'Erreur lors de la suppression');
     }
   };
@@ -142,7 +143,7 @@ export function ChecklistsConfig() {
       toast.success('Checklist dupliquée');
       await loadData();
     } catch (error: any) {
-      console.error('Erreur duplication checklist:', error);
+      logger.error('Erreur duplication checklist:', error);
       toast.error(error.message || 'Erreur lors de la duplication');
     }
   };
@@ -214,8 +215,8 @@ export function ChecklistsConfig() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">Checklists d'Inspection</h2>
-          <p className="mt-1 text-sm text-gray-500">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-dark-text-primary">Checklists d'Inspection</h2>
+          <p className="mt-1 text-sm text-gray-500 dark:text-dark-text-muted">
             Configurez les checklists pour l'inspection du matériel au retour
           </p>
         </div>
@@ -232,7 +233,7 @@ export function ChecklistsConfig() {
       {/* Create/Edit Form */}
       {(isCreating || editingChecklist) && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-dark-text-primary mb-4">
             {isCreating ? 'Créer une checklist' : 'Modifier la checklist'}
           </h3>
 
@@ -240,7 +241,7 @@ export function ChecklistsConfig() {
             {/* Basic Info */}
             <div className="grid grid-cols-1 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                   Nom de la checklist *
                 </label>
                 <input
@@ -248,12 +249,12 @@ export function ChecklistsConfig() {
                   value={formData.nom || ''}
                   onChange={(e) => setFormData({ ...formData, nom: e.target.value })}
                   placeholder="Ex: Inspection régulateur"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                   Description
                 </label>
                 <textarea
@@ -261,14 +262,14 @@ export function ChecklistsConfig() {
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   placeholder="Description de la checklist"
                   rows={2}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md"
                 />
               </div>
             </div>
 
             {/* Type Associations */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
                 Types de matériel associés
               </label>
               <div className="flex flex-wrap gap-2">
@@ -280,7 +281,7 @@ export function ChecklistsConfig() {
                       'inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium border transition-colors',
                       (formData.type_materiel_ids || []).includes(type.id)
                         ? 'bg-blue-100 border-blue-300 text-blue-800'
-                        : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400'
+                        : 'bg-white border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary hover:border-gray-400'
                     )}
                   >
                     {(formData.type_materiel_ids || []).includes(type.id) && (
@@ -291,7 +292,7 @@ export function ChecklistsConfig() {
                 ))}
               </div>
               {itemTypes.filter(t => t.actif).length === 0 && (
-                <p className="text-sm text-gray-500 italic">
+                <p className="text-sm text-gray-500 dark:text-dark-text-muted italic">
                   Aucun type de matériel actif. Créez-en d'abord dans l'onglet "Types de Matériel".
                 </p>
               )}
@@ -300,7 +301,7 @@ export function ChecklistsConfig() {
             {/* Checklist Items */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary">
                   Éléments de la checklist *
                 </label>
                 <button
@@ -314,14 +315,14 @@ export function ChecklistsConfig() {
               {formData.items && formData.items.length > 0 ? (
                 <div className="space-y-2">
                   {formData.items.map((item, index) => (
-                    <div key={item.id} className="bg-white border border-gray-300 rounded-md p-3">
+                    <div key={item.id} className="bg-white border border-gray-300 dark:border-dark-border rounded-md p-3">
                       <div className="flex items-start gap-3">
                         {/* Drag Handle */}
                         <div className="flex flex-col gap-1 pt-2">
                           <button
                             onClick={() => moveItem(index, 'up')}
                             disabled={index === 0}
-                            className="text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="text-gray-400 dark:text-dark-text-muted hover:text-gray-600 dark:text-dark-text-secondary disabled:opacity-30 disabled:cursor-not-allowed"
                           >
                             <GripVertical className="h-4 w-4" />
                           </button>
@@ -329,7 +330,7 @@ export function ChecklistsConfig() {
 
                         {/* Order Number */}
                         <div className="flex-shrink-0 w-8 pt-2">
-                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-medium text-gray-600">
+                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 dark:bg-dark-bg-tertiary text-xs font-medium text-gray-600 dark:text-dark-text-secondary">
                             {index + 1}
                           </span>
                         </div>
@@ -341,7 +342,7 @@ export function ChecklistsConfig() {
                             value={item.description}
                             onChange={(e) => updateChecklistItem(index, { description: e.target.value })}
                             placeholder="Description de l'élément à vérifier"
-                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded"
+                            className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-dark-border rounded"
                           />
                         </div>
 
@@ -372,7 +373,7 @@ export function ChecklistsConfig() {
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-gray-500 italic">Aucun élément. Ajoutez au moins un élément.</p>
+                <p className="text-sm text-gray-500 dark:text-dark-text-muted italic">Aucun élément. Ajoutez au moins un élément.</p>
               )}
             </div>
 
@@ -385,7 +386,7 @@ export function ChecklistsConfig() {
                   onChange={(e) => setFormData({ ...formData, actif: e.target.checked })}
                   className="mr-2"
                 />
-                <span className="text-sm font-medium text-gray-700">Checklist active</span>
+                <span className="text-sm font-medium text-gray-700 dark:text-dark-text-primary">Checklist active</span>
               </label>
             </div>
 
@@ -393,7 +394,7 @@ export function ChecklistsConfig() {
             <div className="flex items-center justify-end gap-3 pt-4 border-t">
               <button
                 onClick={handleCancel}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-primary bg-white border border-gray-300 dark:border-dark-border rounded-md hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary"
               >
                 <X className="h-4 w-4 inline mr-1" />
                 Annuler
@@ -415,29 +416,29 @@ export function ChecklistsConfig() {
       <div className="bg-white shadow-sm rounded-lg overflow-hidden">
         {checklists.length === 0 ? (
           <div className="text-center py-12">
-            <ClipboardList className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-2 text-sm font-medium text-gray-900">Aucune checklist</h3>
-            <p className="mt-1 text-sm text-gray-500">
+            <ClipboardList className="mx-auto h-12 w-12 text-gray-400 dark:text-dark-text-muted" />
+            <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-dark-text-primary">Aucune checklist</h3>
+            <p className="mt-1 text-sm text-gray-500 dark:text-dark-text-muted">
               Commencez par créer votre première checklist d'inspection
             </p>
           </div>
         ) : (
           <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+            <thead className="bg-gray-50 dark:bg-dark-bg-tertiary">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider">
                   Checklist
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider">
                   Éléments
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider">
                   Types associés
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider">
                   Statut
                 </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
@@ -447,14 +448,14 @@ export function ChecklistsConfig() {
                 <tr key={checklist.id} className={cn(!checklist.actif && 'opacity-50')}>
                   <td className="px-6 py-4">
                     <div>
-                      <div className="text-sm font-medium text-gray-900">{checklist.nom}</div>
+                      <div className="text-sm font-medium text-gray-900 dark:text-dark-text-primary">{checklist.nom}</div>
                       {checklist.description && (
-                        <div className="text-sm text-gray-500">{checklist.description}</div>
+                        <div className="text-sm text-gray-500 dark:text-dark-text-muted">{checklist.description}</div>
                       )}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-dark-bg-tertiary text-gray-800">
                       {checklist.items.length} élément{checklist.items.length > 1 ? 's' : ''}
                     </span>
                   </td>
@@ -471,7 +472,7 @@ export function ChecklistsConfig() {
                         })}
                       </div>
                     ) : (
-                      <span className="text-sm text-gray-400 italic">Aucun</span>
+                      <span className="text-sm text-gray-400 dark:text-dark-text-muted italic">Aucun</span>
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -479,7 +480,7 @@ export function ChecklistsConfig() {
                       'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
                       checklist.actif
                         ? 'bg-green-100 text-green-800'
-                        : 'bg-gray-100 text-gray-800'
+                        : 'bg-gray-100 dark:bg-dark-bg-tertiary text-gray-800'
                     )}>
                       {checklist.actif ? 'Active' : 'Inactive'}
                     </span>
@@ -488,7 +489,7 @@ export function ChecklistsConfig() {
                     <button
                       onClick={() => handleDuplicate(checklist)}
                       disabled={isCreating || editingChecklist !== null}
-                      className="text-gray-600 hover:text-gray-900 mr-4 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="text-gray-600 dark:text-dark-text-secondary hover:text-gray-900 dark:text-dark-text-primary mr-4 disabled:opacity-50 disabled:cursor-not-allowed"
                       title="Dupliquer"
                     >
                       <Copy className="h-4 w-4 inline" />

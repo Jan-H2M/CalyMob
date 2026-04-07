@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ChevronDown, Filter, X } from 'lucide-react';
+import { logger } from '@/utils/logger';
 
 interface FilterTab {
   id: string;
@@ -17,6 +18,7 @@ interface FilterAccordionWithTabsProps {
   searchBar?: React.ReactNode;
   recordsFound?: number;
   totalRecords?: number;
+  onExpandedChange?: (expanded: boolean) => void;
 }
 
 export const FilterAccordionWithTabs: React.FC<FilterAccordionWithTabsProps> = ({
@@ -26,22 +28,33 @@ export const FilterAccordionWithTabs: React.FC<FilterAccordionWithTabsProps> = (
   defaultExpanded = false,
   searchBar,
   recordsFound,
-  totalRecords
+  totalRecords,
+  onExpandedChange
 }) => {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [activeTabId, setActiveTabId] = useState(tabs[0]?.id || '');
+  const onExpandedChangeRef = useRef(onExpandedChange);
+  const initialLoadDone = useRef(false);
 
-  // Load persisted state
+  // Keep ref updated
   useEffect(() => {
-    if (persistKey) {
+    onExpandedChangeRef.current = onExpandedChange;
+  }, [onExpandedChange]);
+
+  // Load persisted state (only once on mount)
+  useEffect(() => {
+    if (persistKey && !initialLoadDone.current) {
+      initialLoadDone.current = true;
       const saved = localStorage.getItem(`filter-accordion-tabs-${persistKey}`);
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
           setIsExpanded(parsed.expanded);
           setActiveTabId(parsed.activeTab || tabs[0]?.id || '');
+          // Notify parent of initial expanded state
+          onExpandedChangeRef.current?.(parsed.expanded);
         } catch (e) {
-          console.error('Failed to load filter accordion state:', e);
+          logger.error('Failed to load filter accordion state:', e);
         }
       }
     }
@@ -59,7 +72,9 @@ export const FilterAccordionWithTabs: React.FC<FilterAccordionWithTabsProps> = (
   }, [isExpanded, activeTabId, persistKey]);
 
   const toggleAccordion = () => {
-    setIsExpanded(!isExpanded);
+    const newExpanded = !isExpanded;
+    setIsExpanded(newExpanded);
+    onExpandedChange?.(newExpanded);
   };
 
   const totalActiveFilters = tabs.reduce((sum, tab) => sum + tab.activeFilters, 0);
@@ -80,15 +95,15 @@ export const FilterAccordionWithTabs: React.FC<FilterAccordionWithTabsProps> = (
           {/* Accordion toggle button with integrated record counter */}
           <button
             onClick={toggleAccordion}
-            className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors border border-gray-200 dark:border-dark-border relative group"
+            className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors border border-gray-200 dark:border-dark-border relative group"
             aria-label={isExpanded ? "Masquer les filtres" : "Afficher les filtres"}
           >
-            <Filter className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">
+            <Filter className="w-4 h-4 text-gray-500 dark:text-dark-text-muted" />
+            <span className="text-sm font-medium text-gray-700 dark:text-dark-text-primary dark:text-gray-300 whitespace-nowrap">
               Filtres avancés
             </span>
             {recordsFound !== undefined && totalRecords !== undefined && (
-              <span className="text-xs text-gray-500 dark:text-gray-400">
+              <span className="text-xs text-gray-500 dark:text-dark-text-muted">
                 ({recordsFound}/{totalRecords})
               </span>
             )}
@@ -98,7 +113,7 @@ export const FilterAccordionWithTabs: React.FC<FilterAccordionWithTabsProps> = (
               </span>
             )}
             <ChevronDown
-              className={`w-4 h-4 text-gray-600 dark:text-gray-400 transition-transform duration-200 ${
+              className={`w-4 h-4 text-gray-600 dark:text-dark-text-secondary dark:text-dark-text-muted transition-transform duration-200 ${
                 isExpanded ? 'rotate-180' : ''
               }`}
             />
@@ -136,7 +151,7 @@ export const FilterAccordionWithTabs: React.FC<FilterAccordionWithTabsProps> = (
               aria-label="Réinitialiser"
               title="Réinitialiser tous les filtres"
             >
-              <X className="w-4 h-4 text-gray-500 group-hover:text-red-500 dark:text-gray-400" />
+              <X className="w-4 h-4 text-gray-500 dark:text-dark-text-muted group-hover:text-red-500 dark:text-dark-text-muted" />
             </button>
           )}
         </div>
@@ -159,7 +174,7 @@ export const FilterAccordionWithTabs: React.FC<FilterAccordionWithTabsProps> = (
                     flex items-center gap-1
                     ${activeTabId === tab.id
                       ? 'border-calypso-blue text-calypso-blue'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                      : 'border-transparent text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary dark:text-dark-text-muted dark:hover:text-gray-300'
                     }
                   `}
                 >
@@ -170,7 +185,7 @@ export const FilterAccordionWithTabs: React.FC<FilterAccordionWithTabsProps> = (
                       px-1.5 py-0.5 text-xs rounded-full
                       ${activeTabId === tab.id
                         ? 'bg-calypso-blue text-white'
-                        : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-dark-text-secondary dark:text-gray-300'
                       }
                     `}>
                       {tab.activeFilters}

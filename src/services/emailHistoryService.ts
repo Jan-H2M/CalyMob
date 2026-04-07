@@ -1,3 +1,4 @@
+import { logger } from '@/utils/logger';
 /**
  * Email History Service
  * Handles fetching email history from Firestore
@@ -37,7 +38,7 @@ export async function getEmailHistory(
 
     return emails;
   } catch (error) {
-    console.error('Error fetching email history:', error);
+    logger.error('Error fetching email history:', error);
     throw error;
   }
 }

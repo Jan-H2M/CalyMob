@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { logger } from '@/utils/logger';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   TrendingUp,
@@ -37,6 +38,8 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { FiscalYearService } from '@/services/fiscalYearService';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { FiscalYear } from '@/types';
 import {
   DashboardService,
@@ -86,6 +89,21 @@ export function TableauBord() {
     queryKey: ['balanceSavings', clubId],
     queryFn: () => FiscalYearService.calculateCurrentBalance(clubId!, 'savings'),
     enabled: !!clubId && !!currentFY,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // ✅ React Query: Transactions en attente (virements instantanés sans numéro définitif)
+  const { data: pendingTransactions } = useQuery({
+    queryKey: ['pendingTransactions', clubId],
+    queryFn: async () => {
+      const pendingRef = doc(db, 'clubs', clubId!, 'settings', 'pending_transactions');
+      const snapshot = await getDoc(pendingRef);
+      if (snapshot.exists()) {
+        return snapshot.data() as { count: number; amount: number; updated_at: any };
+      }
+      return null;
+    },
+    enabled: !!clubId,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -215,32 +233,32 @@ export function TableauBord() {
   // ✅ Fonction pour rafraîchir manuellement toutes les données
   const handleRefreshDashboard = async () => {
     try {
-      console.log('🔄 Rafraîchissement manuel du dashboard...');
+      logger.debug('🔄 Rafraîchissement manuel du dashboard...');
 
       // Invalider toutes les queries en une seule fois
       await queryClient.invalidateQueries();
 
-      console.log('✅ Dashboard rafraîchi!');
+      logger.debug('✅ Dashboard rafraîchi!');
     } catch (error) {
-      console.error('❌ Erreur lors du rafraîchissement:', error);
+      logger.error('❌ Erreur lors du rafraîchissement:', error);
     }
   };
 
   // Fonction de debug pour vérifier les calculs
   const handleDebugCalculations = async () => {
     if (!clubId || !currentFY) {
-      console.log('❌ Pas de clubId ou d\'année fiscale');
+      logger.debug('❌ Pas de clubId ou d\'année fiscale');
       return;
     }
 
-    console.log('=== DEBUG CALCULS DASHBOARD ===');
-    console.log('Club ID:', clubId);
-    console.log('Année fiscale:', currentFY.year);
-    console.log('Période:', formatDate(currentFY.start_date), '→', formatDate(currentFY.end_date));
-    console.log('');
-    console.log('Compte courant:', currentFY.account_numbers?.bank_current);
-    console.log('Compte épargne:', currentFY.account_numbers?.bank_savings);
-    console.log('');
+    logger.debug('=== DEBUG CALCULS DASHBOARD ===');
+    logger.debug('Club ID:', clubId);
+    logger.debug('Année fiscale:', currentFY.year);
+    logger.debug('Période:', formatDate(currentFY.start_date), '→', formatDate(currentFY.end_date));
+    logger.debug('');
+    logger.debug('Compte courant:', currentFY.account_numbers?.bank_current);
+    logger.debug('Compte épargne:', currentFY.account_numbers?.bank_savings);
+    logger.debug('');
 
     // Charger TOUTES les transactions
     const { collection, query, where, getDocs, Timestamp } = await import('firebase/firestore');
@@ -255,7 +273,7 @@ export function TableauBord() {
     );
 
     const snapshot = await getDocs(q);
-    console.log(`📊 Total transactions dans l'année fiscale: ${snapshot.size}`);
+    logger.debug(`📊 Total transactions dans l'année fiscale: ${snapshot.size}`);
 
     const normalizedCurrentAccount = currentFY.account_numbers?.bank_current?.replace(/\s/g, '');
     const normalizedSavingsAccount = currentFY.account_numbers?.bank_savings?.replace(/\s/g, '');
@@ -290,7 +308,7 @@ export function TableauBord() {
         return; // Ne pas compter dans les stats
       } else {
         countOtherAccounts++;
-        console.log('⚠️ Compte inconnu:', data.numero_compte, '- Montant:', montant);
+        logger.debug('⚠️ Compte inconnu:', data.numero_compte, '- Montant:', montant);
       }
 
       // Stats mensuelles
@@ -319,35 +337,35 @@ export function TableauBord() {
       }
     });
 
-    console.log('');
-    console.log('🔢 RÉPARTITION PAR COMPTE:');
-    console.log(`  - Compte courant: ${countCurrentAccount} transactions`);
-    console.log(`  - Compte épargne: ${countSavingsAccount} transactions (ignorées)`);
-    console.log(`  - Autres comptes: ${countOtherAccounts} transactions`);
-    console.log(`  - Parents (ventilés): ${countParents} transactions (ignorées)`);
+    logger.debug('');
+    logger.debug('🔢 RÉPARTITION PAR COMPTE:');
+    logger.debug(`  - Compte courant: ${countCurrentAccount} transactions`);
+    logger.debug(`  - Compte épargne: ${countSavingsAccount} transactions (ignorées)`);
+    logger.debug(`  - Autres comptes: ${countOtherAccounts} transactions`);
+    logger.debug(`  - Parents (ventilés): ${countParents} transactions (ignorées)`);
 
-    console.log('');
-    console.log('💰 TOTAUX CALCULÉS (compte courant uniquement):');
-    console.log(`  Revenus: ${formatMontant(totalRevenus)} (${countRevenus} transactions)`);
-    console.log(`  Dépenses: ${formatMontant(totalDepenses)} (${countDepenses} transactions)`);
-    console.log(`  Solde net: ${formatMontant(totalRevenus - totalDepenses)}`);
+    logger.debug('');
+    logger.debug('💰 TOTAUX CALCULÉS (compte courant uniquement):');
+    logger.debug(`  Revenus: ${formatMontant(totalRevenus)} (${countRevenus} transactions)`);
+    logger.debug(`  Dépenses: ${formatMontant(totalDepenses)} (${countDepenses} transactions)`);
+    logger.debug(`  Solde net: ${formatMontant(totalRevenus - totalDepenses)}`);
 
-    console.log('');
-    console.log('📈 DONNÉES AFFICHÉES:');
-    console.log(`  fiscalYearStats.total_revenus: ${formatMontant(fiscalYearStats?.total_revenus || 0)}`);
-    console.log(`  fiscalYearStats.total_depenses: ${formatMontant(fiscalYearStats?.total_depenses || 0)}`);
-    console.log(`  fiscalYearStats.solde_net: ${formatMontant(fiscalYearStats?.solde_net || 0)}`);
+    logger.debug('');
+    logger.debug('📈 DONNÉES AFFICHÉES:');
+    logger.debug(`  fiscalYearStats.total_revenus: ${formatMontant(fiscalYearStats?.total_revenus || 0)}`);
+    logger.debug(`  fiscalYearStats.total_depenses: ${formatMontant(fiscalYearStats?.total_depenses || 0)}`);
+    logger.debug(`  fiscalYearStats.solde_net: ${formatMontant(fiscalYearStats?.solde_net || 0)}`);
 
-    console.log('');
-    console.log('📅 RÉPARTITION MENSUELLE:');
+    logger.debug('');
+    logger.debug('📅 RÉPARTITION MENSUELLE:');
     Object.entries(monthlyData)
       .sort(([a], [b]) => a.localeCompare(b))
       .forEach(([mois, data]) => {
-        console.log(`  ${mois}: Revenus ${formatMontant(data.revenus)} | Dépenses ${formatMontant(data.depenses)}`);
+        logger.debug(`  ${mois}: Revenus ${formatMontant(data.revenus)} | Dépenses ${formatMontant(data.depenses)}`);
       });
 
-    console.log('');
-    console.log('✅ Vérification terminée - Voir détails ci-dessus');
+    logger.debug('');
+    logger.debug('✅ Vérification terminée - Voir détails ci-dessus');
   };
 
   return (
@@ -381,7 +399,7 @@ export function TableauBord() {
           <button
             onClick={handleRefreshDashboard}
             disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-primary bg-white dark:bg-dark-bg-secondary border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-primary bg-white dark:bg-dark-bg-secondary border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
             Actualiser
@@ -391,7 +409,7 @@ export function TableauBord() {
 
       {/* Statistiques rapides */}
       <div className="mb-8">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Statistiques rapides</h2>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary mb-4">Statistiques rapides</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Nombre de transactions */}
           <div className="bg-white dark:bg-dark-bg-secondary rounded-xl shadow-sm border border-gray-200 dark:border-dark-border p-6">
@@ -410,7 +428,7 @@ export function TableauBord() {
                 <div className="text-3xl font-bold text-gray-900 dark:text-dark-text-primary">
                   {countStats?.nombre_transactions || 0}
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 dark:text-dark-text-muted mt-1">
                   Année fiscale en cours
                 </p>
               </div>
@@ -434,7 +452,7 @@ export function TableauBord() {
                 <div className="text-3xl font-bold text-gray-900 dark:text-dark-text-primary">
                   {countStats?.nombre_evenements || 0}
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 dark:text-dark-text-muted mt-1">
                   Total dans la base
                 </p>
               </div>
@@ -458,7 +476,7 @@ export function TableauBord() {
                 <div className="text-3xl font-bold text-gray-900 dark:text-dark-text-primary">
                   {countStats?.nombre_depenses || 0}
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 dark:text-dark-text-muted mt-1">
                   Demandes de remboursement
                 </p>
               </div>
@@ -505,6 +523,26 @@ export function TableauBord() {
                 </div>
               </div>
 
+              {/* Pending transactions + Disclaimer */}
+              {pendingTransactions && pendingTransactions.amount > 0 ? (
+                <div className="border-t border-blue-400/30 pt-3">
+                  <div className="text-xs text-blue-100 mb-1">+ Virements en attente</div>
+                  <div className="text-lg font-semibold text-blue-200">
+                    {formatMontant(pendingTransactions.amount)}
+                  </div>
+                  <div className="text-xs text-blue-100 mt-2 opacity-70">
+                    Solde réel estimé: <span className="font-semibold">{formatMontant(balanceCurrent + pendingTransactions.amount)}</span>
+                  </div>
+                  <div className="text-xs text-blue-100 mt-1 opacity-50 italic">
+                    {pendingTransactions.count} virement(s) instantané(s) sans numéro définitif
+                  </div>
+                </div>
+              ) : (
+                <div className="border-t border-blue-400/30 pt-3 text-xs text-blue-100 opacity-70 italic">
+                  Calculé sur base des extraits bancaires importés
+                </div>
+              )}
+
               {/* Compte Épargne */}
               <div className="border-t border-blue-400/30 pt-3">
                 <div className="text-xs text-blue-100 mb-1">Compte épargne</div>
@@ -516,11 +554,6 @@ export function TableauBord() {
                     <span>{currentFY.account_numbers.bank_savings}</span>
                   )}
                 </div>
-              </div>
-
-              {/* Disclaimer */}
-              <div className="border-t border-blue-400/30 pt-3 text-xs text-blue-100 opacity-70 italic">
-                Calculé sur base des extraits bancaires importés
               </div>
             </div>
           ) : (
@@ -551,7 +584,7 @@ export function TableauBord() {
                 </thead>
                 <tbody>
                   {monthlyBreakdown.map((month) => (
-                    <tr key={month.mois} className="border-b border-gray-100 dark:border-dark-border hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary">
+                    <tr key={month.mois} className="border-b border-gray-100 dark:border-dark-border hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary">
                       <td className="py-1 text-gray-700 dark:text-dark-text-primary">{month.mois_nom}</td>
                       <td className="py-1 text-right font-medium text-green-600 dark:text-green-400">
                         {formatMontant(month.revenus)}
@@ -595,8 +628,8 @@ export function TableauBord() {
                 </thead>
                 <tbody>
                   {monthlyBreakdown.map((month) => (
-                    <tr key={month.mois} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="py-1 text-gray-700">{month.mois_nom}</td>
+                    <tr key={month.mois} className="border-b border-gray-100 hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary">
+                      <td className="py-1 text-gray-700 dark:text-dark-text-primary">{month.mois_nom}</td>
                       <td className="py-1 text-right font-medium text-red-600 dark:text-red-400">
                         {formatMontant(month.depenses)}
                       </td>
@@ -612,7 +645,7 @@ export function TableauBord() {
               </table>
             </div>
           ) : (
-            <div className="text-sm text-gray-400 text-center py-4">
+            <div className="text-sm text-gray-400 dark:text-dark-text-muted text-center py-4">
               Aucune donnée disponible
             </div>
           )}
@@ -745,7 +778,7 @@ export function TableauBord() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           {/* Taux de réconciliation */}
           {reconciliationStats && (
-            <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+            <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200 dark:border-dark-border">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-medium text-gray-600 dark:text-dark-text-secondary">Taux de réconciliation</span>
                 <Activity className="h-5 w-5 text-calypso-blue" />
@@ -757,7 +790,7 @@ export function TableauBord() {
               }`}>
                 {reconciliationStats.taux_reconciliation.toFixed(1)}%
               </div>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-500 dark:text-dark-text-muted mt-1">
                 {reconciliationStats.transactions_reconciliees} sur {reconciliationStats.total_transactions} transactions
               </p>
             </div>
@@ -765,7 +798,7 @@ export function TableauBord() {
 
           {/* Codes comptables assignés */}
           {accountingCodeStats && (
-            <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+            <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200 dark:border-dark-border">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-medium text-gray-600 dark:text-dark-text-secondary">Codes comptables assignés</span>
                 <FileText className="h-5 w-5 text-calypso-blue" />
@@ -777,7 +810,7 @@ export function TableauBord() {
               }`}>
                 {accountingCodeStats.taux_codification.toFixed(1)}%
               </div>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-500 dark:text-dark-text-muted mt-1">
                 {accountingCodeStats.transactions_avec_code} / {accountingCodeStats.total_transactions} transactions ({accountingCodeStats.taux_codification.toFixed(0)}%)
               </p>
             </div>
@@ -861,17 +894,17 @@ export function TableauBord() {
                     );
                   }}
                 />
-                {/* Barres pour année précédente (données complètes) */}
+                {/* Barres pour année précédente (données complètes) - couleurs pastel */}
                 <Bar
                   dataKey="annee_precedente.revenus"
                   name={`revenus_${previousFY.year}`}
-                  fill="#10b981"
+                  fill="#86efac"
                   radius={[4, 4, 0, 0]}
                 />
                 <Bar
                   dataKey="annee_precedente.depenses"
                   name={`depenses_${previousFY.year}`}
-                  fill="#ef4444"
+                  fill="#fca5a5"
                   radius={[4, 4, 0, 0]}
                 />
                 {/* Lignes pour année courante (en cours) */}

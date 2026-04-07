@@ -1,6 +1,7 @@
 import { TransactionBancaire, DemandeRemboursement } from '@/types';
 import OpenAI from 'openai';
 import { AIMatchStorageService } from './aiMatchStorageService';
+import { logger } from '@/utils/logger';
 
 export interface AIMatchAnalysis {
   demande_id: string;
@@ -69,7 +70,7 @@ export class AIExpenseMatchingService {
 
       return analysis;
     } catch (error) {
-      console.error('Erreur lors de l\'analyse IA:', error);
+      logger.error('Erreur lors de l\'analyse IA:', error);
       return null;
     }
   }
@@ -146,7 +147,7 @@ Si aucune correspondance acceptable n'est trouvée (confidence < 50), retourne d
       // Extraire le JSON de la réponse (au cas où il y a du texte avant/après)
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        console.error('Pas de JSON trouvé dans la réponse IA');
+        logger.error('Pas de JSON trouvé dans la réponse IA');
         return null;
       }
 
@@ -164,7 +165,7 @@ Si aucune correspondance acceptable n'est trouvée (confidence < 50), retourne d
         extracted_info: parsed.extracted_info || {}
       };
     } catch (error) {
-      console.error('Erreur parsing réponse IA:', error);
+      logger.error('Erreur parsing réponse IA:', error);
       return null;
     }
   }
@@ -197,7 +198,7 @@ Si aucune correspondance acceptable n'est trouvée (confidence < 50), retourne d
           await new Promise(resolve => setTimeout(resolve, 500));
         }
       } catch (error) {
-        console.error(`Erreur analyse IA transaction ${tx.id}:`, error);
+        logger.error(`Erreur analyse IA transaction ${tx.id}:`, error);
       }
     }
 
@@ -250,7 +251,7 @@ Si aucune correspondance acceptable n'est trouvée (confidence < 50), retourne d
           userId
         );
       } catch (error) {
-        console.error(`Erreur sauvegarde match ${transactionId}:`, error);
+        logger.error(`Erreur sauvegarde match ${transactionId}:`, error);
       }
     }
 

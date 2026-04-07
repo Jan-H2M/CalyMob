@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { logger } from '@/utils/logger';
 import {
   Sparkles,
   Key,
@@ -63,7 +64,7 @@ export function AISettings() {
           aiProviderService.setAnthropicKey(finalAnthropicKey);
         }
       } catch (error) {
-        console.error('Erreur lors du chargement des clés API:', error);
+        logger.error('Erreur lors du chargement des clés API:', error);
         // Fallback to localStorage only
         const savedOpenaiKey = localStorage.getItem('ai_api_key');
         const savedAnthropicKey = localStorage.getItem('anthropic_api_key');
@@ -104,7 +105,7 @@ export function AISettings() {
 
       toast.success('✅ Configuration IA sauvegardée dans Firebase');
     } catch (error) {
-      console.error('Error saving AI config:', error);
+      logger.error('Error saving AI config:', error);
       toast.error('❌ Erreur lors de la sauvegarde dans Firebase');
     } finally {
       setIsSaving(false);
@@ -129,7 +130,7 @@ export function AISettings() {
         toast.error('❌ ' + result.message);
       }
     } catch (error) {
-      console.error('OpenAI test error:', error);
+      logger.error('OpenAI test error:', error);
       toast.error('Impossible de se connecter à OpenAI');
     } finally {
       setIsTestingOpenai(false);
@@ -154,7 +155,7 @@ export function AISettings() {
         toast.error('❌ ' + result.message);
       }
     } catch (error) {
-      console.error('Anthropic test error:', error);
+      logger.error('Anthropic test error:', error);
       toast.error('Impossible de se connecter à Claude');
     } finally {
       setIsTestingAnthropic(false);
@@ -185,7 +186,7 @@ export function AISettings() {
           </div>
         </div>
         <div className="p-6 flex items-center justify-center">
-          <div className="flex items-center gap-2 text-gray-600">
+          <div className="flex items-center gap-2 text-gray-600 dark:text-dark-text-secondary">
             <Loader2 className="h-5 w-5 animate-spin" />
             <span>Chargement de la configuration depuis Firebase...</span>
           </div>
@@ -266,7 +267,7 @@ export function AISettings() {
             <button
               onClick={handleTestOpenAI}
               disabled={isTestingOpenai}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors disabled:opacity-50"
             >
               {isTestingOpenai ? (
                 <>
@@ -341,7 +342,7 @@ export function AISettings() {
             <button
               onClick={handleTestAnthropic}
               disabled={isTestingAnthropic}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors disabled:opacity-50"
             >
               {isTestingAnthropic ? (
                 <>

@@ -1,16 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Save, X, Package } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, Package, Calculator } from 'lucide-react';
 import { InventoryConfigService } from '@/services/inventoryConfigService';
-import { ItemType, CustomField } from '@/types/inventory';
+import { ItemType, CustomField, DepreciationSettings, DepreciationMethod } from '@/types/inventory';
+import { AmortizationService } from '@/services/amortizationService';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { cn } from '@/utils/utils';
+import { logger } from '@/utils/logger';
 
 const FIELD_TYPES = [
   { value: 'text', label: 'Texte' },
   { value: 'number', label: 'Nombre' },
   { value: 'select', label: 'Liste déroulante' },
   { value: 'date', label: 'Date' }
+];
+
+const DEPRECIATION_METHODS = [
+  { value: 'linear', label: 'Linéaire', description: 'Amortissement réparti également sur la durée de vie' },
+  { value: 'degressive', label: 'Dégressif', description: 'Amortissement accéléré les premières années (règle belge: max 40%)' },
+  { value: 'manual', label: 'Manuel / Libre', description: 'Montant saisi manuellement chaque année' }
 ];
 
 export function TypesMaterielConfig() {
@@ -39,7 +47,7 @@ export function TypesMaterielConfig() {
       const types = await InventoryConfigService.getItemTypes(clubId);
       setItemTypes(types);
     } catch (error) {
-      console.error('Erreur chargement types:', error);
+      logger.error('Erreur chargement types:', error);
       toast.error('Erreur lors du chargement des types de matériel');
     } finally {
       setLoading(false);
@@ -65,7 +73,8 @@ export function TypesMaterielConfig() {
       nom: type.nom,
       description: type.description,
       code_prefix: type.code_prefix,
-      custom_fields: [...type.custom_fields],
+      custom_fields: [...(type.custom_fields || [])],
+      depreciation: type.depreciation ? { ...type.depreciation } : undefined,
       actif: type.actif
     });
   };
@@ -78,6 +87,7 @@ export function TypesMaterielConfig() {
       description: '',
       code_prefix: '',
       custom_fields: [],
+      depreciation: undefined,
       actif: true
     });
   };
@@ -102,7 +112,7 @@ export function TypesMaterielConfig() {
       await loadItemTypes();
       handleCancel();
     } catch (error) {
-      console.error('Erreur sauvegarde type:', error);
+      logger.error('Erreur sauvegarde type:', error);
       toast.error('Erreur lors de la sauvegarde');
     }
   };
@@ -122,7 +132,7 @@ export function TypesMaterielConfig() {
       toast.success('Type de matériel supprimé');
       await loadItemTypes();
     } catch (error: any) {
-      console.error('Erreur suppression type:', error);
+      logger.error('Erreur suppression type:', error);
       toast.error(error.message || 'Erreur lors de la suppression');
     }
   };
@@ -167,8 +177,8 @@ export function TypesMaterielConfig() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">Types de Matériel</h2>
-          <p className="mt-1 text-sm text-gray-500">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-dark-text-primary">Types de Matériel</h2>
+          <p className="mt-1 text-sm text-gray-500 dark:text-dark-text-muted">
             Configurez les types de matériel et leurs champs personnalisés
           </p>
         </div>
@@ -185,7 +195,7 @@ export function TypesMaterielConfig() {
       {/* Create/Edit Form */}
       {(isCreating || editingType) && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-dark-text-primary mb-4">
             {isCreating ? 'Créer un type de matériel' : 'Modifier le type de matériel'}
           </h3>
 
@@ -193,7 +203,7 @@ export function TypesMaterielConfig() {
             {/* Basic Info */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                   Nom du type *
                 </label>
                 <input
@@ -201,12 +211,12 @@ export function TypesMaterielConfig() {
                   value={formData.nom || ''}
                   onChange={(e) => setFormData({ ...formData, nom: e.target.value })}
                   placeholder="Ex: Régulateur"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                   Préfixe de code *
                 </label>
                 <input
@@ -214,14 +224,14 @@ export function TypesMaterielConfig() {
                   value={formData.code_prefix || ''}
                   onChange={(e) => setFormData({ ...formData, code_prefix: e.target.value.toUpperCase() })}
                   placeholder="Ex: REG"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md uppercase"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md uppercase"
                   maxLength={5}
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                 Description
               </label>
               <textarea
@@ -229,14 +239,14 @@ export function TypesMaterielConfig() {
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 placeholder="Description du type de matériel"
                 rows={2}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md"
               />
             </div>
 
             {/* Custom Fields */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary">
                   Champs personnalisés
                 </label>
                 <button
@@ -250,7 +260,7 @@ export function TypesMaterielConfig() {
               {formData.custom_fields && formData.custom_fields.length > 0 ? (
                 <div className="space-y-3">
                   {formData.custom_fields.map((field, index) => (
-                    <div key={field.id} className="bg-white border border-gray-300 rounded-md p-3">
+                    <div key={field.id} className="bg-white border border-gray-300 dark:border-dark-border rounded-md p-3">
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         <div>
                           <input
@@ -258,7 +268,7 @@ export function TypesMaterielConfig() {
                             value={field.nom}
                             onChange={(e) => updateCustomField(index, { nom: e.target.value })}
                             placeholder="Nom du champ"
-                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                            className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-dark-border rounded"
                           />
                         </div>
 
@@ -266,7 +276,7 @@ export function TypesMaterielConfig() {
                           <select
                             value={field.type}
                             onChange={(e) => updateCustomField(index, { type: e.target.value as any })}
-                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                            className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-dark-border rounded"
                           >
                             {FIELD_TYPES.map(ft => (
                               <option key={ft.value} value={ft.value}>{ft.label}</option>
@@ -303,7 +313,7 @@ export function TypesMaterielConfig() {
                               options: e.target.value.split(',').map(o => o.trim()).filter(o => o)
                             })}
                             placeholder="Options (séparées par virgule)"
-                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                            className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-dark-border rounded"
                           />
                         </div>
                       )}
@@ -311,8 +321,153 @@ export function TypesMaterielConfig() {
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-gray-500 italic">Aucun champ personnalisé</p>
+                <p className="text-sm text-gray-500 dark:text-dark-text-muted italic">Aucun champ personnalisé</p>
               )}
+            </div>
+
+            {/* Depreciation Settings */}
+            <div className="border-t pt-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Calculator className="h-5 w-5 text-gray-500 dark:text-dark-text-muted" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary">
+                  Paramètres d'amortissement par défaut
+                </label>
+              </div>
+
+              <div className="bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg p-4 space-y-4">
+                {/* Method Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
+                    Méthode d'amortissement
+                  </label>
+                  <select
+                    value={formData.depreciation?.method || 'linear'}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      depreciation: {
+                        ...formData.depreciation,
+                        method: e.target.value as DepreciationMethod,
+                        lifespan: formData.depreciation?.lifespan || 5
+                      }
+                    })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md"
+                  >
+                    {DEPRECIATION_METHODS.map(method => (
+                      <option key={method.value} value={method.value}>
+                        {method.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-dark-text-muted">
+                    {DEPRECIATION_METHODS.find(m => m.value === (formData.depreciation?.method || 'linear'))?.description}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Lifespan */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
+                      Durée de vie (années)
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="50"
+                      value={formData.depreciation?.lifespan || ''}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        depreciation: {
+                          ...formData.depreciation,
+                          method: formData.depreciation?.method || 'linear',
+                          lifespan: parseInt(e.target.value) || 0
+                        }
+                      })}
+                      placeholder="Ex: 10"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md"
+                    />
+                  </div>
+
+                  {/* Degressive Rate - Only show for degressive method */}
+                  {formData.depreciation?.method === 'degressive' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
+                        Taux dégressif (%)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="40"
+                        step="0.1"
+                        value={formData.depreciation?.depreciationRate || ''}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          depreciation: {
+                            ...formData.depreciation,
+                            method: 'degressive',
+                            lifespan: formData.depreciation?.lifespan || 5,
+                            depreciationRate: parseFloat(e.target.value) || undefined
+                          }
+                        })}
+                        placeholder={`Recommandé: ${AmortizationService.getRecommendedDegressiveRate(formData.depreciation?.lifespan || 5)}%`}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md"
+                      />
+                      <p className="mt-1 text-xs text-gray-500 dark:text-dark-text-muted">
+                        Règle belge: 2x taux linéaire, max 40%
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Residual Value */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
+                      Valeur résiduelle (€)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formData.depreciation?.residualValue || ''}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        depreciation: {
+                          ...formData.depreciation,
+                          method: formData.depreciation?.method || 'linear',
+                          lifespan: formData.depreciation?.lifespan || 5,
+                          residualValue: parseFloat(e.target.value) || undefined
+                        }
+                      })}
+                      placeholder="0"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md"
+                    />
+                    <p className="mt-1 text-xs text-gray-500 dark:text-dark-text-muted">
+                      Valeur en fin d'amortissement (défaut: 0€)
+                    </p>
+                  </div>
+                </div>
+
+                {/* Custom Start Date Option */}
+                <div>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={formData.depreciation?.useCustomStartDate || false}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        depreciation: {
+                          ...formData.depreciation,
+                          method: formData.depreciation?.method || 'linear',
+                          lifespan: formData.depreciation?.lifespan || 5,
+                          useCustomStartDate: e.target.checked
+                        }
+                      })}
+                      className="mr-2"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-dark-text-primary">
+                      Permettre une date de début différente de la date d'achat
+                    </span>
+                  </label>
+                </div>
+              </div>
             </div>
 
             {/* Active Toggle */}
@@ -324,7 +479,7 @@ export function TypesMaterielConfig() {
                   onChange={(e) => setFormData({ ...formData, actif: e.target.checked })}
                   className="mr-2"
                 />
-                <span className="text-sm font-medium text-gray-700">Type actif</span>
+                <span className="text-sm font-medium text-gray-700 dark:text-dark-text-primary">Type actif</span>
               </label>
             </div>
 
@@ -332,7 +487,7 @@ export function TypesMaterielConfig() {
             <div className="flex items-center justify-end gap-3 pt-4 border-t">
               <button
                 onClick={handleCancel}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-primary bg-white border border-gray-300 dark:border-dark-border rounded-md hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary"
               >
                 <X className="h-4 w-4 inline mr-1" />
                 Annuler
@@ -354,29 +509,32 @@ export function TypesMaterielConfig() {
       <div className="bg-white shadow-sm rounded-lg overflow-hidden">
         {itemTypes.length === 0 ? (
           <div className="text-center py-12">
-            <Package className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-2 text-sm font-medium text-gray-900">Aucun type de matériel</h3>
-            <p className="mt-1 text-sm text-gray-500">
+            <Package className="mx-auto h-12 w-12 text-gray-400 dark:text-dark-text-muted" />
+            <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-dark-text-primary">Aucun type de matériel</h3>
+            <p className="mt-1 text-sm text-gray-500 dark:text-dark-text-muted">
               Commencez par créer votre premier type de matériel
             </p>
           </div>
         ) : (
           <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+            <thead className="bg-gray-50 dark:bg-dark-bg-tertiary">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider">
                   Type
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider">
                   Préfixe
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider">
+                  Amortissement
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider">
                   Champs personnalisés
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider">
                   Statut
                 </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
@@ -386,9 +544,9 @@ export function TypesMaterielConfig() {
                 <tr key={type.id} className={cn(!type.actif && 'opacity-50')}>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
-                      <div className="text-sm font-medium text-gray-900">{type.nom}</div>
+                      <div className="text-sm font-medium text-gray-900 dark:text-dark-text-primary">{type.nom}</div>
                       {type.description && (
-                        <div className="text-sm text-gray-500">{type.description}</div>
+                        <div className="text-sm text-gray-500 dark:text-dark-text-muted">{type.description}</div>
                       )}
                     </div>
                   </td>
@@ -398,12 +556,27 @@ export function TypesMaterielConfig() {
                     </span>
                   </td>
                   <td className="px-6 py-4">
-                    {type.custom_fields.length > 0 ? (
-                      <div className="text-sm text-gray-900">
-                        {type.custom_fields.map(f => f.nom).join(', ')}
+                    {type.depreciation ? (
+                      <div className="text-sm">
+                        <div className="font-medium text-gray-900 dark:text-dark-text-primary">
+                          {AmortizationService.getMethodLabel(type.depreciation.method)}
+                        </div>
+                        <div className="text-gray-500 dark:text-dark-text-muted">
+                          {type.depreciation.lifespan} ans
+                          {type.depreciation.residualValue ? ` • Résiduel: ${type.depreciation.residualValue}€` : ''}
+                        </div>
                       </div>
                     ) : (
-                      <span className="text-sm text-gray-400 italic">Aucun</span>
+                      <span className="text-sm text-gray-400 dark:text-dark-text-muted italic">Non configuré</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4">
+                    {(type.custom_fields || []).length > 0 ? (
+                      <div className="text-sm text-gray-900 dark:text-dark-text-primary">
+                        {(type.custom_fields || []).map(f => f.nom).join(', ')}
+                      </div>
+                    ) : (
+                      <span className="text-sm text-gray-400 dark:text-dark-text-muted italic">Aucun</span>
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -411,7 +584,7 @@ export function TypesMaterielConfig() {
                       'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
                       type.actif
                         ? 'bg-green-100 text-green-800'
-                        : 'bg-gray-100 text-gray-800'
+                        : 'bg-gray-100 dark:bg-dark-bg-tertiary text-gray-800'
                     )}>
                       {type.actif ? 'Actif' : 'Inactif'}
                     </span>

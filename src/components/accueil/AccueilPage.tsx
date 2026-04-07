@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { FiscalYearService } from '@/services/fiscalYearService';
 import { DashboardService } from '@/services/dashboardService';
+import { logger } from '@/utils/logger';
+import { getFirstName } from '@/utils/fieldMapper';
 
 // Interface TypeScript pour les citations
 interface DivingQuote {
@@ -348,15 +350,22 @@ export function AccueilPage() {
   // ✨ PREFETCHING: Précharger les données du dashboard en arrière-plan
   // Pendant que l'utilisateur lit la citation, on charge silencieusement
   // toutes les données du dashboard pour un affichage instantané quand il navigue
+  // ⚠️ CRITICAL: Users (role 'user') cannot access financial data - skip prefetch
   useEffect(() => {
     const prefetchDashboardData = async () => {
       if (!clubId) return;
 
-      console.log('🚀 [PREFETCH] Préchargement des données du dashboard en arrière-plan...');
+      // ⚠️ Skip prefetch for regular users - they don't have access to financial data
+      if (appUser?.app_role === 'user') {
+        logger.debug('⏸️ [PREFETCH] User role cannot access dashboard data, skipping prefetch');
+        return;
+      }
+
+      logger.debug('🚀 [PREFETCH] Préchargement des données du dashboard en arrière-plan...');
 
       try {
         // 1️⃣ ÉTAPE 1: Charger les années fiscales D'ABORD (requis pour le reste)
-        console.log('   📅 Chargement années fiscales...');
+        logger.debug('   📅 Chargement années fiscales...');
         const [currentFY, previousFY] = await Promise.all([
           queryClient.fetchQuery({
             queryKey: ['currentFiscalYear', clubId],
@@ -371,14 +380,14 @@ export function AccueilPage() {
         ]);
 
         if (!currentFY) {
-          console.warn('⚠️ [PREFETCH] Pas d\'année fiscale courante, arrêt du prefetch');
+          logger.warn('⚠️ [PREFETCH] Pas d\'année fiscale courante, arrêt du prefetch');
           return;
         }
 
-        console.log('   ✅ Années fiscales chargées:', currentFY.year, previousFY?.year || 'N/A');
+        logger.debug('   ✅ Années fiscales chargées', { current: currentFY.year, previous: previousFY?.year || 'N/A' });
 
         // 2️⃣ ÉTAPE 2: Précharger toutes les autres données en parallèle
-        console.log('   💾 Préchargement données dashboard...');
+        logger.debug('   💾 Préchargement données dashboard...');
         await Promise.all([
           // Soldes bancaires
           queryClient.prefetchQuery({
@@ -449,9 +458,9 @@ export function AccueilPage() {
           })
         ].filter(Boolean)); // Retirer les nulls (si pas de previousFY)
 
-        console.log('✅ [PREFETCH] Préchargement terminé - Dashboard prêt à afficher instantanément!');
+        logger.debug('✅ [PREFETCH] Préchargement terminé - Dashboard prêt à afficher instantanément!');
       } catch (error) {
-        console.error('⚠️ [PREFETCH] Erreur pendant le préchargement (non bloquant):', error);
+        logger.error('⚠️ [PREFETCH] Erreur pendant le préchargement (non bloquant):', error);
       }
     };
 
@@ -461,7 +470,7 @@ export function AccueilPage() {
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [clubId, queryClient]);
+  }, [clubId, queryClient, appUser]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-white to-blue-50 dark:from-dark-bg-primary dark:to-dark-bg-secondary flex items-center justify-center p-6 relative">
@@ -469,7 +478,7 @@ export function AccueilPage() {
       {appUser && (
         <div className="absolute top-6 right-6">
           <p className="text-lg text-gray-600 dark:text-dark-text-secondary">
-            Bonjour, {appUser.firstName || appUser.displayName}
+            Bonjour, {getFirstName(appUser) || appUser.displayName}
           </p>
         </div>
       )}
@@ -478,7 +487,7 @@ export function AccueilPage() {
         {/* Logo Calypso */}
         <div className="flex justify-center">
           <img
-            src="/logo-vertical.png"
+            src="/logo-vertical.svg"
             alt="Calypso Diving Club"
             className="h-64 w-auto object-contain"
           />
@@ -489,7 +498,7 @@ export function AccueilPage() {
           <blockquote className="text-xl md:text-2xl text-gray-700 dark:text-dark-text-primary font-light italic leading-relaxed mb-4">
             "{randomQuote.text}"
           </blockquote>
-          <cite className="text-base text-gray-500 dark:text-dark-text-secondary font-medium not-italic">
+          <cite className="text-base text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary font-medium not-italic">
             — {randomQuote.author}
           </cite>
         </div>

@@ -1,3 +1,4 @@
+import { logger } from '@/utils/logger';
 /**
  * Service de gestion des emails
  * Déclenche l'envoi d'emails via Firebase Cloud Functions + SendGrid
@@ -132,7 +133,7 @@ export class EmailService {
    */
   static async sendEmail(clubId: string, emailData: EmailData): Promise<SendEmailResult> {
     try {
-      console.log(`[EmailService] Sending email type: ${emailData.type} for club: ${clubId}`);
+      logger.debug(`[EmailService] Sending email type: ${emailData.type} for club: ${clubId}`);
 
       const sendEmailFunction = httpsCallable<
         { clubId: string; emailData: EmailData },
@@ -144,11 +145,11 @@ export class EmailService {
         emailData
       });
 
-      console.log('[EmailService] Email sent successfully:', result.data);
+      logger.debug('[EmailService] Email sent successfully:', result.data);
       return result.data;
 
     } catch (error: any) {
-      console.error('[EmailService] Error sending email:', error);
+      logger.error('[EmailService] Error sending email:', error);
       return {
         success: false,
         error: error.message || 'Erreur lors de l\'envoi de l\'email'

@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { logger } from '@/utils/logger';
 import {
   Upload,
   FileText,
@@ -125,7 +126,7 @@ export function BatchDocumentImport({
 
       toast.success(`${files.length} documents analysés avec succès`);
     } catch (error) {
-      console.error('Analysis error:', error);
+      logger.error('Analysis error:', error);
       toast.error('Erreur lors de l\'analyse des documents');
     } finally {
       setIsAnalyzing(false);
@@ -193,7 +194,7 @@ export function BatchDocumentImport({
                   "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all",
                   isDragging 
                     ? "border-calypso-blue bg-blue-50" 
-                    : "border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+                    : "border-gray-300 dark:border-dark-border hover:border-gray-400 hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary"
                 )}
               >
                 <Upload className="h-12 w-12 text-gray-400 dark:text-dark-text-muted mx-auto mb-3" />
@@ -302,7 +303,7 @@ export function BatchDocumentImport({
               <div className="flex gap-3">
                 <button
                   onClick={onClose}
-                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors"
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors"
                 >
                   Annuler
                 </button>

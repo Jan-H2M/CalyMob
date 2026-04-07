@@ -1,11 +1,13 @@
+import { logger } from '@/utils/logger';
 /**
  * Événements Settings
- * Main page for managing dive locations and their tariffs
- * Layout: List (left) + Detail Panel (right 800px)
+ * Main page for managing dive locations and their tariffs + LIFRAS exercises
+ * Layout: Tabbed interface with list + detail panel
  */
 
 import { useState, useEffect } from 'react';
-import { Plus, Search, Eye } from 'lucide-react';
+import { Plus, Search, Eye, MapPin, ArrowRight } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { DiveLocation } from '@/types/tariff.types';
 import { DiveLocationService } from '@/services/diveLocationService';
 import { LocationDetailView } from './LocationDetailView';
@@ -47,7 +49,7 @@ export function EvenementsSettings() {
         const data = await DiveLocationService.getAllLocations(clubId);
         setLocations(data);
       } catch (error) {
-        console.error('Error loading locations:', error);
+        logger.error('Error loading locations:', error);
         toast.error('Erreur lors du chargement des lieux');
       } finally {
         setLoading(false);
@@ -85,7 +87,7 @@ export function EvenementsSettings() {
         setSelectedLocation({ ...selectedLocation, ...updates });
       }
     } catch (error) {
-      console.error('Error updating location:', error);
+      logger.error('Error updating location:', error);
       throw error; // Re-throw to let LocationDetailView handle toast
     }
   };
@@ -103,7 +105,7 @@ export function EvenementsSettings() {
 
       setIsCreating(false);
     } catch (error) {
-      console.error('Error creating location:', error);
+      logger.error('Error creating location:', error);
       throw error; // Re-throw to let LocationDetailView handle toast
     }
   };
@@ -128,7 +130,7 @@ export function EvenementsSettings() {
       // Update local state - remove deleted location
       setLocations(locations.filter(loc => loc.id !== locationId));
     } catch (error) {
-      console.error('Error deleting location:', error);
+      logger.error('Error deleting location:', error);
       throw error; // Re-throw to let LocationDetailView handle toast
     }
   };
@@ -144,39 +146,53 @@ export function EvenementsSettings() {
       <div className="max-w-7xl mx-auto">
         <SettingsHeader
           breadcrumb={['Paramètres', 'Événements']}
-          title="Événements"
-          description="Gestion des lieux de plongée et tarifs"
+          title="Lieux de plongée"
+          description="Gestion des lieux de plongée et leurs tarifs"
         />
 
-        <div className="mb-6 flex justify-end">
-          <button
-            onClick={() => setIsCreating(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
+        {/* Link to exercices in Formation section */}
+        <div className="mb-6">
+          <Link
+            to="/formation/exercices"
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
           >
-            <Plus className="h-4 w-4" />
-            Nouveau lieu
-          </button>
+            <MapPin className="h-4 w-4" />
+            Les exercices LIFRAS se trouvent maintenant dans Formation → Exercices
+            <ArrowRight className="h-4 w-4" />
+          </Link>
         </div>
 
-        {/* Search Bar */}
-        <div className="bg-white dark:bg-dark-bg-secondary rounded-xl shadow-sm border border-gray-200 dark:border-dark-border mb-6">
-        <div className="p-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-dark-text-muted" />
-            <input
-              type="text"
-              placeholder="Rechercher un lieu..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 dark:border-dark-border rounded-lg focus:ring-1 focus:ring-gray-400 focus:border-gray-400 bg-white dark:bg-dark-bg-secondary text-gray-900 dark:text-dark-text-primary placeholder:text-gray-400 dark:placeholder:text-dark-text-muted"
-            />
-          </div>
-        </div>
-        </div>
+        {/* Locations content */}
+        <>
+            <div className="mb-6 flex justify-end">
+              <button
+                onClick={() => setIsCreating(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
+              >
+                <Plus className="h-4 w-4" />
+                Nouveau lieu
+              </button>
+            </div>
 
-        {/* Locations Table */}
-        <div className="bg-white dark:bg-dark-bg-secondary rounded-xl shadow-sm border border-gray-200 dark:border-dark-border">
-        {loading ? (
+            {/* Search Bar */}
+            <div className="bg-white dark:bg-dark-bg-secondary rounded-xl shadow-sm border border-gray-200 dark:border-dark-border mb-6">
+            <div className="p-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-dark-text-muted" />
+                <input
+                  type="text"
+                  placeholder="Rechercher un lieu..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 dark:border-dark-border rounded-lg focus:ring-1 focus:ring-gray-400 focus:border-gray-400 bg-white dark:bg-dark-bg-secondary text-gray-900 dark:text-dark-text-primary placeholder:text-gray-400 dark:placeholder:text-dark-text-muted"
+                />
+              </div>
+            </div>
+            </div>
+
+            {/* Locations Table */}
+            <div className="bg-white dark:bg-dark-bg-secondary rounded-xl shadow-sm border border-gray-200 dark:border-dark-border">
+            {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="text-center">
               <div className="inline-flex items-center justify-center w-12 h-12 mb-4">
@@ -224,7 +240,7 @@ export function EvenementsSettings() {
                 {filteredLocations.map(location => (
                   <tr
                     key={location.id}
-                    className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary cursor-pointer transition-colors"
+                    className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary cursor-pointer transition-colors"
                     onClick={() => setSelectedLocation(location)}
                   >
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-dark-text-primary">
@@ -253,20 +269,21 @@ export function EvenementsSettings() {
               </tbody>
             </table>
           </div>
-        )}
-        </div>
+            )}
+            </div>
 
-        {/* Detail Panel */}
-        {(selectedLocation || isCreating) && (
-        <LocationDetailView
-          location={selectedLocation}
-          isCreateMode={isCreating}
-          onClose={handleClosePanel}
-          onUpdate={handleUpdateLocation}
-          onCreate={handleCreateLocation}
-          onDelete={handleDeleteLocation}
-        />
-        )}
+            {/* Detail Panel */}
+            {(selectedLocation || isCreating) && (
+            <LocationDetailView
+              location={selectedLocation}
+              isCreateMode={isCreating}
+              onClose={handleClosePanel}
+              onUpdate={handleUpdateLocation}
+              onCreate={handleCreateLocation}
+              onDelete={handleDeleteLocation}
+            />
+            )}
+          </>
       </div>
     </div>
   );

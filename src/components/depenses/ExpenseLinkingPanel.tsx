@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { X, Search, Check, Calendar, User, Link2, AlertCircle, TrendingUp, TrendingDown, ArrowUpDown, DollarSign, FileText, CheckCircle, Clock, XCircle } from 'lucide-react';
 import { DemandeRemboursement } from '@/types';
 import { formatMontant, formatDate, cn, STATUS_COLORS } from '@/utils/utils';
+import { logger } from '@/utils/logger';
 
 interface ExpenseLinkingPanelProps {
   isOpen: boolean;
@@ -255,7 +256,7 @@ export function ExpenseLinkingPanel({
       await onLinkDemands(Array.from(selectedIds));
       onClose();
     } catch (error) {
-      console.error('Error linking demands:', error);
+      logger.error('Error linking demands:', error);
     } finally {
       setSaving(false);
     }
@@ -305,7 +306,7 @@ export function ExpenseLinkingPanel({
                 "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
                 statusFilter === 'all'
                   ? "bg-orange-600 text-white"
-                  : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  : "bg-white border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary"
               )}
             >
               Tous statuts ({statusCounts.all})
@@ -321,7 +322,7 @@ export function ExpenseLinkingPanel({
                     "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5",
                     statusFilter === status
                       ? `${config?.bg} ${config?.border} ${config?.text} border-2`
-                      : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
+                      : "bg-white border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary"
                   )}
                 >
                   <Icon className="h-3.5 w-3.5" />
@@ -354,7 +355,7 @@ export function ExpenseLinkingPanel({
                 "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
                 quickDateFilter === 'all'
                   ? "bg-orange-600 text-white"
-                  : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  : "bg-white border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary"
               )}
             >
               Toutes périodes
@@ -365,7 +366,7 @@ export function ExpenseLinkingPanel({
                 "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
                 quickDateFilter === 'cette_semaine'
                   ? "bg-orange-600 text-white"
-                  : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  : "bg-white border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary"
               )}
             >
               Cette semaine
@@ -376,7 +377,7 @@ export function ExpenseLinkingPanel({
                 "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
                 quickDateFilter === 'ce_mois'
                   ? "bg-orange-600 text-white"
-                  : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  : "bg-white border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary"
               )}
             >
               Ce mois
@@ -387,7 +388,7 @@ export function ExpenseLinkingPanel({
                 "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
                 quickDateFilter === 'deux_mois'
                   ? "bg-orange-600 text-white"
-                  : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  : "bg-white border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary"
               )}
             >
               2 derniers mois
@@ -427,7 +428,7 @@ export function ExpenseLinkingPanel({
                 "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5",
                 sortField === 'date'
                   ? "bg-orange-600 text-white"
-                  : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  : "bg-white border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary"
               )}
             >
               <Calendar className="h-3.5 w-3.5" />
@@ -442,7 +443,7 @@ export function ExpenseLinkingPanel({
                 "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5",
                 sortField === 'montant'
                   ? "bg-orange-600 text-white"
-                  : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  : "bg-white border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary"
               )}
             >
               <DollarSign className="h-3.5 w-3.5" />
@@ -457,7 +458,7 @@ export function ExpenseLinkingPanel({
                 "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5",
                 sortField === 'description'
                   ? "bg-orange-600 text-white"
-                  : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  : "bg-white border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary"
               )}
             >
               <ArrowUpDown className="h-3.5 w-3.5" />
@@ -518,7 +519,7 @@ export function ExpenseLinkingPanel({
                       "border rounded-lg p-3 cursor-pointer transition-all relative",
                       isSelected
                         ? `${config?.bg} ${config?.border} shadow-sm`
-                        : `bg-white border-gray-200 hover:border-orange-200 hover:bg-orange-50/30`,
+                        : `bg-white border-gray-200 dark:border-dark-border hover:border-orange-200 hover:bg-orange-50/30`,
                       isSuggested && !isSelected && "ring-2 ring-orange-300"
                     )}
                   >
@@ -536,7 +537,7 @@ export function ExpenseLinkingPanel({
                           "w-5 h-5 rounded border-2 flex items-center justify-center transition-colors",
                           isSelected
                             ? "bg-orange-600 border-orange-600"
-                            : "border-gray-300 bg-white"
+                            : "border-gray-300 dark:border-dark-border bg-white"
                         )}>
                           {isSelected && <Check className="h-3 w-3 text-white" />}
                         </div>

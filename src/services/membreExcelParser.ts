@@ -1,27 +1,29 @@
 import { Membre } from '@/types';
 import { generateId } from '@/utils/utils';
-import * as XLSX from 'xlsx';
+import { getFirstName, getLastName } from '@/utils/fieldMapper';
+// XLSX is loaded dynamically to reduce initial bundle size (~200KB)
 
 /**
- * Service de parsing Excel pour import membres (iClubSport format)
+ * Service de parsing Excel pour import membres (format Organon / Lifras)
  *
- * Colonnes importées :
- * 1. LifrasID (obligatoire)
- * 2. Nom
- * 3. Prénom
- * 4. Adresse
- * 5. Code postal
- * 6. Localité
- * 7. Email 1
- * 8. GSM 1
- * 9. Date du certificat médical
- * 10. Validité du certificat médical
- * 11. ICE (In Case of Emergency)
- * 12. Description
- * 13. Pays
- * 14. Date de naissance
- * 15. Newsletter
- * 16. Plongeur (niveau)
+ * Colonnes importées depuis l'export Organon :
+ * 1. Nom
+ * 2. Prénom
+ * 3. Date de naissance
+ * 4. Sexe
+ * 5. Adresse (champ combiné: rue, code postal, localité, pays)
+ * 6. GSM
+ * 7. Téléphone
+ * 8. E-mail
+ * 9. Statut chronologique (ex: "Présent / En ordre")
+ * 10. Type de la dernière licence
+ * 11. Numéro de licence (= LifrasID)
+ *
+ * Logique métier :
+ * - Le "Statut chronologique" détermine si un membre est actif ou inactif
+ * - "En ordre" ou "Présent" dans le statut → ACTIF
+ * - Tout autre statut (pas payé, pas en ordre) → INACTIF
+ * - Les membres absents du fichier seront DÉSACTIVÉS lors de l'import
  */
 
 /**
@@ -70,19 +72,6 @@ function parseExcelDate(value: any): Date | undefined {
 }
 
 /**
- * Parse boolean from Excel (True/False ou 1/0)
- */
-function parseExcelBoolean(value: any): boolean {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'number') return value !== 0;
-  if (typeof value === 'string') {
-    const lower = value.toLowerCase().trim();
-    return lower === 'true' || lower === '1' || lower === 'oui' || lower === 'yes';
-  }
-  return false;
-}
-
-/**
  * Nettoie une string (trim + undefined si vide)
  */
 function cleanString(value: any): string | undefined {
@@ -92,11 +81,11 @@ function cleanString(value: any): string | undefined {
 }
 
 /**
- * Parser principal : Excel → Membre[]
+ * Parser principal : Excel Organon → Membre[]
  */
 export class MembreExcelParser {
   /**
-   * Parse un fichier Excel (format iClubSport HTML-based XLS)
+   * Parse un fichier Excel (format Organon / Lifras)
    */
   static async parseFile(file: File): Promise<MembreParseResult> {
     const result: MembreParseResult = {
@@ -108,10 +97,12 @@ export class MembreExcelParser {
     };
 
     try {
+      // Dynamic import for code splitting - XLSX is ~200KB
+      const XLSX = await import('xlsx');
       // Lire le fichier comme buffer
       const buffer = await file.arrayBuffer();
 
-      // Parser avec XLSX (supporte HTML-based XLS)
+      // Organon exporte du vrai XLSX, pas du HTML déguisé
       const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
 
       // Prendre la première feuille
@@ -127,15 +118,14 @@ export class MembreExcelParser {
       }
 
       // Première ligne = headers
-      const headers = data[0];
+      const headers = data[0].map((h: any) => String(h || '').trim());
 
-      // Helper: Trouver index d'une colonne (flexible pour gérer les headers corrompus)
+      // Helper: Trouver index d'une colonne (flexible)
       const findColumn = (exactName: string, fallbackPattern?: string): number => {
-        // Essayer correspondance exacte d'abord
         let index = headers.indexOf(exactName);
         if (index !== -1) return index;
 
-        // Sinon, chercher pattern dans les headers (pour gérer HTML corrompu)
+        // Chercher pattern dans les headers
         if (fallbackPattern) {
           index = headers.findIndex((h: string) =>
             h && h.toLowerCase().includes(fallbackPattern.toLowerCase())
@@ -145,35 +135,24 @@ export class MembreExcelParser {
         return index;
       };
 
-      // Trouver index des colonnes
+      // Trouver index des colonnes (format Organon)
       const colIndexes = {
-        lifrasID: findColumn('LifrasID', 'lifras'),
-        nrFebras: findColumn('Nr.Febras', 'febras'),
         nom: findColumn('Nom'),
-        prenom: findColumn('Prenom'),
-        adresse: findColumn('Adresse'),
-        codePostal: findColumn('Code postal', 'postal'),
-        localite: findColumn('Localité', 'localit'),
-        // HTML corrompu dans iClubSport XLS: "Email 1" fusionné avec "Localité", data dans "Email 2"
-        email: (() => {
-          const email2Index = headers.indexOf('Email 2');
-          if (email2Index !== -1) return email2Index;
-          return findColumn('Email 1', 'email');
-        })(),
-        gsm: findColumn('GSM 1', 'gsm'),
-        certifDate: findColumn('Date du certificat médical', 'certificat'),
-        certifValidite: findColumn('Validité du certificat médical', 'validit'),
-        ice: findColumn('ICE'),
-        description: findColumn('Description'),
-        pays: findColumn('Pays'),
+        prenom: findColumn('Prénom', 'prenom'),
         dateNaissance: findColumn('Date de naissance', 'naissance'),
-        newsletter: findColumn('Newsletter'),
-        niveauPlongeur: findColumn('Plongeur')
+        sexe: findColumn('Sexe'),
+        adresse: findColumn('Adresse'),
+        gsm: findColumn('GSM'),
+        telephone: findColumn('Téléphone', 'phone'),
+        email: findColumn('E-mail', 'mail'),
+        statutChronologique: findColumn('Statut chronologique', 'statut'),
+        typeLicence: findColumn('Type de la dernière licence', 'licence'),
+        numeroLicence: findColumn('Numéro de licence', 'numéro'),
       };
 
       // Vérifier colonnes obligatoires
-      if (colIndexes.lifrasID === -1) {
-        result.errors.push('Colonne "LifrasID" introuvable dans le fichier Excel');
+      if (colIndexes.numeroLicence === -1) {
+        result.errors.push('Colonne "Numéro de licence" introuvable dans le fichier Excel');
         return result;
       }
       if (colIndexes.nom === -1) {
@@ -181,7 +160,7 @@ export class MembreExcelParser {
         return result;
       }
       if (colIndexes.prenom === -1) {
-        result.errors.push('Colonne "Prenom" introuvable dans le fichier Excel');
+        result.errors.push('Colonne "Prénom" introuvable dans le fichier Excel');
         return result;
       }
 
@@ -192,18 +171,18 @@ export class MembreExcelParser {
         const row = data[i];
 
         try {
-          const lifrasId = cleanString(row[colIndexes.lifrasID]);
+          const lifrasId = cleanString(row[colIndexes.numeroLicence]);
 
-          // LifrasID obligatoire
+          // Numéro de licence obligatoire
           if (!lifrasId) {
-            result.errors.push(`Ligne ${i + 1}: LifrasID manquant`);
+            result.errors.push(`Ligne ${i + 1}: Numéro de licence manquant`);
             result.error_count++;
             continue;
           }
 
           // Détecter doublons
           if (seenLifrasIds.has(lifrasId)) {
-            result.errors.push(`Ligne ${i + 1}: LifrasID ${lifrasId} en double`);
+            result.errors.push(`Ligne ${i + 1}: Numéro de licence ${lifrasId} en double`);
             result.duplicate_count++;
             continue;
           }
@@ -214,71 +193,77 @@ export class MembreExcelParser {
 
           // Nom et prénom obligatoires
           if (!nom || !prenom) {
-            result.errors.push(`Ligne ${i + 1}: Nom ou Prénom manquant (LifrasID: ${lifrasId})`);
+            result.errors.push(`Ligne ${i + 1}: Nom ou Prénom manquant (Licence: ${lifrasId})`);
             result.error_count++;
             continue;
           }
 
-          const email = cleanString(row[colIndexes.email]) || `${lifrasId}@no-email.local`; // Générer email fictif si manquant
+          const rawEmail = row[colIndexes.email];
+          const email = cleanString(rawEmail)?.toLowerCase() || `${lifrasId}@no-email.local`;
 
-          // Construire objet Membre avec nouvelle structure
+          // Téléphone: prendre GSM en priorité, sinon Téléphone
           const gsmValue = cleanString(row[colIndexes.gsm]);
-          const niveauPlongee = cleanString(row[colIndexes.niveauPlongeur]);
+          const telValue = cleanString(row[colIndexes.telephone]);
+          const phoneNumber = gsmValue || telValue;
 
+          // Adresse: stockée telle quelle (champ combiné Organon)
+          const adresse = cleanString(row[colIndexes.adresse]);
+
+          // Sexe
+          const sexeRaw = cleanString(row[colIndexes.sexe]);
+          const sexe = sexeRaw?.toLowerCase() === 'féminin' ? 'F' : sexeRaw?.toLowerCase() === 'masculin' ? 'M' : undefined;
+
+          // Statut chronologique: "Présent / En ordre" → actif, sinon inactif
+          const statutChronoRaw = cleanString(row[colIndexes.statutChronologique]) || '';
+          const statutChronoLower = statutChronoRaw.toLowerCase();
+          const isEnOrdre = statutChronoLower.includes('en ordre') || statutChronoLower.includes('présent');
+          const memberStatus = isEnOrdre ? 'active' : 'inactive';
+
+          // Construire objet Membre
           const membre: Membre = {
             id: generateId(),
             lifras_id: lifrasId,
-            nr_febras: cleanString(row[colIndexes.nrFebras]),
             nom,
             prenom,
             email,
-            displayName: `${prenom} ${nom}`, // Auto-calculated
+            displayName: `${prenom} ${nom}`,
 
-            // Nouvelle structure pour rôles
-            app_role: 'membre' as any, // Rôle app par défaut
-            member_status: 'inactive' as any, // Nouveaux membres = inactifs par défaut
-            has_app_access: false, // Pas d'accès app par défaut
-            is_diver: !!niveauPlongee, // true si niveau plongée présent
-            has_lifras: !!lifrasId, // true si LifrasID présent
+            // Statut basé sur le "Statut chronologique" de Lifras
+            app_role: 'membre' as any,
+            member_status: memberStatus as any,
+            has_app_access: false,
+            is_diver: true,
+            has_lifras: true,
 
-            // Contact (nouvelle structure: telephone + backward compat)
-            telephone: gsmValue,
-            phoneNumber: gsmValue, // Backward compatibility
+            // Contact
+            telephone: phoneNumber,
+            phoneNumber: phoneNumber, // Backward compatibility
             gsm: gsmValue, // Legacy field
 
-            // Adresse
-            adresse: cleanString(row[colIndexes.adresse]),
-            code_postal: cleanString(row[colIndexes.codePostal]),
-            localite: cleanString(row[colIndexes.localite]),
-            pays: cleanString(row[colIndexes.pays]),
+            // Adresse (champ unique depuis Organon)
+            adresse,
 
-            // Contact urgence
-            ice: cleanString(row[colIndexes.ice]),
+            // Sexe
+            sexe,
 
-            // Médical
-            certificat_medical_date: parseExcelDate(row[colIndexes.certifDate]),
-            certificat_medical_validite: parseExcelDate(row[colIndexes.certifValidite]),
-
-            // Plongée (nouvelle structure)
-            niveau_plongee: niveauPlongee,
-            niveau_plongeur: niveauPlongee, // Legacy field
-
-            // Autres
+            // Date de naissance
             date_naissance: parseExcelDate(row[colIndexes.dateNaissance]),
-            newsletter: parseExcelBoolean(row[colIndexes.newsletter]),
 
-            // Dates (nouvelle structure + backward compat)
+            // Dates
             createdAt: new Date(),
             updatedAt: new Date(),
-            date_inscription: new Date(), // Backward compatibility
-            created_at: new Date(), // Legacy field
-            updated_at: new Date(), // Legacy field
+            date_inscription: new Date(),
+            created_at: new Date(),
+            updated_at: new Date(),
+
+            // Statut chronologique brut (pour référence)
+            statut_chronologique: statutChronoRaw || undefined,
 
             // Legacy fields pour backward compatibility
             role: 'membre' as any,
-            actif: true,
-            isActive: true,
-            status: 'active' as any,
+            actif: isEnOrdre,
+            isActive: isEnOrdre,
+            status: memberStatus as any,
             clubId: '' // Will be set during import
           };
 
@@ -305,9 +290,9 @@ export class MembreExcelParser {
   static validateMembre(membre: Partial<Membre>): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
 
-    if (!membre.lifras_id) errors.push('LifrasID manquant');
-    if (!membre.nom) errors.push('Nom manquant');
-    if (!membre.prenom) errors.push('Prénom manquant');
+    if (!membre.lifras_id) errors.push('Numéro de licence manquant');
+    if (!getLastName(membre as Membre)) errors.push('Nom manquant');
+    if (!getFirstName(membre as Membre)) errors.push('Prénom manquant');
     if (!membre.email) errors.push('Email manquant');
 
     // Validation email
@@ -322,14 +307,14 @@ export class MembreExcelParser {
   }
 
   /**
-   * Dédoublonne par LifrasID (garde le premier)
+   * Dédoublonne par Numéro de licence (garde le premier)
    */
   static deduplicateByLifrasId(membres: Membre[]): Membre[] {
     const seen = new Set<string>();
     const unique: Membre[] = [];
 
     for (const membre of membres) {
-      if (!seen.has(membre.lifras_id)) {
+      if (membre.lifras_id && !seen.has(membre.lifras_id)) {
         seen.add(membre.lifras_id);
         unique.push(membre);
       }

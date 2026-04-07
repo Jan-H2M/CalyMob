@@ -1,12 +1,15 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useNavigate } from 'react-router-dom';
-import { signIn, sendPasswordReset } from '@/lib/firebase';
+import { signIn, signOut, db } from '@/lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 import { Eye, EyeOff, Loader2, LogIn } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { cn } from '@/utils/utils';
+import { logger } from '@/utils/logger';
+import { canAccessCalyCompta } from '@/utils/fieldMapper';
 
 // Calypso Logo Component
 const CalypsoLogo = ({ variant = 'icon', className = '' }: { variant?: 'horizontal' | 'icon', className?: string }) => {
@@ -24,7 +27,7 @@ const CalypsoLogo = ({ variant = 'icon', className = '' }: { variant?: 'horizont
   if (variant === 'icon') {
     return (
       <img
-        src="/logo-vertical.png"
+        src="/logo-vertical.svg"
         alt="Calypso Diving Club"
         className={cn("h-32 w-auto", className)}
         onError={() => setImageError(true)}
@@ -34,7 +37,7 @@ const CalypsoLogo = ({ variant = 'icon', className = '' }: { variant?: 'horizont
 
   return (
     <img
-      src="/logo-horizontal.jpg"
+      src="/logo-horizontal.svg"
       alt="Calypso Diving Club"
       className={cn("h-16 w-auto", className)}
       onError={() => setImageError(true)}
@@ -69,24 +72,42 @@ export function LoginForm() {
       const userCredential = await signIn(data.email, data.password);
       const user = userCredential.user;
 
+      // Vérifier si l'utilisateur a accès à CalyCompta (bloquer les comptes "membre" mobile-only)
+      const clubId = 'calypso';
+      const memberDoc = await getDoc(doc(db, `clubs/${clubId}/members/${user.uid}`));
+      if (memberDoc.exists()) {
+        const memberData = memberDoc.data();
+        if (!canAccessCalyCompta(memberData as any)) {
+          // Déconnecter immédiatement — ce compte est réservé à CalyMob
+          logger.warn(`⛔ [LOGIN] Membre-only account blocked from CalyCompta: ${user.email}`);
+          await signOut();
+          toast.error(
+            'Ce compte est réservé à l\'application mobile CalyMob. Téléchargez CalyMob sur l\'App Store ou le Play Store pour accéder à votre espace membre.',
+            { duration: 8000, style: { maxWidth: '500px' } }
+          );
+          return;
+        }
+      }
+
       // Connexion réussie - la modal de changement de mot de passe s'affichera automatiquement
       // via le Layout component si requirePasswordChange: true
-      console.log('✅ [LOGIN] User logged in:', user.email);
+      logger.debug('✅ [LOGIN] User logged in:', user.email);
       toast.success('Connexion réussie !');
       navigate('/accueil');
-    } catch (error: any) {
-      console.error('Erreur de connexion:', error);
+    } catch (error) {
+      logger.error('Erreur de connexion:', error);
 
       // Messages d'erreur en français
+      const firebaseError = error as { code?: string };
       let errorMessage = 'Erreur lors de la connexion';
-      if (error.code === 'auth/user-not-found') {
+      if (firebaseError.code === 'auth/user-not-found') {
         errorMessage = 'Aucun compte trouvé avec cette adresse email';
-      } else if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+      } else if (firebaseError.code === 'auth/wrong-password' || firebaseError.code === 'auth/invalid-credential') {
         // Message spécifique pour mot de passe incorrect ou credentials invalides
         errorMessage = 'Mot de passe incorrect. Utilisez votre mot de passe le plus récent ou relancez la procédure via "Mot de passe oublié". Si un administrateur a réinitialisé votre accès, vérifiez aussi le dernier email reçu.';
-      } else if (error.code === 'auth/invalid-email') {
+      } else if (firebaseError.code === 'auth/invalid-email') {
         errorMessage = 'Adresse email invalide';
-      } else if (error.code === 'auth/too-many-requests') {
+      } else if (firebaseError.code === 'auth/too-many-requests') {
         errorMessage = 'Trop de tentatives. Veuillez réessayer plus tard';
       }
 
@@ -101,37 +122,8 @@ export function LoginForm() {
     }
   };
 
-  const handleForgotPassword = async () => {
-    const email = (document.getElementById('email') as HTMLInputElement)?.value;
-
-    if (!email) {
-      toast.error('Veuillez entrer votre adresse email');
-      return;
-    }
-
-    if (!/\S+@\S+\.\S+/.test(email)) {
-      toast.error('Adresse email invalide');
-      return;
-    }
-
-    try {
-      await sendPasswordReset(email);
-      toast.success(
-        'Email de réinitialisation envoyé ! Vérifiez votre boîte de réception.',
-        { duration: 5000 }
-      );
-    } catch (error: any) {
-      console.error('Erreur réinitialisation:', error);
-      let errorMessage = 'Erreur lors de l\'envoi de l\'email';
-
-      if (error.code === 'auth/user-not-found') {
-        errorMessage = 'Aucun compte trouvé avec cette adresse email';
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = 'Adresse email invalide';
-      }
-
-      toast.error(errorMessage);
-    }
+  const handleForgotPassword = () => {
+    navigate('/mot-de-passe-oublie');
   };
 
   return (
@@ -166,7 +158,7 @@ export function LoginForm() {
                 disabled={isLoading}
               />
               {errors.email && (
-                <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.email.message}</p>
+                <p role="alert" className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.email.message}</p>
               )}
             </div>
 
@@ -190,8 +182,9 @@ export function LoginForm() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:hover:text-dark-text-primary"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary dark:hover:text-dark-text-primary"
                   tabIndex={-1}
+                  aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
                 >
                   {showPassword ? (
                     <EyeOff className="w-5 h-5" />
@@ -201,7 +194,7 @@ export function LoginForm() {
                 </button>
               </div>
               {errors.password && (
-                <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.password.message}</p>
+                <p role="alert" className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.password.message}</p>
               )}
             </div>
 
@@ -243,17 +236,10 @@ export function LoginForm() {
             </button>
           </form>
 
-          {/* Séparateur */}
+          {/* Info compte */}
           <div className="mt-6 pt-6 border-t border-gray-200 dark:border-dark-border text-center">
             <p className="text-sm text-gray-600 dark:text-dark-text-secondary">
-              Pas encore de compte ?{' '}
-              <button
-                type="button"
-                onClick={() => navigate('/inscription')}
-                className="text-calypso-blue dark:text-calypso-aqua hover:text-calypso-blue-dark dark:hover:text-calypso-aqua-light font-medium"
-              >
-                Créer un compte
-              </button>
+              Pas encore de compte ? Contactez un responsable du club.
             </p>
           </div>
         </div>

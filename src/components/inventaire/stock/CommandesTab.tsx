@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { Timestamp } from 'firebase/firestore';
 import { cn } from '@/utils/utils';
+import { logger } from '@/utils/logger';
 
 interface Props {
   onRefresh: () => void;
@@ -37,7 +38,7 @@ export function CommandesTab({ onRefresh }: Props) {
       setOrders(ordersData);
       setProducts(productsData);
     } catch (error: any) {
-      console.error('Erreur chargement commandes:', error);
+      logger.error('Erreur chargement commandes:', error);
       toast.error(error.message || 'Erreur lors du chargement');
     } finally {
       setLoading(false);
@@ -56,7 +57,7 @@ export function CommandesTab({ onRefresh }: Props) {
       loadData();
       onRefresh();
     } catch (error: any) {
-      console.error('Erreur livraison commande:', error);
+      logger.error('Erreur livraison commande:', error);
       toast.error(error.message || 'Erreur lors de la livraison');
     }
   };
@@ -131,7 +132,7 @@ export function CommandesTab({ onRefresh }: Props) {
 
       toast.success('Bon de commande téléchargé');
     } catch (error: any) {
-      console.error('Erreur génération bon:', error);
+      logger.error('Erreur génération bon:', error);
       toast.error(error.message || 'Erreur lors de la génération du bon de commande');
     }
   };
@@ -151,7 +152,7 @@ export function CommandesTab({ onRefresh }: Props) {
         <h3 className="text-lg font-medium text-gray-900 dark:text-dark-text-primary">
           Commandes fournisseur
         </h3>
-        <div className="text-sm text-gray-500 dark:text-dark-text-secondary">
+        <div className="text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
           Fonctionnalité complète à venir
         </div>
       </div>
@@ -161,22 +162,22 @@ export function CommandesTab({ onRefresh }: Props) {
         <table className="min-w-full divide-y divide-gray-200 dark:divide-dark-border">
           <thead className="bg-gray-50 dark:bg-dark-bg-tertiary">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase">
                 Date commande
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase">
                 Fournisseur
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase">
                 Produits
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase">
                 Montant
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase">
                 Statut
               </th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase">
+              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase">
                 Actions
               </th>
             </tr>
@@ -184,21 +185,21 @@ export function CommandesTab({ onRefresh }: Props) {
           <tbody className="divide-y divide-gray-200 dark:divide-dark-border">
             {orders.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-dark-text-secondary">
-                  <ShoppingBag className="mx-auto h-12 w-12 text-gray-400 mb-2" />
+                <td colSpan={6} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
+                  <ShoppingBag className="mx-auto h-12 w-12 text-gray-400 dark:text-dark-text-muted mb-2" />
                   <p>Aucune commande enregistrée</p>
                 </td>
               </tr>
             ) : (
               orders.map((order) => (
-                <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-dark-text-secondary">
+                <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
                     {formatDate(order.date_commande)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-dark-text-primary">
                     {order.fournisseur}
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-500 dark:text-dark-text-secondary">
+                  <td className="px-6 py-4 text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
                     {order.productName}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-dark-text-primary">

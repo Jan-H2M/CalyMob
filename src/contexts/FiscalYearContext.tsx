@@ -4,6 +4,7 @@ import { FiscalYear } from '@/types';
 import { UserRole } from '@/types/user.types';
 import { FiscalYearService } from '@/services/fiscalYearService';
 import { useAuth } from '@/contexts/AuthContext';
+import { logger } from '@/utils/logger';
 
 // ============================================================================
 // INTERFACES
@@ -27,6 +28,10 @@ interface FiscalYearContextType {
   canModify: boolean;                        // false si clôturée ET user pas admin
   loading: boolean;
   error: Error | null;
+
+  // 🔧 TEMPORAIRE: Désactiver le filtrage par année fiscale
+  disableFiscalYearFilter: boolean;
+  setDisableFiscalYearFilter: (value: boolean) => void;
 
   // Actions
   setSelectedFiscalYear: (fy: FiscalYear | null) => void;
@@ -62,6 +67,19 @@ export function FiscalYearProvider({ children }: { children: ReactNode }) {
   // Cache statistiques
   const [statsCache, setStatsCache] = useState<Map<string, YearStats>>(new Map());
 
+  // 🔧 TEMPORAIRE: Désactiver le filtrage par année fiscale (toggle superadmin)
+  // Persister dans localStorage pour garder le choix de l'utilisateur
+  const [disableFiscalYearFilter, setDisableFiscalYearFilterState] = useState(() => {
+    const saved = localStorage.getItem('disableFiscalYearFilter');
+    return saved !== null ? saved === 'true' : false; // Par défaut: filtrage activé (ON)
+  });
+
+  // Wrapper pour persister dans localStorage
+  const setDisableFiscalYearFilter = useCallback((value: boolean) => {
+    setDisableFiscalYearFilterState(value);
+    localStorage.setItem('disableFiscalYearFilter', String(value));
+  }, []);
+
   // Calculer année précédente
   const previousFiscalYear = useMemo(() => {
     if (!currentFiscalYear) return null;
@@ -80,7 +98,7 @@ export function FiscalYearProvider({ children }: { children: ReactNode }) {
     // ⚠️ CRITICAL: Wait for BOTH clubId AND user to be authenticated
     // Prevents "Missing or insufficient permissions" Firestore errors
     if (!clubId || !user) {
-      console.log('⏳ FiscalYear Context: Waiting for authentication...', { clubId: !!clubId, user: !!user });
+      logger.debug('⏳ FiscalYear Context: Waiting for authentication...', { clubId: !!clubId, user: !!user });
       return;
     }
 
@@ -89,7 +107,7 @@ export function FiscalYearProvider({ children }: { children: ReactNode }) {
         setLoading(true);
         setError(null);
 
-        console.log('🔄 FiscalYear Context: Loading fiscal years for clubId:', clubId, 'user:', user.email);
+        logger.debug('🔄 FiscalYear Context: Loading fiscal years for clubId:', clubId, 'user:', user.email);
         const years = await FiscalYearService.getFiscalYears(clubId);
         setAllFiscalYears(years);
 
@@ -97,10 +115,10 @@ export function FiscalYearProvider({ children }: { children: ReactNode }) {
         setCurrentFiscalYear(current);
         setSelectedFiscalYear(current);
 
-        console.log('✅ FiscalYear Context: Loaded', years.length, 'years');
-        console.log('📅 Current:', current?.year, '| Previous:', years.find(y => y.year === (current?.year || 0) - 1)?.year);
+        logger.debug('✅ FiscalYear Context: Loaded', years.length, 'years');
+        logger.debug('📅 Current:', current?.year, '| Previous:', years.find(y => y.year === (current?.year || 0) - 1)?.year);
       } catch (err) {
-        console.error('❌ FiscalYear Context: Load error', err);
+        logger.error('❌ FiscalYear Context: Load error', err);
         setError(err as Error);
       } finally {
         setLoading(false);
@@ -125,7 +143,7 @@ export function FiscalYearProvider({ children }: { children: ReactNode }) {
   const getCachedStats = useCallback(async (fiscalYearId: string): Promise<YearStats> => {
     // Check cache
     if (statsCache.has(fiscalYearId)) {
-      console.log('📊 Cache hit for', fiscalYearId);
+      logger.debug('📊 Cache hit for', fiscalYearId);
       return statsCache.get(fiscalYearId)!;
     }
 
@@ -133,7 +151,7 @@ export function FiscalYearProvider({ children }: { children: ReactNode }) {
     const fiscalYear = allFiscalYears.find(fy => fy.id === fiscalYearId);
     if (!fiscalYear) throw new Error('Fiscal year not found: ' + fiscalYearId);
 
-    console.log('📊 Loading stats for', fiscalYearId);
+    logger.debug('📊 Loading stats for', fiscalYearId);
     const transactions = await FiscalYearService.getTransactionsForFiscalYear(clubId!, fiscalYear);
 
     const stats: YearStats = {
@@ -172,9 +190,9 @@ export function FiscalYearProvider({ children }: { children: ReactNode }) {
       // Clear cache
       setStatsCache(new Map());
 
-      console.log('🔄 FiscalYear Context: Refreshed');
+      logger.debug('🔄 FiscalYear Context: Refreshed');
     } catch (err) {
-      console.error('❌ FiscalYear Context: Refresh error', err);
+      logger.error('❌ FiscalYear Context: Refresh error', err);
     }
   };
 
@@ -191,7 +209,7 @@ export function FiscalYearProvider({ children }: { children: ReactNode }) {
   // ============================================================================
 
   const handleSetSelectedFiscalYear = (fy: FiscalYear | null) => {
-    console.log('🔄 Changement d\'année fiscale, invalidation du cache dashboard...');
+    logger.debug('🔄 Changement d\'année fiscale, invalidation du cache dashboard...');
     setSelectedFiscalYear(fy);
 
     // ✅ Invalidation du cache React Query - TOUTES les données du dashboard
@@ -206,7 +224,7 @@ export function FiscalYearProvider({ children }: { children: ReactNode }) {
     queryClient.invalidateQueries({ queryKey: ['yearOverYearData', clubId] });
     queryClient.invalidateQueries({ queryKey: ['balanceCurrent', clubId] });
     queryClient.invalidateQueries({ queryKey: ['balanceSavings', clubId] });
-    console.log('✅ Cache dashboard invalidé après changement d\'année fiscale!');
+    logger.debug('✅ Cache dashboard invalidé après changement d\'année fiscale!');
   };
 
   // ============================================================================
@@ -222,6 +240,8 @@ export function FiscalYearProvider({ children }: { children: ReactNode }) {
     canModify,
     loading,
     error,
+    disableFiscalYearFilter,
+    setDisableFiscalYearFilter,
     setSelectedFiscalYear: handleSetSelectedFiscalYear,
     refreshFiscalYears,
     resetToCurrentYear,

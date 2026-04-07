@@ -84,7 +84,7 @@ export function AuditLogList({ logs, users }: AuditLogListProps) {
     if (action.includes('SUSPENDED') || action.includes('DEACTIVATED')) {
       return 'text-orange-600 bg-orange-50';
     }
-    return 'text-gray-600 bg-gray-50';
+    return 'text-gray-600 dark:text-dark-text-secondary bg-gray-50 dark:bg-dark-bg-tertiary';
   };
 
   const getActionLabel = (action: AuditAction): string => {
@@ -272,7 +272,7 @@ export function AuditLogList({ logs, users }: AuditLogListProps) {
                     'h-9 cursor-pointer transition-colors',
                     selectedLog?.id === log.id
                       ? 'bg-blue-50'
-                      : 'hover:bg-gray-50'
+                      : 'hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary'
                   )}
                 >
                   {/* Icône */}
@@ -327,7 +327,7 @@ export function AuditLogList({ logs, users }: AuditLogListProps) {
             />
 
             {/* Panneau */}
-            <div className="fixed right-0 top-0 bottom-0 w-[400px] bg-white dark:bg-dark-bg-secondary shadow-2xl z-50 overflow-y-auto">
+            <div className="fixed right-0 top-0 bottom-0 w-full md:w-[400px] bg-white dark:bg-dark-bg-secondary shadow-2xl z-50 overflow-y-auto">
               {/* Header */}
               <div className="sticky top-0 bg-white dark:bg-dark-bg-secondary border-b border-gray-200 dark:border-dark-border p-4 flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary">Détails de l'activité</h3>

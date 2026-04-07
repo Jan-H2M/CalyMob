@@ -30,7 +30,7 @@ export function DarkModeToggle() {
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
           "flex items-center gap-2 px-3 py-2 rounded-lg transition-colors",
-          "hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary",
+          "hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary",
           "text-gray-700 dark:text-dark-text-primary text-sm font-medium"
         )}
         title={`Thème: ${currentOption?.label || 'Inconnu'}`}
@@ -72,7 +72,7 @@ export function DarkModeToggle() {
                   className={cn(
                     "w-full flex items-center gap-3 px-4 py-2.5",
                     "text-left text-sm transition-colors",
-                    "hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary",
+                    "hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary",
                     isActive
                       ? "text-calypso-blue dark:text-calypso-aqua font-medium"
                       : "text-gray-700 dark:text-dark-text-primary"

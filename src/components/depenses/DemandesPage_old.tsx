@@ -16,7 +16,6 @@ import {
 } from 'lucide-react';
 import { formatMontant, formatDate, cn, STATUS_COLORS } from '@/utils/utils';
 import { TransactionBancaire, DemandeRemboursement, MatchedEntity } from '@/types';
-import { VPDiveReconciliationModal } from '../banque/VPDiveReconciliationModal';
 import { ReconciliationService } from '@/services/reconciliationService';
 import toast from 'react-hot-toast';
 
@@ -139,7 +138,6 @@ export function DemandesPage() {
   const [activeView, setActiveView] = useState<'demandes' | 'matching'>('demandes');
   const [selectedDemande, setSelectedDemande] = useState<DemandeRemboursement | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<TransactionBancaire | null>(null);
-  const [showVPDiveModal, setShowVPDiveModal] = useState(false);
   const [expenseTransactions, setExpenseTransactions] = useState<TransactionBancaire[]>(demoExpenseTransactions);
   const [allDemandes, setAllDemandes] = useState<DemandeRemboursement[]>(demandes);
 
@@ -209,8 +207,6 @@ export function DemandesPage() {
   const handleAutoMatch = async () => {
     const results = await ReconciliationService.performAutoReconciliation(
       expenseTransactions,
-      undefined,
-      undefined,
       allDemandes.filter(d => d.statut === 'approuve')
     );
 
@@ -257,7 +253,7 @@ export function DemandesPage() {
               "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
               filterStatut === '' 
                 ? "bg-calypso-blue text-white" 
-                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                : "bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary hover:bg-gray-200"
             )}
           >
             Toutes ({demandes.length})
@@ -268,7 +264,7 @@ export function DemandesPage() {
               "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
               filterStatut === 'soumis' 
                 ? "bg-blue-600 text-white" 
-                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                : "bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary hover:bg-gray-200"
             )}
           >
             En attente ({demandes.filter(d => d.statut === 'soumis').length})
@@ -279,7 +275,7 @@ export function DemandesPage() {
               "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
               filterStatut === 'approuve' 
                 ? "bg-green-600 text-white" 
-                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                : "bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary hover:bg-gray-200"
             )}
           >
             Approuvées ({demandes.filter(d => d.statut === 'approuve').length})
@@ -290,7 +286,7 @@ export function DemandesPage() {
               "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
               filterStatut === 'rembourse' 
                 ? "bg-gray-600 text-white" 
-                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                : "bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary hover:bg-gray-200"
             )}
           >
             Remboursées ({demandes.filter(d => d.statut === 'rembourse').length})
@@ -427,7 +423,7 @@ export function DemandesPage() {
                 <button
                   type="button"
                   onClick={() => setShowNewForm(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors"
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors"
                 >
                   Annuler
                 </button>

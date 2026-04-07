@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { logger } from '@/utils/logger';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -43,9 +44,9 @@ export function AITestPage() {
     if (!file) return;
 
     setIsAnalyzing(true);
-    console.log('=== Starting AI Analysis ===');
-    console.log('File:', file.name, file.type, file.size);
-    console.log('AI Config:', aiConfig);
+    logger.debug('=== Starting AI Analysis ===');
+    logger.debug('File:', file.name, file.type, file.size);
+    logger.debug('AI Config:', aiConfig);
 
     try {
       const result = await aiDocumentService.analyzeDocument(file, {
@@ -59,8 +60,8 @@ export function AITestPage() {
         ]
       });
 
-      console.log('=== Analysis Result ===');
-      console.log(result);
+      logger.debug('=== Analysis Result ===');
+      logger.debug(result);
 
       setAnalysis(result);
 
@@ -70,7 +71,7 @@ export function AITestPage() {
         toast.error(`Erreur: ${result.error}`);
       }
     } catch (error) {
-      console.error('Analysis error:', error);
+      logger.error('Analysis error:', error);
       toast.error('Erreur lors de l\'analyse');
     } finally {
       setIsAnalyzing(false);
@@ -116,7 +117,7 @@ export function AITestPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left Panel - Upload & Preview */}
           <div className="space-y-4">
             {/* Upload */}
@@ -212,7 +213,7 @@ export function AITestPage() {
                 <p>Les résultats apparaîtront ici</p>
               </div>
             ) : analysis.status === 'error' ? (
-              <div className="p-4 bg-red-50 rounded-lg">
+              <div role="alert" className="p-4 bg-red-50 rounded-lg">
                 <div className="flex items-center gap-2 text-red-800">
                   <AlertCircle className="h-5 w-5" />
                   <p className="font-medium">Erreur lors de l'analyse</p>

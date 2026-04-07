@@ -1,6 +1,7 @@
 import { db } from '@/lib/firebase';
 import { collection, doc, setDoc, Timestamp, serverTimestamp } from 'firebase/firestore';
 import { TransactionBancaire, Sale, Order } from '@/types';
+import { logger } from '@/utils/logger';
 
 /**
  * Service pour générer des transactions bancaires depuis les opérations d'inventaire
@@ -98,10 +99,10 @@ export class InventoryTransactionService {
         id: newTransactionRef.id
       });
 
-      console.log(`Transaction créée depuis vente: ${newTransactionRef.id} (${sale.montant_total} €)`);
+      logger.debug(`Transaction créée depuis vente: ${newTransactionRef.id} (${sale.montant_total} €)`);
       return newTransactionRef.id;
     } catch (error) {
-      console.error('Erreur création transaction depuis vente:', error);
+      logger.error('Erreur création transaction depuis vente:', error);
       throw error;
     }
   }
@@ -182,10 +183,10 @@ export class InventoryTransactionService {
         id: newTransactionRef.id
       });
 
-      console.log(`Transaction créée depuis commande: ${newTransactionRef.id} (-${order.montant_total} €)`);
+      logger.debug(`Transaction créée depuis commande: ${newTransactionRef.id} (-${order.montant_total} €)`);
       return newTransactionRef.id;
     } catch (error) {
-      console.error('Erreur création transaction depuis commande:', error);
+      logger.error('Erreur création transaction depuis commande:', error);
       throw error;
     }
   }
@@ -282,10 +283,10 @@ export class InventoryTransactionService {
         id: newTransactionRef.id
       });
 
-      console.log(`Transaction caution créée depuis prêt: ${newTransactionRef.id} (${loanData.montant_caution} €)`);
+      logger.debug(`Transaction caution créée depuis prêt: ${newTransactionRef.id} (${loanData.montant_caution} €)`);
       return newTransactionRef.id;
     } catch (error) {
-      console.error('Erreur création transaction depuis prêt:', error);
+      logger.error('Erreur création transaction depuis prêt:', error);
       throw error;
     }
   }
@@ -382,10 +383,10 @@ export class InventoryTransactionService {
         id: newTransactionRef.id
       });
 
-      console.log(`Transaction remboursement créée depuis retour prêt: ${newTransactionRef.id} (-${returnData.caution_retournee} €)`);
+      logger.debug(`Transaction remboursement créée depuis retour prêt: ${newTransactionRef.id} (-${returnData.caution_retournee} €)`);
       return newTransactionRef.id;
     } catch (error) {
-      console.error('Erreur création transaction depuis retour prêt:', error);
+      logger.error('Erreur création transaction depuis retour prêt:', error);
       throw error;
     }
   }

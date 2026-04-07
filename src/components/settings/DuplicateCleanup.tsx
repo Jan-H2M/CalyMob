@@ -6,6 +6,7 @@ import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatMontant, formatDate, cn } from '@/utils/utils';
 import toast from 'react-hot-toast';
+import { logger } from '@/utils/logger';
 
 interface DuplicateGroup {
   numero_sequence: string;
@@ -50,13 +51,13 @@ export function DuplicateCleanup() {
     setShowResults(false);
 
     try {
-      console.log('🔍 Scanning for duplicate transactions...');
+      logger.debug('🔍 Scanning for duplicate transactions...');
 
       // Load all transactions
       const transactionsRef = collection(db, 'clubs', clubId, 'transactions_bancaires');
       const snapshot = await getDocs(transactionsRef);
 
-      console.log(`📥 Loaded ${snapshot.size} transactions`);
+      logger.debug(`📥 Loaded ${snapshot.size} transactions`);
 
       // Group by numero_sequence
       const groups = new Map<string, TransactionBancaire[]>();
@@ -102,7 +103,7 @@ export function DuplicateCleanup() {
         }
       });
 
-      console.log(`✅ Found ${duplicates.length} duplicate groups`);
+      logger.debug(`✅ Found ${duplicates.length} duplicate groups`);
 
       setDuplicateGroups(duplicates);
       setShowResults(true);
@@ -117,7 +118,7 @@ export function DuplicateCleanup() {
       }
 
     } catch (error) {
-      console.error('Error scanning for duplicates:', error);
+      logger.error('Error scanning for duplicates:', error);
       toast.error('Erreur lors de la recherche de doublons');
     } finally {
       setScanning(false);
@@ -144,7 +145,7 @@ export function DuplicateCleanup() {
     setCleanProgress({ current: 0, total: totalToDelete });
 
     try {
-      console.log(`🗑️  Starting cleanup of ${totalToDelete} duplicate transactions...`);
+      logger.debug(`🗑️  Starting cleanup of ${totalToDelete} duplicate transactions...`);
 
       let deleted = 0;
 
@@ -157,12 +158,12 @@ export function DuplicateCleanup() {
 
           // Log progress every 50 deletions
           if (deleted % 50 === 0) {
-            console.log(`   ${deleted}/${totalToDelete} suppressions effectuées...`);
+            logger.debug(`   ${deleted}/${totalToDelete} suppressions effectuées...`);
           }
         }
       }
 
-      console.log(`✅ ${deleted} transactions supprimées avec succès !`);
+      logger.debug(`✅ ${deleted} transactions supprimées avec succès !`);
 
       toast.success(`${deleted} transactions supprimées avec succès ! 🎉`, {
         duration: 5000
@@ -173,7 +174,7 @@ export function DuplicateCleanup() {
       setShowResults(false);
 
     } catch (error) {
-      console.error('Error cleaning duplicates:', error);
+      logger.error('Error cleaning duplicates:', error);
       toast.error('Erreur lors du nettoyage des doublons');
     } finally {
       setCleaning(false);
@@ -287,7 +288,7 @@ export function DuplicateCleanup() {
                   Groupes de doublons ({duplicateGroups.length})
                 </h3>
 
-                <div className="space-y-4 max-h-[600px] overflow-y-auto">
+                <div className="space-y-4 max-h-[60vh] md:max-h-[600px] overflow-y-auto">
                   {duplicateGroups.slice(0, 20).map((group, idx) => (
                     <div
                       key={group.numero_sequence}
@@ -352,7 +353,7 @@ export function DuplicateCleanup() {
                               "flex items-center justify-between p-3 rounded-lg",
                               txIdx % 2 === 0
                                 ? "bg-white dark:bg-dark-bg-secondary"
-                                : "bg-gray-100 dark:bg-dark-bg-primary"
+                                : "bg-gray-100 dark:bg-dark-bg-tertiary dark:bg-dark-bg-primary"
                             )}
                           >
                             <div className="flex-1 grid grid-cols-3 gap-4">

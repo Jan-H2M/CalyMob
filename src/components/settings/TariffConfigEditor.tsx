@@ -1,13 +1,17 @@
+import { logger } from '@/utils/logger';
 /**
  * Tariff Config Editor
  * Embedded component for managing tariffs (add/remove/edit)
  * Used in LocationDetailView and (future) OperationFormModal
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Trash2, Star, MapPin } from 'lucide-react';
 import { Tariff, TariffCategory, CATEGORY_LABELS } from '@/types/tariff.types';
 import { cn } from '@/utils/utils';
+import { getValueList, sortValueListItems } from '@/services/valueListService';
+import type { ValueList, ValueListItem } from '@/types/valueList.types';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface TariffConfigEditorProps {
   tariffs: Tariff[];
@@ -16,11 +20,54 @@ interface TariffConfigEditorProps {
 }
 
 export function TariffConfigEditor({ tariffs, onChange, disabled = false }: TariffConfigEditorProps) {
+  const { clubId } = useAuth();
+  const [valueList, setValueList] = useState<ValueList | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Load value list from Firestore
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadValueList() {
+      if (!clubId) return;
+
+      try {
+        setLoading(true);
+        const list = await getValueList(clubId, 'fonction');
+        if (mounted) {
+          setValueList(list);
+        }
+      } catch (err) {
+        logger.error('Error loading fonction value list:', err);
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadValueList();
+
+    return () => {
+      mounted = false;
+    };
+  }, [clubId]);
+
+  // Get sorted active items
+  const sortedItems = valueList ? sortValueListItems(valueList.items) : [];
+
+  // Helper to get label from value
+  const getCategoryLabel = (categoryValue: string): string => {
+    const item = sortedItems.find(i => i.value === categoryValue);
+    return item?.label || CATEGORY_LABELS[categoryValue] || categoryValue;
+  };
+
   const handleAddTariff = () => {
-    const category: TariffCategory = 'membre';
+    // Use first available value list item or fallback to 'membre'
+    const category = sortedItems.length > 0 ? sortedItems[0].value : 'membre';
     const newTariff: Tariff = {
       id: `tariff_${Date.now()}`,
-      label: CATEGORY_LABELS[category], // Auto-generate label from category
+      label: getCategoryLabel(category),
       category: category,
       price: 0,
       is_default: tariffs.length === 0, // First tariff is default
@@ -29,13 +76,13 @@ export function TariffConfigEditor({ tariffs, onChange, disabled = false }: Tari
     onChange([...tariffs, newTariff]);
   };
 
-  const handleUpdateTariff = (index: number, field: keyof Tariff, value: any) => {
+  const handleUpdateTariff = (index: number, field: keyof Tariff, value: string | number | boolean) => {
     const updated = [...tariffs];
     updated[index] = { ...updated[index], [field]: value };
 
     // Auto-update label when category changes
     if (field === 'category') {
-      updated[index].label = CATEGORY_LABELS[value as TariffCategory];
+      updated[index].label = getCategoryLabel(value as string);
     }
 
     onChange(updated);
@@ -83,15 +130,31 @@ export function TariffConfigEditor({ tariffs, onChange, disabled = false }: Tari
               ⋮
             </div>
 
-            {/* Category */}
+            {/* Category - Dynamic from value list */}
             <select
               value={tariff.category}
-              onChange={(e) => handleUpdateTariff(index, 'category', e.target.value as TariffCategory)}
-              disabled={disabled}
+              onChange={(e) => handleUpdateTariff(index, 'category', e.target.value)}
+              disabled={disabled || loading}
               className="flex-1 px-2 py-1 text-sm border border-gray-300 dark:border-dark-border bg-white dark:bg-dark-bg-secondary text-gray-900 dark:text-dark-text-primary rounded focus:ring-1 focus:ring-purple-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <option value="membre">{CATEGORY_LABELS.membre}</option>
-              <option value="encadrant">{CATEGORY_LABELS.encadrant}</option>
+              {loading ? (
+                <option>Chargement...</option>
+              ) : sortedItems.length > 0 ? (
+                sortedItems.map(item => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))
+              ) : (
+                // Fallback to hardcoded options if value list not available
+                <>
+                  <option value="membre">{CATEGORY_LABELS.membre}</option>
+                  <option value="encadrant">{CATEGORY_LABELS.encadrant}</option>
+                  <option value="ca">{CATEGORY_LABELS.ca}</option>
+                  <option value="accueil">{CATEGORY_LABELS.accueil}</option>
+
+                </>
+              )}
             </select>
 
             {/* Price */}
@@ -117,7 +180,7 @@ export function TariffConfigEditor({ tariffs, onChange, disabled = false }: Tari
                   "p-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
                   tariff.is_default
                     ? "text-yellow-500 hover:text-yellow-600"
-                    : "text-gray-400 hover:text-yellow-500"
+                    : "text-gray-400 dark:text-dark-text-muted hover:text-yellow-500"
                 )}
                 title="Définir comme tarif par défaut"
               >
@@ -128,7 +191,7 @@ export function TariffConfigEditor({ tariffs, onChange, disabled = false }: Tari
               <button
                 onClick={() => handleRemoveTariff(index)}
                 disabled={disabled}
-                className="p-1 text-gray-400 hover:text-red-600 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="p-1 text-gray-400 dark:text-dark-text-muted hover:text-red-600 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Supprimer ce tarif"
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -141,7 +204,7 @@ export function TariffConfigEditor({ tariffs, onChange, disabled = false }: Tari
       {/* Empty State */}
       {tariffs.length === 0 && (
         <div className="text-center py-8 bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg border border-gray-200 dark:border-dark-border">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gray-100 dark:bg-dark-bg-secondary mb-2">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gray-100 dark:bg-dark-bg-tertiary dark:bg-dark-bg-secondary mb-2">
             <MapPin className="h-6 w-6 text-gray-400 dark:text-dark-text-muted" />
           </div>
           <p className="text-sm text-gray-500 dark:text-dark-text-muted">

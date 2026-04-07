@@ -1,5 +1,6 @@
 import { Evenement, Membre, Categorie, TransactionBancaire } from '@/types';
 import { extractSequenceFromFilename, findTransactionBySequence } from './transactionMatchingService';
+import { logger } from '@/utils/logger';
 
 /**
  * Extrait la date depuis le nom de fichier au format YYMMDD
@@ -17,7 +18,7 @@ export function extractDateFromFilename(filename: string): Date | null {
   const match = filename.match(/(\d{2})(\d{2})(\d{2})/);
 
   if (!match) {
-    console.log(`ℹ️ Aucune date trouvée dans "${filename}"`);
+    logger.debug(`ℹ️ Aucune date trouvée dans "${filename}"`);
     return null;
   }
 
@@ -28,12 +29,12 @@ export function extractDateFromFilename(filename: string): Date | null {
 
   // Validation des valeurs
   if (month < 0 || month > 11) {
-    console.log(`⚠️ Mois invalide dans "${filename}": ${parseInt(mm)}`);
+    logger.debug(`⚠️ Mois invalide dans "${filename}": ${parseInt(mm)}`);
     return null;
   }
 
   if (day < 1 || day > 31) {
-    console.log(`⚠️ Jour invalide dans "${filename}": ${day}`);
+    logger.debug(`⚠️ Jour invalide dans "${filename}": ${day}`);
     return null;
   }
 
@@ -41,11 +42,11 @@ export function extractDateFromFilename(filename: string): Date | null {
 
   // Vérifier que la date est valide (ex: 30 février n'existe pas)
   if (date.getMonth() !== month) {
-    console.log(`⚠️ Date invalide dans "${filename}": ${day}/${parseInt(mm)}/${year}`);
+    logger.debug(`⚠️ Date invalide dans "${filename}": ${day}/${parseInt(mm)}/${year}`);
     return null;
   }
 
-  console.log(`✅ Date extraite du nom "${filename}": ${date.toLocaleDateString('fr-FR')}`);
+  logger.debug(`✅ Date extraite du nom "${filename}": ${date.toLocaleDateString('fr-FR')}`);
   return date;
 }
 
@@ -70,13 +71,13 @@ export function extractDescriptionFromFilename(filename: string): string {
   if (dashIndex !== -1) {
     const description = nameWithoutExt.substring(dashIndex + 3).trim();
     if (description && description.length > 0) {
-      console.log(`✅ Description extraite du nom "${filename}": "${description}"`);
+      logger.debug(`✅ Description extraite du nom "${filename}": "${description}"`);
       return description;
     }
   }
 
   // Fallback : pas de tiret trouvé ou rien après le tiret
-  console.log(`⚠️ Aucune description trouvée dans "${filename}", utilisation de "xxxxx"`);
+  logger.debug(`⚠️ Aucune description trouvée dans "${filename}", utilisation de "xxxxx"`);
   return 'xxxxx';
 }
 
@@ -177,38 +178,38 @@ class AIDocumentService {
 
     try {
       // 🆕 ÉTAPE 1: Extraction automatique du numéro de séquence depuis le nom de fichier
-      console.log(`📄 Analyse du fichier: "${file.name}"`);
+      logger.debug(`📄 Analyse du fichier: "${file.name}"`);
       const sequence = extractSequenceFromFilename(file.name);
 
       if (sequence) {
         analysis.transaction_sequence = sequence;
-        console.log(`✅ Numéro de séquence détecté: ${sequence}`);
+        logger.debug(`✅ Numéro de séquence détecté: ${sequence}`);
 
         // 🆕 ÉTAPE 2: Recherche de la transaction correspondante
         if (options.clubId) {
-          console.log(`🔍 Recherche de la transaction avec numero_sequence="${sequence}"`);
+          logger.debug(`🔍 Recherche de la transaction avec numero_sequence="${sequence}"`);
           const transaction = await findTransactionBySequence(sequence, options.clubId);
 
           if (transaction) {
             analysis.transaction_found = true;
             analysis.transaction_id = transaction.id;
             analysis.transaction = transaction;
-            console.log(`✅ Transaction trouvée automatiquement! ID=${transaction.id}, Montant=${transaction.montant}€`);
+            logger.debug(`✅ Transaction trouvée automatiquement! ID=${transaction.id}, Montant=${transaction.montant}€`);
           } else {
             analysis.transaction_found = false;
-            console.log(`⚠️ Aucune transaction trouvée avec ce numéro de séquence`);
+            logger.debug(`⚠️ Aucune transaction trouvée avec ce numéro de séquence`);
           }
         } else {
-          console.warn(`⚠️ clubId non fourni, impossible de rechercher la transaction`);
+          logger.warn(`⚠️ clubId non fourni, impossible de rechercher la transaction`);
         }
       } else {
-        console.log(`ℹ️ Aucun numéro de séquence dans le nom du fichier`);
+        logger.debug(`ℹ️ Aucun numéro de séquence dans le nom du fichier`);
       }
 
       // ÉTAPE 3: Analyse IA du document (comme avant)
       // Si pas d'IA configurée, faire une extraction basique (non bloquante)
       if (this.apiProvider === 'mock' || !options.useAI) {
-        console.log('💡 Mode extraction basique (sans IA)');
+        logger.debug('💡 Mode extraction basique (sans IA)');
 
         // Extraire la date du nom de fichier
         const extractedDate = extractDateFromFilename(file.name);
@@ -232,14 +233,14 @@ class AIDocumentService {
           confiance: 30 // Faible confiance car extraction basique
         };
 
-        console.log('✅ Extraction basique terminée (sans appel IA)');
+        logger.debug('✅ Extraction basique terminée (sans appel IA)');
         return basicAnalysis;
       }
 
       // Convert PDF to image if needed
       let fileToAnalyze = file;
       if (file.type === 'application/pdf') {
-        console.log('Converting PDF to image...');
+        logger.debug('Converting PDF to image...');
         fileToAnalyze = await this.pdfToImage(file);
       }
 
@@ -248,7 +249,7 @@ class AIDocumentService {
 
       // Call real AI API
       if (this.apiProvider === 'openai') {
-        console.log('Calling OpenAI API for document analysis...');
+        logger.debug('Calling OpenAI API for document analysis...');
         const aiResult = await this.analyzeWithOpenAI(base64, file.name, options);
 
         // 🆕 Fusionner les résultats AI avec les infos de transaction
@@ -268,7 +269,7 @@ class AIDocumentService {
       };
 
     } catch (error) {
-      console.error('Document analysis error:', error);
+      logger.error('Document analysis error:', error);
 
       // Return error instead of mock data
       return {
@@ -383,7 +384,7 @@ class AIDocumentService {
 
     const prompt = this.buildAnalysisPrompt(options, fileName);
 
-    console.log('Making OpenAI API request via proxy...');
+    logger.debug('Making OpenAI API request via proxy...');
 
     // Call Vercel serverless function instead of direct OpenAI API
     const apiUrl = window.location.hostname === 'localhost'
@@ -405,12 +406,12 @@ class AIDocumentService {
 
     if (!response.ok) {
       const errorData = await response.json();
-      console.error('Proxy API error:', errorData);
+      logger.error('Proxy API error:', errorData);
       throw new Error(`API error: ${errorData.error || response.statusText}`);
     }
 
     const result = await response.json();
-    console.log('API response received:', result);
+    logger.debug('API response received:', result);
 
     if (!result.success || !result.data) {
       throw new Error('Invalid API response format');
@@ -425,11 +426,11 @@ class AIDocumentService {
     try {
       // Parse JSON response
       const parsed = JSON.parse(content);
-      console.log('Parsed analysis:', parsed);
+      logger.debug('Parsed analysis:', parsed);
       return this.mapAPIResponseToAnalysis(parsed);
     } catch (error) {
       // Fallback if JSON parsing fails
-      console.error('JSON parsing failed:', error, 'Content:', content);
+      logger.error('JSON parsing failed:', error, 'Content:', content);
       throw new Error('Failed to parse AI response');
     }
   }

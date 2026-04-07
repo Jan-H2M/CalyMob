@@ -44,6 +44,8 @@ export interface EmailHistoryEntry {
   sentByName?: string;            // Display name of sender
   status: EmailStatus;
   statusMessage?: string;         // Error message if failed
+  provider?: string;              // Email provider used (gmail, resend)
+  emailType?: string;             // Specific email type (bulk_invite, etc.)
 
   // Timestamps
   createdAt: Date | Timestamp;

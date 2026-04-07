@@ -11,9 +11,11 @@ import {
   where,
   orderBy,
   serverTimestamp,
-  Timestamp
+  Timestamp,
+  limit
 } from 'firebase/firestore';
-import { Operation, TypeOperation } from '@/types';
+import { Operation, TypeOperation, EventCategory } from '@/types';
+import { logger } from '@/utils/logger';
 
 /**
  * Service de gestion des opérations (événements, cotisations, dons, ventes, subventions)
@@ -44,18 +46,73 @@ export class OperationService {
 
   /**
    * Mettre à jour une opération
+   * @param auditInfo Optional audit information for field tracking
    */
   static async updateOperation(
     clubId: string,
     operationId: string,
-    updates: Partial<Operation>
+    updates: Partial<Operation>,
+    auditInfo?: {
+      userId: string;
+      userName: string;
+      currentOperation?: Operation;
+      fieldsToAudit?: string[];
+    }
   ): Promise<void> {
     const operationRef = doc(db, 'clubs', clubId, 'operations', operationId);
 
-    await updateDoc(operationRef, {
+    // Build the update object
+    const firestoreUpdates: any = {
       ...updates,
       updated_at: serverTimestamp()
-    });
+    };
+
+    // ✅ Add field audit trail if audit info provided
+    if (auditInfo && auditInfo.currentOperation) {
+      const criticalFields = auditInfo.fieldsToAudit || ['montant_prevu', 'statut', 'date_debut', 'date_fin', 'titre'];
+      const auditEntries: any[] = [];
+
+      for (const field of criticalFields) {
+        const oldValue = auditInfo.currentOperation[field as keyof Operation];
+        const newValue = updates[field as keyof Operation];
+
+        if (field in updates && oldValue !== newValue) {
+          auditEntries.push({
+            field,
+            old_value: oldValue,
+            new_value: newValue,
+            changed_by: auditInfo.userId,
+            changed_by_name: auditInfo.userName,
+            changed_at: new Date()
+          });
+        }
+      }
+
+      if (auditEntries.length > 0) {
+        firestoreUpdates.field_history = [
+          ...(auditInfo.currentOperation.field_history || []),
+          ...auditEntries
+        ];
+        firestoreUpdates.fields_modified = true;
+      }
+    }
+
+    await updateDoc(operationRef, firestoreUpdates);
+
+    // Auto-sync: propageer titel wijziging naar gedenormaliseerde documenten
+    if (
+      auditInfo?.currentOperation &&
+      updates.titre &&
+      updates.titre !== auditInfo.currentOperation.titre
+    ) {
+      try {
+        const { DenormalizationSyncService } = await import('@/services/denormalizationSyncService');
+        const result = await DenormalizationSyncService.syncOperationTitre(clubId, operationId, updates.titre);
+        logger.debug(`[OperationService] Titre sync: ${result.message}`);
+      } catch (syncError) {
+        logger.warn(`[OperationService] Titre sync failed (non-blocking):`, syncError);
+      }
+    }
   }
 
   /**
@@ -271,5 +328,79 @@ export class OperationService {
       valid: errors.length === 0,
       errors
     };
+  }
+
+  /**
+   * Convert a sequential number to 4 base-26 letters (A=0, B=1, ..., Z=25)
+   * Example: 0 → AAAA, 1 → AAAB, 6 → AAAG, 26 → AABA
+   */
+  static numberToLetterCode(n: number): string {
+    const d3 = Math.floor(n / (26 * 26 * 26)) % 26;
+    const d2 = Math.floor(n / (26 * 26)) % 26;
+    const d1 = Math.floor(n / 26) % 26;
+    const d0 = n % 26;
+    return String.fromCharCode(65 + d3)
+      + String.fromCharCode(65 + d2)
+      + String.fromCharCode(65 + d1)
+      + String.fromCharCode(65 + d0);
+  }
+
+  /**
+   * Decode 4 base-26 letters back to a sequential number
+   * Example: AAAB → 1, AAAG → 6, AABA → 26
+   */
+  static letterCodeToNumber(code: string): number {
+    return (code.charCodeAt(0) - 65) * 26 * 26 * 26
+      + (code.charCodeAt(1) - 65) * 26 * 26
+      + (code.charCodeAt(2) - 65) * 26
+      + (code.charCodeAt(3) - 65);
+  }
+
+  /**
+   * Generate a unique event number for bank reconciliation
+   * Format: PXXXX for dive events (plongee), SXXXX for other events (sortie)
+   * Uses base-26 letter encoding (no digits) for banking compatibility
+   *
+   * Examples: PAAAB (dive #1), PAAAG (dive #6), SAAAE (sortie #4)
+   * Letter codes sort alphabetically and are deterministic/reversible.
+   *
+   * @param clubId - Club ID
+   * @param isDiveEvent - True if this is a dive event (plongee), false for other events (sortie)
+   * @returns A unique 5-letter event code starting with P (dive) or S (other)
+   */
+  static async generateEventNumber(clubId: string, isDiveEvent: boolean): Promise<string> {
+    const prefix = isDiveEvent ? 'P' : 'S';
+
+    // Query all operations with event_number in this prefix range
+    // Letter codes sort alphabetically: PAAAA < PAAAB < ... < PZZZZ
+    const operationsRef = collection(db, 'clubs', clubId, 'operations');
+    const q = query(
+      operationsRef,
+      where('event_number', '>=', prefix + 'AAAA'),
+      where('event_number', '<=', prefix + 'ZZZZ'),
+      orderBy('event_number', 'desc'),
+      limit(1)
+    );
+
+    const snapshot = await getDocs(q);
+
+    if (snapshot.empty) {
+      // First event of this type - start at 1 (AAAB)
+      return prefix + this.numberToLetterCode(1);
+    }
+
+    // Get the highest existing code and increment
+    const lastEventNumber = snapshot.docs[0].data().event_number as string;
+    const lastNumber = this.letterCodeToNumber(lastEventNumber.substring(1));
+    const nextNumber = lastNumber + 1;
+
+    return prefix + this.numberToLetterCode(nextNumber);
+  }
+
+  /**
+   * Check if an operation is a dive event based on event_category
+   */
+  static isDiveEvent(operation: Partial<Operation>): boolean {
+    return operation.type === 'evenement' && operation.event_category === 'plongee';
   }
 }

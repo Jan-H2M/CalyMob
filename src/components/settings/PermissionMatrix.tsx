@@ -126,12 +126,12 @@ export function PermissionMatrix({ roles, onPermissionToggle, readOnly = false }
 
   const getRoleColor = (role: UserRole): string => {
     const colors: Record<UserRole, string> = {
-      user: 'text-gray-700 bg-gray-50',
+      user: 'text-gray-700 dark:text-dark-text-primary bg-gray-50 dark:bg-dark-bg-tertiary',
       validateur: 'text-blue-700 bg-blue-50',
       admin: 'text-orange-700 bg-orange-50',
       superadmin: 'text-purple-700 bg-purple-50'
     };
-    return colors[role] || 'text-gray-700 bg-gray-50';
+    return colors[role] || 'text-gray-700 dark:text-dark-text-primary bg-gray-50 dark:bg-dark-bg-tertiary';
   };
 
   const handleToggle = (role: UserRole, permission: Permission) => {
@@ -153,7 +153,7 @@ export function PermissionMatrix({ roles, onPermissionToggle, readOnly = false }
                 <th
                   key={role}
                   className={cn(
-                    'px-4 py-3 text-center text-sm font-medium border-l border-gray-200',
+                    'px-4 py-3 text-center text-sm font-medium border-l border-gray-200 dark:border-dark-border',
                     getRoleColor(role)
                   )}
                 >
@@ -186,9 +186,9 @@ export function PermissionMatrix({ roles, onPermissionToggle, readOnly = false }
                   <tr
                     key={perm.id}
                     className={cn(
-                      'border-b border-gray-100 hover:bg-gray-50 transition-colors',
+                      'border-b border-gray-100 hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors',
                       permIndex === group.permissions.length - 1 && groupIndex !== permissionGroups.length - 1
-                        ? 'border-b-2 border-gray-200'
+                        ? 'border-b-2 border-gray-200 dark:border-dark-border'
                         : ''
                     )}
                   >
@@ -229,8 +229,8 @@ export function PermissionMatrix({ roles, onPermissionToggle, readOnly = false }
                       } else if (locked) {
                         // Standard locked (superadmin critical perms)
                         icon = <Lock className="w-4 h-4" />;
-                        bgColor = 'bg-gray-100';
-                        textColor = 'text-gray-400';
+                        bgColor = 'bg-gray-100 dark:bg-dark-bg-tertiary';
+                        textColor = 'text-gray-400 dark:text-dark-text-muted';
                         tooltip = 'Permission verrouillée pour ce rôle';
                       } else if (checked) {
                         // Standard checked
@@ -241,8 +241,8 @@ export function PermissionMatrix({ roles, onPermissionToggle, readOnly = false }
                       } else {
                         // Standard unchecked
                         icon = <X className="w-5 h-5" />;
-                        bgColor = 'bg-gray-100';
-                        textColor = 'text-gray-400';
+                        bgColor = 'bg-gray-100 dark:bg-dark-bg-tertiary';
+                        textColor = 'text-gray-400 dark:text-dark-text-muted';
                         tooltip = 'Cliquer pour ajouter';
                       }
 

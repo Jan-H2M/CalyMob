@@ -1,20 +1,23 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
 import {
   BookOpen,
-  Users,
+  Shield,
   Sparkles,
   Settings as SettingsIcon,
-  Package,
   Mail,
   Key,
   MapPin,
-  FileSpreadsheet,
-  Shield,
-  Brain,
   List as ListIcon,
-  Database
+  Clock,
+  Smartphone,
+  Wrench,
+  Building2,
+  Banknote,
+  Anchor,
+  CreditCard,
+  FileBarChart,
+  Bug,
 } from 'lucide-react';
 
 interface SettingsCard {
@@ -29,10 +32,18 @@ interface SettingsCard {
 
 export function SettingsDashboard() {
   const navigate = useNavigate();
-  const { appUser } = useAuth();
 
-  // Alphabetically sorted cards
+  // Alphabetically sorted cards by title
   const baseCards: SettingsCard[] = [
+    {
+      id: 'app-adoption',
+      title: 'App CalyMob',
+      description: 'Statistiques d\'adoption et utilisation de l\'app mobile',
+      icon: <Smartphone className="h-8 w-8" />,
+      iconBg: 'bg-indigo-100 dark:bg-indigo-900/30',
+      iconColor: 'text-indigo-600 dark:text-indigo-400',
+      route: '/parametres/app-adoption'
+    },
     {
       id: 'automatisation',
       title: 'Catégorisation Intelligente',
@@ -61,6 +72,15 @@ export function SettingsDashboard() {
       route: '/parametres/comptabilite'
     },
     {
+      id: 'cotisations',
+      title: 'Cotisations',
+      description: 'Tarifs de cotisation par saison et catégorie de membre',
+      icon: <CreditCard className="h-8 w-8" />,
+      iconBg: 'bg-emerald-100 dark:bg-emerald-900/30',
+      iconColor: 'text-emerald-600 dark:text-emerald-400',
+      route: '/parametres/cotisations'
+    },
+    {
       id: 'evenements',
       title: 'Événements',
       description: 'Gestion des lieux de plongée et tarifs',
@@ -68,6 +88,24 @@ export function SettingsDashboard() {
       iconBg: 'bg-purple-100 dark:bg-purple-900/30',
       iconColor: 'text-purple-600 dark:text-purple-400',
       route: '/parametres/evenements'
+    },
+    {
+      id: 'fournisseurs',
+      title: 'Fournisseurs',
+      description: 'Gestion des fournisseurs externes pour les remboursements',
+      icon: <Building2 className="h-8 w-8" />,
+      iconBg: 'bg-orange-100 dark:bg-orange-900/30',
+      iconColor: 'text-orange-600 dark:text-orange-400',
+      route: '/parametres/fournisseurs'
+    },
+    {
+      id: 'regles-lifras',
+      title: 'Règles LIFRAS',
+      description: 'Règles de composition des palanquées (MIL 2026)',
+      icon: <Anchor className="h-8 w-8" />,
+      iconBg: 'bg-sky-100 dark:bg-sky-900/30',
+      iconColor: 'text-sky-600 dark:text-sky-400',
+      route: '/parametres/regles-lifras'
     },
     {
       id: 'listes',
@@ -79,21 +117,30 @@ export function SettingsDashboard() {
       route: '/parametres/listes-valeurs'
     },
     {
-      id: 'membres',
-      title: 'Membres & Sécurité',
-      description: 'Gestion des membres, permissions, rôles et sécurité de session',
-      icon: <Users className="h-8 w-8" />,
+      id: 'securite',
+      title: 'Sécurité & Permissions',
+      description: 'Gestion des permissions, rôles et sécurité de session',
+      icon: <Shield className="h-8 w-8" />,
       iconBg: 'bg-green-100 dark:bg-green-900/30',
       iconColor: 'text-green-600 dark:text-green-400',
       route: '/parametres/utilisateurs'
+    },
+    {
+      id: 'bank',
+      title: 'Banque / IBAN',
+      description: 'Compte bancaire pour les paiements EPC QR',
+      icon: <Banknote className="h-8 w-8" />,
+      iconBg: 'bg-emerald-100 dark:bg-emerald-900/30',
+      iconColor: 'text-emerald-600 dark:text-emerald-400',
+      route: '/parametres/bank'
     },
     {
       id: 'general',
       title: 'Paramètres Généraux',
       description: 'Club, devise, seuils',
       icon: <SettingsIcon className="h-8 w-8" />,
-      iconBg: 'bg-gray-100 dark:bg-gray-900/30',
-      iconColor: 'text-gray-600 dark:text-gray-400',
+      iconBg: 'bg-gray-100 dark:bg-dark-bg-tertiary dark:bg-gray-900/30',
+      iconColor: 'text-gray-600 dark:text-dark-text-secondary dark:text-dark-text-muted',
       route: '/parametres/general'
     },
     {
@@ -104,24 +151,56 @@ export function SettingsDashboard() {
       iconBg: 'bg-blue-100 dark:bg-blue-900/30',
       iconColor: 'text-blue-600 dark:text-blue-400',
       route: '/parametres/integrations'
+    },
+    {
+      id: 'compatibility',
+      title: 'Compatibilité',
+      description: 'Versions apps/browsers supportées (CalyMob & CalyCompta)',
+      icon: <Smartphone className="h-8 w-8" />,
+      iconBg: 'bg-teal-100 dark:bg-teal-900/30',
+      iconColor: 'text-teal-600 dark:text-teal-400',
+      route: '/parametres/compatibilite'
+    },
+    {
+      id: 'maintenance',
+      title: 'Maintenance',
+      description: 'Contrôle de version, force refresh et nettoyage de données',
+      icon: <Wrench className="h-8 w-8" />,
+      iconBg: 'bg-red-100 dark:bg-red-900/30',
+      iconColor: 'text-red-600 dark:text-red-400',
+      route: '/parametres/maintenance'
+    },
+    {
+      id: 'automated-jobs',
+      title: 'Tâches Automatisées',
+      description: 'Jobs planifiés pour la maintenance et l\'automatisation',
+      icon: <Clock className="h-8 w-8" />,
+      iconBg: 'bg-amber-100 dark:bg-amber-900/30',
+      iconColor: 'text-amber-600 dark:text-amber-400',
+      route: '/parametres/taches-automatisees'
+    },
+    {
+      id: 'rapports',
+      title: 'Rapports & Exports',
+      description: 'Exports comptables, statistiques membres et rapports',
+      icon: <FileBarChart className="h-8 w-8" />,
+      iconBg: 'bg-emerald-100 dark:bg-emerald-900/30',
+      iconColor: 'text-emerald-600 dark:text-emerald-400',
+      route: '/rapports'
+    },
+    {
+      id: 'signalements',
+      title: 'Signalements & Bugs',
+      description: 'Gestion des signalements de bugs remontés par les utilisateurs',
+      icon: <Bug className="h-8 w-8" />,
+      iconBg: 'bg-orange-100 dark:bg-orange-900/30',
+      iconColor: 'text-orange-600 dark:text-orange-400',
+      route: '/parametres/signalements'
     }
   ];
 
-  // Add Inventaire card only for superadmin
-  const cards: SettingsCard[] = appUser?.role === 'superadmin'
-    ? [
-        ...baseCards,
-        {
-          id: 'inventaire',
-          title: 'Inventaire',
-          description: 'Configuration du matériel, checklists, cautions et emplacements',
-          icon: <Package className="h-8 w-8" />,
-          iconBg: 'bg-orange-100 dark:bg-orange-900/30',
-          iconColor: 'text-orange-600 dark:text-orange-400',
-          route: '/parametres/inventaire'
-        }
-      ]
-    : baseCards;
+  // Inventaire configuration moved to /stock/config
+  const cards = baseCards;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-dark-bg-tertiary p-6">

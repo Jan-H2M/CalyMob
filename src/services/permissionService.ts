@@ -1,6 +1,8 @@
 import { UserRole, Permission, RoleConfig, RuleEnforcedPermission } from '@/types/user.types';
 import { Membre } from '@/types';
 import { PermissionSettingsService } from './permissionSettingsService';
+import { getRole, isActive } from '@/utils/fieldMapper';
+import { logger } from '@/utils/logger';
 
 /**
  * Rule-Enforced Permissions
@@ -127,13 +129,13 @@ export class PermissionService {
 
     this.initializationPromise = (async () => {
       try {
-        console.log('🔄 Initializing permissions from Firebase...');
+        logger.debug('🔄 Initializing permissions from Firebase...');
         const settings = await PermissionSettingsService.loadPermissionSettings(clubId);
         this.roleConfigs = settings.roles;
         this.isInitialized = true;
-        console.log('✅ Permissions initialized from Firebase');
+        logger.debug('✅ Permissions initialized from Firebase');
       } catch (error) {
-        console.error('❌ Failed to initialize permissions from Firebase, using defaults:', error);
+        logger.error('❌ Failed to initialize permissions from Firebase, using defaults:', error);
         this.roleConfigs = this.getDefaultRoleConfigs();
         this.isInitialized = true;
       } finally {
@@ -234,7 +236,7 @@ export class PermissionService {
       level: 2,
       color: '#F97316', // orange-500
       icon: 'Shield',
-      canManage: ['membre', 'user', 'validateur'],
+      canManage: ['membre', 'user', 'validateur', 'admin'],
       permissions: [
         // All permissions except superadmin specific
         'users.view',
@@ -320,10 +322,25 @@ export class PermissionService {
    */
   static getRoleConfig(role: UserRole): RoleConfig {
     if (!this.isInitialized) {
-      console.warn('⚠️ Permissions not initialized, using defaults');
+      logger.warn('⚠️ Permissions not initialized, using defaults');
       this.roleConfigs = this.getDefaultRoleConfigs();
       this.isInitialized = true;
     }
+
+    // Handle undefined/null role - return 'membre' config as fallback (lowest privilege)
+    if (!role) {
+      return this.roleConfigs['membre'] || this.getDefaultRoleConfigs()['membre'];
+    }
+
+    // Fallback to defaults if role not found in loaded config (e.g., Firebase missing new roles)
+    if (!this.roleConfigs[role]) {
+      logger.warn(`⚠️ Role "${role}" not found in loaded config, using default`);
+      const defaults = this.getDefaultRoleConfigs();
+      if (defaults[role]) {
+        this.roleConfigs[role] = defaults[role];
+      }
+    }
+
     return this.roleConfigs[role];
   }
 
@@ -340,7 +357,7 @@ export class PermissionService {
    */
   static getAllRoleConfigs(): RoleConfig[] {
     if (!this.isInitialized) {
-      console.warn('⚠️ Permissions not initialized, using defaults');
+      logger.warn('⚠️ Permissions not initialized, using defaults');
       this.roleConfigs = this.getDefaultRoleConfigs();
       this.isInitialized = true;
     }
@@ -353,12 +370,10 @@ export class PermissionService {
   static hasPermission(user: Membre | null, permission: Permission): boolean {
     if (!user) return false;
 
-    // Check if user is active (support both old and new field names)
-    const isActive = user.member_status === 'active' || user.app_status === 'active' || user.isActive === true;
-    if (!isActive) return false;
+    // Use Field Mapper for consistent field access
+    if (!isActive(user)) return false;
 
-    // Get role (support both old and new field names)
-    const userRole = user.app_role || user.role;
+    const userRole = getRole(user);
     if (!userRole) return false;
 
     const roleConfig = this.getRoleConfig(userRole);
@@ -405,8 +420,8 @@ export class PermissionService {
    * Get all permissions for a user (including custom)
    */
   static getUserPermissions(user: Membre): Permission[] {
-    // Support both new (app_role) and legacy (role) fields
-    const userRole = user.app_role || user.role || 'user';
+    // Use Field Mapper for consistent field access
+    const userRole = getRole(user);
     const rolePermissions = this.getRolePermissions(userRole);
     const customPermissions = user.customPermissions || [];
 
@@ -418,10 +433,10 @@ export class PermissionService {
    * Check if a user can manage another user based on role hierarchy
    */
   static canManageUser(actor: Membre | null, targetRole: UserRole): boolean {
-    if (!actor || (!actor.isActive && !actor.actif)) return false;
-    
+    if (!actor || !isActive(actor)) return false;
+
     // SuperAdmin can manage anyone
-    const actorRole = actor.app_role || actor.role || 'user';
+    const actorRole = getRole(actor);
     if (actorRole === 'superadmin') return true;
 
     const actorConfig = this.getRoleConfig(actorRole);
@@ -432,11 +447,11 @@ export class PermissionService {
    * Check if a user can assign a specific role
    */
   static canAssignRole(actor: Membre | null, roleToAssign: UserRole): boolean {
-    if (!actor || (!actor.isActive && !actor.actif)) return false;
-    
+    if (!actor || !isActive(actor)) return false;
+
     // Only admins and superadmins can assign roles
     if (!this.hasPermission(actor, 'users.assignRole')) return false;
-    
+
     // Check if actor can manage this role
     return this.canManageUser(actor, roleToAssign);
   }
@@ -445,36 +460,38 @@ export class PermissionService {
    * Check if a user can perform an action on a target user
    */
   static canPerformAction(
-    actor: User | null, 
-    target: User, 
+    actor: Membre | null,
+    target: Membre,
     action: 'activate' | 'deactivate' | 'edit' | 'delete' | 'assignRole'
   ): boolean {
-    if (!actor || !actor.isActive) return false;
-    
+    if (!actor || !isActive(actor)) return false;
+
     // User cannot perform actions on themselves (except edit)
     if (actor.id === target.id && action !== 'edit') return false;
-    
+
+    const targetRole = getRole(target);
+
     // Check specific permissions
     switch (action) {
       case 'activate':
       case 'deactivate':
-        return this.hasPermission(actor, 'users.activate') && 
-               this.canManageUser(actor, target.role);
-      
+        return this.hasPermission(actor, 'users.activate') &&
+               this.canManageUser(actor, targetRole);
+
       case 'edit':
         // Users can edit their own profile
         if (actor.id === target.id) return true;
-        return this.hasPermission(actor, 'users.update') && 
-               this.canManageUser(actor, target.role);
-      
+        return this.hasPermission(actor, 'users.update') &&
+               this.canManageUser(actor, targetRole);
+
       case 'delete':
-        return this.hasPermission(actor, 'users.delete') && 
-               this.canManageUser(actor, target.role);
-      
+        return this.hasPermission(actor, 'users.delete') &&
+               this.canManageUser(actor, targetRole);
+
       case 'assignRole':
-        return this.hasPermission(actor, 'users.assignRole') && 
-               this.canManageUser(actor, target.role);
-      
+        return this.hasPermission(actor, 'users.assignRole') &&
+               this.canManageUser(actor, targetRole);
+
       default:
         return false;
     }
@@ -505,9 +522,10 @@ export class PermissionService {
    * Get roles that a user can assign
    */
   static getAssignableRoles(user: Membre | null): UserRole[] {
-    if (!user || !user.isActive) return [];
-    
-    const userConfig = this.getRoleConfig(user.role);
+    if (!user || !isActive(user)) return [];
+
+    const userRole = getRole(user);
+    const userConfig = this.getRoleConfig(userRole);
     return userConfig.canManage;
   }
 
@@ -573,7 +591,8 @@ export class PermissionService {
    */
   static requiresDoubleApproval(user: Membre, amount: number, threshold: number = 100): boolean {
     // Only applies to non-admin roles
-    if (user.role === 'admin' || user.role === 'superadmin') {
+    const userRole = getRole(user);
+    if (userRole === 'admin' || userRole === 'superadmin') {
       return false;
     }
 
@@ -609,13 +628,13 @@ export class PermissionService {
    */
   static getRoleBadgeClass(role: UserRole): string {
     const classes = {
-      'user': 'bg-gray-100 text-gray-700',
+      'user': 'bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary',
       'validateur': 'bg-blue-100 text-blue-700',
       'admin': 'bg-orange-100 text-orange-700',
       'superadmin': 'bg-purple-100 text-purple-700'
     };
 
-    return classes[role] || 'bg-gray-100 text-gray-700';
+    return classes[role] || 'bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary';
   }
 
   /**

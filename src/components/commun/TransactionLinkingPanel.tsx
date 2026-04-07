@@ -4,6 +4,8 @@ import { X, Search, Filter, Check, TrendingUp, TrendingDown, Link2, Calendar, Fi
 import { TransactionBancaire } from '@/types';
 import { formatMontant, formatDate, cn } from '@/utils/utils';
 import { sortTransactionsByRelevance, groupTransactionsByAmount, MatchContext } from '@/services/matchSuggestionService';
+import { logger } from '@/utils/logger';
+import { getOtherTransactionEventLinkIds } from '@/utils/operationFinancials';
 
 /**
  * TRANSACTION LINKING PANEL
@@ -41,6 +43,7 @@ interface TransactionLinkingPanelProps {
 
   // Theming
   theme?: 'blue' | 'orange';
+  onViewTransaction?: (transaction: TransactionBancaire) => void;
 }
 
 type QuickDateFilter = 'all' | 'une_semaine' | 'un_mois' | 'deux_mois';
@@ -59,7 +62,8 @@ export function TransactionLinkingPanel({
   entityDate,
   targetAmount,
   inscriptionMemberName,
-  theme = 'blue'
+  theme = 'blue',
+  onViewTransaction
 }: TransactionLinkingPanelProps) {
   const navigate = useNavigate();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -128,37 +132,11 @@ export function TransactionLinkingPanel({
 
     // Pré-remplir les dates avec la date de l'entité si disponible
     if (entityDate) {
-      // Handle both Date objects and Firestore Timestamps
-      let dateObj: Date;
-      if (entityDate instanceof Date) {
-        dateObj = entityDate;
-      } else if (typeof entityDate === 'object' && 'toDate' in entityDate) {
-        // Firestore Timestamp
-        dateObj = (entityDate as any).toDate();
-      } else {
-        // Try to parse as string or number
-        dateObj = new Date(entityDate);
-      }
-
-      // Validate date
-      if (dateObj instanceof Date && !isNaN(dateObj.getTime())) {
-        // Format date in local timezone (avoid UTC conversion issues)
-        const year = dateObj.getFullYear();
-        const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-        const day = String(dateObj.getDate()).padStart(2, '0');
-        const dateStr = `${year}-${month}-${day}`;
-
-        console.log('✅ Setting date fields - from:', '', 'to:', dateStr);
-        setDateTo(dateStr); // Date de fin = date de l'événement
-        setDateFrom(''); // Date de début vide par défaut
-        console.log('✅ After setState - dateFrom:', dateFrom, 'dateTo:', dateTo);
-      } else {
-        console.error('❌ Invalid entityDate:', entityDate);
-        setDateFrom('');
-        setDateTo('');
-      }
+      // Don't set automatic date filter - let user filter manually
+      // The entityDate is still available for relevance sorting
+      setDateFrom('');
+      setDateTo('');
     } else {
-      console.log('⚠️ No entityDate provided, clearing date fields');
       setDateFrom('');
       setDateTo('');
     }
@@ -340,6 +318,11 @@ export function TransactionLinkingPanel({
   }, [filteredTransactions, groupByAmount]);
 
   const toggleSelection = (id: string) => {
+    const transaction = filteredTransactions.find(tx => tx.id === id) || transactions.find(tx => tx.id === id);
+    if (transaction && mode === 'event' && getOtherTransactionEventLinkIds(transaction, entityId).length > 0) {
+      return;
+    }
+
     // INSCRIPTION MODE: Single-select only
     if (mode === 'inscription') {
       if (selectedIds.has(id)) {
@@ -361,7 +344,11 @@ export function TransactionLinkingPanel({
   };
 
   const selectAll = () => {
-    const allIds = new Set(filteredTransactions.map(tx => tx.id));
+    const allIds = new Set(
+      filteredTransactions
+        .filter(tx => !(mode === 'event' && getOtherTransactionEventLinkIds(tx, entityId).length > 0))
+        .map(tx => tx.id)
+    );
     setSelectedIds(allIds);
   };
 
@@ -388,7 +375,7 @@ export function TransactionLinkingPanel({
       await onLinkTransactions(Array.from(selectedIds));
       onClose();
     } catch (error) {
-      console.error('Error linking transactions:', error);
+      logger.error('Error linking transactions:', error);
     } finally {
       setSaving(false);
     }
@@ -396,6 +383,12 @@ export function TransactionLinkingPanel({
 
   const handleViewDetail = (transactionId: string, event: React.MouseEvent) => {
     event.stopPropagation(); // Prevent checkbox toggle
+
+    const transaction = transactions.find(tx => tx.id === transactionId);
+    if (transaction && onViewTransaction) {
+      onViewTransaction(transaction);
+      return;
+    }
 
     // Build return context URL params
     const params = new URLSearchParams({
@@ -411,9 +404,12 @@ export function TransactionLinkingPanel({
   };
 
   const isLinkedToOther = (tx: TransactionBancaire) => {
+    if (mode === 'event') {
+      return getOtherTransactionEventLinkIds(tx, entityId).length > 0;
+    }
+
     // Determine entity type based on mode
-    const entityTypes = mode === 'event' ? ['event']
-                      : mode === 'inscription' ? ['inscription']
+    const entityTypes = mode === 'inscription' ? ['inscription']
                       : ['expense', 'demand']; // expense can be stored as 'expense' or 'demand'
 
     return tx.matched_entities?.some(e =>
@@ -493,7 +489,7 @@ export function TransactionLinkingPanel({
                   "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
                   quickDateFilter === 'all'
                     ? `bg-${colors.primary} text-white`
-                    : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
+                    : "bg-white border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary"
                 )}
               >
                 Toutes périodes
@@ -504,7 +500,7 @@ export function TransactionLinkingPanel({
                   "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
                   quickDateFilter === 'une_semaine'
                     ? `bg-${colors.primary} text-white`
-                    : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
+                    : "bg-white border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary"
                 )}
               >
                 - 1 semaine
@@ -515,7 +511,7 @@ export function TransactionLinkingPanel({
                   "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
                   quickDateFilter === 'un_mois'
                     ? `bg-${colors.primary} text-white`
-                    : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
+                    : "bg-white border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary"
                 )}
               >
                 - 1 mois
@@ -526,7 +522,7 @@ export function TransactionLinkingPanel({
                   "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
                   quickDateFilter === 'deux_mois'
                     ? `bg-${colors.primary} text-white`
-                    : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
+                    : "bg-white border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary"
                 )}
               >
                 - 2 mois
@@ -634,7 +630,7 @@ export function TransactionLinkingPanel({
                 "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5",
                 sortField === 'date'
                   ? `bg-${colors.primary} text-white`
-                  : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  : "bg-white border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary"
               )}
             >
               <Calendar className="h-3.5 w-3.5" />
@@ -649,7 +645,7 @@ export function TransactionLinkingPanel({
                 "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5",
                 sortField === 'montant'
                   ? `bg-${colors.primary} text-white`
-                  : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  : "bg-white border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary"
               )}
             >
               💶 Montant
@@ -663,7 +659,7 @@ export function TransactionLinkingPanel({
                 "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5",
                 sortField === 'titre'
                   ? `bg-${colors.primary} text-white`
-                  : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  : "bg-white border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary"
               )}
             >
               <FileText className="h-3.5 w-3.5" />
@@ -678,7 +674,7 @@ export function TransactionLinkingPanel({
                 "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5",
                 sortField === 'pertinence'
                   ? `bg-${colors.primary} text-white`
-                  : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  : "bg-white border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary"
               )}
               title="Trie les transactions par pertinence (nom, montant, date)"
             >
@@ -695,12 +691,12 @@ export function TransactionLinkingPanel({
                 checked={groupByAmount}
                 onChange={(e) => setGroupByAmount(e.target.checked)}
                 className={cn(
-                  "w-4 h-4 rounded border-gray-300 focus:ring-2",
+                  "w-4 h-4 rounded border-gray-300 dark:border-dark-border focus:ring-2",
                   `text-${colors.primary}`,
                   `focus:ring-${colors.ring}`
                 )}
               />
-              <span className="text-sm text-gray-700 dark:text-dark-text-secondary">
+              <span className="text-sm text-gray-700 dark:text-dark-text-primary">
                 Grouper par montants similaires
               </span>
             </label>
@@ -764,7 +760,7 @@ export function TransactionLinkingPanel({
                     <div className="sticky top-0 bg-gray-100 dark:bg-dark-bg-tertiary px-3 py-2 rounded-lg border border-gray-300 dark:border-dark-border z-10">
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-medium text-gray-700 dark:text-dark-text-primary">
-                          Montant: {formatMontant(groupAmount)} <span className="text-gray-500">± 1€</span>
+                          Montant: {formatMontant(groupAmount)} <span className="text-gray-500 dark:text-dark-text-muted">± 1€</span>
                         </span>
                         <span className="text-xs text-gray-500 dark:text-dark-text-muted">
                           {groupTransactions.length} transaction{groupTransactions.length > 1 ? 's' : ''}
@@ -777,6 +773,7 @@ export function TransactionLinkingPanel({
                       {groupTransactions.map((tx) => {
                 const isSelected = selectedIds.has(tx.id);
                 const otherEntity = isLinkedToOther(tx);
+                const isSelectionBlocked = mode === 'event' && otherEntity;
                 const isChild = !!tx.parent_transaction_id;
                 const parentTransaction = isChild ? transactions.find(t => t.id === tx.parent_transaction_id) : null;
 
@@ -789,16 +786,22 @@ export function TransactionLinkingPanel({
                 return (
                   <div
                     key={tx.id}
-                    onClick={() => toggleSelection(tx.id)}
+                    onClick={() => {
+                      if (!isSelectionBlocked) {
+                        toggleSelection(tx.id);
+                      }
+                    }}
                     className={cn(
-                      "border rounded-lg p-4 cursor-pointer transition-all",
+                      "border rounded-lg p-4 transition-all",
+                      isSelectionBlocked && "cursor-not-allowed opacity-60",
+                      !isSelectionBlocked && "cursor-pointer",
                       isSelected
                         ? `border-${colors.border} bg-${colors.primaryLight} shadow-sm`
                         : isExactMatch
                         ? "border-green-400 bg-green-50 hover:border-green-500 hover:shadow-sm"
                         : isAmountMatch
                         ? "border-yellow-400 bg-yellow-50 hover:border-yellow-500 hover:shadow-sm"
-                        : "border-gray-200 hover:border-gray-300 hover:shadow-sm bg-white"
+                        : "border-gray-200 dark:border-dark-border hover:border-gray-300 dark:border-dark-border hover:shadow-sm bg-white"
                     )}
                   >
                     <div className="flex items-start gap-3">
@@ -808,7 +811,7 @@ export function TransactionLinkingPanel({
                           "w-5 h-5 rounded border-2 flex items-center justify-center transition-colors",
                           isSelected
                             ? `border-${colors.border} bg-${colors.primary}`
-                            : "border-gray-300"
+                            : "border-gray-300 dark:border-dark-border"
                         )}>
                           {isSelected && <Check className="h-3 w-3 text-white" />}
                         </div>
@@ -888,10 +891,10 @@ export function TransactionLinkingPanel({
                               {/* View Detail Button */}
                               <button
                                 onClick={(e) => handleViewDetail(tx.id, e)}
-                                className="p-1.5 hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors"
+                                className="p-1.5 hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors"
                                 title="Voir le détail de la transaction"
                               >
-                                <Eye className="h-4 w-4 text-gray-500 hover:text-gray-700 dark:text-dark-text-muted dark:hover:text-dark-text-primary" />
+                                <Eye className="h-4 w-4 text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary dark:hover:text-dark-text-primary" />
                               </button>
                             </div>
                           </div>
@@ -911,6 +914,7 @@ export function TransactionLinkingPanel({
               {filteredTransactions.map((tx) => {
                 const isSelected = selectedIds.has(tx.id);
                 const otherEntity = isLinkedToOther(tx);
+                const isSelectionBlocked = mode === 'event' && otherEntity;
                 const isChild = !!tx.parent_transaction_id;
                 const parentTransaction = isChild ? transactions.find(t => t.id === tx.parent_transaction_id) : null;
 
@@ -923,16 +927,22 @@ export function TransactionLinkingPanel({
                 return (
                   <div
                     key={tx.id}
-                    onClick={() => toggleSelection(tx.id)}
+                    onClick={() => {
+                      if (!isSelectionBlocked) {
+                        toggleSelection(tx.id);
+                      }
+                    }}
                     className={cn(
-                      "border rounded-lg p-4 cursor-pointer transition-all",
+                      "border rounded-lg p-4 transition-all",
+                      isSelectionBlocked && "cursor-not-allowed opacity-60",
+                      !isSelectionBlocked && "cursor-pointer",
                       isSelected
                         ? `border-${colors.border} bg-${colors.primaryLight} shadow-sm`
                         : isExactMatch
                         ? "border-green-400 bg-green-50 hover:border-green-500 hover:shadow-sm"
                         : isAmountMatch
                         ? "border-yellow-400 bg-yellow-50 hover:border-yellow-500 hover:shadow-sm"
-                        : "border-gray-200 hover:border-gray-300 hover:shadow-sm bg-white"
+                        : "border-gray-200 dark:border-dark-border hover:border-gray-300 dark:border-dark-border hover:shadow-sm bg-white"
                     )}
                   >
                     <div className="flex items-start gap-3">
@@ -942,7 +952,7 @@ export function TransactionLinkingPanel({
                           "w-5 h-5 rounded border-2 flex items-center justify-center transition-colors",
                           isSelected
                             ? `border-${colors.border} bg-${colors.primary}`
-                            : "border-gray-300"
+                            : "border-gray-300 dark:border-dark-border"
                         )}>
                           {isSelected && <Check className="h-3 w-3 text-white" />}
                         </div>
@@ -1022,10 +1032,10 @@ export function TransactionLinkingPanel({
                               {/* View Detail Button */}
                               <button
                                 onClick={(e) => handleViewDetail(tx.id, e)}
-                                className="p-1.5 hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors"
+                                className="p-1.5 hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors"
                                 title="Voir le détail de la transaction"
                               >
-                                <Eye className="h-4 w-4 text-gray-500 hover:text-gray-700 dark:text-dark-text-muted dark:hover:text-dark-text-primary" />
+                                <Eye className="h-4 w-4 text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary dark:hover:text-dark-text-primary" />
                               </button>
                             </div>
                           </div>
@@ -1043,7 +1053,7 @@ export function TransactionLinkingPanel({
         <div className="px-6 py-4 border-t border-gray-200 dark:border-dark-border bg-gray-50 dark:bg-dark-bg-tertiary flex justify-between items-center">
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary rounded-lg hover:bg-gray-100 dark:hover:bg-dark-bg-secondary transition-colors"
+            className="px-4 py-2 border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary rounded-lg hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-secondary transition-colors"
             disabled={saving}
           >
             Annuler

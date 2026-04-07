@@ -8,6 +8,7 @@ import { VentesTab } from './VentesTab';
 import { CommandesTab } from './CommandesTab';
 import toast from 'react-hot-toast';
 import { cn } from '@/utils/utils';
+import { logger } from '@/utils/logger';
 
 type TabType = 'produits' | 'ventes' | 'commandes';
 
@@ -40,7 +41,7 @@ export function StockPage() {
       const statsData = await StockService.getStats(clubId);
       setStats(statsData);
     } catch (error: any) {
-      console.error('Erreur chargement stats:', error);
+      logger.error('Erreur chargement stats:', error);
       toast.error(error.message || 'Erreur lors du chargement');
     } finally {
       setLoading(false);
@@ -60,7 +61,7 @@ export function StockPage() {
       {/* Header */}
       <div>
         <h2 className="text-2xl font-bold text-gray-900 dark:text-dark-text-primary">Produits en Stock</h2>
-        <p className="mt-1 text-sm text-gray-500 dark:text-dark-text-secondary">
+        <p className="mt-1 text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
           Gestion du stock, ventes et commandes fournisseurs
         </p>
       </div>
@@ -70,10 +71,10 @@ export function StockPage() {
         <div className="bg-white dark:bg-dark-bg-secondary rounded-lg shadow p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500 dark:text-dark-text-secondary">Produits</p>
+              <p className="text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">Produits</p>
               <p className="text-2xl font-bold text-gray-900 dark:text-dark-text-primary">{stats.total_produits}</p>
             </div>
-            <Package className="h-8 w-8 text-gray-400" />
+            <Package className="h-8 w-8 text-gray-400 dark:text-dark-text-muted" />
           </div>
         </div>
 
@@ -157,12 +158,12 @@ export function StockPage() {
             className={cn(
               activeTab === 'produits'
                 ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-dark-text-secondary dark:hover:text-dark-text-primary',
+                : 'border-transparent text-gray-500 dark:text-dark-text-muted hover:border-gray-300 dark:border-dark-border hover:text-gray-700 dark:text-dark-text-primary dark:hover:text-dark-text-primary',
               'group inline-flex items-center border-b-2 py-4 px-1 text-sm font-medium transition-colors'
             )}
           >
             <Package className={cn(
-              activeTab === 'produits' ? 'text-blue-500' : 'text-gray-400',
+              activeTab === 'produits' ? 'text-blue-500' : 'text-gray-400 dark:text-dark-text-muted',
               '-ml-0.5 mr-2 h-5 w-5'
             )} />
             <span>Produits</span>
@@ -173,12 +174,12 @@ export function StockPage() {
             className={cn(
               activeTab === 'ventes'
                 ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-dark-text-secondary dark:hover:text-dark-text-primary',
+                : 'border-transparent text-gray-500 dark:text-dark-text-muted hover:border-gray-300 dark:border-dark-border hover:text-gray-700 dark:text-dark-text-primary dark:hover:text-dark-text-primary',
               'group inline-flex items-center border-b-2 py-4 px-1 text-sm font-medium transition-colors'
             )}
           >
             <ShoppingCart className={cn(
-              activeTab === 'ventes' ? 'text-blue-500' : 'text-gray-400',
+              activeTab === 'ventes' ? 'text-blue-500' : 'text-gray-400 dark:text-dark-text-muted',
               '-ml-0.5 mr-2 h-5 w-5'
             )} />
             <span>Ventes</span>
@@ -189,12 +190,12 @@ export function StockPage() {
             className={cn(
               activeTab === 'commandes'
                 ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-dark-text-secondary dark:hover:text-dark-text-primary',
+                : 'border-transparent text-gray-500 dark:text-dark-text-muted hover:border-gray-300 dark:border-dark-border hover:text-gray-700 dark:text-dark-text-primary dark:hover:text-dark-text-primary',
               'group inline-flex items-center border-b-2 py-4 px-1 text-sm font-medium transition-colors'
             )}
           >
             <ShoppingBag className={cn(
-              activeTab === 'commandes' ? 'text-blue-500' : 'text-gray-400',
+              activeTab === 'commandes' ? 'text-blue-500' : 'text-gray-400 dark:text-dark-text-muted',
               '-ml-0.5 mr-2 h-5 w-5'
             )} />
             <span>Commandes</span>

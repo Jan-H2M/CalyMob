@@ -2,6 +2,7 @@ import { auth } from '@/lib/firebase';
 import { updatePassword } from 'firebase/auth';
 import { doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { generateDefaultPassword } from '@/utils/passwordGenerator';
 
 /**
  * Service for password management operations
@@ -10,13 +11,21 @@ export class PasswordService {
   /**
    * Reset a user's password (admin only)
    * Calls the Vercel API endpoint
+   *
+   * @param userId - The user ID to reset
+   * @param clubId - The club ID
+   * @param newPassword - Optional custom password (defaults to CalyCompta{year}-{month}-{unique})
+   * @param requirePasswordChange - Whether user must change password on next login
    */
   static async resetUserPassword(
     userId: string,
     clubId: string,
-    newPassword: string = "123456",
+    newPassword?: string,
     requirePasswordChange: boolean = true
   ): Promise<void> {
+    // Use secure generated password if none provided
+    const passwordToSet = newPassword || generateDefaultPassword();
+
     const currentUser = auth.currentUser;
     if (!currentUser) {
       throw new Error("Vous devez être authentifié");
@@ -24,16 +33,17 @@ export class PasswordService {
 
     const idToken = await currentUser.getIdToken();
 
-    const response = await fetch('/api/reset-password', {
+    const response = await fetch(`/api/reset-password?t=${Date.now()}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${idToken}`,
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
       },
       body: JSON.stringify({
         userId,
         clubId,
-        newPassword,
+        newPassword: passwordToSet,
         requirePasswordChange,
       }),
     });

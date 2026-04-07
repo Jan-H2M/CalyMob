@@ -1,3 +1,5 @@
+import { logger } from '@/utils/logger';
+import { AI_MODELS } from '@/config/aiModels';
 /**
  * Claude Skills Service
  *
@@ -143,11 +145,11 @@ Dernière ligne: TOTAAL avec formule SUM
 Sauvegarde comme "${filename}" et exécute recalc.py pour calculer les formules.`;
 
     try {
-      console.log('🚀 Génération rapport Excel avec Claude Skills...');
+      logger.debug('🚀 Génération rapport Excel avec Claude Skills...');
 
       // Appeler Claude Skills
       const response = await client.beta.messages.create({
-        model: 'claude-sonnet-4-5-20250929',
+        model: AI_MODELS.skills,
         max_tokens: 16384,
         betas: [
           'code-execution-2025-08-25',
@@ -161,7 +163,7 @@ Sauvegarde comme "${filename}" et exécute recalc.py pour calculer les formules.
         messages: [{ role: 'user', content: prompt }]
       });
 
-      console.log('✅ Réponse reçue de Claude');
+      logger.debug('✅ Réponse reçue de Claude');
 
       // Extraire file IDs
       const fileInfos = extractFileIds(response);
@@ -170,21 +172,21 @@ Sauvegarde comme "${filename}" et exécute recalc.py pour calculer les formules.
         throw new Error('Aucun fichier généré par Claude');
       }
 
-      console.log(`📥 Téléchargement: ${fileInfos[0].filename}`);
+      logger.debug(`📥 Téléchargement: ${fileInfos[0].filename}`);
 
       // Télécharger le fichier
       const { blob, metadata } = await downloadFile(client, fileInfos[0].id);
 
-      console.log(`✅ Fichier téléchargé: ${metadata.filename} (${(metadata.size_bytes / 1024).toFixed(2)} KB)`);
+      logger.debug(`✅ Fichier téléchargé: ${metadata.filename} (${(metadata.size_bytes / 1024).toFixed(2)} KB)`);
 
       // Statistiques API
       if (response.usage) {
-        console.log(`📊 Tokens utilisés: ${response.usage.input_tokens} input, ${response.usage.output_tokens} output`);
+        logger.debug(`📊 Tokens utilisés: ${response.usage.input_tokens} input, ${response.usage.output_tokens} output`);
       }
 
       return blob;
     } catch (error) {
-      console.error('❌ Erreur lors de la génération du rapport:', error);
+      logger.error('❌ Erreur lors de la génération du rapport:', error);
       throw error;
     }
   }

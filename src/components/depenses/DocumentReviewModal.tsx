@@ -13,11 +13,10 @@ import {
   User,
   FileText,
   Sparkles,
-  ChevronDown,
-  Info
+  ChevronDown
 } from 'lucide-react';
 import { DocumentAnalysis } from '@/services/aiDocumentService';
-import { Membre, Evenement, Categorie, AccountCode } from '@/types';
+import { Membre, Evenement, Categorie } from '@/types';
 import { formatMontant, formatDate, cn } from '@/utils/utils';
 import { CategorizationService } from '@/services/categorizationService';
 
@@ -52,15 +51,10 @@ export function DocumentReviewModal({
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Charger les catégories et codes comptables depuis les paramètres
-  const [accountCodes, setAccountCodes] = useState<AccountCode[]>([]);
+  // Charger les catégories depuis les paramètres
   const [categoriesFromSettings, setCategoriesFromSettings] = useState<Categorie[]>([]);
 
   useEffect(() => {
-    // Charger les codes comptables de dépenses
-    const codes = CategorizationService.getAccountCodesByType(true); // true = dépenses
-    setAccountCodes(codes);
-
     // Charger les catégories de dépenses
     const cats = CategorizationService.getCategoriesByType(true);
     setCategoriesFromSettings(cats);
@@ -149,7 +143,7 @@ export function DocumentReviewModal({
             <button
               onClick={handleSaveAndPrevious}
               disabled={currentIndex === 0}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-3 py-1.5 text-sm border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <ChevronLeft className="h-4 w-4" />
               Précédent
@@ -183,7 +177,7 @@ export function DocumentReviewModal({
             <button
               onClick={handleSaveAndNext}
               disabled={currentIndex === files.length - 1}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-3 py-1.5 text-sm border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Suivant
               <ChevronRight className="h-4 w-4" />
@@ -365,67 +359,6 @@ export function DocumentReviewModal({
                     </div>
                   </div>
 
-                  {/* Code comptable */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
-                      <Info className="h-4 w-4 inline mr-1" />
-                      Code comptable
-                    </label>
-                    <div className="relative">
-                      <select
-                        value={localAnalysis.code_comptable || ''}
-                        onChange={(e) => setLocalAnalysis({
-                          ...localAnalysis,
-                          code_comptable: e.target.value
-                        })}
-                        className="w-full pl-3 pr-10 py-2 border border-gray-200 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-calypso-blue focus:border-transparent appearance-none bg-white dark:bg-dark-bg-secondary"
-                      >
-                        <option value="">Sélectionner un code comptable</option>
-
-                        {/* Codes fréquemment utilisés */}
-                        {accountCodes.filter(c => c.isFrequent).length > 0 && (
-                          <>
-                            <optgroup label="★ Fréquemment utilisés">
-                              {accountCodes
-                                .filter(code => code.isFrequent)
-                                .map(code => (
-                                  <option key={`freq-${code.code}`} value={code.code}>
-                                    ★ {code.code} - {code.label}
-                                  </option>
-                                ))}
-                            </optgroup>
-                            {accountCodes.filter(c => !c.isFrequent).length > 0 && (
-                              <option disabled>──────────────────</option>
-                            )}
-                          </>
-                        )}
-
-                        {/* Tous les autres codes */}
-                        {accountCodes.filter(c => !c.isFrequent).length > 0 && (
-                          <optgroup label="Tous les codes">
-                            {accountCodes
-                              .filter(code => !code.isFrequent)
-                              .map(code => (
-                                <option key={code.code} value={code.code}>
-                                  {code.code} - {code.label}
-                                </option>
-                              ))}
-                          </optgroup>
-                        )}
-
-                        {/* Si aucun code fréquent */}
-                        {accountCodes.filter(c => c.isFrequent).length === 0 && (
-                          accountCodes.map(code => (
-                            <option key={code.code} value={code.code}>
-                              {code.code} - {code.label}
-                            </option>
-                          ))
-                        )}
-                      </select>
-                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-dark-text-muted pointer-events-none" />
-                    </div>
-                  </div>
-
                   {/* Requester */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
@@ -514,7 +447,7 @@ export function DocumentReviewModal({
                   onUpdateAnalysis(currentFile.name, localAnalysis);
                 }
               }}
-              className="px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors"
+              className="px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors"
             >
               <Save className="h-4 w-4 inline mr-2" />
               Sauvegarder les modifications

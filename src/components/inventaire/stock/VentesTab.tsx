@@ -6,9 +6,11 @@ import { PDFGenerationService } from '@/services/pdfGenerationService';
 import { EmailService } from '@/services/emailService';
 import { Sale, StockProduct } from '@/types/inventory';
 import { Membre } from '@/types';
+import { getFirstName, getLastName } from '@/utils/fieldMapper';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { Timestamp } from 'firebase/firestore';
+import { logger } from '@/utils/logger';
 
 interface Props {
   onRefresh: () => void;
@@ -52,7 +54,7 @@ export function VentesTab({ onRefresh }: Props) {
       setProducts(productsData);
       setMembers(membersData);
     } catch (error: any) {
-      console.error('Erreur chargement ventes:', error);
+      logger.error('Erreur chargement ventes:', error);
       toast.error(error.message || 'Erreur lors du chargement');
     } finally {
       setLoading(false);
@@ -96,7 +98,7 @@ export function VentesTab({ onRefresh }: Props) {
           const fullSale = {
             ...saleData,
             id: saleId,
-            memberName: `${member.nom} ${member.prenom}`,
+            memberName: `${getFirstName(member)} ${getLastName(member)}`,
             productName: product.nom,
             mode_paiement: 'especes' as const,
             createdAt: Timestamp.now(),
@@ -115,10 +117,10 @@ export function VentesTab({ onRefresh }: Props) {
           if (emailResult.success) {
             toast.success('Reçu envoyé par email', { duration: 2000 });
           } else {
-            console.warn('[VentesTab] Échec envoi email:', emailResult.error);
+            logger.warn('[VentesTab] Échec envoi email:', emailResult.error);
           }
         } catch (emailError) {
-          console.error('[VentesTab] Erreur envoi email:', emailError);
+          logger.error('[VentesTab] Erreur envoi email:', emailError);
           // Ne pas bloquer le workflow
         }
       }
@@ -136,7 +138,7 @@ export function VentesTab({ onRefresh }: Props) {
       loadData();
       onRefresh();
     } catch (error: any) {
-      console.error('Erreur création vente:', error);
+      logger.error('Erreur création vente:', error);
       toast.error(error.message || 'Erreur lors de la création');
     }
   };
@@ -148,7 +150,7 @@ export function VentesTab({ onRefresh }: Props) {
 
   const getMemberName = (memberId: string) => {
     const member = members.find(m => m.id === memberId);
-    return member ? `${member.nom} ${member.prenom}` : 'Membre inconnu';
+    return member ? `${getFirstName(member)} ${getLastName(member)}` : 'Membre inconnu';
   };
 
   const formatDate = (timestamp: Timestamp) => {
@@ -193,7 +195,7 @@ export function VentesTab({ onRefresh }: Props) {
 
       toast.success('Reçu téléchargé');
     } catch (error: any) {
-      console.error('Erreur génération reçu:', error);
+      logger.error('Erreur génération reçu:', error);
       toast.error(error.message || 'Erreur lors de la génération du reçu');
     }
   };
@@ -251,7 +253,7 @@ export function VentesTab({ onRefresh }: Props) {
               <option value="">Sélectionner membre</option>
               {members.map(member => (
                 <option key={member.id} value={member.id}>
-                  {member.nom} {member.prenom}
+                  {getFirstName(member)} {getLastName(member)}
                 </option>
               ))}
             </select>
@@ -280,7 +282,7 @@ export function VentesTab({ onRefresh }: Props) {
                 type="checkbox"
                 checked={formData.sendEmail}
                 onChange={(e) => setFormData({ ...formData, sendEmail: e.target.checked })}
-                className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+                className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 dark:border-dark-border rounded"
               />
               <span className="text-sm font-medium text-green-900 dark:text-green-200">
                 Envoyer le reçu par email
@@ -297,7 +299,7 @@ export function VentesTab({ onRefresh }: Props) {
             </button>
             <button
               onClick={() => setShowForm(false)}
-              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-secondary bg-white dark:bg-dark-bg-primary border border-gray-300 dark:border-dark-border rounded-md hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary"
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-primary bg-white dark:bg-dark-bg-primary border border-gray-300 dark:border-dark-border rounded-md hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary"
             >
               Annuler
             </button>
@@ -310,22 +312,22 @@ export function VentesTab({ onRefresh }: Props) {
         <table className="min-w-full divide-y divide-gray-200 dark:divide-dark-border">
           <thead className="bg-gray-50 dark:bg-dark-bg-tertiary">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase">
                 Date
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase">
                 Produit
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase">
                 Membre
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase">
                 Quantité
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase">
                 Montant
               </th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase">
+              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase">
                 Actions
               </th>
             </tr>
@@ -333,21 +335,21 @@ export function VentesTab({ onRefresh }: Props) {
           <tbody className="divide-y divide-gray-200 dark:divide-dark-border">
             {sales.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-dark-text-secondary">
-                  <ShoppingCart className="mx-auto h-12 w-12 text-gray-400 mb-2" />
+                <td colSpan={6} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
+                  <ShoppingCart className="mx-auto h-12 w-12 text-gray-400 dark:text-dark-text-muted mb-2" />
                   <p>Aucune vente enregistrée</p>
                 </td>
               </tr>
             ) : (
               sales.map((sale) => (
-                <tr key={sale.id} className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-dark-text-secondary">
+                <tr key={sale.id} className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
                     {formatDate(sale.date_vente)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-dark-text-primary">
                     {getProductName(sale.productId)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-dark-text-secondary">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
                     {getMemberName(sale.memberId)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-dark-text-primary">

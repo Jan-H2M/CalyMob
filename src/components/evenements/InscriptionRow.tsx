@@ -18,10 +18,11 @@ interface InscriptionRowProps {
 /**
  * Display a single inscription with payment status and action buttons
  *
- * Handles 3 states:
+ * Handles 4 states:
  * 1. Bank-linked: has transaction_id, paye=true
  * 2. Cash-paid: no transaction_id, paye=true, mode_paiement='cash'
- * 3. Unpaid: no transaction_id, paye=false
+ * 3. CalyMob-paid: no transaction_id, paye=true, not cash (awaiting bank reconciliation)
+ * 4. Unpaid: paye=false
  */
 export function InscriptionRow({
   inscription,
@@ -55,16 +56,19 @@ export function InscriptionRow({
   // Determine payment state
   const isLinkedToBank = inscription.transaction_id && inscription.paye;
   const isPaidCash = !inscription.transaction_id && inscription.paye && inscription.mode_paiement === 'cash';
+  const isPaidCalyMob = !inscription.transaction_id && inscription.paye && inscription.mode_paiement !== 'cash';
   const isUnpaid = !inscription.paye;
 
   // Determine background color based on payment status
   const getBackgroundColor = () => {
     if (isLinkedToBank) {
       return 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-800';
-    } else if (isUnpaid) {
-      return 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-800';
     } else if (isPaidCash) {
       return 'bg-orange-50 dark:bg-orange-900/10 border-orange-200 dark:border-orange-800';
+    } else if (isPaidCalyMob) {
+      return 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800';
+    } else if (isUnpaid) {
+      return 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-800';
     }
     return 'bg-white dark:bg-dark-bg-secondary border-gray-200 dark:border-dark-border';
   };
@@ -201,7 +205,7 @@ export function InscriptionRow({
                   <div className="flex-1">
                     <p className="text-sm text-gray-600 dark:text-dark-text-secondary">
                       <span className="font-medium">💬 Commentaire:</span>{' '}
-                      <span className={inscription.commentaire ? 'text-gray-900' : 'text-gray-400 italic'}>
+                      <span className={inscription.commentaire ? 'text-gray-900 dark:text-dark-text-primary' : 'text-gray-400 italic'}>
                         {inscription.commentaire || 'Aucun commentaire'}
                       </span>
                     </p>

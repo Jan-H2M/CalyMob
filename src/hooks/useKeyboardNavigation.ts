@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { logger } from '@/utils/logger';
 
 interface UseKeyboardNavigationProps<T> {
   items: T[];              // Gefilterde lijst (bv. filteredDemandes)
@@ -30,17 +31,17 @@ export function useKeyboardNavigation<T extends Record<string, any>>({
   useEffect(() => {
     // Alleen luisteren als detail view open is
     if (!isOpen || !currentItem) {
-      console.log('🔍 [useKeyboardNavigation] Not listening:', { isOpen, hasCurrentItem: !!currentItem });
+      logger.debug('🔍 [useKeyboardNavigation] Not listening:', { isOpen, hasCurrentItem: !!currentItem });
       return;
     }
 
-    console.log('👂 [useKeyboardNavigation] Adding listener - items:', items.length, 'current:', currentItem[idKey]);
+    logger.debug('👂 [useKeyboardNavigation] Adding listener - items:', items.length, 'current:', currentItem[idKey]);
 
     const handleKeyDown = (event: KeyboardEvent) => {
       // Alleen reageren op pijltjestoetsen
       if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
 
-      console.log('⌨️ [useKeyboardNavigation] Arrow key pressed:', event.key);
+      logger.debug('⌨️ [useKeyboardNavigation] Arrow key pressed:', event.key);
 
       // Niet reageren als gebruiker in een input field of textarea is
       const target = event.target as HTMLElement;
@@ -71,7 +72,7 @@ export function useKeyboardNavigation<T extends Record<string, any>>({
       // Navigeer naar nieuw item
       const newItem = items[newIndex];
       if (newItem) {
-        console.log('✅ [useKeyboardNavigation] Navigating to:', newItem[idKey], 'at index', newIndex);
+        logger.debug('✅ [useKeyboardNavigation] Navigating to:', newItem[idKey], 'at index', newIndex);
         event.preventDefault(); // Voorkom default browser gedrag
         onNavigate(newItem);
       }
@@ -79,11 +80,11 @@ export function useKeyboardNavigation<T extends Record<string, any>>({
 
     // Voeg event listener toe
     window.addEventListener('keydown', handleKeyDown);
-    console.log('✅ [useKeyboardNavigation] Listener added');
+    logger.debug('✅ [useKeyboardNavigation] Listener added');
 
     // Cleanup
     return () => {
-      console.log('🗑️ [useKeyboardNavigation] Removing listener');
+      logger.debug('🗑️ [useKeyboardNavigation] Removing listener');
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [items, currentItem, onNavigate, isOpen, idKey]);

@@ -3,18 +3,17 @@
  * Used for event pricing configuration
  */
 
-export type TariffCategory =
-  | 'membre'         // Regular member
-  | 'non_membre'     // Non-member
-  | 'encadrant'      // Instructor/supervisor (links to User.isEncadrant)
-  | 'junior'         // Under 18
-  | 'etudiant'       // Student
-  | 'decouverte';    // Discovery/trial dive
+/**
+ * @deprecated TariffCategory is now dynamic and loaded from value lists.
+ * Use string type instead and reference the "fonction" value list.
+ * Legacy values: 'membre' | 'non_membre' | 'encadrant' | 'junior' | 'etudiant' | 'decouverte'
+ */
+export type TariffCategory = string;
 
 export interface Tariff {
   id: string;                    // Unique ID
   label: string;                 // Display name: "Plongeur", "Apnéiste"
-  category: TariffCategory;      // Tariff category
+  category: string;              // Tariff category (references value list item.value from "fonction" list)
   price: number;                 // Price in euros
   is_default: boolean;           // Pre-select in UI?
   display_order: number;         // Custom sort order
@@ -50,12 +49,18 @@ export const COUNTRY_OPTIONS = [
   { value: 'EG', label: 'Égypte' }
 ] as const;
 
-// Category labels for UI
-export const CATEGORY_LABELS: Record<TariffCategory, string> = {
+/**
+ * @deprecated Category labels are now dynamically loaded from value lists.
+ * Use getValueListItem() or getValueList() to retrieve labels.
+ * This constant is kept for backwards compatibility only.
+ */
+export const CATEGORY_LABELS: Record<string, string> = {
   membre: 'Membre',
   non_membre: 'Non-membre',
   encadrant: 'Encadrant',
   junior: 'Junior (<18)',
   etudiant: 'Étudiant',
-  decouverte: 'Découverte'
+  decouverte: 'Découverte',
+  ca: 'Comité d\'Administration',
+  accueil: 'Accueil'
 };

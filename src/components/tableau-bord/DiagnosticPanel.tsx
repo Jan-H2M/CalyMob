@@ -143,7 +143,7 @@ export function DiagnosticPanel({ clubId, fiscalYear }: DiagnosticPanelProps) {
   const hasIssues = Math.abs(diagnostic.discrepancies.solde) > 0.01;
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 dark:border-dark-border p-4 mb-6">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className="w-full flex items-center justify-between text-left"
@@ -154,7 +154,7 @@ export function DiagnosticPanel({ clubId, fiscalYear }: DiagnosticPanelProps) {
           ) : (
             <CheckCircle className="w-5 h-5 text-green-600" />
           )}
-          <h3 className="font-semibold text-gray-900">
+          <h3 className="font-semibold text-gray-900 dark:text-dark-text-primary">
             Diagnostic comptable
           </h3>
           {hasIssues && (
@@ -163,7 +163,7 @@ export function DiagnosticPanel({ clubId, fiscalYear }: DiagnosticPanelProps) {
             </span>
           )}
         </div>
-        <span className="text-sm text-gray-500">
+        <span className="text-sm text-gray-500 dark:text-dark-text-muted">
           {isExpanded ? 'Masquer' : 'Afficher'} les détails
         </span>
       </button>
@@ -208,12 +208,12 @@ export function DiagnosticPanel({ clubId, fiscalYear }: DiagnosticPanelProps) {
 
           {/* Répartition par compte */}
           <div>
-            <h4 className="text-sm font-semibold text-gray-700 mb-2">Répartition par compte</h4>
+            <h4 className="text-sm font-semibold text-gray-700 dark:text-dark-text-primary mb-2">Répartition par compte</h4>
             <div className="space-y-2">
               {Object.entries(diagnostic.accountBreakdown).map(([compte, stats]) => (
-                <div key={compte} className="bg-gray-50 p-2 rounded text-sm">
-                  <div className="font-mono text-xs text-gray-600">{compte}</div>
-                  <div className="flex gap-4 text-xs text-gray-700">
+                <div key={compte} className="bg-gray-50 dark:bg-dark-bg-tertiary p-2 rounded text-sm">
+                  <div className="font-mono text-xs text-gray-600 dark:text-dark-text-secondary">{compte}</div>
+                  <div className="flex gap-4 text-xs text-gray-700 dark:text-dark-text-primary">
                     <span>{stats.count} transactions</span>
                     <span className="text-green-600">+{stats.revenus.toFixed(2)} €</span>
                     <span className="text-red-600">-{stats.depenses.toFixed(2)} €</span>
@@ -226,7 +226,7 @@ export function DiagnosticPanel({ clubId, fiscalYear }: DiagnosticPanelProps) {
           {/* Transactions exclues */}
           {diagnostic.excluded.count > 0 && (
             <div>
-              <h4 className="text-sm font-semibold text-gray-700 mb-2">
+              <h4 className="text-sm font-semibold text-gray-700 dark:text-dark-text-primary mb-2">
                 Transactions exclues ({diagnostic.excluded.count})
               </h4>
               <div className="bg-yellow-50 p-3 rounded text-sm">
@@ -239,14 +239,14 @@ export function DiagnosticPanel({ clubId, fiscalYear }: DiagnosticPanelProps) {
               {/* Première 10 transactions exclues */}
               <div className="mt-2 max-h-64 overflow-y-auto space-y-1">
                 {diagnostic.issues.slice(0, 10).map((issue, idx) => (
-                  <div key={idx} className="bg-gray-50 p-2 rounded text-xs">
+                  <div key={idx} className="bg-gray-50 dark:bg-dark-bg-tertiary p-2 rounded text-xs">
                     <div className="flex justify-between">
                       <span className="font-mono">{issue.date}</span>
                       <span className={issue.montant > 0 ? 'text-green-600' : 'text-red-600'}>
                         {issue.montant.toFixed(2)} €
                       </span>
                     </div>
-                    <div className="text-gray-600">{issue.contrepartie}</div>
+                    <div className="text-gray-600 dark:text-dark-text-secondary">{issue.contrepartie}</div>
                     <div className="text-orange-600 font-medium">{issue.issue}</div>
                   </div>
                 ))}

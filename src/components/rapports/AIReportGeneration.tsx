@@ -1,3 +1,4 @@
+import { logger } from '@/utils/logger';
 /**
  * AI Report Generation Component
  *
@@ -67,7 +68,7 @@ export function AIReportGeneration() {
           testedAt: new Date(parsed.testedAt)
         });
       } catch (e) {
-        console.error('Error parsing cached skills status:', e);
+        logger.error('Error parsing cached skills status:', e);
       }
     }
   }, []);
@@ -140,7 +141,7 @@ export function AIReportGeneration() {
       setGeneratedFiles(result.files || null);
       toast.success('Rapports générés avec succès!');
     } catch (error) {
-      console.error('Error generating reports:', error);
+      logger.error('Error generating reports:', error);
       toast.error(
         error instanceof Error
           ? error.message
@@ -180,7 +181,7 @@ export function AIReportGeneration() {
         toast.error(result.message, { duration: 4000 });
       }
     } catch (error) {
-      console.error('Error checking skills:', error);
+      logger.error('Error checking skills:', error);
       toast.error('Erreur lors de la vérification des Skills');
     } finally {
       setIsCheckingSkills(false);
@@ -367,7 +368,7 @@ export function AIReportGeneration() {
                   <h4 className={cn(
                     "font-medium",
                     !template.implemented
-                      ? "text-gray-500 dark:text-gray-400"
+                      ? "text-gray-500"
                       : "text-gray-900 dark:text-dark-text-primary"
                   )}>
                     {template.name}
@@ -375,7 +376,7 @@ export function AIReportGeneration() {
                   <p className={cn(
                     "text-xs mt-1",
                     !template.implemented
-                      ? "text-gray-400 dark:text-gray-500"
+                      ? "text-gray-400"
                       : "text-gray-600 dark:text-dark-text-secondary"
                   )}>
                     {template.description}

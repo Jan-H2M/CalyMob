@@ -1,4 +1,5 @@
 import { FirebaseSettingsService } from './firebaseSettingsService';
+import { logger } from '@/utils/logger';
 
 interface GeneralSettings {
   doubleApprovalThreshold: number;
@@ -30,7 +31,7 @@ export class SettingsService {
    */
   static getGeneralSettings(): GeneralSettings {
     if (!this.cachedSettings) {
-      console.warn('Paramètres généraux non chargés. Utilisation des valeurs par défaut.');
+      logger.warn('Paramètres généraux non chargés. Utilisation des valeurs par défaut.');
       return {
         doubleApprovalThreshold: 650,
         enableDoubleApproval: true,

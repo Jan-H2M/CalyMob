@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { logger } from '@/utils/logger';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -17,31 +18,39 @@ import {
   UserCheck,
   Shield,
   AlertCircle,
+  AlertTriangle,
   TrendingDown,
   Check,
-  FolderCheck,
   ArrowUp,
   ArrowDown,
   ArrowUpDown
 } from 'lucide-react';
 import { formatMontant, formatDate, cn, STATUS_COLORS } from '@/utils/utils';
-import { TransactionBancaire, DemandeRemboursement, ClubSettings, Membre, DocumentJustificatif, Evenement } from '@/types';
+import { TransactionBancaire, DemandeRemboursement, ClubSettings, Membre, DocumentJustificatif, Evenement, Operation } from '@/types';
 import { ReconciliationService } from '@/services/reconciliationService';
 import { SettingsService } from '@/services/settingsService';
 import { PermissionService } from '@/services/permissionService';
+import { UserService } from '@/services/userService';
 import { ApprovalBadge } from './ApprovalBadge';
 import { DemandeDetailView } from './DemandeDetailView';
 import { TransactionLinkingPanel } from '@/components/commun/TransactionLinkingPanel';
 import { OperationLinkingPanel } from '@/components/banque/OperationLinkingPanel';
+import { TransactionDetailView } from '@/components/banque/TransactionDetailView';
+import { OperationDetailView } from '@/components/operations/OperationDetailView';
 import { useAuth } from '@/contexts/AuthContext';
 import { useFiscalYear } from '@/contexts/FiscalYearContext';
 import { aiDocumentService } from '@/services/aiDocumentService';
 import toast from 'react-hot-toast';
+import { getFirstName, getLastName, getRole } from '@/utils/fieldMapper';
 import { db, storage } from '@/lib/firebase';
-import { collection, addDoc, getDocs, getDoc, doc, updateDoc, deleteDoc, query, orderBy, serverTimestamp, where } from 'firebase/firestore';
+import { collection, addDoc, getDocs, getDoc, doc, updateDoc, deleteDoc, query, orderBy, serverTimestamp, where, Timestamp, deleteField } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { linkCleanupService } from '@/services/linkCleanupService';
 import { useKeyboardNavigation, getNavigationPosition } from '@/hooks/useKeyboardNavigation';
+import { useLinkedEntityQuickViewStack } from '@/hooks/useLinkedEntityQuickViewStack';
+import { getExpenseLinkedEventId, getTransactionEventLinkIds } from '@/utils/operationFinancials';
+// Email notifications are now handled by Firebase Cloud Functions (onExpenseCreated, onExpenseStatusChange)
+// See functions/src/index.ts for the trigger implementation
 
 // Settings du club par défaut (sera mis à jour avec les valeurs Firebase)
 const DEFAULT_CLUB_SETTINGS: ClubSettings = {
@@ -68,15 +77,14 @@ export function DemandesPage() {
   // ✅ Use real authenticated Membre from AuthContext (not Firebase Auth user)
   const currentUser = appUser;
 
-  const { selectedFiscalYear } = useFiscalYear();
+  const { selectedFiscalYear, disableFiscalYearFilter } = useFiscalYear();
   const location = useLocation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [activeView, setActiveView] = useState<'demandes' | 'matching' | 'transactions'>('demandes');
-  const [showNewFormModal, setShowNewFormModal] = useState(false);
-  const [newFormModalKey, setNewFormModalKey] = useState(0); // Key to force re-render of modal
   const [filterStatut, setFilterStatut] = useState<string>('');
   const [filterReconcilie, setFilterReconcilie] = useState<string>(''); // '' | 'oui' | 'non'
+  const [filterMontantModified, setFilterMontantModified] = useState<boolean>(false); // Filter for modified amounts
   const [selectedDemande, setSelectedDemande] = useState<DemandeRemboursement | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<TransactionBancaire | null>(null);
   const [expenseTransactions, setExpenseTransactions] = useState<TransactionBancaire[]>([]);
@@ -85,6 +93,7 @@ export function DemandesPage() {
   const [refusalReason, setRefusalReason] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [detailViewDemand, setDetailViewDemand] = useState<DemandeRemboursement | null>(null);
+  const { quickViews, openQuickView, closeQuickViewsFrom, closeAllQuickViews } = useLinkedEntityQuickViewStack();
   const [lastViewedDemandId, setLastViewedDemandId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showTransactionLinking, setShowTransactionLinking] = useState(false);
@@ -117,19 +126,19 @@ export function DemandesPage() {
         });
       })
       .catch(err => {
-        console.error('Error loading settings:', err);
+        logger.error('Error loading settings:', err);
       });
 
     // ⚠️ CRITICAL: Wait for both selectedFiscalYear AND appUser before loading data
     // Without appUser, we don't know the role and can't apply correct filters
     if (selectedFiscalYear && appUser) {
-      console.log(`🔄 [DemandesPage] Loading data with appUser role: ${appUser.app_role}`);
+      logger.debug(`🔄 [DemandesPage] Loading data with appUser role: ${appUser.app_role}`);
       loadDemandes();
       loadExpenseTransactions();
       loadMembres();
       loadEvenements();
     } else if (selectedFiscalYear && !appUser) {
-      console.log('⏸️ [DemandesPage] Waiting for appUser to load before fetching data...');
+      logger.debug('⏸️ [DemandesPage] Waiting for appUser to load before fetching data...');
     }
   }, [clubId, selectedFiscalYear, appUser]);
 
@@ -138,7 +147,7 @@ export function DemandesPage() {
     if (location.state?.openDemandId && allDemandes.length > 0 && !detailViewDemand) {
       const demandToOpen = allDemandes.find(d => d.id === location.state.openDemandId);
       if (demandToOpen) {
-        console.log('🔓 [DemandesPage] Opening demand from navigation state:', location.state.openDemandId);
+        logger.debug('🔓 [DemandesPage] Opening demand from navigation state:', location.state.openDemandId);
         setDetailViewDemand(demandToOpen);
         // Clear the state to prevent re-opening when modal closes
         navigate(location.pathname, { replace: true, state: {} });
@@ -161,15 +170,16 @@ export function DemandesPage() {
   }, [detailViewDemand, lastViewedDemandId]);
 
   const loadDemandes = async () => {
-    if (!selectedFiscalYear) {
-      console.log('⏸️ No fiscal year selected, skipping demands load');
+    // 🔧 TEMPORAIRE: Si le filtre est désactivé, on n'attend pas selectedFiscalYear
+    if (!disableFiscalYearFilter && !selectedFiscalYear) {
+      logger.debug('⏸️ No fiscal year selected, skipping demands load');
       setAllDemandes([]);
       return;
     }
 
     // ⚠️ CRITICAL: Don't run query if appUser not loaded yet (prevents permission errors)
     if (!appUser) {
-      console.log('⏸️ [loadDemandes] Waiting for appUser to load...');
+      logger.debug('⏸️ [loadDemandes] Waiting for appUser to load...');
       setAllDemandes([]);
       setLoading(false);
       return;
@@ -182,29 +192,24 @@ export function DemandesPage() {
       // 🔒 USER ISOLATION: Filter by demandeur_id for 'user' role
       let q;
       if (currentUser?.app_role === 'user' && user) {
-        console.log(`🔒 USER ISOLATION: Loading only own demands for user ${user.uid}`, {
+        logger.debug(`🔒 USER ISOLATION: Loading only own demands for user ${user.uid}`, {
           user_email: user.email,
           user_uid: user.uid,
-          fiscal_year_id: selectedFiscalYear.id,
-          fiscal_year: selectedFiscalYear.year
+          fiscal_year_id: disableFiscalYearFilter ? 'ALL' : selectedFiscalYear?.id,
+          fiscal_year: disableFiscalYearFilter ? 'ALL' : selectedFiscalYear?.year
         });
-        q = query(
-          demandesRef,
-          where('fiscal_year_id', '==', selectedFiscalYear.id),
-          where('demandeur_id', '==', user.uid),  // Use Firebase Auth UID, not Firestore doc ID
-          orderBy('created_at', 'desc')  // ✅ FIX: Use created_at instead of date_demande (always exists)
-        );
+        q = disableFiscalYearFilter
+          ? query(demandesRef, where('demandeur_id', '==', user.uid), orderBy('created_at', 'desc'))
+          : query(demandesRef, where('fiscal_year_id', '==', selectedFiscalYear!.id), where('demandeur_id', '==', user.uid), orderBy('created_at', 'desc'));
       } else {
         // Admin/validateur/superadmin see all
-        console.log(`📊 Loading ALL demands (admin role: ${currentUser?.app_role})`);
-        q = query(
-          demandesRef,
-          where('fiscal_year_id', '==', selectedFiscalYear.id),
-          orderBy('date_depense', 'desc')
-        );
+        logger.debug(`📊 Loading ALL demands (admin role: ${currentUser?.app_role})`);
+        q = disableFiscalYearFilter
+          ? query(demandesRef, orderBy('date_depense', 'desc'))
+          : query(demandesRef, where('fiscal_year_id', '==', selectedFiscalYear!.id), orderBy('date_depense', 'desc'));
       }
 
-      console.log(`📊 Loading demands for fiscal year: ${selectedFiscalYear.year} (role: ${currentUser?.app_role})`);
+      logger.debug(`📊 Loading demands for fiscal year: ${disableFiscalYearFilter ? 'ALL' : selectedFiscalYear?.year} (role: ${currentUser?.app_role})`);
       const snapshot = await getDocs(q);
 
       // Load all demandes with date conversions
@@ -219,10 +224,10 @@ export function DemandesPage() {
             const memberSnap = await getDoc(memberRef);
             if (memberSnap.exists()) {
               const memberData = memberSnap.data();
-              demandeurNom = memberData.displayName || memberData.nom || memberData.email || data.demandeur_nom;
+              demandeurNom = memberData.displayName || getLastName(memberData) || memberData.email || data.demandeur_nom;
             }
           } catch (error) {
-            console.warn(`Could not load member ${data.demandeur_id}:`, error);
+            logger.warn(`Could not load member ${data.demandeur_id}:`, error);
           }
         }
 
@@ -239,10 +244,10 @@ export function DemandesPage() {
         } as DemandeRemboursement;
       }));
 
-      console.log(`✅ Loaded ${loadedDemandes.length} demands for year ${selectedFiscalYear.year}`);
+      logger.debug(`✅ Loaded ${loadedDemandes.length} demands for year ${selectedFiscalYear.year}`);
       setAllDemandes(loadedDemandes);
     } catch (error) {
-      console.error('Error loading demands:', error);
+      logger.error('Error loading demands:', error);
       toast.error('Erreur lors du chargement des demandes');
     } finally {
       setLoading(false);
@@ -250,22 +255,23 @@ export function DemandesPage() {
   };
 
   const loadExpenseTransactions = async () => {
-    if (!selectedFiscalYear) {
-      console.log('⏸️ No fiscal year selected, skipping transactions load');
+    // 🔧 TEMPORAIRE: Si le filtre est désactivé, on n'attend pas selectedFiscalYear
+    if (!disableFiscalYearFilter && !selectedFiscalYear) {
+      logger.debug('⏸️ No fiscal year selected, skipping transactions load');
       setExpenseTransactions([]);
       return;
     }
 
     // ⚠️ CRITICAL: Users (role 'user') cannot access transactions - skip query
     if (appUser?.app_role === 'user') {
-      console.log('⏸️ [loadExpenseTransactions] User role cannot access transactions, skipping');
+      logger.debug('⏸️ [loadExpenseTransactions] User role cannot access transactions, skipping');
       setExpenseTransactions([]);
       return;
     }
 
     // Wait for appUser to load for other roles
     if (!appUser) {
-      console.log('⏸️ [loadExpenseTransactions] Waiting for appUser to load...');
+      logger.debug('⏸️ [loadExpenseTransactions] Waiting for appUser to load...');
       setExpenseTransactions([]);
       return;
     }
@@ -273,14 +279,12 @@ export function DemandesPage() {
     try {
       const transactionsRef = collection(db, 'clubs', clubId, 'transactions_bancaires');
 
-      // Query with fiscal year filter
-      const q = query(
-        transactionsRef,
-        where('fiscal_year_id', '==', selectedFiscalYear.id),
-        orderBy('date_execution', 'desc')
-      );
+      // Query with fiscal year filter (or all if disabled)
+      const q = disableFiscalYearFilter
+        ? query(transactionsRef, orderBy('date_execution', 'desc'))
+        : query(transactionsRef, where('fiscal_year_id', '==', selectedFiscalYear!.id), orderBy('date_execution', 'desc'));
 
-      console.log(`📊 Loading transactions for fiscal year: ${selectedFiscalYear.year}`);
+      logger.debug(`📊 Loading transactions for fiscal year: ${disableFiscalYearFilter ? 'ALL' : selectedFiscalYear?.year}`);
       const snapshot = await getDocs(q);
 
       const loadedTransactions = snapshot.docs.map(doc => {
@@ -295,10 +299,10 @@ export function DemandesPage() {
         } as TransactionBancaire;
       });
 
-      console.log(`✅ Loaded ${loadedTransactions.length} transactions for year ${selectedFiscalYear.year}`);
+      logger.debug(`✅ Loaded ${loadedTransactions.length} transactions for year ${disableFiscalYearFilter ? 'ALL' : selectedFiscalYear?.year}`);
       setExpenseTransactions(loadedTransactions);
     } catch (error) {
-      console.error('Error loading transactions:', error);
+      logger.error('Error loading transactions:', error);
     }
   };
 
@@ -313,11 +317,11 @@ export function DemandesPage() {
         id: doc.id
       })) as Membre[];
 
-      console.log('📋 Membres loaded:', loadedMembres.length, 'members');
-      console.log('📋 Members data:', loadedMembres);
+      logger.debug('📋 Membres loaded:', loadedMembres.length, 'members');
+      logger.debug('📋 Members data:', loadedMembres);
       setMembres(loadedMembres);
     } catch (error) {
-      console.error('Error loading membres:', error);
+      logger.error('Error loading membres:', error);
     }
   };
 
@@ -325,7 +329,7 @@ export function DemandesPage() {
   const loadEvenements = async () => {
     // ⚠️ CRITICAL: Wait for appUser to load before running query
     if (!appUser) {
-      console.log('⏸️ [loadEvenements] Waiting for appUser to load...');
+      logger.debug('⏸️ [loadEvenements] Waiting for appUser to load...');
       setEvenements([]);
       return;
     }
@@ -361,11 +365,65 @@ export function DemandesPage() {
 
       setEvenements(loadedEvenements);
     } catch (error) {
-      console.error('Error loading evenements:', error);
+      logger.error('Error loading evenements:', error);
     }
   };
 
-  // NEW: Handler for creating expenses
+  const getOperationById = (operationId: string): Evenement | null => {
+    return evenements.find(operation => operation.id === operationId) || null;
+  };
+
+  const getLinkedTransactionsForOperation = (operationId: string): TransactionBancaire[] => {
+    return expenseTransactions.filter(transaction => getTransactionEventLinkIds(transaction).includes(operationId));
+  };
+
+  const getLinkedDemandsForOperation = (operationId: string): DemandeRemboursement[] => {
+    return allDemandes.filter(demand => getExpenseLinkedEventId(demand) === operationId);
+  };
+
+  // Handler for quick expense creation (creates directly in Firestore)
+  const handleNewExpense = async () => {
+    try {
+      const demandesRef = collection(db, 'clubs', clubId, 'demandes_remboursement');
+      const newDemande = {
+        titre: '',
+        description: '',
+        montant: 0,
+        date_depense: new Date().toISOString().split('T')[0],
+        demandeur_id: user?.uid,
+        demandeur_nom: user?.displayName || appUser?.displayName || 'Utilisateur',
+        demandeur_email: user?.email || '',
+        statut: 'brouillon',
+        club_id: clubId,
+        fiscal_year_id: selectedFiscalYear?.id || null,
+        date_soumission: serverTimestamp(),
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp()
+      };
+
+      const docRef = await addDoc(demandesRef, newDemande);
+
+      // Reload demands and open the new one
+      await loadDemandes();
+
+      // Find and open the newly created demand
+      const newDemandeWithId: DemandeRemboursement = {
+        ...newDemande,
+        id: docRef.id,
+        date_soumission: new Date(),
+        created_at: new Date(),
+        updated_at: new Date()
+      } as DemandeRemboursement;
+
+      setDetailViewDemand(newDemandeWithId);
+      toast.success('Nouvelle dépense créée');
+    } catch (error) {
+      logger.error('Error creating expense:', error);
+      toast.error('Erreur lors de la création de la dépense');
+    }
+  };
+
+  // Handler for creating expenses with files (used by DemandeDetailView)
   const handleCreateExpense = async (newDemand: Partial<DemandeRemboursement>, files?: File[]): Promise<string> => {
     try {
       // Upload files to Firebase Storage first
@@ -380,7 +438,7 @@ export function DemandesPage() {
           try {
             fileHash = await hashFile(file);
           } catch (error) {
-            console.error(`Error calculating hash for ${file.name}:`, error);
+            logger.error(`Error calculating hash for ${file.name}:`, error);
           }
 
           const storageRef = ref(storage, `clubs/${clubId}/justificatifs/${Date.now()}_${file.name}`);
@@ -415,8 +473,7 @@ export function DemandesPage() {
         fiscal_year_id: selectedFiscalYear?.id || null,  // Required by Firestore Rules
         demandeur_id: newDemand.demandeur_id || user?.uid,
         demandeur_nom: newDemand.demandeur_nom || user?.displayName || 'Utilisateur',
-        statut: 'soumis',
-        date_soumission: serverTimestamp(),
+        statut: 'brouillon',
         ...(uploadedDocs.length > 0 && {
           documents_justificatifs: uploadedDocs,
           urls_justificatifs: uploadedDocs.map(d => d.url)
@@ -425,17 +482,21 @@ export function DemandesPage() {
         updated_at: serverTimestamp()
       };
 
-      console.log('📝 Creating demand with data:', {
+      logger.debug('📝 Creating demand with data:', {
         demandeur_id: demandData.demandeur_id,
         fiscal_year_id: demandData.fiscal_year_id,
         user_uid: user?.uid,
         user_email: user?.email,
-        appUser_role: appUser?.role
+        appUser_role: getRole(appUser)
       });
 
       const docRef = await addDoc(demandesRef, demandData);
 
       toast.success('Dépense créée avec succès');
+
+      // Send email notification to submitter (non-blocking)
+      // Email notification is now handled by Firebase Cloud Function (onExpenseCreated)
+      logger.debug('📧 Expense submitted - email will be sent by Cloud Function');
 
       // Close the create modal
       setShowNewFormModal(false);
@@ -456,14 +517,14 @@ export function DemandesPage() {
             setDetailViewDemand(newDemande);
           }
         } catch (error) {
-          console.error('Error fetching newly created demand:', error);
+          logger.error('Error fetching newly created demand:', error);
         }
       }, 500);
 
       // Return the created demande ID for auto-linking
       return docRef.id;
     } catch (error) {
-      console.error('Error creating expense:', error);
+      logger.error('Error creating expense:', error);
       toast.error('Erreur lors de la création de la dépense');
       throw error; // Re-throw to allow caller to handle
     }
@@ -493,7 +554,7 @@ export function DemandesPage() {
 
       return null;
     } catch (error) {
-      console.error('AI analysis error:', error);
+      logger.error('AI analysis error:', error);
       toast.error('Erreur lors de l\'analyse IA');
       return null;
     }
@@ -528,7 +589,9 @@ export function DemandesPage() {
         (filterReconcilie === 'oui' && isReconciled) ||
         (filterReconcilie === 'non' && !isReconciled);
 
-      return matchesSearch && matchesStatut && matchesReconcilie;
+      const matchesMontantModified = !filterMontantModified || demande.montant_modified === true;
+
+      return matchesSearch && matchesStatut && matchesReconcilie && matchesMontantModified;
     })
     .sort((a, b) => {
       let comparison = 0;
@@ -571,7 +634,7 @@ export function DemandesPage() {
   // Statistiques
   const stats = {
     totalDemandes: allDemandes.length,
-    enAttente: allDemandes.filter(d => d.statut === 'soumis' || d.statut === 'en_attente_validation').length,
+    enAttente: allDemandes.filter(d => d.statut === 'en_attente_validation').length,
     approuvees: allDemandes.filter(d => d.statut === 'approuve').length,
     remboursees: allDemandes.filter(d => d.statut === 'rembourse').length,
     refusees: allDemandes.filter(d => d.statut === 'refuse').length,
@@ -590,7 +653,9 @@ export function DemandesPage() {
     const demande = allDemandes.find(d => d.id === demandId);
     if (!demande) return;
 
-    if (demande.demandeur_id === currentUser.id) {
+    // Super admin can approve their own demands
+    const isSuperAdmin = getRole(currentUser) === 'super_admin';
+    if (demande.demandeur_id === currentUser.id && !isSuperAdmin) {
       toast.error('Vous ne pouvez pas approuver votre propre demande');
       return;
     }
@@ -600,29 +665,50 @@ export function DemandesPage() {
       return;
     }
 
-    const isSecondApproval = demande.statut === 'en_attente_validation';
     const needsDoubleApproval = SettingsService.requiresDoubleApproval(demande.montant);
+    // isSecondApproval = true seulement si double approbation requise ET première approbation déjà faite
+    const isSecondApproval = needsDoubleApproval && !!demande.approuve_par;
 
-    const newStatus = (isSecondApproval || !needsDoubleApproval) ? 'approuve' : 'en_attente_validation';
+    // Nouveau statut: 'approuve' si pas besoin de double approbation, OU si c'est la 2ème approbation
+    const newStatus = (!needsDoubleApproval || isSecondApproval) ? 'approuve' : 'en_attente_validation';
 
     try {
       // ✅ CRITICAL FIX: Save approval to Firestore
       const demandeRef = doc(db, 'clubs', clubId, 'demandes_remboursement', demandId);
 
+      const currentUserFirstName = getFirstName(currentUser) || '';
+      const currentUserLastName = getLastName(currentUser) || '';
+      const currentUserFullName = `${currentUserFirstName} ${currentUserLastName}`.trim();
+
+      // ✅ Status audit trail entry
+      const statusAuditEntry = {
+        old_statut: demande.statut,
+        new_statut: newStatus,
+        changed_by: currentUser.id,
+        changed_by_name: currentUserFullName,
+        changed_at: new Date(),
+        approval_type: isSecondApproval ? 'second' : 'first'
+      };
+
       const firestoreUpdates: any = {
         statut: newStatus,
         requires_double_approval: needsDoubleApproval,
-        updated_at: serverTimestamp()
+        updated_at: serverTimestamp(),
+        status_history: [...(demande.status_history || []), statusAuditEntry]
       };
 
       if (isSecondApproval) {
         firestoreUpdates.approuve_par_2 = currentUser.id;
-        firestoreUpdates.approuve_par_2_nom = `${currentUser.prenom} ${currentUser.nom}`;
-        firestoreUpdates.date_approbation_2 = serverTimestamp();
+        firestoreUpdates.approuve_par_2_nom = currentUserFullName;
+        // Use Timestamp.now() instead of serverTimestamp() - Firestore rules validate these fields
+        // before serverTimestamp() is resolved, causing "Missing or insufficient permissions"
+        firestoreUpdates.date_approbation_2 = Timestamp.now();
       } else {
         firestoreUpdates.approuve_par = currentUser.id;
-        firestoreUpdates.approuve_par_nom = `${currentUser.prenom} ${currentUser.nom}`;
-        firestoreUpdates.date_approbation = serverTimestamp();
+        firestoreUpdates.approuve_par_nom = currentUserFullName;
+        // Use Timestamp.now() instead of serverTimestamp() - Firestore rules validate these fields
+        // before serverTimestamp() is resolved, causing "Missing or insufficient permissions"
+        firestoreUpdates.date_approbation = Timestamp.now();
       }
 
       await updateDoc(demandeRef, firestoreUpdates);
@@ -646,20 +732,52 @@ export function DemandesPage() {
 
       if (newStatus === 'approuve') {
         toast.success('✅ Demande approuvée complètement');
+        // Email notification is now handled by Firebase Cloud Function (onExpenseStatusChange)
+        logger.debug('📧 Expense approved - email will be sent by Cloud Function');
       } else {
         toast.success('✅ Première approbation effectuée, en attente de deuxième validation');
       }
 
-      console.log('✅ Approval saved to Firestore:', { demandId, newStatus, isSecondApproval });
+      logger.debug('✅ Approval saved to Firestore:', { demandId, newStatus, isSecondApproval });
+
+      // ✅ Audit logging - track who approved and when
+      try {
+        await UserService.createAuditLog(clubId, {
+          userId: currentUser?.id || '',
+          userEmail: currentUser?.email || '',
+          userName: currentUserFullName,
+          action: 'DEMAND_APPROVED',
+          targetId: demandId,
+          targetType: 'demand',
+          targetName: demande.description || demande.titre || `Demande ${demandId}`,
+          previousValue: { statut: demande.statut },
+          newValue: {
+            statut: newStatus,
+            isSecondApproval,
+            montant: demande.montant
+          },
+          details: {
+            demandeur: demande.demandeur_nom,
+            montant: demande.montant,
+            approvalType: isSecondApproval ? 'second_approval' : 'first_approval'
+          },
+          timestamp: new Date(),
+          clubId: clubId,
+          severity: 'info'
+        });
+        logger.debug('📝 Audit log created for approval');
+      } catch (auditError) {
+        logger.error('⚠️ Failed to create audit log (non-blocking):', auditError);
+      }
 
       // ✅ Invalidation du cache React Query - Dashboard & Stats
-      console.log('🔄 Invalidation du cache dashboard après approbation dépense...');
+      logger.debug('🔄 Invalidation du cache dashboard après approbation dépense...');
       queryClient.invalidateQueries({ queryKey: ['countStats', clubId] });
       queryClient.invalidateQueries({ queryKey: ['pendingActions', clubId] });
-      console.log('✅ Cache dashboard invalidé!');
+      logger.debug('✅ Cache dashboard invalidé!');
 
     } catch (error) {
-      console.error('❌ Error approving demand:', error);
+      logger.error('❌ Error approving demand:', error);
       toast.error('Erreur lors de l\'approbation de la demande');
     }
   };
@@ -674,20 +792,38 @@ export function DemandesPage() {
       // ✅ CRITICAL FIX: Save refusal to Firestore
       const demandeRef = doc(db, 'clubs', clubId, 'demandes_remboursement', demandId);
 
+      const refuserFirstName = getFirstName(currentUser) || '';
+      const refuserLastName = getLastName(currentUser) || '';
+      const refuserFullName = `${refuserFirstName} ${refuserLastName}`.trim();
+
+      // Get current demande for status history
+      const demande = allDemandes.find(d => d.id === demandId);
+
+      // ✅ Status audit trail entry
+      const statusAuditEntry = {
+        old_statut: demande?.statut || 'en_attente_validation',
+        new_statut: 'refuse',
+        changed_by: currentUser.id,
+        changed_by_name: refuserFullName,
+        changed_at: new Date(),
+        reason: refusalReason
+      };
+
       await updateDoc(demandeRef, {
         statut: 'refuse',
         refuse_par: currentUser.id,
-        refuse_par_nom: `${currentUser.prenom} ${currentUser.nom}`,
+        refuse_par_nom: refuserFullName,
         date_refus: serverTimestamp(),
         motif_refus: refusalReason,
-        updated_at: serverTimestamp()
+        updated_at: serverTimestamp(),
+        status_history: [...(demande?.status_history || []), statusAuditEntry]
       });
 
       // Update local state for immediate UI feedback
       const updatedDemande = {
         statut: 'refuse' as const,
         refuse_par: currentUser.id,
-        refuse_par_nom: `${currentUser.prenom} ${currentUser.nom}`,
+        refuse_par_nom: refuserFullName,
         date_refus: new Date(),
         motif_refus: refusalReason,
         updated_at: new Date()
@@ -706,16 +842,45 @@ export function DemandesPage() {
       setShowRefusalModal(null);
       setRefusalReason('');
 
-      console.log('✅ Refusal saved to Firestore:', { demandId, refusalReason });
+      logger.debug('✅ Refusal saved to Firestore:', { demandId, refusalReason });
+
+      // ✅ Audit logging - track who rejected and why (reuse demande from above)
+      try {
+        await UserService.createAuditLog(clubId, {
+          userId: currentUser?.id || '',
+          userEmail: currentUser?.email || '',
+          userName: refuserFullName,
+          action: 'DEMAND_REJECTED',
+          targetId: demandId,
+          targetType: 'demand',
+          targetName: demande?.description || demande?.titre || `Demande ${demandId}`,
+          previousValue: { statut: demande?.statut },
+          newValue: {
+            statut: 'refuse',
+            motif_refus: refusalReason
+          },
+          details: {
+            demandeur: demande?.demandeur_nom,
+            montant: demande?.montant,
+            motif_refus: refusalReason
+          },
+          timestamp: new Date(),
+          clubId: clubId,
+          severity: 'warning'
+        });
+        logger.debug('📝 Audit log created for rejection');
+      } catch (auditError) {
+        logger.error('⚠️ Failed to create audit log (non-blocking):', auditError);
+      }
 
       // ✅ Invalidation du cache React Query - Dashboard & Stats
-      console.log('🔄 Invalidation du cache dashboard après refus dépense...');
+      logger.debug('🔄 Invalidation du cache dashboard après refus dépense...');
       queryClient.invalidateQueries({ queryKey: ['countStats', clubId] });
       queryClient.invalidateQueries({ queryKey: ['pendingActions', clubId] });
-      console.log('✅ Cache dashboard invalidé!');
+      logger.debug('✅ Cache dashboard invalidé!');
 
     } catch (error) {
-      console.error('❌ Error refusing demand:', error);
+      logger.error('❌ Error refusing demand:', error);
       toast.error('Erreur lors du refus de la demande');
     }
   };
@@ -743,11 +908,26 @@ export function DemandesPage() {
 
       // 2. Mettre à jour la demande dans Firestore
       const demandeRef = doc(db, 'clubs', clubId, 'demandes_remboursement', demande.id);
+
+      const linkerFirstName = getFirstName(currentUser) || '';
+      const linkerLastName = getLastName(currentUser) || '';
+      const linkerFullName = `${linkerFirstName} ${linkerLastName}`.trim();
+
+      // ✅ Status audit trail entry for linking to transaction
+      const statusAuditEntry = {
+        old_statut: demande.statut,
+        new_statut: 'rembourse',
+        changed_by: currentUser.id,
+        changed_by_name: linkerFullName,
+        changed_at: new Date()
+      };
+
       await updateDoc(demandeRef, {
         transaction_id: transaction.id,
         statut: 'rembourse',
         date_remboursement: new Date(),
-        updated_at: serverTimestamp()
+        updated_at: serverTimestamp(),
+        status_history: [...(demande.status_history || []), statusAuditEntry]
       });
 
       // 3. Mettre à jour l'état local
@@ -764,7 +944,13 @@ export function DemandesPage() {
 
       setAllDemandes(prev =>
         prev.map(d => d.id === demande.id
-          ? { ...d, statut: 'rembourse' as const, transaction_id: transaction.id, date_remboursement: new Date() }
+          ? {
+              ...d,
+              statut: 'rembourse' as const,
+              transaction_id: transaction.id,
+              date_remboursement: new Date(),
+              status_history: [...(d.status_history || []), statusAuditEntry]
+            }
           : d
         )
       );
@@ -773,7 +959,7 @@ export function DemandesPage() {
       setSelectedTransaction(null);
       setSelectedDemande(null);
     } catch (error) {
-      console.error('Error linking transaction:', error);
+      logger.error('Error linking transaction:', error);
       toast.error('Erreur lors de la liaison de la transaction');
     }
   };
@@ -786,18 +972,18 @@ export function DemandesPage() {
       // 1. Mettre à jour la demande dans Firestore
       const demandeRef = doc(db, 'clubs', clubId, 'demandes_remboursement', demandId);
       await updateDoc(demandeRef, {
-        transaction_id: null,
+        transaction_id: deleteField(),
         statut: 'approuve',
-        date_remboursement: null,
+        date_remboursement: deleteField(),
         updated_at: serverTimestamp()
       });
 
       // 2. Mettre à jour la transaction dans Firestore
       const txRef = doc(db, 'clubs', clubId, 'transactions_bancaires', demande.transaction_id);
       await updateDoc(txRef, {
-        expense_claim_id: null,
+        expense_claim_id: deleteField(),
         reconcilie: false,
-        matched_entities: null,
+        matched_entities: deleteField(),
         updated_at: serverTimestamp()
       });
 
@@ -816,7 +1002,7 @@ export function DemandesPage() {
 
       toast.success('Demande déliée de la transaction');
     } catch (error) {
-      console.error('Error unlinking demand:', error);
+      logger.error('Error unlinking demand:', error);
       toast.error('Erreur lors du délien de la demande');
     }
   };
@@ -824,8 +1010,6 @@ export function DemandesPage() {
   const handleAutoMatch = async () => {
     const results = await ReconciliationService.performAutoReconciliation(
       expenseTransactions,
-      undefined,
-      undefined,
       allDemandes.filter(d => d.statut === 'approuve')
     );
 
@@ -897,7 +1081,9 @@ export function DemandesPage() {
           date_remboursement: serverTimestamp(),
           updated_at: serverTimestamp()
         });
-        console.log('✅ [AUTO-UPDATE] Demand status updated: approuve → rembourse');
+        logger.debug('✅ [AUTO-UPDATE] Demand status updated: approuve → rembourse');
+        // Email notification is now handled by Firebase Cloud Function (onExpenseStatusChange)
+        logger.debug('📧 Expense reimbursed - email will be sent by Cloud Function');
       }
 
       // Reload transactions AND demands to get fresh data
@@ -928,7 +1114,7 @@ export function DemandesPage() {
         toast.success(`${transactionIds.length} transaction(s) liée(s) à la dépense`);
       }
     } catch (error) {
-      console.error('Error linking transactions:', error);
+      logger.error('Error linking transactions:', error);
       toast.error('Erreur lors de la liaison des transactions');
     }
   };
@@ -970,7 +1156,7 @@ export function DemandesPage() {
       setLinkingOperationDemandId(null);
       await loadDemandes();
     } catch (error) {
-      console.error('Error linking operation:', error);
+      logger.error('Error linking operation:', error);
       toast.error('Erreur lors de la liaison de l\'activité');
     }
   };
@@ -990,7 +1176,7 @@ export function DemandesPage() {
       toast.success('Activité déliée de la dépense');
       await loadDemandes();
     } catch (error) {
-      console.error('Error unlinking operation:', error);
+      logger.error('Error unlinking operation:', error);
       toast.error('Erreur lors du déliaison de l\'activité');
     }
   };
@@ -1006,17 +1192,7 @@ export function DemandesPage() {
           </div>
           <div className="flex items-center gap-3">
             <button
-              onClick={() => navigate('/parametres/revision-documents')}
-              className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-            >
-              <FolderCheck className="h-4 w-4" />
-              Révision documents
-            </button>
-            <button
-              onClick={() => {
-                setNewFormModalKey(prev => prev + 1); // Increment key to force re-render
-                setShowNewFormModal(true);
-              }}
+              onClick={handleNewExpense}
               className="flex items-center gap-2 px-4 py-2 bg-calypso-blue text-white rounded-lg hover:bg-calypso-blue-dark transition-colors"
             >
               <Plus className="h-4 w-4" />
@@ -1054,9 +1230,11 @@ export function DemandesPage() {
                   onChange={(e) => setFilterStatut(e.target.value)}
                 >
                   <option value="">Tous les statuts</option>
-                  <option value="soumis">En attente</option>
-                  <option value="en_attente_validation">Attente 2e validation</option>
+                  <option value="brouillon">Brouillon</option>
+                  <option value="en_attente_validation">En attente de validation</option>
                   <option value="approuve">Approuvé</option>
+                  <option value="cree_banque_attente_validation">Créé dans banque</option>
+                  <option value="paiement_effectue">Paiement effectué</option>
                   <option value="rembourse">Remboursé</option>
                   <option value="refuse">Refusé</option>
                 </select>
@@ -1069,6 +1247,25 @@ export function DemandesPage() {
                   <option value="oui">Réconcilié</option>
                   <option value="non">Non réconcilié</option>
                 </select>
+                {/* Filter for modified amounts */}
+                <button
+                  onClick={() => setFilterMontantModified(!filterMontantModified)}
+                  className={cn(
+                    "px-4 py-2 border rounded-lg flex items-center gap-2 transition-colors",
+                    filterMontantModified
+                      ? "bg-amber-100 border-amber-500 text-amber-700 dark:bg-amber-900/30 dark:border-amber-500 dark:text-amber-400"
+                      : "border-gray-300 dark:border-dark-border text-gray-600 dark:text-dark-text-secondary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary"
+                  )}
+                  title="Afficher uniquement les demandes avec montant modifié"
+                >
+                  <AlertTriangle className="h-4 w-4" />
+                  <span className="hidden sm:inline">Montants modifiés</span>
+                  {filterMontantModified && (
+                    <span className="text-xs bg-amber-200 dark:bg-amber-800 px-1.5 py-0.5 rounded">
+                      {allDemandes.filter(d => d.montant_modified).length}
+                    </span>
+                  )}
+                </button>
               </div>
             </div>
           </div>
@@ -1083,7 +1280,7 @@ export function DemandesPage() {
                       Description & Liaisons
                     </th>
                     <th
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-dark-bg-secondary"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-secondary"
                       onClick={() => handleSort('date')}
                     >
                       <div className="flex items-center gap-1">
@@ -1096,7 +1293,7 @@ export function DemandesPage() {
                       </div>
                     </th>
                     <th
-                      className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-dark-bg-secondary"
+                      className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-secondary"
                       onClick={() => handleSort('montant')}
                     >
                       <div className="flex items-center justify-end gap-1">
@@ -1109,7 +1306,7 @@ export function DemandesPage() {
                       </div>
                     </th>
                     <th
-                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-dark-bg-secondary"
+                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-secondary"
                       onClick={() => handleSort('statut')}
                     >
                       <div className="flex items-center justify-center gap-1">
@@ -1138,9 +1335,13 @@ export function DemandesPage() {
                         key={demande.id}
                         id={`demand-${demande.id}`}
                         className={cn(
-                          "hover:bg-gray-50 transition-colors",
+                          "hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary transition-colors cursor-pointer",
                           lastViewedDemandId === demande.id && "bg-blue-100"
                         )}
+                        onClick={() => {
+                          setLastViewedDemandId(demande.id);
+                          setDetailViewDemand(demande);
+                        }}
                       >
                         <td className="px-6 py-4">
                           <div>
@@ -1183,14 +1384,23 @@ export function DemandesPage() {
                           {demande.date_depense ? formatDate(demande.date_depense) : '-'}
                         </td>
                         <td className="px-6 py-4 text-right">
-                          <p className="font-semibold text-red-600 dark:text-red-400">-{formatMontant(demande.montant)}</p>
+                          <div className="flex items-center justify-end gap-1.5">
+                            {demande.montant_modified && (
+                              <AlertTriangle
+                                className="h-4 w-4 text-amber-500"
+                                title="Montant modifié après création"
+                              />
+                            )}
+                            <p className="font-semibold text-red-600 dark:text-red-400">-{formatMontant(demande.montant)}</p>
+                          </div>
                         </td>
                         <td className="px-6 py-4 text-center">
                           <ApprovalBadge demand={demande} showDetails={false} />
                         </td>
                         <td className="px-6 py-4 text-center whitespace-nowrap">
                           <button
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation();
                               setLastViewedDemandId(demande.id);
                               setDetailViewDemand(demande);
                             }}
@@ -1212,7 +1422,7 @@ export function DemandesPage() {
 
       {/* Vue Matching */}
       {activeView === 'matching' && (
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Colonne Demandes approuvées */}
           <div>
             <h3 className="font-medium text-gray-900 dark:text-dark-text-primary mb-4">Demandes approuvées en attente</h3>
@@ -1224,7 +1434,7 @@ export function DemandesPage() {
                     "p-4 bg-white border rounded-lg cursor-pointer transition-colors",
                     selectedDemande?.id === demande.id 
                       ? "border-purple-500 bg-purple-50" 
-                      : "border-gray-200 hover:border-gray-300"
+                      : "border-gray-200 dark:border-dark-border hover:border-gray-300 dark:border-dark-border"
                   )}
                   onClick={() => setSelectedDemande(demande)}
                 >
@@ -1233,7 +1443,12 @@ export function DemandesPage() {
                       <p className="font-medium">{demande.description}</p>
                       <p className="text-sm text-gray-600 dark:text-dark-text-secondary">{demande.demandeur_nom}</p>
                     </div>
-                    <p className="font-bold text-red-600 dark:text-red-400">-{formatMontant(demande.montant)}</p>
+                    <div className="flex items-center gap-1.5">
+                      {demande.montant_modified && (
+                        <AlertTriangle className="h-4 w-4 text-amber-500" title="Montant modifié" />
+                      )}
+                      <p className="font-bold text-red-600 dark:text-red-400">-{formatMontant(demande.montant)}</p>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -1254,7 +1469,7 @@ export function DemandesPage() {
                     "p-4 bg-white border rounded-lg cursor-pointer transition-colors",
                     selectedTransaction?.id === transaction.id 
                       ? "border-orange-500 bg-orange-50" 
-                      : "border-gray-200 hover:border-gray-300"
+                      : "border-gray-200 dark:border-dark-border hover:border-gray-300 dark:border-dark-border"
                   )}
                   onClick={() => setSelectedTransaction(transaction)}
                 >
@@ -1306,7 +1521,7 @@ export function DemandesPage() {
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-dark-border">
                 {expenseTransactions.map(transaction => (
-                  <tr key={transaction.id} className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary">
+                  <tr key={transaction.id} className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary">
                     <td className="px-6 py-4 text-sm text-gray-900 dark:text-dark-text-primary">{formatDate(transaction.date_execution)}</td>
                     <td className="px-6 py-4 text-sm font-medium text-gray-900 dark:text-dark-text-primary">{transaction.contrepartie_nom}</td>
                     <td className="px-6 py-4 text-sm text-gray-900 dark:text-dark-text-primary">{transaction.communication}</td>
@@ -1371,7 +1586,7 @@ export function DemandesPage() {
                   setShowRefusalModal(null);
                   setRefusalReason('');
                 }}
-                className="flex-1 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors"
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors"
               >
                 Annuler
               </button>
@@ -1391,10 +1606,11 @@ export function DemandesPage() {
         <DemandeDetailView
           demand={allDemandes.find(d => d.id === detailViewDemand.id) || detailViewDemand}
           linkedTransactions={expenseTransactions.filter(t =>
+            t.id === detailViewDemand.transaction_id ||
             t.matched_entities?.some(e => (e.entity_type === 'expense' || e.entity_type === 'demand') && e.entity_id === detailViewDemand.id)
           )}
           clubSettings={clubSettings}
-          currentUser={currentUser}
+          currentUser={currentUser || undefined}
           membres={membres}
           evenements={evenements}
           isOpen={!!detailViewDemand}
@@ -1402,6 +1618,7 @@ export function DemandesPage() {
             if (detailViewDemand) {
               setLastViewedDemandId(detailViewDemand.id);
             }
+            closeAllQuickViews();
             setDetailViewDemand(null);
           }}
           fromTransactionId={location.state?.fromTransactionId}
@@ -1442,6 +1659,12 @@ export function DemandesPage() {
           onLinkEvent={() => {
             setLinkingOperationDemandId(detailViewDemand.id);
             setShowOperationLinking(true);
+          }}
+          onViewTransaction={(transaction) => {
+            openQuickView({ kind: 'transaction', transaction });
+          }}
+          onViewOperation={(operation) => {
+            openQuickView({ kind: 'operation', operation: operation as unknown as Operation });
           }}
           onUnlinkEvent={handleUnlinkEvent}
           onUnlinkTransaction={async (transactionId) => {
@@ -1487,7 +1710,7 @@ export function DemandesPage() {
                 toast.success('Transaction déliée de la dépense');
               }
             } catch (error) {
-              console.error('Error unlinking transaction:', error);
+              logger.error('Error unlinking transaction:', error);
               toast.error('Erreur lors du déliaison de la transaction');
             }
           }}
@@ -1520,10 +1743,10 @@ export function DemandesPage() {
                   `OK = Tout ajouter | Annuler = Voir les options`
                 );
 
-                console.log(`[DEBUG] addDuplicates decision: ${addDuplicates}`);
-                console.log(`[DEBUG] Duplicates found: ${duplicates.length}`);
-                console.log(`[DEBUG] Non-duplicate files: ${nonDuplicateFiles.length}`);
-                console.log(`[DEBUG] Total files: ${newFiles.length}`);
+                logger.debug(`[DEBUG] addDuplicates decision: ${addDuplicates}`);
+                logger.debug(`[DEBUG] Duplicates found: ${duplicates.length}`);
+                logger.debug(`[DEBUG] Non-duplicate files: ${nonDuplicateFiles.length}`);
+                logger.debug(`[DEBUG] Total files: ${newFiles.length}`);
 
                 if (!addDuplicates && nonDuplicateFiles.length > 0) {
                   // Second dialog: Add only new files?
@@ -1531,23 +1754,23 @@ export function DemandesPage() {
                     `Ajouter uniquement les ${nonDuplicateFiles.length} nouveau(x) fichier(s) ?`
                   );
                   if (!addNew) {
-                    console.log('[DEBUG] User cancelled adding new files');
+                    logger.debug('[DEBUG] User cancelled adding new files');
                     toast.info('Aucun fichier ajouté');
                     return;
                   }
-                  console.log('[DEBUG] Adding only non-duplicate files');
+                  logger.debug('[DEBUG] Adding only non-duplicate files');
                   filesToUpload = nonDuplicateFiles;
                 } else if (!addDuplicates && nonDuplicateFiles.length === 0) {
-                  console.log('[DEBUG] No new files to add, all are duplicates');
+                  logger.debug('[DEBUG] No new files to add, all are duplicates');
                   toast.info('Aucun nouveau fichier à ajouter');
                   return;
                 } else if (!addDuplicates) {
-                  console.log('[DEBUG] User cancelled, no files will be added');
+                  logger.debug('[DEBUG] User cancelled, no files will be added');
                   toast.info('Aucun fichier ajouté');
                   return;
                 } else {
                   // addDuplicates is true: user wants to add ALL files (including duplicates)
-                  console.log('[DEBUG] User chose to add ALL files (including duplicates)');
+                  logger.debug('[DEBUG] User chose to add ALL files (including duplicates)');
                   filesToUpload = newFiles; // Explicitly set to all files
                 }
               }
@@ -1566,7 +1789,7 @@ export function DemandesPage() {
                 try {
                   fileHash = await hashFile(file);
                 } catch (error) {
-                  console.error(`Error calculating hash for ${file.name}:`, error);
+                  logger.error(`Error calculating hash for ${file.name}:`, error);
                 }
 
                 // Use justificatifs path which has the correct permissions
@@ -1578,6 +1801,7 @@ export function DemandesPage() {
                 const downloadURL = await getDownloadURL(snapshot.ref);
 
                 // Create document object with metadata + hash
+                const uploaderName = getLastName(appUser) || appUser?.email || 'Utilisateur';
                 const document: DocumentJustificatif = {
                   url: downloadURL,
                   nom_original: file.name,
@@ -1586,7 +1810,7 @@ export function DemandesPage() {
                   taille: file.size,
                   date_upload: new Date(),
                   uploaded_by: appUser?.id,
-                  uploaded_by_nom: appUser?.nom || appUser?.email || 'Utilisateur',
+                  uploaded_by_nom: uploaderName,
                   file_hash: fileHash  // ✨ NEW: Store hash for future duplicate detection
                 };
 
@@ -1623,14 +1847,14 @@ export function DemandesPage() {
               }
               toast.success(message);
             } catch (error) {
-              console.error('Error uploading documents:', error);
+              logger.error('Error uploading documents:', error);
               toast.error('Erreur lors du téléversement des documents');
             }
           }}
           onDelete={async () => {
             try {
               // 1. Nettoyer les liaisons AVANT de supprimer
-              console.log(`🧹 Nettoyage des liaisons pour dépense ${detailViewDemand.id}...`);
+              logger.debug(`🧹 Nettoyage des liaisons pour dépense ${detailViewDemand.id}...`);
               const cleanupStats = await linkCleanupService.cleanAfterExpenseDelete(
                 detailViewDemand.id,
                 clubId
@@ -1655,7 +1879,7 @@ export function DemandesPage() {
               setLastViewedDemandId(detailViewDemand.id);
               setDetailViewDemand(null);
             } catch (error) {
-              console.error('Error deleting demand:', error);
+              logger.error('Error deleting demand:', error);
               toast.error('Erreur lors de la suppression de la demande');
             }
           }}
@@ -1679,7 +1903,7 @@ export function DemandesPage() {
 
               toast.success('Dépense mise à jour avec succès');
             } catch (error) {
-              console.error('Error updating demand:', error);
+              logger.error('Error updating demand:', error);
               toast.error('Erreur lors de la mise à jour de la dépense');
             }
           }}
@@ -1706,10 +1930,13 @@ export function DemandesPage() {
           entityName={allDemandes.find(d => d.id === linkingDemandId)?.description || ''}
           entityDate={allDemandes.find(d => d.id === linkingDemandId)?.date_depense}
           theme="orange"
+          onViewTransaction={(transaction) => {
+            openQuickView({ kind: 'transaction', transaction });
+          }}
         />
       )}
 
-      {/* Panel de liaison des opérations */}
+      {/* Panel de liaison des opérations - position left car detail panel est à droite */}
       {linkingOperationDemandId && showOperationLinking && (
         <OperationLinkingPanel
           isOpen={showOperationLinking}
@@ -1717,26 +1944,109 @@ export function DemandesPage() {
             setShowOperationLinking(false);
             setLinkingOperationDemandId(null);
           }}
-          operations={evenements}
+          demande={allDemandes.find(d => d.id === linkingOperationDemandId) || null}
+          operations={evenements as unknown as Operation[]}
           linkedOperationIds={allDemandes.find(d => d.id === linkingOperationDemandId)?.evenement_id ? [allDemandes.find(d => d.id === linkingOperationDemandId)!.evenement_id!] : []}
           onLinkOperations={handleLinkOperation}
+          position="left"
         />
       )}
 
-      {/* Create Expense Modal using DemandeDetailView */}
-      <DemandeDetailView
-        key={`new-expense-${newFormModalKey}`} // Force re-render when key changes
-        demand={null}
-        membres={membres}
-        evenements={evenements}
-        clubSettings={clubSettings}
-        currentUser={currentUser}
-        isOpen={showNewFormModal}
-        onClose={() => setShowNewFormModal(false)}
-        onCreate={handleCreateExpense}
-        onAnalyzeWithAI={handleAnalyzeWithAI}
-        onRefreshTransactions={loadExpenseTransactions}
-      />
+      {quickViews.map((quickView, index) => {
+        const stackLevel = index + 2;
+
+        if (quickView.kind === 'transaction') {
+          return (
+            <TransactionDetailView
+              key={`quick-transaction-${quickView.transaction.id}-${index}`}
+              transaction={quickView.transaction}
+              demands={allDemandes}
+              events={evenements as unknown as Evenement[]}
+              membres={membres}
+              isOpen={true}
+              stackLevel={stackLevel}
+              onClose={() => closeQuickViewsFrom(index)}
+              onNavigateToEvent={(eventId) => {
+                const operation = getOperationById(eventId);
+                if (operation) {
+                  openQuickView({ kind: 'operation', operation: operation as unknown as Operation });
+                  return;
+                }
+
+                navigate('/operations', { state: { openEventId: eventId } });
+              }}
+              onNavigateToDemand={(demandId) => {
+                const demand = allDemandes.find(item => item.id === demandId);
+                if (demand) {
+                  openQuickView({ kind: 'demand', demand });
+                  return;
+                }
+
+                navigate('/depenses', { state: { openDemandId: demandId } });
+              }}
+              onOpenContext={() => {
+                navigate('/transactions', { state: { selectedTransactionId: quickView.transaction.id } });
+              }}
+              contextActionLabel="Aller aux transactions"
+            />
+          );
+        }
+
+        if (quickView.kind === 'demand') {
+          return (
+            <DemandeDetailView
+              key={`quick-demand-${quickView.demand.id}-${index}`}
+              demand={quickView.demand}
+              linkedTransactions={expenseTransactions.filter(transaction =>
+                transaction.id === quickView.demand.transaction_id ||
+                transaction.matched_entities?.some(entity =>
+                  (entity.entity_type === 'expense' || entity.entity_type === 'demand') && entity.entity_id === quickView.demand.id
+                )
+              )}
+              clubSettings={clubSettings}
+              currentUser={currentUser || undefined}
+              membres={membres}
+              evenements={evenements}
+              isOpen={true}
+              stackLevel={stackLevel}
+              onClose={() => closeQuickViewsFrom(index)}
+              onViewTransaction={(transaction) => {
+                openQuickView({ kind: 'transaction', transaction });
+              }}
+              onViewOperation={(operation) => {
+                openQuickView({ kind: 'operation', operation: operation as unknown as Operation });
+              }}
+              onOpenContext={() => {
+                navigate('/depenses', { state: { openDemandId: quickView.demand.id } });
+              }}
+              contextActionLabel="Aller aux dépenses"
+            />
+          );
+        }
+
+        return (
+          <OperationDetailView
+            key={`quick-operation-${quickView.operation.id}-${index}`}
+            operation={quickView.operation}
+            linkedTransactions={getLinkedTransactionsForOperation(quickView.operation.id)}
+            linkedDemands={getLinkedDemandsForOperation(quickView.operation.id)}
+            linkedInscriptions={[]}
+            isOpen={true}
+            stackLevel={stackLevel}
+            onClose={() => closeQuickViewsFrom(index)}
+            onViewTransaction={(transaction) => {
+              openQuickView({ kind: 'transaction', transaction });
+            }}
+            onViewDemand={(demand) => {
+              openQuickView({ kind: 'demand', demand });
+            }}
+            onOpenContext={() => {
+              navigate('/operations', { state: { openEventId: quickView.operation.id } });
+            }}
+            contextActionLabel="Aller aux activités"
+          />
+        );
+      })}
 
     </div>
   );

@@ -1,3 +1,4 @@
+import { logger } from '@/utils/logger';
 /**
  * Composant de matching algorithmique inscriptions → transactions
  *
@@ -43,7 +44,7 @@ export function InscriptionMatcher({
     setIsAnalyzing(true);
 
     try {
-      console.log('🔍 Démarrage du matching algorithmique...');
+      logger.debug('🔍 Démarrage du matching algorithmique...');
 
       // Lancer le matching
       const matches = InscriptionMatchingService.findMatches(
@@ -62,9 +63,9 @@ export function InscriptionMatcher({
       });
       setSelectedMatches(highConfidence);
 
-      console.log(`✅ ${matches.size} matches trouvés`);
+      logger.debug(`✅ ${matches.size} matches trouvés`);
     } catch (error) {
-      console.error('Erreur lors du matching:', error);
+      logger.error('Erreur lors du matching:', error);
     } finally {
       setIsAnalyzing(false);
     }
@@ -220,7 +221,7 @@ export function InscriptionMatcher({
                       className={`border-2 rounded-lg p-4 cursor-pointer transition-all ${
                         isSelected
                           ? 'border-green-500 bg-green-50'
-                          : 'border-gray-200 hover:border-blue-300'
+                          : 'border-gray-200 dark:border-dark-border hover:border-blue-300'
                       }`}
                       onClick={() => toggleMatch(txId)}
                     >
@@ -297,7 +298,7 @@ export function InscriptionMatcher({
               <div className="flex items-center gap-3">
                 <button
                   onClick={onClose}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-primary bg-white dark:bg-dark-bg-secondary border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors"
+                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-primary bg-white dark:bg-dark-bg-secondary border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors"
                 >
                   Annuler
                 </button>

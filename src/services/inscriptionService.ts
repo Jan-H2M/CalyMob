@@ -1,6 +1,7 @@
 import { db } from '@/lib/firebase';
 import { doc, updateDoc, serverTimestamp, getDoc, getDocs, collection } from 'firebase/firestore';
 import { InscriptionEvenement, TransactionBancaire } from '@/types';
+import { logger } from '@/utils/logger';
 
 /**
  * Service for managing inscription-transaction linking
@@ -224,10 +225,10 @@ export async function linkInscriptionToTransaction(
   transactionId: string
 ): Promise<LinkInscriptionResult> {
   try {
-    console.log(`🔗 Linking inscription ${inscriptionId} to transaction ${transactionId}`);
+    logger.debug(`🔗 Linking inscription ${inscriptionId} to transaction ${transactionId}`);
 
-    // Get inscription from operation_participants collection
-    const inscriptionRef = doc(db, 'clubs', clubId, 'operation_participants', inscriptionId);
+    // Get inscription from the operations subcollection
+    const inscriptionRef = doc(db, 'clubs', clubId, 'operations', eventId, 'inscriptions', inscriptionId);
     const inscriptionSnap = await getDoc(inscriptionRef);
 
     if (!inscriptionSnap.exists()) {
@@ -295,6 +296,8 @@ export async function linkInscriptionToTransaction(
     await updateDoc(inscriptionRef, {
       transaction_id: transactionId,
       transaction_montant: transaction.montant,
+      transaction_matched: true,  // Sync with CalyMob: enables "Payé" (fully reconciled) display
+      payment_status: 'paid',     // Sync with CalyMob: consistent payment state
       mode_paiement: 'bank',
       paye: true,
       date_paiement: new Date(),
@@ -319,7 +322,7 @@ export async function linkInscriptionToTransaction(
       updated_at: serverTimestamp()
     });
 
-    console.log('✅ Inscription linked successfully');
+    logger.debug('✅ Inscription linked successfully');
 
     return {
       success: true,
@@ -328,7 +331,7 @@ export async function linkInscriptionToTransaction(
       transaction
     };
   } catch (error: any) {
-    console.error('❌ Error linking inscription:', error);
+    logger.error('❌ Error linking inscription:', error);
     return {
       success: false,
       message: error.message || 'Erreur lors de la liaison'
@@ -348,10 +351,10 @@ export async function unlinkInscriptionTransaction(
   markUnpaid: boolean = false
 ): Promise<LinkInscriptionResult> {
   try {
-    console.log(`🔓 Unlinking inscription ${inscriptionId} (markUnpaid: ${markUnpaid})`);
+    logger.debug(`🔓 Unlinking inscription ${inscriptionId} (markUnpaid: ${markUnpaid})`);
 
-    // Get inscription from operation_participants collection
-    const inscriptionRef = doc(db, 'clubs', clubId, 'operation_participants', inscriptionId);
+    // Get inscription from the operations subcollection
+    const inscriptionRef = doc(db, 'clubs', clubId, 'operations', eventId, 'inscriptions', inscriptionId);
     const inscriptionSnap = await getDoc(inscriptionRef);
 
     if (!inscriptionSnap.exists()) {
@@ -373,6 +376,7 @@ export async function unlinkInscriptionTransaction(
     const inscriptionUpdates: any = {
       transaction_id: null,
       transaction_montant: 0,
+      transaction_matched: false,  // Sync with CalyMob: reverts to "pending_bank" display
       updated_at: serverTimestamp()
     };
 
@@ -380,6 +384,7 @@ export async function unlinkInscriptionTransaction(
       // Mark as completely unpaid
       inscriptionUpdates.paye = false;
       inscriptionUpdates.mode_paiement = null;
+      inscriptionUpdates.payment_status = null;  // Reset CalyMob payment status
       inscriptionUpdates.date_paiement = null;
     } else {
       // Keep as paid, assume cash
@@ -406,7 +411,7 @@ export async function unlinkInscriptionTransaction(
       });
     }
 
-    console.log('✅ Inscription unlinked successfully');
+    logger.debug('✅ Inscription unlinked successfully');
 
     return {
       success: true,
@@ -415,7 +420,7 @@ export async function unlinkInscriptionTransaction(
         : 'Transaction déliée (inscription reste marquée comme payée en espèces)'
     };
   } catch (error: any) {
-    console.error('❌ Error unlinking inscription:', error);
+    logger.error('❌ Error unlinking inscription:', error);
     return {
       success: false,
       message: error.message || 'Erreur lors du délien'
@@ -433,9 +438,10 @@ export async function markInscriptionPaidCash(
   comment?: string
 ): Promise<LinkInscriptionResult> {
   try {
-    console.log(`💵 Marking inscription ${inscriptionId} as paid in cash`);
+    logger.debug(`💵 Marking inscription ${inscriptionId} as paid in cash`);
 
-    const inscriptionRef = doc(db, 'clubs', clubId, 'evenements', eventId, 'inscriptions', inscriptionId);
+    // Use operations collection (unified path, not legacy evenements)
+    const inscriptionRef = doc(db, 'clubs', clubId, 'operations', eventId, 'inscriptions', inscriptionId);
     const inscriptionSnap = await getDoc(inscriptionRef);
 
     if (!inscriptionSnap.exists()) {
@@ -445,6 +451,7 @@ export async function markInscriptionPaidCash(
     const updates: any = {
       paye: true,
       mode_paiement: 'cash',
+      payment_status: 'paid',     // Sync with CalyMob: consistent payment state
       date_paiement: new Date(),
       updated_at: serverTimestamp()
     };
@@ -455,14 +462,14 @@ export async function markInscriptionPaidCash(
 
     await updateDoc(inscriptionRef, updates);
 
-    console.log('✅ Inscription marked as paid in cash');
+    logger.debug('✅ Inscription marked as paid in cash');
 
     return {
       success: true,
       message: 'Inscription marquée comme payée en espèces'
     };
   } catch (error: any) {
-    console.error('❌ Error marking as cash:', error);
+    logger.error('❌ Error marking as cash:', error);
     return {
       success: false,
       message: error.message || 'Erreur lors du marquage'
@@ -479,25 +486,28 @@ export async function markInscriptionUnpaid(
   inscriptionId: string
 ): Promise<LinkInscriptionResult> {
   try {
-    console.log(`❌ Marking inscription ${inscriptionId} as unpaid`);
+    logger.debug(`❌ Marking inscription ${inscriptionId} as unpaid`);
 
-    const inscriptionRef = doc(db, 'clubs', clubId, 'evenements', eventId, 'inscriptions', inscriptionId);
+    // Use operations collection (unified path, not legacy evenements)
+    const inscriptionRef = doc(db, 'clubs', clubId, 'operations', eventId, 'inscriptions', inscriptionId);
 
     await updateDoc(inscriptionRef, {
       paye: false,
       mode_paiement: null,
+      payment_status: null,        // Reset CalyMob payment status
+      transaction_matched: false,  // Sync with CalyMob
       date_paiement: null,
       updated_at: serverTimestamp()
     });
 
-    console.log('✅ Inscription marked as unpaid');
+    logger.debug('✅ Inscription marked as unpaid');
 
     return {
       success: true,
       message: 'Inscription marquée comme non payée'
     };
   } catch (error: any) {
-    console.error('❌ Error marking as unpaid:', error);
+    logger.error('❌ Error marking as unpaid:', error);
     return {
       success: false,
       message: error.message || 'Erreur lors du marquage'
@@ -515,7 +525,8 @@ export async function updateInscriptionComment(
   comment: string
 ): Promise<LinkInscriptionResult> {
   try {
-    const inscriptionRef = doc(db, 'clubs', clubId, 'evenements', eventId, 'inscriptions', inscriptionId);
+    // Use operations collection (unified path, not legacy evenements)
+    const inscriptionRef = doc(db, 'clubs', clubId, 'operations', eventId, 'inscriptions', inscriptionId);
 
     await updateDoc(inscriptionRef, {
       commentaire: comment,
@@ -527,7 +538,7 @@ export async function updateInscriptionComment(
       message: 'Commentaire mis à jour'
     };
   } catch (error: any) {
-    console.error('❌ Error updating comment:', error);
+    logger.error('❌ Error updating comment:', error);
     return {
       success: false,
       message: error.message || 'Erreur lors de la mise à jour'
@@ -559,7 +570,7 @@ export async function autoMatchAllInscriptions(
     amountTolerance = 0.50
   } = options;
 
-  console.log('🔄 Starting auto-match for all inscriptions...');
+  logger.debug('🔄 Starting auto-match for all inscriptions...');
 
   const result: AutoMatchResult = {
     matched: [],
@@ -572,10 +583,9 @@ export async function autoMatchAllInscriptions(
 
   try {
     // Load all inscriptions for this event
-    // 🆕 MIGRATION: Load from 'operation_participants' collection
-    const inscriptionsRef = collection(db, 'clubs', clubId, 'operation_participants');
-    const inscQuery = query(inscriptionsRef, where('operation_id', '==', eventId));
-    const inscriptionsSnap = await getDocs(inscQuery);
+    // ✅ UNIFIED: Load from subcollection (single source of truth)
+    const inscriptionsRef = collection(db, 'clubs', clubId, 'operations', eventId, 'inscriptions');
+    const inscriptionsSnap = await getDocs(inscriptionsRef);
 
     const inscriptions: InscriptionEvenement[] = inscriptionsSnap.docs.map(doc => ({
       ...doc.data(),
@@ -586,10 +596,11 @@ export async function autoMatchAllInscriptions(
       updated_at: doc.data().updated_at?.toDate?.()
     } as InscriptionEvenement));
 
-    // Filter: Only inscriptions not yet linked and not paid
-    const unlinkInscriptions = inscriptions.filter(i => !i.transaction_id && !i.paye);
+    // Filter: inscriptions not yet linked to a bank transaction
+    // Includes both unpaid (paye=false) and "en attente bancaire" (paye=true via CalyMob, no transaction_id)
+    const unlinkInscriptions = inscriptions.filter(i => !i.transaction_id);
 
-    console.log(`  Found ${unlinkInscriptions.length} unlinked inscriptions`);
+    logger.debug(`  Found ${unlinkInscriptions.length} unlinked inscriptions`);
 
     if (unlinkInscriptions.length === 0) {
       return result;
@@ -615,7 +626,7 @@ export async function autoMatchAllInscriptions(
       !tx.matched_entities?.some(e => e.entity_type === 'inscription')
     );
 
-    console.log(`  Found ${filteredTransactions.length} available transactions`);
+    logger.debug(`  Found ${filteredTransactions.length} available transactions`);
 
     // Store ALL available transactions for manual selection
     result.availableTransactions = [...filteredTransactions];
@@ -687,11 +698,11 @@ export async function autoMatchAllInscriptions(
       result.unmatched.push(inscription);
     }
 
-    console.log(`✅ Auto-match complete: ${result.matched.length} matched, ${result.needsSplit.length} need split, ${result.cashSuggested.length} cash suggested`);
+    logger.debug(`✅ Auto-match complete: ${result.matched.length} matched, ${result.needsSplit.length} need split, ${result.cashSuggested.length} cash suggested`);
 
     // Auto-mark cash payments if requested
     if (autoMarkCashPayments && result.cashSuggested.length > 0) {
-      console.log(`  Auto-marking ${result.cashSuggested.length} as cash payments...`);
+      logger.debug(`  Auto-marking ${result.cashSuggested.length} as cash payments...`);
       for (const inscription of result.cashSuggested) {
         await markInscriptionPaidCash(clubId, eventId, inscription.id, 'Auto-marqué comme paiement espèces (aucune transaction correspondante)');
       }
@@ -699,7 +710,109 @@ export async function autoMatchAllInscriptions(
 
     return result;
   } catch (error) {
-    console.error('❌ Error during auto-match:', error);
+    logger.error('❌ Error during auto-match:', error);
     return result;
+  }
+}
+
+/**
+ * Normalize a name for comparison: lowercase, remove accents, titles, hyphens, whitespace
+ */
+function normalizeName(s: string): string {
+  return s.toLowerCase()
+    .replace(/\b(mr|mme|mlle|dr|prof|m\.|mme\.|dr\.)\b/g, '')
+    .replace(/\s+/g, '')
+    .replace(/-/g, '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+
+
+/**
+ * Automatically match inscriptions to linked transactions by name similarity.
+ * Called after bank import when transactions are auto-linked to events.
+ *
+ * This mirrors the "Contrôler les paiements" button logic but runs as a service.
+ *
+ * @param clubId - Club ID
+ * @param eventId - Operation/event ID
+ * @param linkedTransactions - Transactions already linked to this event (positive amounts only)
+ * @returns Number of inscriptions matched
+ */
+export async function autoControlInscriptionPayments(
+  clubId: string,
+  eventId: string,
+  linkedTransactions: TransactionBancaire[]
+): Promise<number> {
+  try {
+    // Load inscriptions for this event
+    const inscriptionsRef = collection(db, 'clubs', clubId, 'operations', eventId, 'inscriptions');
+    const inscriptionsSnap = await getDocs(inscriptionsRef);
+
+    const inscriptions: InscriptionEvenement[] = inscriptionsSnap.docs.map(d => ({
+      ...d.data(),
+      id: d.id,
+      date_inscription: d.data().date_inscription?.toDate?.() || new Date(),
+      date_paiement: d.data().date_paiement?.toDate?.(),
+    } as InscriptionEvenement));
+
+    // Get inscriptions without a transaction link (includes "en attente bancaire")
+    const unmatchedInscriptions = inscriptions.filter(i => !i.transaction_id);
+    if (unmatchedInscriptions.length === 0) return 0;
+
+    // Get available transactions (positive, not parent, not already linked to an inscription)
+    const availableTransactions = linkedTransactions.filter(tx =>
+      tx.montant > 0 &&
+      !tx.is_parent &&
+      !tx.matched_entities?.some(e => e.entity_type === 'inscription')
+    );
+    if (availableTransactions.length === 0) return 0;
+
+    // Make a mutable copy so we can remove matched transactions
+    const txPool = [...availableTransactions];
+    let matchedCount = 0;
+
+    for (const inscription of unmatchedInscriptions) {
+      const inscriptionName = `${inscription.membre_prenom || ''} ${inscription.membre_nom || ''}`.trim();
+      if (!inscriptionName) continue;
+
+      let bestMatch: { transaction: TransactionBancaire; score: number } | null = null;
+
+      for (const tx of txPool) {
+        // Match against counterparty name
+        let score = calculateNameSimilarity(inscriptionName, tx.contrepartie_nom || '');
+        // Also try communication field
+        const commScore = calculateNameSimilarity(inscriptionName, tx.communication || '');
+        score = Math.max(score, commScore);
+
+        if (score >= 80 && (!bestMatch || score > bestMatch.score)) {
+          bestMatch = { transaction: tx, score };
+        }
+      }
+
+      if (bestMatch) {
+        try {
+          const result = await linkInscriptionToTransaction(clubId, eventId, inscription.id, bestMatch.transaction.id);
+          if (result.success) {
+            matchedCount++;
+            // Remove from pool
+            const idx = txPool.findIndex(t => t.id === bestMatch!.transaction.id);
+            if (idx !== -1) txPool.splice(idx, 1);
+          }
+        } catch (error) {
+          logger.error(`Auto-control: failed to link inscription ${inscription.id}:`, error);
+        }
+      }
+    }
+
+    if (matchedCount > 0) {
+      logger.debug(`✅ Auto-control paiements: ${matchedCount}/${unmatchedInscriptions.length} inscriptions liées pour event ${eventId}`);
+    }
+
+    return matchedCount;
+  } catch (error) {
+    logger.error('❌ Error in autoControlInscriptionPayments:', error);
+    return 0;
   }
 }

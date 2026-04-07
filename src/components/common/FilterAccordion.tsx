@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronDown, Filter, X } from 'lucide-react';
+import { logger } from '@/utils/logger';
 
 interface FilterSection {
   id: string;
@@ -37,7 +38,7 @@ export const FilterAccordion: React.FC<FilterAccordionProps> = ({
           setExpandedSections(new Set(parsed.expanded));
           setIsMainExpanded(parsed.mainExpanded);
         } catch (e) {
-          console.error('Failed to load filter accordion state:', e);
+          logger.error('Failed to load filter accordion state:', e);
         }
       }
     }
@@ -81,19 +82,19 @@ export const FilterAccordion: React.FC<FilterAccordionProps> = ({
       <div className="flex items-center gap-2 mb-2">
         <button
           onClick={toggleMain}
-          className="p-1.5 hover:bg-gray-100 dark:hover:bg-dark-bg-secondary rounded-lg transition-colors"
+          className="p-1.5 hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-secondary rounded-lg transition-colors"
           aria-label={isMainExpanded ? "Hide filters" : "Show filters"}
         >
           <ChevronDown
-            className={`w-5 h-5 text-gray-600 dark:text-gray-400 transition-transform duration-200 ${
+            className={`w-5 h-5 text-gray-600 dark:text-dark-text-secondary dark:text-dark-text-muted transition-transform duration-200 ${
               isMainExpanded ? 'rotate-180' : ''
             }`}
           />
         </button>
 
         <div className="flex-1 flex items-center gap-2">
-          <Filter className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          <Filter className="w-4 h-4 text-gray-500 dark:text-dark-text-muted" />
+          <span className="text-sm font-medium text-gray-700 dark:text-dark-text-primary dark:text-gray-300">
             Filtres
           </span>
           {totalActiveFilters > 0 && !isMainExpanded && (
@@ -109,7 +110,7 @@ export const FilterAccordion: React.FC<FilterAccordionProps> = ({
             className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors group"
             aria-label="Reset all filters"
           >
-            <X className="w-4 h-4 text-gray-500 group-hover:text-red-500 dark:text-gray-400" />
+            <X className="w-4 h-4 text-gray-500 dark:text-dark-text-muted group-hover:text-red-500 dark:text-dark-text-muted" />
           </button>
         )}
       </div>
@@ -150,11 +151,11 @@ const FilterSectionComponent: React.FC<FilterSectionComponentProps> = ({
     <div className="border border-gray-200 dark:border-dark-border rounded-lg overflow-hidden">
       <button
         onClick={onToggle}
-        className="w-full px-3 py-2 flex items-center justify-between bg-gray-50 dark:bg-dark-bg-secondary hover:bg-gray-100 dark:hover:bg-dark-bg-hover transition-colors"
+        className="w-full px-3 py-2 flex items-center justify-between bg-gray-50 dark:bg-dark-bg-tertiary dark:bg-dark-bg-secondary hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-hover transition-colors"
       >
         <div className="flex items-center gap-2">
           {section.icon}
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          <span className="text-sm font-medium text-gray-700 dark:text-dark-text-primary dark:text-gray-300">
             {section.title}
           </span>
           {section.activeFilters && section.activeFilters > 0 && (
@@ -164,7 +165,7 @@ const FilterSectionComponent: React.FC<FilterSectionComponentProps> = ({
           )}
         </div>
         <ChevronDown
-          className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${
+          className={`w-4 h-4 text-gray-500 dark:text-dark-text-muted transition-transform duration-200 ${
             isExpanded ? 'rotate-180' : ''
           }`}
         />

@@ -1,4 +1,5 @@
 import { db } from '@/lib/firebase';
+import { logger } from '@/utils/logger';
 import {
   collection,
   doc,
@@ -67,7 +68,7 @@ export class StockService {
 
       return products;
     } catch (error) {
-      console.error('Erreur chargement produits:', error);
+      logger.error('Erreur chargement produits:', error);
       throw error;
     }
   }
@@ -89,7 +90,7 @@ export class StockService {
         ...snapshot.data()
       } as StockProduct;
     } catch (error) {
-      console.error('Erreur chargement produit:', error);
+      logger.error('Erreur chargement produit:', error);
       throw error;
     }
   }
@@ -114,10 +115,10 @@ export class StockService {
 
       await setDoc(newProductRef, newProduct);
 
-      console.log(`Produit créé: ${newProduct.nom} (${newProduct.id})`);
+      logger.debug(`Produit créé: ${newProduct.nom} (${newProduct.id})`);
       return newProductRef.id;
     } catch (error) {
-      console.error('Erreur création produit:', error);
+      logger.error('Erreur création produit:', error);
       throw error;
     }
   }
@@ -138,9 +139,9 @@ export class StockService {
         updatedAt: serverTimestamp()
       });
 
-      console.log(`Produit mis à jour: ${productId}`);
+      logger.debug(`Produit mis à jour: ${productId}`);
     } catch (error) {
-      console.error('Erreur mise à jour produit:', error);
+      logger.error('Erreur mise à jour produit:', error);
       throw error;
     }
   }
@@ -153,9 +154,9 @@ export class StockService {
       const productRef = doc(db, 'clubs', clubId, 'stock_products', productId);
       await deleteDoc(productRef);
 
-      console.log(`Produit supprimé: ${productId}`);
+      logger.debug(`Produit supprimé: ${productId}`);
     } catch (error) {
-      console.error('Erreur suppression produit:', error);
+      logger.error('Erreur suppression produit:', error);
       throw error;
     }
   }
@@ -193,9 +194,9 @@ export class StockService {
         updatedAt: serverTimestamp()
       });
 
-      console.log(`Stock ajusté pour ${productId}: ${adjustment} (${reason})`);
+      logger.debug(`Stock ajusté pour ${productId}: ${adjustment} (${reason})`);
     } catch (error) {
-      console.error('Erreur ajustement stock:', error);
+      logger.error('Erreur ajustement stock:', error);
       throw error;
     }
   }
@@ -208,7 +209,7 @@ export class StockService {
       const products = await this.getProducts(clubId);
       return products.filter(p => p.quantite_stock <= p.seuil_alerte);
     } catch (error) {
-      console.error('Erreur chargement produits stock bas:', error);
+      logger.error('Erreur chargement produits stock bas:', error);
       throw error;
     }
   }
@@ -253,7 +254,7 @@ export class StockService {
 
       return sales;
     } catch (error) {
-      console.error('Erreur chargement ventes:', error);
+      logger.error('Erreur chargement ventes:', error);
       throw error;
     }
   }
@@ -309,17 +310,17 @@ export class StockService {
             bankAccount: options?.bankAccount,
             autoReconcile: true
           });
-          console.log(`Transaction bancaire créée pour vente ${newSale.id}`);
+          logger.debug(`Transaction bancaire créée pour vente ${newSale.id}`);
         } catch (txError) {
-          console.error('Erreur création transaction bancaire:', txError);
+          logger.error('Erreur création transaction bancaire:', txError);
           // Ne pas bloquer la vente si la transaction échoue
         }
       }
 
-      console.log(`Vente créée: ${newSale.id} (${data.quantite}x ${product.nom})`);
+      logger.debug(`Vente créée: ${newSale.id} (${data.quantite}x ${product.nom})`);
       return newSaleRef.id;
     } catch (error) {
-      console.error('Erreur création vente:', error);
+      logger.error('Erreur création vente:', error);
       throw error;
     }
   }
@@ -347,9 +348,9 @@ export class StockService {
         updatedAt: serverTimestamp()
       });
 
-      console.log(`Vente annulée: ${saleId}`);
+      logger.debug(`Vente annulée: ${saleId}`);
     } catch (error) {
-      console.error('Erreur annulation vente:', error);
+      logger.error('Erreur annulation vente:', error);
       throw error;
     }
   }
@@ -389,7 +390,7 @@ export class StockService {
 
       return orders;
     } catch (error) {
-      console.error('Erreur chargement commandes:', error);
+      logger.error('Erreur chargement commandes:', error);
       throw error;
     }
   }
@@ -414,10 +415,10 @@ export class StockService {
 
       await setDoc(newOrderRef, newOrder);
 
-      console.log(`Commande créée: ${newOrder.id} (${data.items.length} produits)`);
+      logger.debug(`Commande créée: ${newOrder.id} (${data.items.length} produits)`);
       return newOrderRef.id;
     } catch (error) {
-      console.error('Erreur création commande:', error);
+      logger.error('Erreur création commande:', error);
       throw error;
     }
   }
@@ -438,9 +439,9 @@ export class StockService {
         updatedAt: serverTimestamp()
       });
 
-      console.log(`Commande mise à jour: ${orderId}`);
+      logger.debug(`Commande mise à jour: ${orderId}`);
     } catch (error) {
-      console.error('Erreur mise à jour commande:', error);
+      logger.error('Erreur mise à jour commande:', error);
       throw error;
     }
   }
@@ -479,9 +480,9 @@ export class StockService {
         updatedAt: serverTimestamp()
       });
 
-      console.log(`Commande livrée: ${orderId}`);
+      logger.debug(`Commande livrée: ${orderId}`);
     } catch (error) {
-      console.error('Erreur livraison commande:', error);
+      logger.error('Erreur livraison commande:', error);
       throw error;
     }
   }
@@ -499,9 +500,9 @@ export class StockService {
         updatedAt: serverTimestamp()
       });
 
-      console.log(`Commande annulée: ${orderId}`);
+      logger.debug(`Commande annulée: ${orderId}`);
     } catch (error) {
-      console.error('Erreur annulation commande:', error);
+      logger.error('Erreur annulation commande:', error);
       throw error;
     }
   }
@@ -546,7 +547,7 @@ export class StockService {
 
       return stats;
     } catch (error) {
-      console.error('Erreur chargement statistiques stock:', error);
+      logger.error('Erreur chargement statistiques stock:', error);
       throw error;
     }
   }
@@ -593,7 +594,7 @@ export class StockService {
 
       return results.slice(0, limit);
     } catch (error) {
-      console.error('Erreur chargement produits les plus vendus:', error);
+      logger.error('Erreur chargement produits les plus vendus:', error);
       throw error;
     }
   }

@@ -1,4 +1,5 @@
 import { db, storage } from '@/lib/firebase';
+import { logger } from '@/utils/logger';
 import {
   collection,
   doc,
@@ -85,7 +86,7 @@ export class LoanService {
 
       return loans;
     } catch (error) {
-      console.error('Erreur chargement prêts:', error);
+      logger.error('Erreur chargement prêts:', error);
       throw error;
     }
   }
@@ -115,7 +116,7 @@ export class LoanService {
 
       return loan;
     } catch (error) {
-      console.error('Erreur chargement prêt:', error);
+      logger.error('Erreur chargement prêt:', error);
       throw error;
     }
   }
@@ -179,10 +180,10 @@ export class LoanService {
       // Changer le statut du matériel en "prete"
       await this.updateItemsStatus(clubId, data.itemIds, 'prete');
 
-      console.log(`Prêt créé: ${newLoan.id} (${data.itemIds.length} matériels)`);
+      logger.debug(`Prêt créé: ${newLoan.id} (${data.itemIds.length} matériels)`);
       return newLoanRef.id;
     } catch (error) {
-      console.error('Erreur création prêt:', error);
+      logger.error('Erreur création prêt:', error);
       throw error;
     }
   }
@@ -203,9 +204,9 @@ export class LoanService {
         updatedAt: serverTimestamp()
       });
 
-      console.log(`Prêt mis à jour: ${loanId}`);
+      logger.debug(`Prêt mis à jour: ${loanId}`);
     } catch (error) {
-      console.error('Erreur mise à jour prêt:', error);
+      logger.error('Erreur mise à jour prêt:', error);
       throw error;
     }
   }
@@ -252,9 +253,9 @@ export class LoanService {
       // Changer le statut du matériel en "disponible"
       await this.updateItemsStatus(clubId, loan.itemIds, 'disponible');
 
-      console.log(`Prêt retourné: ${loanId}, caution retournée: ${returnData.caution_retournee} €`);
+      logger.debug(`Prêt retourné: ${loanId}, caution retournée: ${returnData.caution_retournee} €`);
     } catch (error) {
-      console.error('Erreur retour prêt:', error);
+      logger.error('Erreur retour prêt:', error);
       throw error;
     }
   }
@@ -282,9 +283,9 @@ export class LoanService {
       // Changer le statut du matériel en "disponible"
       await this.updateItemsStatus(clubId, loan.itemIds, 'disponible');
 
-      console.log(`Prêt annulé: ${loanId}`);
+      logger.debug(`Prêt annulé: ${loanId}`);
     } catch (error) {
-      console.error('Erreur annulation prêt:', error);
+      logger.error('Erreur annulation prêt:', error);
       throw error;
     }
   }
@@ -328,10 +329,10 @@ export class LoanService {
         updatedAt: serverTimestamp()
       });
 
-      console.log(`Signature ${type} uploadée pour prêt ${loanId}`);
+      logger.debug(`Signature ${type} uploadée pour prêt ${loanId}`);
       return downloadURL;
     } catch (error) {
-      console.error('Erreur upload signature:', error);
+      logger.error('Erreur upload signature:', error);
       throw error;
     }
   }
@@ -365,9 +366,9 @@ export class LoanService {
         updatedAt: serverTimestamp()
       });
 
-      console.log(`Signature ${type} supprimée pour prêt ${loanId}`);
+      logger.debug(`Signature ${type} supprimée pour prêt ${loanId}`);
     } catch (error) {
-      console.error('Erreur suppression signature:', error);
+      logger.error('Erreur suppression signature:', error);
       throw error;
     }
   }
@@ -379,7 +380,7 @@ export class LoanService {
     try {
       const urlParts = signatureUrl.split('/o/');
       if (urlParts.length < 2) {
-        console.warn('URL invalide, impossible de supprimer:', signatureUrl);
+        logger.warn('URL invalide, impossible de supprimer:', signatureUrl);
         return;
       }
 
@@ -389,10 +390,10 @@ export class LoanService {
       const storageRef = ref(storage, path);
       await deleteObject(storageRef);
 
-      console.log(`Signature supprimée de Storage: ${path}`);
+      logger.debug(`Signature supprimée de Storage: ${path}`);
     } catch (error: any) {
       if (error.code === 'storage/object-not-found') {
-        console.warn('Signature déjà supprimée ou introuvable:', signatureUrl);
+        logger.warn('Signature déjà supprimée ou introuvable:', signatureUrl);
       } else {
         throw error;
       }
@@ -430,7 +431,7 @@ export class LoanService {
 
       return totalCaution;
     } catch (error) {
-      console.error('Erreur calcul caution:', error);
+      logger.error('Erreur calcul caution:', error);
       throw error;
     }
   }
@@ -491,7 +492,7 @@ export class LoanService {
 
       return stats;
     } catch (error) {
-      console.error('Erreur chargement statistiques prêts:', error);
+      logger.error('Erreur chargement statistiques prêts:', error);
       throw error;
     }
   }
@@ -504,7 +505,7 @@ export class LoanService {
       const loans = await this.getLoans(clubId);
       return loans.filter(l => l.statut === 'en_retard');
     } catch (error) {
-      console.error('Erreur chargement prêts en retard:', error);
+      logger.error('Erreur chargement prêts en retard:', error);
       throw error;
     }
   }
@@ -524,7 +525,7 @@ export class LoanService {
     try {
       await InventoryItemService.batchUpdateStatus(clubId, itemIds, statut);
     } catch (error) {
-      console.error('Erreur mise à jour statut matériel:', error);
+      logger.error('Erreur mise à jour statut matériel:', error);
       throw error;
     }
   }

@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ProductDetailModal } from './ProductDetailModal';
 import toast from 'react-hot-toast';
 import { cn } from '@/utils/utils';
+import { logger } from '@/utils/logger';
 
 interface Props {
   onRefresh: () => void;
@@ -50,7 +51,7 @@ export function ProduitsTab({ onRefresh }: Props) {
       const cats = Array.from(new Set(productsData.map(p => p.categorie).filter(Boolean)));
       setCategories(cats);
     } catch (error: any) {
-      console.error('Erreur chargement produits:', error);
+      logger.error('Erreur chargement produits:', error);
       toast.error(error.message || 'Erreur lors du chargement');
     } finally {
       setLoading(false);
@@ -107,7 +108,7 @@ export function ProduitsTab({ onRefresh }: Props) {
       loadProducts();
       onRefresh();
     } catch (error: any) {
-      console.error('Erreur suppression produit:', error);
+      logger.error('Erreur suppression produit:', error);
       toast.error(error.message || 'Erreur lors de la suppression');
     }
   };
@@ -168,14 +169,14 @@ export function ProduitsTab({ onRefresh }: Props) {
       {/* Filters */}
       <div className="bg-white dark:bg-dark-bg-secondary rounded-lg shadow p-4">
         <div className="flex items-center gap-2 mb-4">
-          <Filter className="h-5 w-5 text-gray-400" />
+          <Filter className="h-5 w-5 text-gray-400 dark:text-dark-text-muted" />
           <h4 className="text-sm font-medium text-gray-900 dark:text-dark-text-primary">Filtres</h4>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-dark-text-muted" />
             <input
               type="text"
               placeholder="Rechercher un produit..."
@@ -204,22 +205,22 @@ export function ProduitsTab({ onRefresh }: Props) {
         <table className="min-w-full divide-y divide-gray-200 dark:divide-dark-border">
           <thead className="bg-gray-50 dark:bg-dark-bg-tertiary">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                 Produit
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                 Catégorie
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                 Stock
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                 Prix vente
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                 Statut
               </th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                 Actions
               </th>
             </tr>
@@ -227,7 +228,7 @@ export function ProduitsTab({ onRefresh }: Props) {
           <tbody className="divide-y divide-gray-200 dark:divide-dark-border">
             {products.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-dark-text-secondary">
+                <td colSpan={6} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
                   Aucun produit trouvé
                 </td>
               </tr>
@@ -235,29 +236,29 @@ export function ProduitsTab({ onRefresh }: Props) {
               products.map((product) => (
                 <tr
                   key={product.id}
-                  className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors"
+                  className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary transition-colors"
                 >
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <Package className="h-5 w-5 text-gray-400 flex-shrink-0" />
+                      <Package className="h-5 w-5 text-gray-400 dark:text-dark-text-muted flex-shrink-0" />
                       <div>
                         <p className="text-sm font-medium text-gray-900 dark:text-dark-text-primary">
                           {product.nom}
                         </p>
                         {product.reference && (
-                          <p className="text-xs text-gray-500 dark:text-dark-text-secondary">
+                          <p className="text-xs text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
                             Réf: {product.reference}
                           </p>
                         )}
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-dark-text-secondary">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
                     {product.categorie || '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-dark-text-primary">
                     {product.quantite_stock}
-                    <span className="text-xs text-gray-500 dark:text-dark-text-secondary ml-1">
+                    <span className="text-xs text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary ml-1">
                       (seuil: {product.seuil_alerte})
                     </span>
                   </td>

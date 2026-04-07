@@ -4,8 +4,10 @@ import { useFiscalYear } from '@/contexts/FiscalYearContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { FiscalYearService } from '@/services/fiscalYearService';
 import { cn } from '@/utils/utils';
+import { formatDate } from '@/utils/formatters';
 import toast from 'react-hot-toast';
 import { FiscalYear } from '@/types';
+import { logger } from '@/utils/logger';
 
 /**
  * Composant de gestion des années fiscales
@@ -30,7 +32,7 @@ export function FiscalYearSettings() {
             transactions: await FiscalYearService.getTransactionsForFiscalYear(clubId, fy)
           };
         } catch (error) {
-          console.error(`Error loading stats for ${fy.id}:`, error);
+          logger.error(`Error loading stats for ${fy.id}:`, error);
         }
       }
 
@@ -67,8 +69,8 @@ export function FiscalYearSettings() {
       await FiscalYearService.closeFiscalYear(clubId, fiscalYear.id, user?.uid);
       toast.success(`Année ${fiscalYear.year} clôturée avec succès`);
       await refreshFiscalYears();
-    } catch (error: any) {
-      console.error('Error closing fiscal year:', error);
+    } catch (error) {
+      logger.error('Error closing fiscal year:', error);
       toast.error(error.message || 'Erreur lors de la clôture');
     } finally {
       setLoading(false);
@@ -90,8 +92,8 @@ export function FiscalYearSettings() {
       await FiscalYearService.reopenFiscalYear(clubId, fiscalYear.id);
       toast.success(`Année ${fiscalYear.year} rouverte`);
       await refreshFiscalYears();
-    } catch (error: any) {
-      console.error('Error reopening fiscal year:', error);
+    } catch (error) {
+      logger.error('Error reopening fiscal year:', error);
       toast.error(error.message || 'Erreur lors de la réouverture');
     } finally {
       setLoading(false);
@@ -126,8 +128,8 @@ export function FiscalYearSettings() {
       await FiscalYearService.permanentlyCloseFiscalYear(clubId, fiscalYear.id);
       toast.success(`Année ${fiscalYear.year} verrouillée définitivement`);
       await refreshFiscalYears();
-    } catch (error: any) {
-      console.error('Error permanently closing fiscal year:', error);
+    } catch (error) {
+      logger.error('Error permanently closing fiscal year:', error);
       toast.error(error.message || 'Erreur lors du verrouillage');
     } finally {
       setLoading(false);
@@ -161,16 +163,8 @@ export function FiscalYearSettings() {
       case 'open': return 'bg-green-100 text-green-800 border-green-300';
       case 'closed': return 'bg-orange-100 text-orange-800 border-orange-300';
       case 'permanently_closed': return 'bg-red-100 text-red-800 border-red-300';
-      default: return 'bg-gray-100 text-gray-800 border-gray-300';
+      default: return 'bg-gray-100 dark:bg-dark-bg-tertiary text-gray-800 border-gray-300 dark:border-dark-border';
     }
-  };
-
-  const formatDate = (date: Date) => {
-    return new Date(date).toLocaleDateString('fr-BE', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
   };
 
   return (
@@ -329,7 +323,7 @@ export function FiscalYearSettings() {
                 )}
 
                 {fy.status === 'permanently_closed' && (
-                  <div className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-dark-bg-tertiary rounded-lg text-gray-600 dark:text-dark-text-muted">
+                  <div className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-dark-bg-tertiary rounded-lg text-gray-600 dark:text-dark-text-secondary">
                     <LockKeyhole className="w-4 h-4" />
                     Verrouillée (irréversible)
                   </div>

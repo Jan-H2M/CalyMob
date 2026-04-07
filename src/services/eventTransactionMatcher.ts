@@ -1,5 +1,6 @@
+import { logger } from '@/utils/logger';
 /**
- * Service d'auto-matching des transactions bancaires pour les événements VP Dive
+ * Service d'auto-matching des transactions bancaires pour les événements
  *
  * Recherche automatiquement les transactions bancaires qui correspondent à un événement
  * et les lie automatiquement si la confiance est suffisante.
@@ -14,7 +15,15 @@
 import { collection, getDocs, doc, updateDoc, arrayUnion, Timestamp, query, where, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { TransactionBancaire, MatchedEntity } from '@/types';
-import { VPDiveParticipant } from './vpDiveParser';
+
+interface EventParticipant {
+  nom: string;
+  prenom?: string;
+  numero_licence?: string;
+  pratique?: string;
+  montant?: number;
+  etat_paiement?: string;
+}
 
 // Résultat d'un match transaction ↔ événement
 export interface TransactionMatch {
@@ -54,7 +63,7 @@ export class EventTransactionMatcher {
    *
    * @param clubId ID du club
    * @param eventId ID de l'événement créé
-   * @param eventData Données de l'événement VP Dive
+   * @param eventData Données de l'événement
    * @returns Résultat du matching avec statistiques
    */
   static async autoMatchEventTransactions(
@@ -65,16 +74,16 @@ export class EventTransactionMatcher {
       lieu: string;
       date_debut: Date;
       date_fin: Date;
-      participants: VPDiveParticipant[];
+      participants: EventParticipant[];
       montant_total: number;
     }
   ): Promise<AutoMatchResult> {
-    console.log(`🔗 Auto-matching transactions pour événement "${eventData.titre}" (${eventData.montant_total}€)`);
+    logger.debug(`🔗 Auto-matching transactions pour événement "${eventData.titre}" (${eventData.montant_total}€)`);
 
     try {
       // 1. Charger transactions candidates (revenus non réconciliés)
       const transactions = await this.loadCandidateTransactions(clubId, eventData);
-      console.log(`📊 ${transactions.length} transactions candidates trouvées`);
+      logger.debug(`📊 ${transactions.length} transactions candidates trouvées`);
 
       if (transactions.length === 0) {
         return {
@@ -110,7 +119,7 @@ export class EventTransactionMatcher {
         communicationMatches
       );
 
-      console.log(`🎯 ${allMatches.length} matches trouvés`);
+      logger.debug(`🎯 ${allMatches.length} matches trouvés`);
 
       // 6. Lier automatiquement les matches haute confiance (>= 80%)
       const highConfidence = allMatches.filter(m => m.confidence >= 80);
@@ -121,7 +130,7 @@ export class EventTransactionMatcher {
         highConfidence
       );
 
-      console.log(`✅ ${linked.length} transactions liées automatiquement`);
+      logger.debug(`✅ ${linked.length} transactions liées automatiquement`);
 
       // 7. Calculer résultats
       const linkedAmount = linked.reduce((sum, m) => sum + m.amount, 0);
@@ -139,7 +148,7 @@ export class EventTransactionMatcher {
       };
 
     } catch (error) {
-      console.error('❌ Erreur auto-matching:', error);
+      logger.error('❌ Erreur auto-matching:', error);
       // Ne pas bloquer la création de l'événement
       return {
         autoLinked: [],
@@ -194,7 +203,7 @@ export class EventTransactionMatcher {
         );
 
     } catch (error) {
-      console.error('Erreur chargement transactions:', error);
+      logger.error('Erreur chargement transactions:', error);
       return [];
     }
   }
@@ -231,7 +240,7 @@ export class EventTransactionMatcher {
    */
   private static findByParticipantAmounts(
     transactions: TransactionBancaire[],
-    participants: VPDiveParticipant[]
+    participants: EventParticipant[]
   ): TransactionMatch[] {
     const tolerance = 0.01;
     const matches: TransactionMatch[] = [];
@@ -360,10 +369,10 @@ export class EventTransactionMatcher {
           amount: match.transaction.montant
         });
 
-        console.log(`✅ Transaction ${match.transaction.id} liée (${match.confidence}%): ${match.reason}`);
+        logger.debug(`✅ Transaction ${match.transaction.id} liée (${match.confidence}%): ${match.reason}`);
 
       } catch (error) {
-        console.error(`❌ Erreur liaison transaction ${match.transaction.id}:`, error);
+        logger.error(`❌ Erreur liaison transaction ${match.transaction.id}:`, error);
         // Continuer avec les autres
       }
     }
@@ -402,10 +411,10 @@ export class EventTransactionMatcher {
         updated_at: serverTimestamp()
       });
 
-      console.log(`✅ Transaction ${transactionId} déliée de l'événement ${eventId}`);
+      logger.debug(`✅ Transaction ${transactionId} déliée de l'événement ${eventId}`);
 
     } catch (error) {
-      console.error('Erreur déliaison transaction:', error);
+      logger.error('Erreur déliaison transaction:', error);
       throw error;
     }
   }

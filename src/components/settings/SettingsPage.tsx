@@ -1,3 +1,4 @@
+import { logger } from '@/utils/logger';
 /**
  * ⚠️ DEPRECATED - This page will be removed in a future version
  *
@@ -19,7 +20,6 @@ import { useNavigate } from 'react-router-dom';
 import {
   Settings,
   BookOpen,
-  Download,
   Upload,
   Search,
   Filter,
@@ -57,7 +57,8 @@ import {
 import { AccountCode, Categorie } from '@/types';
 import { CategorizationService } from '@/services/categorizationService';
 import { FirebaseSettingsService } from '@/services/firebaseSettingsService';
-import { getCalypsoAccountCodes } from '@/config/calypso-accounts';
+import { AccountCodeService } from '@/services/accountCodeService';
+import { calypsoAccountCodes } from '@/config/calypso-accounts';
 import { AccountCodeDetailView } from './AccountCodeDetailView';
 import { CategoryDetailView } from './CategoryDetailView';
 import { FiscalYearsManagement } from './FiscalYearsManagement';
@@ -73,7 +74,6 @@ import { cn } from '@/utils/utils';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { linkCleanupService, GlobalCleanupStats } from '@/services/linkCleanupService';
-import { DownloadSettings, DEFAULT_DOWNLOAD_SETTINGS } from '@/types/settings.types';
 
 export function SettingsPage() {
   const navigate = useNavigate();
@@ -123,9 +123,6 @@ export function SettingsPage() {
   const [categories, setCategories] = useState<Categorie[]>([]);
   const [categoriesLoaded, setCategoriesLoaded] = useState(false);
 
-  // Paramètres de téléchargement
-  const [downloadSettings, setDownloadSettings] = useState<DownloadSettings>(DEFAULT_DOWNLOAD_SETTINGS);
-
   // Charger tous les paramètres depuis Firebase au montage
   useEffect(() => {
     const loadAllSettings = async () => {
@@ -139,7 +136,7 @@ export function SettingsPage() {
         // const hasLocalGeneralSettings = localStorage.getItem('generalSettings');
         //
         // if (hasLocalCategories || hasLocalAccountCodes || hasLocalGeneralSettings) {
-        //   console.log('Migration des paramètres vers Firebase...');
+        //   logger.debug('Migration des paramètres vers Firebase...');
         //   await FirebaseSettingsService.migrateAllSettings(clubId);
         //   toast.success('Paramètres migrés vers Firebase');
         // }
@@ -156,12 +153,11 @@ export function SettingsPage() {
         const loadedGeneralSettings = await FirebaseSettingsService.loadGeneralSettings(clubId);
         setGeneralSettings(loadedGeneralSettings);
 
-        // Charger les paramètres de téléchargement depuis Firebase
-        const loadedDownloadSettings = await FirebaseSettingsService.loadDownloadSettings(clubId);
-        setDownloadSettings(loadedDownloadSettings);
-
         // Appliquer les codes personnalisés
-        let codes = getCalypsoAccountCodes().map(code => {
+        const baseCodes = AccountCodeService.isReady()
+          ? AccountCodeService.getAllCodes()
+          : calypsoAccountCodes;
+        let codes = baseCodes.map(code => {
           if (accountCodesSettings.customCodes[code.code]) {
             return { ...code, ...accountCodesSettings.customCodes[code.code] };
           }
@@ -182,13 +178,12 @@ export function SettingsPage() {
         const frequents = new Set(codes.filter(c => c.isFrequent).map(c => c.code));
         setFrequentCodes(frequents);
 
-        // Charger le cache pour calypso-accounts.ts
-        const { loadAccountCodesCache } = await import('@/config/calypso-accounts');
-        loadAccountCodesCache(accountCodesSettings.customCodes, accountCodesSettings.selectedCodes);
+        // Rafraîchir le cache AccountCodeService
+        await AccountCodeService.refresh(clubId);
 
         setCategoriesLoaded(true);
       } catch (error) {
-        console.error('Erreur lors du chargement des paramètres:', error);
+        logger.error('Erreur lors du chargement des paramètres:', error);
         toast.error('Erreur lors du chargement des paramètres');
       }
     };
@@ -312,7 +307,7 @@ export function SettingsPage() {
   // Icône de tri pour les en-têtes (account codes)
   const SortIcon = ({ column }: { column: SortColumn }) => {
     if (sortColumn !== column) {
-      return <ArrowUpDown className="h-3 w-3 text-gray-400" />;
+      return <ArrowUpDown className="h-3 w-3 text-gray-400 dark:text-dark-text-muted" />;
     }
     if (sortDirection === 'asc') {
       return <ArrowUp className="h-3 w-3 text-calypso-blue" />;
@@ -340,7 +335,7 @@ export function SettingsPage() {
   // Icône de tri pour les catégories
   const CategorySortIcon = ({ column }: { column: CategorySortColumn }) => {
     if (categorySortColumn !== column) {
-      return <ArrowUpDown className="h-3 w-3 text-gray-400" />;
+      return <ArrowUpDown className="h-3 w-3 text-gray-400 dark:text-dark-text-muted" />;
     }
     if (categorySortDirection === 'asc') {
       return <ArrowUp className="h-3 w-3 text-calypso-blue" />;
@@ -433,13 +428,12 @@ export function SettingsPage() {
         }
         setFrequentCodes(newFrequents);
 
-        // Mettre à jour le cache
-        const { loadAccountCodesCache } = await import('@/config/calypso-accounts');
-        loadAccountCodesCache(settings.customCodes, settings.selectedCodes);
+        // Rafraîchir le cache AccountCodeService
+        await AccountCodeService.refresh(clubId);
 
         toast.success(updatedCode.isFrequent ? 'Code marqué comme fréquent' : 'Code retiré des fréquents');
       } catch (error) {
-        console.error('Erreur lors de la sauvegarde:', error);
+        logger.error('Erreur lors de la sauvegarde:', error);
         toast.error('Erreur lors de la sauvegarde');
       }
     }
@@ -453,13 +447,12 @@ export function SettingsPage() {
       const settings = await FirebaseSettingsService.loadAccountCodesSettings(clubId);
       await FirebaseSettingsService.saveAccountCodesSettings(clubId, settings.customCodes, Array.from(selectedCodes));
 
-      // Mettre à jour le cache
-      const { loadAccountCodesCache } = await import('@/config/calypso-accounts');
-      loadAccountCodesCache(settings.customCodes, Array.from(selectedCodes));
+      // Rafraîchir le cache AccountCodeService
+      await AccountCodeService.refresh(clubId);
 
       toast.success('Codes comptables sauvegardés');
     } catch (error) {
-      console.error('Erreur lors de la sauvegarde:', error);
+      logger.error('Erreur lors de la sauvegarde:', error);
       toast.error('Erreur lors de la sauvegarde');
     }
   };
@@ -484,11 +477,10 @@ export function SettingsPage() {
         code.code === updatedCode.code ? updatedCode : code
       ));
 
-      // Mettre à jour le cache
-      const { loadAccountCodesCache } = await import('@/config/calypso-accounts');
-      loadAccountCodesCache(settings.customCodes, settings.selectedCodes);
+      // Rafraîchir le cache AccountCodeService
+      await AccountCodeService.refresh(clubId);
     } catch (error) {
-      console.error('Erreur lors de la sauvegarde:', error);
+      logger.error('Erreur lors de la sauvegarde:', error);
       toast.error('Erreur lors de la sauvegarde');
     }
   };
@@ -526,7 +518,7 @@ export function SettingsPage() {
 
       setIsNewCategory(false);
     } catch (error) {
-      console.error('Erreur lors de la sauvegarde de la catégorie:', error);
+      logger.error('Erreur lors de la sauvegarde de la catégorie:', error);
       toast.error('Erreur lors de la sauvegarde');
     }
   };
@@ -546,7 +538,7 @@ export function SettingsPage() {
       // Mettre à jour le cache
       CategorizationService.updateCategoriesCache(updatedCategories);
     } catch (error) {
-      console.error('Erreur lors de la suppression de la catégorie:', error);
+      logger.error('Erreur lors de la suppression de la catégorie:', error);
       toast.error('Erreur lors de la suppression');
     }
   };
@@ -577,7 +569,7 @@ export function SettingsPage() {
 
         toast.success(updatedCategory.isFrequent ? 'Catégorie ajoutée aux favoris' : 'Catégorie retirée des favoris');
       } catch (error) {
-        console.error('Erreur lors de la mise à jour de la catégorie:', error);
+        logger.error('Erreur lors de la mise à jour de la catégorie:', error);
         toast.error('Erreur lors de la mise à jour');
       }
     }
@@ -591,13 +583,13 @@ export function SettingsPage() {
       await FirebaseSettingsService.saveGeneralSettings(clubId, generalSettings);
       toast.success('Paramètres sauvegardés');
     } catch (error) {
-      console.error('Erreur lors de la sauvegarde des paramètres:', error);
+      logger.error('Erreur lors de la sauvegarde des paramètres:', error);
       toast.error('Erreur lors de la sauvegarde');
     }
   };
   
   // Mettre à jour un paramètre général
-  const updateGeneralSetting = (key: string, value: any) => {
+  const updateGeneralSetting = (key: string, value: string | number | boolean | null) => {
     setGeneralSettings(prev => ({
       ...prev,
       [key]: value
@@ -673,7 +665,7 @@ export function SettingsPage() {
 
       toast.success(`✅ ${transactionsSnapshot.docs.length} transaction(s) supprimée(s)`);
     } catch (error) {
-      console.error('Erreur lors de la suppression:', error);
+      logger.error('Erreur lors de la suppression:', error);
       toast.error('Erreur lors de la suppression des transactions');
     } finally {
       setDeleting(false);
@@ -734,7 +726,7 @@ export function SettingsPage() {
 
       toast.success(`✅ ${eventsSnapshot.docs.length} activité(s) supprimée(s)`);
     } catch (error) {
-      console.error('Erreur lors de la suppression:', error);
+      logger.error('Erreur lors de la suppression:', error);
       toast.error('Erreur lors de la suppression des activités');
     } finally {
       setDeleting(false);
@@ -818,7 +810,7 @@ export function SettingsPage() {
         (storageFailed > 0 ? `\n⚠️ ${storageFailed} fichier(s) non trouvé(s)` : '')
       );
     } catch (error) {
-      console.error('Erreur lors de la suppression:', error);
+      logger.error('Erreur lors de la suppression:', error);
       toast.error('Erreur lors de la suppression des dépenses');
     } finally {
       setDeleting(false);
@@ -894,7 +886,7 @@ export function SettingsPage() {
 
       toast.success(`✅ ${totalDeleted} documents supprimés avec succès`);
     } catch (error) {
-      console.error('Erreur lors de la suppression:', error);
+      logger.error('Erreur lors de la suppression:', error);
       toast.error('Erreur lors de la suppression des données');
     } finally {
       setDeleting(false);
@@ -937,7 +929,7 @@ export function SettingsPage() {
         `• ${stats.orphanedInscriptions} participants supprimés\n` +
         `• ${stats.orphanedMembers} membres désactivés`;
 
-      console.log(message);
+      logger.debug(message);
 
       toast.success(
         `Nettoyage terminé! ${stats.totalLinksRemoved} liaisons orphelines supprimées. ` +
@@ -948,7 +940,7 @@ export function SettingsPage() {
       // Afficher aussi dans une alerte
       alert(message);
     } catch (error) {
-      console.error('Erreur lors du nettoyage:', error);
+      logger.error('Erreur lors du nettoyage:', error);
       toast.error('Erreur lors du nettoyage des liaisons');
     } finally {
       setDeleting(false);
@@ -984,7 +976,7 @@ export function SettingsPage() {
         `• ${stats.transactionsChecked} transactions vérifiées\n` +
         `• ${stats.transactionsFixed} statuts corrigés`;
 
-      console.log(message);
+      logger.debug(message);
 
       toast.success(
         `Réparation terminée! ${stats.transactionsFixed} transaction(s) corrigée(s).`,
@@ -993,7 +985,7 @@ export function SettingsPage() {
 
       alert(message);
     } catch (error) {
-      console.error('Erreur lors de la réparation:', error);
+      logger.error('Erreur lors de la réparation:', error);
       toast.error('Erreur lors de la réparation des statuts');
     } finally {
       setDeleting(false);
@@ -1035,7 +1027,7 @@ export function SettingsPage() {
 
       toast.success(`✅ ${firebaseCategories.length} catégories réinitialisées avec succès`);
     } catch (error) {
-      console.error('Erreur lors de la réinitialisation:', error);
+      logger.error('Erreur lors de la réinitialisation:', error);
       toast.error('Erreur lors de la réinitialisation des catégories');
     }
   };
@@ -1116,7 +1108,7 @@ export function SettingsPage() {
             });
 
             fixedCount++;
-            console.log(`✅ Fixed transaction ${docSnap.id}: ${data.matched_entities.length} → ${cleanedEntities.length} entities`);
+            logger.debug(`✅ Fixed transaction ${docSnap.id}: ${data.matched_entities.length} → ${cleanedEntities.length} entities`);
           }
         }
 
@@ -1133,7 +1125,7 @@ export function SettingsPage() {
 
       toast.success(`✅ Nettoyage terminé! ${fixedCount} transaction(s) corrigée(s)`);
     } catch (error) {
-      console.error('Erreur lors du nettoyage:', error);
+      logger.error('Erreur lors du nettoyage:', error);
       toast.error('Erreur lors du nettoyage des doublons');
     } finally {
       setCleaning(false);
@@ -1163,7 +1155,7 @@ export function SettingsPage() {
               "py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2",
               activeTab === 'accounting'
                 ? "border-calypso-blue text-calypso-blue"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                : "border-transparent text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary hover:border-gray-300 dark:border-dark-border"
             )}
           >
             <BookOpen className="h-4 w-4" />
@@ -1175,7 +1167,7 @@ export function SettingsPage() {
               "py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2",
               activeTab === 'categories'
                 ? "border-calypso-blue text-calypso-blue"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                : "border-transparent text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary hover:border-gray-300 dark:border-dark-border"
             )}
           >
             <Database className="h-4 w-4" />
@@ -1187,7 +1179,7 @@ export function SettingsPage() {
               "py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2",
               activeTab === 'general'
                 ? "border-calypso-blue text-calypso-blue"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                : "border-transparent text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary hover:border-gray-300 dark:border-dark-border"
             )}
           >
             <Palette className="h-4 w-4" />
@@ -1199,7 +1191,7 @@ export function SettingsPage() {
               "py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2",
               activeTab === 'fiscal_years'
                 ? "border-calypso-blue text-calypso-blue"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                : "border-transparent text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary hover:border-gray-300 dark:border-dark-border"
             )}
           >
             <Calendar className="h-4 w-4" />
@@ -1211,7 +1203,7 @@ export function SettingsPage() {
               "py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2",
               activeTab === 'permissions'
                 ? "border-calypso-blue text-calypso-blue"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                : "border-transparent text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary hover:border-gray-300 dark:border-dark-border"
             )}
           >
             <Shield className="h-4 w-4" />
@@ -1223,7 +1215,7 @@ export function SettingsPage() {
               "py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2",
               activeTab === 'value_lists'
                 ? "border-calypso-blue text-calypso-blue"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                : "border-transparent text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary hover:border-gray-300 dark:border-dark-border"
             )}
           >
             <Database className="h-4 w-4" />
@@ -1235,7 +1227,7 @@ export function SettingsPage() {
               "py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2",
               activeTab === 'security'
                 ? "border-calypso-blue text-calypso-blue"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                : "border-transparent text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary hover:border-gray-300 dark:border-dark-border"
             )}
           >
             <Users className="h-4 w-4" />
@@ -1247,7 +1239,7 @@ export function SettingsPage() {
               "py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2",
               activeTab === 'ai'
                 ? "border-calypso-blue text-calypso-blue"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                : "border-transparent text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary hover:border-gray-300 dark:border-dark-border"
             )}
           >
             <Star className="h-4 w-4" />
@@ -1259,7 +1251,7 @@ export function SettingsPage() {
               "py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2",
               activeTab === 'data'
                 ? "border-calypso-blue text-calypso-blue"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                : "border-transparent text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary hover:border-gray-300 dark:border-dark-border"
             )}
           >
             <Database className="h-4 w-4" />
@@ -1271,7 +1263,7 @@ export function SettingsPage() {
               "py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2",
               activeTab === 'communication'
                 ? "border-calypso-blue text-calypso-blue"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                : "border-transparent text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary hover:border-gray-300 dark:border-dark-border"
             )}
           >
             <Mail className="h-4 w-4" />
@@ -1333,7 +1325,7 @@ export function SettingsPage() {
                 </button>
                 <button
                   onClick={exportCodes}
-                  className="px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors flex items-center gap-2"
+                  className="px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors flex items-center gap-2"
                 >
                   <Download className="h-4 w-4" />
                   Exporter
@@ -1379,7 +1371,7 @@ export function SettingsPage() {
                 <thead className="bg-gray-50 dark:bg-dark-bg-tertiary border-b border-gray-200 dark:border-dark-border">
                   <tr>
                     <th
-                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-dark-bg-primary transition-colors"
+                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-primary transition-colors"
                       onClick={() => handleSort('selected')}
                     >
                       <div className="flex items-center justify-center gap-1">
@@ -1388,7 +1380,7 @@ export function SettingsPage() {
                       </div>
                     </th>
                     <th
-                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-dark-bg-primary transition-colors"
+                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-primary transition-colors"
                       onClick={() => handleSort('frequent')}
                     >
                       <div className="flex items-center justify-center gap-1">
@@ -1397,7 +1389,7 @@ export function SettingsPage() {
                       </div>
                     </th>
                     <th
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-dark-bg-primary transition-colors"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-primary transition-colors"
                       onClick={() => handleSort('code')}
                     >
                       <div className="flex items-center gap-1">
@@ -1406,7 +1398,7 @@ export function SettingsPage() {
                       </div>
                     </th>
                     <th
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-dark-bg-primary transition-colors"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-primary transition-colors"
                       onClick={() => handleSort('label')}
                     >
                       <div className="flex items-center gap-1">
@@ -1415,7 +1407,7 @@ export function SettingsPage() {
                       </div>
                     </th>
                     <th
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-dark-bg-primary transition-colors"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-primary transition-colors"
                       onClick={() => handleSort('type')}
                     >
                       <div className="flex items-center gap-1">
@@ -1424,7 +1416,7 @@ export function SettingsPage() {
                       </div>
                     </th>
                     <th
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-dark-bg-primary transition-colors"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-primary transition-colors"
                       onClick={() => handleSort('category')}
                     >
                       <div className="flex items-center gap-1">
@@ -1439,15 +1431,22 @@ export function SettingsPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {filteredCodes.map((code) => (
-                    <tr key={code.code} className="hover:bg-gray-50 dark:bg-dark-bg-tertiary">
+                    <tr
+                      key={code.code}
+                      className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary cursor-pointer"
+                      onClick={() => setDetailViewCode(code)}
+                    >
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <button
-                          onClick={() => toggleCodeSelection(code.code)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleCodeSelection(code.code);
+                          }}
                           className={cn(
                             "inline-flex items-center justify-center w-8 h-8 rounded-full transition-colors",
                             selectedCodes.has(code.code)
                               ? "bg-green-100 text-green-600 hover:bg-green-200"
-                              : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                              : "bg-gray-100 dark:bg-dark-bg-tertiary text-gray-400 dark:text-dark-text-muted hover:bg-gray-200"
                           )}
                         >
                           {selectedCodes.has(code.code) ? (
@@ -1459,12 +1458,15 @@ export function SettingsPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <button
-                          onClick={() => toggleFrequent(code.code)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFrequent(code.code);
+                          }}
                           className={cn(
                             "inline-flex items-center justify-center w-8 h-8 rounded-full transition-colors",
                             code.isFrequent
                               ? "bg-yellow-100 text-yellow-600 hover:bg-yellow-200"
-                              : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                              : "bg-gray-100 dark:bg-dark-bg-tertiary text-gray-400 dark:text-dark-text-muted hover:bg-gray-200"
                           )}
                           title={code.isFrequent ? "Retirer des fréquents" : "Marquer comme fréquent"}
                         >
@@ -1501,7 +1503,10 @@ export function SettingsPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right">
                         <button
-                          onClick={() => setDetailViewCode(code)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDetailViewCode(code);
+                          }}
                           className="text-gray-600 dark:text-dark-text-secondary hover:text-gray-700 dark:text-dark-text-primary transition-colors"
                           title="Voir les détails"
                         >
@@ -1557,7 +1562,7 @@ export function SettingsPage() {
                 <thead className="bg-gray-50 dark:bg-dark-bg-tertiary border-b border-gray-200 dark:border-dark-border">
                   <tr>
                     <th
-                      className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider w-24 cursor-pointer hover:bg-gray-100 dark:hover:bg-dark-bg-primary transition-colors"
+                      className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider w-24 cursor-pointer hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-primary transition-colors"
                       onClick={() => handleCategorySort('frequent')}
                     >
                       <div className="flex items-center justify-center gap-1">
@@ -1566,7 +1571,7 @@ export function SettingsPage() {
                       </div>
                     </th>
                     <th
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-dark-bg-primary transition-colors"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-primary transition-colors"
                       onClick={() => handleCategorySort('nom')}
                     >
                       <div className="flex items-center gap-1">
@@ -1575,7 +1580,7 @@ export function SettingsPage() {
                       </div>
                     </th>
                     <th
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider w-32 cursor-pointer hover:bg-gray-100 dark:hover:bg-dark-bg-primary transition-colors"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider w-32 cursor-pointer hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-primary transition-colors"
                       onClick={() => handleCategorySort('label_court')}
                     >
                       <div className="flex items-center gap-1">
@@ -1584,7 +1589,7 @@ export function SettingsPage() {
                       </div>
                     </th>
                     <th
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider w-32 cursor-pointer hover:bg-gray-100 dark:hover:bg-dark-bg-primary transition-colors"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider w-32 cursor-pointer hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-primary transition-colors"
                       onClick={() => handleCategorySort('type')}
                     >
                       <div className="flex items-center gap-1">
@@ -1593,7 +1598,7 @@ export function SettingsPage() {
                       </div>
                     </th>
                     <th
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider w-48 cursor-pointer hover:bg-gray-100 dark:hover:bg-dark-bg-primary transition-colors"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider w-48 cursor-pointer hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-primary transition-colors"
                       onClick={() => handleCategorySort('compte_comptable')}
                     >
                       <div className="flex items-center gap-1">
@@ -1608,15 +1613,25 @@ export function SettingsPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {sortedCategories.map((category) => (
-                    <tr key={category.id} className="hover:bg-gray-50 dark:bg-dark-bg-tertiary">
+                    <tr
+                      key={category.id}
+                      className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary cursor-pointer"
+                      onClick={() => {
+                        setDetailViewCategory(category);
+                        setIsNewCategory(false);
+                      }}
+                    >
                       <td className="px-3 py-4 whitespace-nowrap text-center">
                         <button
-                          onClick={() => toggleCategoryFrequent(category.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleCategoryFrequent(category.id);
+                          }}
                           className={cn(
                             "inline-flex items-center justify-center w-8 h-8 rounded-full transition-colors",
                             category.isFrequent
                               ? "bg-yellow-100 text-yellow-600 hover:bg-yellow-200"
-                              : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                              : "bg-gray-100 dark:bg-dark-bg-tertiary text-gray-400 dark:text-dark-text-muted hover:bg-gray-200"
                           )}
                           title={category.isFrequent ? "Retirer des favoris" : "Marquer comme favori"}
                         >
@@ -1650,7 +1665,8 @@ export function SettingsPage() {
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap text-right">
                         <button
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setDetailViewCategory(category);
                             setIsNewCategory(false);
                           }}
@@ -1755,7 +1771,7 @@ export function SettingsPage() {
                     "p-2 rounded-lg transition-colors",
                     generalSettings.enableDoubleApproval
                       ? "text-green-600 hover:bg-green-50"
-                      : "text-gray-400 hover:bg-gray-100"
+                      : "text-gray-400 dark:text-dark-text-muted hover:bg-gray-100 dark:bg-dark-bg-tertiary"
                   )}
                 >
                   {generalSettings.enableDoubleApproval ? (
@@ -1787,7 +1803,7 @@ export function SettingsPage() {
                     </span>
                   </div>
                   <p className="text-sm text-gray-500 dark:text-dark-text-muted mt-2">
-                    Les dépenses supérieures à ce montant nécessiteront l'approbation de deux personnes
+                    Les dépenses égales ou supérieures à ce montant nécessiteront l'approbation de deux personnes
                   </p>
                 </div>
               )}
@@ -1800,7 +1816,7 @@ export function SettingsPage() {
                     <p className="text-sm font-medium text-blue-900">Information sur la double approbation</p>
                     <p className="text-sm text-blue-700 mt-1">
                       {generalSettings.enableDoubleApproval ? (
-                        <>Les dépenses de plus de {generalSettings.doubleApprovalThreshold} {generalSettings.currency} nécessiteront
+                        <>Les dépenses égales ou supérieures à {generalSettings.doubleApprovalThreshold} {generalSettings.currency} nécessiteront
                         l'approbation de deux personnes autorisées avant de pouvoir être remboursées.</>
                       ) : (
                         "La double approbation est désactivée. Toutes les dépenses peuvent être approuvées par une seule personne."
@@ -1823,112 +1839,6 @@ export function SettingsPage() {
             </div>
           </div>
 
-          {/* Carte des paramètres de téléchargement */}
-          <div className="bg-white dark:bg-dark-bg-secondary rounded-lg shadow-sm border border-gray-200 dark:border-dark-border p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <Download className="h-6 w-6 text-blue-600" />
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary">Téléchargements des justificatifs</h2>
-                <p className="text-sm text-gray-600 dark:text-dark-text-secondary mt-1">
-                  Configuration du renommage automatique des fichiers téléchargés
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {/* Option renommage automatique */}
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <p className="font-medium text-gray-900 dark:text-dark-text-primary">Renommer automatiquement les fichiers</p>
-                  <p className="text-sm text-gray-600 dark:text-dark-text-secondary">
-                    Activer le renommage automatique avec le format personnalisable ci-dessous
-                  </p>
-                </div>
-                <button
-                  onClick={() => setDownloadSettings({ ...downloadSettings, autoRenameFiles: !downloadSettings.autoRenameFiles })}
-                  className={cn(
-                    "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
-                    downloadSettings.autoRenameFiles ? "bg-green-600" : "bg-gray-200"
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
-                      downloadSettings.autoRenameFiles ? "translate-x-6" : "translate-x-1"
-                    )}
-                  />
-                </button>
-              </div>
-
-              {/* Format du nom de fichier (editable) */}
-              {downloadSettings.autoRenameFiles && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
-                    Format du nom de fichier
-                  </label>
-                  <input
-                    type="text"
-                    value={downloadSettings.filenamePattern || ''}
-                    onChange={(e) => setDownloadSettings({ ...downloadSettings, filenamePattern: e.target.value })}
-                    placeholder="{ANNÉE}-{NUMÉRO} - {DATE} {DESCRIPTION}.{ext}"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-                  />
-                  <p className="text-xs text-gray-500 dark:text-dark-text-muted mt-1">
-                    Variables disponibles: <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">{`{ANNÉE}`}</code>, <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">{`{NUMÉRO}`}</code>, <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">{`{DATE}`}</code>, <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">{`{DESCRIPTION}`}</code>, <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">{`{ext}`}</code>
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-dark-text-muted mt-1">
-                    Exemple: <span className="font-mono">2025-00175 - 2025 10 22 Coltri liée à LEMAITRE GEOFFROY.pdf</span>
-                  </p>
-                </div>
-              )}
-
-              {/* Option utiliser numéro de transaction */}
-              {downloadSettings.autoRenameFiles && (
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-gray-900 dark:text-dark-text-primary">Utiliser le numéro de transaction bancaire</p>
-                    <p className="text-sm text-gray-600 dark:text-dark-text-secondary">
-                      Si une transaction est liée, utiliser son numéro de séquence au lieu de l'ID de la demande
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setDownloadSettings({ ...downloadSettings, useTransactionNumber: !downloadSettings.useTransactionNumber })}
-                    className={cn(
-                      "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
-                      downloadSettings.useTransactionNumber ? "bg-green-600" : "bg-gray-200"
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
-                        downloadSettings.useTransactionNumber ? "translate-x-6" : "translate-x-1"
-                      )}
-                    />
-                  </button>
-                </div>
-              )}
-
-              {/* Bouton Sauvegarder */}
-              <div className="flex justify-end pt-4 border-t border-gray-200 dark:border-dark-border">
-                <button
-                  onClick={async () => {
-                    if (!clubId) return;
-                    try {
-                      await FirebaseSettingsService.saveDownloadSettings(clubId, downloadSettings, 'current-user');
-                      toast.success('Paramètres de téléchargement sauvegardés');
-                    } catch (error) {
-                      toast.error('Erreur lors de la sauvegarde');
-                    }
-                  }}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-                >
-                  <Save className="h-4 w-4" />
-                  Sauvegarder
-                </button>
-              </div>
-            </div>
-          </div>
-
           {/* Carte d'import de données */}
           <div className="bg-white dark:bg-dark-bg-secondary rounded-lg shadow-sm border border-gray-200 dark:border-dark-border p-6">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary mb-4 flex items-center gap-2">
@@ -1944,7 +1854,7 @@ export function SettingsPage() {
                   <p className="mb-2">Page centralisée pour tous les imports de données:</p>
                   <ul className="list-disc list-inside space-y-1">
                     <li>Transactions bancaires (CSV - BNP, KBC, ING, Belfius)</li>
-                    <li>Événements VP Dive (XLS)</li>
+                    <li>Activités et événements</li>
                     <li>Membres depuis iClubSport (Excel)</li>
                     <li>Dépenses avec IA (PDF, images)</li>
                   </ul>
@@ -2352,6 +2262,7 @@ export function SettingsPage() {
         onClose={() => setDetailViewCode(null)}
         onSave={handleUpdateCode}
         onDelete={handleDeleteCode}
+        categories={categories}
       />
       
       {/* Modal de détail de la catégorie */}

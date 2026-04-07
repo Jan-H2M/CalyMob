@@ -1,3 +1,5 @@
+import { logger } from '@/utils/logger';
+import { AI_MODELS } from '@/config/aiModels';
 /**
  * AI Provider Service
  *
@@ -29,16 +31,17 @@ class AIProviderService {
   private isInitialized = false;
 
   constructor() {
-    // Don't initialize in constructor - wait for async loadFromFirebase
-    this.initializeProvidersFromLocalStorage();
+    // Initialize from environment variables only (not localStorage for security)
+    this.initializeProvidersFromEnv();
   }
 
   /**
-   * Initialize AI providers from environment variables and localStorage (synchronous fallback)
+   * Initialize AI providers from environment variables only
+   * SECURITY: API keys should never be stored in localStorage
    */
-  private initializeProvidersFromLocalStorage() {
-    // OpenAI
-    const openaiKey = import.meta.env.VITE_OPENAI_API_KEY || localStorage.getItem('ai_api_key');
+  private initializeProvidersFromEnv() {
+    // OpenAI - only from environment variables
+    const openaiKey = import.meta.env.VITE_OPENAI_API_KEY;
     if (openaiKey) {
       this.openaiClient = new OpenAI({
         apiKey: openaiKey,
@@ -46,8 +49,8 @@ class AIProviderService {
       });
     }
 
-    // Anthropic
-    const anthropicKey = import.meta.env.VITE_ANTHROPIC_API_KEY || localStorage.getItem('anthropic_api_key');
+    // Anthropic - only from environment variables
+    const anthropicKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
     if (anthropicKey) {
       this.anthropicClient = new Anthropic({
         apiKey: anthropicKey,
@@ -59,37 +62,34 @@ class AIProviderService {
   /**
    * Load API keys from Firebase and initialize providers
    * Call this method after authentication with clubId
+   * SECURITY: Keys are kept in memory only, never stored in localStorage
    */
   async loadFromFirebase(clubId: string): Promise<void> {
     try {
       const { openaiKey, anthropicKey } = await FirebaseSettingsService.loadAIApiKeys(clubId);
 
-      // Initialize OpenAI if key exists
+      // Initialize OpenAI if key exists in Firebase
       if (openaiKey) {
         this.openaiClient = new OpenAI({
           apiKey: openaiKey,
           dangerouslyAllowBrowser: true
         });
-        // Also sync to localStorage for offline use
-        localStorage.setItem('ai_api_key', openaiKey);
       }
 
-      // Initialize Anthropic if key exists
+      // Initialize Anthropic if key exists in Firebase
       if (anthropicKey) {
         this.anthropicClient = new Anthropic({
           apiKey: anthropicKey,
           dangerouslyAllowBrowser: true
         });
-        // Also sync to localStorage for offline use
-        localStorage.setItem('anthropic_api_key', anthropicKey);
       }
 
       this.isInitialized = true;
-      console.log('✅ Clés API IA chargées depuis Firebase');
+      logger.debug('✅ Clés API IA chargées depuis Firebase');
     } catch (error) {
-      console.error('❌ Erreur lors du chargement des clés API IA depuis Firebase:', error);
-      // Fallback to localStorage if Firebase fails
-      this.initializeProvidersFromLocalStorage();
+      logger.error('❌ Erreur lors du chargement des clés API IA depuis Firebase:', error);
+      // Fallback to environment variables only (no localStorage)
+      this.initializeProvidersFromEnv();
     }
   }
 
@@ -108,12 +108,12 @@ class AIProviderService {
   }
 
   /**
-   * Set OpenAI API key
+   * Set OpenAI API key (in-memory only)
+   * SECURITY: Keys are never stored in localStorage
    */
   setOpenAIKey(key: string): void {
     if (!key || key.trim() === '') {
       this.openaiClient = null;
-      localStorage.removeItem('ai_api_key');
       return;
     }
 
@@ -121,16 +121,15 @@ class AIProviderService {
       apiKey: key.trim(),
       dangerouslyAllowBrowser: true
     });
-    localStorage.setItem('ai_api_key', key.trim());
   }
 
   /**
-   * Set Anthropic API key
+   * Set Anthropic API key (in-memory only)
+   * SECURITY: Keys are never stored in localStorage
    */
   setAnthropicKey(key: string): void {
     if (!key || key.trim() === '') {
       this.anthropicClient = null;
-      localStorage.removeItem('anthropic_api_key');
       return;
     }
 
@@ -138,7 +137,6 @@ class AIProviderService {
       apiKey: key.trim(),
       dangerouslyAllowBrowser: true
     });
-    localStorage.setItem('anthropic_api_key', key.trim());
   }
 
   /**
@@ -155,16 +153,17 @@ class AIProviderService {
 
   /**
    * Get current configuration status
+   * SECURITY: Only checks environment variables, not localStorage
    */
   getProviderConfig(): AIProviderConfig {
     return {
       openai: {
         enabled: this.openaiClient !== null,
-        hasKey: !!(import.meta.env.VITE_OPENAI_API_KEY || localStorage.getItem('ai_api_key'))
+        hasKey: !!import.meta.env.VITE_OPENAI_API_KEY || this.openaiClient !== null
       },
       anthropic: {
         enabled: this.anthropicClient !== null,
-        hasKey: !!(import.meta.env.VITE_ANTHROPIC_API_KEY || localStorage.getItem('anthropic_api_key'))
+        hasKey: !!import.meta.env.VITE_ANTHROPIC_API_KEY || this.anthropicClient !== null
       }
     };
   }
@@ -191,7 +190,7 @@ class AIProviderService {
 
       return { success: false, message: 'Réponse OpenAI invalide' };
     } catch (error) {
-      console.error('OpenAI connection test error:', error);
+      logger.error('OpenAI connection test error:', error);
       return {
         success: false,
         message: error instanceof Error ? error.message : 'Erreur de connexion OpenAI'
@@ -210,7 +209,7 @@ class AIProviderService {
     try {
       // Simple API call to test connection
       const response = await this.anthropicClient.messages.create({
-        model: 'claude-sonnet-4-5-20250929',
+        model: AI_MODELS.connectionTest,
         max_tokens: 10,
         messages: [{ role: 'user', content: 'Test connection' }]
       });
@@ -221,7 +220,7 @@ class AIProviderService {
 
       return { success: false, message: 'Réponse Claude invalide' };
     } catch (error) {
-      console.error('Anthropic connection test error:', error);
+      logger.error('Anthropic connection test error:', error);
       return {
         success: false,
         message: error instanceof Error ? error.message : 'Erreur de connexion Claude'

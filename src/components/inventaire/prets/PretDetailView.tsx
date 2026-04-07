@@ -8,10 +8,12 @@ import { PDFGenerationService } from '@/services/pdfGenerationService';
 import { EmailService } from '@/services/emailService';
 import { Loan, InventoryItem, CautionRule } from '@/types/inventory';
 import { Membre } from '@/types';
+import { getFirstName, getLastName } from '@/utils/fieldMapper';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { Timestamp } from 'firebase/firestore';
 import { cn } from '@/utils/utils';
+import { logger } from '@/utils/logger';
 
 interface Props {
   loan: Loan;
@@ -61,7 +63,7 @@ export function PretDetailView({ loan, onClose, onSave }: Props) {
       setMember(memberData);
       setItems(itemsData.filter(i => i !== null) as InventoryItem[]);
     } catch (error) {
-      console.error('Erreur chargement données prêt:', error);
+      logger.error('Erreur chargement données prêt:', error);
     } finally {
       setLoading(false);
     }
@@ -89,7 +91,7 @@ export function PretDetailView({ loan, onClose, onSave }: Props) {
 
       onSave();
     } catch (error) {
-      console.error(`Error saving ${field}:`, error);
+      logger.error(`Error saving ${field}:`, error);
       toast.error('Erreur lors de la sauvegarde');
     }
   };
@@ -135,7 +137,7 @@ export function PretDetailView({ loan, onClose, onSave }: Props) {
         if (emailResult.success) {
           toast.success('Email de confirmation envoyé', { duration: 2000 });
         } else {
-          console.warn('[PretDetailView] Échec envoi email:', emailResult.error);
+          logger.warn('[PretDetailView] Échec envoi email:', emailResult.error);
         }
 
         // Si caution remboursée intégralement, envoyer email remboursement
@@ -154,13 +156,13 @@ export function PretDetailView({ loan, onClose, onSave }: Props) {
           }
         }
       } catch (emailError) {
-        console.error('[PretDetailView] Erreur envoi email:', emailError);
+        logger.error('[PretDetailView] Erreur envoi email:', emailError);
         // Ne pas bloquer le workflow
       }
 
       onSave();
     } catch (error: any) {
-      console.error('Erreur retour prêt:', error);
+      logger.error('Erreur retour prêt:', error);
       toast.error(error.message || 'Erreur lors du retour');
     } finally {
       setProcessing(false);
@@ -180,7 +182,7 @@ export function PretDetailView({ loan, onClose, onSave }: Props) {
       toast.success('Prêt annulé');
       onSave();
     } catch (error: any) {
-      console.error('Erreur annulation prêt:', error);
+      logger.error('Erreur annulation prêt:', error);
       toast.error(error.message || 'Erreur lors de l\'annulation');
     } finally {
       setProcessing(false);
@@ -221,7 +223,7 @@ export function PretDetailView({ loan, onClose, onSave }: Props) {
 
       toast.success('Contrat téléchargé');
     } catch (error: any) {
-      console.error('Erreur génération PDF:', error);
+      logger.error('Erreur génération PDF:', error);
       toast.error(error.message || 'Erreur lors de la génération du PDF');
     } finally {
       setProcessing(false);
@@ -302,7 +304,7 @@ export function PretDetailView({ loan, onClose, onSave }: Props) {
             <div className="flex items-center gap-3">
               <ClipboardList className="h-5 w-5 text-blue-600 dark:text-blue-400" />
               <h2 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary">
-                Prêt à {member?.nom} {member?.prenom}
+                Prêt à {member && `${getFirstName(member)} ${getLastName(member)}`}
               </h2>
               <span className="text-sm text-gray-500 dark:text-dark-text-muted">•</span>
               {getStatutBadge(loan.statut)}
@@ -318,7 +320,7 @@ export function PretDetailView({ loan, onClose, onSave }: Props) {
             </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 dark:hover:text-dark-text-primary transition-colors"
+              className="text-gray-400 dark:text-dark-text-muted hover:text-gray-600 dark:text-dark-text-secondary dark:hover:text-dark-text-primary transition-colors"
             >
               <X className="h-5 w-5" />
             </button>
@@ -337,8 +339,8 @@ export function PretDetailView({ loan, onClose, onSave }: Props) {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg p-3">
                   <div className="flex items-center gap-2 mb-1">
-                    <Calendar className="h-4 w-4 text-gray-400" />
-                    <span className="text-sm font-medium text-gray-700 dark:text-dark-text-secondary">
+                    <Calendar className="h-4 w-4 text-gray-400 dark:text-dark-text-muted" />
+                    <span className="text-sm font-medium text-gray-700 dark:text-dark-text-primary">
                       Date de prêt
                     </span>
                   </div>
@@ -349,8 +351,8 @@ export function PretDetailView({ loan, onClose, onSave }: Props) {
 
                 <div className="bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg p-3">
                   <div className="flex items-center gap-2 mb-1">
-                    <Calendar className="h-4 w-4 text-gray-400" />
-                    <span className="text-sm font-medium text-gray-700 dark:text-dark-text-secondary">
+                    <Calendar className="h-4 w-4 text-gray-400 dark:text-dark-text-muted" />
+                    <span className="text-sm font-medium text-gray-700 dark:text-dark-text-primary">
                       Retour prévu
                     </span>
                   </div>
@@ -376,7 +378,7 @@ export function PretDetailView({ loan, onClose, onSave }: Props) {
 
               {/* Notes field with auto-save */}
               <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                   Notes
                 </label>
                 <textarea
@@ -401,13 +403,13 @@ export function PretDetailView({ loan, onClose, onSave }: Props) {
                 {items.map(item => (
                   <div key={item.id} className="bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg p-3">
                     <div className="flex items-center gap-3">
-                      <Package className="h-5 w-5 text-gray-400" />
+                      <Package className="h-5 w-5 text-gray-400 dark:text-dark-text-muted" />
                       <div className="flex-1">
                         <p className="text-sm font-medium text-gray-900 dark:text-dark-text-primary">
                           {item.numero_serie}
                         </p>
                         {item.nom && (
-                          <p className="text-xs text-gray-500 dark:text-dark-text-secondary">{item.nom}</p>
+                          <p className="text-xs text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">{item.nom}</p>
                         )}
                       </div>
                     </div>
@@ -472,7 +474,7 @@ export function PretDetailView({ loan, onClose, onSave }: Props) {
                         <h4 className="text-sm font-medium text-gray-900 dark:text-dark-text-primary">
                           {snapshot.checklistNom}
                         </h4>
-                        <span className="text-xs text-gray-500 dark:text-dark-text-secondary">
+                        <span className="text-xs text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
                           {items.find(i => i.id === snapshot.itemId)?.numero_serie}
                         </span>
                       </div>
@@ -490,9 +492,9 @@ export function PretDetailView({ loan, onClose, onSave }: Props) {
                                   checked={checkItem.checked_depart}
                                   onChange={() => handleChecklistToggle(snapshotIndex, checkItem.id, 'depart')}
                                   disabled={isReturned}
-                                  className="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                                  className="h-4 w-4 text-blue-600 rounded border-gray-300 dark:border-dark-border focus:ring-blue-500"
                                 />
-                                <span className="text-xs text-gray-500 dark:text-dark-text-secondary">Départ</span>
+                                <span className="text-xs text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">Départ</span>
                               </label>
                               {!isReturned && showReturnForm && (
                                 <label className="flex items-center gap-2 cursor-pointer">
@@ -500,9 +502,9 @@ export function PretDetailView({ loan, onClose, onSave }: Props) {
                                     type="checkbox"
                                     checked={checkItem.checked_retour}
                                     onChange={() => handleChecklistToggle(snapshotIndex, checkItem.id, 'retour')}
-                                    className="h-4 w-4 text-green-600 rounded border-gray-300 focus:ring-green-500"
+                                    className="h-4 w-4 text-green-600 rounded border-gray-300 dark:border-dark-border focus:ring-green-500"
                                   />
-                                  <span className="text-xs text-gray-500 dark:text-dark-text-secondary">Retour</span>
+                                  <span className="text-xs text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">Retour</span>
                                 </label>
                               )}
                               {isReturned && (
@@ -512,7 +514,7 @@ export function PretDetailView({ loan, onClose, onSave }: Props) {
                                   ) : (
                                     <X className="h-4 w-4 text-red-600" />
                                   )}
-                                  <span className="text-xs text-gray-500 dark:text-dark-text-secondary">Retour</span>
+                                  <span className="text-xs text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">Retour</span>
                                 </div>
                               )}
                             </div>
@@ -615,7 +617,7 @@ export function PretDetailView({ loan, onClose, onSave }: Props) {
           <div className="flex items-center gap-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-secondary bg-white dark:bg-dark-bg-primary border border-gray-300 dark:border-dark-border rounded-md hover:bg-gray-50 dark:hover:bg-dark-bg-secondary"
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-primary bg-white dark:bg-dark-bg-primary border border-gray-300 dark:border-dark-border rounded-md hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-secondary"
             >
               Fermer
             </button>

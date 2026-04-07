@@ -1,13 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { logger } from '@/utils/logger';
 import {
   Calendar,
   Plus,
   Lock,
   LockKeyhole,
   Unlock,
-  Check,
-  X,
-  AlertCircle,
   TrendingUp,
   TrendingDown,
   Euro,
@@ -21,21 +19,23 @@ import { FiscalYearService } from '@/services/fiscalYearService';
 import { useAuth } from '@/contexts/AuthContext';
 import { useFiscalYear } from '@/contexts/FiscalYearContext';
 import { FiscalYearDetailView } from './FiscalYearDetailView';
+import { FiscalYearCloseWizard } from './FiscalYearCloseWizard';
 import { formatMontant, formatDate, cn } from '@/utils/utils';
 import toast from 'react-hot-toast';
 import { differenceInDays } from 'date-fns';
 
 export function FiscalYearsManagement() {
-  const { clubId, user } = useAuth();
-  const { allFiscalYears: contextFiscalYears, selectedFiscalYear, setSelectedFiscalYear } = useFiscalYear();
+  const { clubId, user, appUser } = useAuth();
+  const { allFiscalYears: contextFiscalYears, selectedFiscalYear, setSelectedFiscalYear, disableFiscalYearFilter, setDisableFiscalYearFilter, refreshFiscalYears } = useFiscalYear();
   const [fiscalYears, setFiscalYears] = useState<FiscalYear[]>([]);
   const [currentFY, setCurrentFY] = useState<FiscalYear | null>(null);
   const [loading, setLoading] = useState(true);
   const [balanceCurrent, setBalanceCurrent] = useState<number>(0);
   const [balanceSavings, setBalanceSavings] = useState<number>(0);
+  const [liveBalancesByFiscalYear, setLiveBalancesByFiscalYear] = useState<Record<string, { current: number; savings: number }>>({});
+  const [editingFY, setEditingFY] = useState<FiscalYear | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [showCloseModal, setShowCloseModal] = useState(false);
-  const [closing, setClosing] = useState(false);
+  const [closeWizardFY, setCloseWizardFY] = useState<FiscalYear | null>(null);
 
   // DetailView state (replaces old inline edit form)
   const [detailViewFY, setDetailViewFY] = useState<FiscalYear | null>(null);
@@ -50,6 +50,50 @@ export function FiscalYearsManagement() {
   const [newFYAccountSavings, setNewFYAccountSavings] = useState('');
   const [newFYNotes, setNewFYNotes] = useState('');
 
+  const loadLiveBalancesForOpenYears = async (years: FiscalYear[]) => {
+    if (!clubId) {
+      return {};
+    }
+
+    const openYears = years.filter(year => year.status === 'open');
+    const entries = await Promise.all(
+      openYears.map(async year => {
+        const [current, savings] = await Promise.all([
+          FiscalYearService.calculateBalanceForFiscalYear(clubId, year, 'current'),
+          FiscalYearService.calculateBalanceForFiscalYear(clubId, year, 'savings')
+        ]);
+
+        return [year.id, { current, savings }] as const;
+      })
+    );
+
+    return Object.fromEntries(entries);
+  };
+
+  const refreshManagementData = async () => {
+    if (!clubId) return [];
+
+    const years = await FiscalYearService.getFiscalYears(clubId);
+    setFiscalYears(years);
+
+    const openYears = years.filter(year => year.status === 'open');
+    const current = [...openYears].sort((left, right) => right.year - left.year)[0] || null;
+    setCurrentFY(current);
+
+    const liveBalances = await loadLiveBalancesForOpenYears(years);
+    setLiveBalancesByFiscalYear(liveBalances);
+
+    if (current) {
+      setBalanceCurrent(liveBalances[current.id]?.current ?? current.closing_balances.bank_current);
+      setBalanceSavings(liveBalances[current.id]?.savings ?? current.closing_balances.bank_savings);
+    } else {
+      setBalanceCurrent(0);
+      setBalanceSavings(0);
+    }
+
+    return years;
+  };
+
   // Charger les années fiscales
   useEffect(() => {
     const loadFiscalYears = async () => {
@@ -57,21 +101,9 @@ export function FiscalYearsManagement() {
 
       try {
         setLoading(true);
-        const years = await FiscalYearService.getFiscalYears(clubId);
-        setFiscalYears(years);
-
-        const current = years.find(y => y.status === 'open');
-        setCurrentFY(current || null);
-
-        // Charger les soldes en temps réel si année active
-        if (current) {
-          const balCurrent = await FiscalYearService.calculateCurrentBalance(clubId, 'current');
-          const balSavings = await FiscalYearService.calculateCurrentBalance(clubId, 'savings');
-          setBalanceCurrent(balCurrent);
-          setBalanceSavings(balSavings);
-        }
+        await refreshManagementData();
       } catch (error) {
-        console.error('Erreur lors du chargement:', error);
+        logger.error('Erreur lors du chargement:', error);
         toast.error('Erreur lors du chargement des années fiscales');
       } finally {
         setLoading(false);
@@ -99,23 +131,23 @@ export function FiscalYearsManagement() {
         'savings'
       );
 
-      console.log('=== TRANSACTIONS ÉPARGNE ===');
-      console.log(`Compte Épargne configuré: ${currentFY.account_numbers?.bank_savings || 'NON DÉFINI'}`);
-      console.log(`Nombre de transactions trouvées: ${transactions.length}`);
-      console.log('Détail des transactions:');
+      logger.debug('=== TRANSACTIONS ÉPARGNE ===');
+      logger.debug(`Compte Épargne configuré: ${currentFY.account_numbers?.bank_savings || 'NON DÉFINI'}`);
+      logger.debug(`Nombre de transactions trouvées: ${transactions.length}`);
+      logger.debug('Détail des transactions:');
       transactions.forEach((tx, i) => {
-        console.log(`${i + 1}. ${tx.date_execution?.toLocaleDateString()} - ${tx.contrepartie_nom} - ${tx.montant} € (Compte: ${tx.numero_compte})`);
+        logger.debug(`${i + 1}. ${tx.date_execution?.toLocaleDateString()} - ${tx.contrepartie_nom} - ${tx.montant} € (Compte: ${tx.numero_compte})`);
       });
 
       const total = transactions.reduce((sum, tx) => sum + tx.montant, 0);
-      console.log(`Total des mouvements: ${total} €`);
-      console.log(`Opening balance: ${currentFY.opening_balances.bank_savings} €`);
-      console.log(`Closing balance calculé: ${currentFY.opening_balances.bank_savings + total} €`);
-      console.log(`Closing balance affiché: ${balanceSavings} €`);
+      logger.debug(`Total des mouvements: ${total} €`);
+      logger.debug(`Opening balance: ${currentFY.opening_balances.bank_savings} €`);
+      logger.debug(`Closing balance calculé: ${currentFY.opening_balances.bank_savings + total} €`);
+      logger.debug(`Closing balance affiché: ${balanceSavings} €`);
 
       toast.success(`${transactions.length} transaction(s) trouvée(s) - Voir console (F12)`);
     } catch (error) {
-      console.error('Erreur debug:', error);
+      logger.error('Erreur debug:', error);
       toast.error('Erreur lors du debug');
     }
   };
@@ -140,15 +172,16 @@ export function FiscalYearsManagement() {
           bank_current: newFYOpeningCurrent,
           bank_savings: newFYOpeningSavings
         },
-        undefined,
+        (newFYAccountCurrent || newFYAccountSavings) ? {
+          bank_current: newFYAccountCurrent || undefined,
+          bank_savings: newFYAccountSavings || undefined
+        } : undefined,
         user?.uid
       );
 
       toast.success(`Année fiscale ${newFYYear} créée avec succès`);
 
-      // Recharger les données
-      const years = await FiscalYearService.getFiscalYears(clubId);
-      setFiscalYears(years);
+      await refreshManagementData();
       setShowCreateForm(false);
 
       // Reset form
@@ -158,47 +191,8 @@ export function FiscalYearsManagement() {
       setNewFYOpeningCurrent(0);
       setNewFYOpeningSavings(0);
     } catch (error) {
-      console.error('Erreur lors de la création:', error);
+      logger.error('Erreur lors de la création:', error);
       toast.error('Erreur lors de la création de l\'année fiscale');
-    }
-  };
-
-  // Clôturer une année fiscale
-  const handleCloseFiscalYear = async () => {
-    if (!clubId || !currentFY) return;
-
-    try {
-      setClosing(true);
-
-      // Vérifier si la clôture est possible
-      const { canClose, reasons } = await FiscalYearService.canCloseFiscalYear(clubId, currentFY);
-
-      if (!canClose) {
-        const nonWarningReasons = reasons.filter(r => !r.includes('avertissement'));
-        if (nonWarningReasons.length > 0) {
-          toast.error(`Impossible de clôturer: ${nonWarningReasons.join(', ')}`);
-          setClosing(false);
-          return;
-        }
-      }
-
-      await FiscalYearService.closeFiscalYear(clubId, currentFY.id, user?.uid);
-
-      toast.success(`Année fiscale ${currentFY.year} clôturée avec succès`);
-      toast.success(`Année ${currentFY.year + 1} créée automatiquement`);
-
-      // Recharger les données
-      const years = await FiscalYearService.getFiscalYears(clubId);
-      setFiscalYears(years);
-      const newCurrent = years.find(y => y.status === 'open');
-      setCurrentFY(newCurrent || null);
-
-      setShowCloseModal(false);
-    } catch (error) {
-      console.error('Erreur lors de la clôture:', error);
-      toast.error('Erreur lors de la clôture de l\'année fiscale');
-    } finally {
-      setClosing(false);
     }
   };
 
@@ -217,11 +211,12 @@ export function FiscalYearsManagement() {
       await FiscalYearService.reopenFiscalYear(clubId, fiscalYearId);
       toast.success('Année fiscale rouverte');
 
-      // Recharger
-      const years = await FiscalYearService.getFiscalYears(clubId);
-      setFiscalYears(years);
+      await refreshManagementData();
+
+      // Refresh context zodat dropdown ook update
+      await refreshFiscalYears();
     } catch (error) {
-      console.error('Erreur lors de la réouverture:', error);
+      logger.error('Erreur lors de la réouverture:', error);
       toast.error('Erreur lors de la réouverture');
     }
   };
@@ -249,27 +244,11 @@ export function FiscalYearsManagement() {
       await FiscalYearService.permanentlyCloseFiscalYear(clubId, fiscalYearId);
       toast.success(`Année ${year} verrouillée définitivement`);
 
-      // Recharger
-      const years = await FiscalYearService.getFiscalYears(clubId);
-      setFiscalYears(years);
-    } catch (error: any) {
-      console.error('Erreur lors du verrouillage:', error);
-      toast.error(error.message || 'Erreur lors du verrouillage');
+      await refreshManagementData();
+    } catch (error) {
+      logger.error('Erreur lors du verrouillage:', error);
+      toast.error(error instanceof Error ? error.message : 'Erreur lors du verrouillage');
     }
-  };
-
-  // Éditer une année fiscale
-  const handleEditFiscalYear = (fy: FiscalYear) => {
-    setEditingFY(fy);
-    setNewFYYear(fy.year);
-    setNewFYStartDate(fy.start_date.toISOString().split('T')[0]);
-    setNewFYEndDate(fy.end_date.toISOString().split('T')[0]);
-    setNewFYOpeningCurrent(fy.opening_balances.bank_current);
-    setNewFYOpeningSavings(fy.opening_balances.bank_savings);
-    setNewFYAccountCurrent(fy.account_numbers?.bank_current || '');
-    setNewFYAccountSavings(fy.account_numbers?.bank_savings || '');
-    setNewFYNotes(fy.notes || '');
-    setShowCreateForm(true);
   };
 
   // Sauvegarder les modifications
@@ -293,50 +272,14 @@ export function FiscalYearsManagement() {
 
       toast.success('Année fiscale mise à jour');
 
-      // Recharger
-      const years = await FiscalYearService.getFiscalYears(clubId);
-      setFiscalYears(years);
-
-      // Recharger les balances si c'est l'année active
-      const updatedCurrent = years.find(y => y.status === 'open');
-      setCurrentFY(updatedCurrent || null);
-      if (updatedCurrent) {
-        const balCurrent = await FiscalYearService.calculateCurrentBalance(clubId, 'current');
-        const balSavings = await FiscalYearService.calculateCurrentBalance(clubId, 'savings');
-        setBalanceCurrent(balCurrent);
-        setBalanceSavings(balSavings);
-      }
+      await refreshManagementData();
 
       // Reset
       setEditingFY(null);
       setShowCreateForm(false);
-    } catch (error: any) {
-      console.error('Erreur lors de la mise à jour:', error);
-      toast.error(error.message || 'Erreur lors de la mise à jour');
-    }
-  };
-
-  // Supprimer une année fiscale
-  const handleDeleteFiscalYear = async (fiscalYearId: string) => {
-    if (!clubId) return;
-
-    const confirm = window.confirm(
-      'Êtes-vous sûr de vouloir supprimer cette année fiscale ?\n\n' +
-      'Cette action est irréversible. L\'année doit être ouverte et sans transactions.'
-    );
-
-    if (!confirm) return;
-
-    try {
-      await FiscalYearService.deleteFiscalYear(clubId, fiscalYearId);
-      toast.success('Année fiscale supprimée');
-
-      // Recharger
-      const years = await FiscalYearService.getFiscalYears(clubId);
-      setFiscalYears(years);
-    } catch (error: any) {
-      console.error('Erreur lors de la suppression:', error);
-      toast.error(error.message || 'Erreur lors de la suppression');
+    } catch (error) {
+      logger.error('Erreur lors de la mise à jour:', error);
+      toast.error(error instanceof Error ? error.message : 'Erreur lors de la mise à jour');
     }
   };
 
@@ -349,6 +292,56 @@ export function FiscalYearsManagement() {
   }
 
   const daysRemaining = currentFY ? differenceInDays(currentFY.end_date, new Date()) : 0;
+  const openFiscalYears = fiscalYears.filter(fy => fy.status === 'open');
+  const hasMultipleOpenFiscalYears = openFiscalYears.length > 1;
+  const dataQualityWarnings: string[] = [];
+
+  fiscalYears
+    .filter(fy => fy.status === 'open')
+    .forEach(fy => {
+      if (!fy.account_numbers?.bank_current?.trim()) {
+        dataQualityWarnings.push(
+          `Exercice ${fy.year}: l’IBAN du compte courant n’est pas renseigné. Le solde provisoire CC peut être incomplet ou calculé sur un mauvais périmètre.`
+        );
+      }
+
+      if (!fy.account_numbers?.bank_savings?.trim()) {
+        dataQualityWarnings.push(
+          `Exercice ${fy.year}: l’IBAN du compte épargne n’est pas renseigné. Le solde provisoire épargne peut inclure des transactions qui ne lui appartiennent pas.`
+        );
+      }
+    });
+
+  const fiscalYearsAscending = [...fiscalYears].sort((left, right) => left.year - right.year);
+  for (let index = 0; index < fiscalYearsAscending.length - 1; index += 1) {
+    const currentYear = fiscalYearsAscending[index];
+    const nextYear = fiscalYearsAscending[index + 1];
+
+    if (nextYear.year !== currentYear.year + 1) {
+      continue;
+    }
+
+    const currentClosingCurrent = currentYear.status === 'open'
+      ? (liveBalancesByFiscalYear[currentYear.id]?.current ?? currentYear.closing_balances.bank_current)
+      : currentYear.closing_balances.bank_current;
+    const currentClosingSavings = currentYear.status === 'open'
+      ? (liveBalancesByFiscalYear[currentYear.id]?.savings ?? currentYear.closing_balances.bank_savings)
+      : currentYear.closing_balances.bank_savings;
+
+    const currentGap = currentClosingCurrent - nextYear.opening_balances.bank_current;
+    if (Math.abs(currentGap) > 0.01) {
+      dataQualityWarnings.push(
+        `Écart de report compte courant entre ${currentYear.year} et ${nextYear.year}: ${formatMontant(currentClosingCurrent)} vs ${formatMontant(nextYear.opening_balances.bank_current)}.`
+      );
+    }
+
+    const savingsGap = currentClosingSavings - nextYear.opening_balances.bank_savings;
+    if (Math.abs(savingsGap) > 0.01) {
+      dataQualityWarnings.push(
+        `Écart de report compte épargne entre ${currentYear.year} et ${nextYear.year}: ${formatMontant(currentClosingSavings)} vs ${formatMontant(nextYear.opening_balances.bank_savings)}.`
+      );
+    }
+  }
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -364,7 +357,7 @@ export function FiscalYearsManagement() {
       case 'open': return 'bg-green-100 text-green-800 border-green-300';
       case 'closed': return 'bg-orange-100 text-orange-800 border-orange-300';
       case 'permanently_closed': return 'bg-red-100 text-red-800 border-red-300';
-      default: return 'bg-gray-100 text-gray-800 border-gray-300';
+      default: return 'bg-gray-100 dark:bg-dark-bg-tertiary text-gray-800 border-gray-300 dark:border-dark-border';
     }
   };
 
@@ -374,7 +367,7 @@ export function FiscalYearsManagement() {
       {selectedFiscalYear && contextFiscalYears.length > 0 && (
         <div className="flex items-center gap-3 py-3 px-4 bg-white dark:bg-dark-bg-secondary border border-gray-200 dark:border-dark-border rounded-lg">
           <label className="text-base font-bold text-gray-900 dark:text-dark-text-primary">
-            Année fiscale active:
+            Année fiscale consultée:
           </label>
           <select
             value={selectedFiscalYear.id}
@@ -404,6 +397,42 @@ export function FiscalYearsManagement() {
         </div>
       )}
 
+      {/* Toggle filtrage par année fiscale - ADMIN+ */}
+      {(appUser?.app_role === 'superadmin' || appUser?.app_role === 'admin') && (
+        <div className="flex items-center gap-4 py-3 px-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded-lg">
+          <div className="flex-1">
+            <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+              Filtrage par année fiscale
+            </p>
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              {disableFiscalYearFilter
+                ? 'Désactivé - Toutes les données sont affichées sans filtrage'
+                : 'Activé - Les données sont filtrées par année fiscale sélectionnée'}
+            </p>
+          </div>
+          <button
+            onClick={() => setDisableFiscalYearFilter(!disableFiscalYearFilter)}
+            className={cn(
+              "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+              disableFiscalYearFilter ? "bg-amber-500" : "bg-green-500"
+            )}
+          >
+            <span
+              className={cn(
+                "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                disableFiscalYearFilter ? "translate-x-6" : "translate-x-1"
+              )}
+            />
+          </button>
+          <span className={cn(
+            "text-sm font-medium",
+            disableFiscalYearFilter ? "text-amber-700 dark:text-amber-300" : "text-green-700 dark:text-green-300"
+          )}>
+            {disableFiscalYearFilter ? 'OFF' : 'ON'}
+          </span>
+        </div>
+      )}
+
       {/* Année fiscale active - GRAND BANNER */}
       {currentFY && (
         <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl border-4 border-green-300 dark:border-green-700 p-8 shadow-lg">
@@ -429,17 +458,22 @@ export function FiscalYearsManagement() {
                 </div>
                 <p className="text-xs text-gray-500 dark:text-dark-text-muted">jours restants</p>
               </div>
-              {daysRemaining < 0 && (
-                <button
-                  onClick={() => setShowCloseModal(true)}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
-                >
-                  <Lock className="h-4 w-4" />
-                  Clôturer l'année
-                </button>
-              )}
+              <button
+                onClick={() => setCloseWizardFY(currentFY)}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+              >
+                <Lock className="h-4 w-4" />
+                Assistant de clôture
+              </button>
             </div>
           </div>
+
+          {hasMultipleOpenFiscalYears && (
+            <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              Plusieurs exercices sont encore ouverts ({openFiscalYears.map(fy => fy.year).join(', ')}). Les soldes de fin affichés
+              pour ces lignes sont provisoires et calculés séparément par exercice. Un seul exercice devrait idéalement rester ouvert.
+            </div>
+          )}
 
           {/* Soldes en temps réel */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -694,11 +728,11 @@ export function FiscalYearsManagement() {
               <div className="flex flex-wrap gap-3">
                 {editingFY.status === 'open' && (
                   <button
-                    onClick={() => handleCloseFiscalYear(editingFY.id, editingFY.year)}
+                    onClick={() => setCloseWizardFY(editingFY)}
                     className="px-6 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors flex items-center gap-2 font-medium"
                   >
                     <Lock className="h-5 w-5" />
-                    Clôturer l'année fiscale {editingFY.year}
+                    Ouvrir l'assistant de clôture {editingFY.year}
                   </button>
                 )}
 
@@ -749,7 +783,7 @@ export function FiscalYearsManagement() {
                 setShowCreateForm(false);
                 setEditingFY(null);
               }}
-              className="px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors"
+              className="px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors"
             >
               Annuler
             </button>
@@ -759,6 +793,20 @@ export function FiscalYearsManagement() {
 
       {/* Tableau des années fiscales */}
       <div className="bg-white dark:bg-dark-bg-secondary rounded-lg shadow-sm border border-gray-200 dark:border-dark-border overflow-hidden">
+        <div className="border-b border-gray-100 px-4 py-3 text-xs text-gray-600 dark:text-dark-text-secondary">
+          Pour un exercice ouvert, le solde de fin affiché ici est une valeur provisoire calculée à partir des transactions de cet exercice.
+          Pour un exercice clôturé, le solde de fin affiché est le solde enregistré lors de la clôture.
+        </div>
+        {dataQualityWarnings.length > 0 && (
+          <div className="border-b border-amber-200 bg-amber-50 px-4 py-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">Points à vérifier</div>
+            <div className="mt-2 space-y-1 text-sm text-amber-900">
+              {dataQualityWarnings.map(warning => (
+                <div key={warning}>• {warning}</div>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="overflow-x-auto px-4 py-2">
           <table className="w-full">
             <thead className="bg-gray-50 dark:bg-dark-bg-tertiary border-b border-gray-200 dark:border-dark-border">
@@ -776,19 +824,26 @@ export function FiscalYearsManagement() {
             </thead>
             <tbody className="divide-y divide-gray-200">
               {fiscalYears.map((fy) => {
-                const varCurrent = calculateVariation(fy.opening_balances.bank_current, fy.closing_balances.bank_current);
-                const varSavings = calculateVariation(fy.opening_balances.bank_savings, fy.closing_balances.bank_savings);
                 const isOpen = fy.status === 'open';
+                const isCurrentOpenYear = currentFY?.id === fy.id;
+                const liveBalances = liveBalancesByFiscalYear[fy.id];
+                const displayedClosingCurrent = isOpen
+                  ? (liveBalances?.current ?? fy.closing_balances.bank_current)
+                  : fy.closing_balances.bank_current;
+                const displayedClosingSavings = isOpen
+                  ? (liveBalances?.savings ?? fy.closing_balances.bank_savings)
+                  : fy.closing_balances.bank_savings;
+                const varCurrent = calculateVariation(fy.opening_balances.bank_current, displayedClosingCurrent);
 
                 return (
                   <tr key={fy.id} className={cn(
-                    "hover:bg-gray-50",
+                    "hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary",
                     isOpen && "bg-green-50"
                   )}>
                     <td className="px-6 py-4">
                       <span className={cn(
                         "font-bold text-lg",
-                        isOpen ? "text-green-600" : "text-gray-900"
+                        isOpen ? "text-green-600" : "text-gray-900 dark:text-dark-text-primary"
                       )}>
                         {fy.year}
                       </span>
@@ -806,28 +861,30 @@ export function FiscalYearsManagement() {
                     </td>
                     <td className="px-6 py-4 text-right font-medium text-gray-900 dark:text-dark-text-primary">
                       {isOpen ? (
-                        <span className="text-green-600">{formatMontant(balanceCurrent)}</span>
+                        <span className={cn(isCurrentOpenYear ? 'text-green-600' : 'text-amber-700')}>
+                          {formatMontant(displayedClosingCurrent)}
+                        </span>
                       ) : (
                         formatMontant(fy.closing_balances.bank_current)
                       )}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      {!isOpen && (
-                        <div className={cn(
-                          "text-sm font-medium",
-                          varCurrent.diff >= 0 ? "text-green-600" : "text-red-600"
-                        )}>
-                          {varCurrent.diff >= 0 ? '+' : ''}{formatMontant(varCurrent.diff)}
-                          <div className="text-xs">({varCurrent.percent.toFixed(1)}%)</div>
-                        </div>
-                      )}
+                      <div className={cn(
+                        "text-sm font-medium",
+                        varCurrent.diff >= 0 ? "text-green-600" : "text-red-600"
+                      )}>
+                        {varCurrent.diff >= 0 ? '+' : ''}{formatMontant(varCurrent.diff)}
+                        <div className="text-xs">({varCurrent.percent.toFixed(1)}%)</div>
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-right font-medium text-gray-900 dark:text-dark-text-primary">
                       {formatMontant(fy.opening_balances.bank_savings)}
                     </td>
                     <td className="px-6 py-4 text-right font-medium text-gray-900 dark:text-dark-text-primary">
                       {isOpen ? (
-                        <span className="text-green-600">{formatMontant(balanceSavings)}</span>
+                        <span className={cn(isCurrentOpenYear ? 'text-green-600' : 'text-amber-700')}>
+                          {formatMontant(displayedClosingSavings)}
+                        </span>
                       ) : (
                         formatMontant(fy.closing_balances.bank_savings)
                       )}
@@ -836,7 +893,7 @@ export function FiscalYearsManagement() {
                       <span className={cn(
                         "px-2 py-1 text-xs rounded-full font-medium",
                         fy.status === 'open' && "bg-green-100 text-green-700",
-                        fy.status === 'closed' && "bg-gray-100 text-gray-700",
+                        fy.status === 'closed' && "bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary",
                         fy.status === 'permanently_closed' && "bg-red-100 text-red-700"
                       )}>
                         {fy.status === 'open' && 'Ouverte'}
@@ -846,6 +903,14 @@ export function FiscalYearsManagement() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-center gap-2">
+                        <button
+                          onClick={() => setCloseWizardFY(fy)}
+                          className="inline-flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-medium text-orange-700 transition-colors hover:bg-orange-100"
+                          title="Ouvrir l'assistant de clôture"
+                        >
+                          <Lock className="h-4 w-4" />
+                          Assistant de clôture
+                        </button>
                         {/* Eye button - opens detail view modal */}
                         <button
                           onClick={() => setDetailViewFY(fy)}
@@ -864,70 +929,17 @@ export function FiscalYearsManagement() {
         </div>
       </div>
 
-      {/* Modal de clôture */}
-      {showCloseModal && currentFY && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-dark-bg-secondary rounded-lg max-w-2xl w-full p-6">
-            <h3 className="text-xl font-bold text-gray-900 dark:text-dark-text-primary mb-4">
-              Clôturer l'année fiscale {currentFY.year}
-            </h3>
-
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
-              <div className="flex gap-3">
-                <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                <div className="text-sm text-amber-800">
-                  <p className="font-medium mb-1">Important</p>
-                  <p>La clôture va :</p>
-                  <ul className="list-disc list-inside mt-2 space-y-1">
-                    <li>Sauvegarder les soldes de fin calculés</li>
-                    <li>Marquer l'année {currentFY.year} comme clôturée</li>
-                    <li>Créer automatiquement l'année {currentFY.year + 1} avec report des soldes</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              <div className="bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg p-4">
-                <p className="text-sm text-gray-500 dark:text-dark-text-muted mb-1">Compte Courant</p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-dark-text-primary">{formatMontant(balanceCurrent)}</p>
-                <p className="text-xs text-gray-500 dark:text-dark-text-muted mt-1">Sera reporté sur {currentFY.year + 1}</p>
-              </div>
-              <div className="bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg p-4">
-                <p className="text-sm text-gray-500 dark:text-dark-text-muted mb-1">Compte Épargne</p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-dark-text-primary">{formatMontant(balanceSavings)}</p>
-                <p className="text-xs text-gray-500 dark:text-dark-text-muted mt-1">Sera reporté sur {currentFY.year + 1}</p>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={handleCloseFiscalYear}
-                disabled={closing}
-                className="flex-1 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {closing ? (
-                  <>
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                    Clôture en cours...
-                  </>
-                ) : (
-                  <>
-                    <Check className="h-5 w-5" />
-                    Confirmer la clôture
-                  </>
-                )}
-              </button>
-              <button
-                onClick={() => setShowCloseModal(false)}
-                disabled={closing}
-                className="px-4 py-3 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors disabled:opacity-50"
-              >
-                Annuler
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Assistant de clôture */}
+      {closeWizardFY && (
+        <FiscalYearCloseWizard
+          fiscalYear={closeWizardFY}
+          isOpen={!!closeWizardFY}
+          onClose={() => setCloseWizardFY(null)}
+          onCompleted={async () => {
+            await refreshManagementData();
+            await refreshFiscalYears();
+          }}
+        />
       )}
 
       {/* Detail View Modal */}
@@ -937,11 +949,11 @@ export function FiscalYearsManagement() {
           isOpen={!!detailViewFY}
           onClose={() => setDetailViewFY(null)}
           onUpdate={async () => {
-            // Refresh the list
-            if (clubId) {
-              const years = await FiscalYearService.getFiscalYears(clubId);
-              setFiscalYears(years);
-            }
+            await refreshManagementData();
+          }}
+          onOpenCloseWizard={(fiscalYear) => {
+            setDetailViewFY(null);
+            setCloseWizardFY(fiscalYear);
           }}
         />
       )}

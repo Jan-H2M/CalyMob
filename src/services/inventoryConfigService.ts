@@ -1,4 +1,5 @@
 import { db } from '@/lib/firebase';
+import { logger } from '@/utils/logger';
 import {
   collection,
   doc,
@@ -18,7 +19,6 @@ import {
   ItemType,
   Checklist,
   CautionRule,
-  Location,
   AlertSettings,
   EmailTemplate
 } from '@/types/inventory';
@@ -30,7 +30,6 @@ import {
  * - /clubs/{clubId}/inventory_config/item_types/{typeId}
  * - /clubs/{clubId}/inventory_config/checklists/{checklistId}
  * - /clubs/{clubId}/inventory_config/caution_rules/{ruleId}
- * - /clubs/{clubId}/inventory_config/locations/{locationId}
  * - /clubs/{clubId}/inventory_config/settings/alerts
  * - /clubs/{clubId}/inventory_config/email_templates/{templateId}
  */
@@ -46,14 +45,17 @@ export class InventoryConfigService {
   static async getItemTypes(clubId: string): Promise<ItemType[]> {
     try {
       const typesRef = collection(db, 'clubs', clubId, 'inventory_config', 'settings', 'item_types');
-      const snapshot = await getDocs(query(typesRef, orderBy('nom', 'asc')));
+      const snapshot = await getDocs(typesRef);
 
-      return snapshot.docs.map(doc => ({
+      const types = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       } as ItemType));
+
+      // Sort client-side to avoid index requirement
+      return types.sort((a, b) => (a.nom || '').localeCompare(b.nom || ''));
     } catch (error) {
-      console.error('Erreur lors du chargement des types de matériel:', error);
+      logger.error('Erreur lors du chargement des types de matériel:', error);
       throw error;
     }
   }
@@ -75,7 +77,7 @@ export class InventoryConfigService {
         ...snapshot.data()
       } as ItemType;
     } catch (error) {
-      console.error('Erreur lors du chargement du type de matériel:', error);
+      logger.error('Erreur lors du chargement du type de matériel:', error);
       throw error;
     }
   }
@@ -97,10 +99,10 @@ export class InventoryConfigService {
 
       await setDoc(newTypeRef, newType);
 
-      console.log(`Type de matériel créé: ${newType.nom} (${newType.id})`);
+      logger.debug(`Type de matériel créé: ${newType.nom} (${newType.id})`);
       return newTypeRef.id;
     } catch (error) {
-      console.error('Erreur lors de la création du type de matériel:', error);
+      logger.error('Erreur lors de la création du type de matériel:', error);
       throw error;
     }
   }
@@ -121,9 +123,9 @@ export class InventoryConfigService {
         updatedAt: serverTimestamp()
       });
 
-      console.log(`Type de matériel mis à jour: ${typeId}`);
+      logger.debug(`Type de matériel mis à jour: ${typeId}`);
     } catch (error) {
-      console.error('Erreur lors de la mise à jour du type de matériel:', error);
+      logger.error('Erreur lors de la mise à jour du type de matériel:', error);
       throw error;
     }
   }
@@ -146,9 +148,9 @@ export class InventoryConfigService {
       const typeRef = doc(db, 'clubs', clubId, 'inventory_config', 'settings', 'item_types', typeId);
       await deleteDoc(typeRef);
 
-      console.log(`Type de matériel supprimé: ${typeId}`);
+      logger.debug(`Type de matériel supprimé: ${typeId}`);
     } catch (error) {
-      console.error('Erreur lors de la suppression du type de matériel:', error);
+      logger.error('Erreur lors de la suppression du type de matériel:', error);
       throw error;
     }
   }
@@ -170,7 +172,7 @@ export class InventoryConfigService {
         ...doc.data()
       } as Checklist));
     } catch (error) {
-      console.error('Erreur lors du chargement des checklists:', error);
+      logger.error('Erreur lors du chargement des checklists:', error);
       throw error;
     }
   }
@@ -192,7 +194,7 @@ export class InventoryConfigService {
         ...snapshot.data()
       } as Checklist;
     } catch (error) {
-      console.error('Erreur lors du chargement de la checklist:', error);
+      logger.error('Erreur lors du chargement de la checklist:', error);
       throw error;
     }
   }
@@ -214,10 +216,10 @@ export class InventoryConfigService {
 
       await setDoc(newChecklistRef, newChecklist);
 
-      console.log(`Checklist créée: ${newChecklist.nom} (${newChecklist.id})`);
+      logger.debug(`Checklist créée: ${newChecklist.nom} (${newChecklist.id})`);
       return newChecklistRef.id;
     } catch (error) {
-      console.error('Erreur lors de la création de la checklist:', error);
+      logger.error('Erreur lors de la création de la checklist:', error);
       throw error;
     }
   }
@@ -238,9 +240,9 @@ export class InventoryConfigService {
         updatedAt: serverTimestamp()
       });
 
-      console.log(`Checklist mise à jour: ${checklistId}`);
+      logger.debug(`Checklist mise à jour: ${checklistId}`);
     } catch (error) {
-      console.error('Erreur lors de la mise à jour de la checklist:', error);
+      logger.error('Erreur lors de la mise à jour de la checklist:', error);
       throw error;
     }
   }
@@ -253,9 +255,9 @@ export class InventoryConfigService {
       const checklistRef = doc(db, 'clubs', clubId, 'inventory_config', 'settings', 'checklists', checklistId);
       await deleteDoc(checklistRef);
 
-      console.log(`Checklist supprimée: ${checklistId}`);
+      logger.debug(`Checklist supprimée: ${checklistId}`);
     } catch (error) {
-      console.error('Erreur lors de la suppression de la checklist:', error);
+      logger.error('Erreur lors de la suppression de la checklist:', error);
       throw error;
     }
   }
@@ -281,10 +283,10 @@ export class InventoryConfigService {
 
       const newChecklistId = await this.createChecklist(clubId, duplicateData);
 
-      console.log(`Checklist dupliquée: ${checklistId} → ${newChecklistId}`);
+      logger.debug(`Checklist dupliquée: ${checklistId} → ${newChecklistId}`);
       return newChecklistId;
     } catch (error) {
-      console.error('Erreur lors de la duplication de la checklist:', error);
+      logger.error('Erreur lors de la duplication de la checklist:', error);
       throw error;
     }
   }
@@ -306,7 +308,7 @@ export class InventoryConfigService {
         ...doc.data()
       } as CautionRule));
     } catch (error) {
-      console.error('Erreur lors du chargement des règles de caution:', error);
+      logger.error('Erreur lors du chargement des règles de caution:', error);
       throw error;
     }
   }
@@ -328,7 +330,7 @@ export class InventoryConfigService {
         ...snapshot.data()
       } as CautionRule;
     } catch (error) {
-      console.error('Erreur lors du chargement de la règle de caution:', error);
+      logger.error('Erreur lors du chargement de la règle de caution:', error);
       throw error;
     }
   }
@@ -345,9 +347,9 @@ export class InventoryConfigService {
         updatedAt: serverTimestamp()
       }, { merge: true });
 
-      console.log(`Règle de caution sauvegardée: ${rule.nom} (${rule.id})`);
+      logger.debug(`Règle de caution sauvegardée: ${rule.nom} (${rule.id})`);
     } catch (error) {
-      console.error('Erreur lors de la sauvegarde de la règle de caution:', error);
+      logger.error('Erreur lors de la sauvegarde de la règle de caution:', error);
       throw error;
     }
   }
@@ -369,9 +371,9 @@ export class InventoryConfigService {
 
       await batch.commit();
 
-      console.log(`${rules.length} règles de caution mises à jour`);
+      logger.debug(`${rules.length} règles de caution mises à jour`);
     } catch (error) {
-      console.error('Erreur lors de la mise à jour des règles de caution:', error);
+      logger.error('Erreur lors de la mise à jour des règles de caution:', error);
       throw error;
     }
   }
@@ -384,126 +386,9 @@ export class InventoryConfigService {
       const ruleRef = doc(db, 'clubs', clubId, 'inventory_config', 'settings', 'caution_rules', ruleId);
       await deleteDoc(ruleRef);
 
-      console.log(`Règle de caution supprimée: ${ruleId}`);
+      logger.debug(`Règle de caution supprimée: ${ruleId}`);
     } catch (error) {
-      console.error('Erreur lors de la suppression de la règle de caution:', error);
-      throw error;
-    }
-  }
-
-  // ========================================
-  // EMPLACEMENTS (Locations)
-  // ========================================
-
-  /**
-   * Récupérer tous les emplacements
-   */
-  static async getLocations(clubId: string): Promise<Location[]> {
-    try {
-      const locationsRef = collection(db, 'clubs', clubId, 'inventory_config', 'settings', 'locations');
-      const snapshot = await getDocs(query(locationsRef, orderBy('nom', 'asc')));
-
-      return snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as Location));
-    } catch (error) {
-      console.error('Erreur lors du chargement des emplacements:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Récupérer un emplacement par ID
-   */
-  static async getLocationById(clubId: string, locationId: string): Promise<Location | null> {
-    try {
-      const locationRef = doc(db, 'clubs', clubId, 'inventory_config', 'settings', 'locations', locationId);
-      const snapshot = await getDoc(locationRef);
-
-      if (!snapshot.exists()) {
-        return null;
-      }
-
-      return {
-        id: snapshot.id,
-        ...snapshot.data()
-      } as Location;
-    } catch (error) {
-      console.error('Erreur lors du chargement de l\'emplacement:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Créer un nouvel emplacement
-   */
-  static async createLocation(clubId: string, location: Omit<Location, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
-    try {
-      const locationsRef = collection(db, 'clubs', clubId, 'inventory_config', 'settings', 'locations');
-      const newLocationRef = doc(locationsRef);
-
-      const newLocation: Location = {
-        ...location,
-        id: newLocationRef.id,
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now()
-      };
-
-      await setDoc(newLocationRef, newLocation);
-
-      console.log(`Emplacement créé: ${newLocation.nom} (${newLocation.id})`);
-      return newLocationRef.id;
-    } catch (error) {
-      console.error('Erreur lors de la création de l\'emplacement:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Mettre à jour un emplacement existant
-   */
-  static async updateLocation(
-    clubId: string,
-    locationId: string,
-    data: Partial<Omit<Location, 'id' | 'createdAt' | 'updatedAt'>>
-  ): Promise<void> {
-    try {
-      const locationRef = doc(db, 'clubs', clubId, 'inventory_config', 'settings', 'locations', locationId);
-
-      await updateDoc(locationRef, {
-        ...data,
-        updatedAt: serverTimestamp()
-      });
-
-      console.log(`Emplacement mis à jour: ${locationId}`);
-    } catch (error) {
-      console.error('Erreur lors de la mise à jour de l\'emplacement:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Supprimer un emplacement
-   * ATTENTION: Vérifie qu'aucun matériel n'est stocké à cet emplacement
-   */
-  static async deleteLocation(clubId: string, locationId: string): Promise<void> {
-    try {
-      // Vérifier qu'aucun matériel n'est stocké ici
-      const itemsRef = collection(db, 'clubs', clubId, 'inventory_items');
-      const itemsQuery = query(itemsRef, where('locationId', '==', locationId));
-      const itemsSnapshot = await getDocs(itemsQuery);
-
-      if (!itemsSnapshot.empty) {
-        throw new Error(`Impossible de supprimer cet emplacement: ${itemsSnapshot.size} matériel(s) y sont stocké(s)`);
-      }
-
-      const locationRef = doc(db, 'clubs', clubId, 'inventory_config', 'settings', 'locations', locationId);
-      await deleteDoc(locationRef);
-
-      console.log(`Emplacement supprimé: ${locationId}`);
-    } catch (error) {
-      console.error('Erreur lors de la suppression de l\'emplacement:', error);
+      logger.error('Erreur lors de la suppression de la règle de caution:', error);
       throw error;
     }
   }
@@ -527,7 +412,7 @@ export class InventoryConfigService {
 
       return snapshot.data() as AlertSettings;
     } catch (error) {
-      console.error('Erreur lors du chargement des paramètres d\'alerte:', error);
+      logger.error('Erreur lors du chargement des paramètres d\'alerte:', error);
       return this.getDefaultAlertSettings();
     }
   }
@@ -544,9 +429,9 @@ export class InventoryConfigService {
         updatedAt: serverTimestamp()
       }, { merge: true });
 
-      console.log('Paramètres d\'alerte mis à jour');
+      logger.debug('Paramètres d\'alerte mis à jour');
     } catch (error) {
-      console.error('Erreur lors de la mise à jour des paramètres d\'alerte:', error);
+      logger.error('Erreur lors de la mise à jour des paramètres d\'alerte:', error);
       throw error;
     }
   }
@@ -590,7 +475,7 @@ export class InventoryConfigService {
         ...doc.data()
       } as EmailTemplate));
     } catch (error) {
-      console.error('Erreur lors du chargement des templates d\'email:', error);
+      logger.error('Erreur lors du chargement des templates d\'email:', error);
       return this.getDefaultEmailTemplates();
     }
   }
@@ -612,7 +497,7 @@ export class InventoryConfigService {
         ...snapshot.data()
       } as EmailTemplate;
     } catch (error) {
-      console.error('Erreur lors du chargement du template d\'email:', error);
+      logger.error('Erreur lors du chargement du template d\'email:', error);
       throw error;
     }
   }
@@ -633,9 +518,9 @@ export class InventoryConfigService {
         updatedAt: serverTimestamp()
       });
 
-      console.log(`Template d\'email mis à jour: ${templateId}`);
+      logger.debug(`Template d\'email mis à jour: ${templateId}`);
     } catch (error) {
-      console.error('Erreur lors de la mise à jour du template d\'email:', error);
+      logger.error('Erreur lors de la mise à jour du template d\'email:', error);
       throw error;
     }
   }
@@ -659,9 +544,9 @@ export class InventoryConfigService {
         updatedAt: serverTimestamp()
       });
 
-      console.log(`Template d\'email réinitialisé: ${templateId}`);
+      logger.debug(`Template d\'email réinitialisé: ${templateId}`);
     } catch (error) {
-      console.error('Erreur lors de la réinitialisation du template d\'email:', error);
+      logger.error('Erreur lors de la réinitialisation du template d\'email:', error);
       throw error;
     }
   }

@@ -2,17 +2,27 @@ import React, { useState } from 'react';
 import { Info } from 'lucide-react';
 
 interface TooltipProps {
-  text: string;
+  /** Text to display (for icon-based tooltip) */
+  text?: string;
+  /** Content to display (for wrapper tooltip with children) - can be string or JSX */
+  content?: React.ReactNode;
+  /** Children to wrap (makes the tooltip wrap children instead of showing an icon) */
+  children?: React.ReactNode;
   className?: string;
   position?: 'top' | 'right' | 'bottom' | 'left';
 }
 
 export const Tooltip: React.FC<TooltipProps> = ({
   text,
+  content,
+  children,
   className = "",
-  position = 'right'
+  position = 'top'
 }) => {
   const [isVisible, setIsVisible] = useState(false);
+
+  // Use content prop if provided, otherwise fall back to text
+  const tooltipContent = content || text;
 
   const getPositionClasses = () => {
     switch (position) {
@@ -42,6 +52,26 @@ export const Tooltip: React.FC<TooltipProps> = ({
     }
   };
 
+  // If children are provided, wrap them with tooltip behavior
+  if (children) {
+    return (
+      <div
+        className={`relative inline-flex items-center ${className}`}
+        onMouseEnter={() => setIsVisible(true)}
+        onMouseLeave={() => setIsVisible(false)}
+      >
+        {children}
+        {isVisible && tooltipContent && (
+          <div className={`absolute z-[10000] ${getPositionClasses()} px-3 py-2 text-xs text-white bg-gray-800 dark:bg-gray-900 rounded-lg shadow-lg whitespace-normal min-w-[120px] max-w-xs pointer-events-none`}>
+            {tooltipContent}
+            <div className={getArrowClasses()}></div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Original behavior: show Info icon with tooltip
   return (
     <div className={`relative inline-flex items-center ${className}`}>
       <button
@@ -52,15 +82,15 @@ export const Tooltip: React.FC<TooltipProps> = ({
           e.preventDefault();
           setIsVisible(!isVisible);
         }}
-        className="ml-1 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+        className="ml-1 text-gray-400 dark:text-dark-text-muted hover:text-gray-600 dark:text-dark-text-secondary dark:text-dark-text-muted dark:hover:text-gray-300"
         aria-label="Information"
       >
         <Info className="w-3.5 h-3.5" />
       </button>
 
-      {isVisible && (
+      {isVisible && tooltipContent && (
         <div className={`absolute z-[10000] ${getPositionClasses()} px-3 py-2 text-xs text-white bg-gray-800 dark:bg-gray-900 rounded-lg shadow-lg whitespace-normal min-w-[200px] max-w-xs`}>
-          {text}
+          {tooltipContent}
           <div className={getArrowClasses()}></div>
         </div>
       )}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { logger } from '@/utils/logger';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -12,9 +13,11 @@ import {
   TrendingDown,
   Sparkles,
   Zap,
-  Filter
+  Filter,
+  Users
 } from 'lucide-react';
 import { ExpenseMatchingService, BatchMatchResults, MatchResult } from '@/services/expenseMatchingService';
+import { ExpenseOperationMatchingService, BatchMatchResults as OperationBatchResults, ExpenseOperationMatch } from '@/services/expenseOperationMatchingService';
 import { AIExpenseMatchingService, AIMatchAnalysis } from '@/services/aiExpenseMatchingService';
 import { AIMatchStorageService } from '@/services/aiMatchStorageService';
 import { AIExpenseMatch } from '@/types';
@@ -33,6 +36,10 @@ export function AutoLinkExpenses() {
   const [matchFilter, setMatchFilter] = useState<'all' | 'pending' | 'validated' | 'rejected'>('all');
   const [stats, setStats] = useState({ pending: 0, validated: 0, rejected: 0, total: 0 });
   const [selectedSuggestions, setSelectedSuggestions] = useState<Set<string>>(new Set());
+
+  // Operation matching state
+  const [operationProcessing, setOperationProcessing] = useState(false);
+  const [operationResults, setOperationResults] = useState<OperationBatchResults | null>(null);
 
   const aiService = new AIExpenseMatchingService();
 
@@ -54,10 +61,10 @@ export function AutoLinkExpenses() {
       } else {
         matches = await AIMatchStorageService.getMatchesByStatus(clubId, matchFilter);
       }
-      console.log(`Loaded ${matches.length} AI matches (filter: ${matchFilter})`, matches);
+      logger.debug(`Loaded ${matches.length} AI matches (filter: ${matchFilter})`, matches);
       setAiMatches(matches);
     } catch (error) {
-      console.error('Erreur chargement matches AI:', error);
+      logger.error('Erreur chargement matches AI:', error);
       toast.error('Erreur lors du chargement des correspondances IA');
     }
   };
@@ -69,7 +76,7 @@ export function AutoLinkExpenses() {
       const statistics = await AIMatchStorageService.getMatchesStats(clubId);
       setStats(statistics);
     } catch (error) {
-      console.error('Erreur chargement stats:', error);
+      logger.error('Erreur chargement stats:', error);
     }
   };
 
@@ -102,7 +109,7 @@ export function AutoLinkExpenses() {
       }
     } catch (error) {
       toast.error('Erreur lors de la liaison automatique');
-      console.error(error);
+      logger.error(error);
     } finally {
       setProcessing(false);
     }
@@ -126,7 +133,7 @@ export function AutoLinkExpenses() {
       });
     } catch (error) {
       toast.error('Erreur lors de la liaison');
-      console.error(error);
+      logger.error(error);
     }
   };
 
@@ -143,6 +150,78 @@ export function AutoLinkExpenses() {
           transactions: [...prev.unmatched.transactions, ignoredMatch.transaction],
           demandes: [...prev.unmatched.demandes, ignoredMatch.demande]
         }
+      };
+    });
+  };
+
+  // Operation matching: link demandes to operations/activities
+  const handleOperationMatching = async () => {
+    if (!clubId) {
+      toast.error('Club ID manquant');
+      return;
+    }
+
+    setOperationProcessing(true);
+    try {
+      const matchResults = await ExpenseOperationMatchingService.performBatchMatching(clubId, 80, 50);
+      setOperationResults(matchResults);
+
+      if (matchResults.autoLinked.length > 0) {
+        toast.success(`${matchResults.autoLinked.length} dépense(s) liée(s) à des activités`);
+      }
+      if (matchResults.suggested.length > 0) {
+        toast(`${matchResults.suggested.length} suggestion(s) à valider`, {
+          icon: 'ℹ️',
+          style: { background: '#F3E8FF', color: '#6B21A8', border: '1px solid #D8B4FE' }
+        });
+      }
+      if (matchResults.errors.length > 0) {
+        toast.error(`${matchResults.errors.length} erreur(s)`);
+      }
+    } catch (error) {
+      toast.error('Erreur lors de la liaison des activités');
+      logger.error(error);
+    } finally {
+      setOperationProcessing(false);
+    }
+  };
+
+  const handleLinkOperationSuggested = async (match: ExpenseOperationMatch) => {
+    if (!clubId) return;
+
+    try {
+      await ExpenseOperationMatchingService.linkDemandeToOperation(
+        clubId,
+        match.demande_id,
+        match.operation_id,
+        match.operation_titre
+      );
+      toast.success(`Liée à "${match.operation_titre}"`);
+
+      setOperationResults(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          suggested: prev.suggested.filter(m => m.demande_id !== match.demande_id),
+          autoLinked: [...prev.autoLinked, match]
+        };
+      });
+    } catch (error) {
+      toast.error('Erreur lors de la liaison');
+      logger.error(error);
+    }
+  };
+
+  const handleIgnoreOperationSuggestion = (demandeId: string) => {
+    setOperationResults(prev => {
+      if (!prev) return prev;
+      const ignored = prev.suggested.find(m => m.demande_id === demandeId);
+      if (!ignored) return prev;
+
+      return {
+        ...prev,
+        suggested: prev.suggested.filter(m => m.demande_id !== demandeId),
+        unmatched: [...prev.unmatched, { id: demandeId } as any]
       };
     });
   };
@@ -178,7 +257,7 @@ export function AutoLinkExpenses() {
       toast.success(`Analyse IA terminée - consultez l'onglet "Correspondances IA"`);
     } catch (error) {
       toast.error('Erreur lors de l\'analyse IA');
-      console.error(error);
+      logger.error(error);
     } finally {
       setAiProcessing(false);
       setAiProgress({ current: 0, total: 0, message: '' });
@@ -232,7 +311,7 @@ export function AutoLinkExpenses() {
       }
     } catch (error) {
       toast.error('Erreur lors de la liaison');
-      console.error(error);
+      logger.error(error);
     }
   };
 
@@ -286,6 +365,138 @@ export function AutoLinkExpenses() {
             </div>
           </div>
         </div>
+
+        {/* Operation Matching Section */}
+        <div className="bg-white dark:bg-dark-bg-secondary rounded-xl shadow-sm border border-purple-200 dark:border-purple-800 p-6 mb-6">
+          <div className="flex items-start gap-4">
+            <div className="p-3 bg-purple-100 rounded-lg">
+              <Users className="h-6 w-6 text-purple-600" />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary">Liaison dépenses → activités</h2>
+              <p className="text-sm text-gray-600 dark:text-dark-text-secondary mt-1 mb-4">
+                Associe automatiquement les dépenses aux activités/événements en utilisant :
+                titre, description, demandeur participant, et date.
+              </p>
+              <button
+                onClick={handleOperationMatching}
+                disabled={operationProcessing}
+                className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {operationProcessing ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    Analyse en cours...
+                  </>
+                ) : (
+                  <>
+                    <Users className="h-5 w-5" />
+                    Lier dépenses aux activités
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Operation Matching Results */}
+        {operationResults && (
+          <div className="space-y-6 mb-6">
+            {/* Auto-linked to operations */}
+            {operationResults.autoLinked.length > 0 && (
+              <div className="bg-white dark:bg-dark-bg-secondary rounded-xl shadow-sm border border-gray-200 dark:border-dark-border p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <CheckCircle className="h-6 w-6 text-purple-600" />
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary">
+                    Liées à des activités ({operationResults.autoLinked.length})
+                  </h2>
+                </div>
+                <div className="space-y-3">
+                  {operationResults.autoLinked.map(match => (
+                    <div key={match.demande_id} className="border border-purple-200 bg-purple-50 rounded-lg p-4">
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className="font-medium text-gray-900 dark:text-dark-text-primary">{match.demande_id.substring(0, 8)}...</span>
+                        <Link2 className="h-4 w-4 text-purple-600" />
+                        <span className="font-medium text-purple-900">{match.operation_titre}</span>
+                        <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
+                          {match.score}%
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 dark:text-dark-text-muted">{match.reasoning}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Suggested operation links */}
+            {operationResults.suggested.length > 0 && (
+              <div className="bg-white dark:bg-dark-bg-secondary rounded-xl shadow-sm border border-gray-200 dark:border-dark-border p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <AlertCircle className="h-6 w-6 text-amber-600" />
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary">
+                    Suggestions activités à valider ({operationResults.suggested.length})
+                  </h2>
+                </div>
+                <div className="space-y-3">
+                  {operationResults.suggested.map(match => (
+                    <div key={match.demande_id} className="border border-amber-200 bg-amber-50 rounded-lg p-4">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className="text-gray-700 dark:text-dark-text-primary">Dépense</span>
+                            <span className="text-amber-600">→</span>
+                            <span className="font-medium text-gray-900 dark:text-dark-text-primary">{match.operation_titre}</span>
+                            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded">
+                              {match.score}%
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-600 dark:text-dark-text-secondary mb-1">{match.reasoning}</p>
+                          {match.demandeur_participant && (
+                            <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
+                              Demandeur = participant
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex gap-2 ml-4">
+                          <button
+                            onClick={() => handleLinkOperationSuggested(match)}
+                            className="px-3 py-1.5 bg-purple-600 text-white text-sm rounded hover:bg-purple-700 transition-colors flex items-center gap-1"
+                          >
+                            <CheckCircle className="h-4 w-4" />
+                            Lier
+                          </button>
+                          <button
+                            onClick={() => handleIgnoreOperationSuggestion(match.demande_id)}
+                            className="px-3 py-1.5 bg-gray-300 text-gray-700 dark:text-dark-text-primary text-sm rounded hover:bg-gray-400 transition-colors flex items-center gap-1"
+                          >
+                            <X className="h-4 w-4" />
+                            Ignorer
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Unmatched */}
+            {operationResults.unmatched.length > 0 && (
+              <div className="bg-white dark:bg-dark-bg-secondary rounded-xl shadow-sm border border-gray-200 dark:border-dark-border p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <TrendingDown className="h-6 w-6 text-gray-600 dark:text-dark-text-secondary" />
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary">
+                    Dépenses sans activité correspondante ({operationResults.unmatched.length})
+                  </h2>
+                </div>
+                <p className="text-sm text-gray-500 dark:text-dark-text-muted">
+                  Ces dépenses peuvent être liées manuellement depuis la page Dépenses.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Results */}
         {results && (
@@ -560,7 +771,7 @@ export function AutoLinkExpenses() {
                   className={`px-3 py-1 text-sm rounded ${
                     matchFilter === 'pending'
                       ? 'bg-amber-100 text-amber-700 font-medium'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      : 'bg-gray-100 dark:bg-dark-bg-tertiary text-gray-600 dark:text-dark-text-secondary hover:bg-gray-200'
                   }`}
                 >
                   En attente ({stats.pending})
@@ -570,7 +781,7 @@ export function AutoLinkExpenses() {
                   className={`px-3 py-1 text-sm rounded ${
                     matchFilter === 'validated'
                       ? 'bg-green-100 text-green-700 font-medium'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      : 'bg-gray-100 dark:bg-dark-bg-tertiary text-gray-600 dark:text-dark-text-secondary hover:bg-gray-200'
                   }`}
                 >
                   Validés ({stats.validated})
@@ -580,7 +791,7 @@ export function AutoLinkExpenses() {
                   className={`px-3 py-1 text-sm rounded ${
                     matchFilter === 'rejected'
                       ? 'bg-red-100 text-red-700 font-medium'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      : 'bg-gray-100 dark:bg-dark-bg-tertiary text-gray-600 dark:text-dark-text-secondary hover:bg-gray-200'
                   }`}
                 >
                   Rejetés ({stats.rejected})
@@ -590,7 +801,7 @@ export function AutoLinkExpenses() {
                   className={`px-3 py-1 text-sm rounded ${
                     matchFilter === 'all'
                       ? 'bg-blue-100 text-blue-700 font-medium'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      : 'bg-gray-100 dark:bg-dark-bg-tertiary text-gray-600 dark:text-dark-text-secondary hover:bg-gray-200'
                   }`}
                 >
                   Tous ({stats.total})

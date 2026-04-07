@@ -9,6 +9,7 @@ import { generateDefaultPassword } from '@/utils/passwordGenerator';
 import { FirebaseSettingsService } from '@/services/firebaseSettingsService';
 import Handlebars from 'handlebars';
 import toast from 'react-hot-toast';
+import { logger } from '@/utils/logger';
 
 interface SendUserEmailModalProps {
   user: User;
@@ -43,7 +44,7 @@ export function SendUserEmailModal({
         const settings = await FirebaseSettingsService.loadGeneralSettings(clubId);
         setClubSettings(settings);
       } catch (error) {
-        console.error('Error loading club settings:', error);
+        logger.error('Error loading club settings:', error);
       }
     };
 
@@ -76,7 +77,7 @@ export function SendUserEmailModal({
 
         setTemplates(loadedTemplates);
       } catch (error) {
-        console.error('Error loading templates:', error);
+        logger.error('Error loading templates:', error);
         toast.error('Erreur lors du chargement des templates');
       } finally {
         setLoadingTemplates(false);
@@ -111,7 +112,7 @@ export function SendUserEmailModal({
       const rendered = template(data);
       setPreviewHtml(rendered);
     } catch (error) {
-      console.error('Error rendering preview:', error);
+      logger.error('Error rendering preview:', error);
       setPreviewHtml('<p>Erreur lors de la génération de l\'aperçu</p>');
     }
   }, [selectedTemplate, temporaryPassword, user, clubSettings]);
@@ -133,7 +134,7 @@ export function SendUserEmailModal({
       toast.success('Email envoyé avec succès !');
       onClose();
     } catch (error: any) {
-      console.error('Error sending email:', error);
+      logger.error('Error sending email:', error);
       toast.error(error.message || 'Erreur lors de l\'envoi de l\'email');
     } finally {
       setLoading(false);
@@ -172,9 +173,9 @@ export function SendUserEmailModal({
               <button
                 onClick={onClose}
                 disabled={loading}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors"
+                className="p-2 hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors"
               >
-                <X className="h-5 w-5 text-gray-500 dark:text-dark-text-secondary" />
+                <X className="h-5 w-5 text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary" />
               </button>
             </div>
 
@@ -186,7 +187,7 @@ export function SendUserEmailModal({
                 </div>
               ) : templates.length === 0 ? (
                 <div className="text-center py-12">
-                  <Mail className="h-16 w-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+                  <Mail className="h-16 w-16 text-gray-300 dark:text-dark-text-secondary mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 dark:text-dark-text-primary mb-2">
                     Aucun template disponible
                   </h3>
@@ -206,7 +207,7 @@ export function SendUserEmailModal({
 
                   {/* Template Selection */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
                       Type d'email *
                     </label>
                     <select
@@ -219,7 +220,7 @@ export function SendUserEmailModal({
                       <option value="password_reset">Réinitialisation administrateur</option>
                     </select>
                     {selectedTemplate && (
-                      <p className="mt-1 text-xs text-gray-500 dark:text-dark-text-tertiary">
+                      <p className="mt-1 text-xs text-gray-500 dark:text-dark-text-muted dark:text-dark-text-tertiary">
                         Template: {selectedTemplate.name}
                       </p>
                     )}
@@ -227,7 +228,7 @@ export function SendUserEmailModal({
 
                   {/* Temporary Password */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
                       Mot de passe temporaire administratif *
                     </label>
                     <div className="relative">
@@ -242,7 +243,7 @@ export function SendUserEmailModal({
                       <button
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-dark-text-muted hover:text-gray-600 dark:text-dark-text-secondary dark:hover:text-gray-300"
                       >
                         {showPassword ? (
                           <EyeOff className="h-5 w-5" />
@@ -251,7 +252,7 @@ export function SendUserEmailModal({
                         )}
                       </button>
                     </div>
-                    <p className="mt-1 text-xs text-gray-500 dark:text-dark-text-tertiary">
+                    <p className="mt-1 text-xs text-gray-500 dark:text-dark-text-muted dark:text-dark-text-tertiary">
                       Format par défaut: CalyCompta{new Date().getFullYear()}-{String(new Date().getMonth() + 1).padStart(2, '0')}
                     </p>
                   </div>
@@ -261,7 +262,7 @@ export function SendUserEmailModal({
                     <button
                       onClick={() => setShowPreview(!showPreview)}
                       disabled={loading || !selectedTemplate}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg text-gray-700 dark:text-dark-text-primary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors"
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg text-gray-700 dark:text-dark-text-primary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary transition-colors"
                     >
                       {showPreview ? (
                         <>
@@ -280,13 +281,13 @@ export function SendUserEmailModal({
                   {/* Preview */}
                   {showPreview && selectedTemplate && (
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-2">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
                         Aperçu
                       </label>
                       <div className="border border-gray-200 dark:border-dark-border rounded-lg overflow-hidden">
                         <iframe
                           srcDoc={previewHtml}
-                          className="w-full h-[400px] bg-white"
+                          className="w-full h-[40vh] md:h-[400px] bg-white"
                           title="Email Preview"
                           sandbox="allow-same-origin"
                         />
@@ -303,7 +304,7 @@ export function SendUserEmailModal({
                 <button
                   onClick={onClose}
                   disabled={loading}
-                  className="px-4 py-2 text-gray-700 dark:text-dark-text-primary hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors"
+                  className="px-4 py-2 text-gray-700 dark:text-dark-text-primary hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors"
                 >
                   Annuler
                 </button>

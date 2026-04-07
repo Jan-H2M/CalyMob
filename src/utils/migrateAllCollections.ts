@@ -1,3 +1,4 @@
+import { logger } from '@/utils/logger';
 // TEMPORARY MIGRATION UTILITY
 // Migrate fiscal_year_id for operations and demands
 // This file can be deleted after migration is complete
@@ -10,7 +11,7 @@ export async function migrateOperationsAndDemands(clubId: string): Promise<{
   operations: { updated: number; skipped: number; errors: number };
   demands: { updated: number; skipped: number; errors: number };
 }> {
-  console.log('🚀 Starting operations & demands migration...');
+  logger.debug('🚀 Starting operations & demands migration...');
 
   // Load fiscal years
   const fyRef = collection(db, 'clubs', clubId, 'fiscal_years');
@@ -20,7 +21,7 @@ export async function migrateOperationsAndDemands(clubId: string): Promise<{
     ...d.data()
   })) as FiscalYear[];
 
-  console.log(`📅 Found ${fiscalYears.length} fiscal years:`, fiscalYears.map(fy => `${fy.year} (${fy.id})`).join(', '));
+  logger.debug(`📅 Found ${fiscalYears.length} fiscal years:`, fiscalYears.map(fy => `${fy.year} (${fy.id})`).join(', '));
 
   if (fiscalYears.length === 0) {
     throw new Error('No fiscal years found. Create fiscal years first.');
@@ -32,7 +33,7 @@ export async function migrateOperationsAndDemands(clubId: string): Promise<{
   };
 
   // Migrate operations
-  console.log('\n📊 Migrating OPERATIONS...');
+  logger.debug('\n📊 Migrating OPERATIONS...');
   const operationsRef = collection(db, 'clubs', clubId, 'operations');
   const opsSnapshot = await getDocs(operationsRef);
 
@@ -53,7 +54,7 @@ export async function migrateOperationsAndDemands(clubId: string): Promise<{
     const fiscalYear = findFiscalYearForDate(opDate);
 
     if (!fiscalYear) {
-      console.warn(`⚠️ No fiscal year for operation ${data.nom || opDoc.id} (date: ${opDate.toLocaleDateString()})`);
+      logger.warn(`⚠️ No fiscal year for operation ${data.nom || opDoc.id} (date: ${opDate.toLocaleDateString()})`);
       opsErrors++;
       continue;
     }
@@ -65,18 +66,18 @@ export async function migrateOperationsAndDemands(clubId: string): Promise<{
       opsUpdated++;
 
       if (opsUpdated % 10 === 0) {
-        console.log(`✅ Operations: ${opsUpdated} updated, ${opsSkipped} skipped, ${opsErrors} errors`);
+        logger.debug(`✅ Operations: ${opsUpdated} updated, ${opsSkipped} skipped, ${opsErrors} errors`);
       }
     } catch (err) {
-      console.error(`❌ Error updating operation ${opDoc.id}:`, err);
+      logger.error(`❌ Error updating operation ${opDoc.id}:`, err);
       opsErrors++;
     }
   }
 
-  console.log(`\n✅ Operations migration complete: ${opsUpdated} updated, ${opsSkipped} skipped, ${opsErrors} errors`);
+  logger.debug(`\n✅ Operations migration complete: ${opsUpdated} updated, ${opsSkipped} skipped, ${opsErrors} errors`);
 
   // Migrate demands
-  console.log('\n📊 Migrating DEMANDS...');
+  logger.debug('\n📊 Migrating DEMANDS...');
   const demandsRef = collection(db, 'clubs', clubId, 'demandes_remboursement');
   const demandsSnapshot = await getDocs(demandsRef);
 
@@ -97,7 +98,7 @@ export async function migrateOperationsAndDemands(clubId: string): Promise<{
     const fiscalYear = findFiscalYearForDate(demandDate);
 
     if (!fiscalYear) {
-      console.warn(`⚠️ No fiscal year for demand ${data.description || demandDoc.id} (date: ${demandDate.toLocaleDateString()})`);
+      logger.warn(`⚠️ No fiscal year for demand ${data.description || demandDoc.id} (date: ${demandDate.toLocaleDateString()})`);
       demandsErrors++;
       continue;
     }
@@ -109,17 +110,17 @@ export async function migrateOperationsAndDemands(clubId: string): Promise<{
       demandsUpdated++;
 
       if (demandsUpdated % 10 === 0) {
-        console.log(`✅ Demands: ${demandsUpdated} updated, ${demandsSkipped} skipped, ${demandsErrors} errors`);
+        logger.debug(`✅ Demands: ${demandsUpdated} updated, ${demandsSkipped} skipped, ${demandsErrors} errors`);
       }
     } catch (err) {
-      console.error(`❌ Error updating demand ${demandDoc.id}:`, err);
+      logger.error(`❌ Error updating demand ${demandDoc.id}:`, err);
       demandsErrors++;
     }
   }
 
-  console.log(`\n✅ Demands migration complete: ${demandsUpdated} updated, ${demandsSkipped} skipped, ${demandsErrors} errors`);
+  logger.debug(`\n✅ Demands migration complete: ${demandsUpdated} updated, ${demandsSkipped} skipped, ${demandsErrors} errors`);
 
-  console.log('\n🎉 ALL MIGRATIONS COMPLETE!');
+  logger.debug('\n🎉 ALL MIGRATIONS COMPLETE!');
 
   return {
     operations: { updated: opsUpdated, skipped: opsSkipped, errors: opsErrors },

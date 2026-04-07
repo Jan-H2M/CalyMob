@@ -1,4 +1,5 @@
 import { db, storage } from '@/lib/firebase';
+import { logger } from '@/utils/logger';
 import {
   collection,
   doc,
@@ -15,7 +16,8 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { InventoryItem, MaintenanceRecord } from '@/types/inventory';
+import { InventoryItem, MaintenanceRecord, ItemType } from '@/types/inventory';
+import { AmortizationService } from './amortizationService';
 
 /**
  * Service pour gérer le matériel unitaire dans Firebase
@@ -36,8 +38,8 @@ export class InventoryItemService {
     clubId: string,
     filters?: {
       typeId?: string;
-      emplacementId?: string;
       statut?: 'disponible' | 'prete' | 'maintenance' | 'hors_service';
+      etat?: string;
       search?: string;
     }
   ): Promise<InventoryItem[]> {
@@ -61,22 +63,24 @@ export class InventoryItemService {
       } as InventoryItem));
 
       // Filtres client-side
-      if (filters?.emplacementId) {
-        items = items.filter(i => i.emplacementId === filters.emplacementId);
+      if (filters?.etat) {
+        items = items.filter(i => i.etat === filters.etat);
       }
 
       if (filters?.search) {
         const searchLower = filters.search.toLowerCase();
         items = items.filter(i =>
-          i.numero_serie.toLowerCase().includes(searchLower) ||
-          i.nom?.toLowerCase().includes(searchLower) ||
-          i.notes?.toLowerCase().includes(searchLower)
+          (i.numero_serie?.toLowerCase().includes(searchLower)) ||
+          (i.nom?.toLowerCase().includes(searchLower)) ||
+          (i.code?.toLowerCase().includes(searchLower)) ||
+          (i.fabricant?.toLowerCase().includes(searchLower)) ||
+          (i.modele?.toLowerCase().includes(searchLower))
         );
       }
 
       return items;
     } catch (error) {
-      console.error('Erreur chargement matériel:', error);
+      logger.error('Erreur chargement matériel:', error);
       throw error;
     }
   }
@@ -98,7 +102,7 @@ export class InventoryItemService {
         ...snapshot.data()
       } as InventoryItem;
     } catch (error) {
-      console.error('Erreur chargement matériel:', error);
+      logger.error('Erreur chargement matériel:', error);
       throw error;
     }
   }
@@ -129,10 +133,10 @@ export class InventoryItemService {
 
       await setDoc(newItemRef, newItem);
 
-      console.log(`Matériel créé: ${newItem.numero_serie} (${newItem.id})`);
+      logger.debug(`Matériel créé: ${newItem.numero_serie} (${newItem.id})`);
       return newItemRef.id;
     } catch (error) {
-      console.error('Erreur création matériel:', error);
+      logger.error('Erreur création matériel:', error);
       throw error;
     }
   }
@@ -161,9 +165,9 @@ export class InventoryItemService {
         updatedAt: serverTimestamp()
       });
 
-      console.log(`Matériel mis à jour: ${itemId}`);
+      logger.debug(`Matériel mis à jour: ${itemId}`);
     } catch (error) {
-      console.error('Erreur mise à jour matériel:', error);
+      logger.error('Erreur mise à jour matériel:', error);
       throw error;
     }
   }
@@ -180,9 +184,9 @@ export class InventoryItemService {
         updatedAt: serverTimestamp()
       });
 
-      console.log(`Matériel désactivé (soft delete): ${itemId}`);
+      logger.debug(`Matériel désactivé (soft delete): ${itemId}`);
     } catch (error) {
-      console.error('Erreur suppression matériel:', error);
+      logger.error('Erreur suppression matériel:', error);
       throw error;
     }
   }
@@ -192,10 +196,10 @@ export class InventoryItemService {
    */
   static async hardDeleteItem(clubId: string, itemId: string): Promise<void> {
     try {
-      // Supprimer toutes les photos
+      // Supprimer toutes les photos/documents
       const item = await this.getItemById(clubId, itemId);
-      if (item && item.photos && item.photos.length > 0) {
-        for (const photoUrl of item.photos) {
+      if (item && item.documents_urls && item.documents_urls.length > 0) {
+        for (const photoUrl of item.documents_urls) {
           await this.deletePhotoByUrl(photoUrl);
         }
       }
@@ -204,9 +208,9 @@ export class InventoryItemService {
       const itemRef = doc(db, 'clubs', clubId, 'inventory_items', itemId);
       await deleteDoc(itemRef);
 
-      console.log(`Matériel supprimé définitivement: ${itemId}`);
+      logger.debug(`Matériel supprimé définitivement: ${itemId}`);
     } catch (error) {
-      console.error('Erreur suppression définitive matériel:', error);
+      logger.error('Erreur suppression définitive matériel:', error);
       throw error;
     }
   }
@@ -257,17 +261,17 @@ export class InventoryItemService {
         throw new Error('Matériel introuvable');
       }
 
-      const updatedPhotos = [...(item.photos || []), downloadURL];
+      const updatedPhotos = [...(item.documents_urls || []), downloadURL];
 
       await updateDoc(itemRef, {
-        photos: updatedPhotos,
+        documents_urls: updatedPhotos,
         updatedAt: serverTimestamp()
       });
 
-      console.log(`Photo uploadée pour matériel ${itemId}: ${downloadURL}`);
+      logger.debug(`Photo uploadée pour matériel ${itemId}: ${downloadURL}`);
       return downloadURL;
     } catch (error) {
-      console.error('Erreur upload photo:', error);
+      logger.error('Erreur upload photo:', error);
       throw error;
     }
   }
@@ -290,17 +294,17 @@ export class InventoryItemService {
         throw new Error('Matériel introuvable');
       }
 
-      const updatedPhotos = (item.photos || []).filter(url => url !== photoUrl);
+      const updatedPhotos = (item.documents_urls || []).filter(url => url !== photoUrl);
 
       const itemRef = doc(db, 'clubs', clubId, 'inventory_items', itemId);
       await updateDoc(itemRef, {
-        photos: updatedPhotos,
+        documents_urls: updatedPhotos,
         updatedAt: serverTimestamp()
       });
 
-      console.log(`Photo supprimée pour matériel ${itemId}`);
+      logger.debug(`Photo supprimée pour matériel ${itemId}`);
     } catch (error) {
-      console.error('Erreur suppression photo:', error);
+      logger.error('Erreur suppression photo:', error);
       throw error;
     }
   }
@@ -314,7 +318,7 @@ export class InventoryItemService {
       // Format: https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{path}?alt=media&token={token}
       const urlParts = photoUrl.split('/o/');
       if (urlParts.length < 2) {
-        console.warn('URL invalide, impossible de supprimer:', photoUrl);
+        logger.warn('URL invalide, impossible de supprimer:', photoUrl);
         return;
       }
 
@@ -324,11 +328,11 @@ export class InventoryItemService {
       const storageRef = ref(storage, path);
       await deleteObject(storageRef);
 
-      console.log(`Photo supprimée de Storage: ${path}`);
+      logger.debug(`Photo supprimée de Storage: ${path}`);
     } catch (error: any) {
       // Ignorer l'erreur si le fichier n'existe pas
       if (error.code === 'storage/object-not-found') {
-        console.warn('Photo déjà supprimée ou introuvable:', photoUrl);
+        logger.warn('Photo déjà supprimée ou introuvable:', photoUrl);
       } else {
         throw error;
       }
@@ -376,9 +380,9 @@ export class InventoryItemService {
       const itemRef = doc(db, 'clubs', clubId, 'inventory_items', itemId);
       await updateDoc(itemRef, updateData);
 
-      console.log(`Maintenance ajoutée pour matériel ${itemId}: ${record.type}`);
+      logger.debug(`Maintenance ajoutée pour matériel ${itemId}: ${record.type}`);
     } catch (error) {
-      console.error('Erreur ajout maintenance:', error);
+      logger.error('Erreur ajout maintenance:', error);
       throw error;
     }
   }
@@ -398,7 +402,7 @@ export class InventoryItemService {
 
       return item.historique_maintenance || [];
     } catch (error) {
-      console.error('Erreur chargement historique maintenance:', error);
+      logger.error('Erreur chargement historique maintenance:', error);
       throw error;
     }
   }
@@ -429,7 +433,7 @@ export class InventoryItemService {
         ...doc.data()
       } as InventoryItem;
     } catch (error) {
-      console.error('Erreur recherche par numéro de série:', error);
+      logger.error('Erreur recherche par numéro de série:', error);
       throw error;
     }
   }
@@ -467,7 +471,7 @@ export class InventoryItemService {
 
       return stats;
     } catch (error) {
-      console.error('Erreur chargement statistiques:', error);
+      logger.error('Erreur chargement statistiques:', error);
       throw error;
     }
   }
@@ -486,7 +490,212 @@ export class InventoryItemService {
         return item.date_prochaine_maintenance.toMillis() <= now.toMillis();
       });
     } catch (error) {
-      console.error('Erreur chargement matériel nécessitant maintenance:', error);
+      logger.error('Erreur chargement matériel nécessitant maintenance:', error);
+      throw error;
+    }
+  }
+
+  // ========================================
+  // TANK INSPECTION (Belgian Regulations)
+  // ========================================
+
+  /**
+   * Calculer la prochaine date d'épreuve pour une bouteille
+   * Réglementation belge: épreuve hydrostatique tous les 5 ans
+   */
+  static calculateNextTankInspection(lastInspectionDate: Date): Date {
+    const next = new Date(lastInspectionDate);
+    next.setFullYear(next.getFullYear() + 5);
+    return next;
+  }
+
+  /**
+   * Vérifier si une bouteille nécessite une épreuve bientôt
+   * @param alertDaysBefore Nombre de jours avant l'échéance pour alerter (défaut: 180 jours = 6 mois)
+   */
+  static shouldAlertForTankInspection(
+    nextInspectionDate: Date,
+    alertDaysBefore: number = 180
+  ): { needsAlert: boolean; isOverdue: boolean; daysUntil: number } {
+    const now = new Date();
+    const timeDiff = nextInspectionDate.getTime() - now.getTime();
+    const daysUntil = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+
+    return {
+      needsAlert: daysUntil <= alertDaysBefore,
+      isOverdue: daysUntil < 0,
+      daysUntil
+    };
+  }
+
+  /**
+   * Récupérer les bouteilles avec alertes d'épreuve
+   */
+  static async getTanksWithInspectionAlerts(
+    clubId: string,
+    alertDaysBefore: number = 180
+  ): Promise<{
+    overdue: InventoryItem[];
+    upcoming: InventoryItem[];
+    ok: InventoryItem[];
+  }> {
+    try {
+      const items = await this.getItems(clubId);
+
+      // Filtrer uniquement les bouteilles
+      const tanks = items.filter(item =>
+        item.typeId === 'BOUTEILLE' || item.typeId?.toLowerCase().includes('bouteille')
+      );
+
+      const overdue: InventoryItem[] = [];
+      const upcoming: InventoryItem[] = [];
+      const ok: InventoryItem[] = [];
+
+      tanks.forEach(tank => {
+        // Chercher la date d'épreuve dans les customFieldsValues
+        const lastEpreuve = tank.customFieldsValues?.date_derniere_epreuve;
+        if (!lastEpreuve) {
+          overdue.push(tank); // Pas de date = à vérifier
+          return;
+        }
+
+        const lastDate = lastEpreuve instanceof Timestamp
+          ? lastEpreuve.toDate()
+          : new Date(lastEpreuve);
+
+        const nextDate = this.calculateNextTankInspection(lastDate);
+        const { needsAlert, isOverdue } = this.shouldAlertForTankInspection(nextDate, alertDaysBefore);
+
+        if (isOverdue) {
+          overdue.push(tank);
+        } else if (needsAlert) {
+          upcoming.push(tank);
+        } else {
+          ok.push(tank);
+        }
+      });
+
+      return { overdue, upcoming, ok };
+    } catch (error) {
+      logger.error('Erreur chargement alertes bouteilles:', error);
+      throw error;
+    }
+  }
+
+  // ========================================
+  // VALEUR & AMORTISSEMENT
+  // ========================================
+
+  /**
+   * Récupérer les statistiques avec valeurs (incluant amortissement)
+   */
+  static async getStatsWithValues(
+    clubId: string,
+    itemTypes: Record<string, ItemType>
+  ): Promise<{
+    total: number;
+    disponible: number;
+    prete: number;
+    maintenance: number;
+    hors_service: number;
+    byType: Record<string, number>;
+    totalPurchaseValue: number;
+    totalCurrentValue: number;
+    totalDepreciation: number;
+    percentDepreciated: number;
+    fullyDepreciatedCount: number;
+    tankAlerts: {
+      overdue: number;
+      upcoming: number;
+    };
+  }> {
+    try {
+      const items = await this.getItems(clubId);
+
+      // Statistiques de base
+      const stats = {
+        total: items.length,
+        disponible: items.filter(i => i.statut === 'disponible').length,
+        prete: items.filter(i => i.statut === 'prete').length,
+        maintenance: items.filter(i => i.statut === 'maintenance').length,
+        hors_service: items.filter(i => i.statut === 'hors_service').length,
+        byType: {} as Record<string, number>,
+        totalPurchaseValue: 0,
+        totalCurrentValue: 0,
+        totalDepreciation: 0,
+        percentDepreciated: 0,
+        fullyDepreciatedCount: 0,
+        tankAlerts: { overdue: 0, upcoming: 0 }
+      };
+
+      // Compter par type
+      items.forEach(item => {
+        if (!stats.byType[item.typeId]) {
+          stats.byType[item.typeId] = 0;
+        }
+        stats.byType[item.typeId]++;
+      });
+
+      // Calcul des valeurs avec amortissement
+      const summary = AmortizationService.calculateDepreciationSummary(items, itemTypes);
+      stats.totalPurchaseValue = summary.totalPurchaseValue;
+      stats.totalCurrentValue = summary.totalCurrentValue;
+      stats.totalDepreciation = summary.totalAccumulatedDepreciation;
+      stats.percentDepreciated = summary.percentDepreciated;
+      stats.fullyDepreciatedCount = summary.fullyDepreciatedCount;
+
+      // Alertes bouteilles
+      const tankAlerts = await this.getTanksWithInspectionAlerts(clubId);
+      stats.tankAlerts = {
+        overdue: tankAlerts.overdue.length,
+        upcoming: tankAlerts.upcoming.length
+      };
+
+      return stats;
+    } catch (error) {
+      logger.error('Erreur chargement statistiques avec valeurs:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Mettre à jour la valeur actuelle de tous les articles
+   * (à appeler périodiquement ou à la clôture fiscale)
+   */
+  static async updateAllCurrentValues(
+    clubId: string,
+    itemTypes: Record<string, ItemType>
+  ): Promise<number> {
+    try {
+      const items = await this.getItems(clubId);
+      const batch = writeBatch(db);
+      let updatedCount = 0;
+
+      for (const item of items) {
+        const itemType = itemTypes[item.typeId];
+        if (!itemType) continue;
+
+        const currentValue = AmortizationService.getItemCurrentValue(item, itemType);
+
+        // Mettre à jour seulement si la valeur a changé
+        if (item.valeur_actuelle !== currentValue) {
+          const itemRef = doc(db, 'clubs', clubId, 'inventory_items', item.id);
+          batch.update(itemRef, {
+            valeur_actuelle: currentValue,
+            updatedAt: serverTimestamp()
+          });
+          updatedCount++;
+        }
+      }
+
+      if (updatedCount > 0) {
+        await batch.commit();
+        logger.debug(`Valeurs mises à jour pour ${updatedCount} articles`);
+      }
+
+      return updatedCount;
+    } catch (error) {
+      logger.error('Erreur mise à jour valeurs actuelles:', error);
       throw error;
     }
   }
@@ -516,37 +725,9 @@ export class InventoryItemService {
 
       await batch.commit();
 
-      console.log(`${itemIds.length} matériels mis à jour avec statut: ${statut}`);
+      logger.debug(`${itemIds.length} matériels mis à jour avec statut: ${statut}`);
     } catch (error) {
-      console.error('Erreur batch update statut:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Changer l'emplacement de plusieurs matériels à la fois
-   */
-  static async batchUpdateLocation(
-    clubId: string,
-    itemIds: string[],
-    emplacementId: string
-  ): Promise<void> {
-    try {
-      const batch = writeBatch(db);
-
-      itemIds.forEach(itemId => {
-        const itemRef = doc(db, 'clubs', clubId, 'inventory_items', itemId);
-        batch.update(itemRef, {
-          emplacementId,
-          updatedAt: serverTimestamp()
-        });
-      });
-
-      await batch.commit();
-
-      console.log(`${itemIds.length} matériels déplacés vers emplacement: ${emplacementId}`);
-    } catch (error) {
-      console.error('Erreur batch update emplacement:', error);
+      logger.error('Erreur batch update statut:', error);
       throw error;
     }
   }

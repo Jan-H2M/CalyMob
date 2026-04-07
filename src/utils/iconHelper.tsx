@@ -1,10 +1,51 @@
+import { logger } from '@/utils/logger';
 /**
  * Icon Helper Utility
  *
  * Helper functies voor het dynamisch renderen van Lucide iconen.
+ * 
+ * PERFORMANCE: Only imports icons from the allowlist (~45 icons)
+ * instead of all 1000+ Lucide icons (~500KB savings)
  */
 
-import * as LucideIcons from 'lucide-react';
+import {
+  // Users category
+  User, Users, Shield, UserCheck, UserCog, UserPlus,
+  UserMinus, UserX, Award, Crown, Briefcase,
+  // Finance category
+  Wallet, CreditCard, Banknote, TrendingUp, TrendingDown,
+  PiggyBank, Receipt, DollarSign, Euro, Coins,
+  // Operations category
+  Calendar, Target, FileText, ClipboardList, CheckCircle,
+  Flag, Activity, BarChart, PieChart, Package,
+  // General category
+  Settings, Bell, Mail, Home, Star, Heart,
+  Tag, Hash, AlertCircle, Info, HelpCircle,
+  // Theme icons (used in ThemeSwitcher)
+  Sun, Moon, Monitor,
+  type LucideIcon
+} from 'lucide-react';
+
+/**
+ * Allowlist of dynamically-renderable icons
+ * Add new icons here when needed
+ */
+const ICON_MAP: Record<string, LucideIcon> = {
+  // Users
+  User, Users, Shield, UserCheck, UserCog, UserPlus,
+  UserMinus, UserX, Award, Crown, Briefcase,
+  // Finance
+  Wallet, CreditCard, Banknote, TrendingUp, TrendingDown,
+  PiggyBank, Receipt, DollarSign, Euro, Coins,
+  // Operations
+  Calendar, Target, FileText, ClipboardList, CheckCircle,
+  Flag, Activity, BarChart, PieChart, Package,
+  // General
+  Settings, Bell, Mail, Home, Star, Heart,
+  Tag, Hash, AlertCircle, Info, HelpCircle,
+  // Theme
+  Sun, Moon, Monitor,
+};
 
 /**
  * Render een Lucide icon dynamisch op basis van naam
@@ -16,10 +57,10 @@ import * as LucideIcons from 'lucide-react';
 export function renderIcon(iconName: string | undefined, className?: string) {
   if (!iconName) return null;
 
-  const Icon = (LucideIcons as any)[iconName];
+  const Icon = ICON_MAP[iconName];
 
   if (!Icon) {
-    console.warn(`Icon "${iconName}" not found in Lucide icons`);
+    logger.warn(`Icon "${iconName}" not found in allowlist. Add it to iconHelper.tsx if needed.`);
     return null;
   }
 
@@ -30,23 +71,18 @@ export function renderIcon(iconName: string | undefined, className?: string) {
  * Check of een icon naam geldig is
  *
  * @param iconName - Naam van het icon om te valideren
- * @returns true als het icon bestaat in Lucide
+ * @returns true als het icon bestaat in de allowlist
  */
 export function isValidIcon(iconName: string | undefined): boolean {
   if (!iconName) return false;
-  return iconName in LucideIcons;
+  return iconName in ICON_MAP;
 }
 
 /**
- * Haal alle beschikbare Lucide icon namen op
+ * Haal alle beschikbare icon namen op
  *
- * @returns Array van alle icon namen
+ * @returns Array van alle icon namen in de allowlist
  */
 export function getAllIconNames(): string[] {
-  return Object.keys(LucideIcons).filter(key => {
-    // Filter out non-icon exports (like createLucideIcon, etc.)
-    return typeof (LucideIcons as any)[key] === 'function' &&
-           key !== 'createLucideIcon' &&
-           !key.startsWith('default');
-  });
+  return Object.keys(ICON_MAP);
 }

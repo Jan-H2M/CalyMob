@@ -1,8 +1,10 @@
+import { logger } from '@/utils/logger';
+import { AI_MODELS } from '@/config/aiModels';
 /**
  * Claude Document Service
  *
  * Handles document generation (Excel, PowerPoint, PDF) using Anthropic Claude Skills API.
- * Uses Claude Sonnet 4.5 with code execution and file creation capabilities.
+ * Uses the model configured in config/aiModels.ts with code execution and file creation capabilities.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -82,7 +84,7 @@ class ClaudeDocumentService {
               // Each file object may have a file_id
               if (file?.file_id) {
                 fileIds.push(file.file_id);
-                console.log('✅ Found file_id:', file.file_id);
+                logger.debug('✅ Found file_id:', file.file_id);
               }
             }
           }
@@ -98,19 +100,19 @@ class ClaudeDocumentService {
    * Looks for base64 string in bash output to avoid Files API CORS issues
    */
   private extractBase64FromBash(response: any): string | null {
-    console.log('🔍 Searching for base64 in response content...');
+    logger.debug('🔍 Searching for base64 in response content...');
 
     for (const item of response.content) {
       if (item.type === 'bash_code_execution_tool_result') {
         const contentItem = item.content;
-        console.log('📦 Found bash_code_execution_tool_result, contentItem:', contentItem);
+        logger.debug('📦 Found bash_code_execution_tool_result, contentItem:', contentItem);
 
         if (contentItem?.type === 'bash_code_execution_result') {
           // According to official docs, stdout contains the output
           if (contentItem.stdout) {
             const stdout = contentItem.stdout;
-            console.log('📤 Found stdout (length:', stdout.length, ')');
-            console.log('   - Preview (first 200 chars):', stdout.substring(0, 200));
+            logger.debug('📤 Found stdout (length:', stdout.length, ')');
+            logger.debug('   - Preview (first 200 chars):', stdout.substring(0, 200));
 
             // Remove all whitespace and newlines from stdout
             const cleanedStdout = stdout.replace(/\s+/g, '');
@@ -120,7 +122,7 @@ class ClaudeDocumentService {
             // Look for large base64 pattern (at least 1000 chars for Excel file)
             const base64Match = cleanedStdout.match(/^([A-Za-z0-9+/]{1000,}={0,2})$/);
             if (base64Match) {
-              console.log('✅ Found base64 in stdout (length:', base64Match[1].length, ')');
+              logger.debug('✅ Found base64 in stdout (length:', base64Match[1].length, ')');
               return base64Match[1];
             }
 
@@ -129,25 +131,25 @@ class ClaudeDocumentService {
             if (base64InTextMatch) {
               const cleanedBase64 = base64InTextMatch[1].replace(/[\n\r\s]/g, '');
               if (cleanedBase64.length >= 1000) {
-                console.log('✅ Found base64 within stdout (length:', cleanedBase64.length, ')');
+                logger.debug('✅ Found base64 within stdout (length:', cleanedBase64.length, ')');
                 return cleanedBase64;
               }
             }
 
-            console.log('⚠️ stdout found but no base64 detected. Content:', stdout.substring(0, 500));
+            logger.debug('⚠️ stdout found but no base64 detected. Content:', stdout.substring(0, 500));
           }
 
           // Fallback: Check content array (old structure)
           if (Array.isArray(contentItem.content)) {
-            console.log('📋 Checking', contentItem.content.length, 'content items...');
+            logger.debug('📋 Checking', contentItem.content.length, 'content items...');
 
             for (const output of contentItem.content) {
-              console.log('   - Output type:', output?.type, 'has text:', !!output?.text);
+              logger.debug('   - Output type:', output?.type, 'has text:', !!output?.text);
 
               // Look for text output containing base64
               if (output?.type === 'text' && output?.text) {
                 const text = output.text;
-                console.log('   - Text preview (first 200 chars):', text.substring(0, 200));
+                logger.debug('   - Text preview (first 200 chars):', text.substring(0, 200));
 
                 // Remove all whitespace and newlines from text
                 const cleanedText = text.replace(/\s+/g, '');
@@ -155,7 +157,7 @@ class ClaudeDocumentService {
                 // Look for large base64 pattern
                 const base64Match = cleanedText.match(/^([A-Za-z0-9+/]{1000,}={0,2})$/);
                 if (base64Match) {
-                  console.log('✅ Found base64 in content array (length:', base64Match[1].length, ')');
+                  logger.debug('✅ Found base64 in content array (length:', base64Match[1].length, ')');
                   return base64Match[1];
                 }
 
@@ -164,7 +166,7 @@ class ClaudeDocumentService {
                 if (base64InTextMatch) {
                   const cleanedBase64 = base64InTextMatch[1].replace(/[\n\r\s]/g, '');
                   if (cleanedBase64.length >= 1000) {
-                    console.log('✅ Found base64 within content array text (length:', cleanedBase64.length, ')');
+                    logger.debug('✅ Found base64 within content array text (length:', cleanedBase64.length, ')');
                     return cleanedBase64;
                   }
                 }
@@ -175,8 +177,8 @@ class ClaudeDocumentService {
       }
     }
 
-    console.log('❌ No base64 output found in bash results');
-    console.log('📄 Full response structure:', JSON.stringify(response, null, 2));
+    logger.debug('❌ No base64 output found in bash results');
+    logger.debug('📄 Full response structure:', JSON.stringify(response, null, 2));
     return null;
   }
 
@@ -215,7 +217,7 @@ class ClaudeDocumentService {
       }
 
       const response = await this.client.beta.messages.create({
-        model: 'claude-sonnet-4-5-20250929',
+        model: AI_MODELS.documentGeneration,
         max_tokens: 16384,
         betas: [
           'code-execution-2025-08-25',
@@ -239,7 +241,7 @@ class ClaudeDocumentService {
       // CORS Workaround: Try base64 extraction first
       const base64 = this.extractBase64FromBash(response);
       if (base64) {
-        console.log('📦 Using base64 from bash output (CORS workaround)');
+        logger.debug('📦 Using base64 from bash output (CORS workaround)');
 
         if (onProgress) {
           onProgress({ step: 'Conversion', percent: 90, message: 'Conversion du fichier...' });
@@ -258,15 +260,15 @@ class ClaudeDocumentService {
       }
 
       // Fallback: Use Files API (may fail with CORS in browser)
-      console.log('⚠️ No base64 found, falling back to Files API (may fail with CORS)...');
+      logger.debug('⚠️ No base64 found, falling back to Files API (may fail with CORS)...');
       const fileIds = this.extractFileIds(response);
       if (fileIds.length === 0) {
-        console.error('No file_id or base64 in Claude response:', response);
+        logger.error('No file_id or base64 in Claude response:', response);
         throw new Error('Claude n\'a pas généré de fichier. Réponse: ' + JSON.stringify(response.content));
       }
 
       const fileId = fileIds[0];
-      console.log('📥 Downloading Excel file_id:', fileId);
+      logger.debug('📥 Downloading Excel file_id:', fileId);
 
       if (onProgress) {
         onProgress({ step: 'Téléchargement', percent: 90, message: 'Téléchargement du fichier Excel...' });
@@ -289,7 +291,7 @@ class ClaudeDocumentService {
 
       return blob;
     } catch (error) {
-      console.error('Error generating Excel with Claude:', error);
+      logger.error('Error generating Excel with Claude:', error);
       throw error;
     }
   }
@@ -312,7 +314,7 @@ class ClaudeDocumentService {
       }
 
       const response = await this.client.beta.messages.create({
-        model: 'claude-sonnet-4-5-20250929',
+        model: AI_MODELS.documentGeneration,
         max_tokens: 16384,
         betas: [
           'code-execution-2025-08-25',
@@ -336,12 +338,12 @@ class ClaudeDocumentService {
       // Extract file_id from response using official method
       const fileIds = this.extractFileIds(response);
       if (fileIds.length === 0) {
-        console.error('No file_id in Claude response:', response);
+        logger.error('No file_id in Claude response:', response);
         throw new Error('Claude n\'a pas généré de fichier. Réponse: ' + JSON.stringify(response.content));
       }
 
       const fileId = fileIds[0]; // Take first file
-      console.log('📥 Downloading PowerPoint file_id:', fileId);
+      logger.debug('📥 Downloading PowerPoint file_id:', fileId);
 
       if (onProgress) {
         onProgress({ step: 'Téléchargement', percent: 90, message: 'Téléchargement du PowerPoint...' });
@@ -364,7 +366,7 @@ class ClaudeDocumentService {
 
       return blob;
     } catch (error) {
-      console.error('Error generating PowerPoint with Claude:', error);
+      logger.error('Error generating PowerPoint with Claude:', error);
       throw error;
     }
   }
@@ -387,7 +389,7 @@ class ClaudeDocumentService {
       }
 
       const response = await this.client.beta.messages.create({
-        model: 'claude-sonnet-4-5-20250929',
+        model: AI_MODELS.documentGeneration,
         max_tokens: 16384,
         betas: [
           'code-execution-2025-08-25',
@@ -411,12 +413,12 @@ class ClaudeDocumentService {
       // Extract file_id from response using official method
       const fileIds = this.extractFileIds(response);
       if (fileIds.length === 0) {
-        console.error('No file_id in Claude response:', response);
+        logger.error('No file_id in Claude response:', response);
         throw new Error('Claude n\'a pas généré de fichier. Réponse: ' + JSON.stringify(response.content));
       }
 
       const fileId = fileIds[0]; // Take first file
-      console.log('📥 Downloading PDF file_id:', fileId);
+      logger.debug('📥 Downloading PDF file_id:', fileId);
 
       if (onProgress) {
         onProgress({ step: 'Téléchargement', percent: 90, message: 'Téléchargement du PDF...' });
@@ -437,7 +439,7 @@ class ClaudeDocumentService {
 
       return blob;
     } catch (error) {
-      console.error('Error generating PDF with Claude:', error);
+      logger.error('Error generating PDF with Claude:', error);
       throw error;
     }
   }
@@ -460,7 +462,7 @@ class ClaudeDocumentService {
       }
 
       const response = await this.client.beta.messages.create({
-        model: 'claude-sonnet-4-5-20250929',
+        model: AI_MODELS.documentGeneration,
         max_tokens: 16384,
         betas: [
           'code-execution-2025-08-25',
@@ -484,7 +486,7 @@ class ClaudeDocumentService {
       // CORS Workaround: Try base64 extraction first
       const base64 = this.extractBase64FromBash(response);
       if (base64) {
-        console.log('📦 Using base64 from bash output (CORS workaround)');
+        logger.debug('📦 Using base64 from bash output (CORS workaround)');
 
         if (onProgress) {
           onProgress({ step: 'Conversion', percent: 90, message: 'Conversion du fichier...' });
@@ -503,15 +505,15 @@ class ClaudeDocumentService {
       }
 
       // Fallback: Use Files API (may fail with CORS in browser)
-      console.log('⚠️ No base64 found, falling back to Files API (may fail with CORS)...');
+      logger.debug('⚠️ No base64 found, falling back to Files API (may fail with CORS)...');
       const fileIds = this.extractFileIds(response);
       if (fileIds.length === 0) {
-        console.error('No file_id or base64 in Claude response:', response);
+        logger.error('No file_id or base64 in Claude response:', response);
         throw new Error('Claude n\'a pas généré de fichier. Réponse: ' + JSON.stringify(response.content));
       }
 
       const fileId = fileIds[0];
-      console.log('📥 Downloading Word file_id:', fileId);
+      logger.debug('📥 Downloading Word file_id:', fileId);
 
       if (onProgress) {
         onProgress({ step: 'Téléchargement', percent: 90, message: 'Téléchargement du fichier Word...' });
@@ -534,7 +536,7 @@ class ClaudeDocumentService {
 
       return blob;
     } catch (error) {
-      console.error('Error generating Word with Claude:', error);
+      logger.error('Error generating Word with Claude:', error);
       throw error;
     }
   }
@@ -694,7 +696,7 @@ class ClaudeDocumentService {
 
       return result;
     } catch (error) {
-      console.error('Error in multi-format generation:', error);
+      logger.error('Error in multi-format generation:', error);
       result.success = false;
       result.error = error instanceof Error ? error.message : 'Erreur inconnue';
       return result;
@@ -739,11 +741,11 @@ class ClaudeDocumentService {
     }
 
     try {
-      console.log('🔍 Testing Claude Skills API availability...');
+      logger.debug('🔍 Testing Claude Skills API availability...');
 
       // Make a minimal test call with Skills beta
       const response = await this.client.messages.create({
-        model: 'claude-sonnet-4-5-20250929',
+        model: AI_MODELS.documentGeneration,
         max_tokens: 10, // Minimal tokens to save cost (~$0.001)
         betas: [
           'code-execution-2025-08-25',
@@ -763,7 +765,7 @@ class ClaudeDocumentService {
         }]
       });
 
-      console.log('✅ Skills API test successful!', response);
+      logger.debug('✅ Skills API test successful!', response);
 
       return {
         available: true,
@@ -771,7 +773,7 @@ class ClaudeDocumentService {
         testedAt: new Date()
       };
     } catch (error: any) {
-      console.log('❌ Skills API test failed:', error);
+      logger.debug('❌ Skills API test failed:', error);
 
       // Check if error is specifically about Skills not being available
       if (error.message && error.message.includes("does not match any of the expected tags")) {

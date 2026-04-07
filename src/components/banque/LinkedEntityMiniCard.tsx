@@ -18,7 +18,7 @@ export function LinkedEntityMiniCard({ entity, type, onClick }: LinkedEntityMini
     <button
       onClick={onClick}
       className={cn(
-        "flex items-center gap-3 px-4 py-3 rounded-lg border-2 transition-all hover:shadow-md group min-w-[280px]",
+        "flex items-center gap-3 px-4 py-3 rounded-lg border-2 transition-all hover:shadow-md group min-w-0 md:min-w-[280px]",
         isDemand
           ? "bg-purple-50 border-purple-200 hover:bg-purple-100 hover:border-purple-300"
           : "bg-blue-50 border-blue-200 hover:bg-blue-100 hover:border-blue-300"

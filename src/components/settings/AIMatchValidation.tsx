@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { logger } from '@/utils/logger';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -103,8 +104,8 @@ export function AIMatchValidation() {
         } as DemandeRemboursement;
 
         setDemande(dem);
-        console.log('[AIMatchValidation] Demande:', dem);
-        console.log('[AIMatchValidation] URLs justificatifs:', dem.urls_justificatifs);
+        logger.debug('[AIMatchValidation] Demande:', dem);
+        logger.debug('[AIMatchValidation] URLs justificatifs:', dem.urls_justificatifs);
         setDocumentUrls(dem.urls_justificatifs || []);
         setEditedDemande({
           montant: dem.montant,
@@ -113,7 +114,7 @@ export function AIMatchValidation() {
         });
       }
     } catch (error) {
-      console.error('Erreur chargement données:', error);
+      logger.error('Erreur chargement données:', error);
       toast.error('Erreur lors du chargement');
     } finally {
       setLoading(false);
@@ -143,7 +144,7 @@ export function AIMatchValidation() {
       toast.success('Demande mise à jour');
     } catch (error) {
       toast.error('Erreur lors de la sauvegarde');
-      console.error(error);
+      logger.error(error);
     }
   };
 
@@ -162,7 +163,7 @@ export function AIMatchValidation() {
       navigate('/parametres/auto-link-expenses');
     } catch (error) {
       toast.error('Erreur lors de la liaison');
-      console.error(error);
+      logger.error(error);
     } finally {
       setProcessing(false);
     }
@@ -187,7 +188,7 @@ export function AIMatchValidation() {
       navigate('/parametres/auto-link-expenses');
     } catch (error) {
       toast.error('Erreur lors du rejet');
-      console.error(error);
+      logger.error(error);
     } finally {
       setProcessing(false);
     }
@@ -209,15 +210,15 @@ export function AIMatchValidation() {
       navigate('/parametres/auto-link-expenses');
     } catch (error) {
       toast.error('Erreur lors de la liaison');
-      console.error(error);
+      logger.error(error);
     } finally {
       setProcessing(false);
     }
   };
 
   const renderDocumentPreview = () => {
-    console.log('[AIMatchValidation] renderDocumentPreview - documentUrls:', documentUrls);
-    console.log('[AIMatchValidation] renderDocumentPreview - selectedDocIndex:', selectedDocIndex);
+    logger.debug('[AIMatchValidation] renderDocumentPreview - documentUrls:', documentUrls);
+    logger.debug('[AIMatchValidation] renderDocumentPreview - selectedDocIndex:', selectedDocIndex);
 
     if (documentUrls.length === 0) {
       return (
@@ -230,14 +231,14 @@ export function AIMatchValidation() {
     }
 
     const currentUrl = documentUrls[selectedDocIndex];
-    console.log('[AIMatchValidation] Current URL:', currentUrl);
+    logger.debug('[AIMatchValidation] Current URL:', currentUrl);
 
     // Extraire le nom du fichier de l'URL (avant les paramètres ? et &)
     const urlWithoutParams = currentUrl.split('?')[0];
     const isPdf = urlWithoutParams.toLowerCase().endsWith('.pdf');
     const isImage = /\.(jpg|jpeg|png|gif|webp)($|\?)/i.test(currentUrl);
     const isText = /\.(txt|csv|json|log)($|\?)/i.test(currentUrl);
-    console.log('[AIMatchValidation] File types - PDF:', isPdf, 'Image:', isImage, 'Text:', isText);
+    logger.debug('[AIMatchValidation] File types - PDF:', isPdf, 'Image:', isImage, 'Text:', isText);
 
     return (
       <div className="h-full flex flex-col">
@@ -251,7 +252,7 @@ export function AIMatchValidation() {
                 className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
                   selectedDocIndex === index
                     ? 'bg-blue-600 text-white'
-                    : 'bg-white text-gray-700 hover:bg-gray-200'
+                    : 'bg-white text-gray-700 dark:text-dark-text-primary hover:bg-gray-200'
                 }`}
               >
                 Document {index + 1}

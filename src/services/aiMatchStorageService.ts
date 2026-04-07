@@ -1,4 +1,5 @@
 import { db } from '@/lib/firebase';
+import { logger } from '@/utils/logger';
 import {
   collection,
   doc,
@@ -56,16 +57,16 @@ export class AIMatchStorageService {
    * Récupère toutes les correspondances AI pour un club
    */
   static async getAllMatches(clubId: string): Promise<AIExpenseMatch[]> {
-    console.log(`[AIMatchStorage] Getting all matches for club: ${clubId}`);
+    logger.debug(`[AIMatchStorage] Getting all matches for club: ${clubId}`);
     const matchesRef = collection(db, 'clubs', clubId, 'ai_expense_matches');
     const q = query(matchesRef, orderBy('created_at', 'desc'));
     const snapshot = await getDocs(q);
 
-    console.log(`[AIMatchStorage] Found ${snapshot.size} documents`);
+    logger.debug(`[AIMatchStorage] Found ${snapshot.size} documents`);
 
     const matches = snapshot.docs.map(doc => {
       const data = doc.data();
-      console.log(`[AIMatchStorage] Document ${doc.id}:`, data);
+      logger.debug(`[AIMatchStorage] Document ${doc.id}:`, data);
       return {
         id: doc.id,
         ...data,
@@ -74,7 +75,7 @@ export class AIMatchStorageService {
       } as AIExpenseMatch;
     });
 
-    console.log(`[AIMatchStorage] Mapped matches:`, matches);
+    logger.debug(`[AIMatchStorage] Mapped matches:`, matches);
     return matches;
   }
 

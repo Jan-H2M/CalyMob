@@ -1,32 +1,36 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { logger } from '@/utils/logger';
 import {
   BookOpen,
   Tag,
   Calendar,
   Search,
-  Filter,
-  Check,
-  X,
   Star,
-  Save,
   Plus,
   ArrowUpDown,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  Eye,
+  FolderOpen,
+  FolderTree,
+  RefreshCw,
 } from 'lucide-react';
 import { SettingsHeader } from './SettingsHeader';
 import { AccountCode, Categorie } from '@/types';
 import { CategorizationService } from '@/services/categorizationService';
 import { FirebaseSettingsService } from '@/services/firebaseSettingsService';
-import { getCalypsoAccountCodes } from '@/config/calypso-accounts';
+import { AccountCodeService } from '@/services/accountCodeService';
+import { calypsoAccountCodes } from '@/config/calypso-accounts';
 import { AccountCodeDetailView } from './AccountCodeDetailView';
 import { CategoryDetailView } from './CategoryDetailView';
 import { FiscalYearsManagement } from './FiscalYearsManagement';
+import { ReportGroupsConfig } from './ReportGroupsConfig';
+import { BilanCodesConfig } from './BilanCodesConfig';
 import { cn, getCategoryColorClasses } from '@/utils/utils';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/contexts/AuthContext';
 
-type Tab = 'plan_comptable' | 'categories' | 'annees';
+type Tab = 'plan_comptable' | 'categories' | 'groupes_rapport' | 'codes_bilan' | 'annees';
 
 export function ComptabiliteSettings() {
   const { clubId } = useAuth();
@@ -39,10 +43,10 @@ export function ComptabiliteSettings() {
   const [filterType, setFilterType] = useState<'all' | 'revenue' | 'expense' | 'asset' | 'liability'>('all');
   const [selectedCodes, setSelectedCodes] = useState<Set<string>>(new Set());
   const [detailViewCode, setDetailViewCode] = useState<AccountCode | null>(null);
-  const [frequentCodes, setFrequentCodes] = useState<Set<string>>(new Set());
+  const [isNewCode, setIsNewCode] = useState(false);
 
   // États pour le tri (account codes)
-  type SortColumn = 'selected' | 'frequent' | 'code' | 'label' | 'type' | 'category';
+  type SortColumn = 'selected' | 'code' | 'label' | 'type' | 'category';
   type SortDirection = 'asc' | 'desc' | null;
   const [sortColumn, setSortColumn] = useState<SortColumn | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
@@ -52,6 +56,7 @@ export function ComptabiliteSettings() {
   const [categories, setCategories] = useState<Categorie[]>([]);
   const [detailViewCategory, setDetailViewCategory] = useState<Categorie | null>(null);
   const [isNewCategory, setIsNewCategory] = useState(false);
+  const [categorySearchTerm, setCategorySearchTerm] = useState('');
 
   // États pour le tri (categories)
   type CategorySortColumn = 'frequent' | 'nom' | 'label_court' | 'type' | 'compte_comptable';
@@ -72,12 +77,43 @@ export function ComptabiliteSettings() {
         // Charger les codes comptables
         const accountCodesSettings = await FirebaseSettingsService.loadAccountCodesSettings(clubId);
 
-        let codes = getCalypsoAccountCodes().map(code => {
+        // Codes Calypso de base, enrichis avec les personnalisations
+        const calypsoCodes = AccountCodeService.isReady()
+          ? AccountCodeService.getAllCodes()
+          : calypsoAccountCodes;
+        const calypsoCodesSet = new Set(calypsoCodes.map(c => c.code));
+
+        let codes = calypsoCodes.map(code => {
           if (accountCodesSettings.customCodes[code.code]) {
-            return { ...code, ...accountCodesSettings.customCodes[code.code] };
+            const customCode = accountCodesSettings.customCodes[code.code];
+
+            // Smart merge: pour les categories, préférer customCode si défini, sinon base
+            // Ceci évite les doublons causés par l'ancien système
+            const mergedCategories = customCode.categories && customCode.categories.length > 0
+              ? customCode.categories
+              : code.categories;
+
+            const merged = {
+              ...code,
+              ...customCode,
+              categories: mergedCategories ? [...new Set(mergedCategories)] : undefined
+            };
+
+            // Supprimer l'ancien champ category s'il existe encore
+            delete (merged as any).category;
+
+            return merged;
           }
           return code;
         });
+
+        // Ajouter les codes personnalisés qui ne sont pas dans la liste Calypso
+        for (const [codeKey, codeValue] of Object.entries(accountCodesSettings.customCodes)) {
+          const customCode = codeValue as AccountCode;
+          if (!calypsoCodesSet.has(codeKey) && customCode.code && customCode.label) {
+            codes.push(customCode);
+          }
+        }
 
         setAccountCodes(codes);
         setFilteredCodes(codes);
@@ -89,15 +125,10 @@ export function ComptabiliteSettings() {
           setSelectedCodes(new Set(codes.map(c => c.code)));
         }
 
-        // Codes fréquents
-        const frequents = new Set(codes.filter(c => c.isFrequent).map(c => c.code));
-        setFrequentCodes(frequents);
-
-        // Charger le cache
-        const { loadAccountCodesCache } = await import('@/config/calypso-accounts');
-        loadAccountCodesCache(accountCodesSettings.customCodes, accountCodesSettings.selectedCodes);
+        // Rafraîchir le cache AccountCodeService
+        await AccountCodeService.refresh(clubId);
       } catch (error) {
-        console.error('Erreur lors du chargement des données:', error);
+        logger.error('Erreur lors du chargement des données:', error);
         toast.error('Erreur lors du chargement des données');
       }
     };
@@ -141,9 +172,6 @@ export function ComptabiliteSettings() {
         switch (sortColumn) {
           case 'selected':
             comparison = (selectedCodes.has(a.code) ? 1 : 0) - (selectedCodes.has(b.code) ? 1 : 0);
-            break;
-          case 'frequent':
-            comparison = (a.isFrequent ? 1 : 0) - (b.isFrequent ? 1 : 0);
             break;
           case 'code':
             if (sortPattern && sortPattern.trim()) {
@@ -202,7 +230,7 @@ export function ComptabiliteSettings() {
 
   const SortIcon = ({ column }: { column: SortColumn }) => {
     if (sortColumn !== column) {
-      return <ArrowUpDown className="h-3 w-3 text-gray-400" />;
+      return <ArrowUpDown className="h-3 w-3 text-gray-400 dark:text-dark-text-muted" />;
     }
     if (sortDirection === 'asc') {
       return <ArrowUp className="h-3 w-3 text-calypso-blue" />;
@@ -210,8 +238,10 @@ export function ComptabiliteSettings() {
     return <ArrowDown className="h-3 w-3 text-calypso-blue" />;
   };
 
-  // Basculer la sélection d'un code
-  const toggleCodeSelection = (code: string) => {
+  // Basculer la sélection d'un code (avec auto-save)
+  const toggleCodeSelection = async (code: string) => {
+    if (!clubId) return;
+
     const newSelected = new Set(selectedCodes);
     if (newSelected.has(code)) {
       newSelected.delete(code);
@@ -219,81 +249,54 @@ export function ComptabiliteSettings() {
       newSelected.add(code);
     }
     setSelectedCodes(newSelected);
-  };
 
-  // Basculer le statut fréquent d'un code
-  const toggleFrequent = async (codeStr: string) => {
-    if (!clubId) return;
-
-    const code = accountCodes.find(c => c.code === codeStr);
-    if (code) {
-      const updatedCode = { ...code, isFrequent: !code.isFrequent };
-
-      try {
-        const settings = await FirebaseSettingsService.loadAccountCodesSettings(clubId);
-        settings.customCodes[codeStr] = updatedCode;
-        await FirebaseSettingsService.saveAccountCodesSettings(clubId, settings.customCodes, settings.selectedCodes);
-
-        setAccountCodes(prev => prev.map(c => c.code === codeStr ? updatedCode : c));
-        setFilteredCodes(prev => prev.map(c => c.code === codeStr ? updatedCode : c));
-
-        const newFrequents = new Set(frequentCodes);
-        if (updatedCode.isFrequent) {
-          newFrequents.add(codeStr);
-        } else {
-          newFrequents.delete(codeStr);
-        }
-        setFrequentCodes(newFrequents);
-
-        const { loadAccountCodesCache } = await import('@/config/calypso-accounts');
-        loadAccountCodesCache(settings.customCodes, settings.selectedCodes);
-
-        toast.success(updatedCode.isFrequent ? 'Code marqué comme fréquent' : 'Code retiré des fréquents');
-      } catch (error) {
-        console.error('Erreur lors de la sauvegarde:', error);
-        toast.error('Erreur lors de la sauvegarde');
-      }
-    }
-  };
-
-  // Sauvegarder les codes sélectionnés
-  const saveSelectedCodes = async () => {
-    if (!clubId) return;
-
+    // Auto-save
     try {
       const settings = await FirebaseSettingsService.loadAccountCodesSettings(clubId);
-      await FirebaseSettingsService.saveAccountCodesSettings(clubId, settings.customCodes, Array.from(selectedCodes));
+      await FirebaseSettingsService.saveAccountCodesSettings(clubId, settings.customCodes, Array.from(newSelected));
 
-      const { loadAccountCodesCache } = await import('@/config/calypso-accounts');
-      loadAccountCodesCache(settings.customCodes, Array.from(selectedCodes));
-
-      toast.success('Codes comptables sauvegardés');
+      await AccountCodeService.refresh(clubId);
     } catch (error) {
-      console.error('Erreur lors de la sauvegarde:', error);
+      logger.error('Erreur lors de la sauvegarde:', error);
       toast.error('Erreur lors de la sauvegarde');
     }
   };
 
-  // Mettre à jour un code après édition
-  const handleUpdateCode = async (updatedCode: AccountCode) => {
+  // Créer ou mettre à jour un code après édition
+  const handleCreateOrUpdateCode = async (updatedCode: AccountCode) => {
     if (!clubId) return;
 
     try {
       const settings = await FirebaseSettingsService.loadAccountCodesSettings(clubId);
       settings.customCodes[updatedCode.code] = updatedCode;
-      await FirebaseSettingsService.saveAccountCodesSettings(clubId, settings.customCodes, settings.selectedCodes);
 
-      setAccountCodes(prev => prev.map(code =>
-        code.code === updatedCode.code ? updatedCode : code
-      ));
-      setFilteredCodes(prev => prev.map(code =>
-        code.code === updatedCode.code ? updatedCode : code
-      ));
+      // Si c'est un nouveau code, l'ajouter aux codes sélectionnés
+      const newSelectedCodes = isNewCode
+        ? [...settings.selectedCodes, updatedCode.code]
+        : settings.selectedCodes;
 
-      const { loadAccountCodesCache } = await import('@/config/calypso-accounts');
-      loadAccountCodesCache(settings.customCodes, settings.selectedCodes);
+      await FirebaseSettingsService.saveAccountCodesSettings(clubId, settings.customCodes, newSelectedCodes);
+
+      if (isNewCode) {
+        // Ajouter le nouveau code à la liste
+        setAccountCodes(prev => [...prev, updatedCode]);
+        setFilteredCodes(prev => [...prev, updatedCode]);
+        setSelectedCodes(prev => new Set([...prev, updatedCode.code]));
+      } else {
+        // Mettre à jour le code existant
+        setAccountCodes(prev => prev.map(code =>
+          code.code === updatedCode.code ? updatedCode : code
+        ));
+        setFilteredCodes(prev => prev.map(code =>
+          code.code === updatedCode.code ? updatedCode : code
+        ));
+      }
+
+      await AccountCodeService.refresh(clubId);
+
+      setIsNewCode(false);
     } catch (error) {
-      console.error('Erreur lors de la sauvegarde:', error);
+      logger.error('Erreur lors de la sauvegarde:', error);
       toast.error('Erreur lors de la sauvegarde');
     }
   };
@@ -315,7 +318,7 @@ export function ComptabiliteSettings() {
 
   const CategorySortIcon = ({ column }: { column: CategorySortColumn }) => {
     if (categorySortColumn !== column) {
-      return <ArrowUpDown className="h-3 w-3 text-gray-400" />;
+      return <ArrowUpDown className="h-3 w-3 text-gray-400 dark:text-dark-text-muted" />;
     }
     if (categorySortDirection === 'asc') {
       return <ArrowUp className="h-3 w-3 text-calypso-blue" />;
@@ -324,10 +327,20 @@ export function ComptabiliteSettings() {
   };
 
   const sortedCategories = useMemo(() => {
-    let sorted = [...categories];
+    let filtered = [...categories];
+
+    // Filtrer par recherche
+    if (categorySearchTerm) {
+      const term = categorySearchTerm.toLowerCase();
+      filtered = filtered.filter(cat =>
+        cat.nom.toLowerCase().includes(term) ||
+        (cat.label_court && cat.label_court.toLowerCase().includes(term)) ||
+        (cat.compte_comptable && cat.compte_comptable.toLowerCase().includes(term))
+      );
+    }
 
     if (categorySortColumn && categorySortDirection) {
-      sorted.sort((a, b) => {
+      filtered.sort((a, b) => {
         let comparison = 0;
 
         switch (categorySortColumn) {
@@ -355,15 +368,15 @@ export function ComptabiliteSettings() {
         return categorySortDirection === 'asc' ? comparison : -comparison;
       });
     } else {
-      sorted.sort((a, b) => {
+      filtered.sort((a, b) => {
         if (a.isFrequent && !b.isFrequent) return -1;
         if (!a.isFrequent && b.isFrequent) return 1;
         return a.nom.localeCompare(b.nom);
       });
     }
 
-    return sorted;
-  }, [categories, categorySortColumn, categorySortDirection]);
+    return filtered;
+  }, [categories, categorySortColumn, categorySortDirection, categorySearchTerm]);
 
   const handleUpdateCategory = async (updatedCategory: Categorie) => {
     if (!clubId) return;
@@ -386,7 +399,7 @@ export function ComptabiliteSettings() {
 
       setIsNewCategory(false);
     } catch (error) {
-      console.error('Erreur lors de la sauvegarde de la catégorie:', error);
+      logger.error('Erreur lors de la sauvegarde de la catégorie:', error);
       toast.error('Erreur lors de la sauvegarde');
     }
   };
@@ -400,7 +413,7 @@ export function ComptabiliteSettings() {
       setCategories(updatedCategories);
       CategorizationService.updateCategoriesCache(updatedCategories);
     } catch (error) {
-      console.error('Erreur lors de la suppression de la catégorie:', error);
+      logger.error('Erreur lors de la suppression de la catégorie:', error);
       toast.error('Erreur lors de la suppression');
     }
   };
@@ -425,9 +438,32 @@ export function ComptabiliteSettings() {
 
         toast.success(updatedCategory.isFrequent ? 'Catégorie ajoutée aux favoris' : 'Catégorie retirée des favoris');
       } catch (error) {
-        console.error('Erreur lors de la mise à jour de la catégorie:', error);
+        logger.error('Erreur lors de la mise à jour de la catégorie:', error);
         toast.error('Erreur lors de la mise à jour');
       }
+    }
+  };
+
+  const handleResetCategories = async () => {
+    if (!clubId) return;
+
+    const confirmed = window.confirm(
+      '🔄 Réinitialiser les catégories aux valeurs par défaut\n\n' +
+      'Ceci va remplacer toutes les catégories existantes par les catégories par défaut avec les codes comptables correctement configurés.\n\n' +
+      'Êtes-vous sûr de vouloir continuer?'
+    );
+
+    if (!confirmed) return;
+
+    try {
+      await FirebaseSettingsService.resetCategoriesToDefault(clubId);
+      const newCategories = await FirebaseSettingsService.loadCategories(clubId);
+      setCategories(newCategories);
+      CategorizationService.updateCategoriesCache(newCategories);
+      toast.success('Catégories réinitialisées avec succès');
+    } catch (error) {
+      logger.error('Erreur lors de la réinitialisation des catégories:', error);
+      toast.error('Erreur lors de la réinitialisation');
     }
   };
 
@@ -448,7 +484,7 @@ export function ComptabiliteSettings() {
               'px-6 py-3 font-medium text-sm border-b-2 transition-colors',
               activeTab === 'plan_comptable'
                 ? 'border-calypso-blue text-calypso-blue dark:text-calypso-aqua'
-                : 'border-transparent text-gray-600 dark:text-dark-text-secondary hover:text-gray-900 dark:hover:text-dark-text-primary'
+                : 'border-transparent text-gray-600 dark:text-dark-text-secondary hover:text-gray-900 dark:text-dark-text-primary dark:hover:text-dark-text-primary'
             )}
           >
             <div className="flex items-center gap-2">
@@ -462,7 +498,7 @@ export function ComptabiliteSettings() {
               'px-6 py-3 font-medium text-sm border-b-2 transition-colors',
               activeTab === 'categories'
                 ? 'border-calypso-blue text-calypso-blue dark:text-calypso-aqua'
-                : 'border-transparent text-gray-600 dark:text-dark-text-secondary hover:text-gray-900 dark:hover:text-dark-text-primary'
+                : 'border-transparent text-gray-600 dark:text-dark-text-secondary hover:text-gray-900 dark:text-dark-text-primary dark:hover:text-dark-text-primary'
             )}
           >
             <div className="flex items-center gap-2">
@@ -471,12 +507,40 @@ export function ComptabiliteSettings() {
             </div>
           </button>
           <button
+            onClick={() => setActiveTab('groupes_rapport')}
+            className={cn(
+              'px-6 py-3 font-medium text-sm border-b-2 transition-colors',
+              activeTab === 'groupes_rapport'
+                ? 'border-calypso-blue text-calypso-blue dark:text-calypso-aqua'
+                : 'border-transparent text-gray-600 dark:text-dark-text-secondary hover:text-gray-900 dark:text-dark-text-primary dark:hover:text-dark-text-primary'
+            )}
+          >
+            <div className="flex items-center gap-2">
+              <FolderOpen className="h-4 w-4" />
+              Groupes de Rapport
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveTab('codes_bilan')}
+            className={cn(
+              'px-6 py-3 font-medium text-sm border-b-2 transition-colors',
+              activeTab === 'codes_bilan'
+                ? 'border-calypso-blue text-calypso-blue dark:text-calypso-aqua'
+                : 'border-transparent text-gray-600 dark:text-dark-text-secondary hover:text-gray-900 dark:text-dark-text-primary dark:hover:text-dark-text-primary'
+            )}
+          >
+            <div className="flex items-center gap-2">
+              <FolderTree className="h-4 w-4" />
+              Codes de Bilan
+            </div>
+          </button>
+          <button
             onClick={() => setActiveTab('annees')}
             className={cn(
               'px-6 py-3 font-medium text-sm border-b-2 transition-colors',
               activeTab === 'annees'
                 ? 'border-calypso-blue text-calypso-blue dark:text-calypso-aqua'
-                : 'border-transparent text-gray-600 dark:text-dark-text-secondary hover:text-gray-900 dark:hover:text-dark-text-primary'
+                : 'border-transparent text-gray-600 dark:text-dark-text-secondary hover:text-gray-900 dark:text-dark-text-primary dark:hover:text-dark-text-primary'
             )}
           >
             <div className="flex items-center gap-2">
@@ -494,7 +558,7 @@ export function ComptabiliteSettings() {
               <div className="flex flex-col sm:flex-row justify-between gap-4">
                 <div className="flex-1">
                   <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-dark-text-muted" />
                     <input
                       type="text"
                       placeholder="Rechercher un code ou libellé..."
@@ -515,18 +579,25 @@ export function ComptabiliteSettings() {
                     <option value="expense">💸 Sorties</option>
                   </select>
                   <button
-                    onClick={saveSelectedCodes}
+                    onClick={() => {
+                      setDetailViewCode({
+                        code: '',
+                        label: '',
+                        type: 'expense'
+                      });
+                      setIsNewCode(true);
+                    }}
                     className="flex items-center gap-2 px-4 py-2 bg-calypso-blue text-white rounded-lg hover:bg-calypso-blue/90 transition-colors"
                   >
-                    <Save className="h-4 w-4" />
-                    Sauvegarder
+                    <Plus className="h-4 w-4" />
+                    Nouveau code
                   </button>
                 </div>
               </div>
 
               {/* Sort Pattern Input */}
               <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
                   Pattern de tri (optionnel) - Ex: ".XX-..-..""
                 </label>
                 <input
@@ -547,25 +618,17 @@ export function ComptabiliteSettings() {
                     <th className="px-6 py-3 text-left">
                       <button
                         onClick={() => handleSort('selected')}
-                        className="flex items-center gap-1 text-xs font-medium text-gray-700 dark:text-dark-text-secondary uppercase tracking-wider hover:text-calypso-blue"
+                        className="flex items-center gap-1 text-xs font-medium text-gray-700 dark:text-dark-text-primary uppercase tracking-wider hover:text-calypso-blue"
+                        title="Codes actifs sont visibles dans le sélecteur de compte"
                       >
-                        ✓
+                        Actif
                         <SortIcon column="selected" />
                       </button>
                     </th>
                     <th className="px-6 py-3 text-left">
                       <button
-                        onClick={() => handleSort('frequent')}
-                        className="flex items-center gap-1 text-xs font-medium text-gray-700 dark:text-dark-text-secondary uppercase tracking-wider hover:text-calypso-blue"
-                      >
-                        ★
-                        <SortIcon column="frequent" />
-                      </button>
-                    </th>
-                    <th className="px-6 py-3 text-left">
-                      <button
                         onClick={() => handleSort('code')}
-                        className="flex items-center gap-1 text-xs font-medium text-gray-700 dark:text-dark-text-secondary uppercase tracking-wider hover:text-calypso-blue"
+                        className="flex items-center gap-1 text-xs font-medium text-gray-700 dark:text-dark-text-primary uppercase tracking-wider hover:text-calypso-blue"
                       >
                         Code
                         <SortIcon column="code" />
@@ -574,7 +637,7 @@ export function ComptabiliteSettings() {
                     <th className="px-6 py-3 text-left">
                       <button
                         onClick={() => handleSort('label')}
-                        className="flex items-center gap-1 text-xs font-medium text-gray-700 dark:text-dark-text-secondary uppercase tracking-wider hover:text-calypso-blue"
+                        className="flex items-center gap-1 text-xs font-medium text-gray-700 dark:text-dark-text-primary uppercase tracking-wider hover:text-calypso-blue"
                       >
                         Libellé
                         <SortIcon column="label" />
@@ -583,7 +646,7 @@ export function ComptabiliteSettings() {
                     <th className="px-6 py-3 text-left">
                       <button
                         onClick={() => handleSort('type')}
-                        className="flex items-center gap-1 text-xs font-medium text-gray-700 dark:text-dark-text-secondary uppercase tracking-wider hover:text-calypso-blue"
+                        className="flex items-center gap-1 text-xs font-medium text-gray-700 dark:text-dark-text-primary uppercase tracking-wider hover:text-calypso-blue"
                       >
                         Type
                         <SortIcon column="type" />
@@ -592,7 +655,7 @@ export function ComptabiliteSettings() {
                     <th className="px-6 py-3 text-left">
                       <button
                         onClick={() => handleSort('category')}
-                        className="flex items-center gap-1 text-xs font-medium text-gray-700 dark:text-dark-text-secondary uppercase tracking-wider hover:text-calypso-blue"
+                        className="flex items-center gap-1 text-xs font-medium text-gray-700 dark:text-dark-text-primary uppercase tracking-wider hover:text-calypso-blue"
                       >
                         Catégorie
                         <SortIcon column="category" />
@@ -605,7 +668,7 @@ export function ComptabiliteSettings() {
                     <tr
                       key={code.code}
                       onClick={() => setDetailViewCode(code)}
-                      className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary cursor-pointer"
+                      className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary cursor-pointer"
                     >
                       <td className="px-6 py-4">
                         <input
@@ -618,24 +681,10 @@ export function ComptabiliteSettings() {
                           className="h-4 w-4 text-calypso-blue rounded focus:ring-calypso-blue"
                         />
                       </td>
-                      <td className="px-6 py-4">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleFrequent(code.code);
-                          }}
-                          className={cn(
-                            "transition-colors",
-                            code.isFrequent ? "text-yellow-500" : "text-gray-300 dark:text-gray-600 hover:text-yellow-500"
-                          )}
-                        >
-                          <Star className={cn("h-5 w-5", code.isFrequent && "fill-current")} />
-                        </button>
-                      </td>
                       <td className="px-6 py-4 font-mono text-sm text-gray-900 dark:text-dark-text-primary">
                         {code.code}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-700 dark:text-dark-text-secondary">
+                      <td className="px-6 py-4 text-sm text-gray-700 dark:text-dark-text-primary">
                         {code.label}
                       </td>
                       <td className="px-6 py-4">
@@ -646,38 +695,30 @@ export function ComptabiliteSettings() {
                           code.type === 'asset' && "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
                           code.type === 'liability' && "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400"
                         )}>
-                          {code.type === 'revenue' && 'Produit'}
-                          {code.type === 'expense' && 'Charge'}
+                          {code.type === 'revenue' && 'Revenu'}
+                          {code.type === 'expense' && 'Dépense'}
                           {code.type === 'asset' && 'Actif'}
                           {code.type === 'liability' && 'Passif'}
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        {code.category ? (() => {
-                          const categoryNames: Record<string, string> = {
-                            'sorties': 'Sorties plongées',
-                            'cotisations': 'Cotisations',
-                            'evenements': 'Événements',
-                            'assurances': 'Assurances',
-                            'reunions': 'Réunions',
-                            'subsides': 'Subsides',
-                            'frais_bancaires': 'Frais bancaires',
-                            'formation': 'Formation',
-                            'administration': 'Administration',
-                            'piscine': 'Piscine',
-                            'materiel': 'Matériel',
-                            'boutique': 'Boutique',
-                            'activites': 'Activités',
-                            'divers': 'Divers',
-                            'reports': 'Reports',
-                            'bilan': 'Bilan'
-                          };
-                          return (
-                            <span className="text-sm text-gray-700 dark:text-dark-text-secondary">
-                              {categoryNames[code.category] || code.category}
-                            </span>
-                          );
-                        })() : <span className="text-sm text-gray-500 dark:text-dark-text-muted">-</span>}
+                        {code.categories && code.categories.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {code.categories.map(catId => {
+                              const cat = categories.find(c => c.id === catId);
+                              return (
+                                <span
+                                  key={catId}
+                                  className="inline-flex items-center px-2 py-0.5 text-xs rounded-full bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary"
+                                >
+                                  {cat?.nom || catId}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <span className="text-sm text-gray-500 dark:text-dark-text-muted">-</span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -696,27 +737,59 @@ export function ComptabiliteSettings() {
         {activeTab === 'categories' && (
           <div className="bg-white dark:bg-dark-bg-secondary rounded-xl shadow-sm border border-gray-200 dark:border-dark-border">
             {/* Header */}
-            <div className="p-6 border-b border-gray-200 dark:border-dark-border flex justify-between items-center">
-              <h3 className="text-lg font-medium text-gray-900 dark:text-dark-text-primary">
-                Catégories ({sortedCategories.length})
-              </h3>
-              <button
-                onClick={() => {
-                  setDetailViewCategory({
-                    id: `cat-${Date.now()}`,
-                    nom: '',
-                    label_court: '',
-                    type: 'depense',
-                    compte_comptable: '',
-                    isFrequent: false
-                  });
-                  setIsNewCategory(true);
-                }}
-                className="flex items-center gap-2 px-4 py-2 bg-calypso-blue text-white rounded-lg hover:bg-calypso-blue/90 transition-colors"
-              >
-                <Plus className="h-4 w-4" />
-                Nouvelle catégorie
-              </button>
+            <div className="p-6 border-b border-gray-200 dark:border-dark-border">
+              <div className="mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary">
+                  Catégories
+                </h3>
+                <p className="text-sm text-gray-600 dark:text-dark-text-secondary mt-1">
+                  Catégories simplifiées pour la saisie rapide des transactions (raccourcis vers les codes comptables)
+                </p>
+              </div>
+              <div className="flex flex-col sm:flex-row justify-between gap-4">
+                <div className="flex-1">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-dark-text-muted" />
+                    <input
+                      type="text"
+                      placeholder="Rechercher une catégorie..."
+                      value={categorySearchTerm}
+                      onChange={(e) => setCategorySearchTerm(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-calypso-blue dark:bg-dark-bg-tertiary dark:text-dark-text-primary"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className="text-sm text-gray-600 dark:text-dark-text-secondary">
+                    {sortedCategories.length} catégorie{sortedCategories.length > 1 ? 's' : ''}
+                  </span>
+                  <button
+                    onClick={handleResetCategories}
+                    className="flex items-center gap-2 px-4 py-2 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 transition-colors border border-orange-300"
+                    title="Réinitialiser aux valeurs par défaut"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    Réinitialiser
+                  </button>
+                  <button
+                    onClick={() => {
+                      setDetailViewCategory({
+                        id: `cat-${Date.now()}`,
+                        nom: '',
+                        label_court: '',
+                        type: 'depense',
+                        compte_comptable: '',
+                        isFrequent: false
+                      });
+                      setIsNewCategory(true);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-calypso-blue text-white rounded-lg hover:bg-calypso-blue/90 transition-colors"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Nouvelle catégorie
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Table */}
@@ -727,7 +800,7 @@ export function ComptabiliteSettings() {
                     <th className="px-6 py-3 text-left">
                       <button
                         onClick={() => handleCategorySort('frequent')}
-                        className="flex items-center gap-1 text-xs font-medium text-gray-700 dark:text-dark-text-secondary uppercase tracking-wider hover:text-calypso-blue"
+                        className="flex items-center gap-1 text-xs font-medium text-gray-700 dark:text-dark-text-primary uppercase tracking-wider hover:text-calypso-blue"
                       >
                         ★
                         <CategorySortIcon column="frequent" />
@@ -736,7 +809,7 @@ export function ComptabiliteSettings() {
                     <th className="px-6 py-3 text-left">
                       <button
                         onClick={() => handleCategorySort('nom')}
-                        className="flex items-center gap-1 text-xs font-medium text-gray-700 dark:text-dark-text-secondary uppercase tracking-wider hover:text-calypso-blue"
+                        className="flex items-center gap-1 text-xs font-medium text-gray-700 dark:text-dark-text-primary uppercase tracking-wider hover:text-calypso-blue"
                       >
                         Nom
                         <CategorySortIcon column="nom" />
@@ -745,7 +818,7 @@ export function ComptabiliteSettings() {
                     <th className="px-6 py-3 text-left">
                       <button
                         onClick={() => handleCategorySort('label_court')}
-                        className="flex items-center gap-1 text-xs font-medium text-gray-700 dark:text-dark-text-secondary uppercase tracking-wider hover:text-calypso-blue"
+                        className="flex items-center gap-1 text-xs font-medium text-gray-700 dark:text-dark-text-primary uppercase tracking-wider hover:text-calypso-blue"
                       >
                         Label court
                         <CategorySortIcon column="label_court" />
@@ -754,20 +827,21 @@ export function ComptabiliteSettings() {
                     <th className="px-6 py-3 text-left">
                       <button
                         onClick={() => handleCategorySort('type')}
-                        className="flex items-center gap-1 text-xs font-medium text-gray-700 dark:text-dark-text-secondary uppercase tracking-wider hover:text-calypso-blue"
+                        className="flex items-center gap-1 text-xs font-medium text-gray-700 dark:text-dark-text-primary uppercase tracking-wider hover:text-calypso-blue"
                       >
                         Type
                         <CategorySortIcon column="type" />
                       </button>
                     </th>
                     <th className="px-6 py-3 text-left">
-                      <button
-                        onClick={() => handleCategorySort('compte_comptable')}
-                        className="flex items-center gap-1 text-xs font-medium text-gray-700 dark:text-dark-text-secondary uppercase tracking-wider hover:text-calypso-blue"
-                      >
-                        Code comptable
-                        <CategorySortIcon column="compte_comptable" />
-                      </button>
+                      <span className="text-xs font-medium text-gray-700 dark:text-dark-text-primary uppercase tracking-wider">
+                        Codes
+                      </span>
+                    </th>
+                    <th className="px-6 py-3 text-right">
+                      <span className="text-xs font-medium text-gray-700 dark:text-dark-text-primary uppercase tracking-wider">
+                        Actions
+                      </span>
                     </th>
                   </tr>
                 </thead>
@@ -779,7 +853,7 @@ export function ComptabiliteSettings() {
                         setDetailViewCategory(cat);
                         setIsNewCategory(false);
                       }}
-                      className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary cursor-pointer"
+                      className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary cursor-pointer"
                     >
                       <td className="px-6 py-4">
                         <button
@@ -789,7 +863,7 @@ export function ComptabiliteSettings() {
                           }}
                           className={cn(
                             "transition-colors",
-                            cat.isFrequent ? "text-yellow-500" : "text-gray-300 dark:text-gray-600 hover:text-yellow-500"
+                            cat.isFrequent ? "text-yellow-500" : "text-gray-300 dark:text-dark-text-secondary hover:text-yellow-500"
                           )}
                         >
                           <Star className={cn("h-5 w-5", cat.isFrequent && "fill-current")} />
@@ -798,7 +872,7 @@ export function ComptabiliteSettings() {
                       <td className="px-6 py-4 text-sm text-gray-900 dark:text-dark-text-primary font-medium">
                         {cat.nom}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-700 dark:text-dark-text-secondary">
+                      <td className="px-6 py-4 text-sm text-gray-700 dark:text-dark-text-primary">
                         {cat.label_court || cat.nom.split(' ')[0]}
                       </td>
                       <td className="px-6 py-4">
@@ -810,8 +884,31 @@ export function ComptabiliteSettings() {
                           {cat.type === 'revenu' ? 'Revenu' : 'Dépense'}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-sm font-mono text-gray-700 dark:text-dark-text-secondary">
-                        {cat.compte_comptable || '-'}
+                      <td className="px-6 py-4 text-sm text-gray-700 dark:text-dark-text-primary">
+                        {cat.selectedCodes && cat.selectedCodes.length > 0 ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-400 rounded-full text-xs">
+                            {cat.selectedCodes.length} code{cat.selectedCodes.length > 1 ? 's' : ''}
+                          </span>
+                        ) : cat.compte_comptable ? (
+                          <span className="font-mono text-gray-500 dark:text-dark-text-muted" title="Ancien système (préfixe)">
+                            {cat.compte_comptable}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 dark:text-dark-text-muted">-</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDetailViewCategory(cat);
+                            setIsNewCategory(false);
+                          }}
+                          className="p-1 text-gray-400 dark:text-dark-text-muted hover:text-gray-600 dark:text-dark-text-secondary dark:hover:text-dark-text-secondary hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary rounded transition-colors"
+                          title="Voir les détails"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -827,6 +924,18 @@ export function ComptabiliteSettings() {
           </div>
         )}
 
+        {activeTab === 'groupes_rapport' && (
+          <div className="bg-white dark:bg-dark-bg-secondary rounded-xl shadow-sm border border-gray-200 dark:border-dark-border p-6">
+            <ReportGroupsConfig />
+          </div>
+        )}
+
+        {activeTab === 'codes_bilan' && (
+          <div className="bg-white dark:bg-dark-bg-secondary rounded-xl shadow-sm border border-gray-200 dark:border-dark-border p-6">
+            <BilanCodesConfig />
+          </div>
+        )}
+
         {activeTab === 'annees' && (
           <div className="bg-white dark:bg-dark-bg-secondary rounded-xl shadow-sm border border-gray-200 dark:border-dark-border p-6">
             <FiscalYearsManagement />
@@ -836,20 +945,27 @@ export function ComptabiliteSettings() {
         {/* Detail Views */}
         {detailViewCode && (
           <AccountCodeDetailView
-            code={detailViewCode}
-            onClose={() => setDetailViewCode(null)}
-            onUpdate={handleUpdateCode}
+            accountCode={detailViewCode}
+            isOpen={!!detailViewCode}
+            onClose={() => {
+              setDetailViewCode(null);
+              setIsNewCode(false);
+            }}
+            onSave={handleCreateOrUpdateCode}
+            isNew={isNewCode}
+            categories={categories}
           />
         )}
 
         {detailViewCategory && (
           <CategoryDetailView
             category={detailViewCategory}
+            isOpen={!!detailViewCategory}
             onClose={() => {
               setDetailViewCategory(null);
               setIsNewCategory(false);
             }}
-            onUpdate={handleUpdateCategory}
+            onSave={handleUpdateCategory}
             onDelete={handleDeleteCategory}
             isNew={isNewCategory}
           />

@@ -5,6 +5,7 @@ import { ImportResult } from '@/types/inventory';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { cn } from '@/utils/utils';
+import { logger } from '@/utils/logger';
 
 interface Props {
   isOpen: boolean;
@@ -31,7 +32,7 @@ export function MembreImportModal({ isOpen, onClose, onImportComplete }: Props) 
 
   const optionalFields = [
     { key: 'telephone', label: 'Téléphone', required: false },
-    { key: 'niveau_plongee', label: 'Niveau plongée', required: false },
+    { key: 'plongeur_niveau', label: 'Niveau plongeur', required: false },
     { key: 'licence_lifras', label: 'Licence LIFRAS', required: false },
     { key: 'date_adhesion', label: 'Date adhésion', required: false },
     { key: 'statut', label: 'Statut', required: false }
@@ -65,7 +66,7 @@ export function MembreImportModal({ isOpen, onClose, onImportComplete }: Props) 
       setStep('preview');
     } catch (error: any) {
       toast.error(error.message || 'Erreur lors de la lecture du fichier');
-      console.error('Erreur preview:', error);
+      logger.error('Erreur preview:', error);
     }
   };
 
@@ -83,7 +84,7 @@ export function MembreImportModal({ isOpen, onClose, onImportComplete }: Props) 
     detectColumn('prenom', ['prenom', 'prénom', 'first']);
     detectColumn('email', ['email', 'e-mail', 'mail']);
     detectColumn('telephone', ['tel', 'phone', 'gsm']);
-    detectColumn('niveau_plongee', ['niveau', 'level', 'brevet']);
+    detectColumn('plongeur_niveau', ['plongeur', 'niveau', 'level', 'brevet']);
     detectColumn('licence_lifras', ['lifras', 'licence', 'febras']);
     detectColumn('date_adhesion', ['adhesion', 'adhésion', 'date']);
     detectColumn('statut', ['statut', 'status', 'état']);
@@ -117,7 +118,7 @@ export function MembreImportModal({ isOpen, onClose, onImportComplete }: Props) 
       }
     } catch (error: any) {
       toast.error(error.message || 'Erreur lors de l\'import');
-      console.error('Erreur import:', error);
+      logger.error('Erreur import:', error);
       setStep('preview');
     } finally {
       setImporting(false);
@@ -146,7 +147,7 @@ export function MembreImportModal({ isOpen, onClose, onImportComplete }: Props) 
           </div>
           <button
             onClick={handleClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-dark-text-primary"
+            className="text-gray-400 dark:text-dark-text-muted hover:text-gray-600 dark:text-dark-text-secondary dark:hover:text-dark-text-primary"
           >
             <X className="h-6 w-6" />
           </button>
@@ -164,7 +165,7 @@ export function MembreImportModal({ isOpen, onClose, onImportComplete }: Props) 
                 <h3 className="text-lg font-medium text-gray-900 dark:text-dark-text-primary mb-2">
                   Sélectionnez un fichier Excel
                 </h3>
-                <p className="text-sm text-gray-500 dark:text-dark-text-secondary mb-6">
+                <p className="text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary mb-6">
                   Formats acceptés: .xlsx, .xls (max 10 Mo)
                 </p>
 
@@ -202,7 +203,7 @@ export function MembreImportModal({ isOpen, onClose, onImportComplete }: Props) 
                 <h3 className="text-lg font-medium text-gray-900 dark:text-dark-text-primary mb-2">
                   Prévisualisation (5 premières lignes)
                 </h3>
-                <p className="text-sm text-gray-500 dark:text-dark-text-secondary mb-4">
+                <p className="text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary mb-4">
                   Fichier: {file?.name}
                 </p>
 
@@ -211,7 +212,7 @@ export function MembreImportModal({ isOpen, onClose, onImportComplete }: Props) 
                     <thead className="bg-gray-50 dark:bg-dark-bg-tertiary">
                       <tr>
                         {previewData.columns.map((col, i) => (
-                          <th key={i} className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase">
+                          <th key={i} className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase">
                             {col}
                           </th>
                         ))}
@@ -242,12 +243,12 @@ export function MembreImportModal({ isOpen, onClose, onImportComplete }: Props) 
                   {allFields.map((field) => (
                     <div key={field.key} className="flex items-center gap-4">
                       <div className="w-48">
-                        <label className="text-sm font-medium text-gray-700 dark:text-dark-text-secondary">
+                        <label className="text-sm font-medium text-gray-700 dark:text-dark-text-primary">
                           {field.label}
                           {field.required && <span className="text-red-500 ml-1">*</span>}
                         </label>
                       </div>
-                      <ArrowRight className="h-4 w-4 text-gray-400" />
+                      <ArrowRight className="h-4 w-4 text-gray-400 dark:text-dark-text-muted" />
                       <select
                         value={columnMapping[field.key] || ''}
                         onChange={(e) => setColumnMapping({ ...columnMapping, [field.key]: e.target.value })}
@@ -272,7 +273,7 @@ export function MembreImportModal({ isOpen, onClose, onImportComplete }: Props) 
               <h3 className="text-lg font-medium text-gray-900 dark:text-dark-text-primary mb-2">
                 Import en cours...
               </h3>
-              <p className="text-sm text-gray-500 dark:text-dark-text-secondary">
+              <p className="text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
                 Veuillez patienter pendant l'importation des membres
               </p>
             </div>
@@ -307,8 +308,8 @@ export function MembreImportModal({ isOpen, onClose, onImportComplete }: Props) 
                   <div className="text-2xl font-bold text-blue-600">{importResult.updated}</div>
                   <div className="text-sm text-blue-800 dark:text-blue-300">Mis à jour</div>
                 </div>
-                <div className="bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800 rounded-lg p-4 text-center">
-                  <div className="text-2xl font-bold text-gray-600">{importResult.skipped}</div>
+                <div className="bg-gray-50 dark:bg-dark-bg-tertiary dark:bg-gray-900/20 border border-gray-200 dark:border-dark-border dark:border-gray-800 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-gray-600 dark:text-dark-text-secondary">{importResult.skipped}</div>
                   <div className="text-sm text-gray-800 dark:text-gray-300">Ignorés</div>
                 </div>
               </div>
@@ -349,7 +350,7 @@ export function MembreImportModal({ isOpen, onClose, onImportComplete }: Props) 
             <>
               <button
                 onClick={() => setStep('upload')}
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-secondary bg-white dark:bg-dark-bg-primary border border-gray-300 dark:border-dark-border rounded-md hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary"
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-primary bg-white dark:bg-dark-bg-primary border border-gray-300 dark:border-dark-border rounded-md hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary"
               >
                 Retour
               </button>

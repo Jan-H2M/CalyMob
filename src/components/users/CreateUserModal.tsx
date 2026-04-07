@@ -5,6 +5,7 @@ import { UserService } from '@/services/userService';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import toast from 'react-hot-toast';
+import { logger } from '@/utils/logger';
 
 interface CreateUserModalProps {
   clubId: string;
@@ -59,7 +60,7 @@ export function CreateUserModal({ clubId, createdBy, onClose, onSuccess }: Creat
       onSuccess();
       onClose();
     } catch (error: any) {
-      console.error('Error creating user:', error);
+      logger.error('Error creating user:', error);
 
       // Handle specific Firebase errors
       if (error.code === 'auth/email-already-in-use') {
@@ -102,7 +103,7 @@ export function CreateUserModal({ clubId, createdBy, onClose, onSuccess }: Creat
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors"
           >
             <X className="w-5 h-5 text-gray-500 dark:text-dark-text-muted" />
           </button>
@@ -123,7 +124,7 @@ export function CreateUserModal({ clubId, createdBy, onClose, onSuccess }: Creat
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {/* Email */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
               Email *
             </label>
             <input
@@ -139,7 +140,7 @@ export function CreateUserModal({ clubId, createdBy, onClose, onSuccess }: Creat
 
           {/* Prénom */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
               Prénom *
             </label>
             <input
@@ -155,7 +156,7 @@ export function CreateUserModal({ clubId, createdBy, onClose, onSuccess }: Creat
 
           {/* Nom */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
               Nom *
             </label>
             <input
@@ -171,7 +172,7 @@ export function CreateUserModal({ clubId, createdBy, onClose, onSuccess }: Creat
 
           {/* Rôle */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
               Rôle *
             </label>
             <select
@@ -189,7 +190,7 @@ export function CreateUserModal({ clubId, createdBy, onClose, onSuccess }: Creat
 
           {/* Mot de passe */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
               Mot de passe *
             </label>
             <div className="flex gap-2">
@@ -207,7 +208,7 @@ export function CreateUserModal({ clubId, createdBy, onClose, onSuccess }: Creat
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 dark:hover:bg-dark-bg-primary rounded"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-primary rounded"
                   disabled={loading}
                 >
                   {showPassword ? (
@@ -220,7 +221,7 @@ export function CreateUserModal({ clubId, createdBy, onClose, onSuccess }: Creat
               <button
                 type="button"
                 onClick={generatePassword}
-                className="px-3 py-2 bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-secondary rounded-lg hover:bg-gray-200 dark:hover:bg-dark-bg-primary text-sm font-medium whitespace-nowrap"
+                className="px-3 py-2 bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary rounded-lg hover:bg-gray-200 dark:hover:bg-dark-bg-primary text-sm font-medium whitespace-nowrap"
                 disabled={loading}
               >
                 Générer
@@ -236,7 +237,7 @@ export function CreateUserModal({ clubId, createdBy, onClose, onSuccess }: Creat
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2 border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-secondary rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary font-medium"
+              className="flex-1 px-4 py-2 border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary font-medium"
               disabled={loading}
             >
               Annuler

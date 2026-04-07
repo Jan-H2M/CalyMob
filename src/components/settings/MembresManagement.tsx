@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { logger } from '@/utils/logger';
 import { useAuth } from '@/contexts/AuthContext';
 import { Membre, UserRole, MemberStatus } from '@/types';
 import {
@@ -51,7 +52,7 @@ export function MembresManagement() {
       const loadedMembres = await getMembres(appUser.clubId, filters);
       setMembres(loadedMembres);
     } catch (error) {
-      console.error('Error loading membres:', error);
+      logger.error('Error loading membres:', error);
       toast.error('Erreur lors du chargement des membres');
     } finally {
       setLoading(false);
@@ -76,7 +77,7 @@ export function MembresManagement() {
       toast.success('Accès application octroyé');
       await loadMembres();
     } catch (error) {
-      console.error('Error granting app access:', error);
+      logger.error('Error granting app access:', error);
       toast.error(error instanceof Error ? error.message : 'Erreur lors de l\'octroi d\'accès');
     }
   };
@@ -93,7 +94,7 @@ export function MembresManagement() {
         toast.success('Accès application retiré');
         await loadMembres();
       } catch (error) {
-        console.error('Error revoking app access:', error);
+        logger.error('Error revoking app access:', error);
         toast.error(error instanceof Error ? error.message : 'Erreur lors du retrait d\'accès');
       }
     }
@@ -110,7 +111,7 @@ export function MembresManagement() {
       toast.success('Rôle modifié avec succès');
       await loadMembres();
     } catch (error) {
-      console.error('Error changing role:', error);
+      logger.error('Error changing role:', error);
       toast.error(error instanceof Error ? error.message : 'Erreur lors du changement de rôle');
     }
   };
@@ -161,7 +162,7 @@ export function MembresManagement() {
           <div className="flex gap-2">
             <button
               onClick={loadMembres}
-              className="p-2 text-gray-600 dark:text-dark-text-secondary hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary rounded-lg"
+              className="p-2 text-gray-600 dark:text-dark-text-secondary hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary rounded-lg"
               title="Actualiser"
             >
               <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
@@ -268,39 +269,39 @@ export function MembresManagement() {
             <table className="min-w-full divide-y divide-gray-200 dark:divide-dark-border">
               <thead className="bg-gray-50 dark:bg-dark-bg-tertiary">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                     Membre
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                     Contact
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                     LIFRAS
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                     Accès App
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                     Rôle App
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                     Statut
                   </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-dark-bg-secondary divide-y divide-gray-200 dark:divide-dark-border">
                 {filteredMembres.map((membre) => (
-                  <tr key={membre.id} className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary">
+                  <tr key={membre.id} className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
                         <div>
                           <div className="text-sm font-medium text-gray-900 dark:text-dark-text-primary">
                             {membre.prenom} {membre.nom}
                           </div>
-                          <div className="text-sm text-gray-500 dark:text-dark-text-secondary">
+                          <div className="text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
                             {membre.email}
                           </div>
                         </div>
@@ -315,9 +316,16 @@ export function MembresManagement() {
                       <div className="text-sm text-gray-900 dark:text-dark-text-primary">
                         {membre.lifras_id || '-'}
                       </div>
-                      {membre.niveau_plongee && (
-                        <div className="text-xs text-gray-500 dark:text-dark-text-secondary">
-                          {membre.niveau_plongee}
+                      {(membre.plongeur_niveau || membre.niveau_plongee) && (
+                        <div className="flex items-center gap-2 mt-1">
+                          {membre.plongeur_code && (
+                            <span className="px-2 py-0.5 text-xs font-semibold rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
+                              {membre.plongeur_code}
+                            </span>
+                          )}
+                          <span className="text-xs text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
+                            {membre.plongeur_niveau || membre.niveau_plongee}
+                          </span>
                         </div>
                       )}
                     </td>
@@ -327,7 +335,7 @@ export function MembresManagement() {
                           Oui
                         </span>
                       ) : (
-                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 dark:bg-dark-bg-tertiary text-gray-800">
                           Non
                         </span>
                       )}
@@ -356,7 +364,7 @@ export function MembresManagement() {
                           ? 'bg-green-100 text-green-800'
                           : membre.member_status === 'inactive'
                           ? 'bg-yellow-100 text-yellow-800'
-                          : 'bg-gray-100 text-gray-800'
+                          : 'bg-gray-100 dark:bg-dark-bg-tertiary text-gray-800'
                       }`}>
                         {membre.member_status === 'active' ? 'Actif' : membre.member_status === 'inactive' ? 'Inactif' : 'Archivé'}
                       </span>
@@ -388,7 +396,7 @@ export function MembresManagement() {
             </table>
 
             {filteredMembres.length === 0 && (
-              <div className="text-center py-8 text-gray-500 dark:text-dark-text-secondary">
+              <div className="text-center py-8 text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
                 Aucun membre trouvé
               </div>
             )}

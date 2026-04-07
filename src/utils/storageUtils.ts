@@ -1,3 +1,4 @@
+import { logger } from '@/utils/logger';
 /**
  * Utilitaires pour gérer Firebase Storage
  */
@@ -27,7 +28,7 @@ export function extractPathFromUrl(url: string): string | null {
     const pathMatch = urlObj.pathname.match(/\/o\/(.+)$/);
 
     if (!pathMatch || !pathMatch[1]) {
-      console.warn(`Impossible d'extraire le chemin depuis l'URL: ${url}`);
+      logger.warn(`Impossible d'extraire le chemin depuis l'URL: ${url}`);
       return null;
     }
 
@@ -36,7 +37,7 @@ export function extractPathFromUrl(url: string): string | null {
 
     return decodedPath;
   } catch (error) {
-    console.error(`Erreur parsing URL Storage: ${url}`, error);
+    logger.error(`Erreur parsing URL Storage: ${url}`, error);
     return null;
   }
 }
@@ -55,24 +56,25 @@ export async function deleteStorageFile(url: string): Promise<boolean> {
     const path = extractPathFromUrl(url);
 
     if (!path) {
-      console.warn(`Chemin Storage invalide, impossible de supprimer: ${url}`);
+      logger.warn(`Chemin Storage invalide, impossible de supprimer: ${url}`);
       return false;
     }
 
     const fileRef = ref(storage, path);
     await deleteObject(fileRef);
 
-    console.log(`✅ Fichier Storage supprimé: ${path}`);
+    logger.debug(`✅ Fichier Storage supprimé: ${path}`);
     return true;
 
-  } catch (error: any) {
+  } catch (error) {
     // Erreur "object-not-found" = fichier déjà supprimé → OK
-    if (error.code === 'storage/object-not-found') {
-      console.log(`ℹ️ Fichier déjà supprimé: ${url}`);
+    const storageError = error as { code?: string };
+    if (storageError.code === 'storage/object-not-found') {
+      logger.debug(`ℹ️ Fichier déjà supprimé: ${url}`);
       return true;
     }
 
-    console.error(`❌ Erreur suppression fichier Storage: ${url}`, error);
+    logger.error(`❌ Erreur suppression fichier Storage: ${url}`, error);
     return false;
   }
 }

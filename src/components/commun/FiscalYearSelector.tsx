@@ -2,6 +2,7 @@ import React from 'react';
 import { Calendar, CheckCircle, Lock, LockKeyhole, Clock } from 'lucide-react';
 import { useFiscalYear } from '@/contexts/FiscalYearContext';
 import { cn } from '@/utils/utils';
+import { formatDate } from '@/utils/formatters';
 import { differenceInDays } from 'date-fns';
 
 // ============================================================================
@@ -13,7 +14,7 @@ export function FiscalYearSelectorCompact() {
 
   if (loading || !selectedFiscalYear) {
     return (
-      <div className="flex items-center gap-3 text-gray-500">
+      <div className="flex items-center gap-3 text-gray-500 dark:text-dark-text-muted">
         <Calendar className="w-5 h-5 animate-pulse" />
         <span className="text-base font-medium">Chargement...</span>
       </div>
@@ -34,7 +35,7 @@ export function FiscalYearSelectorCompact() {
       case 'open': return 'bg-green-50 border-green-300 text-green-900';
       case 'closed': return 'bg-orange-50 border-orange-300 text-orange-900';
       case 'permanently_closed': return 'bg-red-50 border-red-300 text-red-900';
-      default: return 'bg-gray-50 border-gray-300 text-gray-900';
+      default: return 'bg-gray-50 dark:bg-dark-bg-tertiary border-gray-300 dark:border-dark-border text-gray-900 dark:text-dark-text-primary';
     }
   };
 
@@ -82,8 +83,8 @@ export function FiscalYearSelector() {
 
   if (loading || !selectedFiscalYear) {
     return (
-      <div className="w-80 bg-white border border-gray-200 rounded-lg p-4">
-        <div className="flex items-center gap-2 text-gray-500">
+      <div className="w-80 bg-white border border-gray-200 dark:border-dark-border rounded-lg p-4">
+        <div className="flex items-center gap-2 text-gray-500 dark:text-dark-text-muted">
           <Calendar className="w-5 h-5 animate-pulse" />
           <span>Chargement...</span>
         </div>
@@ -109,7 +110,7 @@ export function FiscalYearSelector() {
       case 'open': return 'bg-green-100 text-green-800 border-green-300';
       case 'closed': return 'bg-orange-100 text-orange-800 border-orange-300';
       case 'permanently_closed': return 'bg-red-100 text-red-800 border-red-300';
-      default: return 'bg-gray-100 text-gray-800 border-gray-300';
+      default: return 'bg-gray-100 dark:bg-dark-bg-tertiary text-gray-800 border-gray-300 dark:border-dark-border';
     }
   };
 
@@ -122,20 +123,12 @@ export function FiscalYearSelector() {
     }
   };
 
-  const formatDate = (date: Date) => {
-    return new Date(date).toLocaleDateString('fr-BE', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
-  };
-
   return (
-    <div className="w-80 bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+    <div className="w-80 bg-white border border-gray-200 dark:border-dark-border rounded-lg p-4 shadow-sm">
       {/* Header */}
       <div className="flex items-center gap-2 mb-3">
         <Calendar className="w-5 h-5 text-blue-600" />
-        <span className="text-sm font-semibold text-gray-700">Année Fiscale</span>
+        <span className="text-sm font-semibold text-gray-700 dark:text-dark-text-primary">Année Fiscale</span>
       </div>
 
       {/* Select */}
@@ -145,7 +138,7 @@ export function FiscalYearSelector() {
           const fy = allFiscalYears.find(y => y.id === e.target.value);
           if (fy) setSelectedFiscalYear(fy);
         }}
-        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 mb-3"
+        className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 mb-3"
       >
         {allFiscalYears.map(fy => (
           <option key={fy.id} value={fy.id}>
@@ -165,7 +158,7 @@ export function FiscalYearSelector() {
       </div>
 
       {/* Période */}
-      <div className="text-sm text-gray-600 mb-2">
+      <div className="text-sm text-gray-600 dark:text-dark-text-secondary mb-2">
         {formatDate(selectedFiscalYear.start_date)} → {formatDate(selectedFiscalYear.end_date)}
       </div>
 

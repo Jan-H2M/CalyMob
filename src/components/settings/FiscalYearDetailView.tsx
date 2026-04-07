@@ -1,15 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { logger } from '@/utils/logger';
 import {
   X,
   Lock,
   Unlock,
   LockKeyhole,
-  AlertCircle,
-  TrendingUp,
-  TrendingDown
+  AlertCircle
 } from 'lucide-react';
 import { FiscalYear } from '@/types';
-import { formatMontant, formatDate, cn } from '@/utils/utils';
+import { formatDate, formatMontant, cn } from '@/utils/utils';
 import { FiscalYearService } from '@/services/fiscalYearService';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
@@ -19,13 +18,15 @@ interface FiscalYearDetailViewProps {
   isOpen: boolean;
   onClose: () => void;
   onUpdate?: () => void;
+  onOpenCloseWizard?: (fiscalYear: FiscalYear) => void;
 }
 
 export function FiscalYearDetailView({
   fiscalYear,
   isOpen,
   onClose,
-  onUpdate
+  onUpdate,
+  onOpenCloseWizard
 }: FiscalYearDetailViewProps) {
   const { clubId } = useAuth();
 
@@ -33,22 +34,12 @@ export function FiscalYearDetailView({
   const [year, setYear] = useState(fiscalYear.year);
   const [startDate, setStartDate] = useState(fiscalYear.start_date.toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(fiscalYear.end_date.toISOString().split('T')[0]);
-  const [openingCurrent, setOpeningCurrent] = useState(fiscalYear.opening_balances.bank_current);
-  const [openingSavings, setOpeningSavings] = useState(fiscalYear.opening_balances.bank_savings);
-  const [accountCurrent, setAccountCurrent] = useState(fiscalYear.account_numbers?.bank_current || '');
-  const [accountSavings, setAccountSavings] = useState(fiscalYear.account_numbers?.bank_savings || '');
-  const [notes, setNotes] = useState(fiscalYear.notes || '');
 
   // Reset form when fiscal year changes
   useEffect(() => {
     setYear(fiscalYear.year);
     setStartDate(fiscalYear.start_date.toISOString().split('T')[0]);
     setEndDate(fiscalYear.end_date.toISOString().split('T')[0]);
-    setOpeningCurrent(fiscalYear.opening_balances.bank_current);
-    setOpeningSavings(fiscalYear.opening_balances.bank_savings);
-    setAccountCurrent(fiscalYear.account_numbers?.bank_current || '');
-    setAccountSavings(fiscalYear.account_numbers?.bank_savings || '');
-    setNotes(fiscalYear.notes || '');
   }, [fiscalYear]);
 
   // Auto-save handler
@@ -64,28 +55,6 @@ export function FiscalYearDetailView({
         updates.start_date = new Date(value);
       } else if (field === 'end_date') {
         updates.end_date = new Date(value);
-      } else if (field === 'opening_current') {
-        updates.opening_balances = {
-          bank_current: parseFloat(value) || 0,
-          bank_savings: openingSavings
-        };
-      } else if (field === 'opening_savings') {
-        updates.opening_balances = {
-          bank_current: openingCurrent,
-          bank_savings: parseFloat(value) || 0
-        };
-      } else if (field === 'account_current') {
-        updates.account_numbers = {
-          bank_current: value,
-          bank_savings: accountSavings
-        };
-      } else if (field === 'account_savings') {
-        updates.account_numbers = {
-          bank_current: accountCurrent,
-          bank_savings: value
-        };
-      } else if (field === 'notes') {
-        updates.notes = value;
       }
 
       await FiscalYearService.updateFiscalYear(clubId, fiscalYear.id, updates);
@@ -96,31 +65,9 @@ export function FiscalYearDetailView({
       });
 
       if (onUpdate) onUpdate();
-    } catch (error: any) {
-      console.error(`Error saving ${field}:`, error);
+    } catch (error) {
+      logger.error(`Error saving ${field}:`, error);
       toast.error('Erreur lors de la sauvegarde');
-    }
-  };
-
-  const handleClose = async () => {
-    if (!clubId) return;
-
-    const confirm = window.confirm(
-      `Voulez-vous clôturer l'année fiscale ${fiscalYear.year}?\n\n` +
-      `Cette action calcule les soldes de clôture et empêche les modifications par les utilisateurs normaux.\n` +
-      `Elle peut être réouverte par un administrateur si nécessaire.`
-    );
-
-    if (!confirm) return;
-
-    try {
-      await FiscalYearService.closeFiscalYear(clubId, fiscalYear.id);
-      toast.success(`Année ${fiscalYear.year} clôturée avec succès`);
-      if (onUpdate) onUpdate();
-      onClose();
-    } catch (error: any) {
-      console.error('Error closing fiscal year:', error);
-      toast.error(error.message || 'Erreur lors de la clôture');
     }
   };
 
@@ -138,9 +85,9 @@ export function FiscalYearDetailView({
       await FiscalYearService.reopenFiscalYear(clubId, fiscalYear.id);
       toast.success(`Année ${fiscalYear.year} réouverte`);
       if (onUpdate) onUpdate();
-    } catch (error: any) {
-      console.error('Error reopening fiscal year:', error);
-      toast.error(error.message || 'Erreur lors de la réouverture');
+    } catch (error) {
+      logger.error('Error reopening fiscal year:', error);
+      toast.error(error instanceof Error ? error.message : 'Erreur lors de la réouverture');
     }
   };
 
@@ -167,19 +114,11 @@ export function FiscalYearDetailView({
       toast.success(`Année ${fiscalYear.year} verrouillée définitivement`);
       if (onUpdate) onUpdate();
       onClose();
-    } catch (error: any) {
-      console.error('Error permanently closing fiscal year:', error);
-      toast.error(error.message || 'Erreur lors du verrouillage');
+    } catch (error) {
+      logger.error('Error permanently closing fiscal year:', error);
+      toast.error(error instanceof Error ? error.message : 'Erreur lors du verrouillage');
     }
   };
-
-  // Calculate variation for closed years
-  const varCurrent = fiscalYear.status !== 'open' ? {
-    diff: fiscalYear.closing_balances.bank_current - fiscalYear.opening_balances.bank_current,
-    percent: fiscalYear.opening_balances.bank_current !== 0
-      ? ((fiscalYear.closing_balances.bank_current - fiscalYear.opening_balances.bank_current) / Math.abs(fiscalYear.opening_balances.bank_current)) * 100
-      : 0
-  } : null;
 
   if (!isOpen) return null;
 
@@ -217,7 +156,7 @@ export function FiscalYearDetailView({
             </span>
             <button
               onClick={onClose}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors"
+              className="p-2 hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors"
             >
               <X className="h-5 w-5" />
             </button>
@@ -233,10 +172,11 @@ export function FiscalYearDetailView({
             </h3>
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 dark:text-dark-text-secondary mb-1">
+                <label htmlFor="fiscalyear-year-input" className="block text-xs font-medium text-gray-600 dark:text-dark-text-secondary mb-1">
                   Année
                 </label>
                 <input
+                  id="fiscalyear-year-input"
                   type="number"
                   value={year}
                   onChange={(e) => setYear(parseInt(e.target.value))}
@@ -247,10 +187,11 @@ export function FiscalYearDetailView({
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 dark:text-dark-text-secondary mb-1">
+                <label htmlFor="fiscalyear-startDate-input" className="block text-xs font-medium text-gray-600 dark:text-dark-text-secondary mb-1">
                   Date de début
                 </label>
                 <input
+                  id="fiscalyear-startDate-input"
                   type="date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
@@ -259,10 +200,11 @@ export function FiscalYearDetailView({
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 dark:text-dark-text-secondary mb-1">
+                <label htmlFor="fiscalyear-endDate-input" className="block text-xs font-medium text-gray-600 dark:text-dark-text-secondary mb-1">
                   Date de fin
                 </label>
                 <input
+                  id="fiscalyear-endDate-input"
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
@@ -273,125 +215,47 @@ export function FiscalYearDetailView({
             </div>
           </div>
 
-          {/* Compte Courant - 2 fields on 1 line */}
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-gray-700 dark:text-dark-text-primary">
-              Compte Courant
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+            <h3 className="text-sm font-semibold text-blue-900">
+              Saisie comptable centralisée
             </h3>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 dark:text-dark-text-secondary mb-1">
-                  IBAN (optionnel)
-                </label>
-                <input
-                  type="text"
-                  value={accountCurrent}
-                  onChange={(e) => setAccountCurrent(e.target.value)}
-                  onBlur={() => handleFieldSave('account_current', accountCurrent)}
-                  placeholder="BE68 5390 0754 7034"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-calypso-blue text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 dark:text-dark-text-secondary mb-1">
-                  Solde début (€)
-                </label>
-                <input
-                  type="number"
-                  value={openingCurrent}
-                  onChange={(e) => setOpeningCurrent(parseFloat(e.target.value) || 0)}
-                  onBlur={() => handleFieldSave('opening_current', openingCurrent)}
-                  step="0.01"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-calypso-blue text-sm"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Compte Épargne - 2 fields on 1 line */}
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-gray-700 dark:text-dark-text-primary">
-              Compte Épargne
-            </h3>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 dark:text-dark-text-secondary mb-1">
-                  IBAN (optionnel)
-                </label>
-                <input
-                  type="text"
-                  value={accountSavings}
-                  onChange={(e) => setAccountSavings(e.target.value)}
-                  onBlur={() => handleFieldSave('account_savings', accountSavings)}
-                  placeholder="BE68 5390 0754 7035"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-calypso-blue text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 dark:text-dark-text-secondary mb-1">
-                  Solde début (€)
-                </label>
-                <input
-                  type="number"
-                  value={openingSavings}
-                  onChange={(e) => setOpeningSavings(parseFloat(e.target.value) || 0)}
-                  onBlur={() => handleFieldSave('opening_savings', openingSavings)}
-                  step="0.01"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-calypso-blue text-sm"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Closing balances - only for closed years */}
-          {fiscalYear.status !== 'open' && (
-            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
-              <h3 className="text-sm font-semibold text-gray-700 dark:text-dark-text-primary mb-3">
-                Soldes de clôture
-              </h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <div className="text-xs text-gray-600 dark:text-dark-text-secondary mb-1">
-                    Compte Courant
-                  </div>
-                  <div className="text-lg font-bold text-gray-900 dark:text-dark-text-primary">
-                    {formatMontant(fiscalYear.closing_balances.bank_current)}
-                  </div>
-                  {varCurrent && (
-                    <div className={cn(
-                      "text-sm font-medium mt-1 flex items-center gap-1",
-                      varCurrent.diff >= 0 ? "text-green-600" : "text-red-600"
-                    )}>
-                      {varCurrent.diff >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                      {varCurrent.diff >= 0 ? '+' : ''}{formatMontant(varCurrent.diff)} ({varCurrent.percent.toFixed(1)}%)
-                    </div>
-                  )}
+            <p className="mt-2 text-sm text-blue-800">
+              Les IBAN, soldes d’ouverture, stocks verrouillés, valeurs manuelles du bilan et la validation finale
+              se gèrent désormais uniquement dans l’<strong>Assistant de clôture</strong>. Cette fiche ne sert plus
+              d’écran de saisie parallèle pour la clôture.
+            </p>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <div className="rounded-lg bg-white/80 p-3">
+                <div className="text-xs uppercase tracking-wide text-blue-700">Compte courant</div>
+                <div className="mt-1 text-sm text-slate-700">
+                  IBAN: {fiscalYear.account_numbers?.bank_current || 'Non renseigné'}
                 </div>
-                <div>
-                  <div className="text-xs text-gray-600 dark:text-dark-text-secondary mb-1">
-                    Compte Épargne
-                  </div>
-                  <div className="text-lg font-bold text-gray-900 dark:text-dark-text-primary">
-                    {formatMontant(fiscalYear.closing_balances.bank_savings)}
-                  </div>
+                <div className="mt-1 text-sm text-slate-700">
+                  Ouverture: {formatMontant(fiscalYear.opening_balances.bank_current)}
+                </div>
+                <div className="mt-1 text-sm text-slate-700">
+                  Clôture: {formatMontant(fiscalYear.closing_balances?.bank_current || 0)}
+                </div>
+              </div>
+              <div className="rounded-lg bg-white/80 p-3">
+                <div className="text-xs uppercase tracking-wide text-blue-700">Compte épargne</div>
+                <div className="mt-1 text-sm text-slate-700">
+                  IBAN: {fiscalYear.account_numbers?.bank_savings || 'Non renseigné'}
+                </div>
+                <div className="mt-1 text-sm text-slate-700">
+                  Ouverture: {formatMontant(fiscalYear.opening_balances.bank_savings)}
+                </div>
+                <div className="mt-1 text-sm text-slate-700">
+                  Clôture: {formatMontant(fiscalYear.closing_balances?.bank_savings || 0)}
                 </div>
               </div>
             </div>
-          )}
-
-          {/* Notes - compact */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 dark:text-dark-text-secondary mb-1">
-              Notes (optionnel)
-            </label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              onBlur={() => handleFieldSave('notes', notes)}
-              rows={2}
-              placeholder="Notes ou remarques..."
-              className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-calypso-blue text-sm"
-            />
+            {fiscalYear.notes && (
+              <div className="mt-4 rounded-lg bg-white/80 p-3 text-sm text-slate-700">
+                <div className="text-xs uppercase tracking-wide text-blue-700">Notes enregistrées</div>
+                <div className="mt-1 whitespace-pre-wrap">{fiscalYear.notes}</div>
+              </div>
+            )}
           </div>
 
           {/* Status management buttons - compact */}
@@ -406,11 +270,11 @@ export function FiscalYearDetailView({
                   ✅ Année ouverte: tout le monde peut modifier
                 </p>
                 <button
-                  onClick={handleClose}
+                  onClick={() => onOpenCloseWizard?.(fiscalYear)}
                   className="w-full px-4 py-2.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors flex items-center justify-center gap-2 font-medium text-sm"
                 >
                   <Lock className="h-4 w-4" />
-                  Clôturer l'année {fiscalYear.year}
+                  Assistant de clôture
                 </button>
               </>
             )}

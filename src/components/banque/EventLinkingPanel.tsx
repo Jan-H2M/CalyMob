@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { X, Search, Filter, Check, Calendar, Users, MapPin, Link2, AlertCircle } from 'lucide-react';
 import { TransactionBancaire, Evenement } from '@/types';
 import { formatMontant, formatDate, cn } from '@/utils/utils';
+import { logger } from '@/utils/logger';
 
 interface EventLinkingPanelProps {
   isOpen: boolean;
@@ -95,7 +96,7 @@ export function EventLinkingPanel({
       await onLinkEvents(Array.from(selectedIds));
       onClose();
     } catch (error) {
-      console.error('Error linking events:', error);
+      logger.error('Error linking events:', error);
     } finally {
       setSaving(false);
     }
@@ -221,7 +222,7 @@ export function EventLinkingPanel({
                       "border rounded-lg p-3 cursor-pointer transition-all",
                       isSelected
                         ? "bg-blue-50 border-blue-300 shadow-sm"
-                        : "bg-white border-gray-200 hover:border-blue-200 hover:bg-blue-50/30",
+                        : "bg-white border-gray-200 dark:border-dark-border hover:border-blue-200 hover:bg-blue-50/30",
                       linkedToOther && "opacity-50 cursor-not-allowed"
                     )}
                   >
@@ -232,7 +233,7 @@ export function EventLinkingPanel({
                           "w-5 h-5 rounded border-2 flex items-center justify-center transition-colors",
                           isSelected
                             ? "bg-blue-600 border-blue-600"
-                            : "border-gray-300 bg-white"
+                            : "border-gray-300 dark:border-dark-border bg-white"
                         )}>
                           {isSelected && <Check className="h-3 w-3 text-white" />}
                         </div>

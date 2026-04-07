@@ -1,0 +1,371 @@
+/* Nautical Theme CSS - Matching CalyMob Design */
+
+/* Color Variables */
+:root {
+  --nautical-donkerblauw: #183868;
+  --nautical-middenblauw: #006DB6;
+  --nautical-lichtblauw: #6BCBE8;
+  --nautical-oranje: #F6921E;
+  --nautical-white: #FFFFFF;
+}
+
+/* Ocean Gradient Backgrounds */
+.ocean-gradient {
+  background: linear-gradient(180deg, var(--nautical-lichtblauw) 0%, var(--nautical-middenblauw) 50%, var(--nautical-donkerblauw) 100%);
+}
+
+.ocean-gradient-light {
+  background: linear-gradient(180deg, #e0f4ff 0%, var(--nautical-lichtblauw) 100%);
+}
+
+.ocean-gradient-hero {
+  background: linear-gradient(135deg, var(--nautical-middenblauw) 0%, var(--nautical-donkerblauw) 100%);
+}
+
+/* Wave Divider - Top */
+.wave-divider-top {
+  position: relative;
+  overflow: hidden;
+}
+
+.wave-divider-top::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 80px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 320'%3E%3Cpath fill='%23ffffff' fill-opacity='1' d='M0,96L48,112C96,128,192,160,288,160C384,160,480,128,576,122.7C672,117,768,139,864,154.7C960,171,1056,181,1152,165.3C1248,149,1344,107,1392,85.3L1440,64L1440,0L1392,0C1344,0,1248,0,1152,0C1056,0,960,0,864,0C768,0,672,0,576,0C480,0,384,0,288,0C192,0,96,0,48,0L0,0Z'%3E%3C/path%3E%3C/svg%3E") no-repeat;
+  background-size: cover;
+}
+
+/* Wave Divider - Bottom */
+.wave-divider-bottom {
+  position: relative;
+  overflow: hidden;
+}
+
+.wave-divider-bottom::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 80px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 320'%3E%3Cpath fill='%23ffffff' fill-opacity='1' d='M0,224L48,213.3C96,203,192,181,288,181.3C384,181,480,203,576,218.7C672,235,768,245,864,229.3C960,213,1056,171,1152,165.3C1248,160,1344,192,1392,208L1440,224L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z'%3E%3C/path%3E%3C/svg%3E") no-repeat;
+  background-size: cover;
+}
+
+/* Animated Waves */
+.waves {
+  position: relative;
+  width: 100%;
+  height: 100px;
+  margin-bottom: -7px;
+  min-height: 100px;
+  max-height: 150px;
+}
+
+.waves .parallax > use {
+  animation: wave-move 25s cubic-bezier(.55,.5,.45,.5) infinite;
+}
+
+.waves .parallax > use:nth-child(1) {
+  animation-delay: -2s;
+  animation-duration: 7s;
+}
+
+.waves .parallax > use:nth-child(2) {
+  animation-delay: -3s;
+  animation-duration: 10s;
+}
+
+.waves .parallax > use:nth-child(3) {
+  animation-delay: -4s;
+  animation-duration: 13s;
+}
+
+.waves .parallax > use:nth-child(4) {
+  animation-delay: -5s;
+  animation-duration: 20s;
+}
+
+@keyframes wave-move {
+  0% {
+    transform: translate3d(-90px, 0, 0);
+  }
+  100% {
+    transform: translate3d(85px, 0, 0);
+  }
+}
+
+/* Bubble Animation */
+.bubbles-container {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.bubble {
+  position: absolute;
+  bottom: -50px;
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.8), rgba(107, 203, 232, 0.3));
+  border-radius: 50%;
+  opacity: 0;
+  animation: bubble-rise linear infinite;
+}
+
+.bubble:nth-child(1) {
+  width: 20px;
+  height: 20px;
+  left: 10%;
+  animation-duration: 8s;
+  animation-delay: 0s;
+}
+
+.bubble:nth-child(2) {
+  width: 15px;
+  height: 15px;
+  left: 25%;
+  animation-duration: 10s;
+  animation-delay: 1s;
+}
+
+.bubble:nth-child(3) {
+  width: 25px;
+  height: 25px;
+  left: 40%;
+  animation-duration: 9s;
+  animation-delay: 2s;
+}
+
+.bubble:nth-child(4) {
+  width: 12px;
+  height: 12px;
+  left: 55%;
+  animation-duration: 11s;
+  animation-delay: 0.5s;
+}
+
+.bubble:nth-child(5) {
+  width: 18px;
+  height: 18px;
+  left: 70%;
+  animation-duration: 7s;
+  animation-delay: 1.5s;
+}
+
+.bubble:nth-child(6) {
+  width: 22px;
+  height: 22px;
+  left: 85%;
+  animation-duration: 12s;
+  animation-delay: 3s;
+}
+
+.bubble:nth-child(7) {
+  width: 14px;
+  height: 14px;
+  left: 15%;
+  animation-duration: 9s;
+  animation-delay: 4s;
+}
+
+.bubble:nth-child(8) {
+  width: 16px;
+  height: 16px;
+  left: 60%;
+  animation-duration: 10s;
+  animation-delay: 2.5s;
+}
+
+@keyframes bubble-rise {
+  0% {
+    transform: translateY(0) scale(0.5);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 0.4;
+  }
+  100% {
+    transform: translateY(-100vh) scale(1);
+    opacity: 0;
+  }
+}
+
+/* Glossy Button Style */
+.glossy-button {
+  background: linear-gradient(180deg, var(--nautical-lichtblauw) 0%, var(--nautical-middenblauw) 100%);
+  border: none;
+  border-radius: 12px;
+  padding: 16px 32px;
+  color: white;
+  font-weight: 600;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(0, 109, 182, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+.glossy-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(180deg, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0) 100%);
+  border-radius: 12px 12px 0 0;
+}
+
+.glossy-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 109, 182, 0.4);
+}
+
+.glossy-button:active {
+  transform: translateY(0);
+}
+
+/* Orange Accent Button */
+.glossy-button-orange {
+  background: linear-gradient(180deg, #f9a94b 0%, var(--nautical-oranje) 100%);
+  box-shadow: 0 4px 15px rgba(246, 146, 30, 0.3);
+}
+
+.glossy-button-orange:hover {
+  box-shadow: 0 6px 20px rgba(246, 146, 30, 0.4);
+}
+
+/* Card Styling */
+.nautical-card {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(24, 56, 104, 0.1);
+  padding: 24px;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.nautical-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 30px rgba(24, 56, 104, 0.15);
+}
+
+/* Text Colors */
+.text-donkerblauw {
+  color: var(--nautical-donkerblauw);
+}
+
+.text-middenblauw {
+  color: var(--nautical-middenblauw);
+}
+
+.text-lichtblauw {
+  color: var(--nautical-lichtblauw);
+}
+
+.text-oranje {
+  color: var(--nautical-oranje);
+}
+
+/* Link Styling */
+.nautical-link {
+  color: var(--nautical-middenblauw);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s ease;
+}
+
+.nautical-link:hover {
+  color: var(--nautical-donkerblauw);
+  text-decoration: underline;
+}
+
+/* Section Styling */
+.nautical-section {
+  position: relative;
+  padding: 80px 0;
+}
+
+.nautical-section-light {
+  background: linear-gradient(180deg, #f0f9ff 0%, #e0f2fe 100%);
+}
+
+/* Fish Animation (subtle background decoration) */
+.fish-container {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.swimming-fish {
+  position: absolute;
+  width: 40px;
+  height: 20px;
+  opacity: 0.15;
+  animation: fish-swim 30s linear infinite;
+}
+
+.swimming-fish:nth-child(1) {
+  top: 20%;
+  animation-delay: 0s;
+}
+
+.swimming-fish:nth-child(2) {
+  top: 50%;
+  animation-delay: -10s;
+}
+
+.swimming-fish:nth-child(3) {
+  top: 70%;
+  animation-delay: -20s;
+}
+
+@keyframes fish-swim {
+  0% {
+    left: -50px;
+    transform: scaleX(1);
+  }
+  49% {
+    transform: scaleX(1);
+  }
+  50% {
+    left: calc(100% + 50px);
+    transform: scaleX(-1);
+  }
+  99% {
+    transform: scaleX(-1);
+  }
+  100% {
+    left: -50px;
+    transform: scaleX(1);
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .nautical-section {
+    padding: 40px 0;
+  }
+
+  .glossy-button {
+    padding: 12px 24px;
+    font-size: 14px;
+  }
+
+  .waves {
+    height: 60px;
+    min-height: 60px;
+  }
+}

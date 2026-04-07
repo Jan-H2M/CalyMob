@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { logger } from '@/utils/logger';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -78,7 +79,7 @@ export function DocumentReviewPage() {
         })) as Evenement[];
         setEvenements(evenementsData);
       } catch (error) {
-        console.error('Erreur chargement données:', error);
+        logger.error('Erreur chargement données:', error);
       }
     };
 
@@ -98,7 +99,7 @@ export function DocumentReviewPage() {
       const q = query(demandesRef, where('description', '==', 'A compléter'));
       const snapshot = await getDocs(q);
 
-      console.log(`📥 Chargement de ${snapshot.docs.length} dépense(s) à réviser depuis Firestore...`);
+      logger.debug(`📥 Chargement de ${snapshot.docs.length} dépense(s) à réviser depuis Firestore...`);
 
       if (snapshot.docs.length === 0) {
         toast('Aucune dépense à compléter trouvée', {
@@ -140,13 +141,13 @@ export function DocumentReviewPage() {
         }
 
         if (!documentUrl) {
-          console.warn(`❌ Pas de document trouvé pour la dépense ${doc.id}`);
+          logger.warn(`❌ Pas de document trouvé pour la dépense ${doc.id}`);
           continue; // Ignorer les dépenses sans document
         }
 
         try {
           // Télécharger le fichier depuis Firebase Storage
-          console.log(`📥 Téléchargement de ${fileName}...`);
+          logger.debug(`📥 Téléchargement de ${fileName}...`);
           const response = await fetch(documentUrl);
 
           if (!response.ok) {
@@ -166,7 +167,7 @@ export function DocumentReviewPage() {
             demandeId: doc.id
           });
         } catch (error) {
-          console.error(`❌ Erreur téléchargement document pour ${doc.id}:`, error);
+          logger.error(`❌ Erreur téléchargement document pour ${doc.id}:`, error);
           toast.error(`Impossible de charger ${fileName}`);
         }
       }
@@ -185,7 +186,7 @@ export function DocumentReviewPage() {
 
       toast.success(`${demandesAsFiles.length} document(s) chargé(s) pour révision`);
     } catch (error) {
-      console.error('Erreur chargement dépenses existantes:', error);
+      logger.error('Erreur chargement dépenses existantes:', error);
       toast.error('Erreur lors du chargement des dépenses');
     } finally {
       setIsLoadingFromFirestore(false);
@@ -242,7 +243,7 @@ export function DocumentReviewPage() {
   const addFiles = async (newFiles: File[]) => {
     if (!clubId) return;
 
-    console.log(`📥 Ajout de ${newFiles.length} fichier(s)`);
+    logger.debug(`📥 Ajout de ${newFiles.length} fichier(s)`);
 
     // 🔒 ÉTAPE 1: Analyse des doublons
     const duplicateInfo = await analyzeBatchForDuplicates(newFiles, clubId);
@@ -280,15 +281,15 @@ export function DocumentReviewPage() {
 
       if (sequence && clubId) {
         // 🔍 ÉTAPE 3: Chercher la transaction correspondante
-        console.log(`🔍 Recherche transaction pour ${sequence}...`);
+        logger.debug(`🔍 Recherche transaction pour ${sequence}...`);
         const transaction = await findTransactionBySequence(sequence, clubId);
 
         if (transaction) {
           transactionFound = true;
           transactionId = transaction.id;
-          console.log(`✅ Transaction trouvée: ${transaction.id} (${transaction.montant}€)`);
+          logger.debug(`✅ Transaction trouvée: ${transaction.id} (${transaction.montant}€)`);
         } else {
-          console.log(`⚠️ Aucune transaction trouvée pour ${sequence}`);
+          logger.debug(`⚠️ Aucune transaction trouvée pour ${sequence}`);
         }
       }
 
@@ -344,7 +345,7 @@ export function DocumentReviewPage() {
     setIsCreating(true);
 
     try {
-      console.log(`🚀 Création de ${validFiles.length} dépense(s)...`);
+      logger.debug(`🚀 Création de ${validFiles.length} dépense(s)...`);
 
       for (let i = 0; i < validFiles.length; i++) {
         const fileData = validFiles[i];
@@ -364,7 +365,7 @@ export function DocumentReviewPage() {
           const safeName = fileData.file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
           const storageRef = ref(storage, `clubs/${clubId}/justificatifs/${timestamp}_${safeName}`);
 
-          console.log(`📤 Upload fichier: ${fileData.file.name}`);
+          logger.debug(`📤 Upload fichier: ${fileData.file.name}`);
           const snapshot = await uploadBytes(storageRef, fileData.file);
           const downloadUrl = await getDownloadURL(snapshot.ref);
 
@@ -403,7 +404,7 @@ export function DocumentReviewPage() {
                   auto_linked: true
                 }
               };
-              console.log(`✅ Pré-remplissage avec transaction ${fileData.sequence}`);
+              logger.debug(`✅ Pré-remplissage avec transaction ${fileData.sequence}`);
             }
           }
 
@@ -411,7 +412,7 @@ export function DocumentReviewPage() {
           const demandesRef = collection(db, 'clubs', clubId, 'demandes_remboursement');
           const docRef = await addDoc(demandesRef, demandeData);
 
-          console.log(`✅ Dépense créée: ${docRef.id}`);
+          logger.debug(`✅ Dépense créée: ${docRef.id}`);
 
           // 🔗 IMPORTANT: Créer la liaison dans matched_entities de la transaction
           if (fileData.transactionFound && fileData.transactionId && fileData.sequence) {
@@ -422,9 +423,9 @@ export function DocumentReviewPage() {
                 fileData.transactionId, // ID de la transaction
                 clubId
               );
-              console.log(`✅ Liaison créée dans matched_entities pour transaction ${fileData.sequence}`);
+              logger.debug(`✅ Liaison créée dans matched_entities pour transaction ${fileData.sequence}`);
             } catch (linkError) {
-              console.error(`⚠️ Erreur liaison matched_entities:`, linkError);
+              logger.error(`⚠️ Erreur liaison matched_entities:`, linkError);
               // On continue quand même, la dépense est créée
             }
           }
@@ -438,7 +439,7 @@ export function DocumentReviewPage() {
             )
           );
         } catch (error) {
-          console.error(`❌ Erreur pour ${fileData.file.name}:`, error);
+          logger.error(`❌ Erreur pour ${fileData.file.name}:`, error);
 
           // Mise à jour statut erreur
           setFiles(prev =>
@@ -462,7 +463,7 @@ export function DocumentReviewPage() {
       setReviewIndex(0);
       setShowReviewView(true);
     } catch (error) {
-      console.error('Erreur création dépenses:', error);
+      logger.error('Erreur création dépenses:', error);
       toast.error('Erreur lors de la création des dépenses');
     } finally {
       setIsCreating(false);
@@ -636,7 +637,7 @@ export function DocumentReviewPage() {
               'border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all',
               isDragging
                 ? 'border-calypso-blue bg-blue-50'
-                : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
+                : 'border-gray-300 dark:border-dark-border hover:border-gray-400 hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary'
             )}
           >
             <Upload className="h-12 w-12 text-gray-400 dark:text-dark-text-muted mx-auto mb-3" />
@@ -680,7 +681,7 @@ export function DocumentReviewPage() {
                       fileData.status === 'error' ? 'bg-red-50 border border-red-200' :
                       fileData.status === 'duplicate' ? 'bg-amber-50 border border-amber-200' :
                       fileData.status === 'uploading' ? 'bg-blue-50 border border-blue-200' :
-                      'bg-gray-50 border border-gray-200'
+                      'bg-gray-50 dark:bg-dark-bg-tertiary border border-gray-200 dark:border-dark-border'
                     )}
                   >
                     <div className="flex items-center gap-3 flex-1">

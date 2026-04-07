@@ -4,6 +4,12 @@ export type Role = 'membre' | 'organisateur' | 'validateur' | 'admin';
 
 // Export user types
 export * from './user.types';
+
+// Export piscine types
+export * from './piscine.types';
+
+// Export palanquée types
+export * from './palanquee.types';
 import { Permission, UserRole, UserStatus } from './user.types';
 
 /**
@@ -27,30 +33,76 @@ export interface Membre {
   nr_febras?: string;                  // Numéro FEBRAS
 
   // ========== IDENTITÉ ==========
+  /**
+   * @deprecated Utiliser getLastName() du Field Mapper (@/utils/fieldMapper) au lieu d'accéder directement à ce champ
+   * @see {@link import('@/utils/fieldMapper').getLastName}
+   */
   nom: string;                         // Nom de famille (OBLIGATOIRE)
+  /**
+   * @deprecated Utiliser getFirstName() du Field Mapper (@/utils/fieldMapper) au lieu d'accéder directement à ce champ
+   * @see {@link import('@/utils/fieldMapper').getFirstName}
+   */
   prenom: string;                      // Prénom (OBLIGATOIRE)
   email: string;                       // Email (OBLIGATOIRE - unique)
   displayName?: string;                // Nom d'affichage (calculé: "Prénom Nom" si absent)
   date_naissance?: Date;               // Date de naissance
+  sexe?: 'M' | 'F';                   // Sexe (M/F, depuis Organon)
 
   // ========== CONTACT ==========
+  /**
+   * @deprecated Utiliser getPhone() du Field Mapper (@/utils/fieldMapper) au lieu d'accéder directement à ce champ
+   * @see {@link import('@/utils/fieldMapper').getPhone}
+   */
   telephone?: string;                  // GSM principal (renommé de gsm pour cohérence)
   phoneNumber?: string;                // Alias de telephone (backward compatibility)
+  /**
+   * @deprecated Utiliser getPhone() du Field Mapper (@/utils/fieldMapper)
+   */
   gsm?: string;                        // DEPRECATED - Utiliser telephone
+  /**
+   * @deprecated Utiliser getAddress() du Field Mapper (@/utils/fieldMapper) au lieu d'accéder directement à ce champ
+   * @see {@link import('@/utils/fieldMapper').getAddress}
+   */
   adresse?: string;                    // Adresse complète
+  /**
+   * @deprecated Utiliser getPostalCode() du Field Mapper (@/utils/fieldMapper) au lieu d'accéder directement à ce champ
+   * @see {@link import('@/utils/fieldMapper').getPostalCode}
+   */
   code_postal?: string;                // Code postal
   localite?: string;                   // Localité
   pays?: string;                       // Pays (défaut: "Belgique")
   ice?: string;                        // Contact urgence (In Case of Emergency)
   photoURL?: string;                   // Photo de profil
 
+  // ========== BANCAIRE ==========
+  iban?: string;                       // IBAN principal (le plus utilisé)
+  ibans?: string[];                    // Tous les IBANs détectés
+  iban_metadata?: {
+    [iban: string]: {
+      first_seen: Date;
+      last_seen: Date;
+      transaction_count: number;
+      source: 'auto' | 'manual';
+      confidence: number;              // 0-100
+    };
+  };
+
   // ========== MÉDICAL (PLONGEURS) ==========
   certificat_medical_date?: Date;
   certificat_medical_validite?: Date;
+  has_pending_medical?: boolean;       // Flag for pending mobile medical certificates
+
+  // ========== COTISATION ==========
+  cotisation_validite?: Date; // Validité de la cotisation (replaces Dernière connexion functionality in main view)
+  membership_category_code?: string;  // Code du type de membre selon les cotisations actives
+  membership_period?: 'jan_dec' | 'sept_dec'; // Période tarifaire sélectionnée
+  membership_season_id?: string;      // Saison de cotisation liée au type de membre
 
   // ========== PLONGÉE ==========
-  niveau_plongee?: string;             // Niveau plongeur (P1, P2, P3, etc.)
-  niveau_plongeur?: string;            // DEPRECATED - Utiliser niveau_plongee
+  niveau_plongee?: string;             // Niveau plongeur (P1, P2, P3, etc.) - DEPRECATED, use plongeur_niveau
+  niveau_plongeur?: string;            // DEPRECATED - Utiliser plongeur_niveau
+  plongeur_niveau?: string;            // Niveau plongeur (valeur brute: "Plongeur 1*", "Moniteur Club", etc.)
+  plongeur_code?: string;              // Code standardisé calculé (1, 2, 3, 4, MC, MF, AM, etc.) - pour filtrage
   date_adhesion?: Date;                // Date adhésion club
   isDebutant?: boolean;                // Calculé automatiquement (< 1 an ancienneté)
   anciennete?: number;                 // Années depuis adhésion (calculé)
@@ -63,10 +115,64 @@ export interface Membre {
   requirePasswordChange?: boolean;     // Force changement mot de passe
   customPermissions?: Permission[];    // Permissions personnalisées
 
+  // ========== SECURITY METADATA ==========
+  security?: {
+    requirePasswordChange?: boolean;   // Force password change on next login
+    lastPasswordChange?: Date;         // Timestamp of last password change
+    passwordChangedBy?: string;        // Who changed the password (userId or 'self')
+  };
+
+  // ========== PUSH NOTIFICATIONS (CalyMob) ==========
+  fcm_token?: string;                  // FCM token actuel (legacy, single device)
+  fcm_tokens?: string[];               // FCM tokens pour multi-device support
+  fcm_token_updated_at?: Date;         // Dernière mise à jour du token
+  notifications_enabled?: boolean;     // Notifications push activées
+
+  // ========== DIAGNOSTICS (CalyMob → Firestore → CalyCompta) ==========
+  diag_biometric?: {                   // Statut biométrique (écrit par DiagnosticService)
+    available: boolean;
+    canCheck: boolean;
+    deviceSupported: boolean;
+    types: string;
+    error?: string;
+    updated_at?: Date;
+  };
+  diag_errors?: Array<{                // Dernières erreurs (max 10)
+    domain: string;
+    message: string;
+    detail?: string;
+    timestamp: string;
+  }>;
+  diag_last_error_at?: Date;
+  diag_health?: {                      // App health snapshot
+    notifications_ok: boolean;
+    biometric_ok: boolean;
+    app_version?: string;
+    checked_at?: Date;
+  };
+
+  // ========== APP INSTALLATION TRACKING (CalyMob) ==========
+  app_installed?: boolean;             // CalyMob est installée
+  app_platform?: 'ios' | 'android';    // Plateforme mobile
+  app_version?: string;                // Version app (ex: "1.0.6")
+  app_build_number?: string;           // Numéro de build (ex: "22")
+  device_model?: string;               // Modèle appareil (ex: "iPhone 14 Pro", "Pixel 7")
+  device_os_version?: string;          // Version OS (ex: "iOS 17.1", "Android 14")
+  app_last_opened?: Date;              // Dernière ouverture de l'app
+  app_first_installed?: Date;          // Date première installation
+
+  // ========== CALENDAR FEED ==========
+  calendar_token?: string;             // UUID v4 for calendar feed access (unique, secret)
+  calendar_token_created_at?: Date;    // When the token was generated
+
   // ========== STATUT MEMBRE CLUB ==========
   member_status: MemberStatus;         // NOUVEAU - 'active' | 'inactive' | 'archived'
   is_diver: boolean;                   // NOUVEAU - Est plongeur actif (pour filtres)
   has_lifras: boolean;                 // NOUVEAU - A une licence LIFRAS (pour filtres)
+
+  // ========== FONCTION DANS LE CLUB ==========
+  fonction_defaut?: string;            // Fonction par défaut (référence value list "fonction": "membre", "encadrant", "ca", etc.)
+  clubStatuten?: string[];              // Fonctions multiples dans le club (["Membre", "Encadrants", "CA"])
 
   // ========== PERMISSIONS & PRÉFÉRENCES ==========
   can_approve_expenses?: boolean;      // Permission approuver dépenses (legacy)
@@ -92,18 +198,113 @@ export interface Membre {
     suspendedReason?: string;
   };
 
+  // ========== AUDIT TRAIL (Billing/Access) ==========
+  billing_audit_history?: MemberFieldAudit[];  // Audit trail voor IBAN, role, access wijzigingen
+
   // ========== LEGACY FIELDS (backward compatibility) ==========
   // Ces champs sont gardés pour compatibilité mais DEPRECATED
+  /**
+   * @deprecated Utiliser isActive() du Field Mapper (@/utils/fieldMapper) au lieu d'accéder directement à ce champ
+   * @see {@link import('@/utils/fieldMapper').isActive}
+   */
   isActive?: boolean;                  // DEPRECATED - Utiliser member_status === 'active'
+  /**
+   * @deprecated Utiliser isActive() du Field Mapper (@/utils/fieldMapper) au lieu d'accéder directement à ce champ
+   * @see {@link import('@/utils/fieldMapper').isActive}
+   */
   actif?: boolean;                     // DEPRECATED - Utiliser member_status === 'active'
+  /**
+   * @deprecated Utiliser getRole() du Field Mapper (@/utils/fieldMapper) au lieu d'accéder directement à ce champ
+   * @see {@link import('@/utils/fieldMapper').getRole}
+   */
+  role?: Role;                         // DEPRECATED - Utiliser app_role
+  /**
+   * @deprecated Utiliser getStatus() du Field Mapper (@/utils/fieldMapper) au lieu d'accéder directement à ce champ
+   * @see {@link import('@/utils/fieldMapper').getStatus}
+   */
   status?: UserStatus;                 // DEPRECATED - Utiliser app_status
   clubId?: string;                     // DEPRECATED - Implicite via path collection
+  /**
+   * @deprecated Utiliser getCreatedAt() du Field Mapper (@/utils/fieldMapper)
+   */
   created_at?: Date;                   // DEPRECATED - Utiliser createdAt
+  /**
+   * @deprecated Utiliser getUpdatedAt() du Field Mapper (@/utils/fieldMapper)
+   */
   updated_at?: Date;                   // DEPRECATED - Utiliser updatedAt
 }
 
 // Nouveaux types pour structure unifiée
 export type MemberStatus = 'active' | 'inactive' | 'archived';
+
+// Audit trail entry pour code comptable
+export interface CodeComptableAudit {
+  code_comptable: string;         // Le code qui a été assigné
+  categorie?: string;             // Catégorie associée (optionnel)
+  assigned_by: string;            // User ID de la personne qui a assigné
+  assigned_by_name: string;       // Nom d'affichage de la personne
+  assigned_at: Date;              // Date et heure de l'assignation
+  previous_code?: string;         // Code comptable précédent (si modification)
+  previous_categorie?: string;    // Catégorie précédente (si modification)
+  source?: 'manual' | 'manual_delete' | 'auto' | 'bulk' | 'learned';  // Source de l'assignation
+}
+
+// Audit trail entry pour modification de montant
+export interface MontantAudit {
+  old_montant: number;            // Ancien montant
+  new_montant: number;            // Nouveau montant
+  changed_by: string;             // User ID de la personne qui a modifié
+  changed_by_name: string;        // Nom d'affichage de la personne
+  changed_at: Date;               // Date et heure de la modification
+  justification?: string;         // Motif du changement (optionnel)
+  // Approval reset tracking (when amount changes after approval)
+  approval_reset?: boolean;       // True si la modification a reset l'approbation
+  previous_statut?: string;       // Statut avant le reset (approuve, rembourse, etc.)
+}
+
+// Audit trail entry pour changement de statut demande
+export interface StatusAudit {
+  old_statut: string;             // Ancien statut
+  new_statut: string;             // Nouveau statut
+  changed_by: string;             // User ID
+  changed_by_name: string;        // Nom d'affichage
+  changed_at: Date;               // Date et heure
+  reason?: string;                // Motif (pour refus)
+  approval_type?: 'first' | 'second';  // Type d'approbation
+}
+
+// Audit trail entry pour modification de champ transaction
+export interface TransactionFieldAudit {
+  field: string;                  // Nom du champ modifié
+  old_value: unknown;             // Ancienne valeur
+  new_value: unknown;             // Nouvelle valeur
+  changed_by: string;             // User ID
+  changed_by_name: string;        // Nom d'affichage
+  changed_at: Date;               // Date et heure
+  justification?: string;         // Motif du changement
+  was_reconciled?: boolean;       // True si transaction était réconciliée
+}
+
+// Audit trail entry pour modification de champ opération
+export interface OperationFieldAudit {
+  field: string;                  // 'montant_prevu' | 'date_debut' | 'statut' | etc.
+  old_value: unknown;
+  new_value: unknown;
+  changed_by: string;
+  changed_by_name: string;
+  changed_at: Date;
+  justification?: string;
+}
+
+// Audit trail entry pour modification de données membre (billing)
+export interface MemberFieldAudit {
+  field: string;                  // 'iban' | 'ibans' | 'app_role' | 'has_app_access'
+  old_value: unknown;
+  new_value: unknown;
+  changed_by: string;
+  changed_by_name: string;
+  changed_at: Date;
+}
 
 export interface TransactionBancaire {
   id: string;
@@ -124,6 +325,10 @@ export interface TransactionBancaire {
   // Champs ajoutés pour la gestion
   categorie?: string;
   code_comptable?: string; // Code comptable belge (ex: "730-00-712")
+  code_comptable_not_found?: boolean; // True si recherché mais aucun code approprié trouvé
+
+  // Audit trail pour les codes comptables
+  code_comptable_history?: CodeComptableAudit[];  // Historique de toutes les assignations/modifications
 
   // Liaison opérations
   operation_id?: string;          // NOUVEAU - Lien vers opération (événement, cotisation, don, etc.)
@@ -156,15 +361,31 @@ export interface TransactionBancaire {
   // Champs de réconciliation avancée
   type?: 'income' | 'expense'; // Type calculé depuis le montant
   expense_claim_id?: string; // Lien vers demande de remboursement
-  vp_dive_import_id?: string; // Lien vers import VP Dive
   matched_entities?: MatchedEntity[]; // Entités liées
 
   // Champ commentaire
   commentaire?: string; // Commentaire libre sur la transaction
 
+  // Auto-catégorisation
+  categorization_source?: 'manual' | 'rules' | 'ai' | 'learned'; // Source de la catégorisation
+  categorization_confidence?: number; // Score de confiance 0-100
+  needs_review?: boolean; // True si catégorisé par AI avec confiance < 60%
+  categorization_batch_id?: string; // Timestamp ISO pour identifier un batch de traitement
+
+  // Signalement manuel pour transactions problématiques
+  flagged_problematic?: boolean;    // True si manuellement signalée comme problématique
+  flagged_at?: Date;                // Quand signalée
+  flagged_by?: string;              // User ID qui a signalé
+  flagged_by_name?: string;         // Nom affiché de qui a signalé
+  flagged_reason?: string;          // Raison/note expliquant le problème
+
   // Documents justificatifs (receipts, invoices, etc.)
   urls_justificatifs?: string[]; // URLs des documents stockés dans Firebase Storage (LEGACY - use documents_justificatifs)
   documents_justificatifs?: DocumentJustificatif[]; // Documents avec métadonnées complètes
+
+  // Audit trail pour modifications de champs (hors code_comptable qui a son propre historique)
+  field_history?: TransactionFieldAudit[];
+  fields_modified?: boolean;     // Flag pour identifier transactions modifiées après import
 
   created_at: Date;
   updated_at: Date;
@@ -213,6 +434,16 @@ export type TypeOperation =
   | 'subvention'     // ADEPS, subsides fédération
   | 'autre';         // Divers
 
+// Catégorie d'événement (uniquement pour type='evenement')
+export type EventCategory = 'plongee' | 'piscine' | 'sortie';
+
+// Labels pour affichage des catégories d'événements
+export const EVENT_CATEGORY_LABELS: Record<EventCategory, string> = {
+  plongee: 'Plongée',
+  piscine: 'Piscine',
+  sortie: 'Sortie / Fête'
+};
+
 /**
  * Interface Operation - Remplace Evenement avec système multi-types
  * Supporte: événements, cotisations, cautions, ventes, subventions
@@ -222,18 +453,22 @@ export interface Operation {
   id: string;
   type: TypeOperation;
 
-  // Source & Synchronization
-  source?: 'vpdive' | 'caly';     // 'vpdive' | 'caly' | null (default: caly)
-  vpdiveId?: string;              // Original VPdive reference
-  isEditable?: boolean;           // Can modify in Caly
-  lastSyncedAt?: Date;            // Last VPdive sync
-  syncStatus?: 'synced' | 'pending' | 'error';
+  // Unique event number for bank reconciliation
+  // Format: 2XXXXX for dive events, 3XXXXX for other events
+  event_number?: string;
+
+  // Source & edition
+  source?: string;
+  isEditable?: boolean;
 
   // Champs communs (TOUS types)
   titre: string;
   description?: string;
+  info_document?: DocumentJustificatif;  // Document d'information lié à la description (affiché dans CalyMob)
   montant_prevu: number;          // Budget prévisionnel (remplace budget_prevu_revenus)
   statut: 'brouillon' | 'ouvert' | 'ferme' | 'annule';
+  budget_prevu_revenus?: number;  // Legacy fallback for migrated events
+  budget_prevu_depenses?: number; // Legacy field still present on older events
 
   // Organisateur/responsable
   organisateur_id: string;
@@ -247,21 +482,42 @@ export interface Operation {
   code_comptable?: string;      // Code comptable belge (ex: '730-00-712')
 
   // ---- Champs spécifiques ÉVÉNEMENTS (optionnels pour autres types) ----
+  event_category?: EventCategory; // Catégorie d'événement: 'plongee' ou 'sortie'
   date_debut?: Date;              // Date début événement
   date_fin?: Date;                // Date fin événement
   lieu?: string;                  // Lieu événement
+  lieu_id?: string;               // Référence DiveLocation (si créé depuis un lieu)
+  lieu_type?: import('../config/locationTypes').LocationType;  // Type de lieu (Carrière, Zélande, etc.)
   capacite_max?: number;          // Capacité maximale participants
-  prix_membre?: number;           // Prix membre
-  prix_non_membre?: number;       // Prix non-membre
-  vp_dive_source_hash?: string;   // Hash déduplication VP Dive
+
+  /**
+   * @deprecated Utiliser tariffs[] pour tarification flexible par fonction.
+   * Conservé pour compatibilité avec événements existants.
+   */
+  prix_membre?: number;           // Prix membre (DEPRECATED - utiliser tariffs)
+  /**
+   * @deprecated Utiliser tariffs[] pour tarification flexible par fonction.
+   * Conservé pour compatibilité avec événements existants.
+   */
+  prix_non_membre?: number;       // Prix non-membre (DEPRECATED - utiliser tariffs)
+
+  // Tarifs pour événements (copie depuis DiveLocation lors de la création)
+  event_tariffs?: import('./tariff.types').Tariff[];  // Tarifs flexibles par fonction (membre, encadrant, etc.)
+
+  // Suppléments optionnels pour événements (location combinaison, etc.)
+  supplements?: import('./supplement.types').Supplement[];
 
   // ---- Champs spécifiques COTISATIONS (optionnels pour autres types) ----
   periode_debut?: Date;           // Début période cotisation (ex: 01/01/2025)
   periode_fin?: Date;             // Fin période cotisation (ex: 31/01/2026)
-  tarifs?: Record<string, number>; // Tarifs différenciés (ex: {plongeur: 130, apneiste: 80})
+  tarifs?: Record<string, number>; // Tarifs différenciés cotisations (ex: {plongeur: 130, apneiste: 80})
 
   // ---- Champs spécifiques DONS/VENTES/SUBVENTIONS ----
   // (utilisent seulement champs communs + documents)
+
+  // Audit trail voor veld wijzigingen
+  field_history?: OperationFieldAudit[];
+  fields_modified?: boolean;
 
   // Métadonnées
   created_at: Date;
@@ -287,7 +543,6 @@ export interface Evenement {
   prix_membre: number;
   prix_non_membre?: number;
   capacite_max?: number;
-  vp_dive_source_hash?: string; // Hash pour détecter les doublons d'imports VP Dive
   created_at: Date;
   updated_at: Date;
 }
@@ -305,6 +560,9 @@ export interface InscriptionEvenement {
   date_inscription: Date;
   notes?: string;
 
+  // Fonction/Role for this event (references value list "fonction")
+  fonction?: string;                 // Member function for this event (e.g., "membre", "encadrant", "ca")
+
   // Transaction linking (one-to-one relationship)
   transaction_id?: string;           // ID of linked transaction (bank payment)
   transaction_montant?: number;      // Amount from linked transaction
@@ -312,11 +570,33 @@ export interface InscriptionEvenement {
   // Payment method tracking
   mode_paiement?: 'bank' | 'cash' | 'other' | null;  // How payment was received
 
+  // Mollie payment tracking (CalyMob app payments)
+  payment_provider?: 'mollie' | null;    // Payment provider used
+  payment_status?: 'open' | 'pending' | 'paid' | 'failed' | 'canceled' | 'expired' | 'qr_email_sent' | 'qr_on_site' | 'cash' | null;  // Payment status
+  payment_id?: string;                   // Internal payment ID
+  mollie_payment_id?: string;            // Mollie's payment ID
+  payment_initiated_at?: Date;           // When payment was initiated
+
+  // Cash payment amount tracking
+  montant_paye_especes?: number;         // Amount paid in cash (may differ from prix)
+
   // Comments field for additional information
   commentaire?: string;              // Free text notes (e.g., "Payé sur place en espèces")
 
   // Legacy field (deprecated - use transaction_id)
   transaction_bancaire_id?: string;  // DEPRECATED - use transaction_id instead
+
+  // Guest (non-member) inscription
+  is_guest?: boolean;                // True for non-member guests
+  added_by?: string;                 // User ID who added the guest
+  added_by_name?: string;            // Display name of user who added the guest
+
+  // Exercices souhaités (LIFRAS exercise IDs selected by the student)
+  exercices?: string[];              // Array of exercice_lifras document IDs
+
+  // Suppléments sélectionnés (snapshot at registration time)
+  selected_supplements?: import('./supplement.types').SelectedSupplement[];
+  supplement_total?: number;         // Sum of selected supplement prices
 
   // Metadata
   created_at?: Date;
@@ -340,6 +620,9 @@ export interface ParticipantOperation {
   membre_prenom?: string;
   lifras_id?: string;             // Pour cotisations et recherche rapide
 
+  // Fonction/Role for this operation (references value list "fonction")
+  fonction?: string;               // Member function for this operation (e.g., "membre", "encadrant", "ca")
+
   // Paiement
   prix: number;
   paye: boolean;
@@ -354,6 +637,10 @@ export interface ParticipantOperation {
   // Commentaires
   commentaire?: string;            // Texte libre
   notes?: string;
+
+  // Suppléments sélectionnés (snapshot at registration time)
+  selected_supplements?: import('./supplement.types').SelectedSupplement[];
+  supplement_total?: number;       // Sum of selected supplement prices
 
   // Legacy (deprecated)
   transaction_bancaire_id?: string; // DEPRECATED - use transaction_id
@@ -392,7 +679,7 @@ export interface DemandeRemboursement {
   montant: number;
   description: string;
   categorie?: string;
-  statut: 'soumis' | 'en_attente_validation' | 'approuve' | 'rembourse' | 'refuse' | 'brouillon';
+  statut: 'en_attente_validation' | 'approuve' | 'paiement_effectue' | 'rembourse' | 'refuse' | 'brouillon' | 'cree_banque_attente_validation';
   pieces_jointes?: string[];  // File names from import
   urls_justificatifs?: string[];  // Firebase Storage URLs (LEGACY - use documents_justificatifs)
   documents_justificatifs?: DocumentJustificatif[];  // Documents avec métadonnées complètes
@@ -412,7 +699,12 @@ export interface DemandeRemboursement {
   requires_double_approval?: boolean; // Indique si double approbation requise
 
   date_remboursement?: Date;
-  transaction_id?: string;
+  transaction_id?: string;  // Transaction qui a PAYÉ cette dépense
+
+  // Transaction source (pour remboursements créés depuis une transaction)
+  source_transaction_id?: string;    // ID de la transaction que cette dépense rembourse
+  source_transaction_ref?: string;   // numero_sequence pour affichage (ex: "#2026-00131")
+
   motif_refus?: string;
   refuse_par?: string;
   refuse_par_nom?: string;
@@ -421,6 +713,30 @@ export interface DemandeRemboursement {
   created_at: Date;
   updated_at: Date;
   created_by?: string;
+
+  // Email notification tracking
+  confirmation_email_sent?: boolean;  // True if confirmation email was sent to demandeur
+  confirmation_email_sent_at?: Date;  // When the email was sent
+
+  // Audit trail montant
+  montant_history?: MontantAudit[];   // Historique des modifications de montant
+  montant_modified?: boolean;         // Flag automatique si montant a été modifié après création
+
+  // Audit trail statut
+  status_history?: StatusAudit[];     // Historique des changements de statut
+
+  // Bénéficiaire du remboursement (nieuw voor QR-code betalingen)
+  beneficiaire_type?: 'demandeur' | 'fournisseur';  // Default: 'demandeur'
+  fournisseur_id?: string;         // Alleen als beneficiaire_type = 'fournisseur'
+  fournisseur_nom?: string;        // Gedenormaliseerd voor display
+
+  // Paiement manuel (betaald via QR maar nog niet geboekt)
+  paiement_manuel?: boolean;       // True als betaling handmatig gedaan (via QR) maar nog niet via transactie gekoppeld
+  paiement_manuel_date?: Date;     // Datum van handmatige betaling
+  paiement_manuel_par?: string;    // User ID die betaling heeft gemarkeerd
+
+  // Communication pour QR Code de paiement (max 140 chars EPC standard)
+  communication_qr?: string;       // Communication bancaire pour le QR code, défaut = description
 }
 
 export interface Categorie {
@@ -431,7 +747,6 @@ export interface Categorie {
   couleur: string;
   icone?: string;
   description?: string;
-  compte_comptable?: string; // Pour mapping avec plan comptable belge
   isFrequent?: boolean; // Indique si la catégorie est fréquemment utilisée (favori)
 }
 
@@ -439,8 +754,7 @@ export interface AccountCode {
   code: string;  // Ex: "730-00-712"
   label: string; // Ex: "Cotisations des membres plongeurs (V)"
   type: 'revenue' | 'expense' | 'asset' | 'liability';
-  category?: string; // Catégorie associée
-  isFrequent?: boolean; // Indique si le code est fréquemment utilisé
+  categories?: string[]; // Catégories associées (peut appartenir à plusieurs catégories)
 }
 
 export interface ClubSettings {
@@ -486,6 +800,67 @@ export interface FiscalYear {
   account_numbers?: {
     bank_current?: string;         // IBAN ou numéro du compte courant
     bank_savings?: string;         // IBAN ou numéro du compte épargne
+  };
+
+  // Données du Bilan (Balance Sheet) - saisie manuelle
+  balance_sheet?: {
+    // ACTIF - Actifs circulants (hors comptes bancaires déjà gérés)
+    assets: {
+      stock_cdc?: number;              // Stock C.D.C.
+      stock_boutique?: number;         // Boutique
+      stock_boutique_lifras?: number;  // Boutique LIFRAS
+      obligations?: number;            // Obligations Dette Belge / Placements
+      charges_reportees?: number;      // Charges à reporter (sorties année suivante)
+      assurance_reportee?: number;     // Assurance matériel année suivante
+    };
+
+    // PASSIF - Fonds propres et provisions
+    liabilities: {
+      resultat_reporte?: number;       // Résultat reporté des exercices antérieurs
+      fonds_affectes?: number;         // Fonds affectés
+      resultat_exercice?: number;      // Résultat de l'exercice
+      provision_entretien?: number;    // Provision pour entretien matériel
+      provision_piscine?: number;      // Provision location piscine
+      cotisations_reportees?: number;  // Cotisations plongeurs année suivante
+      sorties_reportees?: number;      // Sorties club année suivante
+      paiements_annee_suivante?: number; // Paiements N afférents à N+1
+    };
+  };
+
+  // Suivi de l'assistant de clôture
+  closing_wizard?: {
+    version: number;
+    current_step?: 'preparation' | 'banques' | 'stocks' | 'bilan' | 'validation';
+    last_saved_at?: string;
+    blocking_reasons?: string[];
+    warning_messages?: string[];
+    steps?: {
+      preparation?: {
+        status: 'todo' | 'in_progress' | 'done';
+        updated_at?: string;
+        completed_at?: string;
+      };
+      banques?: {
+        status: 'todo' | 'in_progress' | 'done';
+        updated_at?: string;
+        completed_at?: string;
+      };
+      stocks?: {
+        status: 'todo' | 'in_progress' | 'done';
+        updated_at?: string;
+        completed_at?: string;
+      };
+      bilan?: {
+        status: 'todo' | 'in_progress' | 'done';
+        updated_at?: string;
+        completed_at?: string;
+      };
+      validation?: {
+        status: 'todo' | 'in_progress' | 'done';
+        updated_at?: string;
+        completed_at?: string;
+      };
+    };
   };
 
   // Audit et métadonnées
@@ -544,23 +919,6 @@ export interface CSVMapping {
   decimal_separator: string;
 }
 
-// Type pour les imports VP Dive
-export interface VPDiveImport {
-  id: string;
-  event_id: string;
-  event_name: string;
-  file_name: string;
-  imported_at: Date;
-  imported_by: string;
-  participants_count: number;
-  matched_transactions_count: number;
-  unmatched_participants_count: number;
-  total_expected_amount: number;
-  total_matched_amount: number;
-  reconciliation_status: 'pending' | 'partial' | 'complete';
-  participants_data?: any; // Données brutes des participants
-}
-
 // Type pour le résultat de réconciliation
 export interface ReconciliationResult {
   transaction_id: string;
@@ -599,6 +957,34 @@ export interface AIExpenseMatch {
   validated_at?: Date;
   created_at: Date;
   created_by: string;
+}
+
+// ============================================================
+// Types pour les patterns de catégorisation appris
+// ============================================================
+
+export interface LearnedPattern {
+  id: string;
+
+  // Critères de matching (au moins un doit être présent)
+  contrepartie_nom?: string;         // Ex: "PROXIMUS SA"
+  contrepartie_normalized?: string;  // Ex: "proximus" (lowercase, sans accents)
+  keywords?: string[];               // Ex: ["téléphone", "gsm"]
+
+  // Résultat à appliquer
+  code_comptable: string;
+  categorie: string;
+
+  // Métadonnées
+  confidence: number;        // 90 pour patterns appris manuellement
+  use_count: number;         // Incrémenté à chaque utilisation
+  created_at: Date;
+  created_by: string;        // userId
+  source_transaction_id: string;
+
+  // Pour audit et compréhension
+  comment?: string;          // Commentaire libre de l'utilisateur
+  original_wrong_code?: string; // Code qui était incorrect (optionnel)
 }
 
 // ============================================================
@@ -779,4 +1165,98 @@ export interface AccountCodeSuggestion {
   confidence: number;         // Score de confiance 0-100
   reasons: string[];          // Raisons de la suggestion
   source: 'linked_entity' | 'counterparty' | 'history' | 'keyword' | 'amount';
+}
+
+/**
+ * Groupe de rapport pour le Compte de Résultats
+ * Permet de regrouper les codes comptables pour l'export Excel
+ */
+export interface ReportGroup {
+  id: string;                 // Identifiant unique du groupe
+  name: string;               // Nom affiché du groupe
+  order: number;              // Ordre d'affichage (1, 2, 3...)
+  accountCodes: string[];     // Liste des codes comptables dans ce groupe
+}
+
+/**
+ * Code de Bilan pour la structure hiérarchique du bilan comptable
+ * Ex: 02.01.01 = Stock Boutique (enfant de 02.01 Stock CDC)
+ */
+export interface BilanCode {
+  id: string;                    // Identifiant unique (ex: "02.01")
+  code: string;                  // Code hiérarchique (ex: "02.01")
+  name: string;                  // Nom affiché (ex: "Stock CDC")
+  section: 'actif' | 'passif';   // Section du bilan
+  order: number;                 // Ordre d'affichage
+  parentId?: string;             // ID du parent (ex: "02" pour "02.01")
+
+  // Configuration du calcul
+  calculationType:
+    | 'sum_children'        // Somme des codes enfants
+    | 'sum_transactions'    // Somme des transactions liées
+    | 'manual'              // Saisie manuelle
+    | 'calculated'          // Calcul spécial
+    | 'inventory_value'     // Valeur actuelle de l'inventaire matériel
+    | 'pl_result'           // Résultat du compte de résultats (P&L)
+    | 'boutique_stock'      // Valeur du stock boutique
+    | 'result_carryforward' // Résultat reporté: opening + résultat année précédente
+    | 'bank_total';         // Solde bancaire: opening + somme de TOUTES les transactions
+  accountCodes?: string[];       // Codes comptables liés (pour sum_transactions)
+
+  // Configuration spéciale pour boutique_stock
+  boutiqueType?: 'boutique' | 'boutique_lifras';
+
+  // Logique Opening/Closing
+  openingSource: 'manual' | 'previous_closing' | 'calculated' | 'zero';  // 'zero' = toujours 0 (pour résultat exercice)
+  closingSource: 'manual' | 'opening_plus_movements' | 'calculated';
+}
+
+/**
+ * Status van een snapshot voor bilan waarden
+ * Geeft aan of de waarde bevroren is (locked) of nog kan wijzigen
+ */
+export interface BilanValueStatus {
+  hasSnapshot: boolean;          // Is er een snapshot gemaakt?
+  isLocked: boolean;             // Is de snapshot verrouillerd?
+  source: 'snapshot_locked' | 'snapshot_provisional' | 'live_calculation' | 'manual';
+}
+
+/**
+ * Valeurs du bilan pour une année fiscale
+ * Stockées dans clubs/{clubId}/fiscal_years/{yearId}/bilan_values
+ */
+export interface BilanValues {
+  bilanCodeId: string;           // Référence au BilanCode
+  openingValue: number;          // Valeur d'ouverture
+  closingValue: number;          // Valeur de clôture
+  isManualOpening: boolean;      // True si opening saisi manuellement
+  isManualClosing: boolean;      // True si closing saisi manuellement
+  calculatedMovements?: number;  // Mouvements calculés (pour info)
+  closingStatus?: BilanValueStatus;  // Status van de closing waarde (snapshot/live)
+}
+
+// ============================================================
+// FOURNISSEURS (LEVERANCIERS)
+// ============================================================
+
+/**
+ * Fournisseur - Leverancier voor terugbetalingen aan derden
+ * Collection: /clubs/{clubId}/fournisseurs/{fournisseurId}
+ */
+export interface Fournisseur {
+  id: string;
+  nom: string;                    // Bedrijfsnaam (verplicht)
+  iban: string;                   // IBAN (verplicht voor QR-code)
+  adresse?: string;
+  code_postal?: string;
+  localite?: string;
+  pays?: string;                  // Default: "Belgique"
+  email?: string;
+  telephone?: string;
+  numero_tva?: string;            // BTW-nummer
+  notes?: string;
+  actif: boolean;                 // Default: true
+  created_at: Date;
+  updated_at: Date;
+  created_by: string;
 }

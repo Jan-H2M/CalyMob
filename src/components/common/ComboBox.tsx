@@ -97,16 +97,16 @@ export const ComboBox: React.FC<ComboBoxProps> = ({
           onChange={handleInputChange}
           onFocus={() => setIsOpen(true)}
           placeholder={placeholder}
-          className="w-full px-2 py-1 pr-8 text-sm border border-gray-300 dark:border-dark-border rounded focus:ring-1 focus:ring-calypso-blue bg-white dark:bg-dark-bg text-gray-900 dark:text-gray-100"
+          className="w-full px-2 py-1 pr-8 text-sm border border-gray-300 dark:border-dark-border rounded focus:ring-1 focus:ring-calypso-blue bg-white dark:bg-dark-bg text-gray-900 dark:text-dark-text-primary dark:text-gray-100"
         />
         <button
           type="button"
           onClick={toggleDropdown}
-          className="absolute right-0 top-0 bottom-0 px-2 flex items-center justify-center hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary rounded-r"
+          className="absolute right-0 top-0 bottom-0 px-2 flex items-center justify-center hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary rounded-r"
           aria-label="Toggle dropdown"
         >
           <ChevronDown
-            className={`w-4 h-4 text-gray-500 dark:text-gray-400 transition-transform duration-200 ${
+            className={`w-4 h-4 text-gray-500 dark:text-dark-text-muted transition-transform duration-200 ${
               isOpen ? 'rotate-180' : ''
             }`}
           />
@@ -114,24 +114,24 @@ export const ComboBox: React.FC<ComboBoxProps> = ({
       </div>
 
       {isOpen && filteredOptions.length > 0 && (
-        <div className="absolute z-[9999] w-full mt-1 bg-white dark:bg-dark-bg-secondary border border-gray-200 dark:border-dark-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-dark-bg-secondary border border-gray-200 dark:border-dark-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
           {filteredOptions.map((option, index) => (
             <button
               key={index}
               type="button"
               onClick={() => handleOptionSelect(option)}
-              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors flex flex-col"
+              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary transition-colors flex flex-col"
             >
               <span className={`font-medium ${
                 option.type === 'revenue'
                   ? 'text-green-600 dark:text-green-400'
                   : option.type === 'expense'
                   ? 'text-red-600 dark:text-red-400'
-                  : 'text-gray-900 dark:text-gray-100'
+                  : 'text-gray-900 dark:text-dark-text-primary dark:text-gray-100'
               }`}>
                 {option.value}
               </span>
-              <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
+              <span className="text-xs text-gray-500 dark:text-dark-text-muted truncate">
                 {option.label} {option.type === 'revenue' ? '(V)' : option.type === 'expense' ? '(A)' : ''}
               </span>
             </button>

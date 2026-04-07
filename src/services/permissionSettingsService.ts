@@ -1,6 +1,7 @@
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { UserRole, Permission, RoleConfig } from '@/types/user.types';
+import { logger } from '@/utils/logger';
 
 /**
  * Structure des paramètres de permissions stockés dans Firebase
@@ -42,7 +43,7 @@ export class PermissionSettingsService {
       await this.savePermissionSettings(clubId, defaultSettings);
       return defaultSettings;
     } catch (error) {
-      console.error('Erreur lors du chargement des permissions depuis Firebase:', error);
+      logger.error('Erreur lors du chargement des permissions depuis Firebase:', error);
       // Fallback sur configuration par défaut
       return this.getDefaultPermissions();
     }
@@ -67,9 +68,9 @@ export class PermissionSettingsService {
         updatedBy: userId || settings.updatedBy || 'system'
       });
 
-      console.log('Permissions sauvegardées avec succès dans Firebase');
+      logger.debug('Permissions sauvegardées avec succès dans Firebase');
     } catch (error) {
-      console.error('Erreur lors de la sauvegarde des permissions:', error);
+      logger.error('Erreur lors de la sauvegarde des permissions:', error);
       throw error;
     }
   }
@@ -90,6 +91,16 @@ export class PermissionSettingsService {
     return {
       lastUpdated: new Date(),
       roles: {
+        membre: {
+          role: 'membre',
+          label: 'Membre',
+          description: 'Membre du club (sans accès application)',
+          level: -1,
+          color: '#64748B', // slate-500
+          icon: 'Users',
+          canManage: [],
+          permissions: [] // Aucune permission - juste membership
+        },
         user: {
           role: 'user',
           label: 'Utilisateur',
@@ -153,7 +164,7 @@ export class PermissionSettingsService {
           level: 2,
           color: '#F97316', // orange-500
           icon: 'Shield',
-          canManage: ['user', 'validateur'],
+          canManage: ['membre', 'user', 'validateur', 'admin'],
           permissions: [
             // All permissions except superadmin specific
             'users.view',
@@ -195,7 +206,7 @@ export class PermissionSettingsService {
           level: 3,
           color: '#9333EA', // purple-600
           icon: 'Crown',
-          canManage: ['user', 'validateur', 'admin', 'superadmin'],
+          canManage: ['membre', 'user', 'validateur', 'admin', 'superadmin'],
           permissions: [
             // All permissions
             'users.view',
@@ -241,7 +252,7 @@ export class PermissionSettingsService {
    */
   static validatePermissions(settings: PermissionSettings): void {
     // Vérifier que tous les rôles sont présents
-    const requiredRoles: MembreRole[] = ['user', 'validateur', 'admin', 'superadmin'];
+    const requiredRoles: UserRole[] = ['membre', 'user', 'validateur', 'admin', 'superadmin'];
     for (const role of requiredRoles) {
       if (!settings.roles[role]) {
         throw new Error(`Rôle manquant: ${role}`);
@@ -280,7 +291,7 @@ export class PermissionSettingsService {
       throw new Error('SuperAdmin doit avoir un niveau supérieur à Admin');
     }
 
-    console.log('✅ Configuration des permissions validée avec succès');
+    logger.debug('✅ Configuration des permissions validée avec succès');
   }
 
   /**
@@ -334,11 +345,11 @@ export class PermissionSettingsService {
     current: PermissionSettings,
     proposed: PermissionSettings
   ): {
-    role: MembreRole;
+    role: UserRole;
     changes: { permission: Permission; action: 'added' | 'removed' }[];
   }[] {
     const differences: {
-      role: MembreRole;
+      role: UserRole;
       changes: { permission: Permission; action: 'added' | 'removed' }[];
     }[] = [];
 

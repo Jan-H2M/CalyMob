@@ -1,5 +1,6 @@
 import { auth } from '@/lib/firebase';
 import { UserRole } from '@/types/user.types';
+import { logger } from '@/utils/logger';
 
 /**
  * Data structure for creating a user via API
@@ -68,7 +69,7 @@ export async function callCreateUserFunction(
     return result;
   } catch (error: any) {
     // Handle API errors
-    console.error('Error calling createUser API:', error);
+    logger.error('Error calling createUser API:', error);
 
     // Rethrow with clear message
     throw new Error(error.message || 'Erreur lors de la création de l\'utilisateur');

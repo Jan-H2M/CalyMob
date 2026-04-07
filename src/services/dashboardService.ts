@@ -3,6 +3,7 @@ import { db } from '@/lib/firebase';
 import { startOfMonth, endOfMonth, startOfDay, endOfDay, subMonths } from 'date-fns';
 import { FiscalYear, TransactionBancaire, DemandeRemboursement, Evenement, Membre } from '@/types';
 import { FiscalYearService } from './fiscalYearService';
+import { logger } from '@/utils/logger';
 
 export interface FiscalYearStats {
   total_revenus: number;
@@ -163,7 +164,7 @@ export class DashboardService {
         })
         .sort((a, b) => a.mois.localeCompare(b.mois));
     } catch (error) {
-      console.error('Erreur lors du calcul de la répartition mensuelle:', error);
+      logger.error('Erreur lors du calcul de la répartition mensuelle:', error);
       throw error;
     }
   }
@@ -189,7 +190,7 @@ export class DashboardService {
         solde_total: solde_debut + stats.total_revenus - stats.total_depenses + solde_epargne
       };
     } catch (error) {
-      console.error('Erreur lors du calcul du résumé financier:', error);
+      logger.error('Erreur lors du calcul du résumé financier:', error);
       throw error;
     }
   }
@@ -255,7 +256,7 @@ export class DashboardService {
         nombre_depenses
       };
     } catch (error) {
-      console.error('Erreur lors du calcul des stats de l\'année fiscale:', error);
+      logger.error('Erreur lors du calcul des stats de l\'année fiscale:', error);
       throw error;
     }
   }
@@ -370,7 +371,7 @@ export class DashboardService {
         nombre_transactions
       };
     } catch (error) {
-      console.error('Erreur lors du calcul des stats du mois:', error);
+      logger.error('Erreur lors du calcul des stats du mois:', error);
       throw error;
     }
   }
@@ -410,7 +411,7 @@ export class DashboardService {
         nouveaux_ce_mois
       };
     } catch (error) {
-      console.error('Erreur lors du calcul des stats membres:', error);
+      logger.error('Erreur lors du calcul des stats membres:', error);
       throw error;
     }
   }
@@ -463,7 +464,7 @@ export class DashboardService {
         total_participants
       };
     } catch (error) {
-      console.error('Erreur lors du calcul des stats événements:', error);
+      logger.error('Erreur lors du calcul des stats événements:', error);
       throw error;
     }
   }
@@ -516,7 +517,7 @@ export class DashboardService {
         evenements_sans_budget
       };
     } catch (error) {
-      console.error('Erreur lors du calcul des actions en attente:', error);
+      logger.error('Erreur lors du calcul des actions en attente:', error);
       throw error;
     }
   }
@@ -576,7 +577,7 @@ export class DashboardService {
         taux_reconciliation
       };
     } catch (error) {
-      console.error('Erreur lors du calcul du taux de réconciliation:', error);
+      logger.error('Erreur lors du calcul du taux de réconciliation:', error);
       throw error;
     }
   }
@@ -641,7 +642,7 @@ export class DashboardService {
         taux_codification
       };
     } catch (error) {
-      console.error('Erreur lors du calcul des codes comptables:', error);
+      logger.error('Erreur lors du calcul des codes comptables:', error);
       throw error;
     }
   }
@@ -656,11 +657,11 @@ export class DashboardService {
       const currentAccountNumber = fiscalYear?.account_numbers?.bank_current;
       const normalizedCurrentAccount = currentAccountNumber?.replace(/\s/g, '');
 
-      console.log('=== DEBUG COUNT STATS ===');
-      console.log('Fiscal Year:', fiscalYear?.year);
-      console.log('Période:', fiscalYear?.start_date, '→', fiscalYear?.end_date);
-      console.log('IBAN configuré:', currentAccountNumber);
-      console.log('IBAN normalisé:', normalizedCurrentAccount);
+      logger.debug('=== DEBUG COUNT STATS ===');
+      logger.debug('Fiscal Year:', fiscalYear?.year);
+      logger.debug('Période:', fiscalYear?.start_date, '→', fiscalYear?.end_date);
+      logger.debug('IBAN configuré:', currentAccountNumber);
+      logger.debug('IBAN normalisé:', normalizedCurrentAccount);
 
       // 1. Compter les transactions (compte courant uniquement, année fiscale en cours)
       let nombre_transactions = 0;
@@ -678,7 +679,7 @@ export class DashboardService {
         const snapshot = await getDocs(q);
         total_in_period = snapshot.size;
 
-        console.log('Total transactions dans la période:', total_in_period);
+        logger.debug('Total transactions dans la période:', total_in_period);
 
         snapshot.docs.forEach(doc => {
           const data = doc.data();
@@ -705,7 +706,7 @@ export class DashboardService {
           }
         });
       } else {
-        console.log('⚠️ Aucune année fiscale active trouvée');
+        logger.debug('⚠️ Aucune année fiscale active trouvée');
       }
 
       // 2. Compter tous les événements
@@ -726,7 +727,7 @@ export class DashboardService {
         nombre_depenses
       };
     } catch (error) {
-      console.error('Erreur lors du calcul des statistiques de comptage:', error);
+      logger.error('Erreur lors du calcul des statistiques de comptage:', error);
       throw error;
     }
   }
@@ -866,7 +867,7 @@ export class DashboardService {
 
       return comparisons;
     } catch (error) {
-      console.error('Erreur lors du calcul de la comparaison année par année:', error);
+      logger.error('Erreur lors du calcul de la comparaison année par année:', error);
       throw error;
     }
   }

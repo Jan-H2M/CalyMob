@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { logger } from '@/utils/logger';
 import {
   X,
   Sparkles,
@@ -86,7 +87,7 @@ export function AIInscriptionMatcher({
         toast('Aucune correspondance trouvée par l\'IA', { icon: 'ℹ️' });
       }
     } catch (error: any) {
-      console.error('Erreur analyse IA:', error);
+      logger.error('Erreur analyse IA:', error);
       setError(error.message || 'Erreur lors de l\'analyse IA');
       toast.error('Erreur lors de l\'analyse IA');
     } finally {
@@ -170,7 +171,7 @@ export function AIInscriptionMatcher({
 
           {/* Error */}
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+            <div role="alert" className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
               <div className="flex items-start gap-3">
                 <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
                 <div>
@@ -244,7 +245,7 @@ export function AIInscriptionMatcher({
           <div className="flex items-center justify-end gap-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-primary bg-white dark:bg-dark-bg-secondary border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors"
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-primary bg-white dark:bg-dark-bg-secondary border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors"
             >
               Fermer
             </button>

@@ -1,8 +1,7 @@
-import React, { useState, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Operation } from '@/types';
-import { SourceBadge } from '../evenements/SourceBadge';
-import { formatDate, cn } from '@/utils/utils';
+import { cn } from '@/utils/utils';
 
 interface CalendarViewProps {
     events: Operation[];
@@ -158,7 +157,7 @@ export function CalendarView({ events, onEventClick }: CalendarViewProps) {
 
                         <button
                             onClick={goToPreviousMonth}
-                            className="p-2 hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors"
+                            className="p-2 hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors"
                             title="Mois précédent"
                         >
                             <ChevronLeft className="h-5 w-5 text-gray-600 dark:text-dark-text-secondary" />
@@ -166,7 +165,7 @@ export function CalendarView({ events, onEventClick }: CalendarViewProps) {
 
                         <button
                             onClick={goToNextMonth}
-                            className="p-2 hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors"
+                            className="p-2 hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors"
                             title="Mois suivant"
                         >
                             <ChevronRight className="h-5 w-5 text-gray-600 dark:text-dark-text-secondary" />

@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
+import { logger } from '@/utils/logger';
 import {
   X,
   Tag,
   FileText,
   Info,
   Trash2,
-  AlertCircle,
-  Star
+  AlertCircle
 } from 'lucide-react';
-import { AccountCode } from '@/types';
+import { AccountCode, Categorie } from '@/types';
 import { cn } from '@/utils/utils';
 import toast from 'react-hot-toast';
 
@@ -18,6 +18,8 @@ interface AccountCodeDetailViewProps {
   onClose: () => void;
   onSave?: (updatedCode: AccountCode) => void;
   onDelete?: (code: string) => void;
+  isNew?: boolean;
+  categories?: Categorie[];
 }
 
 export function AccountCodeDetailView({
@@ -25,7 +27,9 @@ export function AccountCodeDetailView({
   isOpen,
   onClose,
   onSave,
-  onDelete
+  onDelete,
+  isNew = false,
+  categories = []
 }: AccountCodeDetailViewProps) {
   const [editedCode, setEditedCode] = useState<AccountCode | null>(null);
 
@@ -39,8 +43,21 @@ export function AccountCodeDetailView({
   const handleFieldSave = async (field: string, value: any) => {
     if (!onSave || !editedCode) return;
 
-    try {
-      // Validation
+    // Update local state first
+    const updated = { ...editedCode, [field]: value };
+    setEditedCode(updated);
+
+    // Pour un nouveau code, ne sauvegarder que si code ET label sont remplis
+    if (isNew) {
+      const codeValue = field === 'code' ? value : updated.code;
+      const labelValue = field === 'label' ? value : updated.label;
+
+      if (!codeValue || !codeValue.trim() || !labelValue || !labelValue.trim()) {
+        // Ne pas sauvegarder encore, attendre que les deux champs soient remplis
+        return;
+      }
+    } else {
+      // Pour un code existant, validation normale
       if (field === 'code' && (!value || !value.trim())) {
         toast.error('Le code est obligatoire');
         return;
@@ -49,15 +66,13 @@ export function AccountCodeDetailView({
         toast.error('Le libellé est obligatoire');
         return;
       }
+    }
 
-      // Update local state and save
-      const updated = { ...editedCode, [field]: value };
-      setEditedCode(updated);
+    try {
       await onSave(updated);
-
       toast.success('✓ Sauvegardé', { duration: 1500, position: 'bottom-right' });
     } catch (error) {
-      console.error(`Error saving ${field}:`, error);
+      logger.error(`Error saving ${field}:`, error);
       toast.error('Erreur lors de la sauvegarde');
     }
   };
@@ -109,10 +124,14 @@ export function AccountCodeDetailView({
             <div className="flex items-center gap-3">
               <Tag className="h-6 w-6 text-gray-700 dark:text-dark-text-primary" />
               <div>
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-dark-text-primary">Détails du code comptable</h2>
-                <p className="text-sm text-gray-600 dark:text-dark-text-secondary mt-1">
-                  {accountCode.code}
-                </p>
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-dark-text-primary">
+                  {isNew ? 'Nouveau code comptable' : 'Détails du code comptable'}
+                </h2>
+                {!isNew && accountCode.code && (
+                  <p className="text-sm text-gray-600 dark:text-dark-text-secondary mt-1">
+                    {accountCode.code}
+                  </p>
+                )}
               </div>
             </div>
             <button
@@ -123,16 +142,18 @@ export function AccountCodeDetailView({
             </button>
           </div>
 
-          {/* Action buttons */}
-          <div className="flex gap-2 mt-4">
-            <button
-              onClick={handleDelete}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
-            >
-              <Trash2 className="h-4 w-4" />
-              Désactiver
-            </button>
-          </div>
+          {/* Action buttons - only show for existing codes */}
+          {!isNew && (
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={handleDelete}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+              >
+                <Trash2 className="h-4 w-4" />
+                Désactiver
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Content */}
@@ -195,38 +216,59 @@ export function AccountCodeDetailView({
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
-                    Catégorie
+                    Catégories
                   </label>
-                  <input
-                    type="text"
-                    value={editedCode.category || ''}
-                    onChange={(e) => setEditedCode({ ...editedCode, category: e.target.value })}
-                    onBlur={() => handleFieldSave('category', editedCode.category)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Ex: cotisations, piscine, sorties..."
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
-                    Utilisation fréquente
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="isFrequent"
-                      checked={editedCode.isFrequent || false}
-                      onChange={(e) => {
-                        const newValue = e.target.checked;
-                        setEditedCode({ ...editedCode, isFrequent: newValue });
-                        handleFieldSave('isFrequent', newValue);
-                      }}
-                      className="w-4 h-4 text-blue-600 border-gray-300 dark:border-dark-border rounded focus:ring-blue-500"
-                    />
-                    <label htmlFor="isFrequent" className="text-sm text-gray-700 dark:text-dark-text-primary flex items-center gap-1">
-                      <Star className="h-4 w-4 text-yellow-500" />
-                      Marquer comme fréquemment utilisé
-                    </label>
+                  <div className="border border-gray-300 dark:border-dark-border rounded-lg p-2 max-h-48 overflow-y-auto bg-white dark:bg-dark-bg-secondary">
+                    {categories
+                      .filter((cat) => {
+                        // Filter categories based on account code type
+                        if (editedCode.type === 'revenue') return cat.type === 'revenu';
+                        if (editedCode.type === 'expense') return cat.type === 'depense';
+                        // For asset/liability, show all categories
+                        return true;
+                      })
+                      .sort((a, b) => a.nom.localeCompare(b.nom, 'fr'))
+                      .map((cat) => {
+                        const isChecked = editedCode.categories?.includes(cat.id) || false;
+                        return (
+                          <label
+                            key={cat.id}
+                            className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary rounded cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                const currentCategories = editedCode.categories || [];
+                                let newCategories: string[];
+                                if (e.target.checked) {
+                                  newCategories = [...currentCategories, cat.id];
+                                } else {
+                                  newCategories = currentCategories.filter(id => id !== cat.id);
+                                }
+                                setEditedCode({ ...editedCode, categories: newCategories });
+                                handleFieldSave('categories', newCategories);
+                              }}
+                              className="w-4 h-4 text-blue-600 border-gray-300 dark:border-dark-border rounded focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-700 dark:text-dark-text-primary">
+                              {cat.nom}
+                            </span>
+                            {cat.isFrequent && (
+                              <span className="text-yellow-500 text-xs">★</span>
+                            )}
+                          </label>
+                        );
+                      })}
+                    {categories.filter((cat) => {
+                      if (editedCode.type === 'revenue') return cat.type === 'revenu';
+                      if (editedCode.type === 'expense') return cat.type === 'depense';
+                      return true;
+                    }).length === 0 && (
+                      <p className="text-sm text-gray-500 dark:text-dark-text-muted px-2 py-1">
+                        Aucune catégorie disponible pour ce type
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -251,9 +293,12 @@ export function AccountCodeDetailView({
                       'Compte de passif'
                     }
                   </p>
-                  {editedCode.category && (
+                  {editedCode.categories && editedCode.categories.length > 0 && (
                     <p>
-                      <span className="font-medium">Catégorie:</span> {editedCode.category.replace(/_/g, ' ')}
+                      <span className="font-medium">Catégories:</span> {editedCode.categories.map(catId => {
+                        const cat = categories.find(c => c.id === catId);
+                        return cat?.nom || catId.replace(/_/g, ' ');
+                      }).join(', ')}
                     </p>
                   )}
                   <p className="mt-3 text-xs text-blue-700">

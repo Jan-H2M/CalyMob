@@ -1,5 +1,8 @@
 import { aiProviderService } from './aiProviderService';
+import { AI_MODELS } from '@/config/aiModels';
 import type { EmailTemplateType, EmailTemplateVariable, EmailTemplateStyles } from '@/types/emailTemplates';
+import type { ClubBranding } from '@/types/branding';
+import { logger } from '@/utils/logger';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -14,6 +17,7 @@ export interface GenerateEmailHtmlOptions {
   styles: EmailTemplateStyles;
   conversationHistory?: ChatMessage[];
   currentHtmlContent?: string; // HTML actuel pour les modifications incrémentales
+  branding?: ClubBranding; // Branding du club pour personnalisation automatique
 }
 
 export interface GenerateEmailMetadataResult {
@@ -31,13 +35,13 @@ export class EmailTemplateAiService {
    * Génère un template email complet (métadonnées + HTML) à partir d'une description
    */
   static async generateEmailWithMetadata(options: GenerateEmailHtmlOptions): Promise<GenerateEmailMetadataResult> {
-    console.log('🔍 [EmailTemplateAiService] generateEmailWithMetadata called');
+    logger.debug('🔍 [EmailTemplateAiService] generateEmailWithMetadata called');
 
     const client = aiProviderService.getAnthropicClient();
-    console.log('🔍 [EmailTemplateAiService] Anthropic client:', client ? '✅ Configured' : '❌ Not configured');
+    logger.debug('🔍 [EmailTemplateAiService] Anthropic client:', client ? '✅ Configured' : '❌ Not configured');
 
     if (!client) {
-      console.error('❌ [EmailTemplateAiService] Anthropic client not available');
+      logger.error('❌ [EmailTemplateAiService] Anthropic client not available');
       throw new Error(
         'L\'API Claude n\'est pas configurée. ' +
         'Veuillez configurer votre clé API dans Paramètres → Intelligence Artificielle.'
@@ -51,14 +55,14 @@ export class EmailTemplateAiService {
     const isFollowUp = hasHistory || hasExistingHtml;
 
     const prompt = this.buildPromptWithMetadata(options, isFollowUp);
-    console.log('📝 [EmailTemplateAiService] Prompt built, length:', prompt.length);
-    console.log('📝 [EmailTemplateAiService] Is follow-up message:', isFollowUp);
-    console.log('📝 [EmailTemplateAiService] Has history:', hasHistory, '| Has existing HTML:', hasExistingHtml);
+    logger.debug('📝 [EmailTemplateAiService] Prompt built, length:', prompt.length);
+    logger.debug('📝 [EmailTemplateAiService] Is follow-up message:', isFollowUp);
+    logger.debug('📝 [EmailTemplateAiService] Has history:', hasHistory, '| Has existing HTML:', hasExistingHtml);
 
     try {
-      console.log('🚀 [EmailTemplateAiService] Calling Claude API...');
+      logger.debug('🚀 [EmailTemplateAiService] Calling Claude API...');
       const response = await client.messages.create({
-        model: 'claude-sonnet-4-5-20250929',
+        model: AI_MODELS.emailTemplate,
         max_tokens: 8192,
         messages: this.buildMessages(
           options.conversationHistory || [],
@@ -68,7 +72,7 @@ export class EmailTemplateAiService {
           options.currentHtmlContent
         ),
       });
-      console.log('✅ [EmailTemplateAiService] Claude API response received');
+      logger.debug('✅ [EmailTemplateAiService] Claude API response received');
 
       const content = response.content[0];
       if (content.type !== 'text') {
@@ -77,7 +81,7 @@ export class EmailTemplateAiService {
 
       // Parse la réponse JSON contenant métadonnées + HTML
       const responseText = content.text.trim();
-      console.log('📄 [EmailTemplateAiService] Raw response (first 200 chars):', responseText.substring(0, 200));
+      logger.debug('📄 [EmailTemplateAiService] Raw response (first 200 chars):', responseText.substring(0, 200));
 
       // Extraire le JSON (peut être dans des backticks markdown ou précédé/suivi de texte)
       let jsonText = responseText;
@@ -109,13 +113,13 @@ export class EmailTemplateAiService {
         }
       }
 
-      console.log('🔍 [EmailTemplateAiService] Extracted JSON (first 200 chars):', jsonText.substring(0, 200));
+      logger.debug('🔍 [EmailTemplateAiService] Extracted JSON (first 200 chars):', jsonText.substring(0, 200));
 
       const result = JSON.parse(jsonText) as GenerateEmailMetadataResult;
-      console.log('✅ [EmailTemplateAiService] JSON parsed successfully');
+      logger.debug('✅ [EmailTemplateAiService] JSON parsed successfully');
       return result;
     } catch (error: any) {
-      console.error('Erreur lors de la génération du template:', error);
+      logger.error('Erreur lors de la génération du template:', error);
 
       if (error.status === 401) {
         throw new Error('Clé API Claude invalide. Veuillez vérifier votre configuration.');
@@ -134,13 +138,13 @@ export class EmailTemplateAiService {
    * (méthode conservée pour compatibilité)
    */
   static async generateEmailHtml(options: GenerateEmailHtmlOptions): Promise<string> {
-    console.log('🔍 [EmailTemplateAiService] generateEmailHtml called');
+    logger.debug('🔍 [EmailTemplateAiService] generateEmailHtml called');
 
     const client = aiProviderService.getAnthropicClient();
-    console.log('🔍 [EmailTemplateAiService] Anthropic client:', client ? '✅ Configured' : '❌ Not configured');
+    logger.debug('🔍 [EmailTemplateAiService] Anthropic client:', client ? '✅ Configured' : '❌ Not configured');
 
     if (!client) {
-      console.error('❌ [EmailTemplateAiService] Anthropic client not available');
+      logger.error('❌ [EmailTemplateAiService] Anthropic client not available');
       throw new Error(
         'L\'API Claude n\'est pas configurée. ' +
         'Veuillez configurer votre clé API dans Paramètres → Intelligence Artificielle.'
@@ -148,16 +152,16 @@ export class EmailTemplateAiService {
     }
 
     const prompt = this.buildPrompt(options);
-    console.log('📝 [EmailTemplateAiService] Prompt built, length:', prompt.length);
+    logger.debug('📝 [EmailTemplateAiService] Prompt built, length:', prompt.length);
 
     try {
-      console.log('🚀 [EmailTemplateAiService] Calling Claude API...');
+      logger.debug('🚀 [EmailTemplateAiService] Calling Claude API...');
       const response = await client.messages.create({
-        model: 'claude-sonnet-4-5-20250929',
+        model: AI_MODELS.emailTemplate,
         max_tokens: 8192, // Augmenté pour permettre des templates plus longs
         messages: this.buildMessages(options.conversationHistory || [], options.userMessage, prompt),
       });
-      console.log('✅ [EmailTemplateAiService] Claude API response received');
+      logger.debug('✅ [EmailTemplateAiService] Claude API response received');
 
       // Extraire le contenu texte de la réponse
       const content = response.content[0];
@@ -177,7 +181,7 @@ export class EmailTemplateAiService {
 
       return htmlContent;
     } catch (error: any) {
-      console.error('Erreur lors de la génération du template:', error);
+      logger.error('Erreur lors de la génération du template:', error);
 
       if (error.status === 401) {
         throw new Error('Clé API Claude invalide. Veuillez vérifier votre configuration.');
@@ -190,18 +194,137 @@ export class EmailTemplateAiService {
   }
 
   /**
+   * Construit la section branding pour le prompt
+   */
+  private static buildBrandingSection(branding?: ClubBranding): string {
+    if (!branding) return '';
+
+    const sections: string[] = [];
+
+    sections.push('BRANDING DU CLUB (À UTILISER OBLIGATOIREMENT):');
+
+    // Nom du club
+    sections.push(`- Nom du club: ${branding.clubName}`);
+
+    // === LOGO ===
+    if (branding.logoUrl) {
+      const logoStyle = branding.logoStyle || 'contained';
+      const logoBg = branding.logoBackgroundColor || '#FFFFFF';
+      const logoPadding = branding.logoPadding ?? 8;
+      const logoRadius = branding.logoBorderRadius ?? 8;
+
+      let logoStyleStr = '';
+      if (logoStyle === 'transparent') {
+        logoStyleStr = 'background: transparent; padding: 0;';
+      } else if (logoStyle === 'circle') {
+        logoStyleStr = `background: ${logoBg}; padding: ${logoPadding}px; border-radius: 50%;`;
+      } else {
+        logoStyleStr = `background: ${logoBg}; padding: ${logoPadding}px; border-radius: ${logoRadius}px;`;
+      }
+
+      sections.push(`- Logo du club (dans un container avec style): <div style="${logoStyleStr}"><img src="${branding.logoUrl}" alt="${branding.logoAlt || branding.clubName}" style="max-height: 60px; width: auto; display: block;"></div>`);
+    }
+
+    // === COULEURS ===
+    sections.push(`- Couleur primaire: ${branding.primaryColor}`);
+    if (branding.secondaryColor) {
+      sections.push(`- Couleur secondaire: ${branding.secondaryColor}`);
+    }
+    if (branding.accentColor) {
+      sections.push(`- Couleur accent (boutons): ${branding.accentColor}`);
+    }
+    if (branding.textColor) {
+      sections.push(`- Couleur du texte: ${branding.textColor}`);
+    }
+
+    // === HEADER ===
+    if (branding.headerGradient) {
+      sections.push(`- Dégradé pour le header: ${branding.headerGradient}`);
+    }
+    if (branding.headerHeight) {
+      sections.push(`- Hauteur du header: ${branding.headerHeight}px`);
+    }
+    if (branding.headerPadding) {
+      sections.push(`- Padding du header: ${branding.headerPadding}px`);
+    }
+
+    // === TYPOGRAPHIE ===
+    if (branding.fontFamily) {
+      sections.push(`- Police de caractères: ${branding.fontFamily}`);
+    }
+    if (branding.titleFontSize) {
+      sections.push(`- Taille des titres: ${branding.titleFontSize}px`);
+    }
+    if (branding.bodyFontSize) {
+      sections.push(`- Taille du texte: ${branding.bodyFontSize}px`);
+    }
+
+    // === FOND D'EMAIL ===
+    const bgType = branding.emailBackgroundType || 'solid';
+    const bgColor = branding.emailBackgroundColor || '#F5F5F5';
+    const contentBg = branding.contentBackgroundColor || '#FFFFFF';
+
+    if (bgType === 'gradient' && branding.emailBackgroundGradient) {
+      sections.push(`- Fond de l'email: dégradé ${branding.emailBackgroundGradient}`);
+    } else if (bgType === 'image' && branding.emailBackgroundImageUrl) {
+      sections.push(`- Image de fond de l'email: url(${branding.emailBackgroundImageUrl})`);
+    } else {
+      sections.push(`- Couleur de fond de l'email: ${bgColor}`);
+    }
+    sections.push(`- Couleur de fond du contenu: ${contentBg}`);
+
+    // === FOOTER ===
+    if (branding.footerBackgroundColor) {
+      sections.push(`- Couleur de fond du footer: ${branding.footerBackgroundColor}`);
+    }
+    if (branding.footerImageUrl) {
+      sections.push(`- Image dans le footer: <img src="${branding.footerImageUrl}" alt="Footer" style="max-height: 80px; width: auto;">`);
+    }
+    if (branding.footerText) {
+      sections.push(`- Texte de footer personnalisé: ${branding.footerText}`);
+    }
+
+    // === BOUTONS ===
+    const btnRadius = branding.buttonBorderRadius ?? 4;
+    const btnPaddingV = branding.buttonPaddingV ?? 12;
+    const btnPaddingH = branding.buttonPaddingH ?? 24;
+    sections.push(`- Style des boutons: border-radius: ${btnRadius}px; padding: ${btnPaddingV}px ${btnPaddingH}px; background: ${branding.accentColor || branding.primaryColor}; color: #FFFFFF;`);
+
+    // === LIENS ===
+    if (branding.websiteUrl) {
+      sections.push(`- Site web du club: ${branding.websiteUrl}`);
+    }
+    if (branding.facebookUrl) {
+      sections.push(`- Facebook: ${branding.facebookUrl}`);
+    }
+    if (branding.instagramUrl) {
+      sections.push(`- Instagram: ${branding.instagramUrl}`);
+    }
+
+    return sections.join('\n') + '\n';
+  }
+
+  /**
    * Construit le prompt système pour Claude (avec métadonnées)
    */
   private static buildPromptWithMetadata(options: GenerateEmailHtmlOptions, isFollowUp: boolean): string {
-    const { emailType, variables, styles } = options;
+    const { emailType, variables, styles, branding } = options;
 
     const variablesList = variables
       .map(v => `  - {{${v.name}}} : ${v.description}`)
       .join('\n');
 
+    const brandingSection = this.buildBrandingSection(branding);
+
     const emailTypeDescriptions: Partial<Record<EmailTemplateType, string>> = {
       pending_demands: 'Email de rappel pour des demandes de remboursement en attente de validation',
       accounting_codes: 'Email quotidien avec la liste des codes comptables du jour',
+      expense_submitted: 'Email de confirmation quand une note de frais est soumise',
+      expense_approved: 'Email de notification quand une note de frais est approuvée',
+      expense_reimbursed: 'Email de confirmation quand une note de frais est remboursée',
+      bank_validation_pending: 'Email de rappel pour des paiements en attente de validation bancaire',
+      account_activated: 'Email de bienvenue quand un compte utilisateur est activé',
+      password_reset: 'Email de notification quand un mot de passe est réinitialisé',
       events: 'Email concernant les événements du club (sorties, formations)',
       transactions: 'Email concernant les transactions bancaires',
       members: 'Email concernant les membres du club',
@@ -218,6 +341,7 @@ IMPORTANT: Ceci est un MESSAGE DE SUIVI. L'utilisateur veut MODIFIER le template
 CONTEXTE:
 Type d'email: ${emailTypeDescriptions[emailType] || emailType}
 
+${brandingSection}
 VARIABLES HANDLEBARS DISPONIBLES:
 ${variablesList}
 
@@ -262,16 +386,17 @@ RÈGLES CRITIQUES:
 CONTEXTE:
 Type d'email: ${emailTypeDescriptions[emailType] || emailType}
 
+${brandingSection}
 VARIABLES HANDLEBARS DISPONIBLES:
 ${variablesList}
 
 STYLES À RESPECTER:
-- Couleur primaire: ${styles.primaryColor}
-- Couleur secondaire: ${styles.secondaryColor}
-- Couleur des boutons: ${styles.buttonColor}
+- Couleur primaire: ${branding?.primaryColor || styles.primaryColor}
+- Couleur secondaire: ${branding?.secondaryColor || styles.secondaryColor}
+- Couleur des boutons: ${branding?.accentColor || styles.buttonColor}
 - Couleur du texte des boutons: ${styles.buttonTextColor}
-- Dégradé header: ${styles.headerGradient}
-- Police de caractères: ${styles.fontFamily}
+- Dégradé header: ${branding?.headerGradient || styles.headerGradient}
+- Police de caractères: ${branding?.fontFamily || styles.fontFamily}
 
 EXIGENCES TECHNIQUES:
 1. HTML valide et bien formé (DOCTYPE, html, head, body)
@@ -282,12 +407,13 @@ EXIGENCES TECHNIQUES:
 6. Pour les boucles: {{#each items}} ... {{/each}}
 7. Pour les conditions: {{#if condition}} ... {{/if}}
 8. Structure professionnelle et épurée (pas de clipart, pas d'emojis excessifs)
+${branding?.logoUrl ? '9. INCLURE LE LOGO DU CLUB dans le header de l\'email' : ''}
 
 STRUCTURE RECOMMANDÉE:
-- Header avec dégradé de couleur et titre principal
+- Header avec ${branding?.logoUrl ? 'logo centré et ' : ''}dégradé de couleur et titre principal
 - Corps avec contenu principal (texte, tableaux si nécessaire)
 - Bouton d'action (CTA) si pertinent
-- Footer avec informations de contact et nom du club
+- Footer avec ${branding?.clubName ? `"${branding.clubName}"` : 'nom du club'}${branding?.footerText ? ` et "${branding.footerText}"` : ''}
 
 FORMAT DE RÉPONSE REQUIS:
 Tu DOIS répondre UNIQUEMENT avec un objet JSON valide, sans AUCUN texte avant ou après.
@@ -304,7 +430,7 @@ Retourne DIRECTEMENT le JSON suivant:
 RÈGLES CRITIQUES:
 1. Le JSON doit être valide (échapper les guillemets dans le HTML avec \\")
 2. Le HTML doit être complet (DOCTYPE, html, head, body)
-3. Utilise les couleurs fournies pour maintenir la cohérence visuelle
+3. Utilise les couleurs du branding pour maintenir la cohérence visuelle
 4. Ta réponse doit commencer par { et finir par }
 5. AUCUN texte avant le { ou après le }
 6. AUCUNE balise markdown comme \`\`\`json
@@ -463,7 +589,7 @@ IMPORTANT:
 
     try {
       await client.messages.create({
-        model: 'claude-sonnet-4-5-20250929',
+        model: AI_MODELS.emailTemplate,
         max_tokens: 50,
         messages: [{
           role: 'user',
@@ -480,6 +606,177 @@ IMPORTANT:
         success: false,
         message: `Erreur de connexion: ${error.message || 'Erreur inconnue'}`,
       };
+    }
+  }
+}
+
+/**
+ * Options for generating zones with AI
+ */
+export interface GenerateZoneOptions {
+  userMessage: string;
+  currentHtmlContent: string;
+  emailType: EmailTemplateType;
+  variables: EmailTemplateVariable[];
+  existingZones: Array<{ id: string; label: string; content: string }>;
+}
+
+/**
+ * Result of zone generation
+ */
+export interface GenerateZoneResult {
+  html: string;
+  zoneName: string;
+}
+
+/**
+ * Generate or add an editable zone to an email template using AI
+ * The AI will understand the user's request and add appropriate zone markers
+ */
+export async function generateZoneWithAi(options: GenerateZoneOptions): Promise<GenerateZoneResult> {
+  const { userMessage, currentHtmlContent, variables, existingZones } = options;
+
+  logger.debug('[generateZoneWithAi] Starting zone generation...');
+  logger.debug('[generateZoneWithAi] User message:', userMessage);
+  logger.debug('[generateZoneWithAi] Existing zones:', existingZones.map(z => z.id));
+
+  const { aiProviderService } = await import('./aiProviderService');
+  const client = aiProviderService.getAnthropicClient();
+
+  if (!client) {
+    throw new Error(
+      'L\'API Claude n\'est pas configuree. ' +
+      'Veuillez configurer votre cle API dans Parametres - Intelligence Artificielle.'
+    );
+  }
+
+  const variablesList = variables
+    .map(v => `  - {{${v.name}}} : ${v.description}`)
+    .join('\n');
+
+  const existingZonesList = existingZones.length > 0
+    ? existingZones.map(z => `  - ID: "${z.id}", Label: "${z.label}"`).join('\n')
+    : '  (aucune zone existante)';
+
+  const systemPrompt = `Tu es un expert en templates email HTML. Ta tache est d'AJOUTER une zone editable dans un template email existant.
+
+FORMAT DES ZONES EDITABLES:
+Les zones sont definies avec ce format HTML:
+<!--ZONE:id:Label-->
+contenu par defaut de la zone
+<!--/ZONE:id-->
+
+REGLES POUR LES ZONES:
+1. L'ID doit etre en minuscules, alphanumerique avec underscores (ex: intro, message, signature)
+2. Le Label est le nom affiche (ex: "Introduction", "Message personnalise", "Signature")
+3. Le contenu par defaut doit etre du HTML valide
+4. Les zones ne peuvent pas etre imbriquees
+
+VARIABLES HANDLEBARS DISPONIBLES:
+${variablesList}
+
+ZONES EXISTANTES DANS CE TEMPLATE:
+${existingZonesList}
+
+HTML ACTUEL DU TEMPLATE:
+${currentHtmlContent}
+
+DEMANDE DE L'UTILISATEUR:
+${userMessage}
+
+INSTRUCTIONS:
+1. Analyse la demande de l'utilisateur pour comprendre:
+   - Quel type de zone il veut (intro, message, signature, etc.)
+   - Ou la placer dans le template
+   - Quel contenu par defaut utiliser
+2. Ajoute la zone avec les marqueurs <!--ZONE:id:Label--> et <!--/ZONE:id-->
+3. Choisis un ID unique qui n'existe pas encore
+4. Garde TOUT le reste du HTML exactement identique
+
+FORMAT DE REPONSE REQUIS:
+Retourne UNIQUEMENT un objet JSON valide:
+
+{
+  "zoneName": "Le label de la zone ajoutee",
+  "html": "Le HTML complet du template avec la nouvelle zone ajoutee"
+}
+
+REGLES CRITIQUES:
+1. Le JSON doit etre valide (echappe les guillemets: \\")
+2. Le HTML doit contenir TOUT le template original PLUS la nouvelle zone
+3. Ta reponse doit commencer par { et finir par }
+4. AUCUN texte avant le { ou apres le }
+5. AUCUNE balise markdown`;
+
+  try {
+    const response = await client.messages.create({
+      model: AI_MODELS.emailTemplate,
+      max_tokens: 16384,
+      messages: [{
+        role: 'user',
+        content: systemPrompt,
+      }],
+    });
+
+    const content = response.content[0];
+    if (content.type !== 'text') {
+      throw new Error('Type de reponse inattendu de l\'API Claude');
+    }
+
+    // Parse JSON response
+    let jsonText = content.text.trim();
+
+    // Remove markdown code blocks if present
+    if (jsonText.includes('```json')) {
+      const match = jsonText.match(/```json\s*([\s\S]*?)\s*```/);
+      if (match) {
+        jsonText = match[1].trim();
+      }
+    } else if (jsonText.includes('```')) {
+      const match = jsonText.match(/```\s*([\s\S]*?)\s*```/);
+      if (match) {
+        jsonText = match[1].trim();
+      }
+    }
+
+    // Find JSON boundaries
+    if (!jsonText.startsWith('{')) {
+      const firstBrace = jsonText.indexOf('{');
+      if (firstBrace !== -1) {
+        jsonText = jsonText.substring(firstBrace);
+      }
+    }
+    if (!jsonText.endsWith('}')) {
+      const lastBrace = jsonText.lastIndexOf('}');
+      if (lastBrace !== -1) {
+        jsonText = jsonText.substring(0, lastBrace + 1);
+      }
+    }
+
+    const result = JSON.parse(jsonText) as GenerateZoneResult;
+
+    // Validate that a new zone was actually added
+    const zonePattern = /<!--ZONE:(\w+):([^>]+)-->/g;
+    const originalZones = currentHtmlContent.match(zonePattern) || [];
+    const newZones = result.html.match(zonePattern) || [];
+
+    if (newZones.length <= originalZones.length) {
+      logger.warn('[generateZoneWithAi] Warning: No new zone detected in response');
+    }
+
+    logger.debug('[generateZoneWithAi] Zone generated successfully:', result.zoneName);
+    return result;
+  } catch (error: any) {
+    logger.error('[generateZoneWithAi] Error:', error);
+
+    if (error.status === 401) {
+      throw new Error('Cle API Claude invalide. Veuillez verifier votre configuration.');
+    } else if (error.status === 429) {
+      throw new Error('Limite de requetes API atteinte. Veuillez reessayer dans quelques instants.');
+    } else if (error instanceof SyntaxError) {
+      throw new Error('Erreur de parsing de la reponse de l\'IA. Veuillez reessayer.');
+    } else {
+      throw new Error(`Erreur lors de la generation: ${error.message || 'Erreur inconnue'}`);
     }
   }
 }

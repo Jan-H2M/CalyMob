@@ -40,7 +40,7 @@ export function ImageViewer({ fileUrl, fileName, className = '' }: ImageViewerPr
   // Si erreur de chargement, afficher fallback
   if (loadError) {
     return (
-      <div className={`flex flex-col items-center justify-center p-8 bg-gray-100 rounded-lg ${className}`}>
+      <div className={`flex flex-col items-center justify-center p-8 bg-gray-100 dark:bg-dark-bg-tertiary rounded-lg ${className}`}>
         <div className="text-center max-w-md">
           <AlertCircle className="h-16 w-16 text-amber-500 mx-auto mb-4" />
           <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary mb-2">

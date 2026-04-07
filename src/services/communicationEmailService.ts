@@ -1,3 +1,4 @@
+import { logger } from '@/utils/logger';
 /**
  * Service de gestion des emails de communication
  * Déclenche l'envoi d'emails programmés via Firebase Cloud Functions + Google Mail API
@@ -28,7 +29,7 @@ export class CommunicationEmailService {
     recipientName: string
   ): Promise<EmailSendResult> {
     try {
-      console.log('[CommunicationEmailService] Sending test pending demands email');
+      logger.debug('[CommunicationEmailService] Sending test pending demands email');
 
       // TODO: Implement test email function call
       // const testEmailFunction = httpsCallable<any, EmailSendResult>(
@@ -54,7 +55,7 @@ export class CommunicationEmailService {
       };
 
     } catch (error: any) {
-      console.error('[CommunicationEmailService] Error sending test email:', error);
+      logger.error('[CommunicationEmailService] Error sending test email:', error);
       return {
         success: false,
         error: error.message || 'Erreur lors de l\'envoi de l\'email de test',
@@ -76,7 +77,7 @@ export class CommunicationEmailService {
     emailData: PendingDemandsEmailData
   ): Promise<EmailSendResult> {
     try {
-      console.log(`[CommunicationEmailService] Sending pending demands reminder to: ${emailData.recipientEmail}`);
+      logger.debug(`[CommunicationEmailService] Sending pending demands reminder to: ${emailData.recipientEmail}`);
 
       const sendEmailFunction = httpsCallable<
         { clubId: string; emailData: PendingDemandsEmailData },
@@ -88,11 +89,11 @@ export class CommunicationEmailService {
         emailData
       });
 
-      console.log('[CommunicationEmailService] Email sent successfully:', result.data);
+      logger.debug('[CommunicationEmailService] Email sent successfully:', result.data);
       return result.data;
 
     } catch (error: any) {
-      console.error('[CommunicationEmailService] Error sending email:', error);
+      logger.error('[CommunicationEmailService] Error sending email:', error);
       return {
         success: false,
         error: error.message || 'Erreur lors de l\'envoi de l\'email',

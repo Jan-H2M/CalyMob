@@ -1,73 +1,113 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { FileText, Download, Calendar, FileSpreadsheet, Presentation, Sparkles, Loader2, CheckCircle, AlertCircle, Zap } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { FileSpreadsheet, Loader2, Calendar, FileText, Users, BarChart3, Activity } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { FiscalYearService } from '@/services/fiscalYearService';
-import { ReportService } from '@/services/reportService';
-import { FiscalYear, ReportType, ReportPeriod, FinancialSummary, ReportMetadata, PDFReport, EventStatistics } from '@/types';
-import { claudeReportTemplates, ClaudeReportTemplate } from '@/services/claudeReportTemplates';
-import { claudeDocumentService, ClaudeGenerationProgress } from '@/services/claudeDocumentService';
-import { aiProviderService } from '@/services/aiProviderService';
-import { cn } from '@/utils/utils';
+import { FiscalYear } from '@/types';
+import { User } from '@/types/user.types';
+import { UserService } from '@/services/userService';
+import { downloadCompteResultatsExcel } from '@/services/reportExcelService';
+import { generatePresencePdf } from '@/utils/generatePresencePdf';
+import { generateMemberStatsPptx } from '@/services/memberStatsPptxService';
+import { generateActivityStatsPptx } from '@/services/activityStatsPptxService';
+import { MemberStatsReport } from './MemberStatsReport';
 import toast from 'react-hot-toast';
-import { format, formatDistanceToNow, startOfMonth, endOfMonth } from 'date-fns';
-import { fr } from 'date-fns/locale';
-import { saveAs } from 'file-saver';
+import { format } from 'date-fns';
+import { logger } from '@/utils/logger';
 
-// Import des templates PDF (gardés pour backward compatibility)
-import { ReportPreview } from './ReportPreview';
-import { PptxExportService } from '@/services/pptxExportService';
-import { ExcelExportService } from '@/services/excelExportService';
+type TabType = 'exports' | 'members';
 
-// Ancien système gardé pour backward compatibility si besoin
-// const REPORT_TYPES = [...] (supprimé - remplacé par claudeReportTemplates)
+function toTimeMs(date: Date | undefined): number {
+  return date instanceof Date && !Number.isNaN(date.getTime()) ? date.getTime() : 0;
+}
+
+function fiscalYearStatusRank(status: FiscalYear['status']): number {
+  if (status === 'permanently_closed') return 3;
+  if (status === 'closed') return 2;
+  return 1;
+}
+
+function selectPreferredFiscalYearByYear(
+  fiscalYears: FiscalYear[],
+  targetYear: number
+): FiscalYear | null {
+  const candidates = fiscalYears.filter(y => y.year === targetYear);
+  if (candidates.length === 0) return null;
+
+  const sorted = [...candidates].sort((a, b) => {
+    const statusDiff = fiscalYearStatusRank(b.status) - fiscalYearStatusRank(a.status);
+    if (statusDiff !== 0) return statusDiff;
+
+    const endDiff = toTimeMs(b.end_date) - toTimeMs(a.end_date);
+    if (endDiff !== 0) return endDiff;
+
+    const updatedDiff = toTimeMs(b.updated_at) - toTimeMs(a.updated_at);
+    if (updatedDiff !== 0) return updatedDiff;
+
+    const createdDiff = toTimeMs(b.created_at) - toTimeMs(a.created_at);
+    if (createdDiff !== 0) return createdDiff;
+
+    return a.id.localeCompare(b.id);
+  });
+
+  return sorted[0] || null;
+}
 
 export function RapportsPage() {
-  const { clubId, appUser } = useAuth();
-  const navigate = useNavigate();
+  const { clubId } = useAuth();
+  const [searchParams] = useSearchParams();
+  const autoExportLastTokenRef = useRef<string | null>(null);
 
-  // États pour la sélection
+  // États
+  const [activeTab, setActiveTab] = useState<TabType>('exports');
   const [fiscalYears, setFiscalYears] = useState<FiscalYear[]>([]);
   const [selectedFiscalYear, setSelectedFiscalYear] = useState<FiscalYear | null>(null);
-  const [selectedTemplate, setSelectedTemplate] = useState<ClaudeReportTemplate | null>(null);
-  const [selectedFormats, setSelectedFormats] = useState<ClaudeDocumentFormat[]>([]);
-  const [customStartDate, setCustomStartDate] = useState<string>('');
-  const [customEndDate, setCustomEndDate] = useState<string>('');
-  const [periodType, setPeriodType] = useState<'year' | 'quarter' | 'month' | 'custom'>('month');
-  const [selectedMonth, setSelectedMonth] = useState<number>(9); // Default to October (0-indexed, month 9 = October)
+  const [isExporting, setIsExporting] = useState(false);
+  const [users, setUsers] = useState<User[]>([]);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isGeneratingMemberStats, setIsGeneratingMemberStats] = useState(false);
+  const [isGeneratingActivityStats, setIsGeneratingActivityStats] = useState(false);
 
-  // États pour la génération avec Claude Skills
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [progress, setProgress] = useState<ClaudeGenerationProgress | null>(null);
-  const [generatedFiles, setGeneratedFiles] = useState<{
-    excel?: Blob;
-    pptx?: Blob;
-    pdf?: Blob;
-    docx?: Blob;
-  } | null>(null);
-
-  // Check if Claude is configured
-  const isClaudeAvailable = aiProviderService.isProviderAvailable('anthropic');
-
-  // Charger les années fiscales au montage
+  // Charger les années fiscales et les membres au montage
   useEffect(() => {
-    loadFiscalYears();
+    void loadFiscalYears();
+    void loadUsers();
   }, [clubId]);
 
-  // Initialiser les formats sélectionnés quand le template change
-  useEffect(() => {
-    if (selectedTemplate) {
-      // Ne sélectionner aucun format par défaut - l'utilisateur doit choisir
-      setSelectedFormats([]);
-    } else {
-      setSelectedFormats([]);
+  const loadUsers = useCallback(async () => {
+    try {
+      const loadedUsers = await UserService.getUsers(clubId);
+      setUsers(loadedUsers);
+    } catch (error) {
+      logger.error('Erreur chargement membres:', error);
     }
-  }, [selectedTemplate]);
+  }, [clubId]);
 
-  const loadFiscalYears = async () => {
+  const getRequestedFiscalYear = useCallback((years: FiscalYear[]): FiscalYear | null => {
+    const fyIdParam = searchParams.get('fyId');
+    if (fyIdParam) {
+      return years.find(year => year.id === fyIdParam) || null;
+    }
+
+    const yearParam = searchParams.get('year');
+    if (!yearParam) return null;
+
+    const requestedYear = Number(yearParam);
+    if (!Number.isFinite(requestedYear)) return null;
+
+    return selectPreferredFiscalYearByYear(years, requestedYear);
+  }, [searchParams]);
+
+  const loadFiscalYears = useCallback(async () => {
     try {
       const years = await FiscalYearService.getFiscalYears(clubId);
       setFiscalYears(years);
+
+      const requestedFiscalYear = getRequestedFiscalYear(years);
+      if (requestedFiscalYear) {
+        setSelectedFiscalYear(requestedFiscalYear);
+        return;
+      }
 
       // Sélectionner l'année fiscale courante par défaut
       const currentYear = await FiscalYearService.getCurrentFiscalYear(clubId);
@@ -77,624 +117,331 @@ export function RapportsPage() {
         setSelectedFiscalYear(years[0]);
       }
     } catch (error) {
-      console.error('Erreur chargement années fiscales:', error);
+      logger.error('Erreur chargement années fiscales:', error);
       toast.error('Erreur lors du chargement des années fiscales');
     }
-  };
+  }, [clubId, getRequestedFiscalYear]);
 
-  const handleGenerateReport = async () => {
-    if (!selectedTemplate) {
-      toast.error('Veuillez sélectionner un template');
-      return;
-    }
-
-    if (!isClaudeAvailable) {
-      toast.error('Claude API non configurée. Allez dans Paramètres → IA pour ajouter votre clé API Anthropic.');
-      return;
-    }
-
-    if (!selectedFiscalYear) {
+  // Export Compte de Résultats
+  const handleExportCompteResultats = useCallback(async (fiscalYearOverride?: FiscalYear) => {
+    const fiscalYearToExport = fiscalYearOverride || selectedFiscalYear;
+    if (!fiscalYearToExport) {
       toast.error('Veuillez sélectionner une année fiscale');
       return;
     }
 
-    setIsGenerating(true);
-    setProgress({ step: 'Initialisation', percent: 0 });
-    setGeneratedFiles(null);
-
+    setIsExporting(true);
     try {
-      // 1. Créer la période
-      let period: ReportPeriod;
-      if (periodType === 'custom') {
-        if (!customStartDate || !customEndDate) {
-          toast.error('Veuillez sélectionner une période personnalisée');
-          setIsGenerating(false);
-          return;
-        }
-        period = ReportService.createCustomPeriod(
-          new Date(customStartDate),
-          new Date(customEndDate),
-          selectedFiscalYear.year
-        );
-      } else if (periodType === 'month') {
-        // For monthly reports, use selected month of the selected fiscal year
-        const fiscalYear = selectedFiscalYear.year;
-        const targetDate = new Date(fiscalYear, selectedMonth, 1);
-        const monthStart = startOfMonth(targetDate);
-        const monthEnd = endOfMonth(targetDate);
-
-        period = {
-          start_date: monthStart,
-          end_date: monthEnd,
-          fiscal_year: selectedFiscalYear.year,
-          label: `${format(targetDate, 'MMMM yyyy', { locale: fr })}`,
-          type: 'month'
-        };
-      } else {
-        period = ReportService.createPeriodFromFiscalYear(selectedFiscalYear, periodType);
-      }
-
-      // 2. Collect data from reportService
-      setProgress({ step: 'Collecte des données', percent: 10, message: 'Récupération des transactions...' });
-      const financialSummary = await ReportService.generateFinancialSummary(clubId, period, selectedFiscalYear);
-
-      // 🔴 VALIDATION: Check if we have data before generating
-      if (financialSummary.transaction_count === 0) {
-        toast.error('Aucune transaction trouvée pour cette période. Impossible de générer un rapport.', {
-          duration: 5000
-        });
-        setIsGenerating(false);
-        setProgress(null);
-        return;
-      }
-
-      setProgress({ step: 'Préparation prompts', percent: 20, message: 'Construction des prompts Claude...' });
-
-      // 3. Build prompts using template (only for selected formats)
-      const prompts: { excel?: string; pptx?: string; pdf?: string; docx?: string } = {};
-      const clubName = 'Calypso Diving Club';
-
-      if (selectedFormats.includes('excel') && selectedTemplate.buildExcelPrompt) {
-        prompts.excel = selectedTemplate.buildExcelPrompt(financialSummary, clubName);
-      }
-
-      if (selectedFormats.includes('pptx') && selectedTemplate.buildPowerPointPrompt) {
-        prompts.pptx = selectedTemplate.buildPowerPointPrompt(financialSummary, clubName);
-      }
-
-      if (selectedFormats.includes('pdf') && selectedTemplate.buildPDFPrompt) {
-        prompts.pdf = selectedTemplate.buildPDFPrompt(financialSummary, clubName);
-      }
-
-      if (selectedFormats.includes('docx') && selectedTemplate.buildWordPrompt) {
-        prompts.docx = selectedTemplate.buildWordPrompt(financialSummary, clubName);
-      }
-
-      // 4. Generate documents with Claude (only selected formats)
-      const result = await claudeDocumentService.generateMultiFormat(
-        selectedFormats,
-        prompts,
-        {
-          includeCharts: selectedTemplate.includeCharts,
-          includeInsights: selectedTemplate.includeInsights,
-          includeForecasts: selectedTemplate.includeForecasts,
-          language: 'fr',
-          clubName
-        },
-        (p) => setProgress(p)
+      await downloadCompteResultatsExcel(clubId, fiscalYearToExport);
+      toast.success(
+        `Fichier "Compta_Calypso_${fiscalYearToExport.year}.xlsx" téléchargé dans votre dossier Téléchargements`,
+        { duration: 5000 }
       );
-
-      if (!result.success) {
-        throw new Error(result.error || 'Erreur lors de la génération');
-      }
-
-      setGeneratedFiles(result.files || null);
-      toast.success('Rapports générés avec succès!');
     } catch (error) {
-      console.error('Error generating reports:', error);
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : 'Erreur lors de la génération des rapports'
-      );
+      logger.error('Erreur export Compte de Résultats:', error);
+      toast.error('Erreur lors de l\'export du Compte de Résultats');
     } finally {
-      setIsGenerating(false);
-      setProgress(null);
+      setIsExporting(false);
+    }
+  }, [clubId, selectedFiscalYear]);
+
+  const handleExportButtonClick = useCallback(() => {
+    void handleExportCompteResultats();
+  }, [handleExportCompteResultats]);
+
+  // Auto-export optionnel via URL:
+  // /rapports?autoExport=1&year=2025&token=<run-id>
+  // /rapports?autoExport=1&fyId=<id>&token=<run-id>
+  useEffect(() => {
+    const autoExport = searchParams.get('autoExport') === '1';
+    if (!autoExport || isExporting) return;
+
+    // Token allows repeated auto-runs on same mounted page.
+    // Without token, run once per page lifetime.
+    const token = searchParams.get('token');
+    const tokenKey = token || '__once__';
+    if (autoExportLastTokenRef.current === tokenKey) return;
+
+    if (fiscalYears.length === 0) return;
+
+    const fyIdParam = searchParams.get('fyId');
+    const yearParam = searchParams.get('year');
+
+    let targetFY: FiscalYear | null = null;
+    if (fyIdParam) {
+      targetFY = fiscalYears.find(y => y.id === fyIdParam) || null;
+    } else if (yearParam) {
+      const year = Number(yearParam);
+      if (Number.isFinite(year)) {
+        targetFY = selectPreferredFiscalYearByYear(fiscalYears, year);
+      }
+    }
+
+    // Fallback: année déjà sélectionnée
+    if (!targetFY) {
+      targetFY = selectedFiscalYear;
+    }
+    if (!targetFY) return;
+
+    if (!selectedFiscalYear || selectedFiscalYear.id !== targetFY.id) {
+      setSelectedFiscalYear(targetFY);
+    }
+
+    autoExportLastTokenRef.current = tokenKey;
+    void handleExportCompteResultats(targetFY);
+  }, [searchParams, fiscalYears, selectedFiscalYear, isExporting, handleExportCompteResultats]);
+
+  // Générer PPTX rapport d'activités
+  const handleGenerateActivityStats = async () => {
+    if (!selectedFiscalYear) {
+      toast.error('Veuillez sélectionner une année fiscale');
+      return;
+    }
+    setIsGeneratingActivityStats(true);
+    try {
+      await generateActivityStatsPptx(clubId, selectedFiscalYear.year);
+      toast.success('Rapport d\'activités généré avec succès');
+    } catch (error) {
+      logger.error('Erreur génération PPTX activités:', error);
+      toast.error('Erreur lors de la génération du rapport');
+    } finally {
+      setIsGeneratingActivityStats(false);
+    }
+  };
+
+  // Générer PPTX statistiques membres
+  const handleGenerateMemberStats = async () => {
+    if (!selectedFiscalYear) {
+      toast.error('Veuillez sélectionner une année fiscale');
+      return;
+    }
+    setIsGeneratingMemberStats(true);
+    try {
+      await generateMemberStatsPptx(clubId, selectedFiscalYear.year);
+      toast.success('Présentation PowerPoint générée avec succès');
+    } catch (error) {
+      logger.error('Erreur génération PPTX membres:', error);
+      toast.error('Erreur lors de la génération du PowerPoint');
+    } finally {
+      setIsGeneratingMemberStats(false);
+    }
+  };
+
+  // Générer PDF liste de présences
+  const handleGeneratePresencePdf = async () => {
+    setIsGeneratingPdf(true);
+    try {
+      await generatePresencePdf(users);
+      toast.success('PDF généré avec succès');
+    } catch (error) {
+      logger.error('Erreur génération PDF:', error);
+      toast.error('Erreur lors de la génération du PDF');
+    } finally {
+      setIsGeneratingPdf(false);
     }
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      {/* Header avec badge AI */}
-      <div className="bg-gradient-to-r from-purple-600 to-purple-700 rounded-xl p-6 text-white mb-6">
-        <div className="flex items-center gap-3 mb-2">
-          <Sparkles className="h-8 w-8" />
-          <div>
-            <h1 className="text-2xl font-bold">Génération de Rapports avec IA</h1>
-            <p className="text-purple-100 text-sm mt-1">
-              Powered by Claude Sonnet 4.5 - Documents professionnels en quelques minutes
-            </p>
-          </div>
-        </div>
+    <div className="p-6 max-w-6xl mx-auto">
+      {/* Header */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-dark-text-primary">
+          Rapports
+        </h1>
+        <p className="text-gray-600 dark:text-dark-text-secondary mt-1">
+          Exports et statistiques
+        </p>
       </div>
 
-      {/* Claude Not Configured Warning */}
-      {!isClaudeAvailable && (
-        <div className="p-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-lg mb-6">
-          <div className="flex gap-3">
-            <AlertCircle className="h-5 w-5 text-orange-600 dark:text-orange-400 flex-shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <p className="font-medium text-orange-900 dark:text-orange-300">Claude API non configurée</p>
-              <p className="text-sm text-orange-800 dark:text-orange-400 mt-1">
-                Pour utiliser cette fonctionnalité, allez dans{' '}
-                <a href="/parametres" className="underline font-medium">
-                  Paramètres → Intelligence Artificielle
-                </a>{' '}
-                et ajoutez votre clé API Anthropic.
-              </p>
-            </div>
-          </div>
-        </div>
+      {/* Tabs */}
+      <div className="border-b border-gray-200 dark:border-dark-border mb-6">
+        <nav className="-mb-px flex space-x-8">
+          <button
+            onClick={() => setActiveTab('exports')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors ${
+              activeTab === 'exports'
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-dark-text-secondary dark:hover:text-dark-text-primary'
+            }`}
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            Exports Comptables
+          </button>
+          <button
+            onClick={() => setActiveTab('members')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors ${
+              activeTab === 'members'
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-dark-text-secondary dark:hover:text-dark-text-primary'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4" />
+            Statistiques Membres
+          </button>
+        </nav>
+      </div>
+
+      {/* Tab Content: Members */}
+      {activeTab === 'members' && (
+        <MemberStatsReport />
       )}
 
+      {/* Tab Content: Exports */}
+      {activeTab === 'exports' && (
+        <>
       {/* Sélection de l'année fiscale */}
       <div className="bg-white dark:bg-dark-bg-secondary rounded-lg shadow-sm border border-gray-200 dark:border-dark-border p-6 mb-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary mb-4 flex items-center gap-2">
           <Calendar className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-          Période du rapport
+          Année fiscale
         </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Sélecteur année fiscale */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
-              Année fiscale
-            </label>
-            <select
-              value={selectedFiscalYear?.id || ''}
-              onChange={(e) => {
-                const year = fiscalYears.find(y => y.id === e.target.value);
-                setSelectedFiscalYear(year || null);
-              }}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">Sélectionner une année</option>
-              {fiscalYears.map(year => (
-                <option key={year.id} value={year.id}>
-                  {year.year} ({format(year.start_date, 'dd/MM/yyyy')} - {format(year.end_date, 'dd/MM/yyyy')})
-                  {year.status === 'open' && ' - En cours'}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Sélecteur type de période */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
-              Type de période
-            </label>
-            <select
-              value={periodType}
-              onChange={(e) => setPeriodType(e.target.value as any)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="year">Année complète</option>
-              <option value="quarter">Trimestre</option>
-              <option value="month">Mois</option>
-              <option value="custom">Période personnalisée</option>
-            </select>
-          </div>
-
-          {/* Month selector (if month type selected) */}
-          {periodType === 'month' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
-                Mois
-              </label>
-              <select
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="0">Janvier</option>
-                <option value="1">Février</option>
-                <option value="2">Mars</option>
-                <option value="3">Avril</option>
-                <option value="4">Mai</option>
-                <option value="5">Juin</option>
-                <option value="6">Juillet</option>
-                <option value="7">Août</option>
-                <option value="8">Septembre</option>
-                <option value="9">Octobre</option>
-                <option value="10">Novembre</option>
-                <option value="11">Décembre</option>
-              </select>
-            </div>
-          )}
-
-          {/* Dates personnalisées (si sélectionné) */}
-          {periodType === 'custom' && (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
-                  Date de début
-                </label>
-                <input
-                  type="date"
-                  value={customStartDate}
-                  onChange={(e) => setCustomStartDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
-                  Date de fin
-                </label>
-                <input
-                  type="date"
-                  value={customEndDate}
-                  onChange={(e) => setCustomEndDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Sélection du template de rapport */}
-      <div>
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary mb-4">
-          Choisissez un Template
-        </h3>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {claudeReportTemplates.map((template) => (
-            <button
-              key={template.id}
-              onClick={() => template.implemented && setSelectedTemplate(template)}
-              disabled={isGenerating || !template.implemented}
-              className={cn(
-                'p-4 rounded-lg border-2 text-left transition-all relative',
-                selectedTemplate?.id === template.id
-                  ? 'border-purple-600 bg-purple-50 dark:bg-purple-900/20'
-                  : 'border-gray-200 dark:border-dark-border hover:border-purple-300',
-                (isGenerating || !template.implemented) && 'opacity-50 cursor-not-allowed',
-                !template.implemented && 'bg-gray-50 dark:bg-gray-800/50'
-              )}
-            >
-              {/* Coming Soon Badge */}
-              {!template.implemented && (
-                <div className="absolute top-2 right-2 px-2 py-1 bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 text-xs font-medium rounded">
-                  À venir
-                </div>
-              )}
-
-              <div className="flex items-start gap-3">
-                <span className="text-3xl">{template.icon}</span>
-                <div className="flex-1">
-                  <h4 className={cn(
-                    "font-medium",
-                    !template.implemented
-                      ? "text-gray-500 dark:text-gray-400"
-                      : "text-gray-900 dark:text-dark-text-primary"
-                  )}>
-                    {template.name}
-                  </h4>
-                  <p className={cn(
-                    "text-xs mt-1",
-                    !template.implemented
-                      ? "text-gray-400 dark:text-gray-500"
-                      : "text-gray-600 dark:text-dark-text-secondary"
-                  )}>
-                    {template.description}
-                  </p>
-
-                  {/* Formats */}
-                  <div className="flex gap-2 mt-3">
-                    {template.formats.includes('excel') && (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded text-xs">
-                        <FileSpreadsheet className="h-3 w-3" />
-                        Excel
-                      </span>
-                    )}
-                    {template.formats.includes('pptx') && (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">
-                        <Presentation className="h-3 w-3" />
-                        PPT
-                      </span>
-                    )}
-                    {template.formats.includes('pdf') && (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded text-xs">
-                        <FileText className="h-3 w-3" />
-                        PDF
-                      </span>
-                    )}
-                    {template.formats.includes('docx') && (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs">
-                        <FileText className="h-3 w-3" />
-                        Word
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Cost & Time */}
-                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-200 dark:border-dark-border">
-                    <span className="text-sm font-medium text-purple-600">
-                      ~€{template.estimatedCost.toFixed(2)}
-                    </span>
-                    <span className="text-xs text-gray-500 dark:text-dark-text-muted">
-                      {template.estimatedTime} min
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </button>
+        <select
+          value={selectedFiscalYear?.id || ''}
+          onChange={(e) => {
+            const year = fiscalYears.find(y => y.id === e.target.value);
+            setSelectedFiscalYear(year || null);
+          }}
+          className="w-full md:w-96 px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-dark-bg-tertiary text-gray-900 dark:text-dark-text-primary"
+        >
+          <option value="">Sélectionner une année</option>
+          {fiscalYears.map(year => (
+            <option key={year.id} value={year.id}>
+              {year.year} ({format(year.start_date, 'dd/MM/yyyy')} - {format(year.end_date, 'dd/MM/yyyy')})
+              {year.status === 'open' && ' - En cours'}
+            </option>
           ))}
-        </div>
+        </select>
       </div>
 
-      {/* Generate Button */}
-      {selectedTemplate && (
-        <div className="bg-white dark:bg-dark-bg-secondary rounded-lg border border-gray-200 dark:border-dark-border p-6 mt-6">
-          <div className="flex items-center justify-between mb-4">
+      {/* Export Compte de Résultats */}
+      <div className="bg-white dark:bg-dark-bg-secondary rounded-lg shadow-sm border border-gray-200 dark:border-dark-border p-6">
+        <div className="flex items-start justify-between">
+          <div className="flex items-start gap-4">
+            <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-lg">
+              <FileSpreadsheet className="h-6 w-6 text-green-600 dark:text-green-400" />
+            </div>
             <div>
-              <h4 className="font-medium text-gray-900 dark:text-dark-text-primary">
-                Template sélectionné: {selectedTemplate.name}
-              </h4>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary">
+                Compte de Résultats & Bilan
+              </h3>
               <p className="text-sm text-gray-600 dark:text-dark-text-secondary mt-1">
-                Année fiscale: {selectedFiscalYear?.year || 'Non sélectionnée'}
+                Export Excel avec 4 feuilles :
               </p>
-            </div>
-            <div className="text-right">
-              <p className="text-2xl font-bold text-purple-600">
-                €{selectedTemplate.estimatedCost.toFixed(2)}
-              </p>
-              <p className="text-xs text-gray-500 dark:text-dark-text-muted">
-                Coût estimé
+              <ul className="text-sm text-gray-600 dark:text-dark-text-secondary mt-2 list-disc list-inside">
+                <li><strong>Compte de Résultats</strong> - P&L par groupes de codes comptables</li>
+                <li><strong>Bilan</strong> - Actif et Passif avec formules automatiques</li>
+                <li><strong>Données</strong> - Cellules éditables pour saisie manuelle</li>
+                <li><strong>Transactions</strong> - Liste complète avec numéro, date, contrepartie, compte comptable, liaison et montant</li>
+              </ul>
+              <p className="text-xs text-gray-500 dark:text-dark-text-muted mt-3">
+                Configuration des groupes disponible dans Paramètres → Comptabilité → Groupes de Rapport
               </p>
             </div>
           </div>
-
-          {/* Format Selection */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
-              Formats à générer
-            </label>
-            <div className="flex flex-wrap gap-3">
-              {selectedTemplate.formats.includes('excel') && (
-                <label className="flex items-center gap-2 px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors">
-                  <input
-                    type="checkbox"
-                    checked={selectedFormats.includes('excel')}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedFormats([...selectedFormats, 'excel']);
-                      } else {
-                        setSelectedFormats(selectedFormats.filter(f => f !== 'excel'));
-                      }
-                    }}
-                    className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-                  />
-                  <FileSpreadsheet className="h-4 w-4 text-green-600" />
-                  <span className="text-sm font-medium text-gray-700 dark:text-dark-text-primary">Excel</span>
-                </label>
-              )}
-
-              {selectedTemplate.formats.includes('docx') && (
-                <label className="flex items-center gap-2 px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors">
-                  <input
-                    type="checkbox"
-                    checked={selectedFormats.includes('docx')}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedFormats([...selectedFormats, 'docx']);
-                      } else {
-                        setSelectedFormats(selectedFormats.filter(f => f !== 'docx'));
-                      }
-                    }}
-                    className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-                  />
-                  <FileText className="h-4 w-4 text-purple-600" />
-                  <span className="text-sm font-medium text-gray-700 dark:text-dark-text-primary">Word</span>
-                </label>
-              )}
-
-              {selectedTemplate.formats.includes('pptx') && (
-                <label className="flex items-center gap-2 px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors">
-                  <input
-                    type="checkbox"
-                    checked={selectedFormats.includes('pptx')}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedFormats([...selectedFormats, 'pptx']);
-                      } else {
-                        setSelectedFormats(selectedFormats.filter(f => f !== 'pptx'));
-                      }
-                    }}
-                    className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-                  />
-                  <Presentation className="h-4 w-4 text-blue-600" />
-                  <span className="text-sm font-medium text-gray-700 dark:text-dark-text-primary">PowerPoint</span>
-                </label>
-              )}
-
-              {selectedTemplate.formats.includes('pdf') && (
-                <label className="flex items-center gap-2 px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors">
-                  <input
-                    type="checkbox"
-                    checked={selectedFormats.includes('pdf')}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedFormats([...selectedFormats, 'pdf']);
-                      } else {
-                        setSelectedFormats(selectedFormats.filter(f => f !== 'pdf'));
-                      }
-                    }}
-                    className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-                  />
-                  <FileText className="h-4 w-4 text-red-600" />
-                  <span className="text-sm font-medium text-gray-700 dark:text-dark-text-primary">PDF</span>
-                </label>
-              )}
-            </div>
-          </div>
-
           <button
-            onClick={handleGenerateReport}
-            disabled={isGenerating || !isClaudeAvailable || !selectedFiscalYear || selectedFormats.length === 0}
-            className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={handleExportButtonClick}
+            disabled={isExporting || !selectedFiscalYear}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isGenerating ? (
+            {isExporting ? (
               <>
-                <Loader2 className="h-5 w-5 animate-spin" />
-                Génération en cours...
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Export en cours...
               </>
             ) : (
               <>
-                <Zap className="h-5 w-5" />
-                Générer avec Claude
+                <FileSpreadsheet className="h-4 w-4" />
+                Exporter Excel
               </>
             )}
           </button>
         </div>
-      )}
+      </div>
 
-      {/* Progress Bar */}
-      {isGenerating && progress && (
-        <div className="bg-white dark:bg-dark-bg-secondary rounded-lg border border-gray-200 dark:border-dark-border p-6 mt-6">
-          <div className="flex items-center gap-3 mb-4">
-            <Loader2 className="h-5 w-5 text-purple-600 animate-spin" />
-            <div className="flex-1">
-              <p className="font-medium text-gray-900 dark:text-dark-text-primary">
-                {progress.step}
-              </p>
-              {progress.message && (
-                <p className="text-sm text-gray-600 dark:text-dark-text-secondary mt-1">
-                  {progress.message}
-                </p>
-              )}
+      {/* Rapport d'Activités */}
+      <div className="bg-white dark:bg-dark-bg-secondary rounded-lg shadow-sm border border-gray-200 dark:border-dark-border p-6 mt-6">
+        <div className="flex items-start justify-between">
+          <div className="flex items-start gap-4">
+            <div className="p-3 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
+              <Activity className="h-6 w-6 text-orange-600 dark:text-orange-400" />
             </div>
-            <span className="text-sm font-medium text-purple-600">
-              {progress.percent}%
-            </span>
-          </div>
-
-          {/* Progress Bar */}
-          <div className="w-full bg-gray-200 dark:bg-dark-bg-tertiary rounded-full h-2">
-            <div
-              className="bg-purple-600 h-2 rounded-full transition-all duration-500"
-              style={{ width: `${progress.percent}%` }}
-            />
-          </div>
-
-          <p className="text-xs text-gray-500 dark:text-dark-text-muted mt-2 text-center">
-            Temps estimé: {selectedTemplate?.estimatedTime} minutes
-          </p>
-        </div>
-      )}
-
-      {/* Download Section */}
-      {generatedFiles && (
-        <div className="bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800 p-6 mt-6">
-          <div className="flex items-center gap-3 mb-4">
-            <CheckCircle className="h-6 w-6 text-green-600" />
             <div>
-              <h4 className="font-medium text-green-900 dark:text-green-100">
-                Rapports générés avec succès!
-              </h4>
-              <p className="text-sm text-green-700 dark:text-green-300 mt-1">
-                Cliquez pour télécharger vos fichiers
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary">
+                Rapport d'Activités
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-dark-text-secondary mt-1">
+                Statistiques des activités du club pour l'année fiscale sélectionnée
               </p>
+              <ul className="text-sm text-gray-600 dark:text-dark-text-secondary mt-2 list-disc list-inside">
+                <li><strong>Événements</strong> — Nombre par type (plongée, piscine, sortie)</li>
+                <li><strong>Participations</strong> — Inscriptions, taux de remplissage</li>
+                <li><strong>Top participants</strong> — Membres les plus actifs</li>
+              </ul>
             </div>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {generatedFiles.excel && (
-              <button
-                onClick={() => {
-                  saveAs(generatedFiles.excel!, `Rapport_${selectedFiscalYear?.year}_${selectedTemplate?.id}.xlsx`);
-                  toast.success('Excel téléchargé');
-                }}
-                className="flex items-center gap-3 p-4 bg-white dark:bg-dark-bg-secondary rounded-lg border border-gray-200 dark:border-dark-border hover:bg-gray-50 transition-colors"
-              >
-                <FileSpreadsheet className="h-8 w-8 text-green-600" />
-                <div className="text-left flex-1">
-                  <p className="font-medium text-gray-900 dark:text-dark-text-primary">
-                    Excel
-                  </p>
-                  <p className="text-xs text-gray-600 dark:text-dark-text-secondary">
-                    Rapport_{selectedFiscalYear?.year}.xlsx
-                  </p>
-                </div>
-                <Download className="h-5 w-5 text-gray-400" />
-              </button>
+          <button
+            onClick={handleGenerateActivityStats}
+            disabled={isGeneratingActivityStats || !selectedFiscalYear}
+            className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isGeneratingActivityStats ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Génération...
+              </>
+            ) : (
+              <>
+                <FileText className="h-4 w-4" />
+                Générer PowerPoint
+              </>
             )}
-
-            {generatedFiles.pptx && (
-              <button
-                onClick={() => {
-                  saveAs(generatedFiles.pptx!, `Presentation_${selectedFiscalYear?.year}_${selectedTemplate?.id}.pptx`);
-                  toast.success('PowerPoint téléchargé');
-                }}
-                className="flex items-center gap-3 p-4 bg-white dark:bg-dark-bg-secondary rounded-lg border border-gray-200 dark:border-dark-border hover:bg-gray-50 transition-colors"
-              >
-                <Presentation className="h-8 w-8 text-blue-600" />
-                <div className="text-left flex-1">
-                  <p className="font-medium text-gray-900 dark:text-dark-text-primary">
-                    PowerPoint
-                  </p>
-                  <p className="text-xs text-gray-600 dark:text-dark-text-secondary">
-                    Presentation_{selectedFiscalYear?.year}.pptx
-                  </p>
-                </div>
-                <Download className="h-5 w-5 text-gray-400" />
-              </button>
-            )}
-
-            {generatedFiles.pdf && (
-              <button
-                onClick={() => {
-                  saveAs(generatedFiles.pdf!, `Rapport_${selectedFiscalYear?.year}_${selectedTemplate?.id}.pdf`);
-                  toast.success('PDF téléchargé');
-                }}
-                className="flex items-center gap-3 p-4 bg-white dark:bg-dark-bg-secondary rounded-lg border border-gray-200 dark:border-dark-border hover:bg-gray-50 transition-colors"
-              >
-                <FileText className="h-8 w-8 text-red-600" />
-                <div className="text-left flex-1">
-                  <p className="font-medium text-gray-900 dark:text-dark-text-primary">
-                    PDF
-                  </p>
-                  <p className="text-xs text-gray-600 dark:text-dark-text-secondary">
-                    Rapport_{selectedFiscalYear?.year}.pdf
-                  </p>
-                </div>
-                <Download className="h-5 w-5 text-gray-400" />
-              </button>
-            )}
-
-            {generatedFiles.docx && (
-              <button
-                onClick={() => {
-                  saveAs(generatedFiles.docx!, `Rapport_${selectedFiscalYear?.year}_${selectedTemplate?.id}.docx`);
-                  toast.success('Word téléchargé');
-                }}
-                className="flex items-center gap-3 p-4 bg-white dark:bg-dark-bg-secondary rounded-lg border border-gray-200 dark:border-dark-border hover:bg-gray-50 transition-colors"
-              >
-                <FileText className="h-8 w-8 text-purple-600" />
-                <div className="text-left flex-1">
-                  <p className="font-medium text-gray-900 dark:text-dark-text-primary">
-                    Word
-                  </p>
-                  <p className="text-xs text-gray-600 dark:text-dark-text-secondary">
-                    Rapport_{selectedFiscalYear?.year}.docx
-                  </p>
-                </div>
-                <Download className="h-5 w-5 text-gray-400" />
-              </button>
-            )}
-          </div>
+          </button>
         </div>
+      </div>
+
+      {/* Statistiques Membres */}
+      <div className="bg-white dark:bg-dark-bg-secondary rounded-lg shadow-sm border border-gray-200 dark:border-dark-border p-6 mt-6">
+        <div className="flex items-start justify-between">
+          <div className="flex items-start gap-4">
+            <div className="p-3 bg-teal-100 dark:bg-teal-900/30 rounded-lg">
+              <Users className="h-6 w-6 text-teal-600 dark:text-teal-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary">
+                Statistiques Membres
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-dark-text-secondary mt-1">
+                Présentation PowerPoint avec les statistiques détaillées des membres
+              </p>
+              <ul className="text-sm text-gray-600 dark:text-dark-text-secondary mt-2 list-disc list-inside">
+                <li><strong>Démographie</strong> — Répartition par sexe et tranches d'âge</li>
+                <li><strong>Brevets</strong> — Niveaux de plongée et encadrement</li>
+                <li><strong>Cotisations</strong> — Types d'affiliation</li>
+                <li><strong>Fonctions</strong> — Rôles au sein du club</li>
+              </ul>
+            </div>
+          </div>
+          <button
+            onClick={handleGenerateMemberStats}
+            disabled={isGeneratingMemberStats || !selectedFiscalYear}
+            className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isGeneratingMemberStats ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Génération...
+              </>
+            ) : (
+              <>
+                <FileText className="h-4 w-4" />
+                Générer PowerPoint
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+        </>
       )}
     </div>
   );

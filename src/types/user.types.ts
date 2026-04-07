@@ -3,6 +3,28 @@ import { Timestamp } from 'firebase/firestore';
 // User roles hierarchy
 export type UserRole = 'membre' | 'user' | 'validateur' | 'admin' | 'superadmin';
 
+// Medical certificate status (for mobile app uploads)
+export type CertificateStatus = 'pending' | 'approved' | 'rejected';
+
+/**
+ * Medical certificate uploaded via mobile app (CalyMob)
+ * Stored in subcollection: clubs/{clubId}/members/{memberId}/medical_certificates
+ */
+export interface MobileMedicalCertificate {
+  id: string;
+  member_id: string;
+  document_url: string;
+  document_type: 'image' | 'pdf';
+  file_name?: string;
+  uploaded_at: Timestamp;
+  status: CertificateStatus;
+  valid_until?: Timestamp;
+  reviewed_by?: string;
+  reviewed_by_nom?: string;
+  reviewed_at?: Timestamp;
+  rejection_reason?: string;
+}
+
 // User status
 export type UserStatus = 'pending' | 'active' | 'inactive' | 'suspended' | 'deleted';
 
@@ -55,6 +77,66 @@ export interface RuleEnforcedPermission {
   firestoreRule?: string; // Optional reference to the Firestore rule
 }
 
+// ============================================================
+// DOCUMENTS MÉDICAUX ET GÉNÉRAUX (MEMBRE)
+// ============================================================
+
+/**
+ * Action d'audit pour les documents
+ */
+export interface DocumentAuditEntry {
+  action: 'upload' | 'modification' | 'suppression' | 'date_modified' | 'name_modified';
+  par: string;                    // User ID
+  par_nom: string;                // Display name
+  date: Date | Timestamp;
+  champ?: string;                 // Field modified (for 'modification')
+  ancienne_valeur?: unknown;      // Previous value (for 'modification')
+  nouvelle_valeur?: unknown;      // New value (for 'modification')
+  details?: string;               // Human-readable description of the change
+}
+
+/**
+ * Document médical (certificat médical)
+ * Structure complète incluant les champs DocumentJustificatif + champs spécifiques médicaux
+ */
+export interface MedicalDocument {
+  // Champs de base (comme DocumentJustificatif)
+  url: string;                          // URL Firebase Storage
+  nom_original: string;                 // Nom du fichier lors de l'upload
+  nom_affichage: string;                // Nom modifiable par l'utilisateur
+  type: string;                         // MIME type (application/pdf)
+  taille: number;                       // Taille en bytes
+  date_upload: Date | Timestamp;        // Date de téléversement
+  uploaded_by?: string;                 // ID de l'utilisateur qui a uploadé
+  uploaded_by_nom?: string;             // Nom de l'utilisateur
+  file_hash?: string;                   // Hash SHA-256 du contenu (pour déduplication)
+
+  // Champs spécifiques aux certificats médicaux
+  date_validite: Date | Timestamp;      // Date jusqu'à laquelle le certificat est valide
+  type_certificat?: string;             // Ex: "Certificat médical de non contre-indication"
+  historique?: DocumentAuditEntry[];    // Audit trail
+}
+
+/**
+ * Document général (assurance, diplôme, etc.)
+ * Structure complète incluant les champs DocumentJustificatif + audit trail
+ */
+export interface GeneralDocument {
+  // Champs de base (comme DocumentJustificatif)
+  url: string;                          // URL Firebase Storage
+  nom_original: string;                 // Nom du fichier lors de l'upload
+  nom_affichage: string;                // Nom modifiable par l'utilisateur
+  type: string;                         // MIME type (application/pdf, image/jpeg, etc.)
+  taille: number;                       // Taille en bytes
+  date_upload: Date | Timestamp;        // Date de téléversement
+  uploaded_by?: string;                 // ID de l'utilisateur qui a uploadé
+  uploaded_by_nom?: string;             // Nom de l'utilisateur
+  file_hash?: string;                   // Hash SHA-256 du contenu (pour déduplication)
+
+  // Audit trail
+  historique?: DocumentAuditEntry[];
+}
+
 // User interface
 export interface User {
   id: string;
@@ -62,8 +144,20 @@ export interface User {
   displayName: string;
   firstName?: string;
   lastName?: string;
-  app_role: UserRole;
+  /**
+   * @deprecated Utiliser getRole() du Field Mapper (@/utils/fieldMapper) au lieu d'accéder directement à ce champ
+   * @see {@link import('@/utils/fieldMapper').getRole}
+   */
+  role: UserRole;
+  /**
+   * @deprecated Utiliser getStatus() du Field Mapper (@/utils/fieldMapper) au lieu d'accéder directement à ce champ
+   * @see {@link import('@/utils/fieldMapper').getStatus}
+   */
   status: UserStatus;
+  /**
+   * @deprecated Utiliser isActive() du Field Mapper (@/utils/fieldMapper) au lieu d'accéder directement à ce champ
+   * @see {@link import('@/utils/fieldMapper').isActive}
+   */
   isActive: boolean;
   clubId: string;
   phoneNumber?: string;
@@ -71,6 +165,12 @@ export interface User {
   isCA?: boolean; // Member of Comité d'Administration (DEPRECATED - use clubStatuten)
   isEncadrant?: boolean; // Diving instructor/supervisor (DEPRECATED - use clubStatuten)
   clubStatuten?: string[]; // Array of club status values (e.g., ["ca", "encadrant"])
+  has_app_access?: boolean; // Whether user has access to the application
+  is_diver?: boolean; // Whether user is a diver
+  has_lifras?: boolean; // Whether user has a LIFRAS ID
+  lifras_id?: string; // LIFRAS ID number
+  plongeur_niveau?: string; // Diver level (e.g., "Plongeur 1*", "Moniteur Club")
+  plongeur_code?: string; // Standardized diver code (e.g., "1", "2", "MC", "MF")
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
   lastLogin?: Date | Timestamp;
@@ -83,6 +183,11 @@ export interface User {
     suspendedBy?: string;
     suspendedAt?: Date | Timestamp;
     suspendedReason?: string;
+    /**
+     * @deprecated Field created by legacy code - will be removed after migration
+     */
+    pendingActivation?: boolean;
+    deletedAt?: Date | Timestamp;
   };
   preferences?: {
     language?: 'fr' | 'nl' | 'en';
@@ -91,6 +196,19 @@ export interface User {
   };
   customPermissions?: Permission[];
   requirePasswordChange?: boolean; // Force user to change password on next login
+  cotisation_validite?: Date | Timestamp; // Validité de la cotisation (added per user request)
+  membership_category_code?: string; // Code du tarif de cotisation (e.g., "membre_1ere")
+  membership_period?: 'jan_dec' | 'sept_dec'; // Période choisie
+  membership_season_id?: string; // ID du tarif/saison actif
+  certificat_medical_date?: Date | Timestamp; // Date d'édition du certificat médical
+  certificat_medical_validite?: Date | Timestamp; // Validité du certificat médical
+  documents_medicaux?: MedicalDocument[];         // Certificats médicaux (PDF avec date de validité)
+  documents_generaux?: GeneralDocument[];         // Documents généraux (assurance, diplôme, etc.)
+  member_status?: 'active' | 'inactive' | 'archived'; // Compatibility with Membre type
+  nom?: string; // Compatibility with Membre type (deprecated)
+  iban?: string; // IBAN principal
+  ibans?: string[]; // Liste des IBANs connus
+  has_pending_medical?: boolean; // Flag for pending mobile medical certificates
 }
 
 // Audit log types
@@ -115,21 +233,33 @@ export type AuditAction =
   | 'TRANSACTION_DELETED'
   | 'DEMAND_CREATED'
   | 'DEMAND_APPROVED'
-  | 'DEMAND_REJECTED';
+  | 'DEMAND_REJECTED'
+  // Member management actions (membreService)
+  | 'member_created'
+  | 'member_updated'
+  | 'member_deleted'
+  | 'member_hard_deleted'
+  | 'app_access_granted'
+  | 'app_access_revoked'
+  | 'app_access_activated'
+  | 'app_access_deactivated'
+  | 'app_role_changed'
+  | 'member_status_changed'
+  | 'login';
 
 // Audit log interface
 export interface AuditLog {
   id: string;
   userId: string;
-  userEmail: string;
+  userEmail?: string;
   userName?: string;
   action: AuditAction;
   targetId?: string;
   targetType?: 'user' | 'transaction' | 'demand' | 'event' | 'member';
   targetName?: string;
-  previousValue?: any;
-  newValue?: any;
-  details?: Record<string, any>;
+  previousValue?: unknown;
+  newValue?: unknown;
+  details?: Record<string, unknown>;
   timestamp: Date | Timestamp;
   ipAddress?: string;
   userAgent?: string;
@@ -181,7 +311,7 @@ export interface EnhancedTransaction {
 
 // Role configuration
 export interface RoleConfig {
-  app_role: UserRole;
+  role: UserRole;
   label: string;
   description: string;
   level: number; // Hierarchy level (0 = lowest, higher = more permissions)
@@ -207,9 +337,13 @@ export interface CreateUserDTO {
   displayName: string;
   firstName?: string;
   lastName?: string;
-  app_role: UserRole;
+  role: UserRole;
+  app_role?: UserRole;
   clubId: string;
   phoneNumber?: string;
+  membership_category_code?: string | null;
+  membership_period?: 'jan_dec' | 'sept_dec' | null;
+  membership_season_id?: string | null;
   sendWelcomeEmail?: boolean;
   temporaryPassword?: string;
 }
@@ -220,6 +354,14 @@ export interface UpdateUserDTO {
   lastName?: string;
   phoneNumber?: string;
   photoURL?: string;
+  email?: string;
+  lifras_id?: string;
+  cotisation_validite?: Date | Timestamp;
+  certificat_medical_date?: Date | Timestamp;
+  certificat_medical_validite?: Date | Timestamp;
+  membership_category_code?: string | null;
+  membership_period?: 'jan_dec' | 'sept_dec' | null;
+  membership_season_id?: string | null;
   isCA?: boolean;
   isEncadrant?: boolean;
   clubStatuten?: string[];
@@ -247,9 +389,9 @@ export function isUserActive(user: User): boolean {
 
 export function hasRole(user: User, role: UserRole | UserRole[]): boolean {
   if (Array.isArray(role)) {
-    return role.includes(user.app_role);
+    return role.includes(user.role);
   }
-  return user.app_role === role;
+  return user.role === role;
 }
 
 export function canManageUser(actor: User, target: User): boolean {
@@ -261,14 +403,13 @@ export function canManageUser(actor: User, target: User): boolean {
     'superadmin': 3
   };
 
-  const actorLevel = hierarchy[actor.app_role];
-  const targetLevel = hierarchy[target.app_role];
+  const targetLevel = hierarchy[target.role];
 
   // SuperAdmin can manage anyone
-  if (actor.app_role === 'superadmin') return true;
+  if (actor.role === 'superadmin') return true;
 
   // Admin can manage users, membres, and validateurs
-  if (actor.app_role === 'admin' && targetLevel < 2) return true;
+  if (actor.role === 'admin' && targetLevel < 2) return true;
 
   // Others cannot manage users
   return false;

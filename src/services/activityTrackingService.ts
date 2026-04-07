@@ -1,5 +1,6 @@
 import { collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { logger } from '@/utils/logger';
 
 export interface NewActivityStats {
   transactions: number;
@@ -46,7 +47,7 @@ export class ActivityTrackingService {
         lastChecked: new Date()
       };
     } catch (error) {
-      console.error('Erreur lors du calcul des nouveautés:', error);
+      logger.error('Erreur lors du calcul des nouveautés:', error);
       return {
         transactions: 0,
         operations: 0,
@@ -73,7 +74,7 @@ export class ActivityTrackingService {
       const snapshot = await getDocs(q);
       return snapshot.size;
     } catch (error) {
-      console.error('Erreur comptage transactions:', error);
+      logger.error('Erreur comptage transactions:', error);
       return 0;
     }
   }
@@ -94,7 +95,7 @@ export class ActivityTrackingService {
       const snapshot = await getDocs(q);
       return snapshot.size;
     } catch (error) {
-      console.error('Erreur comptage opérations:', error);
+      logger.error('Erreur comptage opérations:', error);
       return 0;
     }
   }
@@ -115,7 +116,7 @@ export class ActivityTrackingService {
       const snapshot = await getDocs(q);
       return snapshot.size;
     } catch (error) {
-      console.error('Erreur comptage demandes:', error);
+      logger.error('Erreur comptage demandes:', error);
       return 0;
     }
   }

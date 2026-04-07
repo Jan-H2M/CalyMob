@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { logger } from '@/utils/logger';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -8,17 +9,14 @@ import {
   CheckCircle,
   X,
   Loader2,
-  FileText,
   Calendar,
   Euro,
   Users,
-  FolderCheck,
   UserPlus,
   Brain,
   Sparkles
 } from 'lucide-react';
 import { parseCSVFile } from '@/services/csvParser';
-import { parseVPDiveFile } from '@/services/vpDiveParser';
 import { MembreImportModal } from '@/components/membres/MembreImportModal';
 import { CategorizationService } from '@/services/categorizationService';
 import { TransactionBancaire, FiscalYear } from '@/types';
@@ -28,7 +26,7 @@ import { collection, addDoc, getDocs, serverTimestamp, query, orderBy } from 'fi
 import toast from 'react-hot-toast';
 
 interface ImportResult {
-  type: 'transactions' | 'events' | 'demands' | 'membres';
+  type: 'transactions' | 'demands' | 'membres';
   success: number;
   failed: number;
   duplicates: number;
@@ -61,14 +59,12 @@ export function BatchImportSettings() {
 
   // Separate states for each import type
   const [importingTransactions, setImportingTransactions] = useState(false);
-  const [importingEvents, setImportingEvents] = useState(false);
   const [showMembreImport, setShowMembreImport] = useState(false);
   const [importingPatterns, setImportingPatterns] = useState(false);
   const [patternsImportStats, setPatternsImportStats] = useState<{ imported: number; skipped: number; errors: number } | null>(null);
 
   // File input refs
   const transactionsInputRef = useRef<HTMLInputElement>(null);
-  const eventsInputRef = useRef<HTMLInputElement>(null);
 
   // Helper function to find fiscal year for a given date
   const findFiscalYearForDate = (date: Date, fiscalYears: FiscalYear[]): FiscalYear | null => {
@@ -110,7 +106,7 @@ export function BatchImportSettings() {
         ...doc.data()
       })) as FiscalYear[];
 
-      console.log(`📅 Loaded ${fiscalYears.length} fiscal years for automatic assignment`);
+      logger.debug(`📅 Loaded ${fiscalYears.length} fiscal years for automatic assignment`);
       if (fiscalYears.length === 0) {
         toast.error('Aucune année fiscale trouvée. Créez d\'abord une année fiscale.');
         setImportingTransactions(false);
@@ -182,92 +178,6 @@ export function BatchImportSettings() {
     }
   };
 
-  // Import events
-  const handleEventsImport = async () => {
-    if (!eventsInputRef.current?.files?.length) {
-      toast.error('Veuillez sélectionner des fichiers VP Dive');
-      return;
-    }
-    
-    setImportingEvents(true);
-    const result: ImportResult = {
-      type: 'events',
-      success: 0,
-      failed: 0,
-      duplicates: 0,
-      errors: []
-    };
-
-    try {
-      for (const file of Array.from(eventsInputRef.current.files)) {
-        try {
-          const vpData = await parseVPDiveFile(file);
-
-          // 🆕 MIGRATION: Write to 'operations' collection with type='evenement'
-          const eventsRef = collection(db, 'clubs', clubId, 'operations');
-
-          // Check for existing event
-          const existingEvents = await getDocs(eventsRef);
-          const existingEventIds = new Set(existingEvents.docs.map(doc => doc.data().vp_dive_id));
-          
-          if (vpData.eventId && existingEventIds.has(vpData.eventId)) {
-            result.duplicates++;
-            continue;
-          }
-
-          // Create event
-          const eventDocRef = await addDoc(eventsRef, {
-            type: 'evenement',
-            club_id: clubId,
-            fiscal_year_id: selectedFiscalYear?.id || null,  // Required by Firestore Rules
-            organisateur_id: appUser?.id || '',  // ✅ Required by Firestore rules
-            titre: vpData.event.titre,
-            description: vpData.event.description,
-            date: vpData.event.date,
-            lieu: vpData.event.lieu,
-            vp_dive_id: vpData.eventId,
-            statut: 'termine',
-            inscriptions: vpData.participants.length,
-            capacite: vpData.event.capacite,
-            created_at: serverTimestamp(),
-            updated_at: serverTimestamp()
-          });
-
-          // Add participants as inscriptions
-          // 🆕 MIGRATION: Write to 'operation_participants' collection
-          const inscriptionsRef = collection(db, 'clubs', clubId, 'operation_participants');
-          for (const participant of vpData.participants) {
-            await addDoc(inscriptionsRef, {
-              club_id: clubId,
-              fiscal_year_id: selectedFiscalYear?.id || null,  // Required by Firestore Rules
-              operation_id: eventDocRef.id,
-              operation_titre: vpData.event.titre,
-              operation_type: 'evenement',
-              ...participant,
-              created_at: serverTimestamp(),
-              updated_at: serverTimestamp()
-            });
-          }
-          
-          result.success++;
-        } catch (error) {
-          result.failed++;
-          result.errors.push(`Event file ${file.name}: ${error}`);
-        }
-      }
-
-      setResults(prev => [...prev, result]);
-      toast.success(`${result.success} événements importés avec succès`);
-    } catch (error) {
-      toast.error('Erreur lors de l\'import des événements');
-    } finally {
-      setImportingEvents(false);
-      if (eventsInputRef.current) {
-        eventsInputRef.current.value = '';
-      }
-    }
-  };
-
   // Import patterns from existing transactions
   const handlePatternsImport = async () => {
     setImportingPatterns(true);
@@ -293,7 +203,7 @@ export function BatchImportSettings() {
         { id: 'patterns-import', duration: 5000 }
       );
     } catch (error) {
-      console.error('[BatchImportSettings] Error importing patterns:', error);
+      logger.error('[BatchImportSettings] Error importing patterns:', error);
       toast.error('Erreur lors de l\'import des patterns', { id: 'patterns-import' });
     } finally {
       setImportingPatterns(false);
@@ -344,7 +254,7 @@ export function BatchImportSettings() {
                 />
                 <label
                   htmlFor="transactions-upload"
-                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary cursor-pointer transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary cursor-pointer transition-colors"
                 >
                   <Upload className="h-4 w-4" />
                   Choisir des fichiers CSV
@@ -363,74 +273,6 @@ export function BatchImportSettings() {
                     <>
                       <FileSpreadsheet className="h-4 w-4" />
                       Importer les transactions
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Événements VP Dive */}
-          <div className="bg-white dark:bg-dark-bg-secondary rounded-xl shadow-sm border border-gray-200 dark:border-dark-border p-6">
-            <div className="flex items-start gap-4 mb-4">
-              <div className="p-3 bg-green-100 rounded-lg">
-                <Calendar className="h-6 w-6 text-green-600" />
-              </div>
-              <div className="flex-1">
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary">Événements VP Dive</h2>
-                <p className="text-sm text-gray-600 dark:text-dark-text-secondary mt-1">
-                  Importez vos fichiers d'événements depuis VP Dive (.xls)
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-                <div className="flex gap-2">
-                  <AlertCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
-                  <div className="text-sm text-green-800">
-                    <p className="font-medium mb-2">Instructions:</p>
-                    <ul className="list-disc list-inside space-y-1">
-                      <li>Connectez-vous à VP Dive</li>
-                      <li>Allez dans la section "Sorties"</li>
-                      <li>Sélectionnez vos opérations</li>
-                      <li>Cliquez sur "Exporter" → "Excel"</li>
-                      <li>Importez les fichiers .xls ci-dessous</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <input
-                  ref={eventsInputRef}
-                  type="file"
-                  accept=".xls,.xlsx"
-                  multiple
-                  className="hidden"
-                  id="events-upload"
-                />
-                <label
-                  htmlFor="events-upload"
-                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary cursor-pointer transition-colors"
-                >
-                  <Upload className="h-4 w-4" />
-                  Choisir des fichiers XLS
-                </label>
-                <button
-                  onClick={handleEventsImport}
-                  disabled={importingEvents}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center gap-2"
-                >
-                  {importingEvents ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Import en cours...
-                    </>
-                  ) : (
-                    <>
-                      <Calendar className="h-4 w-4" />
-                      Importer les événements
                     </>
                   )}
                 </button>
@@ -473,39 +315,6 @@ export function BatchImportSettings() {
               >
                 <UserPlus className="h-5 w-5" />
                 Importer des membres
-              </button>
-            </div>
-          </div>
-
-          {/* Dépenses */}
-          <div className="bg-white dark:bg-dark-bg-secondary rounded-xl shadow-sm border border-gray-200 dark:border-dark-border p-6">
-            <div className="flex items-start gap-4 mb-4">
-              <div className="p-3 bg-purple-100 rounded-lg">
-                <FileText className="h-6 w-6 text-purple-600" />
-              </div>
-              <div className="flex-1">
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary">Dépenses</h2>
-                <p className="text-sm text-gray-600 dark:text-dark-text-secondary mt-1">
-                  Importez et révisez vos justificatifs de dépenses
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => navigate('/parametres/revision-documents')}
-                className="flex items-center gap-2 px-6 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-              >
-                <Upload className="h-4 w-4" />
-                Importer les documents
-              </button>
-
-              <button
-                onClick={() => navigate('/parametres/revision-documents')}
-                className="flex items-center gap-2 px-6 py-2.5 border-2 border-purple-600 text-purple-600 rounded-lg hover:bg-purple-50 transition-colors"
-              >
-                <FolderCheck className="h-4 w-4" />
-                Révision documents
               </button>
             </div>
           </div>
@@ -602,7 +411,6 @@ export function BatchImportSettings() {
                       <div>
                         <p className="font-medium text-gray-900 dark:text-dark-text-primary">
                           {result.type === 'transactions' ? 'Transactions bancaires' :
-                           result.type === 'events' ? 'Événements' :
                            result.type === 'membres' ? 'Membres' : 'Dépenses'}
                         </p>
                         <p className="text-sm text-gray-600 dark:text-dark-text-secondary">
@@ -613,7 +421,7 @@ export function BatchImportSettings() {
                     {result.errors.length > 0 && (
                       <button
                         onClick={() => {
-                          console.error(`Errors for ${result.type}:`, result.errors);
+                          logger.error(`Errors for ${result.type}:`, result.errors);
                           toast.error(`${result.errors.length} erreur(s) - voir la console`);
                         }}
                         className="text-sm text-red-600 hover:text-red-700"

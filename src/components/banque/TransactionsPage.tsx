@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { logger } from '@/utils/logger';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -13,33 +14,54 @@ import {
   ChevronRight,
   HelpCircle,
   ArrowLeft,
-  X
+  X,
+  Bot,
+  AlertTriangle,
+  Sparkles,
+  Settings2,
+  Link2,
+  Users,
+  FileText
 } from 'lucide-react';
 import { formatMontant, formatDate, cn, CATEGORY_COLORS, findIncompleteMatch, isIncompleteSequenceNumber } from '@/utils/utils';
 import { parseCSVFile, exportTransactionsToCSV } from '@/services/csvParser';
+import { canAutoMatch, autoMatchByEventNumber } from '@/services/eventNumberMatchingService';
+import { autoControlInscriptionPayments } from '@/services/inscriptionService';
 import { migrateFiscalYearIds } from '@/utils/migrateFiscalYear';
 import { migrateOperationsAndDemands } from '@/utils/migrateAllCollections';
-import { TransactionBancaire, TransactionSplit, Categorie, DemandeRemboursement, Evenement, VPDiveParticipant, Operation, FiscalYear } from '@/types';
+import { TransactionBancaire, TransactionSplit, Categorie, DemandeRemboursement, Evenement, Operation, FiscalYear, Membre, TransactionFieldAudit, MatchedEntity } from '@/types';
 import { TransactionSplitModal } from './TransactionSplitModal';
 import { OperationLinkingPanel } from './OperationLinkingPanel';
 import { ExpenseFromTransactionLinkingPanel } from './ExpenseFromTransactionLinkingPanel';
 import { TransactionDetailView } from './TransactionDetailView';
 import { MultiFileImportModal, ImportProgress } from './MultiFileImportModal';
+import { DemandeDetailView } from '@/components/depenses/DemandeDetailView';
+import { OperationDetailView } from '@/components/operations/OperationDetailView';
+import { MemberLinkingPanel } from './MemberLinkingPanel';
+import { CotisationDateConfirmModal } from './CotisationDateConfirmModal';
+import { BulkMemberLinkingModal, MemberAssignment } from './BulkMemberLinkingModal';
+import { BulkEditModal } from './BulkEditModal';
+import { updateMembre } from '@/services/membreService';
 import toast from 'react-hot-toast';
 import { CategorizationService } from '@/services/categorizationService';
 import { ClaudeSkillsService } from '@/services/claudeSkillsService';
 import { db, storage } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, where, orderBy, serverTimestamp, deleteField } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, query, where, orderBy, serverTimestamp, deleteField, writeBatch, Timestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { useAuth } from '@/contexts/AuthContext';
+import { getRole } from '@/utils/fieldMapper';
 import { useFiscalYear } from '@/contexts/FiscalYearContext';
-import { ArchiveBanner } from '@/components/commun/ArchiveBanner';
 import { ProtectedAction } from '@/components/commun/ProtectedAction';
 import { useKeyboardNavigation, getNavigationPosition } from '@/hooks/useKeyboardNavigation';
+import { useLinkedEntityQuickViewStack } from '@/hooks/useLinkedEntityQuickViewStack';
 import { FilterAccordionWithTabs } from '@/components/common/FilterAccordionWithTabs';
 import { ComboBox } from '@/components/common/ComboBox';
 import { Tooltip } from '@/components/common/Tooltip';
-import { calypsoAccountCodes } from '@/config/calypso-accounts';
+import { AccountCodeService } from '@/services/accountCodeService';
+import { AccountCodeSelectorModal } from '@/components/commun/AccountCodeSelectorModal';
+import { SessionService } from '@/services/sessionService';
+import { findFournisseurByIban, createFournisseur } from '@/services/fournisseurService';
+import { getExpenseLinkedEventId, getTransactionEventLinkIds } from '@/utils/operationFinancials';
 
 // Données de démonstration - vide pour commencer avec des vraies données
 const demoTransactions: TransactionBancaire[] = [];
@@ -47,82 +69,6 @@ const demoTransactions: TransactionBancaire[] = [];
 
 // Données de démonstration pour les demandes de remboursement
 const demoDemands: DemandeRemboursement[] = [];
-
-// Données de démonstration pour les participants VP Dive
-const demoVPDiveParticipants: VPDiveParticipant[] = [
-  {
-    nom: 'MARTIN Jean-Pierre',
-    numero_licence: 'LIFRAS-2025-001234',
-    pratique: 'P3',
-    etat_paiement: 'Payé',
-    plan_tarifaire: 'Membre',
-    telephone: '+32 475 12 34 56',
-    contact_urgence: 'Marie Martin - +32 475 98 76 54'
-  },
-  {
-    nom: 'DUBOIS Sophie',
-    numero_licence: 'LIFRAS-2025-001235',
-    pratique: 'P2',
-    etat_paiement: 'Payé',
-    plan_tarifaire: 'Membre',
-    telephone: '+32 486 45 67 89',
-    contact_urgence: 'Luc Dubois - +32 486 11 22 33'
-  },
-  {
-    nom: 'LEROY Michel',
-    numero_licence: 'LIFRAS-2025-001236',
-    pratique: 'P1',
-    etat_paiement: 'Non payé',
-    plan_tarifaire: 'Membre',
-    telephone: '+32 491 78 90 12',
-    contact_urgence: 'Anne Leroy - +32 491 44 55 66'
-  },
-  {
-    nom: 'MOREAU Catherine',
-    numero_licence: 'LIFRAS-2025-001237',
-    pratique: 'P2',
-    etat_paiement: 'Payé',
-    plan_tarifaire: 'Membre',
-    telephone: '+32 495 23 45 67',
-    contact_urgence: 'Pierre Moreau - +32 495 77 88 99'
-  },
-  {
-    nom: 'PETIT Lucas',
-    numero_licence: 'LIFRAS-2025-001238',
-    pratique: 'P3',
-    etat_paiement: 'Non payé',
-    plan_tarifaire: 'Invité',
-    telephone: '+32 499 34 56 78',
-    contact_urgence: 'Emma Petit - +32 499 00 11 22'
-  },
-  {
-    nom: 'ROUX Amélie',
-    numero_licence: 'LIFRAS-2025-001239',
-    pratique: 'P1',
-    etat_paiement: 'Payé',
-    plan_tarifaire: 'Membre',
-    telephone: '+32 472 45 67 89',
-    contact_urgence: 'Thomas Roux - +32 472 33 44 55'
-  },
-  {
-    nom: 'SIMON David',
-    numero_licence: 'LIFRAS-2025-001240',
-    pratique: 'P4',
-    etat_paiement: 'Payé',
-    plan_tarifaire: 'Moniteur',
-    telephone: '+32 477 56 78 90',
-    contact_urgence: 'Julie Simon - +32 477 66 77 88'
-  },
-  {
-    nom: 'LAURENT Marie',
-    numero_licence: 'LIFRAS-2025-001241',
-    pratique: 'P2',
-    etat_paiement: 'Payé',
-    plan_tarifaire: 'Membre',
-    telephone: '+32 483 67 89 01',
-    contact_urgence: 'Paul Laurent - +32 483 99 00 11'
-  }
-];
 
 // Données de démonstration pour les événements
 const demoEvents: Evenement[] = [
@@ -203,7 +149,7 @@ const demoSplits: TransactionSplit[] = [
 
 export function TransactionsPage() {
   const { clubId, appUser } = useAuth();
-  const { selectedFiscalYear, allFiscalYears } = useFiscalYear();
+  const { selectedFiscalYear, allFiscalYears, disableFiscalYearFilter } = useFiscalYear();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -212,8 +158,11 @@ export function TransactionsPage() {
   const [splits, setSplits] = useState<TransactionSplit[]>(demoSplits);
   const [operations, setOperations] = useState<Operation[]>([]);
   const [demands, setDemands] = useState<DemandeRemboursement[]>([]);
+  const [membres, setMembres] = useState<Membre[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [accountCodeFilter, setAccountCodeFilter] = useState<'all' | 'with' | 'without'>('all');
+  const [categorizationSourceFilter, setCategorizationSourceFilter] = useState<'all' | 'manual' | 'rules' | 'ai' | 'needs_review'>('all');
+  const [flaggedFilter, setFlaggedFilter] = useState<'all' | 'flagged' | 'not_flagged'>('all');
   const [activeTab, setActiveTab] = useState<'all' | 'income' | 'expense'>('all');
   const [reconciliationFilter, setReconciliationFilter] = useState<'all' | 'reconciled' | 'unreconciled' | 'not_found'>('all');
   const [amountFilterType, setAmountFilterType] = useState<'all' | 'equal' | 'greater' | 'less' | 'between'>('all');
@@ -242,8 +191,33 @@ export function TransactionsPage() {
   const [expenseLinkingTransaction, setExpenseLinkingTransaction] = useState<TransactionBancaire | null>(null);
   const [detailViewTransaction, setDetailViewTransaction] = useState<TransactionBancaire | null>(null);
   const [returnContext, setReturnContext] = useState<{ type: string; id: string; name: string } | null>(null);
+  const { quickViews, openQuickView, closeQuickViewsFrom, closeAllQuickViews } = useLinkedEntityQuickViewStack();
   const [lastViewedTransactionId, setLastViewedTransactionId] = useState<string | null>(null);
   const [expandedTransactions, setExpandedTransactions] = useState<Set<string>>(new Set());
+  const [selectedTransactionIds, setSelectedTransactionIds] = useState<Set<string>>(new Set());
+  const [showOnlySelected, setShowOnlySelected] = useState(false); // Filtre pour voir uniquement les sélectionnées
+  const [batchFilter, setBatchFilter] = useState<string>('all'); // Filtre par batch de catégorisation
+  const [isFilterAccordionOpen, setIsFilterAccordionOpen] = useState(false);
+  const [isBulkCodeModalOpen, setIsBulkCodeModalOpen] = useState(false);
+  const [isBulkActivityModalOpen, setIsBulkActivityModalOpen] = useState(false);
+  const [isBulkEditModalOpen, setIsBulkEditModalOpen] = useState(false);
+  const [isAutoCategorizeModalOpen, setIsAutoCategorizeModalOpen] = useState(false);
+  // Member linking states
+  const [isMemberPanelOpen, setIsMemberPanelOpen] = useState(false);
+  const [selectedMemberForCotisation, setSelectedMemberForCotisation] = useState<Membre | null>(null);
+  const [isBulkMemberModalOpen, setIsBulkMemberModalOpen] = useState(false);
+  const [isAutoCategorizing, setIsAutoCategorizing] = useState(false);
+  const [autoCategorizeLimit, setAutoCategorizeLimit] = useState<'all' | '5' | '10' | '20' | '50'>('all');
+  const [autoCategorizeUseAi, setAutoCategorizeUseAi] = useState(false); // Désactivé par défaut - AI pas fiable
+  const [autoCategorizeScope, setAutoCategorizeScope] = useState<'uncategorized' | 'all' | 'selected'>('uncategorized'); // uncategorized = seulement sans code, selected = sélectionnées
+  const [autoCategorizeResult, setAutoCategorizeResult] = useState<{
+    total: number;
+    byRules: number;
+    byAi: number;
+    needsReview: number;
+    noMatch: number;
+    processedIds: string[];
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [sortConfig, setSortConfig] = useState<{
     key: keyof TransactionBancaire | null;
@@ -254,9 +228,9 @@ export function TransactionsPage() {
   useEffect(() => {
     (window as any).runFiscalYearMigration = () => migrateFiscalYearIds(clubId);
     (window as any).migrateOperationsAndDemands = () => migrateOperationsAndDemands(clubId);
-    console.log('💡 Migration functions available:');
-    console.log('   - window.runFiscalYearMigration() (transactions)');
-    console.log('   - window.migrateOperationsAndDemands() (operations + demands)');
+    logger.debug('💡 Migration functions available:');
+    logger.debug('   - window.runFiscalYearMigration() (transactions)');
+    logger.debug('   - window.migrateOperationsAndDemands() (operations + demands)');
   }, [clubId]);
 
   // Load data from Firestore on mount and when fiscal year changes
@@ -265,6 +239,7 @@ export function TransactionsPage() {
       loadTransactions();
       loadOperations();
       loadDemands();
+      loadMembres();
     }
   }, [clubId, selectedFiscalYear]);
 
@@ -308,7 +283,7 @@ export function TransactionsPage() {
     if (transactionIdToOpen && transactions.length > 0 && !detailViewTransaction) {
       const transactionToOpen = transactions.find(t => t.id === transactionIdToOpen);
       if (transactionToOpen) {
-        console.log('🔓 [TransactionsPage] Opening transaction from navigation state:', transactionIdToOpen);
+        logger.debug('🔓 [TransactionsPage] Opening transaction from navigation state:', transactionIdToOpen);
         setDetailViewTransaction(transactionToOpen);
         // Clear the state to prevent re-opening when modal closes (modernized from window.history.replaceState)
         navigate(location.pathname, { replace: true, state: {} });
@@ -331,8 +306,9 @@ export function TransactionsPage() {
   }, [detailViewTransaction, lastViewedTransactionId]);
 
   const loadTransactions = async () => {
-    if (!selectedFiscalYear) {
-      console.log('⏸️ No fiscal year selected, skipping transaction load');
+    // 🔧 TEMPORAIRE: Si le filtre est désactivé, on n'attend pas selectedFiscalYear
+    if (!disableFiscalYearFilter && !selectedFiscalYear) {
+      logger.debug('⏸️ No fiscal year selected, skipping transaction load');
       setTransactions([]);
       return;
     }
@@ -341,14 +317,12 @@ export function TransactionsPage() {
       setLoading(true);
       const transactionsRef = collection(db, 'clubs', clubId, 'transactions_bancaires');
 
-      // Query with fiscal year filter
-      const q = query(
-        transactionsRef,
-        where('fiscal_year_id', '==', selectedFiscalYear.id),
-        orderBy('date_execution', 'desc')
-      );
+      // Query with fiscal year filter (or all if disabled)
+      const q = disableFiscalYearFilter
+        ? query(transactionsRef, orderBy('date_execution', 'desc'))
+        : query(transactionsRef, where('fiscal_year_id', '==', selectedFiscalYear!.id), orderBy('date_execution', 'desc'));
 
-      console.log(`📊 Loading transactions for fiscal year: ${selectedFiscalYear.year} (ID: ${selectedFiscalYear.id})`);
+      logger.debug(`📊 Loading transactions for fiscal year: ${disableFiscalYearFilter ? 'ALL' : selectedFiscalYear?.year} (ID: ${disableFiscalYearFilter ? 'ALL' : selectedFiscalYear?.id})`);
       const snapshot = await getDocs(q);
 
       const loadedTransactions = snapshot.docs.map(doc => {
@@ -366,10 +340,10 @@ export function TransactionsPage() {
         } as TransactionBancaire;
       });
 
-      console.log(`✅ Loaded ${loadedTransactions.length} transactions for year ${selectedFiscalYear.year}`);
+      logger.debug(`✅ Loaded ${loadedTransactions.length} transactions for year ${disableFiscalYearFilter ? 'ALL' : selectedFiscalYear?.year}`);
       setTransactions(loadedTransactions);
     } catch (error) {
-      console.error('❌ Error loading transactions:', error);
+      logger.error('❌ Error loading transactions:', error);
       toast.error('Erreur lors du chargement des transactions');
     } finally {
       setLoading(false);
@@ -377,8 +351,9 @@ export function TransactionsPage() {
   };
 
   const loadOperations = async () => {
-    if (!selectedFiscalYear) {
-      console.log('⏸️ No fiscal year selected, skipping operations load');
+    // 🔧 TEMPORAIRE: Si le filtre est désactivé, on n'attend pas selectedFiscalYear
+    if (!disableFiscalYearFilter && !selectedFiscalYear) {
+      logger.debug('⏸️ No fiscal year selected, skipping operations load');
       setOperations([]);
       return;
     }
@@ -386,14 +361,17 @@ export function TransactionsPage() {
     try {
       const operationsRef = collection(db, 'clubs', clubId, 'operations');
 
-      // Query with fiscal year filter
-      const q = query(
-        operationsRef,
-        where('fiscal_year_id', '==', selectedFiscalYear.id),
-        orderBy('date_debut', 'desc')
-      );
+      // 📅 Filter by date_debut within fiscal year range (not by fiscal_year_id)
+      // This ensures events are shown based on when they occur, not when they were created
+      // Convert Date to Timestamp for Firestore queries
+      const startTimestamp = selectedFiscalYear ? Timestamp.fromDate(selectedFiscalYear.start_date) : null;
+      const endTimestamp = selectedFiscalYear ? Timestamp.fromDate(selectedFiscalYear.end_date) : null;
 
-      console.log(`📊 Loading operations for fiscal year: ${selectedFiscalYear.year}`);
+      const q = disableFiscalYearFilter
+        ? query(operationsRef, orderBy('date_debut', 'desc'))
+        : query(operationsRef, where('date_debut', '>=', startTimestamp), where('date_debut', '<=', endTimestamp), orderBy('date_debut', 'desc'));
+
+      logger.debug(`📊 Loading operations for fiscal year: ${disableFiscalYearFilter ? 'ALL' : selectedFiscalYear?.year}`);
       const snapshot = await getDocs(q);
 
       const loadedOperations = snapshot.docs.map(doc => {
@@ -410,24 +388,25 @@ export function TransactionsPage() {
         } as Operation;
       });
 
-      console.log(`✅ Loaded ${loadedOperations.length} operations for year ${selectedFiscalYear.year}`);
+      logger.debug(`✅ Loaded ${loadedOperations.length} operations for year ${disableFiscalYearFilter ? 'ALL' : selectedFiscalYear?.year}`);
 
       // Count by type
       const typeCounts = loadedOperations.reduce((acc, op) => {
         acc[op.type] = (acc[op.type] || 0) + 1;
         return acc;
       }, {} as Record<string, number>);
-      console.log(`📊 Operations by type:`, typeCounts);
+      logger.debug(`📊 Operations by type:`, typeCounts);
 
       setOperations(loadedOperations);
     } catch (error) {
-      console.error('❌ Error loading operations:', error);
+      logger.error('❌ Error loading operations:', error);
     }
   };
 
   const loadDemands = async () => {
-    if (!selectedFiscalYear) {
-      console.log('⏸️ No fiscal year selected, skipping demands load');
+    // 🔧 TEMPORAIRE: Si le filtre est désactivé, on n'attend pas selectedFiscalYear
+    if (!disableFiscalYearFilter && !selectedFiscalYear) {
+      logger.debug('⏸️ No fiscal year selected, skipping demands load');
       setDemands([]);
       return;
     }
@@ -435,14 +414,12 @@ export function TransactionsPage() {
     try {
       const demandsRef = collection(db, 'clubs', clubId, 'demandes_remboursement');
 
-      // Query with fiscal year filter
-      const q = query(
-        demandsRef,
-        where('fiscal_year_id', '==', selectedFiscalYear.id),
-        orderBy('date_depense', 'desc')
-      );
+      // Query with fiscal year filter (or all if disabled)
+      const q = disableFiscalYearFilter
+        ? query(demandsRef, orderBy('date_depense', 'desc'))
+        : query(demandsRef, where('fiscal_year_id', '==', selectedFiscalYear!.id), orderBy('date_depense', 'desc'));
 
-      console.log(`📊 Loading demands for fiscal year: ${selectedFiscalYear.year}`);
+      logger.debug(`📊 Loading demands for fiscal year: ${disableFiscalYearFilter ? 'ALL' : selectedFiscalYear?.year}`);
       const snapshot = await getDocs(q);
 
       const loadedDemands = snapshot.docs.map(doc => {
@@ -459,11 +436,26 @@ export function TransactionsPage() {
         } as DemandeRemboursement;
       });
 
-      console.log(`✅ Loaded ${loadedDemands.length} demands for year ${selectedFiscalYear.year}`);
+      logger.debug(`✅ Loaded ${loadedDemands.length} demands for year ${disableFiscalYearFilter ? 'ALL' : selectedFiscalYear?.year}`);
       setDemands(loadedDemands);
     } catch (error) {
-      console.error('❌ Error loading demands:', error);
+      logger.error('❌ Error loading demands:', error);
       toast.error('Erreur lors du chargement des demandes');
+    }
+  };
+
+  // Load membres for CommunicationModal
+  const loadMembres = async () => {
+    try {
+      const membresRef = collection(db, 'clubs', clubId, 'members');
+      const snapshot = await getDocs(membresRef);
+      const loadedMembres = snapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id
+      })) as Membre[];
+      setMembres(loadedMembres);
+    } catch (error) {
+      logger.error('Error loading membres:', error);
     }
   };
 
@@ -471,6 +463,22 @@ export function TransactionsPage() {
   const getChildTransactions = (parentId: string) => {
     return transactions.filter(tx => tx.parent_transaction_id === parentId)
       .sort((a, b) => (a.child_index || 0) - (b.child_index || 0));
+  };
+
+  const getOperationById = (operationId: string): Operation | null => {
+    return operations.find(operation => operation.id === operationId) || null;
+  };
+
+  const getDemandById = (demandId: string): DemandeRemboursement | null => {
+    return demands.find(demand => demand.id === demandId) || null;
+  };
+
+  const getLinkedTransactionsForOperation = (operationId: string): TransactionBancaire[] => {
+    return transactions.filter(transaction => getTransactionEventLinkIds(transaction).includes(operationId));
+  };
+
+  const getLinkedDemandsForOperation = (operationId: string): DemandeRemboursement[] => {
+    return demands.filter(demand => getExpenseLinkedEventId(demand) === operationId);
   };
 
   // Filtrer les transactions - EXCLURE les transactions enfants de la liste principale
@@ -516,9 +524,36 @@ export function TransactionsPage() {
     const matchesCategory = true;
 
     // Filtre par code comptable
-    const matchesAccountCode = accountCodeFilter === 'all' ||
-      (accountCodeFilter === 'with' && tx.code_comptable && tx.code_comptable.trim() !== '') ||
-      (accountCodeFilter === 'without' && (!tx.code_comptable || tx.code_comptable.trim() === ''));
+    // Pour les parents: vérifier le statut des children au lieu du parent lui-même
+    let matchesAccountCode = accountCodeFilter === 'all';
+    if (!matchesAccountCode) {
+      if (tx.is_parent) {
+        const children = getChildTransactions(tx.id);
+        if (accountCodeFilter === 'without') {
+          // Parent visible seulement si au moins 1 child n'a pas de code
+          matchesAccountCode = children.length === 0 || children.some(c => !c.code_comptable || c.code_comptable.trim() === '');
+        } else if (accountCodeFilter === 'with') {
+          // Parent visible seulement si tous les children ont un code
+          matchesAccountCode = children.length > 0 && children.every(c => c.code_comptable && c.code_comptable.trim() !== '');
+        }
+      } else {
+        matchesAccountCode =
+          (accountCodeFilter === 'with' && tx.code_comptable && tx.code_comptable.trim() !== '') ||
+          (accountCodeFilter === 'without' && (!tx.code_comptable || tx.code_comptable.trim() === ''));
+      }
+    }
+
+    // Filtre par source de catégorisation
+    const matchesCategorizationSource = categorizationSourceFilter === 'all' ||
+      (categorizationSourceFilter === 'manual' && (!tx.categorization_source || tx.categorization_source === 'manual')) ||
+      (categorizationSourceFilter === 'rules' && tx.categorization_source === 'rules') ||
+      (categorizationSourceFilter === 'ai' && tx.categorization_source === 'ai') ||
+      (categorizationSourceFilter === 'needs_review' && tx.needs_review === true);
+
+    // Filtre par signalement problématique
+    const matchesFlagged = flaggedFilter === 'all' ||
+      (flaggedFilter === 'flagged' && tx.flagged_problematic === true) ||
+      (flaggedFilter === 'not_flagged' && !tx.flagged_problematic);
 
     // Filtre par état de réconciliation avec la nouvelle logique
     const hasEntities = tx.matched_entities && tx.matched_entities.length > 0;
@@ -647,20 +682,56 @@ export function TransactionsPage() {
     const matchesComment = !commentSearch ||
       (tx.commentaire && tx.commentaire.toLowerCase().includes(commentSearch.toLowerCase()));
 
-    return matchesTab && matchesSearch && matchesCategory && matchesAccountCode &&
-           matchesReconciliation && matchesAmount && matchesStatus && matchesAttachments &&
+    // Batch filter (for categorization batches)
+    const matchesBatch = batchFilter === 'all' ||
+      (tx.categorization_batch_id === batchFilter);
+
+    // NIEUW: Geselecteerde transacties altijd tonen, ook als ze niet aan filter voldoen
+    const isSelected = selectedTransactionIds.has(tx.id);
+    
+    const matchesAllFilters = matchesTab && matchesSearch && matchesCategory && matchesAccountCode &&
+           matchesCategorizationSource && matchesFlagged && matchesReconciliation && matchesAmount && matchesStatus && matchesAttachments &&
            matchesParentChild && matchesDateRange && matchesCounterparty && matchesIban &&
            matchesCommunication && matchesSequenceRange && matchesLinkedEntity &&
-           matchesSpecificCode && matchesComment;
+           matchesSpecificCode && matchesComment && matchesBatch;
+    
+    // Toon als: matches filters OF is geselecteerd
+    return matchesAllFilters || isSelected;
   });
 
-  // Keyboard navigatie voor detail view (pijltjestoetsen ← →)
-  useKeyboardNavigation({
-    items: filteredTransactions,
-    currentItem: detailViewTransaction,
-    onNavigate: setDetailViewTransaction,
-    isOpen: !!detailViewTransaction
-  });
+  // Calculer les batchs uniques pour le dropdown (avec nombre de transactions)
+  const availableBatches = useMemo(() => {
+    const batchCounts = new Map<string, number>();
+    transactions.forEach(tx => {
+      if (tx.categorization_batch_id) {
+        batchCounts.set(tx.categorization_batch_id, (batchCounts.get(tx.categorization_batch_id) || 0) + 1);
+      }
+    });
+
+    // Convertir en tableau et trier par date décroissante (plus récent en premier)
+    return Array.from(batchCounts.entries())
+      .map(([batchId, count]) => ({
+        batchId,
+        count,
+        date: new Date(batchId)
+      }))
+      .sort((a, b) => b.date.getTime() - a.date.getTime());
+  }, [transactions]);
+
+  // Helper pour vérifier si un code est un code cotisation (730-00-7xx ou 493-00-719)
+  const isCotisationCode = (code: string | undefined): boolean => {
+    if (!code) return false;
+    return code.startsWith('730-00-7') || code === '493-00-719';
+  };
+
+  // Transactions cotisation sélectionnées (pour le bouton bulk "Lier Membres")
+  const selectedCotisationTransactions = useMemo(() => {
+    return transactions.filter(tx =>
+      selectedTransactionIds.has(tx.id) &&
+      isCotisationCode(tx.code_comptable) &&
+      !tx.is_parent
+    );
+  }, [transactions, selectedTransactionIds]);
 
   // Synchronize lastViewedTransactionId with detailViewTransaction (for blue highlight)
   useEffect(() => {
@@ -700,8 +771,12 @@ export function TransactionsPage() {
     setSortConfig({ key, direction });
   };
 
-  // Appliquer le tri aux transactions filtrées
-  const sortedTransactions = [...filteredTransactions].sort((a, b) => {
+  // Appliquer le filtre "sélectionnées uniquement" puis le tri
+  const transactionsToSort = showOnlySelected && selectedTransactionIds.size > 0
+    ? filteredTransactions.filter(t => selectedTransactionIds.has(t.id))
+    : filteredTransactions;
+
+  const sortedTransactions = [...transactionsToSort].sort((a, b) => {
     if (!sortConfig.key) return 0;
 
     const aValue = a[sortConfig.key];
@@ -736,6 +811,14 @@ export function TransactionsPage() {
     }
   });
 
+  // Keyboard navigatie voor detail view (pijltjestoetsen ← →)
+  useKeyboardNavigation({
+    items: sortedTransactions,
+    currentItem: detailViewTransaction,
+    onNavigate: setDetailViewTransaction,
+    isOpen: !!detailViewTransaction
+  });
+
   // Calculer les statistiques
   const stats = {
     totalIncome: transactions.filter(t => t.montant > 0).reduce((sum, t) => sum + t.montant, 0),
@@ -752,6 +835,8 @@ export function TransactionsPage() {
     let totalDuplicates = 0;
     let totalUpdated = 0; // NOUVEAU - Compteur de mises à jour de numéros incomplets
     let totalErrors = 0;
+    let totalPendingCount = 0;
+    let totalPendingAmount = 0;
 
     // Process each file
     for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
@@ -770,10 +855,17 @@ export function TransactionsPage() {
       }
       try {
         const result = await parseCSVFile(file);
-        
+
         if (result.errors.length > 0) {
           totalErrors += result.errors.length;
-          console.error(`Erreurs dans ${file.name}:`, result.errors);
+          logger.error(`Erreurs dans ${file.name}:`, result.errors);
+        }
+
+        // Accumuler les transactions en attente (virements instantanés sans numéro définitif)
+        if (result.pendingTransactions.count > 0) {
+          totalPendingCount += result.pendingTransactions.count;
+          totalPendingAmount += result.pendingTransactions.totalAmount;
+          logger.debug(`⏳ ${result.pendingTransactions.count} transaction(s) en attente (${result.pendingTransactions.totalAmount.toFixed(2)}€) - numéro de séquence incomplet`);
         }
 
         // Check for duplicates first
@@ -801,17 +893,17 @@ export function TransactionsPage() {
         const incompleteCount = incompleteTransactions.length;
 
         // Logs de démarrage
-        console.log(`\n📊 Import CSV: ${file.name}`);
-        console.log(`📊 Transactions dans le CSV: ${result.transactions.length}`);
-        console.log(`📊 Transactions en base: ${existingTransactions.length} (dont ${incompleteCount} avec numéros incomplets)`);
+        logger.debug(`\n📊 Import CSV: ${file.name}`);
+        logger.debug(`📊 Transactions dans le CSV: ${result.transactions.length}`);
+        logger.debug(`📊 Transactions en base: ${existingTransactions.length} (dont ${incompleteCount} avec numéros incomplets)`);
 
         // DEBUG: Afficher les transactions avec numéros incomplets
         if (incompleteCount > 0) {
-          console.log(`\n🔍 Transactions avec numéros incomplets en base:`);
+          logger.debug(`\n🔍 Transactions avec numéros incomplets en base:`);
           incompleteTransactions.forEach(tx => {
             const date = tx.date_execution instanceof Date ? tx.date_execution : new Date(tx.date_execution);
             const dateStr = !isNaN(date.getTime()) ? date.toISOString().split('T')[0] : 'INVALID_DATE';
-            console.log(`  - ${tx.numero_sequence} | ${dateStr} | ${tx.montant}€ | ${tx.contrepartie_nom} | "${tx.communication}"`);
+            logger.debug(`  - ${tx.numero_sequence} | ${dateStr} | ${tx.montant}€ | ${tx.contrepartie_nom} | "${tx.communication}"`);
           });
         }
 
@@ -826,7 +918,7 @@ export function TransactionsPage() {
 
           if (incompleteMatch) {
             // Match trouvé! Préparer pour mise à jour
-            console.log(`🔄 Match incomplet: ${tx.numero_sequence} - ${tx.contrepartie_nom} (${tx.montant}€) → Update ${incompleteMatch.id.substring(0, 8)}...`);
+            logger.debug(`🔄 Match incomplet: ${tx.numero_sequence} - ${tx.contrepartie_nom} (${tx.montant}€) → Update ${incompleteMatch.id.substring(0, 8)}...`);
             toUpdate.push({ newTx: tx, existingId: incompleteMatch.id });
             // Ajouter le hash de la nouvelle transaction pour éviter les doublons dans le batch
             if (tx.hash_dedup) {
@@ -841,7 +933,7 @@ export function TransactionsPage() {
             const existingTx = existingTransactions.find(t => t.numero_sequence === tx.numero_sequence);
             if (existingTx && (!existingTx.contrepartie_nom || existingTx.contrepartie_nom.trim() === '') && tx.contrepartie_nom) {
               // Transaction existe avec contrepartie vide + CSV a une contrepartie → Enrichir!
-              console.log(`🎨 Enrichissement détecté: ${tx.numero_sequence} → "${tx.contrepartie_nom}"`);
+              logger.debug(`🎨 Enrichissement détecté: ${tx.numero_sequence} → "${tx.contrepartie_nom}"`);
               toUpdate.push({ newTx: tx, existingId: existingTx.id });
               continue;
             }
@@ -855,7 +947,7 @@ export function TransactionsPage() {
             // Vérifier aussi si besoin d'enrichissement par hash
             const existingTx = existingTransactions.find(t => t.hash_dedup === tx.hash_dedup);
             if (existingTx && (!existingTx.contrepartie_nom || existingTx.contrepartie_nom.trim() === '') && tx.contrepartie_nom) {
-              console.log(`🎨 Enrichissement détecté (hash): ${tx.numero_sequence} → "${tx.contrepartie_nom}"`);
+              logger.debug(`🎨 Enrichissement détecté (hash): ${tx.numero_sequence} → "${tx.contrepartie_nom}"`);
               toUpdate.push({ newTx: tx, existingId: existingTx.id });
               continue;
             }
@@ -876,7 +968,7 @@ export function TransactionsPage() {
         totalDuplicates += duplicates.length;
 
         // Log des résultats du tri
-        console.log(`📊 Résultat du tri: ${toUpdate.length} à mettre à jour, ${newTransactions.length} nouvelles, ${duplicates.length} duplicates`);
+        logger.debug(`📊 Résultat du tri: ${toUpdate.length} à mettre à jour, ${newTransactions.length} nouvelles, ${duplicates.length} duplicates`);
 
         // NOUVEAU: Mettre à jour les transactions (numéros incomplets + enrichissement)
         for (const { newTx, existingId } of toUpdate) {
@@ -885,7 +977,12 @@ export function TransactionsPage() {
             const existingTx = existingTransactions.find(tx => tx.id === existingId);
 
             // Préparer les champs à mettre à jour
-            const updateData: any = {
+            const updateData: {
+              updated_at: ReturnType<typeof serverTimestamp>;
+              numero_sequence?: string;
+              hash_dedup?: string;
+              contrepartie_nom?: string;
+            } = {
               updated_at: serverTimestamp()
             };
 
@@ -893,13 +990,13 @@ export function TransactionsPage() {
             if (existingTx && isIncompleteSequenceNumber(existingTx.numero_sequence)) {
               updateData.numero_sequence = newTx.numero_sequence;
               updateData.hash_dedup = newTx.hash_dedup;
-              console.log(`🔄 Update numéro incomplet: ${existingTx.numero_sequence} → ${newTx.numero_sequence}`);
+              logger.debug(`🔄 Update numéro incomplet: ${existingTx.numero_sequence} → ${newTx.numero_sequence}`);
             }
 
             // Cas 2: Enrichissement contrepartie (seulement si vide)
             if (existingTx && (!existingTx.contrepartie_nom || existingTx.contrepartie_nom.trim() === '') && newTx.contrepartie_nom) {
               updateData.contrepartie_nom = newTx.contrepartie_nom;
-              console.log(`🎨 Enrichissement contrepartie: ${existingId.substring(0, 8)}... → "${newTx.contrepartie_nom}"`);
+              logger.debug(`🎨 Enrichissement contrepartie: ${existingId.substring(0, 8)}... → "${newTx.contrepartie_nom}"`);
             }
 
             await updateDoc(docRef, updateData);
@@ -920,9 +1017,9 @@ export function TransactionsPage() {
 
             const enrichmentNote = updateData.contrepartie_nom ? ` [enrichi: "${updateData.contrepartie_nom}"]` : '';
             const numeroNote = updateData.numero_sequence ? ` [numero: ${updateData.numero_sequence}]` : '';
-            console.log(`✓ Mise à jour: ${existingId.substring(0, 8)}...${numeroNote}${enrichmentNote}`);
+            logger.debug(`✓ Mise à jour: ${existingId.substring(0, 8)}...${numeroNote}${enrichmentNote}`);
           } catch (error) {
-            console.error('Error updating transaction:', error);
+            logger.error('Error updating transaction:', error);
             totalErrors++;
           }
         }
@@ -970,12 +1067,74 @@ export function TransactionsPage() {
             } as TransactionBancaire);
             totalImported++;
           } catch (error) {
-            console.error('Error saving transaction:', error);
+            logger.error('Error saving transaction:', error);
             totalErrors++;
           }
         }
 
         setTransactions(prev => [...prev, ...savedTransactions]);
+
+        // AUTO-MATCH: Tenter le matching automatique par event_number sur les nouvelles transactions
+        let autoMatchCount = 0;
+        const matchedEventTransactions = new Map<string, TransactionBancaire[]>(); // eventId -> transactions matched to it
+
+        for (const tx of savedTransactions) {
+          if (canAutoMatch(tx)) {
+            try {
+              const matchResult = await autoMatchByEventNumber(clubId, tx);
+              if (matchResult.success && matchResult.transactionUpdates) {
+                autoMatchCount++;
+                logger.debug(`✅ Auto-match réussi: ${tx.communication} → ${matchResult.message}`);
+
+                // Track which events got new transactions
+                if (matchResult.operation) {
+                  const eventId = matchResult.operation.id;
+                  const updatedTx = { ...tx, ...matchResult.transactionUpdates };
+                  if (!matchedEventTransactions.has(eventId)) {
+                    matchedEventTransactions.set(eventId, []);
+                  }
+                  matchedEventTransactions.get(eventId)!.push(updatedTx);
+                }
+
+                // Mettre à jour la transaction dans l'état local
+                setTransactions(prev =>
+                  prev.map(t => t.id === tx.id ? { ...t, ...matchResult.transactionUpdates } : t)
+                );
+              }
+            } catch (error) {
+              logger.error(`Auto-match échoué pour ${tx.numero_sequence}:`, error);
+            }
+          }
+        }
+        if (autoMatchCount > 0) {
+          logger.debug(`🔗 Auto-match: ${autoMatchCount}/${savedTransactions.length} transactions liées automatiquement`);
+        }
+
+        // AUTO-CONTROL INSCRIPTIONS: For each event that got linked transactions,
+        // automatically match inscriptions to transactions by name similarity
+        // (mirrors "Contrôler les paiements" button logic)
+        if (matchedEventTransactions.size > 0) {
+          let inscriptionMatchCount = 0;
+          for (const [eventId, newTxs] of matchedEventTransactions) {
+            // Combine new transactions with existing ones already linked to this event
+            const existingEventTxs = transactions.filter(t =>
+              t.operation_id === eventId ||
+              t.matched_entities?.some(e => e.entity_type === 'event' && e.entity_id === eventId)
+            );
+            const allEventTransactions = [...existingEventTxs, ...newTxs];
+
+            try {
+              const matched = await autoControlInscriptionPayments(clubId, eventId, allEventTransactions);
+              inscriptionMatchCount += matched;
+            } catch (error) {
+              logger.error(`Auto-control inscriptions échoué pour event ${eventId}:`, error);
+            }
+          }
+
+          if (inscriptionMatchCount > 0) {
+            logger.debug(`💳 Auto-control: ${inscriptionMatchCount} inscription(s) liées automatiquement`);
+          }
+        }
 
         // Update progress: file completed
         if (onProgress) {
@@ -990,13 +1149,26 @@ export function TransactionsPage() {
         }
 
       } catch (error) {
-        console.error(`Error processing ${file.name}:`, error);
+        logger.error(`Error processing ${file.name}:`, error);
         totalErrors++;
       }
     }
 
     // Log final
-    console.log(`\n✅ Import terminé: ${totalUpdated} mises à jour, ${totalImported} nouvelles, ${totalDuplicates} duplicates, ${totalErrors} erreurs\n`);
+    logger.debug(`\n✅ Import terminé: ${totalUpdated} mises à jour, ${totalImported} nouvelles, ${totalDuplicates} duplicates, ${totalErrors} erreurs\n`);
+
+    // Sauvegarder les transactions en attente dans Firestore pour affichage dans le dashboard
+    try {
+      const pendingRef = doc(db, 'clubs', clubId, 'settings', 'pending_transactions');
+      await setDoc(pendingRef, {
+        count: totalPendingCount,
+        amount: totalPendingAmount,
+        updated_at: serverTimestamp()
+      });
+      logger.debug(`💾 Pending transactions sauvegardées: ${totalPendingCount} transactions, ${totalPendingAmount.toFixed(2)}€`);
+    } catch (error) {
+      logger.error('Erreur sauvegarde pending transactions:', error);
+    }
 
     // Show summary for multiple files
     if (totalDuplicates > 0 && totalImported === 0 && totalUpdated === 0) {
@@ -1012,8 +1184,8 @@ export function TransactionsPage() {
               </svg>
             </div>
             <div class="flex-1">
-              <h3 class="text-lg font-semibold text-gray-900">Toutes les transactions existent déjà!</h3>
-              <p class="text-sm text-gray-600 mt-1">
+              <h3 class="text-lg font-semibold text-gray-900 dark:text-dark-text-primary">Toutes les transactions existent déjà!</h3>
+              <p class="text-sm text-gray-600 dark:text-dark-text-secondary mt-1">
                 ${totalDuplicates} transaction(s) étaient déjà présentes dans la base de données.
               </p>
               <p class="text-sm text-amber-600 font-medium mt-2">
@@ -1046,41 +1218,59 @@ export function TransactionsPage() {
               </svg>
             </div>
             <div class="flex-1">
-              <h3 class="text-lg font-semibold text-gray-900">Import réussi!</h3>
-              <p class="text-sm text-gray-600 mt-1">
+              <h3 class="text-lg font-semibold text-gray-900 dark:text-dark-text-primary">Import réussi!</h3>
+              <p class="text-sm text-gray-600 dark:text-dark-text-secondary mt-1">
                 Les transactions ont été importées avec succès depuis ${files.length} fichier${files.length > 1 ? 's' : ''}.
               </p>
             </div>
           </div>
 
-          <div class="bg-gray-50 rounded-lg p-4 space-y-2">
+          <div class="bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg p-4 space-y-2">
             <div class="flex justify-between text-sm">
-              <span class="text-gray-600">Fichiers traités:</span>
+              <span class="text-gray-600 dark:text-dark-text-secondary">Fichiers traités:</span>
               <span class="font-semibold">${files.length}</span>
             </div>
             <div class="flex justify-between text-sm">
-              <span class="text-gray-600">Transactions importées:</span>
+              <span class="text-gray-600 dark:text-dark-text-secondary">Transactions importées:</span>
               <span class="font-semibold text-green-600">${totalImported}</span>
             </div>
             ${totalUpdated > 0 ? `
             <div class="flex justify-between text-sm">
-              <span class="text-gray-600">Mises à jour:</span>
+              <span class="text-gray-600 dark:text-dark-text-secondary">Mises à jour:</span>
               <span class="font-semibold text-blue-600">${totalUpdated}</span>
             </div>
             ` : ''}
             ${totalDuplicates > 0 ? `
             <div class="flex justify-between text-sm">
-              <span class="text-gray-600">Doublons ignorés:</span>
+              <span class="text-gray-600 dark:text-dark-text-secondary">Doublons ignorés:</span>
               <span class="font-semibold text-amber-600">${totalDuplicates}</span>
             </div>
             ` : ''}
             ${totalErrors > 0 ? `
             <div class="flex justify-between text-sm">
-              <span class="text-gray-600">Erreurs:</span>
+              <span class="text-gray-600 dark:text-dark-text-secondary">Erreurs:</span>
               <span class="font-semibold text-red-600">${totalErrors}</span>
             </div>
             ` : ''}
           </div>
+          ${totalPendingCount > 0 ? `
+          <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mt-3">
+            <div class="flex items-start gap-2">
+              <svg class="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div class="text-sm">
+                <p class="font-medium text-blue-800 dark:text-blue-200">${totalPendingCount} virement(s) instantané(s) en attente</p>
+                <p class="text-blue-600 dark:text-blue-300 mt-1">
+                  Montant: <span class="font-semibold">${totalPendingAmount.toLocaleString('fr-BE', { minimumFractionDigits: 2 })} €</span>
+                </p>
+                <p class="text-blue-600/80 dark:text-blue-400/80 text-xs mt-2">
+                  Ces transactions n'ont pas encore de numéro de séquence définitif. Elles apparaîtront automatiquement lors du prochain import (1-2 jours).
+                </p>
+              </div>
+            </div>
+          </div>
+          ` : ''}
 
           <div class="flex justify-end mt-6">
             <button id="close-success-modal" class="px-4 py-2 bg-calypso-blue text-white rounded-lg hover:bg-calypso-blue-dark transition-colors">
@@ -1100,7 +1290,7 @@ export function TransactionsPage() {
 
     // ✅ Invalidation du cache React Query - Dashboard & Stats
     if (totalImported > 0 || totalUpdated > 0) {
-      console.log('🔄 Invalidation du cache dashboard après import transactions...');
+      logger.debug('🔄 Invalidation du cache dashboard après import transactions...');
       await queryClient.invalidateQueries({ queryKey: ['fiscalYearStats', clubId] });
       await queryClient.invalidateQueries({ queryKey: ['monthlyBreakdown', clubId] });
       await queryClient.invalidateQueries({ queryKey: ['financialSummary', clubId] });
@@ -1111,7 +1301,7 @@ export function TransactionsPage() {
       await queryClient.invalidateQueries({ queryKey: ['yearOverYearData', clubId] });
       await queryClient.invalidateQueries({ queryKey: ['balanceCurrent', clubId] });
       await queryClient.invalidateQueries({ queryKey: ['balanceSavings', clubId] });
-      console.log('✅ Cache dashboard invalidé!');
+      logger.debug('✅ Cache dashboard invalidé!');
     }
   };
 
@@ -1164,7 +1354,7 @@ export function TransactionsPage() {
 
       toast.success('Rapport Excel généré avec succès', { id: loadingToast });
     } catch (error) {
-      console.error('Error generating AI report:', error);
+      logger.error('Error generating AI report:', error);
       toast.error('Erreur lors de la génération du rapport', { id: loadingToast });
     }
   };
@@ -1218,7 +1408,7 @@ export function TransactionsPage() {
         const sign = parentTx.montant < 0 ? -1 : 1; // Garder le même signe que la transaction mère
 
         // Préparer les données pour Firestore (ne pas inclure undefined)
-        const firestoreData: any = {
+        const firestoreData: Record<string, unknown> = {
           // Champs obligatoires de base (copiés de la mère)
           numero_sequence: `${parentTx.numero_sequence}_child_${i + 1}`,
           date_execution: parentTx.date_execution,
@@ -1255,7 +1445,6 @@ export function TransactionsPage() {
         if (parentTx.import_batch_id) firestoreData.import_batch_id = parentTx.import_batch_id;
         if (parentTx.evenement_id) firestoreData.evenement_id = parentTx.evenement_id;
         if (parentTx.expense_claim_id) firestoreData.expense_claim_id = parentTx.expense_claim_id;
-        if (parentTx.vp_dive_import_id) firestoreData.vp_dive_import_id = parentTx.vp_dive_import_id;
         if (parentTx.matched_entities) firestoreData.matched_entities = parentTx.matched_entities;
         if (parentTx.commentaire) firestoreData.commentaire = parentTx.commentaire;
 
@@ -1265,6 +1454,19 @@ export function TransactionsPage() {
         else if (parentTx.categorie) firestoreData.categorie = parentTx.categorie;
         if (split.code_comptable) firestoreData.code_comptable = split.code_comptable;
         else if (parentTx.code_comptable) firestoreData.code_comptable = parentTx.code_comptable;
+
+        // Gérer la liaison avec une opération (activité)
+        if (split.operation_id) {
+          const operation = operations.find(op => op.id === split.operation_id);
+          firestoreData.matched_entities = [{
+            entity_type: 'event',
+            entity_id: split.operation_id,
+            entity_name: operation?.titre || 'Activité',
+            confidence: 100,
+            matched_at: new Date(),
+            matched_by: 'manual'
+          }];
+        }
 
         // Sauvegarder dans Firestore
         const txRef = collection(db, 'clubs', clubId, 'transactions_bancaires');
@@ -1300,7 +1502,7 @@ export function TransactionsPage() {
       setSplitModalTransaction(null);
 
     } catch (error) {
-      console.error('Error saving splits:', error);
+      logger.error('Error saving splits:', error);
       toast.error('Erreur lors de la ventilation');
     }
   };
@@ -1394,7 +1596,7 @@ export function TransactionsPage() {
         toast.success('Ligne de ventilation supprimée');
       }
     } catch (error) {
-      console.error('Error deleting child transaction:', error);
+      logger.error('Error deleting child transaction:', error);
       toast.error('Erreur lors de la suppression');
     }
   };
@@ -1412,6 +1614,162 @@ export function TransactionsPage() {
     });
   };
 
+  // Fonctions de sélection pour l'assignation en masse
+  const toggleTransactionSelection = (transactionId: string) => {
+    setSelectedTransactionIds(prev => {
+      const next = new Set(prev);
+      if (next.has(transactionId)) {
+        next.delete(transactionId);
+      } else {
+        next.add(transactionId);
+      }
+      return next;
+    });
+  };
+
+  const selectAllFiltered = () => {
+    setSelectedTransactionIds(new Set(sortedTransactions.map(t => t.id)));
+  };
+
+  const clearSelection = () => {
+    setSelectedTransactionIds(new Set());
+    setShowOnlySelected(false); // Reset le filtre quand on désélectionne tout
+  };
+
+  // Assignation en masse du code comptable
+  const handleBulkCodeAssignment = async (code: string) => {
+    if (!clubId || selectedTransactionIds.size === 0) return;
+
+    try {
+      const batch = writeBatch(db);
+      const transactionIds = Array.from(selectedTransactionIds);
+
+      for (const transactionId of transactionIds) {
+        const transactionRef = doc(db, 'clubs', clubId, 'transactions_bancaires', transactionId);
+
+        // Trouver la transaction actuelle pour obtenir le code précédent
+        const transaction = transactions.find(t => t.id === transactionId);
+
+        if (code === '') {
+          // Supprimer le code et les champs d'auto-catégorisation
+          batch.update(transactionRef, {
+            code_comptable: deleteField(),
+            categorization_source: deleteField(),
+            categorization_confidence: deleteField(),
+            needs_review: deleteField()
+          });
+        } else {
+          // Créer l'entrée audit trail
+          const auditEntry: import('@/types').CodeComptableAudit = {
+            code_comptable: code,
+            categorie: transaction?.categorie,
+            assigned_by: appUser?.id || 'unknown',
+            assigned_by_name: appUser?.displayName || appUser?.email || 'Utilisateur inconnu',
+            assigned_at: new Date(),
+            previous_code: transaction?.code_comptable,
+            previous_categorie: transaction?.categorie,
+            source: 'bulk'
+          };
+
+          // Nettoyer l'entry - verwijder undefined velden
+          Object.keys(auditEntry).forEach(key => {
+            if (auditEntry[key as keyof typeof auditEntry] === undefined) {
+              delete auditEntry[key as keyof typeof auditEntry];
+            }
+          });
+
+          // Ajouter à l'historique existant
+          const updatedHistory = [
+            ...(transaction?.code_comptable_history || []),
+            auditEntry
+          ];
+
+          // Assigner un nouveau code (marquer comme bulk)
+          batch.update(transactionRef, {
+            code_comptable: code,
+            code_comptable_history: updatedHistory,
+            categorization_source: 'bulk',
+            categorization_confidence: deleteField(),
+            needs_review: deleteField()
+          });
+        }
+      }
+
+      await batch.commit();
+
+      if (code === '') {
+        toast.success(`Code comptable supprimé de ${transactionIds.length} transactions`);
+      } else {
+        toast.success(`Code comptable assigné à ${transactionIds.length} transactions`);
+      }
+
+      // Rafraîchir les transactions (garder la sélection pour permettre d'autres actions)
+      await loadTransactions();
+      setIsBulkCodeModalOpen(false);
+    } catch (error) {
+      logger.error('Erreur lors de l\'assignation en masse:', error);
+      toast.error('Erreur lors de l\'assignation en masse');
+    }
+  };
+
+  // Liaison en masse des transactions à une/des activités
+  const handleBulkActivityLinking = async (operationIds: string[]) => {
+    if (!clubId || selectedTransactionIds.size === 0 || operationIds.length === 0) return;
+
+    try {
+      // Rafraîchir la session AVANT l'écriture pour éviter permission-denied
+      if (appUser?.id) {
+        await SessionService.ensureValidSession(clubId, appUser.id);
+      }
+
+      const batch = writeBatch(db);
+      const transactionIds = Array.from(selectedTransactionIds);
+
+      for (const transactionId of transactionIds) {
+        const txRef = doc(db, 'clubs', clubId, 'transactions_bancaires', transactionId);
+        const tx = transactions.find(t => t.id === transactionId);
+
+        // Créer les nouvelles entités liées
+        const newEntities = operationIds.map(opId => {
+          const operation = operations.find(op => op.id === opId);
+          return {
+            entity_type: 'event' as const,
+            entity_id: opId,
+            entity_name: operation?.titre || 'Activité',
+            confidence: 100,
+            matched_at: new Date(),
+            matched_by: 'manual' as const
+          };
+        });
+
+        // Fusionner avec entités existantes (éviter doublons)
+        const existingEntities = tx?.matched_entities || [];
+        const existingIds = new Set(existingEntities.map(e => e.entity_id));
+        const uniqueNewEntities = newEntities.filter(e => !existingIds.has(e.entity_id));
+
+        batch.update(txRef, {
+          matched_entities: [...existingEntities, ...uniqueNewEntities],
+          reconcilie: true,
+          updated_at: serverTimestamp()
+        });
+      }
+
+      await batch.commit();
+      toast.success(`${transactionIds.length} transaction${transactionIds.length > 1 ? 's' : ''} liée${transactionIds.length > 1 ? 's' : ''} à ${operationIds.length} activité${operationIds.length > 1 ? 's' : ''}`);
+
+      // Rafraîchir les transactions (garder la sélection pour permettre d'autres actions)
+      await loadTransactions();
+      setIsBulkActivityModalOpen(false);
+    } catch (error: any) {
+      logger.error('Erreur lors de la liaison en masse:', error);
+      if (error?.code === 'permission-denied') {
+        toast.error('Session expirée. Veuillez rafraîchir la page et réessayer.');
+      } else {
+        toast.error('Erreur lors de la liaison en masse');
+      }
+    }
+  };
+
   // Délier une transaction
   const unlinkTransaction = (transactionId: string) => {
     setTransactions(prev => prev.map(tx =>
@@ -1424,6 +1782,177 @@ export function TransactionsPage() {
         : tx
     ));
     toast.success('Transaction déliée');
+  };
+
+  // Handler pour confirmer la cotisation d'un membre (mode single)
+  const handleConfirmCotisation = async (cotisationDate: Date) => {
+    if (!selectedMemberForCotisation || !detailViewTransaction || !clubId) return;
+
+    try {
+      const membre = selectedMemberForCotisation;
+
+      // 1. Mettre à jour le membre avec la nouvelle date de cotisation
+      await updateMembre(clubId, membre.id!, {
+        cotisation_validite: Timestamp.fromDate(cotisationDate)
+      });
+
+      // 2. Ajouter l'entité membre à la transaction
+      const txRef = doc(db, 'clubs', clubId, 'transactions_bancaires', detailViewTransaction.id);
+      const existingEntities = detailViewTransaction.matched_entities || [];
+
+      // Vérifier qu'il n'y a pas déjà un membre lié
+      const filteredEntities = existingEntities.filter(e => e.entity_type !== 'member');
+
+      const newEntity = {
+        entity_type: 'member' as const,
+        entity_id: membre.id!,
+        entity_name: membre.displayName || `${membre.prenom || ''} ${membre.nom || ''}`.trim(),
+        cotisation_date: Timestamp.fromDate(cotisationDate)
+      };
+
+      const updatedEntities = [...filteredEntities, newEntity];
+
+      await updateDoc(txRef, {
+        matched_entities: updatedEntities,
+        reconcilie: true,
+        updated_at: serverTimestamp()
+      });
+
+      // 3. Mettre à jour l'état local de la transaction
+      const updatedTransaction = {
+        ...detailViewTransaction,
+        matched_entities: updatedEntities,
+        reconcilie: true
+      };
+
+      setTransactions(prev => prev.map(tx =>
+        tx.id === detailViewTransaction.id ? updatedTransaction : tx
+      ));
+      setDetailViewTransaction(updatedTransaction);
+
+      // 4. Mettre à jour l'état local des membres
+      setMembres(prev => prev.map(m =>
+        m.id === membre.id
+          ? { ...m, cotisation_validite: cotisationDate }
+          : m
+      ));
+
+      // 5. Fermer les modals et afficher un toast
+      setSelectedMemberForCotisation(null);
+      setIsMemberPanelOpen(false);
+
+      toast.success(`Cotisation de ${newEntity.entity_name} mise à jour jusqu'au ${cotisationDate.toLocaleDateString('fr-BE')}`);
+    } catch (error) {
+      logger.error('Erreur lors de la mise à jour de la cotisation:', error);
+      toast.error('Erreur lors de la mise à jour de la cotisation');
+    }
+  };
+
+  // Handler pour confirmer les cotisations en batch
+  const handleBulkMemberCotisation = async (assignments: MemberAssignment[], cotisationDate: Date) => {
+    if (!clubId || assignments.length === 0) return;
+
+    try {
+      const batch = writeBatch(db);
+      const processedMemberIds = new Set<string>();
+
+      for (const assignment of assignments) {
+        const transaction = transactions.find(t => t.id === assignment.transactionId);
+        if (!transaction) continue;
+
+        // Mettre à jour le membre (une seule fois par membre)
+        if (!processedMemberIds.has(assignment.memberId)) {
+          const membreRef = doc(db, 'clubs', clubId, 'members', assignment.memberId);
+          const membre = membres.find(m => m.id === assignment.memberId);
+
+          const memberUpdate: Record<string, unknown> = {
+            cotisation_validite: Timestamp.fromDate(cotisationDate),
+            updated_at: serverTimestamp()
+          };
+
+          // Ajouter IBAN seulement si le membre n'en a aucun (évite le cas James/Jacqueline)
+          if (assignment.ibanToAdd) {
+            const memberHasNoIban = !membre?.iban && (!membre?.ibans || membre.ibans.length === 0);
+            if (memberHasNoIban) {
+              // Ajouter comme IBAN principal
+              memberUpdate.iban = assignment.ibanToAdd.replace(/\s/g, '').toUpperCase();
+            }
+          }
+
+          batch.update(membreRef, memberUpdate);
+          processedMemberIds.add(assignment.memberId);
+        }
+
+        // Mettre à jour la transaction
+        const txRef = doc(db, 'clubs', clubId, 'transactions_bancaires', assignment.transactionId);
+        const existingEntities = transaction.matched_entities || [];
+        const filteredEntities = existingEntities.filter(e => e.entity_type !== 'member');
+
+        const newEntity = {
+          entity_type: 'member' as const,
+          entity_id: assignment.memberId,
+          entity_name: assignment.memberName,
+          cotisation_date: Timestamp.fromDate(cotisationDate)
+        };
+
+        batch.update(txRef, {
+          matched_entities: [...filteredEntities, newEntity],
+          reconcilie: true,
+          updated_at: serverTimestamp()
+        });
+      }
+
+      await batch.commit();
+
+      // Mettre à jour l'état local des transactions
+      setTransactions(prev => prev.map(tx => {
+        const assignment = assignments.find(a => a.transactionId === tx.id);
+        if (!assignment) return tx;
+
+        const existingEntities = tx.matched_entities || [];
+        const filteredEntities = existingEntities.filter(e => e.entity_type !== 'member');
+        const newEntity = {
+          entity_type: 'member' as const,
+          entity_id: assignment.memberId,
+          entity_name: assignment.memberName,
+          cotisation_date: Timestamp.fromDate(cotisationDate)
+        };
+
+        return {
+          ...tx,
+          matched_entities: [...filteredEntities, newEntity],
+          reconcilie: true
+        };
+      }));
+
+      // Mettre à jour l'état local des membres (y compris le nouvel IBAN si ajouté)
+      setMembres(prev => prev.map(m => {
+        const assignment = assignments.find(a => a.memberId === m.id);
+        if (processedMemberIds.has(m.id!)) {
+          const updates: Partial<Membre> = { cotisation_validite: cotisationDate };
+
+          // Ajouter l'IBAN seulement si le membre n'en a aucun
+          if (assignment?.ibanToAdd) {
+            const memberHasNoIban = !m.iban && (!m.ibans || m.ibans.length === 0);
+            if (memberHasNoIban) {
+              updates.iban = assignment.ibanToAdd.replace(/\s/g, '').toUpperCase();
+            }
+          }
+
+          return { ...m, ...updates };
+        }
+        return m;
+      }));
+
+      // Fermer le modal et effacer la sélection
+      setIsBulkMemberModalOpen(false);
+      setSelectedTransactionIds(new Set());
+
+      toast.success(`${processedMemberIds.size} cotisation${processedMemberIds.size > 1 ? 's' : ''} mise${processedMemberIds.size > 1 ? 's' : ''} à jour`);
+    } catch (error) {
+      logger.error('Erreur lors de la mise à jour des cotisations en batch:', error);
+      toast.error('Erreur lors de la mise à jour des cotisations');
+    }
   };
 
   // Handle document upload for a transaction
@@ -1469,7 +1998,7 @@ export function TransactionsPage() {
 
       toast.success(`${files.length} document${files.length > 1 ? 's' : ''} ajouté${files.length > 1 ? 's' : ''} avec succès`);
     } catch (error) {
-      console.error('Error uploading documents:', error);
+      logger.error('Error uploading documents:', error);
       toast.error('Erreur lors du téléversement des documents');
       throw error;
     }
@@ -1484,7 +2013,7 @@ export function TransactionsPage() {
         const storageRef = ref(storage, `clubs/${clubId}/justificatifs/${fileName}`);
         await deleteObject(storageRef);
       } catch (storageError) {
-        console.warn('Could not delete file from storage (it may have already been deleted):', storageError);
+        logger.warn('Could not delete file from storage (it may have already been deleted):', storageError);
       }
 
       // Update the transaction in Firestore
@@ -1514,7 +2043,7 @@ export function TransactionsPage() {
 
       toast.success('Document supprimé avec succès');
     } catch (error) {
-      console.error('Error deleting document:', error);
+      logger.error('Error deleting document:', error);
       toast.error('Erreur lors de la suppression du document');
       throw error;
     }
@@ -1547,8 +2076,99 @@ export function TransactionsPage() {
 
       toast.success('Transaction supprimée avec succès');
     } catch (error) {
-      console.error('Error deleting transaction:', error);
+      logger.error('Error deleting transaction:', error);
       toast.error('Erreur lors de la suppression de la transaction');
+    }
+  };
+
+  // Create a reimbursement expense from a bank transaction
+  const handleCreateReimbursementFromTransaction = async (transaction: TransactionBancaire) => {
+    try {
+      // 1. Try to find or create Fournisseur by IBAN (graceful failure - continues without if permissions fail)
+      let fournisseurId: string | undefined;
+      let fournisseurNom: string | undefined;
+
+      if (transaction.contrepartie_iban && transaction.contrepartie_nom) {
+        try {
+          // Search existing fournisseurs by IBAN
+          const existingFournisseur = await findFournisseurByIban(clubId, transaction.contrepartie_iban);
+
+          if (existingFournisseur) {
+            fournisseurId = existingFournisseur.id;
+            fournisseurNom = existingFournisseur.nom;
+          } else {
+            // Create new fournisseur
+            const newFournisseurId = await createFournisseur(
+              clubId,
+              {
+                nom: transaction.contrepartie_nom,
+                iban: transaction.contrepartie_iban,
+              },
+              appUser?.id || 'system'
+            );
+            fournisseurId = newFournisseurId;
+            fournisseurNom = transaction.contrepartie_nom;
+          }
+        } catch (fournisseurError) {
+          // Permission error on fournisseurs collection - continue without fournisseur
+          // User can manually set the beneficiary in the expense detail view
+          logger.warn('Could not access fournisseurs collection, continuing without fournisseur:', fournisseurError);
+        }
+      }
+
+      // 2. Get linked activity name (if any)
+      const linkedActivity = transaction.matched_entities?.find(e => e.entity_type === 'event');
+      const activityName = linkedActivity?.entity_name || '';
+
+      // 3. Format communication_qr (max 140 chars) - include activity name if available
+      const communicationQr = activityName
+        ? `Remb. tr. ${transaction.numero_sequence} - ${activityName}`.substring(0, 140)
+        : `Remb. tr. ${transaction.numero_sequence}`.substring(0, 140);
+
+      // 4. Format description with date and activity name
+      const dateStr = formatDate(transaction.date_execution);
+      const description = activityName
+        ? `Remboursement qui annule la transaction ${transaction.numero_sequence} du ${dateStr} - ${activityName}`
+        : `Remboursement qui annule la transaction ${transaction.numero_sequence} du ${dateStr}`;
+
+      // 5. Create expense in Firestore
+      const demandesRef = collection(db, 'clubs', clubId, 'demandes_remboursement');
+      const newDemande = {
+        description,
+        communication_qr: communicationQr,
+        montant: Math.abs(transaction.montant),
+        date_depense: transaction.date_execution,
+        demandeur_id: appUser?.id,
+        demandeur_nom: appUser?.nom || appUser?.displayName || 'Utilisateur',
+        demandeur_prenom: appUser?.prenom || '',
+        demandeur_email: appUser?.email || '',
+        beneficiaire_type: fournisseurId ? 'fournisseur' : 'demandeur',
+        fournisseur_id: fournisseurId || null,
+        fournisseur_nom: fournisseurNom || null,
+        source_transaction_id: transaction.id,
+        source_transaction_ref: transaction.numero_sequence,
+        statut: 'brouillon',
+        club_id: clubId,
+        fiscal_year_id: selectedFiscalYear?.id || null,
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
+      };
+
+      const docRef = await addDoc(demandesRef, newDemande);
+
+      // 5. Close detail view and navigate to expenses page
+      setDetailViewTransaction(null);
+      navigate('/depenses', {
+        state: {
+          openDemandId: docRef.id,
+          fromTransactionId: transaction.id
+        }
+      });
+
+      toast.success('Demande de remboursement créée en brouillon');
+    } catch (error) {
+      logger.error('Error creating reimbursement from transaction:', error);
+      toast.error('Erreur lors de la création du remboursement');
     }
   };
 
@@ -1609,21 +2229,32 @@ export function TransactionsPage() {
         </div>
       )}
 
-      {/* Archive Banner */}
-      <ArchiveBanner />
-
       {/* Header */}
       <div className="mb-6">
         <div className="flex justify-between items-start">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-dark-text-primary">Transactions bancaires</h1>
-            <p className="text-gray-600 dark:text-dark-text-secondary mt-1">Gérez et réconciliez les transactions du club</p>
+            <div className="flex items-center gap-3 mt-1">
+              <p className="text-gray-600 dark:text-dark-text-secondary">Gérez et réconciliez les transactions du club</p>
+              {/* Bouton Auto-catégoriser - temporairement masqué pour debugging */}
+              {/* TODO: Réactiver après debugging du système d'auto-catégorisation */}
+              {false && getRole(appUser) === 'superadmin' && selectedTransactionIds.size === 0 && (
+                <button
+                  onClick={() => setIsAutoCategorizeModalOpen(true)}
+                  className="flex items-center gap-1.5 px-2 py-1 text-xs border border-purple-300 dark:border-purple-600 text-purple-600 dark:text-purple-400 rounded hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors"
+                  title="Auto-catégoriser les transactions sans code comptable"
+                >
+                  <Sparkles className="h-3 w-3" />
+                  Auto-catégoriser
+                </button>
+              )}
+            </div>
           </div>
           <div className="flex gap-2">
             <ProtectedAction requireModify>
               <button
                 onClick={() => setShowImportModal(true)}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm border border-gray-300 dark:border-dark-border text-gray-600 dark:text-dark-text-secondary rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors"
+                className="flex items-center gap-2 px-3 py-1.5 text-sm border border-gray-300 dark:border-dark-border text-gray-600 dark:text-dark-text-secondary rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary transition-colors"
                 title="Importer des transactions depuis un fichier CSV"
               >
                 <Upload className="h-3.5 w-3.5" />
@@ -1639,6 +2270,13 @@ export function TransactionsPage() {
           persistKey="transactions-filters"
           recordsFound={filteredTransactions.length}
           totalRecords={transactions.length}
+          onExpandedChange={(expanded) => {
+            setIsFilterAccordionOpen(expanded);
+            // Clear selection when accordion closes
+            if (!expanded) {
+              clearSelection();
+            }
+          }}
           searchBar={
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-dark-text-muted" />
@@ -1657,6 +2295,8 @@ export function TransactionsPage() {
             setActiveTab('all');
             setReconciliationFilter('all');
             setAccountCodeFilter('all');
+            setCategorizationSourceFilter('all');
+            setFlaggedFilter('all');
             setAmountFilterType('all');
             setAmountValue1('');
             setAmountValue2('');
@@ -1681,9 +2321,11 @@ export function TransactionsPage() {
               title: 'Général',
               activeFilters: (activeTab !== 'all' ? 1 : 0) +
                             (reconciliationFilter !== 'all' ? 1 : 0) +
-                            (transactionStatus !== 'all' ? 1 : 0) +
                             (hasAttachments !== 'all' ? 1 : 0) +
-                            (parentChildFilter !== 'all' ? 1 : 0),
+                            (parentChildFilter !== 'all' ? 1 : 0) +
+                            (accountCodeFilter !== 'all' ? 1 : 0) +
+                            (categorizationSourceFilter !== 'all' ? 1 : 0) +
+                            (flaggedFilter !== 'all' ? 1 : 0),
               content: (
                 <div className="flex gap-2 flex-wrap">
                   {/* All filters on one line */}
@@ -1694,7 +2336,7 @@ export function TransactionsPage() {
                         "px-2.5 py-1.5 text-sm rounded-lg transition-colors",
                         activeTab === 'all'
                           ? "bg-calypso-blue text-white"
-                          : "border border-gray-300 dark:border-dark-border text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary"
+                          : "border border-gray-300 dark:border-dark-border text-gray-600 dark:text-dark-text-secondary dark:text-dark-text-muted hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary"
                       )}
                     >
                       Tout ({transactions.length})
@@ -1705,7 +2347,7 @@ export function TransactionsPage() {
                         "px-2.5 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-1",
                         activeTab === 'income'
                           ? "bg-green-600 text-white"
-                          : "border border-gray-300 dark:border-dark-border text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary"
+                          : "border border-gray-300 dark:border-dark-border text-gray-600 dark:text-dark-text-secondary dark:text-dark-text-muted hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary"
                       )}
                     >
                       <TrendingUp className="h-4 w-4" />
@@ -1717,7 +2359,7 @@ export function TransactionsPage() {
                         "px-2.5 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-1",
                         activeTab === 'expense'
                           ? "bg-red-600 text-white"
-                          : "border border-gray-300 dark:border-dark-border text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary"
+                          : "border border-gray-300 dark:border-dark-border text-gray-600 dark:text-dark-text-secondary dark:text-dark-text-muted hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary"
                       )}
                     >
                       <TrendingDown className="h-4 w-4" />
@@ -1734,17 +2376,6 @@ export function TransactionsPage() {
                     <option value="reconciled">✓ Réconciliés</option>
                     <option value="unreconciled">⚠ Non vérifiés</option>
                     <option value="not_found">✗ Pas trouvé</option>
-                  </select>
-
-                  <select
-                    className="px-2 py-1.5 text-sm border border-gray-300 dark:border-dark-border rounded-lg focus:ring-1 focus:ring-calypso-blue bg-white dark:bg-dark-bg"
-                    value={transactionStatus}
-                    onChange={(e) => setTransactionStatus(e.target.value as any)}
-                  >
-                    <option value="all">Statut: Tous</option>
-                    <option value="accepte">Accepté</option>
-                    <option value="refuse">Refusé</option>
-                    <option value="en_attente">En attente</option>
                   </select>
 
                   <select
@@ -1767,6 +2398,48 @@ export function TransactionsPage() {
                     <option value="child">Enfant</option>
                     <option value="standalone">Simple</option>
                   </select>
+
+                  <select
+                    className="px-2 py-1.5 text-sm border border-gray-300 dark:border-dark-border rounded-lg focus:ring-1 focus:ring-calypso-blue bg-white dark:bg-dark-bg"
+                    value={accountCodeFilter}
+                    onChange={(e) => setAccountCodeFilter(e.target.value as any)}
+                  >
+                    <option value="all">Code comptable: Tous</option>
+                    <option value="with">Avec code</option>
+                    <option value="without">Sans code</option>
+                  </select>
+
+                  <select
+                    className={cn(
+                      "px-2 py-1.5 text-sm border rounded-lg focus:ring-1 focus:ring-calypso-blue bg-white dark:bg-dark-bg",
+                      categorizationSourceFilter !== 'all'
+                        ? "border-purple-400 dark:border-purple-600 text-purple-700 dark:text-purple-400"
+                        : "border-gray-300 dark:border-dark-border"
+                    )}
+                    value={categorizationSourceFilter}
+                    onChange={(e) => setCategorizationSourceFilter(e.target.value as any)}
+                  >
+                    <option value="all">Source: Toutes</option>
+                    <option value="manual">👤 Manuel</option>
+                    <option value="rules">⚙️ Règles auto</option>
+                    <option value="ai">🤖 AI</option>
+                    <option value="needs_review">⚠️ À vérifier</option>
+                  </select>
+
+                  <select
+                    className={cn(
+                      "px-2 py-1.5 text-sm border rounded-lg focus:ring-1 focus:ring-calypso-blue bg-white dark:bg-dark-bg",
+                      flaggedFilter !== 'all'
+                        ? "border-red-400 dark:border-red-600 text-red-700 dark:text-red-400"
+                        : "border-gray-300 dark:border-dark-border"
+                    )}
+                    value={flaggedFilter}
+                    onChange={(e) => setFlaggedFilter(e.target.value as any)}
+                  >
+                    <option value="all">Signalement: Tous</option>
+                    <option value="flagged">🚩 Signalées</option>
+                    <option value="not_flagged">Non signalées</option>
+                  </select>
                 </div>
               )
             },
@@ -1788,7 +2461,7 @@ export function TransactionsPage() {
                   </select>
 
                   <ComboBox
-                    options={calypsoAccountCodes
+                    options={AccountCodeService.getActiveCodes()
                       .sort((a, b) => a.code.localeCompare(b.code))
                       .map(code => ({
                         value: code.code,
@@ -1843,7 +2516,7 @@ export function TransactionsPage() {
                       />
                       {amountFilterType === 'between' && (
                         <>
-                          <span className="text-gray-400 text-sm">-</span>
+                          <span className="text-gray-400 dark:text-dark-text-muted text-sm">-</span>
                           <input
                             type="number"
                             step="0.01"
@@ -1873,7 +2546,7 @@ export function TransactionsPage() {
                     value={dateRangeFilter.start}
                     onChange={(e) => setDateRangeFilter({ ...dateRangeFilter, start: e.target.value })}
                   />
-                  <span className="text-sm text-gray-500">-</span>
+                  <span className="text-sm text-gray-500 dark:text-dark-text-muted">-</span>
                   <input
                     type="date"
                     className="w-auto px-1.5 py-1 text-sm border border-gray-300 dark:border-dark-border rounded focus:ring-1 focus:ring-calypso-blue bg-white dark:bg-dark-bg"
@@ -1917,7 +2590,7 @@ export function TransactionsPage() {
                       className="w-32 px-1.5 py-1 text-[10px] border border-gray-300 dark:border-dark-border rounded focus:ring-1 focus:ring-calypso-blue bg-white dark:bg-dark-bg cursor-pointer relative z-10"
                       value={linkedEntityType}
                       onChange={(e) => {
-                        console.log('Changing linkedEntityType to:', e.target.value);
+                        logger.debug('Changing linkedEntityType to:', e.target.value);
                         setLinkedEntityType(e.target.value as any);
                       }}
                     >
@@ -1948,7 +2621,7 @@ export function TransactionsPage() {
                         value={sequenceNumberRange.start}
                         onChange={(e) => setSequenceNumberRange({ ...sequenceNumberRange, start: e.target.value })}
                       />
-                      <span className="mx-1 text-sm text-gray-500">-</span>
+                      <span className="mx-1 text-sm text-gray-500 dark:text-dark-text-muted">-</span>
                       <input
                         type="text"
                         placeholder="N° trans. fin"
@@ -1968,6 +2641,24 @@ export function TransactionsPage() {
                       />
                       <Tooltip text="Rechercher dans les commentaires et notes des transactions. Tapez un mot-clé pour trouver toutes les transactions contenant ce texte dans leurs commentaires." />
                     </div>
+                    {/* Batch filter dropdown */}
+                    {availableBatches.length > 0 && (
+                      <div className="flex items-center">
+                        <select
+                          value={batchFilter}
+                          onChange={(e) => setBatchFilter(e.target.value)}
+                          className="w-52 px-1.5 py-1 text-sm border border-gray-300 dark:border-dark-border rounded focus:ring-1 focus:ring-calypso-blue bg-white dark:bg-dark-bg"
+                        >
+                          <option value="all">Tous les batchs</option>
+                          {availableBatches.map(({ batchId, count, date }) => (
+                            <option key={batchId} value={batchId}>
+                              {date.toLocaleDateString('fr-BE', { day: '2-digit', month: '2-digit', year: 'numeric' })} {date.toLocaleTimeString('fr-BE', { hour: '2-digit', minute: '2-digit' })} ({count})
+                            </option>
+                          ))}
+                        </select>
+                        <Tooltip text="Filtrer par batch de catégorisation. Chaque fois que vous auto-catégorisez des transactions, elles reçoivent un identifiant de batch commun pour les retrouver facilement." />
+                      </div>
+                    )}
                   </div>
                 )
               }
@@ -1977,6 +2668,30 @@ export function TransactionsPage() {
 
       {/* Table des transactions */}
       <div className="bg-white dark:bg-dark-bg-secondary rounded-xl shadow-sm border border-gray-200 dark:border-dark-border">
+        {/* Barre de sélection simplifiée */}
+        {selectedTransactionIds.size > 0 && (
+          <div className="px-4 py-3 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-800 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setIsBulkEditModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-calypso-blue text-white rounded-lg hover:bg-calypso-blue-dark transition-colors text-sm font-medium"
+              >
+                <FileText className="h-4 w-4" />
+                Modifier
+              </button>
+              <button
+                onClick={clearSelection}
+                className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-dark-border text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary transition-colors text-sm font-medium"
+              >
+                <X className="h-4 w-4" />
+                Désélectionner tout
+              </button>
+            </div>
+            <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+              {selectedTransactionIds.size} transaction{selectedTransactionIds.size > 1 ? 's' : ''} sélectionnée{selectedTransactionIds.size > 1 ? 's' : ''}
+            </span>
+          </div>
+        )}
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="text-center">
@@ -1991,12 +2706,24 @@ export function TransactionsPage() {
           <table className="min-w-full table-fixed" style={{ width: '100%' }}>
             <thead className="bg-gray-50 dark:bg-dark-bg-tertiary border-b border-gray-200 dark:border-dark-border">
               <tr>
+                {/* Checkbox column - only visible when filter accordion is open */}
+                {isFilterAccordionOpen && (
+                  <th className="w-10 px-2 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedTransactionIds.size === sortedTransactions.length && sortedTransactions.length > 0}
+                      onChange={() => selectedTransactionIds.size === sortedTransactions.length ? clearSelection() : selectAllFiltered()}
+                      className="w-4 h-4 rounded border-gray-300 dark:border-dark-border text-calypso-blue focus:ring-calypso-blue cursor-pointer"
+                      title={selectedTransactionIds.size === sortedTransactions.length ? "Tout désélectionner" : "Tout sélectionner"}
+                    />
+                  </th>
+                )}
                 <th
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider w-36 cursor-pointer hover:bg-gray-100 dark:bg-dark-bg-tertiary select-none"
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider w-20 cursor-pointer hover:bg-gray-100 dark:bg-dark-bg-tertiary select-none"
                   onClick={() => handleSort('numero_sequence')}
                 >
                   <div className="flex items-center gap-1">
-                    N° Trans.
+                    N°
                     {sortConfig.key === 'numero_sequence' && (
                       <span className="text-calypso-blue">
                         {sortConfig.direction === 'asc' ? '↑' : '↓'}
@@ -2005,7 +2732,7 @@ export function TransactionsPage() {
                   </div>
                 </th>
                 <th
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider w-36 cursor-pointer hover:bg-gray-100 dark:bg-dark-bg-tertiary select-none"
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider w-24 cursor-pointer hover:bg-gray-100 dark:bg-dark-bg-tertiary select-none"
                   onClick={() => handleSort('date_execution')}
                 >
                   <div className="flex items-center gap-1">
@@ -2018,11 +2745,11 @@ export function TransactionsPage() {
                   </div>
                 </th>
                 <th
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:bg-dark-bg-tertiary select-none"
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider w-72 cursor-pointer hover:bg-gray-100 dark:bg-dark-bg-tertiary select-none"
                   onClick={() => handleSort('contrepartie_nom')}
                 >
                   <div className="flex items-center gap-1">
-                    Contrepartie & Liaisons
+                    Contrepartie
                     {sortConfig.key === 'contrepartie_nom' && (
                       <span className="text-calypso-blue">
                         {sortConfig.direction === 'asc' ? '↑' : '↓'}
@@ -2030,13 +2757,16 @@ export function TransactionsPage() {
                     )}
                   </div>
                 </th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider w-44">
+                  Liaison
+                </th>
                 <th
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider w-36 cursor-pointer hover:bg-gray-100 dark:bg-dark-bg-tertiary select-none"
-                  onClick={() => handleSort('categorie')}
+                  className="px-2 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider w-24 cursor-pointer hover:bg-gray-100 dark:bg-dark-bg-tertiary select-none"
+                  onClick={() => handleSort('code_comptable')}
                 >
                   <div className="flex items-center gap-1">
-                    Catégorie
-                    {sortConfig.key === 'categorie' && (
+                    CCompt.
+                    {sortConfig.key === 'code_comptable' && (
                       <span className="text-calypso-blue">
                         {sortConfig.direction === 'asc' ? '↑' : '↓'}
                       </span>
@@ -2044,7 +2774,7 @@ export function TransactionsPage() {
                   </div>
                 </th>
                 <th
-                  className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider w-36 cursor-pointer hover:bg-gray-100 dark:bg-dark-bg-tertiary select-none"
+                  className="px-2 py-3 text-right text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider w-20 cursor-pointer hover:bg-gray-100 dark:bg-dark-bg-tertiary select-none"
                   onClick={() => handleSort('montant')}
                 >
                   <div className="flex items-center justify-end gap-1">
@@ -2056,7 +2786,7 @@ export function TransactionsPage() {
                     )}
                   </div>
                 </th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider w-auto">
+                <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider w-16">
                   Actions
                 </th>
               </tr>
@@ -2074,21 +2804,54 @@ export function TransactionsPage() {
                     <tr
                       id={`tx-${transaction.id}`}
                       className={cn(
-                        "hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors",
-                        isParent && "bg-orange-50 dark:bg-orange-900/20 border-l-4 border-orange-400 dark:border-orange-600",
-                        lastViewedTransactionId === transaction.id && "bg-blue-100 dark:bg-blue-900/30"
+                        "hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary transition-colors cursor-pointer",
+                        transaction.flagged_problematic && "bg-red-100 dark:bg-red-900/30 border-l-4 border-red-500 dark:border-red-600",
+                        isParent && !transaction.flagged_problematic && "bg-orange-50 dark:bg-orange-900/20 border-l-4 border-orange-400 dark:border-orange-600",
+                        lastViewedTransactionId === transaction.id && !transaction.flagged_problematic && "bg-blue-100 dark:bg-blue-900/30",
+                        selectedTransactionIds.has(transaction.id) && !transaction.flagged_problematic && "bg-blue-50 dark:bg-blue-900/20"
                       )}
+                      onClick={() => {
+                        setLastViewedTransactionId(transaction.id);
+                        setDetailViewTransaction(transaction);
+                      }}
                     >
-                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900 dark:text-dark-text-primary">
-                        <span className={cn("font-mono text-xs", isParent ? "text-orange-700 dark:text-orange-400" : "text-gray-600 dark:text-dark-text-secondary")}>
-                          {transaction.numero_sequence || '-'}
-                        </span>
+                      {/* Checkbox cell - only visible when filter accordion is open, disabled for parent transactions */}
+                      {isFilterAccordionOpen && (
+                        <td
+                          className="w-10 px-2 py-2"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {!isParent ? (
+                            <input
+                              type="checkbox"
+                              checked={selectedTransactionIds.has(transaction.id)}
+                              onChange={() => toggleTransactionSelection(transaction.id)}
+                              className="w-4 h-4 rounded border-gray-300 dark:border-dark-border text-calypso-blue focus:ring-calypso-blue cursor-pointer"
+                            />
+                          ) : (
+                            <div className="w-4 h-4" title="Transaction ventilée - sélectionnez les lignes enfants" />
+                          )}
+                        </td>
+                      )}
+                      <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 dark:text-dark-text-primary">
+                        <div className="flex items-center gap-1.5">
+                          {transaction.flagged_problematic && (
+                            <Tooltip content={transaction.flagged_reason || "Signalée comme problématique"}>
+                              <span className="inline-flex items-center justify-center w-5 h-5 bg-red-100 dark:bg-red-900/30 rounded-full flex-shrink-0">
+                                <AlertTriangle className="h-3 w-3 text-red-600 dark:text-red-400" />
+                              </span>
+                            </Tooltip>
+                          )}
+                          <span className={cn("font-mono text-xs", isParent ? "text-orange-700 dark:text-orange-400" : "text-gray-600 dark:text-dark-text-secondary")}>
+                            {transaction.numero_sequence || '-'}
+                          </span>
+                        </div>
                       </td>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900 dark:text-dark-text-primary">
+                      <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 dark:text-dark-text-primary">
                         <div className="flex items-center space-x-1.5">
                           {isParent && (
                             <button
-                              onClick={() => toggleExpanded(transaction.id)}
+                              onClick={(e) => { e.stopPropagation(); toggleExpanded(transaction.id); }}
                               className="p-0.5 hover:bg-orange-100 dark:hover:bg-orange-900/30 rounded transition-colors"
                             >
                               {isExpanded ? (
@@ -2101,11 +2864,11 @@ export function TransactionsPage() {
                           <span className={cn("text-xs", isParent && "font-semibold")}>{formatDate(transaction.date_execution)}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-2">
-                        <div>
+                      <td className="px-3 py-2 w-72" title={transaction.communication || ''}>
+                        <div className="cursor-default">
                           {/* Contrepartie + Communication sur même ligne */}
                           <div className="flex items-center gap-2">
-                            <p className={cn("text-sm font-medium truncate max-w-xs", isParent ? "text-orange-900 dark:text-orange-400" : "text-gray-900 dark:text-dark-text-primary")}>
+                            <p className={cn("text-sm font-medium truncate max-w-[250px]", isParent ? "text-orange-900 dark:text-orange-400" : "text-gray-900 dark:text-dark-text-primary")}>
                               {transaction.contrepartie_nom}
                             </p>
                             {isParent && (
@@ -2116,65 +2879,118 @@ export function TransactionsPage() {
                             )}
                           </div>
 
-                          {/* Communication + Liaisons inline */}
-                          <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-600 dark:text-dark-text-secondary">
-                            <span className={cn("truncate max-w-sm", isParent && "text-gray-500 dark:text-dark-text-muted")}>
+                          {/* Communication */}
+                          <div className="mt-0.5 text-xs text-gray-600 dark:text-dark-text-secondary">
+                            <span className={cn("truncate max-w-[250px] block", isParent && "text-gray-500 dark:text-dark-text-muted")}>
                               {transaction.communication}
                             </span>
-
-                            {/* Liaisons inline */}
-                            {transaction.matched_entities && transaction.matched_entities.length > 0 && (
-                              <>
-                                <span className="text-gray-300 dark:text-dark-border">•</span>
-                                {transaction.matched_entities.filter(e => e.entity_type === 'event' || e.entity_type === 'operation').map((entity, idx) => (
-                                  <span key={idx} className="text-blue-600 dark:text-blue-400 whitespace-nowrap">
-                                    📅 {entity.entity_name}
-                                  </span>
-                                ))}
-                                {transaction.matched_entities.filter(e => e.entity_type === 'expense' || e.entity_type === 'demand').map((entity, idx) => (
-                                  <span key={idx} className="text-orange-600 dark:text-orange-400 whitespace-nowrap">
-                                    💳 {entity.entity_name}
-                                  </span>
-                                ))}
-                              </>
-                            )}
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-2 whitespace-nowrap">
+                      {/* Colonne Liaison */}
+                      <td className="px-3 py-2 w-44">
+                        {transaction.matched_entities && transaction.matched_entities.length > 0 ? (
+                          <div className="space-y-0.5">
+                            {transaction.matched_entities.filter(e => e.entity_type === 'event' || e.entity_type === 'operation').slice(0, 2).map((entity, idx) => (
+                              <div key={idx} className="flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400">
+                                <span className="truncate max-w-[160px]" title={entity.entity_name}>
+                                  📅 {entity.entity_name}
+                                </span>
+                              </div>
+                            ))}
+                            {transaction.matched_entities.filter(e => e.entity_type === 'expense' || e.entity_type === 'demand').slice(0, 2).map((entity, idx) => (
+                              <div key={idx} className="flex items-center gap-1 text-sm text-orange-600 dark:text-orange-400">
+                                <span className="truncate max-w-[160px]" title={entity.entity_name}>
+                                  💳 {entity.entity_name}
+                                </span>
+                              </div>
+                            ))}
+                            {transaction.matched_entities.filter(e => e.entity_type === 'member').slice(0, 2).map((entity, idx) => (
+                              <div key={idx} className="flex items-center gap-1 text-sm text-green-600 dark:text-green-400">
+                                <span className="truncate max-w-[160px]" title={entity.entity_name}>
+                                  🎫 {entity.entity_name}
+                                </span>
+                              </div>
+                            ))}
+                            {transaction.matched_entities.length > 2 && (
+                              <span className="text-xs text-gray-400 dark:text-dark-text-muted">
+                                +{transaction.matched_entities.length - 2} autre{transaction.matched_entities.length > 3 ? 's' : ''}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-sm text-gray-400 dark:text-dark-text-muted">-</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-2 whitespace-nowrap w-32">
                         <div className="space-y-0.5">
-                          {!transaction.is_split && transaction.categorie && (() => {
-                            const categoryNames: Record<string, string> = {
-                              'sorties_revenu': 'Sorties plongées',
-                              'sorties_depense': 'Sorties plongées',
-                              'cotisations': 'Cotisations',
-                              'evenement': 'Événements',
-                              'assurance': 'Assurances',
-                              'reunion': 'Réunions',
-                              'subsides': 'Subsides',
-                              'frais_bancaires': 'Frais bancaires',
-                              'formation': 'Formation',
-                              'administration': 'Administration',
-                              'piscine': 'Piscine',
-                              'materiel': 'Matériel',
-                              'boutique': 'Boutique',
-                              'activite': 'Activités',
-                              'divers': 'Divers',
-                              'reports': 'Reports',
-                              'bilan': 'Bilan'
-                            };
-                            return (
-                              <span className="text-xs text-gray-700 dark:text-dark-text-secondary">
-                                {categoryNames[transaction.categorie] || transaction.categorie}
-                              </span>
-                            );
-                          })()}
                           {!transaction.is_split && transaction.code_comptable && (
-                            <div>
-                              <span className="px-2 py-0.5 text-xs font-mono bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary rounded">
-                                {transaction.code_comptable}
+                            <div className="flex flex-col gap-0.5">
+                              {/* Libellé du code comptable */}
+                              <span className="text-xs text-gray-700 dark:text-dark-text-primary truncate max-w-[120px]" title={AccountCodeService.getByCode(transaction.code_comptable)?.label || ''}>
+                                {AccountCodeService.getByCode(transaction.code_comptable)?.label || ''}
                               </span>
+                              {/* Code + badges */}
+                              <div className="flex items-center gap-1">
+                                <span className="px-1.5 py-0.5 text-[10px] font-mono bg-gray-100 dark:bg-dark-bg-tertiary text-gray-500 dark:text-dark-text-muted rounded">
+                                  {transaction.code_comptable}
+                                </span>
+                                {/* Badge source de catégorisation */}
+                                {transaction.categorization_source === 'ai' && (
+                                  <Tooltip content={transaction.needs_review ? "Catégorisé par AI - À vérifier" : `Catégorisé par AI (${transaction.categorization_confidence || 0}%)`}>
+                                    <span className={cn(
+                                      "flex items-center gap-0.5 px-1 py-0.5 text-[10px] rounded",
+                                      transaction.needs_review
+                                        ? "bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400"
+                                        : "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400"
+                                    )}>
+                                      {transaction.needs_review ? <AlertTriangle className="h-3 w-3" /> : <Bot className="h-3 w-3" />}
+                                    </span>
+                                  </Tooltip>
+                                )}
+                                {transaction.categorization_source === 'rules' && (
+                                  <Tooltip content={`Catégorisé par règles (${transaction.categorization_confidence || 0}%)`}>
+                                    <span className="flex items-center gap-0.5 px-1 py-0.5 text-[10px] rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
+                                      <Settings2 className="h-3 w-3" />
+                                    </span>
+                                  </Tooltip>
+                                )}
+                              </div>
                             </div>
+                          )}
+                          {!transaction.is_split && !transaction.code_comptable && transaction.categorie && (
+                            <span className="text-xs text-gray-700 dark:text-dark-text-primary">
+                              {(() => {
+                                const categoryNames: Record<string, string> = {
+                                  'sorties_revenu': 'Sorties plongées',
+                                  'sorties_depense': 'Sorties plongées',
+                                  'cotisations': 'Cotisations',
+                                  'evenement': 'Événements',
+                                  'assurance': 'Assurances',
+                                  'reunion': 'Réunions',
+                                  'subsides': 'Subsides',
+                                  'frais_bancaires': 'Frais bancaires',
+                                  'formation': 'Formation',
+                                  'administration': 'Administration',
+                                  'piscine': 'Piscine',
+                                  'materiel': 'Matériel',
+                                  'boutique': 'Boutique',
+                                  'activite': 'Activités',
+                                  'divers': 'Divers',
+                                  'reports': 'Reports',
+                                  'bilan': 'Bilan'
+                                };
+                                return categoryNames[transaction.categorie] || transaction.categorie;
+                              })()}
+                            </span>
+                          )}
+                          {!transaction.is_split && !transaction.code_comptable && transaction.code_comptable_not_found && (
+                            <Tooltip content="Aucun code comptable approprié trouvé">
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] rounded bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400">
+                                <HelpCircle className="h-3 w-3" />
+                                Non trouvé
+                              </span>
+                            </Tooltip>
                           )}
                           {transaction.is_split && (
                             <span className="text-xs text-gray-500 dark:text-dark-text-muted italic">Ventilé</span>
@@ -2182,13 +2998,13 @@ export function TransactionsPage() {
                         </div>
                       </td>
                       <td className={cn(
-                        "px-6 py-4 whitespace-nowrap text-sm font-semibold text-right",
+                        "px-2 py-2 whitespace-nowrap text-sm font-semibold text-right w-20",
                         transaction.montant > 0 ? "text-green-600" : "text-red-600"
                       )}>
                         {formatMontant(transaction.montant)}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <div className="flex items-center justify-center gap-2">
+                      <td className="px-2 py-2 whitespace-nowrap text-center w-16">
+                        <div className="flex items-center justify-center gap-1">
                           {/* Icône de statut de réconciliation */}
                           {(() => {
                             const hasEntities = transaction.matched_entities && transaction.matched_entities.length > 0;
@@ -2201,7 +3017,7 @@ export function TransactionsPage() {
                                 className={cn(
                                   "inline-flex items-center justify-center w-6 h-6 rounded-full",
                                   transaction.is_split || transaction.is_parent
-                                    ? "bg-gray-50 dark:bg-gray-700 text-gray-300 dark:text-gray-600"
+                                    ? "bg-gray-50 dark:bg-dark-bg-tertiary dark:bg-gray-700 text-gray-300 dark:text-dark-text-secondary"
                                     : isReconciled
                                     ? "bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400"
                                     : isNotFound
@@ -2220,7 +3036,8 @@ export function TransactionsPage() {
                           })()}
 
                           <button
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation();
                               setLastViewedTransactionId(transaction.id);
                               setDetailViewTransaction(transaction);
                             }}
@@ -2239,13 +3056,32 @@ export function TransactionsPage() {
                         key={child.id}
                         id={`tx-${child.id}`}
                         className={cn(
-                          "hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors",
-                          lastViewedTransactionId === child.id && "bg-blue-200 dark:bg-blue-900/40"
+                          "hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors cursor-pointer",
+                          lastViewedTransactionId === child.id && "bg-blue-200 dark:bg-blue-900/40",
+                          selectedTransactionIds.has(child.id) && "bg-blue-100 dark:bg-blue-900/30"
                         )}
+                        onClick={() => {
+                          setLastViewedTransactionId(child.id);
+                          setDetailViewTransaction(child);
+                        }}
                       >
+                        {/* Checkbox pour enfant - visible quand le filtre accordion est ouvert */}
+                        {isFilterAccordionOpen && (
+                          <td
+                            className="w-10 px-2 py-1.5 bg-blue-50/50 dark:bg-blue-900/20"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedTransactionIds.has(child.id)}
+                              onChange={() => toggleTransactionSelection(child.id)}
+                              className="w-4 h-4 rounded border-blue-300 dark:border-blue-600 text-blue-500 focus:ring-blue-500 cursor-pointer"
+                            />
+                          </td>
+                        )}
                         <td className="px-4 py-1.5 whitespace-nowrap text-sm bg-blue-50/50 dark:bg-blue-900/20">
                           <span className="font-mono text-xs text-blue-600 dark:text-blue-400">
-                            {child.numero_sequence || '-'}
+                            {transaction.numero_sequence}_{child.child_index || index + 1}
                           </span>
                         </td>
                         <td className="py-1.5 whitespace-nowrap text-sm bg-white dark:bg-dark-bg-secondary">
@@ -2280,26 +3116,34 @@ export function TransactionsPage() {
                                     💳 {entity.entity_name}
                                   </span>
                                 ))}
+                                {child.matched_entities.filter(e => e.entity_type === 'member').map((entity, idx) => (
+                                  <span key={idx} className="text-green-600 dark:text-green-400 whitespace-nowrap">
+                                    🎫 {entity.entity_name}
+                                  </span>
+                                ))}
                               </>
                             )}
                           </div>
                         </td>
                         <td className="px-4 py-1.5 whitespace-nowrap bg-blue-50/50 dark:bg-blue-900/20">
                           <div className="space-y-0.5">
-                            {child.categorie && (
+                            {child.code_comptable && (
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-xs text-gray-700 dark:text-dark-text-primary truncate max-w-[120px]" title={AccountCodeService.getByCode(child.code_comptable)?.label || ''}>
+                                  {AccountCodeService.getByCode(child.code_comptable)?.label || ''}
+                                </span>
+                                <span className="px-1.5 py-0.5 text-[10px] font-mono bg-gray-100 dark:bg-dark-bg-tertiary text-gray-500 dark:text-dark-text-muted rounded w-fit">
+                                  {child.code_comptable}
+                                </span>
+                              </div>
+                            )}
+                            {!child.code_comptable && child.categorie && (
                               <span className={cn(
                                 "px-1.5 py-0.5 text-xs rounded-full",
                                 CATEGORY_COLORS[child.categorie] || CATEGORY_COLORS.autre
                               )}>
                                 {CategorizationService.getAllCategories().find(c => c.id === child.categorie)?.nom || child.categorie}
                               </span>
-                            )}
-                            {child.code_comptable && (
-                              <div>
-                                <span className="px-1.5 py-0.5 text-xs font-mono bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary rounded">
-                                  {child.code_comptable}
-                                </span>
-                              </div>
                             )}
                           </div>
                         </td>
@@ -2340,7 +3184,8 @@ export function TransactionsPage() {
                             })()}
 
                             <button
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 setLastViewedTransactionId(child.id);
                                 setDetailViewTransaction(child);
                               }}
@@ -2369,17 +3214,20 @@ export function TransactionsPage() {
                         </td>
                         <td className="px-6 py-2">
                           <div className="space-y-1">
-                            {split.categorie && (
-                              <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary">
-                                {CategorizationService.getAllCategories().find(c => c.id === split.categorie)?.nom}
-                              </span>
-                            )}
                             {split.code_comptable && (
-                              <div>
-                                <span className="px-1.5 py-0.5 text-xs font-mono bg-gray-50 dark:bg-dark-bg-tertiary text-gray-600 dark:text-dark-text-secondary rounded">
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-xs text-gray-700 dark:text-dark-text-primary truncate max-w-[120px]" title={AccountCodeService.getByCode(split.code_comptable)?.label || ''}>
+                                  {AccountCodeService.getByCode(split.code_comptable)?.label || ''}
+                                </span>
+                                <span className="px-1.5 py-0.5 text-[10px] font-mono bg-gray-50 dark:bg-dark-bg-tertiary text-gray-500 dark:text-dark-text-muted rounded w-fit">
                                   {split.code_comptable}
                                 </span>
                               </div>
+                            )}
+                            {!split.code_comptable && split.categorie && (
+                              <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary">
+                                {CategorizationService.getAllCategories().find(c => c.id === split.categorie)?.nom}
+                              </span>
                             )}
                           </div>
                         </td>
@@ -2395,7 +3243,7 @@ export function TransactionsPage() {
                               "inline-flex items-center justify-center w-6 h-6 rounded-full",
                               split.reconcilie
                                 ? "bg-green-100 text-green-600"
-                                : "bg-gray-100 text-gray-400"
+                                : "bg-gray-100 dark:bg-dark-bg-tertiary text-gray-400 dark:text-dark-text-muted"
                             )}
                           >
                             {split.reconcilie ? "✓" : "✗"}
@@ -2430,6 +3278,9 @@ export function TransactionsPage() {
           childTransactions={getChildTransactions(splitModalTransaction.id)}
           onSave={handleSaveSplits}
           onClose={() => setSplitModalTransaction(null)}
+          clubId={clubId}
+          operations={operations}
+          membres={membres}
         />
       )}
       
@@ -2440,6 +3291,7 @@ export function TransactionsPage() {
           onClose={() => setOperationLinkingTransaction(null)}
           transaction={operationLinkingTransaction}
           operations={operations}
+          position={detailViewTransaction ? 'left' : 'right'}
           linkedOperationIds={
             operationLinkingTransaction.matched_entities
               ?.filter(e => e.entity_type === 'event')
@@ -2447,6 +3299,11 @@ export function TransactionsPage() {
           }
           onLinkOperations={async (operationIds: string[]) => {
             try {
+              // Rafraîchir la session AVANT l'écriture pour éviter permission-denied
+              if (appUser?.id) {
+                await SessionService.ensureValidSession(clubId, appUser.id);
+              }
+
               const txRef = doc(db, 'clubs', clubId, 'transactions_bancaires', operationLinkingTransaction.id);
 
               // Créer les entités liées pour toutes les opérations sélectionnées
@@ -2466,17 +3323,49 @@ export function TransactionsPage() {
               // Fusionner avec les entités existantes (éviter les doublons)
               const allEntities = [...existingEntities, ...newEntities];
 
-              await updateDoc(txRef, {
+              // ✅ Field audit trail voor reconciliatie
+              const wasReconciled = operationLinkingTransaction.reconcilie || false;
+              const fieldAuditEntry = !wasReconciled ? {
+                field: 'reconcilie',
+                old_value: false,
+                new_value: true,
+                changed_by: appUser?.id || '',
+                changed_by_name: `${appUser?.prenom || ''} ${appUser?.nom || ''}`.trim() || appUser?.email || 'Unknown',
+                changed_at: new Date(),
+                was_reconciled: false
+              } : null;
+
+              const firestoreUpdates: {
+                reconcilie: boolean;
+                matched_entities: MatchedEntity[];
+                updated_at: ReturnType<typeof serverTimestamp>;
+                field_history?: TransactionFieldAudit[];
+                fields_modified?: boolean;
+              } = {
                 reconcilie: true,
                 matched_entities: allEntities,
                 updated_at: serverTimestamp()
-              });
+              };
+
+              if (fieldAuditEntry) {
+                firestoreUpdates.field_history = [
+                  ...(operationLinkingTransaction.field_history || []),
+                  fieldAuditEntry
+                ];
+                firestoreUpdates.fields_modified = true;
+              }
+
+              await updateDoc(txRef, firestoreUpdates);
 
               // Mettre à jour l'état local
               const updatedTransaction = {
                 ...operationLinkingTransaction,
                 reconcilie: true,
-                matched_entities: allEntities
+                matched_entities: allEntities,
+                ...(fieldAuditEntry && {
+                  field_history: [...(operationLinkingTransaction.field_history || []), fieldAuditEntry],
+                  fields_modified: true
+                })
               };
 
               setTransactions(prev => prev.map(tx =>
@@ -2492,13 +3381,29 @@ export function TransactionsPage() {
               setDetailViewTransaction(updatedTransaction);
 
               loadTransactions();
-            } catch (error) {
-              console.error('Error linking operations:', error);
-              toast.error('Erreur lors de la liaison des activités');
+            } catch (error: any) {
+              logger.error('Error linking operations:', error);
+              if (error?.code === 'permission-denied') {
+                toast.error('Session expirée. Veuillez rafraîchir la page et réessayer.');
+              } else {
+                toast.error('Erreur lors de la liaison des activités');
+              }
             }
           }}
         />
       )}
+
+      {/* Panel de liaison des opérations en masse */}
+      <OperationLinkingPanel
+        isOpen={isBulkActivityModalOpen}
+        onClose={() => setIsBulkActivityModalOpen(false)}
+        transaction={null}
+        operations={operations}
+        linkedOperationIds={[]}
+        onLinkOperations={handleBulkActivityLinking}
+        bulkMode={true}
+        bulkCount={selectedTransactionIds.size}
+      />
 
       {/* Panel de liaison des dépenses */}
       {expenseLinkingTransaction && (
@@ -2512,6 +3417,7 @@ export function TransactionsPage() {
               ?.filter(e => e.entity_type === 'expense' || e.entity_type === 'demand')
               .map(e => e.entity_id) || []
           }
+          onRefresh={loadDemands}
           onLinkExpenses={async (expenseIds: string[]) => {
             try {
               const txRef = doc(db, 'clubs', clubId, 'transactions_bancaires', expenseLinkingTransaction.id);
@@ -2533,20 +3439,59 @@ export function TransactionsPage() {
               // Fusionner avec les entités existantes
               const allEntities = [...existingEntities, ...newEntities];
 
-              await updateDoc(txRef, {
+              // ✅ Field audit trail voor reconciliatie
+              const wasReconciled = expenseLinkingTransaction.reconcilie || false;
+              const fieldAuditEntry = !wasReconciled ? {
+                field: 'reconcilie',
+                old_value: false,
+                new_value: true,
+                changed_by: appUser?.id || '',
+                changed_by_name: `${appUser?.prenom || ''} ${appUser?.nom || ''}`.trim() || appUser?.email || 'Unknown',
+                changed_at: new Date(),
+                was_reconciled: false
+              } : null;
+
+              const txFirestoreUpdates: {
+                reconcilie: boolean;
+                matched_entities: MatchedEntity[];
+                updated_at: ReturnType<typeof serverTimestamp>;
+                field_history?: TransactionFieldAudit[];
+                fields_modified?: boolean;
+              } = {
                 reconcilie: true,
                 matched_entities: allEntities,
                 updated_at: serverTimestamp()
-              });
+              };
 
-              // Mettre à jour toutes les demandes de remboursement
+              if (fieldAuditEntry) {
+                txFirestoreUpdates.field_history = [
+                  ...(expenseLinkingTransaction.field_history || []),
+                  fieldAuditEntry
+                ];
+                txFirestoreUpdates.fields_modified = true;
+              }
+
+              await updateDoc(txRef, txFirestoreUpdates);
+
+              // Mettre à jour toutes les demandes de remboursement avec status audit
+              const userFullName = `${appUser?.prenom || ''} ${appUser?.nom || ''}`.trim() || appUser?.email || 'Unknown';
               for (const expenseId of expenseIds) {
+                const expense = demands.find(d => d.id === expenseId);
+                const statusAuditEntry = {
+                  old_statut: expense?.statut || 'en_attente_validation',
+                  new_statut: 'rembourse',
+                  changed_by: appUser?.id || '',
+                  changed_by_name: userFullName,
+                  changed_at: new Date()
+                };
+
                 const demandeRef = doc(db, 'clubs', clubId, 'demandes_remboursement', expenseId);
                 await updateDoc(demandeRef, {
                   transaction_id: expenseLinkingTransaction.id,
                   statut: 'rembourse',
                   date_remboursement: new Date(),
-                  updated_at: serverTimestamp()
+                  updated_at: serverTimestamp(),
+                  status_history: [...(expense?.status_history || []), statusAuditEntry]
                 });
               }
 
@@ -2554,7 +3499,11 @@ export function TransactionsPage() {
               const updatedTransaction = {
                 ...expenseLinkingTransaction,
                 reconcilie: true,
-                matched_entities: allEntities
+                matched_entities: allEntities,
+                ...(fieldAuditEntry && {
+                  field_history: [...(expenseLinkingTransaction.field_history || []), fieldAuditEntry],
+                  fields_modified: true
+                })
               };
 
               setTransactions(prev => prev.map(tx =>
@@ -2572,7 +3521,7 @@ export function TransactionsPage() {
               loadTransactions();
               loadDemands();
             } catch (error) {
-              console.error('Error linking expenses:', error);
+              logger.error('Error linking expenses:', error);
               toast.error('Erreur lors de la liaison des dépenses');
             }
           }}
@@ -2584,20 +3533,20 @@ export function TransactionsPage() {
         <TransactionDetailView
           transaction={detailViewTransaction}
           demands={demands}
-          events={operations}
+          events={operations as unknown as Evenement[]}
           splits={splits}
           childTransactions={getChildTransactions(detailViewTransaction.id)}
-          vpDiveParticipants={
-            // Pass participants if the transaction is linked to Plongée Zélande event
-            detailViewTransaction.matched_entities?.some(e => e.entity_id === 'zeeland-avril')
-              ? demoVPDiveParticipants
-              : []
-          }
+          selectedTransactionIds={selectedTransactionIds}
+          onBulkCodeAssigned={async () => {
+            await loadTransactions();
+          }}
+          membres={membres}
           isOpen={!!detailViewTransaction}
           onClose={() => {
             if (detailViewTransaction) {
               setLastViewedTransactionId(detailViewTransaction.id);
             }
+            closeAllQuickViews();
             setDetailViewTransaction(null);
             setReturnContext(null); // Clear return context
           }}
@@ -2609,47 +3558,83 @@ export function TransactionsPage() {
             setExpenseLinkingTransaction(detailViewTransaction);
             // NE PAS fermer le panneau de détail - il sera rouvert après la liaison
           }}
+          onCreateReimbursement={() => {
+            if (detailViewTransaction) {
+              handleCreateReimbursementFromTransaction(detailViewTransaction);
+            }
+          }}
           onUnlink={async (entityId: string) => {
             // Délier une entité (demande, événement ou inscription) de la transaction
             try {
               const txRef = doc(db, 'clubs', clubId, 'transactions_bancaires', detailViewTransaction.id);
 
-              // Trouver le type d'entité
+              // Trouver le type d'entité - chercher dans matched_entities OU legacy link
               const entity = detailViewTransaction.matched_entities?.find(e => e.entity_id === entityId);
-              if (!entity) {
+
+              // Vérifier si c'est une demande liée à l'ancienne méthode (transaction_id sur la demande)
+              const legacyLinkedDemand = !entity
+                ? demands.find(d => d.id === entityId && d.transaction_id === detailViewTransaction.id)
+                : null;
+
+              if (!entity && !legacyLinkedDemand) {
                 toast.error('Entité non trouvée');
                 return;
               }
 
-              // 1. Supprimer l'entité liée de la transaction
+              // Déterminer le type d'entité
+              const entityType = entity?.entity_type || 'expense'; // legacy links are always expenses/demands
+
+              // 1. Supprimer l'entité liée de la transaction (si présente dans matched_entities)
               const updatedEntities = detailViewTransaction.matched_entities?.filter(
                 e => e.entity_id !== entityId
               ) || [];
 
               // Préparer les updates - utiliser deleteField() pour supprimer les champs
-              const updates: any = {
-                matched_entities: updatedEntities.length > 0 ? updatedEntities : deleteField(),
+              const updates: {
+                matched_entities?: MatchedEntity[] | ReturnType<typeof deleteField>;
+                reconcilie: boolean;
+                updated_at: ReturnType<typeof serverTimestamp>;
+                expense_claim_id?: ReturnType<typeof deleteField>;
+              } = {
                 reconcilie: updatedEntities.length > 0,
                 updated_at: serverTimestamp()
               };
 
+              // Seulement mettre à jour matched_entities si l'entité y était présente
+              if (entity) {
+                updates.matched_entities = updatedEntities.length > 0 ? updatedEntities : deleteField();
+              }
+
               // Si c'est une dépense, supprimer expense_claim_id
-              if (entity.entity_type === 'expense' || entity.entity_type === 'demand') {
+              if (entityType === 'expense' || entityType === 'demand') {
                 updates.expense_claim_id = deleteField();
               }
 
               await updateDoc(txRef, updates);
 
               // 2. Mettre à jour l'entité selon son type
-              if (entity.entity_type === 'expense' || entity.entity_type === 'demand') {
+              if (entityType === 'expense' || entityType === 'demand') {
                 // Demande de remboursement - supprimer transaction_id et date_remboursement
+                const existingDemand = demands.find(d => d.id === entityId);
                 const demandeRef = doc(db, 'clubs', clubId, 'demandes_remboursement', entityId);
-                await updateDoc(demandeRef, {
+
+                // Préparer l'update - ajouter les métadonnées d'approbation si manquantes
+                // (requis par les règles Firestore quand statut = 'approuve')
+                const demandUpdate: Record<string, unknown> = {
                   transaction_id: deleteField(),
                   statut: 'approuve',
                   date_remboursement: deleteField(),
                   updated_at: serverTimestamp()
-                });
+                };
+
+                // Si les métadonnées d'approbation manquent, les ajouter avec l'utilisateur actuel
+                if (!existingDemand?.approuve_par) {
+                  demandUpdate.approuve_par = appUser?.id || null;
+                  demandUpdate.approuve_par_nom = `${appUser?.prenom || ''} ${appUser?.nom || ''}`.trim() || appUser?.email || 'Unknown';
+                  demandUpdate.date_approbation = serverTimestamp();
+                }
+
+                await updateDoc(demandeRef, demandUpdate);
 
                 setDemands(prev => prev.map(d =>
                   d.id === entityId
@@ -2657,10 +3642,10 @@ export function TransactionsPage() {
                     : d
                 ));
                 toast.success('Dépense déliée de la transaction');
-              } else if (entity.entity_type === 'event') {
+              } else if (entityType === 'event') {
                 // Événement - juste retirer de matched_entities
                 toast.success('Événement délié de la transaction');
-              } else if (entity.entity_type === 'inscription') {
+              } else if (entityType === 'inscription') {
                 // Inscription - utiliser le service d'inscription
                 // Note: Nécessite eventId, on ne peut pas le faire ici sans plus d'infos
                 toast.success('Inscription déliée de la transaction');
@@ -2674,7 +3659,7 @@ export function TransactionsPage() {
               };
 
               // Si c'est une dépense, supprimer expense_claim_id
-              if (entity.entity_type === 'expense' || entity.entity_type === 'demand') {
+              if (entityType === 'expense' || entityType === 'demand') {
                 delete (updatedTransaction as any).expense_claim_id;
               }
 
@@ -2690,7 +3675,7 @@ export function TransactionsPage() {
               loadTransactions();
               loadDemands();
             } catch (error) {
-              console.error('Error unlinking entity:', error);
+              logger.error('Error unlinking entity:', error);
               toast.error('Erreur lors de la déliaison');
             }
           }}
@@ -2704,13 +3689,17 @@ export function TransactionsPage() {
                 e => e.entity_id !== eventId
               ) || [];
 
-              const updates: any = {
+              const eventUpdates: {
+                matched_entities: MatchedEntity[] | ReturnType<typeof deleteField>;
+                reconcilie: boolean;
+                updated_at: ReturnType<typeof serverTimestamp>;
+              } = {
                 matched_entities: updatedEntities.length > 0 ? updatedEntities : deleteField(),
                 reconcilie: updatedEntities.length > 0,
                 updated_at: serverTimestamp()
               };
 
-              await updateDoc(txRef, updates);
+              await updateDoc(txRef, eventUpdates);
 
               // Mettre à jour l'état local
               const updatedTransaction = {
@@ -2732,7 +3721,7 @@ export function TransactionsPage() {
               toast.success('Événement délié');
               loadTransactions();
             } catch (error) {
-              console.error('Error unlinking event:', error);
+              logger.error('Error unlinking event:', error);
               toast.error('Erreur lors de la déliaison de l\'événement');
             }
           }}
@@ -2769,53 +3758,213 @@ export function TransactionsPage() {
             setDetailViewTransaction(null);
           }}
           onNavigateToEvent={(eventId) => {
-            // Fermer le modal de transaction AVANT de naviguer
-            setDetailViewTransaction(null);
+            const operation = getOperationById(eventId);
+            if (operation) {
+              openQuickView({ kind: 'operation', operation });
+              return;
+            }
+
             navigate('/operations', { state: { openEventId: eventId, fromTransactionId: detailViewTransaction.id } });
           }}
           onNavigateToDemand={(demandId) => {
-            // Fermer le modal de transaction AVANT de naviguer
-            setDetailViewTransaction(null);
+            const demand = getDemandById(demandId);
+            if (demand) {
+              openQuickView({ kind: 'demand', demand });
+              return;
+            }
+
             navigate('/depenses', { state: { openDemandId: demandId, fromTransactionId: detailViewTransaction.id } });
+          }}
+          onLinkMember={() => {
+            setIsMemberPanelOpen(true);
+          }}
+          onUnlinkMember={async (memberId: string) => {
+            try {
+              const txRef = doc(db, 'clubs', clubId, 'transactions_bancaires', detailViewTransaction.id);
+
+              // Supprimer l'entité membre de la transaction
+              const updatedEntities = detailViewTransaction.matched_entities?.filter(
+                e => !(e.entity_type === 'member' && e.entity_id === memberId)
+              ) || [];
+
+              const memberUpdates: {
+                matched_entities: MatchedEntity[] | ReturnType<typeof deleteField>;
+                reconcilie: boolean;
+                updated_at: ReturnType<typeof serverTimestamp>;
+              } = {
+                matched_entities: updatedEntities.length > 0 ? updatedEntities : deleteField(),
+                reconcilie: updatedEntities.length > 0,
+                updated_at: serverTimestamp()
+              };
+
+              await updateDoc(txRef, memberUpdates);
+
+              // Mettre à jour l'état local
+              const updatedTransaction = {
+                ...detailViewTransaction,
+                matched_entities: updatedEntities.length > 0 ? updatedEntities : undefined,
+                reconcilie: updatedEntities.length > 0
+              };
+
+              setTransactions(prev => prev.map(tx => {
+                if (tx.id === detailViewTransaction.id) {
+                  return updatedTransaction;
+                }
+                return tx;
+              }));
+
+              setDetailViewTransaction(updatedTransaction);
+              toast.success('Membre délié');
+              loadTransactions();
+            } catch (error) {
+              logger.error('Error unlinking member:', error);
+              toast.error('Erreur lors de la déliaison du membre');
+            }
+          }}
+          onNavigateToMember={(memberId) => {
+            setDetailViewTransaction(null);
+            navigate('/membres', { state: { openMemberId: memberId } });
           }}
           onUpdateTransaction={async (updates) => {
             try {
-              // Mettre à jour dans Firestore
               const transactionRef = doc(db, 'clubs', clubId, 'transactions_bancaires', detailViewTransaction.id);
-              await updateDoc(transactionRef, {
-                ...updates,
-                updated_at: serverTimestamp()
+
+              // Helper voor field audit trail - use null instead of undefined for Firestore compatibility
+              const createFieldAuditEntry = (field: string, oldValue: unknown, newValue: unknown): TransactionFieldAudit => ({
+                field,
+                old_value: oldValue ?? null,
+                new_value: newValue ?? null,
+                changed_by: appUser?.id || '',
+                changed_by_name: `${appUser?.prenom || ''} ${appUser?.nom || ''}`.trim() || appUser?.email || 'Unknown',
+                changed_at: new Date(),
+                was_reconciled: detailViewTransaction.reconcilie || false
               });
 
-              // Mettre à jour la transaction dans la liste locale
-              setTransactions(prev =>
-                prev.map(t => t.id === detailViewTransaction.id
-                  ? { ...t, ...updates }
-                  : t
-                )
-              );
-              // Mettre à jour la transaction dans le modal
-              setDetailViewTransaction(prev => prev ? { ...prev, ...updates } : null);
+              // Si on efface le code comptable (chaîne vide), supprimer tous les champs de catégorisation
+              if (updates.code_comptable === '') {
+                // Créer l'entrée audit trail pour la suppression
+                const deleteAuditEntry = {
+                  code_comptable: '',
+                  categorie: '',
+                  assigned_by: appUser?.id || 'unknown',
+                  assigned_by_name: `${appUser?.prenom || ''} ${appUser?.nom || ''}`.trim() || appUser?.email || 'Utilisateur inconnu',
+                  assigned_at: new Date(),
+                  previous_code: detailViewTransaction.code_comptable,
+                  previous_categorie: detailViewTransaction.categorie,
+                  source: 'manual_delete' as const
+                };
 
-              // Message de succès spécifique selon le type de mise à jour
-              if (updates.commentaire !== undefined) {
-                toast.success('Commentaire mis à jour');
-              } else if (updates.categorie || updates.code_comptable) {
-                toast.success('Catégorisation mise à jour');
+                const updatedHistory = [
+                  ...(detailViewTransaction.code_comptable_history || []),
+                  deleteAuditEntry
+                ];
+
+                await updateDoc(transactionRef, {
+                  code_comptable: deleteField(),
+                  categorie: deleteField(),
+                  categorization_source: deleteField(),
+                  categorization_confidence: deleteField(),
+                  needs_review: deleteField(),
+                  code_comptable_history: updatedHistory,
+                  updated_at: serverTimestamp()
+                });
+
+                // Mettre à jour la transaction dans la liste locale
+                const clearedUpdates = {
+                  code_comptable: undefined,
+                  categorie: undefined,
+                  categorization_source: undefined,
+                  categorization_confidence: undefined,
+                  needs_review: undefined,
+                  code_comptable_history: updatedHistory
+                };
+                setTransactions(prev =>
+                  prev.map(t => t.id === detailViewTransaction.id
+                    ? { ...t, ...clearedUpdates }
+                    : t
+                  )
+                );
+                setDetailViewTransaction(prev => prev ? { ...prev, ...clearedUpdates } : null);
+                toast.success('Code comptable supprimé');
               } else {
-                toast.success('Transaction mise à jour');
+                // ✅ Field audit trail voor kritieke velden
+                const fieldsToAudit = ['contrepartie_nom', 'categorie', 'reconcilie'];
+                const auditEntries: TransactionFieldAudit[] = [];
+
+                for (const field of fieldsToAudit) {
+                  if (field in updates && updates[field as keyof typeof updates] !== detailViewTransaction[field as keyof TransactionBancaire]) {
+                    auditEntries.push(createFieldAuditEntry(
+                      field,
+                      detailViewTransaction[field as keyof TransactionBancaire],
+                      updates[field as keyof typeof updates]
+                    ));
+                  }
+                }
+
+                // Remove undefined values - Firestore doesn't accept undefined
+                const cleanedUpdates = Object.fromEntries(
+                  Object.entries(updates).filter(([_, value]) => value !== undefined)
+                );
+
+                const firestoreUpdates: Record<string, unknown> & { updated_at: ReturnType<typeof serverTimestamp> } = {
+                  ...cleanedUpdates,
+                  updated_at: serverTimestamp()
+                };
+
+                // Voeg audit history toe als er geaudite wijzigingen zijn
+                if (auditEntries.length > 0) {
+                  firestoreUpdates.field_history = [
+                    ...(detailViewTransaction.field_history || []),
+                    ...auditEntries
+                  ];
+                  firestoreUpdates.fields_modified = true;
+                }
+
+                await updateDoc(transactionRef, firestoreUpdates);
+
+                // Mettre à jour la transaction dans la liste locale
+                const localUpdates = {
+                  ...updates,
+                  ...(auditEntries.length > 0 && {
+                    field_history: [...(detailViewTransaction.field_history || []), ...auditEntries],
+                    fields_modified: true
+                  })
+                };
+
+                setTransactions(prev =>
+                  prev.map(t => t.id === detailViewTransaction.id
+                    ? { ...t, ...localUpdates }
+                    : t
+                  )
+                );
+                // Mettre à jour la transaction dans le modal
+                setDetailViewTransaction(prev => prev ? { ...prev, ...localUpdates } : null);
+
+                // Message de succès spécifique selon le type de mise à jour
+                if (updates.commentaire !== undefined) {
+                  toast.success('Commentaire mis à jour');
+                } else if (updates.categorie || updates.code_comptable) {
+                  toast.success('Catégorisation mise à jour');
+                } else {
+                  toast.success('Transaction mise à jour');
+                }
               }
             } catch (error) {
-              console.error('Error updating transaction:', error);
+              logger.error('Error updating transaction:', error);
               toast.error('Erreur lors de la mise à jour de la transaction');
             }
           }}
           onUpdateChildTransaction={async (childId: string, updates: Partial<TransactionBancaire>) => {
             try {
+              // Remove undefined values - Firestore doesn't accept undefined
+              const cleanedUpdates = Object.fromEntries(
+                Object.entries(updates).filter(([_, value]) => value !== undefined)
+              );
+
               // Mettre à jour dans Firestore
               const childRef = doc(db, 'clubs', clubId, 'transactions_bancaires', childId);
               await updateDoc(childRef, {
-                ...updates,
+                ...cleanedUpdates,
                 updated_at: serverTimestamp()
               });
 
@@ -2832,7 +3981,7 @@ export function TransactionsPage() {
                 position: 'bottom-right'
               });
             } catch (error) {
-              console.error('Error updating child transaction:', error);
+              logger.error('Error updating child transaction:', error);
               toast.error('Erreur lors de la sauvegarde');
             }
           }}
@@ -2845,28 +3994,139 @@ export function TransactionsPage() {
           onDelete={async () => {
             await handleDeleteTransaction(detailViewTransaction.id);
           }}
-          navigationPosition={getNavigationPosition(filteredTransactions, detailViewTransaction)}
+          navigationPosition={getNavigationPosition(sortedTransactions, detailViewTransaction)}
           onNavigatePrevious={() => {
-            const currentIndex = filteredTransactions.findIndex(t => t.id === detailViewTransaction.id);
+            const currentIndex = sortedTransactions.findIndex(t => t.id === detailViewTransaction.id);
             if (currentIndex > 0) {
-              setDetailViewTransaction(filteredTransactions[currentIndex - 1]);
+              setDetailViewTransaction(sortedTransactions[currentIndex - 1]);
             } else {
               // Wrap to end
-              setDetailViewTransaction(filteredTransactions[filteredTransactions.length - 1]);
+              setDetailViewTransaction(sortedTransactions[sortedTransactions.length - 1]);
             }
           }}
           onNavigateNext={() => {
-            const currentIndex = filteredTransactions.findIndex(t => t.id === detailViewTransaction.id);
-            if (currentIndex < filteredTransactions.length - 1) {
-              setDetailViewTransaction(filteredTransactions[currentIndex + 1]);
+            const currentIndex = sortedTransactions.findIndex(t => t.id === detailViewTransaction.id);
+            if (currentIndex < sortedTransactions.length - 1) {
+              setDetailViewTransaction(sortedTransactions[currentIndex + 1]);
             } else {
               // Wrap to start
-              setDetailViewTransaction(filteredTransactions[0]);
+              setDetailViewTransaction(sortedTransactions[0]);
             }
           }}
           returnContext={returnContext}
+          onOpenContext={returnContext ? () => {
+            setDetailViewTransaction(null);
+            if (returnContext.type === 'event' || returnContext.type === 'operation') {
+              navigate('/operations', { state: { openEventId: returnContext.id } });
+              return;
+            }
+
+            if (returnContext.type === 'expense' || returnContext.type === 'demand') {
+              navigate('/depenses', { state: { openDemandId: returnContext.id } });
+              return;
+            }
+
+            navigate('/transactions', { state: { selectedTransactionId: detailViewTransaction.id } });
+          } : undefined}
+          contextActionLabel={returnContext ? `Retour à ${returnContext.name}` : undefined}
         />
       )}
+
+      {quickViews.map((quickView, index) => {
+        const stackLevel = index + 2;
+
+        if (quickView.kind === 'transaction') {
+          return (
+            <TransactionDetailView
+              key={`quick-transaction-${quickView.transaction.id}-${index}`}
+              transaction={quickView.transaction}
+              demands={demands}
+              events={operations as unknown as Evenement[]}
+              splits={splits}
+              childTransactions={getChildTransactions(quickView.transaction.id)}
+              membres={membres}
+              isOpen={true}
+              stackLevel={stackLevel}
+              onClose={() => closeQuickViewsFrom(index)}
+              onNavigateToEvent={(eventId) => {
+                const operation = getOperationById(eventId);
+                if (operation) {
+                  openQuickView({ kind: 'operation', operation });
+                  return;
+                }
+
+                navigate('/operations', { state: { openEventId: eventId } });
+              }}
+              onNavigateToDemand={(demandId) => {
+                const demand = getDemandById(demandId);
+                if (demand) {
+                  openQuickView({ kind: 'demand', demand });
+                  return;
+                }
+
+                navigate('/depenses', { state: { openDemandId: demandId } });
+              }}
+              onOpenContext={() => {
+                navigate('/transactions', { state: { selectedTransactionId: quickView.transaction.id } });
+              }}
+              contextActionLabel="Aller aux transactions"
+            />
+          );
+        }
+
+        if (quickView.kind === 'demand') {
+          return (
+            <DemandeDetailView
+              key={`quick-demand-${quickView.demand.id}-${index}`}
+              demand={quickView.demand}
+              linkedTransactions={transactions.filter(transaction =>
+                transaction.id === quickView.demand.transaction_id ||
+                transaction.matched_entities?.some(entity =>
+                  (entity.entity_type === 'expense' || entity.entity_type === 'demand') && entity.entity_id === quickView.demand.id
+                )
+              )}
+              evenements={operations as unknown as Evenement[]}
+              membres={membres}
+              isOpen={true}
+              stackLevel={stackLevel}
+              onClose={() => closeQuickViewsFrom(index)}
+              onViewTransaction={(transaction) => {
+                openQuickView({ kind: 'transaction', transaction });
+              }}
+              onViewOperation={(operation) => {
+                openQuickView({ kind: 'operation', operation: operation as unknown as Operation });
+              }}
+              onOpenContext={() => {
+                navigate('/depenses', { state: { openDemandId: quickView.demand.id } });
+              }}
+              contextActionLabel="Aller aux dépenses"
+            />
+          );
+        }
+
+        return (
+          <OperationDetailView
+            key={`quick-operation-${quickView.operation.id}-${index}`}
+            operation={quickView.operation}
+            linkedTransactions={getLinkedTransactionsForOperation(quickView.operation.id)}
+            linkedDemands={getLinkedDemandsForOperation(quickView.operation.id)}
+            linkedInscriptions={[]}
+            isOpen={true}
+            stackLevel={stackLevel}
+            onClose={() => closeQuickViewsFrom(index)}
+            onViewTransaction={(transaction) => {
+              openQuickView({ kind: 'transaction', transaction });
+            }}
+            onViewDemand={(demand) => {
+              openQuickView({ kind: 'demand', demand });
+            }}
+            onOpenContext={() => {
+              navigate('/operations', { state: { openEventId: quickView.operation.id } });
+            }}
+            contextActionLabel="Aller aux activités"
+          />
+        );
+      })}
 
       {/* Duplicates Modal */}
       {showDuplicatesModal && (
@@ -2925,7 +4185,7 @@ export function TransactionsPage() {
                           key={tx.id}
                           className={cn(
                             'flex items-center justify-between p-3 rounded-lg',
-                            index % 2 === 0 ? 'bg-white dark:bg-dark-bg-secondary' : 'bg-gray-100 dark:bg-dark-bg-primary'
+                            index % 2 === 0 ? 'bg-white dark:bg-dark-bg-secondary' : 'bg-gray-100 dark:bg-dark-bg-tertiary dark:bg-dark-bg-primary'
                           )}
                         >
                           <div className="flex-1 grid grid-cols-3 gap-4">
@@ -2989,6 +4249,531 @@ export function TransactionsPage() {
           </div>
         </>
       )}
+
+      {/* Modal de bewerking in bulk - nieuwe aanpak */}
+      <BulkEditModal
+        isOpen={isBulkEditModalOpen}
+        onClose={() => setIsBulkEditModalOpen(false)}
+        transactions={transactions.filter(t => selectedTransactionIds.has(t.id))}
+        operations={operations}
+        membres={membres}
+        clubId={clubId || ''}
+        onAssignCode={handleBulkCodeAssignment}
+        onAssignActivities={handleBulkActivityLinking}
+        onLinkMembers={handleBulkMemberCotisation}
+        onClearSelection={clearSelection}
+      />
+
+      {/* Modal de sélection de code comptable en masse (legacy - behouden als fallback) */}
+      <AccountCodeSelectorModal
+        isOpen={isBulkCodeModalOpen}
+        onClose={() => setIsBulkCodeModalOpen(false)}
+        onSelect={handleBulkCodeAssignment}
+        isExpense={true}
+        clubId={clubId}
+        allowClear={true}
+      />
+
+      {/* Modal d'auto-catégorisation */}
+      {isAutoCategorizeModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-dark-bg-secondary rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-dark-text-primary flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-purple-500" />
+                  Auto-catégorisation intelligente
+                </h2>
+                <button
+                  onClick={() => {
+                    setIsAutoCategorizeModalOpen(false);
+                    setAutoCategorizeResult(null);
+                  }}
+                  className="text-gray-400 dark:text-dark-text-muted hover:text-gray-600 dark:text-dark-text-secondary dark:hover:text-gray-300"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {!autoCategorizeResult ? (
+                <>
+                  {/* Info avant lancement */}
+                  <div className="space-y-4">
+                    <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
+                      <p className="text-sm text-purple-700 dark:text-purple-300 mb-3">
+                        Cette fonction va analyser les transactions et tenter de les catégoriser automatiquement avec les règles apprises.
+                      </p>
+                      <div className="space-y-2 text-xs text-purple-600 dark:text-purple-400">
+                        <div className="flex items-center gap-2">
+                          <Settings2 className="h-4 w-4" />
+                          <span><strong>Règles classiques</strong> : IBAN, mots-clés, contrepartie</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Bot className="h-4 w-4" />
+                          <span><strong>AI (Claude)</strong> : fallback pour les cas difficiles</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Stats des transactions */}
+                    <div className="bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg p-4">
+                      <div className="text-sm text-gray-600 dark:text-dark-text-secondary dark:text-dark-text-muted">
+                        <p><strong>{transactions.filter(t => !t.code_comptable && !t.is_parent).length}</strong> transactions sans code comptable</p>
+                        <p><strong>{transactions.filter(t => t.code_comptable && !t.is_parent).length}</strong> transactions déjà catégorisées</p>
+                        <p className="text-xs mt-1 text-gray-500 dark:text-dark-text-muted">
+                          (Total: {transactions.filter(t => !t.is_parent).length} transactions)
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Options de configuration */}
+                    <div className="space-y-3">
+                      {/* Portée : quelles transactions traiter */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary dark:text-gray-300 mb-2">
+                          Quelles transactions analyser ?
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          {/* Option Sélectionnées - visible seulement si des transactions sont sélectionnées */}
+                          {selectedTransactionIds.size > 0 && (
+                            <button
+                              onClick={() => setAutoCategorizeScope('selected')}
+                              className={cn(
+                                "px-3 py-1.5 text-sm rounded-lg transition-colors",
+                                autoCategorizeScope === 'selected'
+                                  ? "bg-purple-600 text-white"
+                                  : "border border-purple-300 dark:border-purple-500 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20"
+                              )}
+                            >
+                              Sélectionnées ({selectedTransactionIds.size})
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setAutoCategorizeScope('uncategorized')}
+                            className={cn(
+                              "px-3 py-1.5 text-sm rounded-lg transition-colors",
+                              autoCategorizeScope === 'uncategorized'
+                                ? "bg-purple-600 text-white"
+                                : "border border-gray-300 dark:border-dark-border text-gray-600 dark:text-dark-text-secondary dark:text-dark-text-muted hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary"
+                            )}
+                          >
+                            Sans code ({transactions.filter(t => !t.code_comptable && !t.is_parent).length})
+                          </button>
+                          <button
+                            onClick={() => setAutoCategorizeScope('all')}
+                            className={cn(
+                              "px-3 py-1.5 text-sm rounded-lg transition-colors",
+                              autoCategorizeScope === 'all'
+                                ? "bg-purple-600 text-white"
+                                : "border border-gray-300 dark:border-dark-border text-gray-600 dark:text-dark-text-secondary dark:text-dark-text-muted hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary"
+                            )}
+                          >
+                            Toutes ({transactions.filter(t => !t.is_parent).length})
+                          </button>
+                        </div>
+                        {autoCategorizeScope === 'all' && (
+                          <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                            ⚠️ Les codes comptables existants seront remplacés si une règle correspond
+                          </p>
+                        )}
+                        {autoCategorizeScope === 'selected' && (
+                          <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">
+                            Seules les {selectedTransactionIds.size} transactions sélectionnées seront traitées
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Nombre de transactions */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary dark:text-gray-300 mb-2">
+                          Combien de transactions traiter ?
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          {(['5', '10', '20', '50', 'all'] as const).map((limit) => (
+                            <button
+                              key={limit}
+                              onClick={() => setAutoCategorizeLimit(limit)}
+                              className={cn(
+                                "px-3 py-1.5 text-sm rounded-lg transition-colors",
+                                autoCategorizeLimit === limit
+                                  ? "bg-purple-600 text-white"
+                                  : "border border-gray-300 dark:border-dark-border text-gray-600 dark:text-dark-text-secondary dark:text-dark-text-muted hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary"
+                              )}
+                            >
+                              {limit === 'all' ? 'Toutes' : limit}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-dark-text-muted mt-1">
+                          {autoCategorizeLimit === 'all'
+                            ? `Toutes les ${autoCategorizeScope === 'uncategorized'
+                                ? transactions.filter(t => !t.code_comptable && !t.is_parent).length
+                                : transactions.filter(t => !t.is_parent).length} transactions seront traitées`
+                            : `Les ${autoCategorizeLimit} premières transactions seront traitées`
+                          }
+                        </p>
+                      </div>
+
+                      {/* Option AI */}
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          id="useAiFallback"
+                          checked={autoCategorizeUseAi}
+                          onChange={(e) => setAutoCategorizeUseAi(e.target.checked)}
+                          className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 dark:border-dark-border rounded"
+                        />
+                        <label htmlFor="useAiFallback" className="text-sm text-gray-700 dark:text-dark-text-primary dark:text-gray-300">
+                          Utiliser l'AI pour les transactions non reconnues par les règles
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Avertissement coût AI */}
+                    {autoCategorizeUseAi && (
+                      <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-3">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                          <p className="text-xs text-amber-700 dark:text-amber-300">
+                            Les transactions non reconnues par les règles seront envoyées à l'AI (coût estimé: ~0.01€/transaction).
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Boutons */}
+                  <div className="flex justify-between mt-6">
+                    {/* Bouton supprimer les codes - à gauche */}
+                    <button
+                      onClick={async () => {
+                        // Déterminer quelles transactions traiter
+                        let toProcess: typeof transactions;
+                        if (autoCategorizeScope === 'selected') {
+                          toProcess = transactions.filter(t =>
+                            selectedTransactionIds.has(t.id) && t.code_comptable && !t.is_parent
+                          );
+                        } else if (autoCategorizeScope === 'all') {
+                          toProcess = transactions.filter(t => t.code_comptable && !t.is_parent);
+                        } else {
+                          // uncategorized - pas de sens de supprimer
+                          toProcess = [];
+                        }
+
+                        if (toProcess.length === 0) {
+                          toast.error('Aucune transaction avec un code comptable à supprimer');
+                          return;
+                        }
+
+                        try {
+                          const batch = writeBatch(db);
+                          for (const tx of toProcess) {
+                            const txRef = doc(db, 'clubs', clubId, 'transactions_bancaires', tx.id);
+                            batch.update(txRef, {
+                              code_comptable: deleteField(),
+                              categorie: deleteField(),
+                              categorization_source: deleteField(),
+                              categorization_confidence: deleteField(),
+                              categorization_batch_id: deleteField()
+                            });
+                          }
+                          await batch.commit();
+                          await loadTransactions();
+                          toast.success(`${toProcess.length} code(s) comptable(s) supprimé(s)`);
+                          setIsAutoCategorizeModalOpen(false);
+                        } catch (error) {
+                          logger.error('Error deleting codes:', error);
+                          toast.error('Erreur lors de la suppression');
+                        }
+                      }}
+                      disabled={
+                        autoCategorizeScope === 'uncategorized' ||
+                        (autoCategorizeScope === 'selected' && transactions.filter(t => selectedTransactionIds.has(t.id) && t.code_comptable && !t.is_parent).length === 0) ||
+                        (autoCategorizeScope === 'all' && transactions.filter(t => t.code_comptable && !t.is_parent).length === 0)
+                      }
+                      className={cn(
+                        "flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                        autoCategorizeScope === 'uncategorized' ||
+                        (autoCategorizeScope === 'selected' && transactions.filter(t => selectedTransactionIds.has(t.id) && t.code_comptable && !t.is_parent).length === 0) ||
+                        (autoCategorizeScope === 'all' && transactions.filter(t => t.code_comptable && !t.is_parent).length === 0)
+                          ? "bg-gray-100 dark:bg-dark-bg-tertiary dark:bg-gray-800 text-gray-400 dark:text-dark-text-muted cursor-not-allowed"
+                          : "border border-red-300 dark:border-red-600 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                      )}
+                      title={autoCategorizeScope === 'uncategorized' ? "Sélectionnez 'Toutes' ou 'Sélectionnées' pour pouvoir supprimer les codes" : "Supprimer les codes comptables"}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Supprimer les codes
+                      {autoCategorizeScope === 'selected' && (
+                        <span className="text-xs">
+                          ({transactions.filter(t => selectedTransactionIds.has(t.id) && t.code_comptable && !t.is_parent).length})
+                        </span>
+                      )}
+                      {autoCategorizeScope === 'all' && (
+                        <span className="text-xs">
+                          ({transactions.filter(t => t.code_comptable && !t.is_parent).length})
+                        </span>
+                      )}
+                    </button>
+
+                    {/* Boutons à droite */}
+                    <div className="flex gap-3">
+                    <button
+                      onClick={() => setIsAutoCategorizeModalOpen(false)}
+                      className="px-4 py-2 text-sm text-gray-600 dark:text-dark-text-secondary dark:text-dark-text-muted hover:text-gray-800 dark:hover:text-gray-200"
+                    >
+                      Annuler
+                    </button>
+                    {/* Bouton pour voir les transactions d'abord - caché si scope = selected */}
+                    {autoCategorizeScope !== 'selected' && (
+                      <button
+                        onClick={() => {
+                          // Filtrer les transactions selon le scope
+                          const baseTransactions = autoCategorizeScope === 'all'
+                            ? transactions.filter(t => !t.is_parent)
+                            : transactions.filter(t => !t.code_comptable && !t.is_parent);
+                          const limitNum = autoCategorizeLimit === 'all' ? baseTransactions.length : parseInt(autoCategorizeLimit);
+                          const toSelect = baseTransactions.slice(0, limitNum);
+
+                          // Sélectionner ces transactions
+                          setSelectedTransactionIds(new Set(toSelect.map(t => t.id)));
+
+                          // Fermer le modal
+                          setIsAutoCategorizeModalOpen(false);
+
+                          toast.success(`${toSelect.length} transactions sélectionnées. Utilisez le bouton "Auto-catégoriser" dans la barre d'actions.`, { duration: 4000 });
+                        }}
+                        disabled={transactions.filter(t => !t.code_comptable && !t.is_parent).length === 0}
+                        className={cn(
+                          "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors",
+                          transactions.filter(t => !t.code_comptable && !t.is_parent).length === 0
+                            ? "bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-dark-text-muted cursor-not-allowed"
+                            : "border border-purple-600 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20"
+                        )}
+                      >
+                        <Eye className="h-4 w-4" />
+                        Voir d'abord ({autoCategorizeLimit === 'all' ? transactions.filter(t => !t.code_comptable && !t.is_parent).length : Math.min(parseInt(autoCategorizeLimit) || 0, transactions.filter(t => !t.code_comptable && !t.is_parent).length)})
+                      </button>
+                    )}
+                    {/* Bouton pour lancer directement */}
+                    <button
+                      onClick={async () => {
+                        setIsAutoCategorizing(true);
+                        try {
+                          // Filtrer les transactions selon le scope
+                          let toProcess: typeof transactions;
+                          if (autoCategorizeScope === 'selected') {
+                            // Transactions sélectionnées (sans code comptable uniquement)
+                            toProcess = transactions.filter(t =>
+                              selectedTransactionIds.has(t.id) && !t.code_comptable && !t.is_parent
+                            );
+                          } else if (autoCategorizeScope === 'all') {
+                            // Toutes les transactions
+                            const all = transactions.filter(t => !t.is_parent);
+                            const limitNum = autoCategorizeLimit === 'all' ? all.length : parseInt(autoCategorizeLimit);
+                            toProcess = all.slice(0, limitNum);
+                          } else {
+                            // Sans code comptable uniquement
+                            const uncategorized = transactions.filter(t => !t.code_comptable && !t.is_parent);
+                            const limitNum = autoCategorizeLimit === 'all' ? uncategorized.length : parseInt(autoCategorizeLimit);
+                            toProcess = uncategorized.slice(0, limitNum);
+                          }
+
+                          if (toProcess.length === 0) {
+                            toast.error('Aucune transaction à traiter');
+                            return;
+                          }
+
+                          const result = await CategorizationService.autoCategorizeAllWithAI(
+                            clubId,
+                            toProcess,
+                            {
+                              onlyUncategorized: autoCategorizeScope !== 'all',
+                              useAiFallback: autoCategorizeUseAi,
+                              rulesThreshold: 45,
+                              aiConfidenceThreshold: 50,
+                              dryRun: false,
+                              userId: appUser?.id,
+                              userName: appUser?.displayName || appUser?.email || 'Utilisateur inconnu'
+                            }
+                          );
+
+                          // Collecter les IDs des transactions qui ont été catégorisées
+                          const categorizedIds = result.details
+                            .filter(d => d.code !== null && (d.source === 'rules' || d.source === 'ai'))
+                            .map(d => d.transactionId);
+
+                          setAutoCategorizeResult({
+                            total: result.total,
+                            byRules: result.byRules,
+                            byAi: result.byAi,
+                            needsReview: result.needsReview,
+                            noMatch: result.noMatch,
+                            processedIds: categorizedIds
+                          });
+                          await loadTransactions();
+
+                          // Si scope = selected, retirer les transactions catégorisées de la sélection
+                          if (autoCategorizeScope === 'selected') {
+                            const categorizedSet = new Set(categorizedIds);
+                            setSelectedTransactionIds(prev => {
+                              const newSet = new Set(prev);
+                              categorizedSet.forEach(id => newSet.delete(id));
+                              return newSet;
+                            });
+                          }
+
+                          toast.success(`${result.byRules + result.byAi} transactions catégorisées`);
+                        } catch (error) {
+                          logger.error('Auto-categorization error:', error);
+                          toast.error('Erreur lors de l\'auto-catégorisation');
+                        } finally {
+                          setIsAutoCategorizing(false);
+                        }
+                      }}
+                      disabled={isAutoCategorizing || (autoCategorizeScope === 'selected' ? selectedTransactionIds.size === 0 : transactions.filter(t => !t.code_comptable && !t.is_parent).length === 0)}
+                      className={cn(
+                        "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors",
+                        isAutoCategorizing || (autoCategorizeScope === 'selected' ? selectedTransactionIds.size === 0 : transactions.filter(t => !t.code_comptable && !t.is_parent).length === 0)
+                          ? "bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-dark-text-muted cursor-not-allowed"
+                          : "bg-purple-600 hover:bg-purple-700 text-white"
+                      )}
+                    >
+                      {isAutoCategorizing ? (
+                        <>
+                          <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                          Traitement...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-4 w-4" />
+                          Lancer directement
+                        </>
+                      )}
+                    </button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Résultats */}
+                  <div className="space-y-4">
+                    <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+                      <div className="flex items-center gap-2 text-green-700 dark:text-green-400 mb-3">
+                        <Sparkles className="h-5 w-5" />
+                        <span className="font-semibold">Auto-catégorisation terminée !</span>
+                      </div>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600 dark:text-dark-text-secondary dark:text-dark-text-muted">Transactions traitées</span>
+                          <span className="font-medium text-gray-900 dark:text-dark-text-primary dark:text-gray-100">{autoCategorizeResult.total}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600 dark:text-dark-text-secondary dark:text-dark-text-muted flex items-center gap-1">
+                            <Settings2 className="h-3 w-3 text-blue-500" /> Par règles
+                          </span>
+                          <span className="font-medium text-blue-600 dark:text-blue-400">{autoCategorizeResult.byRules}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600 dark:text-dark-text-secondary dark:text-dark-text-muted flex items-center gap-1">
+                            <Bot className="h-3 w-3 text-purple-500" /> Par AI
+                          </span>
+                          <span className="font-medium text-purple-600 dark:text-purple-400">{autoCategorizeResult.byAi}</span>
+                        </div>
+                        {autoCategorizeResult.needsReview > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 dark:text-dark-text-secondary dark:text-dark-text-muted flex items-center gap-1">
+                              <AlertTriangle className="h-3 w-3 text-orange-500" /> À vérifier
+                            </span>
+                            <span className="font-medium text-orange-600 dark:text-orange-400">{autoCategorizeResult.needsReview}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between">
+                          <span className="text-gray-600 dark:text-dark-text-secondary dark:text-dark-text-muted">Non catégorisées</span>
+                          <span className="font-medium text-gray-500 dark:text-dark-text-muted">{autoCategorizeResult.noMatch}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {autoCategorizeResult.needsReview > 0 && (
+                      <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-lg p-3">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="h-4 w-4 text-orange-600 dark:text-orange-400 mt-0.5 flex-shrink-0" />
+                          <p className="text-xs text-orange-700 dark:text-orange-300">
+                            {autoCategorizeResult.needsReview} transaction(s) catégorisée(s) par AI avec une confiance basse.
+                            Elles sont marquées avec un badge orange <AlertTriangle className="h-3 w-3 inline" /> pour révision.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Boutons d'action */}
+                  <div className="flex justify-between items-center mt-6">
+                    {/* Bouton pour voir les transactions catégorisées */}
+                    {autoCategorizeResult.processedIds.length > 0 && (
+                      <button
+                        onClick={() => {
+                          // Fermer le modal
+                          setIsAutoCategorizeModalOpen(false);
+                          // Sélectionner les transactions catégorisées pour les mettre en évidence
+                          setSelectedTransactionIds(new Set(autoCategorizeResult.processedIds));
+                          // Reset le résultat après un délai pour permettre la prochaine utilisation
+                          setTimeout(() => setAutoCategorizeResult(null), 100);
+                          toast.success(`${autoCategorizeResult.processedIds.length} transactions catégorisées sélectionnées`, { duration: 2000 });
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 text-sm text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded-lg transition-colors"
+                      >
+                        <Eye className="h-4 w-4" />
+                        Voir les {autoCategorizeResult.processedIds.length} transactions catégorisées
+                      </button>
+                    )}
+                    <div className="flex-1" />
+                    <button
+                      onClick={() => {
+                        setIsAutoCategorizeModalOpen(false);
+                        setAutoCategorizeResult(null);
+                      }}
+                      className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg text-sm font-medium"
+                    >
+                      Fermer
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Panneau de liaison membre (mode single) */}
+      <MemberLinkingPanel
+        isOpen={isMemberPanelOpen}
+        onClose={() => setIsMemberPanelOpen(false)}
+        membres={membres}
+        transactionIban={detailViewTransaction?.contrepartie_iban}
+        linkedMemberId={detailViewTransaction?.matched_entities?.find(e => e.entity_type === 'member')?.entity_id}
+        onSelectMember={(membre) => {
+          setSelectedMemberForCotisation(membre);
+        }}
+        position="left"
+      />
+
+      {/* Modal de confirmation de date de cotisation (mode single) */}
+      <CotisationDateConfirmModal
+        isOpen={!!selectedMemberForCotisation}
+        onClose={() => setSelectedMemberForCotisation(null)}
+        membre={selectedMemberForCotisation}
+        onConfirm={handleConfirmCotisation}
+      />
+
+      {/* Modal de liaison batch */}
+      <BulkMemberLinkingModal
+        isOpen={isBulkMemberModalOpen}
+        onClose={() => setIsBulkMemberModalOpen(false)}
+        transactions={selectedCotisationTransactions}
+        membres={membres}
+        onConfirm={handleBulkMemberCotisation}
+      />
     </div>
   );
 }

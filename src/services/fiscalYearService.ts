@@ -1,4 +1,7 @@
 import { db } from '@/lib/firebase';
+import { logger } from '@/utils/logger';
+import { BoutiqueStockService } from '@/services/boutiqueStockService';
+import { InventoryValueSnapshotService } from '@/services/inventoryValueSnapshotService';
 import {
   collection,
   doc,
@@ -12,13 +15,187 @@ import {
   Timestamp
 } from 'firebase/firestore';
 import { FiscalYear, TransactionBancaire } from '@/types';
-import { addYears, isWithinInterval, parseISO, startOfDay, endOfDay } from 'date-fns';
+import { addYears, isWithinInterval, startOfDay, endOfDay } from 'date-fns';
+
+function removeUndefinedDeep<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map(item => removeUndefinedDeep(item)) as T;
+  }
+
+  if (value && typeof value === 'object' && !(value instanceof Date) && !(value instanceof Timestamp)) {
+    const cleanedEntries = Object.entries(value as Record<string, unknown>)
+      .filter(([, entryValue]) => entryValue !== undefined)
+      .map(([entryKey, entryValue]) => [entryKey, removeUndefinedDeep(entryValue)]);
+
+    return Object.fromEntries(cleanedEntries) as T;
+  }
+
+  return value;
+}
+
+const REQUIRED_BALANCE_SHEET_FIELDS: Array<{ label: string; path: string }> = [
+  { label: 'Stock C.D.C.', path: 'assets.stock_cdc' },
+  { label: 'Obligations / Dette belge', path: 'assets.obligations' },
+  { label: 'Charges à reporter', path: 'assets.charges_reportees' },
+  { label: 'Assurance reportée', path: 'assets.assurance_reportee' },
+  { label: 'Résultat reporté', path: 'liabilities.resultat_reporte' },
+  { label: 'Fonds affectés', path: 'liabilities.fonds_affectes' },
+  { label: 'Provision entretien matériel', path: 'liabilities.provision_entretien' },
+  { label: 'Provision piscine', path: 'liabilities.provision_piscine' },
+  { label: 'Cotisations reportées', path: 'liabilities.cotisations_reportees' },
+  { label: 'Sorties reportées', path: 'liabilities.sorties_reportees' },
+  { label: 'Paiements année suivante', path: 'liabilities.paiements_annee_suivante' }
+];
+
+function getBalanceSheetNumber(fiscalYear: FiscalYear, path: string): number | undefined {
+  const parts = path.split('.');
+  let current: unknown = fiscalYear.balance_sheet;
+
+  for (const part of parts) {
+    if (!current || typeof current !== 'object' || !(part in (current as Record<string, unknown>))) {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[part];
+  }
+
+  return typeof current === 'number' && Number.isFinite(current) ? current : undefined;
+}
+
+interface FiscalYearCloseValidation {
+  canClose: boolean;
+  reasons: string[];
+  blockingReasons: string[];
+  warningReasons: string[];
+}
 
 /**
  * Service pour gérer les années fiscales et calcul des soldes
  * Conforme aux meilleures pratiques comptables belges et internationales
  */
 export class FiscalYearService {
+  private static async resolveClosingBalanceForClosure(
+    clubId: string,
+    fiscalYear: FiscalYear,
+    accountType: 'current' | 'savings'
+  ): Promise<number> {
+    const hasAccountNumber = accountType === 'current'
+      ? !!fiscalYear.account_numbers?.bank_current?.trim()
+      : !!fiscalYear.account_numbers?.bank_savings?.trim();
+
+    if (hasAccountNumber) {
+      return this.calculateBalanceForFiscalYear(clubId, fiscalYear, accountType);
+    }
+
+    const storedClosingBalance = accountType === 'current'
+      ? fiscalYear.closing_balances?.bank_current
+      : fiscalYear.closing_balances?.bank_savings;
+
+    if (Number.isFinite(storedClosingBalance)) {
+      return storedClosingBalance;
+    }
+
+    throw new Error(
+      accountType === 'current'
+        ? 'Impossible de déterminer le solde de clôture du compte courant.'
+        : 'Impossible de déterminer le solde de clôture du compte épargne.'
+    );
+  }
+
+  private static async validateFiscalYearClosure(
+    clubId: string,
+    fiscalYear: FiscalYear
+  ): Promise<FiscalYearCloseValidation> {
+    const blockingReasons: string[] = [];
+    const warningReasons: string[] = [];
+
+    if (fiscalYear.status !== 'open') {
+      blockingReasons.push('L\'année fiscale n\'est pas ouverte');
+    }
+
+    const now = new Date();
+    if (now < fiscalYear.end_date) {
+      blockingReasons.push('L\'année fiscale n\'est pas encore terminée');
+    }
+
+    if (
+      !Number.isFinite(fiscalYear.opening_balances?.bank_current) ||
+      !Number.isFinite(fiscalYear.opening_balances?.bank_savings)
+    ) {
+      blockingReasons.push('Les soldes d’ouverture des comptes doivent être confirmés dans l’étape « Banques ».');
+    }
+
+    if (!fiscalYear.account_numbers?.bank_current?.trim()) {
+      warningReasons.push('L’IBAN du compte courant n’est pas renseigné. (avertissement)');
+    }
+
+    if (!fiscalYear.account_numbers?.bank_savings?.trim()) {
+      warningReasons.push('L’IBAN du compte épargne n’est pas renseigné. (avertissement)');
+    }
+
+    REQUIRED_BALANCE_SHEET_FIELDS.forEach(field => {
+      if (getBalanceSheetNumber(fiscalYear, field.path) === undefined) {
+        blockingReasons.push(`Le champ « ${field.label} » n’a pas encore été confirmé.`);
+      }
+    });
+
+    try {
+      const [transactions, boutiqueValue, lifrasValue, inventoryValue] = await Promise.all([
+        this.getTransactionsForFiscalYear(clubId, fiscalYear),
+        BoutiqueStockService.getValueForBilan(clubId, fiscalYear.year, 'boutique'),
+        BoutiqueStockService.getValueForBilan(clubId, fiscalYear.year, 'boutique_lifras'),
+        InventoryValueSnapshotService.getValueForBilan(clubId, fiscalYear.year)
+      ]);
+
+      const unreconciled = transactions.filter(tx => !tx.is_parent && !tx.reconcilie);
+      if (unreconciled.length > 0) {
+        warningReasons.push(`${unreconciled.length} transaction(s) non réconciliée(s) (avertissement)`);
+      }
+
+      [
+        { title: 'Boutique club', value: boutiqueValue.value, hasSnapshot: boutiqueValue.hasSnapshot, isLocked: boutiqueValue.isLocked },
+        { title: 'Boutique LIFRAS', value: lifrasValue.value, hasSnapshot: lifrasValue.hasSnapshot, isLocked: lifrasValue.isLocked },
+        { title: 'Matériel', value: inventoryValue.value, hasSnapshot: inventoryValue.hasSnapshot, isLocked: inventoryValue.isLocked }
+      ].forEach(item => {
+        if ((item.value > 0 || item.hasSnapshot) && !item.isLocked) {
+          blockingReasons.push(`La clôture « ${item.title} » n’est pas verrouillée.`);
+        } else if (item.value === 0 && !item.isLocked) {
+          warningReasons.push(`La clôture « ${item.title} » n’est pas verrouillée, mais sa valeur est actuellement à 0,00 €.`);
+        }
+      });
+
+      const [resolvedClosingCurrent, resolvedClosingSavings] = await Promise.all([
+        this.resolveClosingBalanceForClosure(clubId, fiscalYear, 'current'),
+        this.resolveClosingBalanceForClosure(clubId, fiscalYear, 'savings')
+      ]);
+
+      const nextFiscalYear = await this.getFiscalYearById(clubId, `FY${fiscalYear.year + 1}`);
+      if (nextFiscalYear) {
+        const currentGap = resolvedClosingCurrent - nextFiscalYear.opening_balances.bank_current;
+        if (Math.abs(currentGap) > 0.01) {
+          blockingReasons.push(
+            `Le report du compte courant vers ${nextFiscalYear.year} ne correspond pas (${resolvedClosingCurrent.toFixed(2)} € vs ${nextFiscalYear.opening_balances.bank_current.toFixed(2)} €).`
+          );
+        }
+
+        const savingsGap = resolvedClosingSavings - nextFiscalYear.opening_balances.bank_savings;
+        if (Math.abs(savingsGap) > 0.01) {
+          blockingReasons.push(
+            `Le report du compte épargne vers ${nextFiscalYear.year} ne correspond pas (${resolvedClosingSavings.toFixed(2)} € vs ${nextFiscalYear.opening_balances.bank_savings.toFixed(2)} €).`
+          );
+        }
+      }
+    } catch (error) {
+      logger.error('Erreur lors des contrôles de clôture:', error);
+      blockingReasons.push('Impossible de valider les clôtures de stock, de matériel ou les transactions de l’exercice.');
+    }
+
+    return {
+      canClose: blockingReasons.length === 0,
+      blockingReasons,
+      warningReasons,
+      reasons: [...blockingReasons, ...warningReasons]
+    };
+  }
 
   /**
    * Récupérer toutes les années fiscales d'un club
@@ -42,7 +219,7 @@ export class FiscalYearService {
         } as FiscalYear;
       });
     } catch (error) {
-      console.error('Erreur lors du chargement des années fiscales:', error);
+      logger.error('Erreur lors du chargement des années fiscales:', error);
       throw error;
     }
   }
@@ -73,7 +250,7 @@ export class FiscalYearService {
         closed_at: data.closed_at?.toDate ? data.closed_at.toDate() : undefined,
       } as FiscalYear;
     } catch (error) {
-      console.error('Erreur lors du chargement de l\'année fiscale courante:', error);
+      logger.error('Erreur lors du chargement de l\'année fiscale courante:', error);
       throw error;
     }
   }
@@ -93,7 +270,7 @@ export class FiscalYearService {
 
       return null;
     } catch (error) {
-      console.error('Erreur lors du chargement de l\'année fiscale précédente:', error);
+      logger.error('Erreur lors du chargement de l\'année fiscale précédente:', error);
       throw error;
     }
   }
@@ -112,7 +289,7 @@ export class FiscalYearService {
         })
       ) || null;
     } catch (error) {
-      console.error('Erreur lors de la recherche de l\'année fiscale:', error);
+      logger.error('Erreur lors de la recherche de l\'année fiscale:', error);
       throw error;
     }
   }
@@ -140,7 +317,7 @@ export class FiscalYearService {
         closed_at: data.closed_at?.toDate ? data.closed_at.toDate() : undefined,
       } as FiscalYear;
     } catch (error) {
-      console.error('Erreur lors du chargement de l\'année fiscale:', error);
+      logger.error('Erreur lors du chargement de l\'année fiscale:', error);
       throw error;
     }
   }
@@ -197,7 +374,7 @@ export class FiscalYearService {
 
       return transactions;
     } catch (error) {
-      console.error('Erreur lors du chargement des transactions:', error);
+      logger.error('Erreur lors du chargement des transactions:', error);
       throw error;
     }
   }
@@ -216,23 +393,40 @@ export class FiscalYearService {
       const fiscalYear = await this.getCurrentFiscalYear(clubId);
 
       if (!fiscalYear) {
-        console.warn('Aucune année fiscale active trouvée');
+        logger.warn('Aucune année fiscale active trouvée');
         return 0;
       }
 
-      // 2. Récupérer le solde d'ouverture
+      return this.calculateBalanceForFiscalYear(clubId, fiscalYear, accountType);
+    } catch (error) {
+      logger.error(`Erreur lors du calcul du solde ${accountType}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Calculer le solde d'un compte pour une année fiscale donnée
+   * Utilise le solde d'ouverture propre à l'exercice concerné.
+   */
+  static async calculateBalanceForFiscalYear(
+    clubId: string,
+    fiscalYear: FiscalYear,
+    accountType: 'current' | 'savings'
+  ): Promise<number> {
+    try {
+      // 1. Récupérer le solde d'ouverture
       const openingBalance = accountType === 'current'
         ? fiscalYear.opening_balances.bank_current
         : fiscalYear.opening_balances.bank_savings;
 
-      // 3. Récupérer toutes les transactions de l'année pour ce compte
+      // 2. Récupérer toutes les transactions de l'année pour ce compte
       const transactions = await this.getTransactionsForFiscalYear(
         clubId,
         fiscalYear,
         accountType
       );
 
-      // 4. Calculer la somme des transactions (positives et négatives)
+      // 3. Calculer la somme des transactions (positives et négatives)
       // Exclure les transactions ventilées (parents) pour éviter le double comptage
       const transactionsSum = transactions.reduce((sum, tx) => {
         // Les transactions ventilées parents ne doivent pas être comptées
@@ -243,10 +437,10 @@ export class FiscalYearService {
         return sum + tx.montant;
       }, 0);
 
-      // 5. Retourner le solde actuel
+      // 4. Retourner le solde calculé pour cet exercice
       return openingBalance + transactionsSum;
     } catch (error) {
-      console.error(`Erreur lors du calcul du solde ${accountType}:`, error);
+      logger.error(`Erreur lors du calcul du solde ${accountType} pour l'exercice ${fiscalYear.year}:`, error);
       throw error;
     }
   }
@@ -279,6 +473,7 @@ export class FiscalYearService {
         },
         created_at: Timestamp.fromDate(new Date()),
         updated_at: Timestamp.fromDate(new Date()),
+        created_by: userId || 'system'
       };
 
       // Ajouter accountNumbers seulement s'il est défini et non vide
@@ -288,10 +483,10 @@ export class FiscalYearService {
 
       await setDoc(fyRef, newFiscalYear);
 
-      console.log(`Année fiscale ${year} créée avec succès`);
+      logger.debug(`Année fiscale ${year} créée avec succès`);
       return fyId;
     } catch (error) {
-      console.error('Erreur lors de la création de l\'année fiscale:', error);
+      logger.error('Erreur lors de la création de l\'année fiscale:', error);
       throw error;
     }
   }
@@ -320,9 +515,16 @@ export class FiscalYearService {
         throw new Error('Seule une année fiscale ouverte peut être clôturée');
       }
 
-      // 2. Calculer les soldes de fin
-      const closingCurrent = await this.calculateCurrentBalance(clubId, 'current');
-      const closingSavings = await this.calculateCurrentBalance(clubId, 'savings');
+      const validation = await this.validateFiscalYearClosure(clubId, fiscalYear);
+      if (!validation.canClose) {
+        throw new Error(`Clôture impossible:\n- ${validation.blockingReasons.join('\n- ')}`);
+      }
+
+      // 2. Déterminer les soldes de fin pour l'exercice ciblé
+      const [closingCurrent, closingSavings] = await Promise.all([
+        this.resolveClosingBalanceForClosure(clubId, fiscalYear, 'current'),
+        this.resolveClosingBalanceForClosure(clubId, fiscalYear, 'savings')
+      ]);
 
       // 3. Mettre à jour l'année fiscale avec les soldes de clôture
       const fyRef = doc(db, 'clubs', clubId, 'fiscal_years', fiscalYearId);
@@ -335,30 +537,44 @@ export class FiscalYearService {
         updated_at: Timestamp.fromDate(new Date())
       });
 
-      console.log(`Année fiscale ${fiscalYear.year} clôturée avec succès`);
-      console.log(`Soldes de clôture - Courant: ${closingCurrent}, Épargne: ${closingSavings}`);
+      logger.debug(`Année fiscale ${fiscalYear.year} clôturée avec succès`);
+      logger.debug(`Soldes de clôture - Courant: ${closingCurrent}, Épargne: ${closingSavings}`);
 
-      // 4. Créer automatiquement l'année suivante avec report des soldes
+      // 4. Créer automatiquement l'année suivante avec report des soldes,
+      // ou synchroniser l'ouverture si l'exercice suivant existe déjà.
       const nextYear = fiscalYear.year + 1;
       const nextStartDate = addYears(fiscalYear.start_date, 1);
       const nextEndDate = addYears(fiscalYear.end_date, 1);
+      const nextFiscalYearId = `FY${nextYear}`;
+      const nextFiscalYear = await this.getFiscalYearById(clubId, nextFiscalYearId);
 
-      await this.createFiscalYear(
-        clubId,
-        nextYear,
-        nextStartDate,
-        nextEndDate,
-        {
-          bank_current: closingCurrent,  // Report automatique
-          bank_savings: closingSavings   // Report automatique
-        },
-        fiscalYear.account_numbers,
-        userId
-      );
+      if (nextFiscalYear) {
+        const nextFiscalYearRef = doc(db, 'clubs', clubId, 'fiscal_years', nextFiscalYearId);
+        await updateDoc(nextFiscalYearRef, {
+          'opening_balances.bank_current': closingCurrent,
+          'opening_balances.bank_savings': closingSavings,
+          updated_at: Timestamp.fromDate(new Date())
+        });
 
-      console.log(`Année fiscale ${nextYear} créée automatiquement avec report des soldes`);
+        logger.debug(`Année fiscale ${nextYear} déjà existante: soldes d’ouverture synchronisés`);
+      } else {
+        await this.createFiscalYear(
+          clubId,
+          nextYear,
+          nextStartDate,
+          nextEndDate,
+          {
+            bank_current: closingCurrent,
+            bank_savings: closingSavings
+          },
+          fiscalYear.account_numbers,
+          userId
+        );
+
+        logger.debug(`Année fiscale ${nextYear} créée automatiquement avec report des soldes`);
+      }
     } catch (error) {
-      console.error('Erreur lors de la clôture de l\'année fiscale:', error);
+      logger.error('Erreur lors de la clôture de l\'année fiscale:', error);
       throw error;
     }
   }
@@ -385,12 +601,14 @@ export class FiscalYearService {
       const fyRef = doc(db, 'clubs', clubId, 'fiscal_years', fiscalYearId);
       await updateDoc(fyRef, {
         status: 'open',
+        closed_at: null,
+        closed_by: null,
         updated_at: Timestamp.fromDate(new Date())
       });
 
-      console.log(`Année fiscale ${fiscalYear.year} rouverte`);
+      logger.debug(`Année fiscale ${fiscalYear.year} rouverte`);
     } catch (error) {
-      console.error('Erreur lors de la réouverture de l\'année fiscale:', error);
+      logger.error('Erreur lors de la réouverture de l\'année fiscale:', error);
       throw error;
     }
   }
@@ -410,9 +628,9 @@ export class FiscalYearService {
         updated_at: Timestamp.fromDate(new Date())
       });
 
-      console.log('Année fiscale définitivement verrouillée');
+      logger.debug('Année fiscale définitivement verrouillée');
     } catch (error) {
-      console.error('Erreur lors du verrouillage définitif:', error);
+      logger.error('Erreur lors du verrouillage définitif:', error);
       throw error;
     }
   }
@@ -435,34 +653,10 @@ export class FiscalYearService {
     clubId: string,
     fiscalYear: FiscalYear
   ): Promise<{ canClose: boolean; reasons: string[] }> {
-    const reasons: string[] = [];
-
-    // Vérifier le statut
-    if (fiscalYear.status !== 'open') {
-      reasons.push('L\'année fiscale n\'est pas ouverte');
-    }
-
-    // Vérifier qu'on est après la date de fin
-    const now = new Date();
-    if (now < fiscalYear.end_date) {
-      reasons.push('L\'année fiscale n\'est pas encore terminée');
-    }
-
-    // Vérifier les transactions non réconciliées (optionnel, warning seulement)
-    try {
-      const transactions = await this.getTransactionsForFiscalYear(clubId, fiscalYear);
-      const unreconciled = transactions.filter(tx => !tx.reconcilie);
-
-      if (unreconciled.length > 0) {
-        reasons.push(`${unreconciled.length} transaction(s) non réconciliée(s) (avertissement)`);
-      }
-    } catch (error) {
-      console.error('Erreur lors de la vérification des transactions:', error);
-    }
-
+    const validation = await this.validateFiscalYearClosure(clubId, fiscalYear);
     return {
-      canClose: reasons.length === 0 || reasons.every(r => r.includes('avertissement')),
-      reasons
+      canClose: validation.canClose,
+      reasons: validation.reasons
     };
   }
 
@@ -481,9 +675,9 @@ export class FiscalYearService {
         updated_at: Timestamp.fromDate(new Date())
       });
 
-      console.log('Numéros de compte mis à jour');
+      logger.debug('Numéros de compte mis à jour');
     } catch (error) {
-      console.error('Erreur lors de la mise à jour des numéros de compte:', error);
+      logger.error('Erreur lors de la mise à jour des numéros de compte:', error);
       throw error;
     }
   }
@@ -495,10 +689,14 @@ export class FiscalYearService {
     clubId: string,
     fiscalYearId: string,
     updates: {
+      year?: number;
       start_date?: Date;
       end_date?: Date;
       opening_balances?: { bank_current: number; bank_savings: number };
       account_numbers?: { bank_current?: string; bank_savings?: string };
+      closing_balances?: { bank_current: number; bank_savings: number };
+      balance_sheet?: FiscalYear['balance_sheet'];
+      closing_wizard?: FiscalYear['closing_wizard'];
       notes?: string;
     }
   ): Promise<void> {
@@ -508,6 +706,10 @@ export class FiscalYearService {
       const updateData: any = {
         updated_at: Timestamp.fromDate(new Date())
       };
+
+      if (updates.year !== undefined) {
+        updateData.year = updates.year;
+      }
 
       // Convertir les dates en Timestamps si présentes
       if (updates.start_date) {
@@ -522,16 +724,25 @@ export class FiscalYearService {
         updateData.opening_balances = updates.opening_balances;
       }
       if (updates.account_numbers) {
-        updateData.account_numbers = updates.account_numbers;
+        updateData.account_numbers = removeUndefinedDeep(updates.account_numbers);
+      }
+      if (updates.closing_balances) {
+        updateData.closing_balances = updates.closing_balances;
+      }
+      if (updates.balance_sheet) {
+        updateData.balance_sheet = removeUndefinedDeep(updates.balance_sheet);
+      }
+      if (updates.closing_wizard) {
+        updateData.closing_wizard = removeUndefinedDeep(updates.closing_wizard);
       }
       if (updates.notes !== undefined) {
         updateData.notes = updates.notes;
       }
 
       await updateDoc(fyRef, updateData);
-      console.log('Année fiscale mise à jour avec succès');
+      logger.debug('Année fiscale mise à jour avec succès');
     } catch (error) {
-      console.error('Erreur lors de la mise à jour de l\'année fiscale:', error);
+      logger.error('Erreur lors de la mise à jour de l\'année fiscale:', error);
       throw error;
     }
   }
@@ -566,9 +777,9 @@ export class FiscalYearService {
         updated_at: Timestamp.fromDate(new Date())
       });
 
-      console.log('Année fiscale supprimée');
+      logger.debug('Année fiscale supprimée');
     } catch (error) {
-      console.error('Erreur lors de la suppression:', error);
+      logger.error('Erreur lors de la suppression:', error);
       throw error;
     }
   }

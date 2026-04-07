@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { logger } from '@/utils/logger';
 import {
   Shield,
   Save,
@@ -14,6 +15,7 @@ import {
 import { UserRole, Permission, RoleConfig } from '@/types/user.types';
 import { PermissionSettingsService, PermissionSettings } from '@/services/permissionSettingsService';
 import { PermissionService } from '@/services/permissionService';
+import { SessionService } from '@/services/sessionService';
 import { PermissionMatrix } from './PermissionMatrix';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
@@ -52,7 +54,7 @@ export function PermissionsManagement() {
       setOriginalSettings(settings);
       setCurrentSettings(settings);
     } catch (error) {
-      console.error('Erreur lors du chargement des permissions:', error);
+      logger.error('Erreur lors du chargement des permissions:', error);
       toast.error('Erreur lors du chargement des permissions');
     } finally {
       setLoading(false);
@@ -97,6 +99,10 @@ export function PermissionsManagement() {
       PermissionSettingsService.validatePermissions(currentSettings);
 
       setSaving(true);
+
+      // Rafraîchir la session AVANT l'écriture pour éviter permission-denied
+      await SessionService.ensureValidSession(clubId, appUser.id);
+
       await PermissionSettingsService.savePermissionSettings(clubId, currentSettings, appUser.id);
 
       // Recharger les permissions dans le PermissionService
@@ -108,8 +114,12 @@ export function PermissionsManagement() {
 
       toast.success('Permissions sauvegardées avec succès !');
     } catch (error: any) {
-      console.error('Erreur lors de la sauvegarde:', error);
-      toast.error(`Erreur : ${error.message || 'Impossible de sauvegarder'}`);
+      logger.error('Erreur lors de la sauvegarde:', error);
+      if (error?.code === 'permission-denied') {
+        toast.error('Session expirée. Veuillez rafraîchir la page et réessayer.');
+      } else {
+        toast.error(`Erreur : ${error.message || 'Impossible de sauvegarder'}`);
+      }
     } finally {
       setSaving(false);
     }
@@ -137,7 +147,7 @@ export function PermissionsManagement() {
       setShowResetDialog(false);
       toast.success('Permissions réinitialisées aux valeurs par défaut');
     } catch (error) {
-      console.error('Erreur lors de la réinitialisation:', error);
+      logger.error('Erreur lors de la réinitialisation:', error);
       toast.error('Erreur lors de la réinitialisation');
     } finally {
       setSaving(false);
@@ -306,7 +316,7 @@ export function PermissionsManagement() {
           <button
             onClick={handleCancel}
             disabled={saving}
-            className="px-4 py-2 text-sm bg-white dark:bg-dark-bg-secondary text-gray-700 dark:text-dark-text-primary border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors flex items-center gap-2"
+            className="px-4 py-2 text-sm bg-white dark:bg-dark-bg-secondary text-gray-700 dark:text-dark-text-primary border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors flex items-center gap-2"
           >
             <X className="w-4 h-4" />
             Annuler

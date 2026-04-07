@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Shield, Clock, Save, Info } from 'lucide-react';
 import { FirebaseSettingsService } from '@/services/firebaseSettingsService';
+import { SessionService } from '@/services/sessionService';
 import { SecuritySettings as SecuritySettingsType, IDLE_TIMEOUT_OPTIONS } from '@/types/settings.types';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
+import { logger } from '@/utils/logger';
 
 export function SecuritySettings() {
   const { clubId, appUser } = useAuth();
@@ -24,7 +26,7 @@ export function SecuritySettings() {
       const loaded = await FirebaseSettingsService.loadSecuritySettings(clubId);
       setSettings(loaded);
     } catch (error) {
-      console.error('Error loading security settings:', error);
+      logger.error('Error loading security settings:', error);
       toast.error('Erreur lors du chargement des paramètres');
     } finally {
       setLoading(false);
@@ -34,10 +36,20 @@ export function SecuritySettings() {
   const handleSave = async () => {
     setSaving(true);
     try {
+      // Rafraîchir la session AVANT l'écriture pour éviter permission-denied
+      if (appUser?.id) {
+        await SessionService.ensureValidSession(clubId, appUser.id);
+      }
+
       await FirebaseSettingsService.saveSecuritySettings(clubId, settings, appUser?.id);
       toast.success('Paramètres de sécurité sauvegardés');
-    } catch (error) {
-      toast.error('Erreur lors de la sauvegarde');
+    } catch (error: any) {
+      logger.error('Erreur lors de la sauvegarde des paramètres de sécurité:', error);
+      if (error?.code === 'permission-denied') {
+        toast.error('Session expirée. Veuillez rafraîchir la page et réessayer.');
+      } else {
+        toast.error('Erreur lors de la sauvegarde');
+      }
     } finally {
       setSaving(false);
     }
@@ -113,7 +125,7 @@ export function SecuritySettings() {
                 className={`p-4 rounded-lg border-2 text-left transition-all ${
                   settings.idleTimeoutMinutes === option.value
                     ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-200 hover:border-gray-300'
+                    : 'border-gray-200 dark:border-dark-border hover:border-gray-300 dark:border-dark-border'
                 }`}
               >
                 <div className="font-medium text-gray-900 dark:text-dark-text-primary">{option.label}</div>

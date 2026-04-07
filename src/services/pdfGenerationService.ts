@@ -1,7 +1,8 @@
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { logger } from '@/utils/logger';
+// jsPDF and jspdf-autotable are loaded dynamically to reduce initial bundle size (~300KB)
 import { Loan, InventoryItem, Member, StockProduct, Sale, Order } from '@/types/inventory';
 import { Timestamp } from 'firebase/firestore';
+import { getFirstName, getLastName, getPhone } from '@/utils/fieldMapper';
 
 /**
  * Service de génération de documents PDF pour le module Inventaire
@@ -35,6 +36,9 @@ export class PDFGenerationService {
       logo_url?: string;
     }
   ): Promise<Blob> {
+    // Dynamic import for code splitting - jsPDF is ~300KB
+    const { default: jsPDF } = await import('jspdf');
+    const { default: autoTable } = await import('jspdf-autotable');
     const doc = new jsPDF();
 
     // Configuration
@@ -51,7 +55,7 @@ export class PDFGenerationService {
         doc.addImage(logoImg, 'PNG', marginX, currentY, 40, 20);
         currentY += 25;
       } catch (error) {
-        console.warn('Impossible de charger le logo:', error);
+        logger.warn('Impossible de charger le logo:', error);
         currentY += 5;
       }
     }
@@ -101,12 +105,16 @@ export class PDFGenerationService {
 
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Nom: ${member.nom} ${member.prenom}`, marginX + 5, currentY);
+    // Use Field Mapper for consistent member field access
+    const memberLastName = getLastName(member) || '';
+    const memberFirstName = getFirstName(member) || '';
+    doc.text(`Nom: ${memberLastName} ${memberFirstName}`, marginX + 5, currentY);
     currentY += 5;
     doc.text(`Email: ${member.email}`, marginX + 5, currentY);
     currentY += 5;
-    if (member.telephone) {
-      doc.text(`Téléphone: ${member.telephone}`, marginX + 5, currentY);
+    const memberPhone = getPhone(member);
+    if (memberPhone) {
+      doc.text(`Téléphone: ${memberPhone}`, marginX + 5, currentY);
       currentY += 5;
     }
     currentY += 5;
@@ -226,14 +234,15 @@ export class PDFGenerationService {
         const signatureImg = await this.loadImage(loan.signature_membre_url);
         doc.addImage(signatureImg, 'PNG', leftX, currentY + 2, signatureWidth, signatureHeight);
       } catch (error) {
-        console.warn('Impossible de charger la signature membre:', error);
+        logger.warn('Impossible de charger la signature membre:', error);
       }
     }
     doc.rect(leftX, currentY + 2, signatureWidth, signatureHeight);
 
     doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
-    doc.text(`${member.nom} ${member.prenom}`, leftX + signatureWidth / 2, currentY + signatureHeight + 7, { align: 'center' });
+    // Use Field Mapper for member name
+    doc.text(`${memberLastName} ${memberFirstName}`, leftX + signatureWidth / 2, currentY + signatureHeight + 7, { align: 'center' });
     doc.text(this.formatDate(loan.date_pret), leftX + signatureWidth / 2, currentY + signatureHeight + 12, { align: 'center' });
 
     // Signature responsable (droite)
@@ -276,6 +285,9 @@ export class PDFGenerationService {
       logo_url?: string;
     }
   ): Promise<Blob> {
+    // Dynamic import for code splitting - jsPDF is ~300KB
+    const { default: jsPDF } = await import('jspdf');
+    const { default: autoTable } = await import('jspdf-autotable');
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const marginX = 15;
@@ -288,7 +300,7 @@ export class PDFGenerationService {
         doc.addImage(logoImg, 'PNG', marginX, currentY, 40, 20);
         currentY += 25;
       } catch (error) {
-        console.warn('Impossible de charger le logo:', error);
+        logger.warn('Impossible de charger le logo:', error);
         currentY += 5;
       }
     }
@@ -335,7 +347,10 @@ export class PDFGenerationService {
 
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(`${member.nom} ${member.prenom}`, marginX + 5, currentY);
+    // Use Field Mapper for consistent member field access
+    const clientLastName = getLastName(member) || '';
+    const clientFirstName = getFirstName(member) || '';
+    doc.text(`${clientLastName} ${clientFirstName}`, marginX + 5, currentY);
     currentY += 5;
     doc.text(member.email, marginX + 5, currentY);
     currentY += 10;
@@ -413,6 +428,9 @@ export class PDFGenerationService {
       logo_url?: string;
     }
   ): Promise<Blob> {
+    // Dynamic import for code splitting - jsPDF is ~300KB
+    const { default: jsPDF } = await import('jspdf');
+    const { default: autoTable } = await import('jspdf-autotable');
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const marginX = 15;

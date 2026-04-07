@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
-import { Download, FileText, AlertCircle, Loader2, ZoomIn, ZoomOut } from 'lucide-react';
+import { FileText, AlertCircle, Loader2, ZoomIn, ZoomOut } from 'lucide-react';
+import { logger } from '@/utils/logger';
+
+// Import react-pdf styles for proper text layer rendering
+import 'react-pdf/dist/Page/TextLayer.css';
+import 'react-pdf/dist/Page/AnnotationLayer.css';
 
 // Configure PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -25,41 +30,24 @@ export function PDFViewer({ fileUrl, fileName, className = '' }: PDFViewerProps)
   }
 
   function onDocumentLoadError(error: Error) {
-    console.error('PDF Load Error:', error);
+    logger.error('PDF Load Error:', error);
     setLoadError(error.message);
     setIsLoading(false);
   }
 
-  const handleDownload = () => {
-    const link = document.createElement('a');
-    link.href = fileUrl;
-    link.download = fileName || 'document.pdf';
-    link.target = '_blank';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  // Si erreur de chargement, afficher fallback avec lien de téléchargement
+  // Si erreur de chargement, afficher fallback
   if (loadError) {
     return (
-      <div className={`flex flex-col items-center justify-center p-8 bg-gray-100 rounded-lg ${className}`}>
+      <div className={`flex flex-col items-center justify-center p-8 bg-gray-100 dark:bg-dark-bg-tertiary rounded-lg ${className}`}>
         <div className="text-center max-w-md">
           <AlertCircle className="h-16 w-16 text-amber-500 mx-auto mb-4" />
           <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary mb-2">
             Impossible d'afficher le PDF
           </h3>
           <p className="text-sm text-gray-600 dark:text-dark-text-secondary mb-4">
-            Ce PDF ne peut pas être affiché dans le navigateur. Vous pouvez le télécharger pour le consulter.
+            Ce PDF ne peut pas être affiché dans le navigateur.
           </p>
-          <button
-            onClick={handleDownload}
-            className="flex items-center gap-2 px-4 py-2 bg-calypso-blue text-white rounded-lg hover:bg-calypso-blue-dark transition-colors mx-auto"
-          >
-            <Download className="h-4 w-4" />
-            Télécharger le PDF
-          </button>
-          <p className="text-xs text-gray-500 dark:text-dark-text-muted mt-3">
+          <p className="text-xs text-gray-500 dark:text-dark-text-muted">
             Erreur: {loadError}
           </p>
         </div>
@@ -124,16 +112,6 @@ export function PDFViewer({ fileUrl, fileName, className = '' }: PDFViewerProps)
             </>
           )}
 
-          {/* Download button */}
-          <div className="w-px h-6 bg-gray-600 mx-2" />
-          <button
-            onClick={handleDownload}
-            className="flex items-center gap-2 px-3 py-1.5 bg-calypso-blue text-white rounded hover:bg-calypso-blue-dark transition-colors text-sm"
-            title="Télécharger le PDF"
-          >
-            <Download className="h-4 w-4" />
-            Télécharger
-          </button>
         </div>
       </div>
 

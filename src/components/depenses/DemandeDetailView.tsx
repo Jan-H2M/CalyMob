@@ -1,4 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
+import { logger } from '@/utils/logger';
 import { useNavigate } from 'react-router-dom';
 import {
   X,
@@ -28,13 +29,19 @@ import {
   Loader2,
   ChevronLeft,
   ChevronRight,
-  Tag
+  Tag,
+  Send,
+  Building2,
+  QrCode,
+  MessageCircle,
+  RefreshCcw
 } from 'lucide-react';
-import { DemandeRemboursement, TransactionBancaire, ClubSettings, Membre, DocumentJustificatif, Evenement } from '@/types';
+import { DemandeRemboursement, TransactionBancaire, ClubSettings, Membre, DocumentJustificatif, Evenement, Fournisseur } from '@/types';
+import { getActiveFournisseurs, createFournisseur } from '@/services/fournisseurService';
 import { formatMontant, formatDate, cn } from '@/utils/utils';
+import { getFirstName, getLastName, getRole } from '@/utils/fieldMapper';
 import { ApprovalBadge } from './ApprovalBadge';
 import { CategorizationService } from '@/services/categorizationService';
-import { CategoryAccountSelector } from '@/components/banque/CategoryAccountSelector';
 import { PermissionService } from '@/services/permissionService';
 import { SettingsService } from '@/services/settingsService';
 import { useAuth } from '@/contexts/AuthContext';
@@ -48,7 +55,70 @@ import {
   findTransactionBySequence,
   autoLinkExpenseToTransaction
 } from '@/services/transactionMatchingService';
-import { ExpenseReportModal } from './ExpenseReportModal';
+import { sendExpenseSubmittedEmail } from '@/services/expenseEmailService';
+import { MontantEditModal } from './MontantEditModal';
+import { MontantAuditTrail } from './MontantAuditTrail';
+import { EpcQrCode } from './EpcQrCode';
+import { CommunicationModal } from '@/components/common/CommunicationModal';
+import type { SMSContextData } from '@/types/sms';
+
+/**
+ * Format IBAN for display (groups of 4)
+ */
+function formatIBAN(iban: string): string {
+  if (!iban) return '';
+  return iban.replace(/(.{4})/g, '$1 ').trim();
+}
+
+function formatEditableAmount(montant: number): string {
+  if (!Number.isFinite(montant)) return '0,00';
+
+  return new Intl.NumberFormat('fr-BE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+    .format(montant)
+    .replace(/[\u202f\u00a0]/g, ' ');
+}
+
+function parseAmountInput(value: string | number): number {
+  if (typeof value === 'number') {
+    return value;
+  }
+
+  const sanitized = value
+    .replace(/eur/gi, '')
+    .replace(/€/g, '')
+    .replace(/\s/g, '')
+    .trim();
+
+  if (!sanitized) {
+    return Number.NaN;
+  }
+
+  const commaCount = (sanitized.match(/,/g) || []).length;
+  const dotCount = (sanitized.match(/\./g) || []).length;
+  let normalized = sanitized;
+
+  if (commaCount > 0 && dotCount > 0) {
+    normalized = sanitized.lastIndexOf(',') > sanitized.lastIndexOf('.')
+      ? sanitized.replace(/\./g, '').replace(',', '.')
+      : sanitized.replace(/,/g, '');
+  } else if (commaCount > 0) {
+    const decimalDigits = sanitized.length - sanitized.lastIndexOf(',') - 1;
+    normalized = commaCount === 1 && decimalDigits !== 3
+      ? sanitized.replace(',', '.')
+      : sanitized.replace(/,/g, '');
+  } else if (dotCount > 0) {
+    const decimalDigits = sanitized.length - sanitized.lastIndexOf('.') - 1;
+    normalized = dotCount === 1 && decimalDigits !== 3
+      ? sanitized
+      : sanitized.replace(/\./g, '');
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
 
 /**
  * Génère un nom de fichier formaté selon le pattern CalyCompta
@@ -132,8 +202,8 @@ async function downloadRenamedFile(
   url: string,
   newFilename: string
 ): Promise<void> {
-  console.log('🔽 [DOWNLOAD] Tentative de téléchargement:', newFilename);
-  console.log('🔗 [DOWNLOAD] URL:', url);
+  logger.debug('🔽 [DOWNLOAD] Tentative de téléchargement:', newFilename);
+  logger.debug('🔗 [DOWNLOAD] URL:', url);
 
   try {
     // Extraire le chemin du fichier depuis l'URL Firebase Storage
@@ -147,15 +217,15 @@ async function downloadRenamedFile(
     }
 
     const filePath = decodeURIComponent(pathMatch[1]);
-    console.log('📁 [DOWNLOAD] Chemin du fichier:', filePath);
+    logger.debug('📁 [DOWNLOAD] Chemin du fichier:', filePath);
 
     // Télécharger le blob via Firebase Storage SDK
     const storage = getStorage();
     const fileRef = storageRef(storage, filePath);
 
-    console.log('⬇️ [DOWNLOAD] Téléchargement du blob...');
+    logger.debug('⬇️ [DOWNLOAD] Téléchargement du blob...');
     const blob = await getBlob(fileRef);
-    console.log('✅ [DOWNLOAD] Blob téléchargé:', blob.size, 'bytes');
+    logger.debug('✅ [DOWNLOAD] Blob téléchargé:', blob.size, 'bytes');
 
     // Créer un Object URL local
     const blobUrl = URL.createObjectURL(blob);
@@ -170,16 +240,16 @@ async function downloadRenamedFile(
     a.click();
     document.body.removeChild(a);
 
-    console.log('💾 [DOWNLOAD] Téléchargement déclenché');
+    logger.debug('💾 [DOWNLOAD] Téléchargement déclenché');
 
     // Libérer la mémoire après un court délai
     setTimeout(() => {
       URL.revokeObjectURL(blobUrl);
-      console.log('🧹 [DOWNLOAD] Object URL libéré');
+      logger.debug('🧹 [DOWNLOAD] Object URL libéré');
     }, 100);
 
   } catch (error) {
-    console.error('❌ [DOWNLOAD] Erreur:', error);
+    logger.error('❌ [DOWNLOAD] Erreur:', error);
     throw error;
   }
 }
@@ -203,27 +273,39 @@ interface DemandeDetailViewProps {
   onAddDocument?: (files: FileList) => void;
   onDelete?: () => void;
   onUpdate?: (updates: Partial<DemandeRemboursement>) => void;
-  onCreate?: (newDemand: Partial<DemandeRemboursement>, files?: File[]) => Promise<string>; // NEW: Returns demandeId for auto-linking
   onAnalyzeWithAI?: (files: File[]) => Promise<Partial<DemandeRemboursement> | null>; // NEW: For AI analysis
   onRefreshTransactions?: () => Promise<void>; // NEW: Reload transactions after auto-linking
   fromTransactionId?: string; // ID of the transaction we came from (for back navigation)
   navigationPosition?: { current: number; total: number } | null; // NEW: Keyboard navigation position (X van Y)
   onNavigatePrevious?: () => void; // NEW: Navigate to previous demand
   onNavigateNext?: () => void; // NEW: Navigate to next demand
+  onViewTransaction?: (transaction: TransactionBancaire) => void;
+  onViewOperation?: (operation: Evenement) => void;
+  onOpenContext?: () => void;
+  contextActionLabel?: string;
+  stackLevel?: number;
 }
 
-// Helper function to get documents with backward compatibility
+// Helper function to get documents — merges both new and legacy formats
+// to avoid losing documents uploaded via mobile (urls_justificatifs)
+// when web admin later adds documents (documents_justificatifs)
 function getDocuments(demand: DemandeRemboursement): DocumentJustificatif[] {
-  // New format: use documents_justificatifs if available
+  const docs: DocumentJustificatif[] = [];
+
+  // New format documents
   if (demand.documents_justificatifs && demand.documents_justificatifs.length > 0) {
-    return demand.documents_justificatifs;
+    docs.push(...demand.documents_justificatifs);
   }
 
-  // Legacy format: convert urls_justificatifs to DocumentJustificatif objects
+  // Legacy format: convert urls_justificatifs and add any that aren't already present
   if (demand.urls_justificatifs && demand.urls_justificatifs.length > 0) {
-    return demand.urls_justificatifs.map((url, index) => {
+    const existingUrls = new Set(docs.map(d => d.url));
+
+    for (const url of demand.urls_justificatifs) {
+      if (existingUrls.has(url)) continue; // skip duplicates
+
       // Détection du type de fichier depuis l'URL
-      let type = 'application/octet-stream'; // Type par défaut
+      let type = 'application/octet-stream';
       const urlLower = url.toLowerCase();
 
       if (urlLower.includes('.pdf')) {
@@ -238,18 +320,18 @@ function getDocuments(demand: DemandeRemboursement): DocumentJustificatif[] {
         type = 'image/webp';
       }
 
-      return {
+      docs.push({
         url,
-        nom_original: `Document ${index + 1}`,
-        nom_affichage: `Document ${index + 1}`,
+        nom_original: `Photo (mobile)`,
+        nom_affichage: `Photo (mobile)`,
         type,
         taille: 0,
         date_upload: demand.created_at || new Date(),
-      };
-    });
+      });
+    }
   }
 
-  return [];
+  return docs;
 }
 
 export function DemandeDetailView({
@@ -271,13 +353,17 @@ export function DemandeDetailView({
   onAddDocument,
   onDelete,
   onUpdate,
-  onCreate,
   onAnalyzeWithAI,
   onRefreshTransactions,
   fromTransactionId,
   navigationPosition,
   onNavigatePrevious,
-  onNavigateNext
+  onNavigateNext,
+  onViewTransaction,
+  onViewOperation,
+  onOpenContext,
+  contextActionLabel = 'Aller aux dépenses',
+  stackLevel = 0
 }: DemandeDetailViewProps) {
   const { hasPermission, clubId, user, appUser } = useAuth();
   const navigate = useNavigate();
@@ -287,17 +373,20 @@ export function DemandeDetailView({
 
   // Debug logging for membres prop
   useEffect(() => {
-    console.log('👥 DemandeDetailView - membres prop:', membres?.length || 0, 'members');
+    logger.debug('👥 DemandeDetailView - membres prop:', membres?.length || 0, 'members');
     if (membres && membres.length > 0) {
-      console.log('👥 First member:', membres[0]);
+      logger.debug('👥 First member:', membres[0]);
     }
   }, [membres]);
 
   // Helper function to get member display name
   const getMemberDisplayName = (membre: Membre): string => {
-    // Try prenom + nom first
-    if (membre.prenom && membre.nom) {
-      return `${membre.prenom} ${membre.nom}`;
+    // Use Field Mapper for consistent field access
+    const firstName = getFirstName(membre);
+    const lastName = getLastName(membre);
+
+    if (firstName && lastName) {
+      return `${firstName} ${lastName}`;
     }
     // Fall back to displayName (Firebase Auth field)
     if (membre.displayName) {
@@ -309,6 +398,11 @@ export function DemandeDetailView({
 
   // Mode detection
   const isCreateMode = !demand;
+  const isQuickView = !!onOpenContext || stackLevel > 0;
+  const zIndexOffset = stackLevel * 40;
+  const backdropZIndex = 40 + zIndexOffset;
+  const panelZIndex = 50 + zIndexOffset;
+  const modalBackdropZIndex = 60 + zIndexOffset;
 
   // Paramètres de téléchargement
   const [downloadSettings, setDownloadSettings] = useState<DownloadSettings | null>(null);
@@ -323,52 +417,68 @@ export function DemandeDetailView({
   const [isEditingDocName, setIsEditingDocName] = useState(false);
   const [editedDocName, setEditedDocName] = useState('');
   // REMOVED: isEditing - fields are now always editable with auto-save
-  const [editedMontant, setEditedMontant] = useState(demand?.montant.toString() || '0');
+  const [editedMontant, setEditedMontant] = useState(formatEditableAmount(demand?.montant ?? 0));
   const [editedDescription, setEditedDescription] = useState(demand?.description || '');
   const [editedCommentaire, setEditedCommentaire] = useState(demand?.titre || '');
   const [editedCategorie, setEditedCategorie] = useState(demand?.categorie || '');
   const [editedCodeComptable, setEditedCodeComptable] = useState(demand?.code_comptable || '');
+  const [editedCommunicationQr, setEditedCommunicationQr] = useState(
+    demand?.communication_qr || demand?.description?.substring(0, 140) || ''
+  );
   const [editedDateDepense, setEditedDateDepense] = useState(() => {
     if (!demand?.date_depense) return new Date().toISOString().split('T')[0];
 
     const date = new Date(demand.date_depense);
     // Check if date is valid
     if (isNaN(date.getTime())) {
-      console.warn('⚠️ Invalid date_depense:', demand.date_depense, '- using today');
+      logger.warn('⚠️ Invalid date_depense:', demand.date_depense, '- using today');
       return new Date().toISOString().split('T')[0];
     }
 
     return date.toISOString().split('T')[0];
   });
 
-  // State pour le modal de création de note de frais
-  const [showExpenseReportModal, setShowExpenseReportModal] = useState(false);
+  // State pour le modal de modification de montant (audit trail)
+  const [showMontantEditModal, setShowMontantEditModal] = useState(false);
+  const [pendingMontantChange, setPendingMontantChange] = useState<{ oldMontant: number; newMontant: number } | null>(null);
+
+  // State pour l'envoi d'email de confirmation
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [confirmationEmailSent, setConfirmationEmailSent] = useState(demand?.confirmation_email_sent || false);
+
+  // State pour SMS modal
+  const [showSMSModal, setShowSMSModal] = useState(false);
+
+  // State pour modal d'avertissement brouillon
+  const [showBrouillonWarningModal, setShowBrouillonWarningModal] = useState(false);
 
   // Reset form fields when demand changes or when entering create mode
   useEffect(() => {
     if (isCreateMode) {
       // Reset to empty values for create mode
-      setEditedMontant('0');
+      setEditedMontant('0,00');
       setEditedDescription('');
       setEditedCommentaire('');
       setEditedCategorie('');
       setEditedCodeComptable('');
+      setEditedCommunicationQr('');
       setEditedDateDepense(new Date().toISOString().split('T')[0]);
       setEditedStatut('en_attente_validation');
     } else if (demand) {
       // Load values from demand in edit mode
-      setEditedMontant(demand.montant.toString());
+      setEditedMontant(formatEditableAmount(demand.montant));
       setEditedDescription(demand.description || '');
       setEditedCommentaire(demand.titre || '');
       setEditedCategorie(demand.categorie || '');
       setEditedCodeComptable(demand.code_comptable || '');
+      setEditedCommunicationQr(demand.communication_qr || demand.description?.substring(0, 140) || '');
       setEditedStatut(demand.statut || 'en_attente_validation');
 
       // Safe date handling
       if (demand.date_depense) {
         const date = new Date(demand.date_depense);
         if (isNaN(date.getTime())) {
-          console.warn('⚠️ Invalid date_depense in useEffect:', demand.date_depense, '- using today');
+          logger.warn('⚠️ Invalid date_depense in useEffect:', demand.date_depense, '- using today');
           setEditedDateDepense(new Date().toISOString().split('T')[0]);
         } else {
           setEditedDateDepense(date.toISOString().split('T')[0]);
@@ -386,12 +496,27 @@ export function DemandeDetailView({
     try {
       // Validate before saving
       if (field === 'montant') {
-        const montant = typeof value === 'string' ? parseFloat(value.replace(',', '.')) : value;
+        const montant = parseAmountInput(value);
         if (isNaN(montant) || montant <= 0) {
           toast.error('Le montant doit être un nombre valide supérieur à 0');
           return;
         }
-        value = montant;
+        // Check if montant actually changed
+        const oldMontant = demand?.montant || 0;
+        if (montant !== oldMontant) {
+          // Skip modal for initial entry (from 0 to new value)
+          if (oldMontant === 0) {
+            // Direct save without confirmation for initial entry
+            await onUpdate({ montant });
+            toast.success('Montant enregistré');
+            return;
+          }
+          // Open modal for justification for actual modifications
+          setPendingMontantChange({ oldMontant, newMontant: montant });
+          setShowMontantEditModal(true);
+          return; // Don't save here, wait for modal confirmation
+        }
+        return; // No change, nothing to save
       } else if (field === 'description' && (!value || !value.trim())) {
         toast.error('La description est obligatoire');
         return;
@@ -399,8 +524,65 @@ export function DemandeDetailView({
         value = new Date(value);
       }
 
+      // Build update object
+      let updateData: Record<string, any> = { [field]: value };
+
+      // ✅ Status audit trail for all status changes
+      if (field === 'statut' && value !== demand?.statut) {
+        const currentUserFullName = `${currentUser?.prenom || ''} ${currentUser?.nom || ''}`.trim() || currentUser?.email || 'Unknown';
+
+        const statusAuditEntry = {
+          old_statut: demand?.statut || 'brouillon',
+          new_statut: value,
+          changed_by: currentUser?.id || '',
+          changed_by_name: currentUserFullName,
+          changed_at: new Date()
+        };
+
+        updateData.status_history = [...(demand?.status_history || []), statusAuditEntry];
+      }
+
+      // CRITICAL: When changing status to 'approuve', add approval metadata
+      if (field === 'statut' && value === 'approuve') {
+        if (!currentUser) {
+          toast.error('Utilisateur non connecté - impossible d\'approuver');
+          return;
+        }
+        // Check if already has approval metadata (e.g., reverting from rembourse)
+        if (!demand?.approuve_par) {
+          const currentUserFullName = `${currentUser.prenom || ''} ${currentUser.nom || ''}`.trim() || currentUser.email || 'Unknown';
+
+          updateData = {
+            ...updateData,
+            approuve_par: currentUser.id,
+            approuve_par_nom: currentUserFullName,
+            date_approbation: new Date(),
+          };
+          logger.debug('📝 Adding approval metadata for status change to approuve:', updateData);
+        }
+      }
+
+      // CRITICAL: When changing status to 'refuse', add refusal metadata
+      if (field === 'statut' && value === 'refuse') {
+        if (!currentUser) {
+          toast.error('Utilisateur non connecté - impossible de refuser');
+          return;
+        }
+        if (!demand?.refuse_par) {
+          const currentUserFullName = `${currentUser.prenom || ''} ${currentUser.nom || ''}`.trim() || currentUser.email || 'Unknown';
+
+          updateData = {
+            ...updateData,
+            refuse_par: currentUser.id,
+            refuse_par_nom: currentUserFullName,
+            date_refus: new Date(),
+          };
+          logger.debug('📝 Adding refusal metadata for status change to refuse:', updateData);
+        }
+      }
+
       // Save to Firestore
-      await onUpdate({ [field]: value });
+      await onUpdate(updateData);
 
       // Success feedback
       toast.success('✓ Sauvegardé', {
@@ -408,9 +590,96 @@ export function DemandeDetailView({
         position: 'bottom-right'
       });
     } catch (error) {
-      console.error(`Error saving ${field}:`, error);
+      logger.error(`Error saving ${field}:`, error);
       toast.error('Erreur lors de la sauvegarde');
     }
+  };
+
+  // Handler for montant change confirmation (with audit trail)
+  const handleMontantChangeConfirm = async (justification: string) => {
+    if (!pendingMontantChange || !onUpdate || !currentUser) {
+      setShowMontantEditModal(false);
+      setPendingMontantChange(null);
+      return;
+    }
+
+    try {
+      const { oldMontant, newMontant } = pendingMontantChange;
+      const currentUserFullName = `${currentUser.prenom || ''} ${currentUser.nom || ''}`.trim() || currentUser.email || 'Unknown';
+
+      // Check if demand was already approved - if so, reset approval
+      const wasApproved = demand?.statut === 'approuve' || demand?.statut === 'rembourse' || demand?.statut === 'en_attente_validation';
+
+      // Create audit trail entry with approval reset info if applicable
+      const auditEntry = {
+        old_montant: oldMontant,
+        new_montant: newMontant,
+        changed_by: currentUser.id,
+        changed_by_name: currentUserFullName,
+        changed_at: new Date(),
+        ...(justification && { justification }),
+        ...(wasApproved && {
+          approval_reset: true,
+          previous_statut: demand?.statut,
+        }),
+      };
+
+      // Get existing history or create new array
+      const existingHistory = demand?.montant_history || [];
+
+      // Update with new montant, history, and modified flag
+      // If was approved, reset approval status and clear approval metadata
+      const updateData: Record<string, any> = {
+        montant: newMontant,
+        montant_history: [...existingHistory, auditEntry],
+        montant_modified: true,
+      };
+
+      if (wasApproved) {
+        updateData.statut = 'en_attente_validation';
+        updateData.approuve_par = null;
+        updateData.approuve_par_nom = null;
+        updateData.date_approbation = null;
+        updateData.approuve_par_2 = null;
+        updateData.approuve_par_2_nom = null;
+        updateData.date_approbation_2 = null;
+        updateData.requires_double_approval = false;
+      }
+
+      await onUpdate(updateData);
+
+      // Update local state to reflect new value
+      setEditedMontant(formatEditableAmount(newMontant));
+
+      // Show appropriate message
+      if (wasApproved) {
+        toast.success('Montant modifié - demande à réapprouver', {
+          duration: 3000,
+          position: 'bottom-right'
+        });
+      } else {
+        toast.success('✓ Montant modifié', {
+          duration: 1500,
+          position: 'bottom-right'
+        });
+      }
+    } catch (error) {
+      logger.error('Error saving montant change:', error);
+      toast.error('Erreur lors de la sauvegarde du montant');
+      // Revert the input to the original value
+      setEditedMontant(formatEditableAmount(demand?.montant ?? 0));
+    } finally {
+      setShowMontantEditModal(false);
+      setPendingMontantChange(null);
+    }
+  };
+
+  // Handler for montant change cancellation
+  const handleMontantChangeCancel = () => {
+    // Revert the input to the original value
+    setEditedMontant(formatEditableAmount(demand?.montant ?? 0));
+    setShowMontantEditModal(false);
+    setPendingMontantChange(null);
   };
 
   // Auto-save for demandeur (special handling for dropdown vs free text)
@@ -435,13 +704,12 @@ export function DemandeDetailView({
       await onUpdate(updates);
       toast.success('✓ Sauvegardé', { duration: 1500, position: 'bottom-right' });
     } catch (error) {
-      console.error('Error saving demandeur:', error);
+      logger.error('Error saving demandeur:', error);
       toast.error('Erreur lors de la sauvegarde');
     }
   };
 
   // NEW: Additional fields for creation mode
-  const [editedFournisseur, setEditedFournisseur] = useState(demand?.fournisseur || '');
   // ✅ FIX: Only auto-fill current user in CREATE mode (not for existing expenses with NULL demandeur)
   const [editedDemandeurId, setEditedDemandeurId] = useState(
     demand?.demandeur_id || (isCreateMode && currentUser?.id) || ''
@@ -454,6 +722,23 @@ export function DemandeDetailView({
   const [editedStatut, setEditedStatut] = useState<DemandeRemboursement['statut']>(
     demand?.statut || 'en_attente_validation'
   );
+
+  // Bénéficiaire du remboursement (nieuw voor QR-code betalingen)
+  const [beneficiaireType, setBeneficiaireType] = useState<'demandeur' | 'fournisseur'>(
+    demand?.beneficiaire_type || 'demandeur'
+  );
+  const [selectedFournisseurId, setSelectedFournisseurId] = useState(demand?.fournisseur_id || '');
+  const [fournisseurs, setFournisseurs] = useState<Fournisseur[]>([]);
+
+  // Quick create fournisseur inline
+  const [showQuickCreateFournisseur, setShowQuickCreateFournisseur] = useState(false);
+  const [newFournisseurNom, setNewFournisseurNom] = useState('');
+  const [newFournisseurIban, setNewFournisseurIban] = useState('');
+  const [isCreatingFournisseur, setIsCreatingFournisseur] = useState(false);
+
+  // Paiement manuel (betaald via QR maar nog niet geboekt)
+  const [isPaiementManuel, setIsPaiementManuel] = useState(demand?.paiement_manuel || false);
+  const paiementManuelDate = demand?.paiement_manuel_date;
 
   // NEW: For file uploads in create mode
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -528,11 +813,26 @@ export function DemandeDetailView({
         const settings = await FirebaseSettingsService.loadDownloadSettings(clubId);
         setDownloadSettings(settings);
       } catch (error) {
-        console.error('Erreur chargement settings téléchargement:', error);
+        logger.error('Erreur chargement settings téléchargement:', error);
       }
     };
 
     loadDownloadSettings();
+  }, [clubId]);
+
+  // Charger les fournisseurs pour la sélection bénéficiaire
+  useEffect(() => {
+    const loadFournisseurs = async () => {
+      if (!clubId) return;
+      try {
+        const data = await getActiveFournisseurs(clubId);
+        setFournisseurs(data);
+      } catch (error) {
+        logger.error('Erreur chargement fournisseurs:', error);
+      }
+    };
+
+    loadFournisseurs();
   }, [clubId]);
 
   if (!isOpen) return null;
@@ -541,23 +841,60 @@ export function DemandeDetailView({
   const hasApprovalPermission = currentUser ? PermissionService.hasPermission(currentUser, 'demands.approve') : false;
   const isRequester = currentUser?.id === demand?.demandeur_id;
   const alreadyApproved = demand?.approuve_par === currentUser?.id;
+  const isSuperAdmin = currentUser ? getRole(currentUser) === 'super_admin' : false;
 
+  // Super admin can approve their own demands
   const canApprove = !isCreateMode &&
                      hasApprovalPermission &&
-                     !isRequester &&
+                     (!isRequester || isSuperAdmin) &&
                      !alreadyApproved;
 
   const needsDoubleApproval = !isCreateMode && demand &&
                                SettingsService.requiresDoubleApproval(demand.montant);
 
-  const isAwaitingSecondApproval = demand?.statut === 'en_attente_validation';
   const hasFirstApproval = !!demand?.approuve_par;
+  const isAwaitingFirstApproval = demand?.statut === 'en_attente_validation' && !hasFirstApproval;
+  const isAwaitingSecondApproval = demand?.statut === 'en_attente_validation' && hasFirstApproval && needsDoubleApproval;
+  const currentApprovalLabel = needsDoubleApproval ? '1ère approbation' : 'Approbation';
+  const historyApprovalLabel = needsDoubleApproval ? 'Première approbation' : 'Approbation';
 
   const handleReject = () => {
     if (rejectReason.trim() && onReject) {
       onReject(rejectReason);
       setShowRejectModal(false);
       setRejectReason('');
+    }
+  };
+
+  // Handler for sending confirmation email
+  const handleSendConfirmationEmail = async () => {
+    if (!demand || !clubId) return;
+
+    setIsSendingEmail(true);
+    try {
+      const result = await sendExpenseSubmittedEmail(clubId, demand);
+
+      if (result.success) {
+        // Update local state
+        setConfirmationEmailSent(true);
+
+        // Update in Firestore via onUpdate
+        if (onUpdate) {
+          onUpdate({
+            confirmation_email_sent: true,
+            confirmation_email_sent_at: new Date(),
+          });
+        }
+
+        toast.success('Email de confirmation envoyé avec succès');
+      } else {
+        toast.error(result.error || 'Erreur lors de l\'envoi de l\'email');
+      }
+    } catch (error: any) {
+      logger.error('Error sending confirmation email:', error);
+      toast.error(error.message || 'Erreur lors de l\'envoi de l\'email');
+    } finally {
+      setIsSendingEmail(false);
     }
   };
 
@@ -573,7 +910,7 @@ export function DemandeDetailView({
       const result = await onAnalyzeWithAI(pendingFiles);
       if (result) {
         // Apply AI results to fields
-        if (result.montant) setEditedMontant(result.montant.toString());
+        if (result.montant) setEditedMontant(formatEditableAmount(result.montant));
         if (result.description) setEditedDescription(result.description);
         if (result.fournisseur) setEditedFournisseur(result.fournisseur);
         if (result.categorie) setEditedCategorie(result.categorie);
@@ -584,7 +921,7 @@ export function DemandeDetailView({
         }
       }
     } catch (error) {
-      console.error('AI analysis error:', error);
+      logger.error('AI analysis error:', error);
       alert('Erreur lors de l\'analyse IA');
     } finally {
       setIsAnalyzing(false);
@@ -594,113 +931,56 @@ export function DemandeDetailView({
   const handleSaveEdit = async () => {
     // Prevent double submission
     if (isSaving) {
-      console.log('⚠️ Déjà en train de sauvegarder, ignoring click');
+      logger.debug('⚠️ Déjà en train de sauvegarder, ignoring click');
       return;
     }
 
     // Validation - Support both comma and period as decimal separator
-    const montant = parseFloat(editedMontant.replace(',', '.'));
+    const montant = parseAmountInput(editedMontant);
 
     // REMOVED VALIDATION BLOCKS - Allow creation with montant = 0 and empty description
     // The user can edit these fields after creation
 
     // Update the display state with the parsed value to prevent display issues
     if (!isNaN(montant)) {
-      setEditedMontant(montant.toString());
+      setEditedMontant(formatEditableAmount(montant));
     }
 
     setIsSaving(true);
 
     try {
-      if (isCreateMode && onCreate) {
-      // Creation mode
-      const newDemand: Partial<DemandeRemboursement> = {
-        montant,
-        description: editedDescription,
-        titre: editedCommentaire,
-        categorie: editedCategorie,
-        code_comptable: editedCodeComptable,
-        date_depense: new Date(editedDateDepense),
-        fournisseur: editedFournisseur,
-        demandeur_id: showOtherDemandeur ? undefined : editedDemandeurId,
-        demandeur_nom: showOtherDemandeur ? editedDemandeurNom : undefined,
-        evenement_id: editedEvenementId || undefined
-      };
+      if (onUpdate) {
+        // Edit mode - Filter out undefined values for Firestore
+        const updates: any = {
+          montant,
+          description: editedDescription,
+          titre: editedCommentaire,
+          categorie: editedCategorie,
+          code_comptable: editedCodeComptable,
+          date_depense: new Date(editedDateDepense),
+        };
 
-      // Create the demand and get the ID
-      console.log('🔍 DEBUG onCreate avant appel');
-      const createdDemandeId = await onCreate(newDemand, pendingFiles);
-      console.log('🔍 DEBUG onCreate après appel, ID reçu:', createdDemandeId);
-      console.log('🔍 DEBUG foundTransactionId:', foundTransactionId);
-      console.log('🔍 DEBUG clubId:', clubId);
-
-      // 🔗 Auto-link transaction if found during file analysis
-      if (foundTransactionId && clubId && createdDemandeId) {
-        try {
-          console.log(`🔗 Linking dépense ${createdDemandeId} to transaction ${foundTransactionId}`);
-          await autoLinkExpenseToTransaction(
-            createdDemandeId,
-            editedDescription,
-            foundTransactionId,
-            clubId
-          );
-          console.log('✅ Auto-linking complété avec succès!');
-          toast.success('✅ Dépense créée et transaction liée automatiquement!', {
-            icon: '🔗',
-            duration: 5000
-          });
-
-          // Don't close modal - let user see the result and close manually
-        } catch (linkError) {
-          console.error('❌ Erreur lors de la liaison automatique:', linkError);
-          // Non-bloquant - la dépense est déjà créée
-          toast.error('Dépense créée mais liaison échouée');
+        // Add demandeur fields only if they have values
+        if (showOtherDemandeur && editedDemandeurNom) {
+          updates.demandeur_nom = editedDemandeurNom;
+          // Remove demandeur_id when using free text
+          updates.demandeur_id = null;
+        } else if (!showOtherDemandeur && editedDemandeurId) {
+          updates.demandeur_id = editedDemandeurId;
+          // Find membre and set demandeur_nom
+          const membre = membres.find(m => m.id === editedDemandeurId);
+          if (membre) {
+            updates.demandeur_nom = getMemberDisplayName(membre);
+          }
         }
-      } else {
-        console.log('⚠️ DEBUG Auto-linking skipped:', {
-          foundTransactionId,
-          clubId,
-          createdDemandeId
-        });
-      }
 
-      // Don't auto-close - let user close manually
-      // onClose();
-    } else if (onUpdate) {
-      // Edit mode - Filter out undefined values for Firestore
-      const updates: any = {
-        montant,
-        description: editedDescription,
-        titre: editedCommentaire,
-        categorie: editedCategorie,
-        code_comptable: editedCodeComptable,
-        date_depense: new Date(editedDateDepense),
-        fournisseur: editedFournisseur,
-      };
-
-      // Add demandeur fields only if they have values
-      if (showOtherDemandeur && editedDemandeurNom) {
-        updates.demandeur_nom = editedDemandeurNom;
-        // Remove demandeur_id when using free text
-        updates.demandeur_id = null;
-      } else if (!showOtherDemandeur && editedDemandeurId) {
-        updates.demandeur_id = editedDemandeurId;
-        // Find membre and set demandeur_nom
-        const membre = membres.find(m => m.id === editedDemandeurId);
-        if (membre) {
-          updates.demandeur_nom = getMemberDisplayName(membre);
+        // Add evenement_id only if set
+        if (editedEvenementId) {
+          updates.evenement_id = editedEvenementId;
         }
+
+        onUpdate(updates);
       }
-
-      // Add evenement_id only if set
-      if (editedEvenementId) {
-        updates.evenement_id = editedEvenementId;
-      }
-
-      onUpdate(updates);
-    }
-
-      // No need to set editing state in edit mode - auto-save is always active
     } finally {
       setIsSaving(false);
     }
@@ -712,12 +992,11 @@ export function DemandeDetailView({
       onClose();
     } else if (demand) {
       // In edit mode, revert changes
-      setEditedMontant(demand.montant.toString());
+      setEditedMontant(formatEditableAmount(demand.montant));
       setEditedDescription(demand.description);
       setEditedCommentaire(demand.titre || '');
       setEditedCategorie(demand.categorie || '');
       setEditedCodeComptable(demand.code_comptable || '');
-      setEditedFournisseur(demand.fournisseur || '');
       setEditedDemandeurId(demand.demandeur_id || '');
       setEditedDemandeurNom(demand.demandeur_nom || '');
       setEditedEvenementId(demand.evenement_id || '');
@@ -725,6 +1004,77 @@ export function DemandeDetailView({
         demand.date_depense ? new Date(demand.date_depense).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
       );
     }
+  };
+
+  // Quick create fournisseur handler
+  const handleQuickCreateFournisseur = async () => {
+    if (!newFournisseurNom.trim()) {
+      toast.error('Le nom du fournisseur est requis');
+      return;
+    }
+    if (!newFournisseurIban.trim()) {
+      toast.error('L\'IBAN est requis');
+      return;
+    }
+
+    const cleanIban = newFournisseurIban.replace(/\s/g, '').toUpperCase();
+    if (cleanIban.length < 15 || cleanIban.length > 34) {
+      toast.error('IBAN invalide: longueur incorrecte (15-34 caractères)');
+      return;
+    }
+
+    setIsCreatingFournisseur(true);
+    try {
+      const newFournisseurId = await createFournisseur(
+        clubId,
+        {
+          nom: newFournisseurNom.trim(),
+          iban: cleanIban,
+        },
+        currentUser?.id || 'unknown'
+      );
+
+      // Refresh fournisseurs list
+      const updatedFournisseurs = await getActiveFournisseurs(clubId);
+      setFournisseurs(updatedFournisseurs);
+
+      // Auto-select the newly created fournisseur
+      setSelectedFournisseurId(newFournisseurId);
+      if (!isCreateMode) {
+        handleFieldSave('fournisseur_id', newFournisseurId);
+        handleFieldSave('fournisseur_nom', newFournisseurNom.trim());
+      }
+
+      // Reset form
+      setShowQuickCreateFournisseur(false);
+      setNewFournisseurNom('');
+      setNewFournisseurIban('');
+
+      toast.success(`Fournisseur "${newFournisseurNom.trim()}" créé!`);
+    } catch (error) {
+      logger.error('Error creating fournisseur:', error);
+      toast.error('Erreur lors de la création du fournisseur');
+    } finally {
+      setIsCreatingFournisseur(false);
+    }
+  };
+
+  // Gestion de la fermeture avec avertissement brouillon
+  const handleCloseWithWarning = () => {
+    if (demand?.statut === 'brouillon') {
+      setShowBrouillonWarningModal(true);
+    } else {
+      onClose();
+    }
+  };
+
+  // Changer le statut en "en_attente_validation" et fermer
+  const handleSubmitBrouillon = async () => {
+    if (onUpdate) {
+      await onUpdate({ statut: 'en_attente_validation' });
+    }
+    setShowBrouillonWarningModal(false);
+    onClose();
   };
 
   const handleDeleteDocument = (urlToDelete: string) => {
@@ -891,7 +1241,7 @@ export function DemandeDetailView({
       setIsAnalyzingFile(true);
 
       try {
-        console.log(`🔍 Analyse automatique du fichier: ${file.name}`);
+        logger.debug(`🔍 Analyse automatique du fichier: ${file.name}`);
 
         // STEP 1: Extract sequence from filename
         const sequence = extractSequenceFromFilename(file.name);
@@ -899,12 +1249,12 @@ export function DemandeDetailView({
         let foundTransaction: TransactionBancaire | null = null;
 
         if (sequence && clubId) {
-          console.log(`✅ Numéro de séquence détecté: ${sequence}`);
+          logger.debug(`✅ Numéro de séquence détecté: ${sequence}`);
           foundTransaction = await findTransactionBySequence(sequence, clubId);
 
           if (foundTransaction) {
             transactionFound = true;
-            console.log(`✅ Transaction trouvée! Montant: ${foundTransaction.montant}€`);
+            logger.debug(`✅ Transaction trouvée! Montant: ${foundTransaction.montant}€`);
 
             // 🔗 Opslaan transaction ID voor automatische linking na creatie
             setFoundTransactionId(foundTransaction.id);
@@ -915,7 +1265,7 @@ export function DemandeDetailView({
             });
 
             // Pre-fill expense data from transaction
-            setEditedMontant(Math.abs(foundTransaction.montant).toString());
+            setEditedMontant(formatEditableAmount(Math.abs(foundTransaction.montant)));
 
             // Use transaction date if no date in filename
             if (foundTransaction.date_execution) {
@@ -926,16 +1276,11 @@ export function DemandeDetailView({
 
               const dateStr = transactionDate.toISOString().split('T')[0];
               setEditedDateDepense(dateStr);
-              console.log(`📅 Date de la transaction utilisée: ${transactionDate.toLocaleDateString('fr-FR')}`);
+              logger.debug(`📅 Date de la transaction utilisée: ${transactionDate.toLocaleDateString('fr-FR')}`);
             }
 
-            // Use counterparty name as fournisseur if available
-            if (foundTransaction.contrepartie_nom && !editedFournisseur) {
-              setEditedFournisseur(foundTransaction.contrepartie_nom);
-              console.log(`🏢 Contrepartie utilisée comme fournisseur: ${foundTransaction.contrepartie_nom}`);
-            }
           } else {
-            console.log(`⚠️ Aucune transaction trouvée pour ${sequence}`);
+            logger.debug(`⚠️ Aucune transaction trouvée pour ${sequence}`);
             toast('Aucune transaction correspondante trouvée', {
               icon: 'ℹ️',
               duration: 3000
@@ -947,7 +1292,7 @@ export function DemandeDetailView({
         const fileDescription = extractDescriptionFromFilename(file.name);
         if (fileDescription && !editedDescription) {
           setEditedDescription(fileDescription);
-          console.log(`📝 Description extraite du fichier: ${fileDescription}`);
+          logger.debug(`📝 Description extraite du fichier: ${fileDescription}`);
         }
 
         // STEP 3: Extract date from filename
@@ -955,12 +1300,12 @@ export function DemandeDetailView({
         if (extractedDate) {
           const dateStr = extractedDate.toISOString().split('T')[0];
           setEditedDateDepense(dateStr);
-          console.log(`📅 Date extraite: ${extractedDate.toLocaleDateString('fr-FR')}`);
+          logger.debug(`📅 Date extraite: ${extractedDate.toLocaleDateString('fr-FR')}`);
         }
 
         // STEP 4: Optional AI analysis (if configured and enabled)
         if (aiDocumentService.isAIAvailable() && onAnalyzeWithAI) {
-          console.log('🤖 Analyse IA disponible, lancement de l\'analyse approfondie...');
+          logger.debug('🤖 Analyse IA disponible, lancement de l\'analyse approfondie...');
           const aiResult = await aiDocumentService.analyzeDocument(file, {
             clubId,
             useAI: true
@@ -969,7 +1314,7 @@ export function DemandeDetailView({
           if (aiResult.status === 'completed') {
             // Apply AI results (will override basic extraction)
             if (aiResult.montant && aiResult.montant > 0) {
-              setEditedMontant(aiResult.montant.toString());
+              setEditedMontant(formatEditableAmount(aiResult.montant));
             }
             if (aiResult.fournisseur?.nom) {
               setEditedFournisseur(aiResult.fournisseur.nom);
@@ -997,94 +1342,8 @@ export function DemandeDetailView({
           });
         }
 
-        // 🚀 AUTO-CREATE: Always create expense immediately after file upload
-        if (isCreateMode && onCreate) {
-          console.log('🚀 Création automatique de la dépense...');
-
-          // Wait for all state updates to complete
-          await new Promise(resolve => setTimeout(resolve, 800));
-
-          try {
-            // Prepare expense data with defaults for missing fields
-            let expenseDate: Date;
-            let expenseMontant: number;
-            let expenseFournisseur: string;
-
-            if (foundTransaction) {
-              // Use transaction data if found
-              expenseDate = foundTransaction.date_execution
-                ? (foundTransaction.date_execution instanceof Date
-                    ? foundTransaction.date_execution
-                    : foundTransaction.date_execution.toDate())
-                : new Date();
-              expenseMontant = Math.abs(foundTransaction.montant);
-              expenseFournisseur = foundTransaction.contrepartie_nom || '';
-            } else {
-              // Use extracted/default data if no transaction found
-              // Safe date handling: validate extractedDate
-              if (extractedDate && extractedDate instanceof Date && !isNaN(extractedDate.getTime())) {
-                expenseDate = extractedDate;
-              } else {
-                expenseDate = new Date();
-              }
-              expenseMontant = parseFloat(editedMontant) || 0;
-              expenseFournisseur = editedFournisseur || '';
-            }
-
-            const autoCreatedDemand: Partial<DemandeRemboursement> = {
-              description: editedDescription || fileDescription || 'xxxxx',
-              montant: expenseMontant,
-              date_depense: expenseDate,
-              fournisseur: expenseFournisseur,
-              demandeur_id: user?.uid,
-              demandeur_nom: user?.displayName || user?.email || 'Utilisateur',
-              categorie: editedCategorie || undefined,
-              code_comptable: editedCodeComptable || undefined,
-              evenement_id: editedEvenementId || undefined
-            };
-
-            console.log('📋 Création automatique avec:', autoCreatedDemand);
-
-            const createdId = await onCreate(autoCreatedDemand, newFiles);
-
-            // Auto-link transaction if found
-            if (createdId && foundTransaction && foundTransaction.id && clubId) {
-              console.log(`🔗 Auto-linking dépense ${createdId} to transaction ${foundTransaction.id}`);
-              await autoLinkExpenseToTransaction(
-                createdId,
-                autoCreatedDemand.description || 'Dépense',
-                foundTransaction.id,
-                clubId
-              );
-
-              // Refresh transactions to show the linked transaction
-              if (onRefreshTransactions) {
-                console.log('🔄 Reloading transactions after auto-linking...');
-                await onRefreshTransactions();
-              }
-
-              toast.success('✅ Dépense créée et liée automatiquement!', {
-                icon: '🚀',
-                duration: 5000
-              });
-            } else {
-              // No transaction found, but expense still created
-              toast.success('✅ Dépense créée! Vous pouvez maintenant la modifier.', {
-                icon: '📄',
-                duration: 4000
-              });
-            }
-
-            // Close modal and trigger reload to reopen in edit mode
-            onClose();
-          } catch (createError) {
-            console.error('❌ Erreur lors de la création automatique:', createError);
-            toast.error('Erreur lors de la création automatique');
-          }
-        }
-
       } catch (error) {
-        console.error('❌ Erreur lors de l\'analyse:', error);
+        logger.error('❌ Erreur lors de l\'analyse:', error);
         toast.error('Erreur lors de l\'analyse du fichier');
       } finally {
         setIsAnalyzingFile(false);
@@ -1099,17 +1358,19 @@ export function DemandeDetailView({
   return (
     <>
       {/* Overlay */}
-      <div 
-        className="fixed inset-0 bg-black/30 z-40"
-        onClick={onClose}
+      <div
+        className="fixed inset-0 bg-black/30"
+        style={{ zIndex: backdropZIndex }}
+        onClick={handleCloseWithWarning}
       />
       
       {/* Panel - Right side */}
       <div className={cn(
-        "fixed right-0 top-0 h-full bg-white shadow-2xl z-50 flex flex-col transition-transform duration-300",
+        "fixed right-0 top-0 h-full bg-white shadow-2xl flex flex-col transition-transform duration-300",
         isOpen ? "translate-x-0" : "translate-x-full",
         "w-full max-w-3xl"
-      )}>
+      )}
+      style={{ zIndex: panelZIndex }}>
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-200 dark:border-dark-border bg-gradient-to-r from-orange-600 to-orange-700">
           <div className="flex items-center justify-between">
@@ -1117,18 +1378,30 @@ export function DemandeDetailView({
               <div className="flex items-center gap-3 mb-1">
                 <button
                   onClick={() => {
-                    if (fromTransactionId) {
+                    if (isQuickView) {
+                      onClose();
+                    } else if (fromTransactionId) {
                       navigate('/transactions', { state: { fromTransactionId } });
                     } else {
                       navigate(-1);
                     }
                   }}
                   className="flex items-center gap-1.5 px-2.5 py-1 bg-white/10 hover:bg-white dark:bg-dark-bg-secondary/20 text-white rounded-lg transition-colors text-sm font-medium"
-                  title="Retour à la page précédente"
+                  title={isQuickView ? 'Fermer cette vue' : 'Retour à la page précédente'}
                 >
                   <ArrowLeft className="h-4 w-4" />
-                  Retour
+                  {isQuickView ? 'Fermer' : 'Retour'}
                 </button>
+                {onOpenContext && !isCreateMode && (
+                  <button
+                    onClick={onOpenContext}
+                    className="flex items-center gap-1.5 px-2.5 py-1 bg-white/15 hover:bg-white/25 text-white rounded-lg transition-colors text-sm font-medium"
+                    title={contextActionLabel}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    {contextActionLabel}
+                  </button>
+                )}
                 <input
                   type="text"
                   value={editedDescription}
@@ -1180,13 +1453,13 @@ export function DemandeDetailView({
             )}
 
             <button
-              onClick={onClose}
+              onClick={handleCloseWithWarning}
               className="p-2 hover:bg-white dark:bg-dark-bg-secondary/10 rounded-lg transition-colors"
             >
               <X className="h-5 w-5 text-white" />
             </button>
           </div>
-          
+
           {/* Action buttons */}
           <div className="flex gap-2 mt-4">
             {/* NEW: AI Analysis button in create mode */}
@@ -1228,6 +1501,17 @@ export function DemandeDetailView({
                 Lier une transaction
               </button>
             )}
+            {/* Bouton Envoyer message - toujours visible */}
+            {!isCreateMode && demand && (
+              <button
+                onClick={() => setShowSMSModal(true)}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-white/20 text-white rounded-lg hover:bg-white/30 transition-colors"
+              >
+                <MessageCircle className="h-4 w-4" />
+                Envoyer message
+              </button>
+            )}
+
             {/* Bouton supprimer - visible pour les utilisateurs avec permission */}
             {!isCreateMode && onDelete && hasPermission('demands.delete') && (
               <button
@@ -1243,38 +1527,11 @@ export function DemandeDetailView({
               </button>
             )}
 
-            {/* Create mode buttons - in header (auto-save mode for edit) */}
-            {isCreateMode && onCreate && (
-              <button
-                onClick={handleSaveEdit}
-                disabled={isSaving}
-                className="flex items-center gap-2 px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ml-auto"
-              >
-                {isSaving ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Création en cours...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="h-4 w-4" />
-                    Créer la dépense
-                  </>
-                )}
-              </button>
-            )}
           </div>
         </div>
 
-        {/* Status Bar */}
-        {!isCreateMode && demand && (
-          <div className="px-6 py-3 bg-gray-50 dark:bg-dark-bg-tertiary border-b border-gray-200 dark:border-dark-border">
-            <ApprovalBadge demand={demand} showDetails={true} />
-          </div>
-        )}
-
         {/* Tabs */}
-        <div className="border-b border-gray-200 dark:border-dark-border bg-gray-50 dark:bg-dark-bg-secondary">
+        <div className="border-b border-gray-200 dark:border-dark-border bg-gray-50 dark:bg-dark-bg-tertiary dark:bg-dark-bg-secondary">
           <nav className="flex -mb-px px-6 overflow-x-auto">
             {[
               { id: 'overview', label: 'Vue d\'ensemble', icon: FileText, showInCreate: true },
@@ -1283,7 +1540,7 @@ export function DemandeDetailView({
               { id: 'documents', label: `Documents (${isCreateMode ? pendingFiles.length : documents.length})`, icon: Upload, showInCreate: true }
             ]
               .filter(tab => !isCreateMode || tab.showInCreate)
-              .filter(tab => !(tab.hideForUser && appUser?.role === 'user'))
+              .filter(tab => !(tab.hideForUser && appUser && getRole(appUser) === 'user'))
               .map((tab) => {
               const Icon = tab.icon;
               return (
@@ -1294,7 +1551,7 @@ export function DemandeDetailView({
                     "px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2",
                     activeTab === tab.id
                       ? "border-orange-600 text-orange-600"
-                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                      : "border-transparent text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary hover:border-gray-300 dark:border-dark-border"
                   )}
                 >
                   <Icon className="h-4 w-4" />
@@ -1313,10 +1570,11 @@ export function DemandeDetailView({
               {/* Informations principales */}
               <div>
                 <h3 className="text-sm font-medium text-gray-500 dark:text-dark-text-muted mb-3">Informations de la demande</h3>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg p-4">
-                    <p className="text-sm text-gray-600 dark:text-dark-text-secondary mb-1 flex items-center gap-1">
-                      <Euro className="h-3.5 w-3.5" />
+                <div className="flex gap-3">
+                  {/* Montant - compact */}
+                  <div className="bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg p-3 w-44 md:w-48 flex-shrink-0">
+                    <p className="text-xs text-gray-600 dark:text-dark-text-secondary mb-1 flex items-center gap-1">
+                      <Euro className="h-3 w-3" />
                       Montant
                     </p>
                     <input
@@ -1325,19 +1583,28 @@ export function DemandeDetailView({
                       onChange={(e) => setEditedMontant(e.target.value)}
                       onFocus={(e) => e.target.select()}
                       onBlur={() => handleFieldSave('montant', editedMontant)}
-                      className="text-2xl font-bold text-gray-900 dark:text-dark-text-primary bg-white dark:bg-dark-bg-secondary border border-gray-300 dark:border-dark-border rounded px-2 py-1 w-full"
-                      placeholder="0.00"
+                      inputMode="decimal"
+                      className="text-xl font-bold font-mono text-gray-900 dark:text-dark-text-primary bg-white dark:bg-dark-bg-secondary border border-gray-300 dark:border-dark-border rounded px-2 py-1 w-full"
+                      placeholder="0,00"
                     />
                     {needsDoubleApproval && (
-                      <div className="mt-2 flex items-center gap-1 text-xs text-orange-600">
-                        <Shield className="h-3.5 w-3.5" />
-                        <span>Double approbation requise</span>
+                      <div className="mt-1.5 flex items-center gap-1 text-[10px] text-orange-600">
+                        <Shield className="h-3 w-3" />
+                        <span>Double appro.</span>
                       </div>
                     )}
+                    {/* Audit trail for montant modifications */}
+                    {demand?.montant_modified && (
+                      <MontantAuditTrail
+                        history={demand.montant_history}
+                        currentMontant={demand.montant}
+                      />
+                    )}
                   </div>
-                  <div className="bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg p-4">
-                    <p className="text-sm text-gray-600 dark:text-dark-text-secondary mb-1 flex items-center gap-1">
-                      <Calendar className="h-3.5 w-3.5" />
+                  {/* Date - compact */}
+                  <div className="bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg p-3 w-40 flex-shrink-0">
+                    <p className="text-xs text-gray-600 dark:text-dark-text-secondary mb-1 flex items-center gap-1">
+                      <Calendar className="h-3 w-3" />
                       Date de la dépense
                     </p>
                     <input
@@ -1345,27 +1612,40 @@ export function DemandeDetailView({
                       value={editedDateDepense}
                       onChange={(e) => setEditedDateDepense(e.target.value)}
                       onBlur={() => handleFieldSave('date_depense', editedDateDepense)}
-                      className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary bg-white dark:bg-dark-bg-secondary border border-gray-300 dark:border-dark-border rounded px-2 py-1 w-full"
+                      className="text-sm font-semibold text-gray-900 dark:text-dark-text-primary bg-white dark:bg-dark-bg-secondary border border-gray-300 dark:border-dark-border rounded px-2 py-1.5 w-full"
                     />
+                  </div>
+                  {/* Communication - takes remaining space */}
+                  <div className="bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg p-3 flex-1 min-w-0">
+                    <p className="text-xs text-gray-600 dark:text-dark-text-secondary mb-1 flex items-center gap-1">
+                      <MessageCircle className="h-3 w-3" />
+                      Communication
+                    </p>
+                    <input
+                      type="text"
+                      value={editedCommunicationQr}
+                      onChange={(e) => setEditedCommunicationQr(e.target.value.substring(0, 140))}
+                      onBlur={() => handleFieldSave('communication_qr', editedCommunicationQr)}
+                      className="text-sm font-medium text-gray-900 dark:text-dark-text-primary bg-white dark:bg-dark-bg-secondary border border-gray-300 dark:border-dark-border rounded px-2 py-1.5 w-full font-mono"
+                      placeholder="Communication bancaire..."
+                      maxLength={140}
+                    />
+                    <p className="text-[10px] text-gray-400 dark:text-dark-text-muted mt-0.5 text-right">{editedCommunicationQr.length}/140</p>
                   </div>
                 </div>
               </div>
 
-              {/* NEW: Fournisseur field */}
-              <div>
-                <h3 className="text-sm font-medium text-gray-500 dark:text-dark-text-muted mb-2 flex items-center gap-1">
-                  🏢 Fournisseur
-                </h3>
-                <input
-                  type="text"
-                  value={editedFournisseur}
-                  onChange={(e) => setEditedFournisseur(e.target.value)}
-                  onBlur={() => handleFieldSave('fournisseur', editedFournisseur)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  placeholder="Nom du fournisseur..."
-                />
-              </div>
-
+              {/* Source Transaction (if created from a bank transaction to refund it) */}
+              {demand?.source_transaction_id && (
+                <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg">
+                  <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200">
+                    <RefreshCcw className="h-4 w-4" />
+                    <span className="text-sm font-medium">
+                      Remboursement de la transaction {demand.source_transaction_ref || demand.source_transaction_id}
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* NEW: Demandeur field */}
               <div>
@@ -1395,7 +1675,6 @@ export function DemandeDetailView({
                   >
                     <option value="">Sélectionner un membre</option>
                     {membres
-                      .filter(m => m.status === 'active')
                       .sort((a, b) => getMemberDisplayName(a).localeCompare(getMemberDisplayName(b)))
                       .map(membre => (
                         <option key={membre.id} value={membre.id}>
@@ -1420,12 +1699,180 @@ export function DemandeDetailView({
                         setEditedDemandeurNom('');
                         setEditedDemandeurId(currentUser?.id || '');
                       }}
-                      className="px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary text-sm"
+                      className="px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary text-sm"
                     >
                       Revenir à la liste
                     </button>
                   </div>
                 )}
+              </div>
+
+              {/* Bénéficiaire du remboursement */}
+              <div>
+                <h3 className="text-sm font-medium text-gray-500 dark:text-dark-text-muted mb-2 flex items-center gap-1">
+                  <CreditCard className="h-3.5 w-3.5" />
+                  Bénéficiaire du remboursement
+                </h3>
+                <div className="space-y-3">
+                  {/* Toggle between demandeur and fournisseur */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setBeneficiaireType('demandeur');
+                        setSelectedFournisseurId('');
+                        if (!isCreateMode) {
+                          handleFieldSave('beneficiaire_type', 'demandeur');
+                          handleFieldSave('fournisseur_id', null);
+                          handleFieldSave('fournisseur_nom', null);
+                        }
+                      }}
+                      className={cn(
+                        'flex-1 px-3 py-2 rounded-lg border text-sm font-medium transition-colors',
+                        beneficiaireType === 'demandeur'
+                          ? 'bg-calypso-blue text-white border-calypso-blue'
+                          : 'bg-white dark:bg-dark-bg-secondary border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary'
+                      )}
+                    >
+                      <User className="h-4 w-4 inline mr-2" />
+                      Demandeur
+                    </button>
+                    <button
+                      onClick={() => {
+                        setBeneficiaireType('fournisseur');
+                        if (!isCreateMode) {
+                          handleFieldSave('beneficiaire_type', 'fournisseur');
+                        }
+                      }}
+                      className={cn(
+                        'flex-1 px-3 py-2 rounded-lg border text-sm font-medium transition-colors',
+                        beneficiaireType === 'fournisseur'
+                          ? 'bg-calypso-blue text-white border-calypso-blue'
+                          : 'bg-white dark:bg-dark-bg-secondary border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary'
+                      )}
+                    >
+                      <Building2 className="h-4 w-4 inline mr-2" />
+                      Fournisseur
+                    </button>
+                  </div>
+
+                  {/* Show current beneficiary info */}
+                  {beneficiaireType === 'demandeur' ? (
+                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-3">
+                      <p className="text-sm text-blue-800 dark:text-blue-300">
+                        Remboursement vers: <span className="font-medium">{editedDemandeurNom || 'Non spécifié'}</span>
+                      </p>
+                      {editedDemandeurId && membres.find(m => m.id === editedDemandeurId)?.iban && (
+                        <p className="text-xs text-blue-600 dark:text-blue-400 mt-1 font-mono">
+                          IBAN: {formatIBAN(membres.find(m => m.id === editedDemandeurId)?.iban || '')}
+                        </p>
+                      )}
+                      {editedDemandeurId && !membres.find(m => m.id === editedDemandeurId)?.iban && (
+                        <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                          ⚠️ IBAN non renseigné pour ce membre
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {!showQuickCreateFournisseur ? (
+                        <>
+                          <div className="flex gap-2">
+                            <select
+                              value={selectedFournisseurId}
+                              onChange={(e) => {
+                                const newId = e.target.value;
+                                setSelectedFournisseurId(newId);
+                                const selectedFournisseur = fournisseurs.find(f => f.id === newId);
+                                if (!isCreateMode) {
+                                  handleFieldSave('fournisseur_id', newId || null);
+                                  handleFieldSave('fournisseur_nom', selectedFournisseur?.nom || null);
+                                }
+                              }}
+                              className="flex-1 px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-calypso-blue focus:border-transparent bg-white dark:bg-dark-bg-secondary"
+                            >
+                              <option value="">Sélectionner un fournisseur</option>
+                              {fournisseurs
+                                .sort((a, b) => a.nom.localeCompare(b.nom))
+                                .map(f => (
+                                  <option key={f.id} value={f.id}>
+                                    {f.nom}
+                                  </option>
+                                ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => setShowQuickCreateFournisseur(true)}
+                              className="px-3 py-2 text-sm font-medium text-calypso-blue border border-calypso-blue rounded-lg hover:bg-calypso-blue hover:text-white transition-colors flex items-center gap-1"
+                              title="Créer un nouveau fournisseur"
+                            >
+                              <Plus className="h-4 w-4" />
+                              Nouveau
+                            </button>
+                          </div>
+                          {selectedFournisseurId && (
+                            <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-lg p-3">
+                              <p className="text-sm text-orange-800 dark:text-orange-300">
+                                Remboursement vers: <span className="font-medium">{fournisseurs.find(f => f.id === selectedFournisseurId)?.nom}</span>
+                              </p>
+                              <p className="text-xs text-orange-600 dark:text-orange-400 mt-1 font-mono">
+                                IBAN: {formatIBAN(fournisseurs.find(f => f.id === selectedFournisseurId)?.iban || '')}
+                              </p>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="bg-gray-50 dark:bg-dark-bg-tertiary border border-gray-200 dark:border-dark-border rounded-lg p-3 space-y-3">
+                          <p className="text-sm font-medium text-gray-700 dark:text-dark-text-primary">
+                            Nouveau fournisseur
+                          </p>
+                          <input
+                            type="text"
+                            value={newFournisseurNom}
+                            onChange={(e) => setNewFournisseurNom(e.target.value)}
+                            placeholder="Nom du fournisseur *"
+                            className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-calypso-blue focus:border-transparent bg-white dark:bg-dark-bg-secondary"
+                            autoFocus
+                          />
+                          <input
+                            type="text"
+                            value={newFournisseurIban}
+                            onChange={(e) => setNewFournisseurIban(e.target.value.toUpperCase())}
+                            placeholder="IBAN *"
+                            className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-calypso-blue focus:border-transparent bg-white dark:bg-dark-bg-secondary font-mono"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={handleQuickCreateFournisseur}
+                              disabled={isCreatingFournisseur || !newFournisseurNom.trim() || !newFournisseurIban.trim()}
+                              className="flex-1 px-3 py-2 text-sm font-medium text-white bg-calypso-blue rounded-lg hover:bg-calypso-blue/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                            >
+                              {isCreatingFournisseur ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                  Création...
+                                </>
+                              ) : (
+                                'Créer'
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowQuickCreateFournisseur(false);
+                                setNewFournisseurNom('');
+                                setNewFournisseurIban('');
+                              }}
+                              className="px-3 py-2 text-sm font-medium text-gray-600 dark:text-dark-text-secondary border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-secondary transition-colors"
+                            >
+                              Annuler
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* NEW: Activité liée field with linking panel button */}
@@ -1444,15 +1891,17 @@ export function DemandeDetailView({
                         {demand.evenement_id && (
                           <button
                             onClick={() => {
-                              onClose(); // Close modal first
-                              setTimeout(() => {
-                                navigate('/operations', {
-                                  state: {
-                                    selectedEventId: demand.evenement_id,
-                                    fromExpense: true
-                                  }
-                                });
-                              }, 100);
+                              if (linkedOperation && onViewOperation) {
+                                onViewOperation(linkedOperation);
+                                return;
+                              }
+
+                              navigate('/operations', {
+                                state: {
+                                  openEventId: demand.evenement_id,
+                                  fromExpense: true
+                                }
+                              });
                             }}
                             className="inline-flex items-center gap-2 px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
                           >
@@ -1476,52 +1925,52 @@ export function DemandeDetailView({
                 )}
               </div>
 
-              {/* Catégorie et Code comptable */}
-              <div>
-                <h3 className="text-sm font-medium text-gray-500 dark:text-dark-text-muted mb-2 flex items-center gap-1">
-                  <Tag className="h-3.5 w-3.5" />
-                  Catégorie et Code comptable
-                </h3>
-                <CategoryAccountSelector
-                  isExpense={true}
-                  selectedCategory={editedCategorie}
-                  selectedAccountCode={editedCodeComptable}
-                  clubId={clubId}
-                  counterpartyName={demand?.description || ''}
-                  onCategoryChange={(cat) => {
-                    setEditedCategorie(cat);
-                    if (!isCreateMode) handleFieldSave('categorie', cat);
-                  }}
-                  onAccountCodeChange={(code) => {
-                    setEditedCodeComptable(code);
-                    if (!isCreateMode) handleFieldSave('code_comptable', code);
-                  }}
-                />
-              </div>
-
               {/* Statut */}
               <div>
                 <h3 className="text-sm font-medium text-gray-500 dark:text-dark-text-muted mb-2 flex items-center gap-1">
                   <CheckCircle className="h-3.5 w-3.5" />
                   Statut
                 </h3>
-                <select
-                  value={editedStatut}
-                  onChange={(e) => {
-                    const newStatut = e.target.value as DemandeRemboursement['statut'];
-                    setEditedStatut(newStatut);
-                    if (!isCreateMode) handleFieldSave('statut', newStatut);
-                  }}
-                  disabled={isCreateMode}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent bg-white dark:bg-dark-bg-secondary"
-                >
-                  <option value="brouillon">Brouillon</option>
-                  <option value="soumis">Soumis</option>
-                  <option value="en_attente_validation">En attente de validation</option>
-                  <option value="approuve">Approuvé</option>
-                  <option value="rembourse">Remboursé</option>
-                  <option value="refuse">Refusé</option>
-                </select>
+                <div className="relative">
+                  <select
+                    value={editedStatut}
+                    onChange={(e) => {
+                      const newStatut = e.target.value as DemandeRemboursement['statut'];
+                      setEditedStatut(newStatut);
+                      if (!isCreateMode) handleFieldSave('statut', newStatut);
+                    }}
+                    disabled={isCreateMode}
+                    className={cn(
+                      "w-full pl-8 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent appearance-none cursor-pointer",
+                      editedStatut === 'brouillon' && "bg-gray-100 dark:bg-dark-bg-tertiary border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300",
+                      editedStatut === 'en_attente_validation' && "bg-amber-50 border-amber-300 text-amber-700 dark:bg-amber-900/30 dark:border-amber-600 dark:text-amber-300",
+                      editedStatut === 'approuve' && "bg-emerald-50 border-emerald-300 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-600 dark:text-emerald-300",
+                      editedStatut === 'cree_banque_attente_validation' && "bg-indigo-50 border-indigo-300 text-indigo-700 dark:bg-indigo-900/30 dark:border-indigo-600 dark:text-indigo-300",
+                      editedStatut === 'paiement_effectue' && "bg-cyan-50 border-cyan-300 text-cyan-700 dark:bg-cyan-900/30 dark:border-cyan-600 dark:text-cyan-300",
+                      editedStatut === 'rembourse' && "bg-blue-50 border-blue-300 text-blue-700 dark:bg-blue-900/30 dark:border-blue-600 dark:text-blue-300",
+                      editedStatut === 'refuse' && "bg-red-50 border-red-300 text-red-700 dark:bg-red-900/30 dark:border-red-600 dark:text-red-300"
+                    )}
+                  >
+                    <option value="brouillon">Brouillon</option>
+                    <option value="en_attente_validation">En attente de validation</option>
+                    <option value="approuve">Approuvé</option>
+                    <option value="cree_banque_attente_validation">Créé dans banque</option>
+                    <option value="paiement_effectue">Paiement effectué</option>
+                    <option value="rembourse">Remboursé</option>
+                    <option value="refuse">Refusé</option>
+                  </select>
+                  {/* Status indicator dot */}
+                  <div className={cn(
+                    "absolute left-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full pointer-events-none",
+                    editedStatut === 'brouillon' && "bg-gray-400",
+                    editedStatut === 'en_attente_validation' && "bg-amber-500",
+                    editedStatut === 'approuve' && "bg-emerald-500",
+                    editedStatut === 'cree_banque_attente_validation' && "bg-indigo-500",
+                    editedStatut === 'paiement_effectue' && "bg-cyan-500",
+                    editedStatut === 'rembourse' && "bg-blue-500",
+                    editedStatut === 'refuse' && "bg-red-500"
+                  )} />
+                </div>
               </div>
 
               {/* Notes additionnelles */}
@@ -1538,6 +1987,59 @@ export function DemandeDetailView({
                   placeholder="Notes, remarques, informations complémentaires..."
                 />
               </div>
+
+              {/* EPC QR Code voor betaling */}
+              {!isCreateMode && demand && (
+                <EpcQrCode
+                  beneficiaryName={
+                    beneficiaireType === 'fournisseur' && selectedFournisseurId
+                      ? fournisseurs.find(f => f.id === selectedFournisseurId)?.nom || ''
+                      : editedDemandeurNom || ''
+                  }
+                  iban={
+                    beneficiaireType === 'fournisseur' && selectedFournisseurId
+                      ? fournisseurs.find(f => f.id === selectedFournisseurId)?.iban
+                      : editedDemandeurId
+                        ? membres.find(m => m.id === editedDemandeurId)?.iban
+                        : undefined
+                  }
+                  amount={demand.montant}
+                  communicationQr={editedCommunicationQr}
+                  fallbackReference={editedDescription || `Demande ${demand.id?.substring(0, 8)}`}
+                  status={demand.statut}
+                  isAlreadyPaid={demand.statut === 'rembourse' || !!demand.transaction_id}
+                  isPaiementManuel={isPaiementManuel}
+                  paiementManuelDate={paiementManuelDate}
+                  onPaiementManuelChange={async (checked) => {
+                    setIsPaiementManuel(checked);
+                    if (onUpdate) {
+                      // Si on coche, passer automatiquement au statut 'paiement_effectue'
+                      // Sauf si déjà 'rembourse' (priorité au remboursement)
+                      const shouldChangeStatus = checked && demand.statut !== 'rembourse';
+                      const newStatut = shouldChangeStatus ? 'paiement_effectue' : demand.statut;
+
+                      if (shouldChangeStatus) {
+                        setEditedStatut('paiement_effectue');
+                      }
+
+                      await onUpdate({
+                        paiement_manuel: checked,
+                        paiement_manuel_date: checked ? new Date() : undefined,
+                        paiement_manuel_par: checked ? appUser?.id : undefined,
+                        ...(shouldChangeStatus && { statut: 'paiement_effectue' }),
+                      });
+                      toast.success(checked ? 'Paiement marqué comme effectué' : 'Marquage paiement retiré');
+                    }
+                  }}
+                />
+              )}
+
+              {/* ID de la demande - tout en bas */}
+              {demand?.id && (
+                <p className="text-xs text-gray-400 dark:text-dark-text-muted font-mono pt-4 border-t border-gray-100 dark:border-dark-border">
+                  ID: {demand.id}
+                </p>
+              )}
 
             </div>
           )}
@@ -1628,12 +2130,14 @@ export function DemandeDetailView({
                           <div className="flex items-center gap-2 flex-shrink-0">
                             <button
                               onClick={() => {
-                                onClose();
-                                setTimeout(() => {
-                                  navigate('/transactions', {
-                                    state: { selectedTransactionId: tx.id, fromExpense: true }
-                                  });
-                                }, 100);
+                                if (onViewTransaction) {
+                                  onViewTransaction(tx);
+                                  return;
+                                }
+
+                                navigate('/transactions', {
+                                  state: { selectedTransactionId: tx.id, fromExpense: true }
+                                });
                               }}
                               className="flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
                               title="Voir les détails"
@@ -1692,12 +2196,14 @@ export function DemandeDetailView({
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <button
                           onClick={() => {
-                            onClose();
-                            setTimeout(() => {
-                              navigate('/operations', {
-                                state: { selectedOperationId: linkedOperation.id, fromExpense: true }
-                              });
-                            }, 100);
+                            if (onViewOperation) {
+                              onViewOperation(linkedOperation);
+                              return;
+                            }
+
+                            navigate('/operations', {
+                              state: { openEventId: linkedOperation.id, fromExpense: true }
+                            });
                           }}
                           className="flex items-center gap-1.5 px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
                           title="Voir l'activité"
@@ -1785,8 +2291,8 @@ export function DemandeDetailView({
                             setSelectedPendingFileIndex(index);
                           }}
                           className={cn(
-                            "w-full border rounded-lg p-3 cursor-pointer hover:bg-gray-50 transition-colors",
-                            selectedPendingFileIndex === index ? "border-purple-500 bg-purple-50" : "border-gray-200"
+                            "w-full border rounded-lg p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors",
+                            selectedPendingFileIndex === index ? "border-purple-500 bg-purple-50" : "border-gray-200 dark:border-dark-border"
                           )}
                           title={file.name}
                         >
@@ -1847,7 +2353,7 @@ export function DemandeDetailView({
                     "relative border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all",
                     isDragging
                       ? "border-orange-500 bg-orange-50 dark:bg-orange-900/10"
-                      : "border-gray-300 dark:border-dark-border hover:border-orange-400 hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary"
+                      : "border-gray-300 dark:border-dark-border hover:border-orange-400 hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary"
                   )}
                 >
                   {isAnalyzingFile ? (
@@ -1879,22 +2385,6 @@ export function DemandeDetailView({
                 </div>
               )}
 
-              {/* Bouton Créer Note de frais - MODE CRÉATION SEULEMENT */}
-              {isCreateMode && (
-                <div className="mt-6">
-                  <button
-                    onClick={() => setShowExpenseReportModal(true)}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition-colors shadow-sm"
-                  >
-                    <FileText className="h-5 w-5" />
-                    Créer une Note de frais
-                  </button>
-                  <p className="text-xs text-gray-500 dark:text-dark-text-muted text-center mt-2">
-                    Créer une note de frais qui générera automatiquement la demande
-                  </p>
-                </div>
-              )}
-
               {/* Drag & Drop Zone for existing demands - Always visible - NOW AT TOP */}
               {!isCreateMode && onAddDocument && (
                 <div
@@ -1921,7 +2411,7 @@ export function DemandeDetailView({
                     "relative border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-all mb-6",
                     isDragging
                       ? "border-orange-500 bg-orange-50 dark:bg-orange-900/10"
-                      : "border-gray-300 dark:border-dark-border hover:border-orange-400 hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary"
+                      : "border-gray-300 dark:border-dark-border hover:border-orange-400 hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary"
                   )}
                 >
                   <div className="flex items-center justify-center gap-3">
@@ -1963,7 +2453,7 @@ export function DemandeDetailView({
                           setIsEditingDocName(false);
                         }}
                         className={cn(
-                          "w-full border rounded-lg p-4 text-left hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors",
+                          "w-full border rounded-lg p-4 text-left hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary transition-colors",
                           selectedDocument?.url === doc.url ? "border-purple-500 bg-purple-50 dark:bg-purple-900/20" : "border-gray-200 dark:border-dark-border"
                         )}
                         title={doc.nom_affichage}
@@ -1992,7 +2482,7 @@ export function DemandeDetailView({
 
                           {/* Action buttons */}
                           <div className="flex items-center gap-2 flex-shrink-0">
-                            <Eye className="h-4 w-4 text-gray-400" />
+                            <Eye className="h-4 w-4 text-gray-400 dark:text-dark-text-muted" />
                           </div>
                         </div>
                       </button>
@@ -2015,10 +2505,10 @@ export function DemandeDetailView({
                   <div className="space-y-2 mb-4">
                     <div className="flex items-center gap-2 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 p-3 rounded-lg">
                       <CheckCircle className="h-4 w-4 flex-shrink-0" />
-                      <span className="font-medium">1ère approbation:</span>
+                      <span className="font-medium">{currentApprovalLabel}:</span>
                       <span>{demand?.approuve_par_nom}</span>
                       {demand?.date_approbation && (
-                        <span className="text-gray-500 dark:text-gray-400 text-sm ml-auto">
+                        <span className="text-gray-500 dark:text-dark-text-muted text-sm ml-auto">
                           le {formatDate(demand.date_approbation)}
                         </span>
                       )}
@@ -2037,7 +2527,7 @@ export function DemandeDetailView({
                         <span className="font-medium">2ème approbation:</span>
                         <span>{demand?.approuve_par_2_nom}</span>
                         {demand?.date_approbation_2 && (
-                          <span className="text-gray-500 dark:text-gray-400 text-sm ml-auto">
+                          <span className="text-gray-500 dark:text-dark-text-muted text-sm ml-auto">
                             le {formatDate(demand.date_approbation_2)}
                           </span>
                         )}
@@ -2046,7 +2536,7 @@ export function DemandeDetailView({
                   </div>
                 )}
 
-                {demand && <ApprovalBadge demand={demand} showDetails={true} />}
+                {demand && <ApprovalBadge demand={{ ...demand, statut: editedStatut }} showDetails={true} />}
               </div>
 
               {/* Historique d'approbation */}
@@ -2073,7 +2563,7 @@ export function DemandeDetailView({
                         <CheckCircle className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
                       </div>
                       <div className="flex-1">
-                        <p className="text-sm font-medium text-gray-900 dark:text-dark-text-primary">Première approbation</p>
+                        <p className="text-sm font-medium text-gray-900 dark:text-dark-text-primary">{historyApprovalLabel}</p>
                         <p className="text-xs text-gray-500 dark:text-dark-text-muted">
                           {formatDate(demand.date_approbation!, 'dd/MM/yyyy HH:mm')} par {demand.approuve_par_nom}
                         </p>
@@ -2135,8 +2625,8 @@ export function DemandeDetailView({
               <div>
                 <h3 className="text-sm font-medium text-gray-500 dark:text-dark-text-muted mb-3">Actions disponibles</h3>
 
-                {/* CAS 1: User is the requester AND demand is pending approval */}
-                {isRequester && demand && (demand.statut === 'soumis' || demand.statut === 'en_attente_validation') && (
+                {/* CAS 1: User is the requester AND demand is pending approval (except super_admin) */}
+                {isRequester && demand && demand.statut === 'en_attente_validation' && currentUser && getRole(currentUser) !== 'super_admin' && (
                   <div className="bg-red-50 dark:bg-red-900/20 border-2 border-red-200 dark:border-red-700 rounded-lg p-4 mb-4">
                     <div className="flex items-start gap-3">
                       <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
@@ -2152,14 +2642,14 @@ export function DemandeDetailView({
                 )}
 
                 {/* CAS 2: User doesn't have permission AND demand is pending approval */}
-                {!hasApprovalPermission && !isRequester && demand && (demand.statut === 'soumis' || demand.statut === 'en_attente_validation') && (
+                {!hasApprovalPermission && !isRequester && demand && demand.statut === 'en_attente_validation' && (
                   <div className="bg-yellow-50 dark:bg-yellow-900/20 border-2 border-yellow-200 dark:border-yellow-700 rounded-lg p-4 mb-4">
                     <div className="flex items-start gap-3">
                       <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
                       <div>
                         <p className="text-sm font-semibold text-yellow-800 dark:text-yellow-400">Autorisation insuffisante</p>
                         <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
-                          Votre rôle{currentUser?.role && <> <strong>{currentUser.role}</strong></>} ne permet pas d'approuver les demandes de remboursement.
+                          Votre rôle{currentUser && <> <strong>{getRole(currentUser)}</strong></>} ne permet pas d'approuver les demandes de remboursement.
                           {' '}Seuls les utilisateurs <strong>admin</strong> ou <strong>validateur</strong> peuvent effectuer cette action.
                         </p>
                       </div>
@@ -2184,7 +2674,7 @@ export function DemandeDetailView({
                 )}
 
                 {/* CAS 4: User CAN approve - First approval needed */}
-                {canApprove && demand && demand.statut === 'soumis' && (
+                {canApprove && demand && isAwaitingFirstApproval && (
                   <div className="bg-green-50 dark:bg-green-900/20 border-2 border-green-200 dark:border-green-700 rounded-lg p-4 mb-4">
                     <div className="flex items-start gap-3">
                       <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
@@ -2193,7 +2683,7 @@ export function DemandeDetailView({
                           Vous pouvez approuver cette demande
                         </p>
                         <p className="text-sm text-green-700 dark:text-green-300 mt-1">
-                          Cette demande créée par <strong>{demand.demandeur_nom || 'un membre'}</strong> attend votre première approbation.
+                          Cette demande créée par <strong>{demand.demandeur_nom || 'un membre'}</strong> attend votre {needsDoubleApproval ? 'première approbation' : 'approbation'}.
                         </p>
                         {needsDoubleApproval ? (
                           <p className="text-sm text-green-700 dark:text-green-300 mt-2">
@@ -2256,6 +2746,37 @@ export function DemandeDetailView({
                         <p className="text-sm text-green-700 dark:text-green-300 mt-3">
                           📌 <strong>Prochaine étape:</strong> Liez cette demande à une transaction bancaire pour la marquer comme remboursée.
                         </p>
+
+                        {/* Button to mark as created in bank - visible for admin/superadmin */}
+                        {currentUser && (getRole(currentUser) === 'admin' || getRole(currentUser) === 'super_admin') && onUpdate && (
+                          <div className="mt-4 pt-3 border-t border-green-200 dark:border-green-600">
+                            <button
+                              onClick={() => {
+                                onUpdate({
+                                  statut: 'cree_banque_attente_validation',
+                                  status_history: [
+                                    ...(demand.status_history || []),
+                                    {
+                                      old_statut: demand.statut,
+                                      new_statut: 'cree_banque_attente_validation',
+                                      changed_by: currentUser.id,
+                                      changed_by_name: `${getFirstName(currentUser)} ${getLastName(currentUser)}`.trim() || currentUser.email,
+                                      changed_at: new Date(),
+                                    }
+                                  ]
+                                } as Partial<DemandeRemboursement>);
+                                toast.success('Statut mis à jour: Créé dans banque');
+                              }}
+                              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
+                            >
+                              <Building2 className="h-4 w-4" />
+                              Marquer créé dans banque
+                            </button>
+                            <p className="text-xs text-green-600 dark:text-green-400 mt-2">
+                              Utilisez ce bouton après avoir créé le paiement dans votre application bancaire.
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -2320,8 +2841,56 @@ export function DemandeDetailView({
                   </div>
                 )}
 
+                {/* CAS 9: Demand is created in bank - awaiting bank validation */}
+                {demand && demand.statut === 'cree_banque_attente_validation' && (
+                  <div className="bg-indigo-50 dark:bg-indigo-900/20 border-2 border-indigo-200 dark:border-indigo-700 rounded-lg p-4 mb-4">
+                    <div className="flex items-start gap-3">
+                      <Building2 className="h-5 w-5 text-indigo-600 dark:text-indigo-400 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-indigo-800 dark:text-indigo-400">Créé dans banque - En attente de validation bancaire</p>
+
+                        {/* Show approvers */}
+                        <div className="mt-2 space-y-1">
+                          {demand.approuve_par && (
+                            <p className="text-sm text-indigo-700 dark:text-indigo-300">
+                              ✓ Approuvée par <strong>{demand.approuve_par_nom || demand.approuve_par}</strong>
+                              {demand.date_approbation && ` le ${formatDate(demand.date_approbation)}`}
+                            </p>
+                          )}
+                          {demand.approuve_par_2 && (
+                            <p className="text-sm text-indigo-700 dark:text-indigo-300">
+                              ✓ 2e approbation par <strong>{demand.approuve_par_2_nom || demand.approuve_par_2}</strong>
+                              {demand.date_approbation_2 && ` le ${formatDate(demand.date_approbation_2)}`}
+                            </p>
+                          )}
+                        </div>
+
+                        <p className="text-sm text-indigo-700 dark:text-indigo-300 mt-3">
+                          🏦 <strong>Action requise:</strong> Ce paiement a été créé dans l'application bancaire et attend une validation. Connectez-vous à votre espace bancaire pour l'approuver.
+                        </p>
+
+                        {/* Button to link transaction after bank validation */}
+                        {onLinkTransaction && (
+                          <div className="mt-4 pt-3 border-t border-indigo-200 dark:border-indigo-600">
+                            <button
+                              onClick={onLinkTransaction}
+                              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
+                            >
+                              <Link2 className="h-4 w-4" />
+                              Lier à une transaction bancaire
+                            </button>
+                            <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-2">
+                              Une fois le paiement validé dans votre banque, liez-le à une transaction pour finaliser.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Approval buttons - grayed out if user can't approve */}
-                {(demand.statut === 'soumis' || isAwaitingSecondApproval) && (
+                {demand.statut === 'en_attente_validation' && (
                   <div className="flex gap-3">
                     <button
                       onClick={canApprove ? onApprove : undefined}
@@ -2330,7 +2899,7 @@ export function DemandeDetailView({
                         "flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-lg font-medium transition-all shadow-md",
                         canApprove
                           ? "bg-green-600 hover:bg-green-700 text-white cursor-pointer hover:shadow-lg"
-                          : "bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed opacity-60"
+                          : "bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-dark-text-muted cursor-not-allowed opacity-60"
                       )}
                     >
                       <CheckCircle className="h-5 w-5" />
@@ -2343,12 +2912,47 @@ export function DemandeDetailView({
                         "flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-lg font-medium transition-all shadow-md",
                         canApprove
                           ? "bg-red-600 hover:bg-red-700 text-white cursor-pointer hover:shadow-lg"
-                          : "bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed opacity-60"
+                          : "bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-dark-text-muted cursor-not-allowed opacity-60"
                       )}
                     >
                       <XCircle className="h-5 w-5" />
                       Refuser
                     </button>
+                  </div>
+                )}
+
+                {/* Send confirmation email button */}
+                {demand && demand.statut === 'en_attente_validation' && (
+                  <div className="mt-4 pt-4 border-t border-gray-200 dark:border-dark-border">
+                    {confirmationEmailSent ? (
+                      <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                        <CheckCircle className="h-4 w-4" />
+                        <span>Email de confirmation envoyé</span>
+                        {demand?.confirmation_email_sent_at && (
+                          <span className="text-gray-500 dark:text-dark-text-muted">
+                            le {formatDate(demand.confirmation_email_sent_at)}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <button
+                        onClick={handleSendConfirmationEmail}
+                        disabled={isSendingEmail}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isSendingEmail ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Envoi en cours...
+                          </>
+                        ) : (
+                          <>
+                            <Send className="h-4 w-4" />
+                            Envoyer l'email de confirmation
+                          </>
+                        )}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -2360,7 +2964,10 @@ export function DemandeDetailView({
 
       {/* Reject Modal */}
       {showRejectModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
+        <div
+          className="fixed inset-0 flex items-center justify-center bg-black/50"
+          style={{ zIndex: modalBackdropZIndex }}
+        >
           <div className="bg-white dark:bg-dark-bg-secondary rounded-xl p-6 w-full max-w-md">
             <h3 className="text-lg font-bold text-gray-900 dark:text-dark-text-primary mb-4">Refuser la demande</h3>
             <textarea
@@ -2376,7 +2983,7 @@ export function DemandeDetailView({
                   setShowRejectModal(false);
                   setRejectReason('');
                 }}
-                className="flex-1 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors"
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors"
               >
                 Annuler
               </button>
@@ -2393,7 +3000,10 @@ export function DemandeDetailView({
 
       {/* Document Preview Panel - Left Side */}
       {selectedDocument && (
-        <div className="fixed left-0 top-0 h-full w-1/2 bg-white dark:bg-dark-bg-secondary shadow-xl z-[60] border-r border-gray-200 dark:border-dark-border flex flex-col">
+        <div
+          className="fixed left-0 top-0 h-full w-1/2 bg-white dark:bg-dark-bg-secondary shadow-xl border-r border-gray-200 dark:border-dark-border flex flex-col"
+          style={{ zIndex: modalBackdropZIndex }}
+        >
           {/* Header with editable name */}
           <div className="bg-gray-50 dark:bg-dark-bg-tertiary border-b border-gray-200 dark:border-dark-border px-6 py-4 flex-shrink-0">
             <div className="flex items-center justify-between mb-3">
@@ -2431,7 +3041,7 @@ export function DemandeDetailView({
                     </button>
                     <button
                       onClick={() => setIsEditingDocName(false)}
-                      className="px-3 py-2 border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors"
+                      className="px-3 py-2 border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors"
                     >
                       <X className="h-4 w-4" />
                     </button>
@@ -2504,7 +3114,7 @@ export function DemandeDetailView({
                         target.style.display = 'none';
                         const parent = target.parentElement;
                         if (parent) {
-                          parent.innerHTML = '<div class="flex items-center justify-center h-64 text-gray-400"><p>Erreur de chargement de l\'image</p></div>';
+                          parent.innerHTML = '<div class="flex items-center justify-center h-64 text-gray-400 dark:text-dark-text-muted"><p>Erreur de chargement de l\'image</p></div>';
                         }
                       }}
                     />
@@ -2537,7 +3147,7 @@ export function DemandeDetailView({
                               await downloadRenamedFile(selectedDocument.url, newFilename);
                               toast.success(`Téléchargé: ${newFilename}`);
                             } catch (error) {
-                              console.error('Erreur téléchargement:', error);
+                              logger.error('Erreur téléchargement:', error);
                               toast.error('Erreur lors du téléchargement');
                             }
                           } else {
@@ -2550,7 +3160,7 @@ export function DemandeDetailView({
                             document.body.removeChild(a);
                           }
                         }}
-                        className="px-4 py-2 border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary rounded hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors flex items-center gap-2"
+                        className="px-4 py-2 border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary rounded hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors flex items-center gap-2"
                       >
                         <Download className="h-4 w-4" />
                         Télécharger
@@ -2607,7 +3217,7 @@ export function DemandeDetailView({
                               await downloadRenamedFile(selectedDocument.url, newFilename);
                               toast.success(`Téléchargé: ${newFilename}`);
                             } catch (error) {
-                              console.error('Erreur téléchargement:', error);
+                              logger.error('Erreur téléchargement:', error);
                               toast.error('Erreur lors du téléchargement');
                             }
                           } else {
@@ -2620,7 +3230,7 @@ export function DemandeDetailView({
                             document.body.removeChild(a);
                           }
                         }}
-                        className="px-4 py-2 border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary rounded hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors flex items-center gap-2"
+                        className="px-4 py-2 border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary rounded hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors flex items-center gap-2"
                       >
                         <Download className="h-4 w-4" />
                         Télécharger
@@ -2673,7 +3283,7 @@ export function DemandeDetailView({
                               await downloadRenamedFile(selectedDocument.url, newFilename);
                               toast.success(`Téléchargé: ${newFilename}`);
                             } catch (error) {
-                              console.error('Erreur téléchargement:', error);
+                              logger.error('Erreur téléchargement:', error);
                               toast.error('Erreur lors du téléchargement');
                             }
                           } else {
@@ -2686,7 +3296,7 @@ export function DemandeDetailView({
                             document.body.removeChild(a);
                           }
                         }}
-                        className="px-4 py-2 border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary rounded hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors flex items-center gap-2"
+                        className="px-4 py-2 border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary rounded hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors flex items-center gap-2"
                       >
                         <Download className="h-4 w-4" />
                         Télécharger
@@ -2816,15 +3426,95 @@ export function DemandeDetailView({
         </div>
       )}
 
-      {/* Modal Expense Report - Mode création uniquement */}
-      {isCreateMode && showExpenseReportModal && (
-        <ExpenseReportModal
-          isOpen={showExpenseReportModal}
-          onClose={() => setShowExpenseReportModal(false)}
-          onCreate={onCreate}
-          currentUser={currentUser}
-          clubId={clubId}
+      {/* Modal for montant modification with justification */}
+      {showMontantEditModal && pendingMontantChange && (
+        <MontantEditModal
+          isOpen={showMontantEditModal}
+          onClose={handleMontantChangeCancel}
+          onConfirm={handleMontantChangeConfirm}
+          oldMontant={pendingMontantChange.oldMontant}
+          newMontant={pendingMontantChange.newMontant}
         />
+      )}
+
+      {/* Communication Modal (SMS/WhatsApp/Email) */}
+      {showSMSModal && demand && clubId && (
+        <CommunicationModal
+          isOpen={showSMSModal}
+          onClose={() => setShowSMSModal(false)}
+          context={{
+            type: 'demandes',
+            nom: `${demand.demandeur_prenom || ''} ${demand.demandeur_nom || ''}`.trim() || 'Inconnu',
+            date: (() => {
+              // Probeer meerdere datumvelden: date_depense > date_soumission > date_demande > vandaag
+              const dateToUse = demand.date_depense || demand.date_soumission || demand.date_demande;
+              if (dateToUse) {
+                const formatted = formatDate(dateToUse);
+                if (formatted !== 'Date invalide' && formatted !== 'Date non disponible') {
+                  return formatted;
+                }
+              }
+              return formatDate(new Date());
+            })(),
+            montant: demand.montant,
+            reference: demand.id.slice(-6).toUpperCase(),
+            description: demand.description || demand.titre || '',
+          } as SMSContextData}
+          membres={membres}
+          clubId={clubId}
+          onSuccess={() => {
+            setShowSMSModal(false);
+          }}
+        />
+      )}
+
+      {/* Modal d'avertissement pour brouillon */}
+      {showBrouillonWarningModal && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center"
+          style={{ zIndex: modalBackdropZIndex }}
+        >
+          <div className="bg-white dark:bg-dark-bg-secondary rounded-xl shadow-2xl max-w-md w-full mx-4 overflow-hidden">
+            <div className="p-6">
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 w-12 h-12 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center">
+                  <AlertCircle className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary">
+                    Demande en brouillon
+                  </h3>
+                  <p className="mt-2 text-sm text-gray-600 dark:text-dark-text-secondary">
+                    Cette demande est toujours en brouillon. Voulez-vous la mettre en attente de validation ?
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-4 bg-gray-50 dark:bg-dark-bg-tertiary flex flex-col gap-2">
+              <button
+                onClick={handleSubmitBrouillon}
+                className="w-full px-4 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium transition-colors"
+              >
+                Mettre en attente de validation
+              </button>
+              <button
+                onClick={() => {
+                  setShowBrouillonWarningModal(false);
+                  onClose();
+                }}
+                className="w-full px-4 py-2.5 bg-gray-200 dark:bg-dark-bg-secondary hover:bg-gray-300 dark:hover:bg-dark-border text-gray-700 dark:text-dark-text-primary rounded-lg font-medium transition-colors"
+              >
+                Garder en brouillon
+              </button>
+              <button
+                onClick={() => setShowBrouillonWarningModal(false)}
+                className="w-full px-4 py-2.5 text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary dark:hover:text-dark-text-secondary font-medium transition-colors"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </>

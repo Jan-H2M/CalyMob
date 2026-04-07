@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { logger } from '@/utils/logger';
 import {
   ChevronLeft,
   ChevronRight,
@@ -69,15 +70,15 @@ export function DocumentReviewView({
   // Debug: Log des membres disponibles
   useEffect(() => {
     if (membres.length > 0) {
-      console.log('👥 [DocumentReviewView] Membres chargés:', membres.length);
-      console.log('👥 [DocumentReviewView] Membres actifs:', membres.filter(m => m.status === 'active').length);
-      console.log('👥 [DocumentReviewView] Exemples:', membres.slice(0, 3).map(m => ({
+      logger.debug('👥 [DocumentReviewView] Membres chargés:', membres.length);
+      logger.debug('👥 [DocumentReviewView] Membres actifs:', membres.filter(m => m.status === 'active').length);
+      logger.debug('👥 [DocumentReviewView] Exemples:', membres.slice(0, 3).map(m => ({
         id: m.id,
         nom: `${m.prenom} ${m.nom}`,
         status: m.status
       })));
     } else {
-      console.warn('⚠️ [DocumentReviewView] Aucun membre chargé!');
+      logger.warn('⚠️ [DocumentReviewView] Aucun membre chargé!');
     }
   }, [membres]);
 
@@ -107,7 +108,7 @@ export function DocumentReviewView({
           }
         }
       } catch (error) {
-        console.error('Erreur chargement dépense:', error);
+        logger.error('Erreur chargement dépense:', error);
         toast.error('Erreur lors du chargement de la dépense');
       }
     };
@@ -134,7 +135,7 @@ export function DocumentReviewView({
           } as TransactionBancaire);
         }
       } catch (error) {
-        console.error('Erreur chargement transaction:', error);
+        logger.error('Erreur chargement transaction:', error);
       }
     };
 
@@ -165,7 +166,7 @@ export function DocumentReviewView({
     setIsAnalyzingAI(true);
 
     try {
-      console.log('🤖 Analyse IA du document...');
+      logger.debug('🤖 Analyse IA du document...');
 
       const analysis = await aiDocumentService.analyzeDocument(currentFile.file, {
         categories,
@@ -191,7 +192,7 @@ export function DocumentReviewView({
         toast.error(analysis.error || 'Erreur lors de l\'analyse IA');
       }
     } catch (error) {
-      console.error('Erreur analyse IA:', error);
+      logger.error('Erreur analyse IA:', error);
       toast.error('Erreur lors de l\'analyse avec IA');
     } finally {
       setIsAnalyzingAI(false);
@@ -223,7 +224,7 @@ export function DocumentReviewView({
 
       toast.success('✅ Modifications sauvegardées');
     } catch (error) {
-      console.error('Erreur sauvegarde:', error);
+      logger.error('Erreur sauvegarde:', error);
       toast.error('Erreur lors de la sauvegarde');
     } finally {
       setIsSaving(false);
@@ -271,7 +272,7 @@ export function DocumentReviewView({
       currentFile.transactionId = undefined;
 
     } catch (error) {
-      console.error('Erreur déliage:', error);
+      logger.error('Erreur déliage:', error);
       toast.error('Erreur lors du déliage de la transaction');
     }
   };
@@ -333,7 +334,7 @@ export function DocumentReviewView({
             <button
               onClick={() => onNavigate(currentIndex - 1)}
               disabled={currentIndex === 0}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronLeft className="h-4 w-4" />
               Précédent
@@ -619,7 +620,7 @@ export function DocumentReviewView({
                           setShowOtherDemandeur(false);
                           setDemande({ ...demande, demandeur_id: undefined, demandeur_nom: undefined } as any);
                         }}
-                        className="px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors text-sm"
+                        className="px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors text-sm"
                         title="Revenir à la liste"
                       >
                         ← Liste

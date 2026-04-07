@@ -5,6 +5,7 @@ import { pdf } from '@react-pdf/renderer';
 import { saveAs } from 'file-saver';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
+import { logger } from '@/utils/logger';
 
 // Import des templates
 import { SyntheseReport } from './templates/SyntheseReport';
@@ -78,7 +79,7 @@ export function ReportPreview({ report, onClose }: Props) {
     setIsDownloading(true);
 
     try {
-      console.log('📥 Génération du PDF pour téléchargement...');
+      logger.debug('📥 Génération du PDF pour téléchargement...');
 
       // Générer le blob PDF depuis le composant React-PDF
       const component = getReportComponent();
@@ -90,7 +91,7 @@ export function ReportPreview({ report, onClose }: Props) {
 
       toast.success(`Rapport téléchargé: ${fileName}`);
     } catch (error) {
-      console.error('Erreur téléchargement PDF:', error);
+      logger.error('Erreur téléchargement PDF:', error);
       toast.error('Erreur lors du téléchargement du rapport');
     } finally {
       setIsDownloading(false);
@@ -102,7 +103,7 @@ export function ReportPreview({ report, onClose }: Props) {
     setIsDownloading(true);
 
     try {
-      console.log('📥 Génération du fichier Excel pour téléchargement...');
+      logger.debug('📥 Génération du fichier Excel pour téléchargement...');
 
       // Exporter via ExcelExportService
       await ExcelExportService.exportEventReport(
@@ -112,7 +113,7 @@ export function ReportPreview({ report, onClose }: Props) {
 
       toast.success('Rapport Excel téléchargé avec succès !');
     } catch (error) {
-      console.error('Erreur téléchargement Excel:', error);
+      logger.error('Erreur téléchargement Excel:', error);
       toast.error('Erreur lors du téléchargement du rapport');
     } finally {
       setIsDownloading(false);
@@ -124,7 +125,7 @@ export function ReportPreview({ report, onClose }: Props) {
     setIsDownloading(true);
 
     try {
-      console.log('📊 Génération du fichier PowerPoint pour téléchargement...');
+      logger.debug('📊 Génération du fichier PowerPoint pour téléchargement...');
 
       // Exporter via PptxExportService
       await PptxExportService.exportEventReport(
@@ -134,7 +135,7 @@ export function ReportPreview({ report, onClose }: Props) {
 
       toast.success('Rapport PowerPoint téléchargé avec succès !');
     } catch (error) {
-      console.error('Erreur téléchargement PowerPoint:', error);
+      logger.error('Erreur téléchargement PowerPoint:', error);
       toast.error('Erreur lors du téléchargement du rapport');
     } finally {
       setIsDownloading(false);
@@ -146,7 +147,7 @@ export function ReportPreview({ report, onClose }: Props) {
     setIsGeneratingPreview(true);
 
     try {
-      console.log('🔍 Génération de la prévisualisation PDF...');
+      logger.debug('🔍 Génération de la prévisualisation PDF...');
 
       const component = getReportComponent();
       const blob = await pdf(component).toBlob();
@@ -155,7 +156,7 @@ export function ReportPreview({ report, onClose }: Props) {
       const url = URL.createObjectURL(blob);
       setPdfUrl(url);
     } catch (error) {
-      console.error('Erreur génération prévisualisation:', error);
+      logger.error('Erreur génération prévisualisation:', error);
       toast.error('Erreur lors de la génération de la prévisualisation');
     } finally {
       setIsGeneratingPreview(false);

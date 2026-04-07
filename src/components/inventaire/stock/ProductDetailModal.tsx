@@ -5,6 +5,7 @@ import { StockProduct } from '@/types/inventory';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/utils/utils';
 import toast from 'react-hot-toast';
+import { logger } from '@/utils/logger';
 
 interface Props {
   product: StockProduct;
@@ -45,7 +46,7 @@ export function ProductDetailModal({ product, isCreateMode, onClose, onSave }: P
       await StockService.updateProduct(clubId, product.id, { [field]: value });
       toast.success('✓ Sauvegardé', { duration: 1500, position: 'bottom-right' });
     } catch (error) {
-      console.error(`Error saving ${field}:`, error);
+      logger.error(`Error saving ${field}:`, error);
       toast.error('Erreur lors de la sauvegarde');
     }
   };
@@ -77,7 +78,7 @@ export function ProductDetailModal({ product, isCreateMode, onClose, onSave }: P
 
       onSave();
     } catch (error: any) {
-      console.error('Erreur sauvegarde produit:', error);
+      logger.error('Erreur sauvegarde produit:', error);
       toast.error(error.message || 'Erreur lors de la sauvegarde');
     } finally {
       setSaving(false);
@@ -105,13 +106,13 @@ export function ProductDetailModal({ product, isCreateMode, onClose, onSave }: P
                 {isCreateMode ? 'Nouveau produit' : product.nom}
               </h2>
               {!isCreateMode && product.reference && (
-                <p className="text-sm text-gray-500 dark:text-dark-text-secondary">Réf: {product.reference}</p>
+                <p className="text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">Réf: {product.reference}</p>
               )}
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-dark-text-primary"
+            className="text-gray-400 dark:text-dark-text-muted hover:text-gray-600 dark:text-dark-text-secondary dark:hover:text-dark-text-primary"
           >
             <X className="h-6 w-6" />
           </button>
@@ -122,7 +123,7 @@ export function ProductDetailModal({ product, isCreateMode, onClose, onSave }: P
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                   Nom *
                 </label>
                 <input
@@ -140,7 +141,7 @@ export function ProductDetailModal({ product, isCreateMode, onClose, onSave }: P
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                   Référence
                 </label>
                 <input
@@ -158,7 +159,7 @@ export function ProductDetailModal({ product, isCreateMode, onClose, onSave }: P
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                   Catégorie
                 </label>
                 <input
@@ -176,7 +177,7 @@ export function ProductDetailModal({ product, isCreateMode, onClose, onSave }: P
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                   Quantité en stock
                 </label>
                 <input
@@ -194,7 +195,7 @@ export function ProductDetailModal({ product, isCreateMode, onClose, onSave }: P
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                   Seuil d'alerte
                 </label>
                 <input
@@ -209,13 +210,13 @@ export function ProductDetailModal({ product, isCreateMode, onClose, onSave }: P
                     isCreateMode && "opacity-100"
                   )}
                 />
-                <p className="mt-1 text-xs text-gray-500 dark:text-dark-text-secondary">
+                <p className="mt-1 text-xs text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
                   Alerte si stock ≤ ce seuil
                 </p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                   Prix d'achat (€)
                 </label>
                 <input
@@ -234,7 +235,7 @@ export function ProductDetailModal({ product, isCreateMode, onClose, onSave }: P
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                   Prix de vente (€) *
                 </label>
                 <input
@@ -254,7 +255,7 @@ export function ProductDetailModal({ product, isCreateMode, onClose, onSave }: P
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                 Description
               </label>
               <textarea
@@ -292,7 +293,7 @@ export function ProductDetailModal({ product, isCreateMode, onClose, onSave }: P
           <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 dark:border-dark-border">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-secondary bg-white dark:bg-dark-bg-primary border border-gray-300 dark:border-dark-border rounded-md hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary"
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-primary bg-white dark:bg-dark-bg-primary border border-gray-300 dark:border-dark-border rounded-md hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary"
             >
               Annuler
             </button>

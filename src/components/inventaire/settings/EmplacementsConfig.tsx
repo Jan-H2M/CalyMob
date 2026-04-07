@@ -5,6 +5,7 @@ import { Location } from '@/types/inventory';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { cn } from '@/utils/utils';
+import { logger } from '@/utils/logger';
 
 export function EmplacementsConfig() {
   const { clubId } = useAuth();
@@ -30,7 +31,7 @@ export function EmplacementsConfig() {
       const locationsData = await InventoryConfigService.getLocations(clubId);
       setLocations(locationsData);
     } catch (error) {
-      console.error('Erreur chargement emplacements:', error);
+      logger.error('Erreur chargement emplacements:', error);
       toast.error('Erreur lors du chargement des emplacements');
     } finally {
       setLoading(false);
@@ -85,7 +86,7 @@ export function EmplacementsConfig() {
       await loadLocations();
       handleCancel();
     } catch (error) {
-      console.error('Erreur sauvegarde emplacement:', error);
+      logger.error('Erreur sauvegarde emplacement:', error);
       toast.error('Erreur lors de la sauvegarde');
     }
   };
@@ -105,7 +106,7 @@ export function EmplacementsConfig() {
       toast.success('Emplacement supprimé');
       await loadLocations();
     } catch (error: any) {
-      console.error('Erreur suppression emplacement:', error);
+      logger.error('Erreur suppression emplacement:', error);
       toast.error(error.message || 'Erreur lors de la suppression');
     }
   };
@@ -126,7 +127,7 @@ export function EmplacementsConfig() {
 
       await loadLocations();
     } catch (error) {
-      console.error('Erreur changement statut:', error);
+      logger.error('Erreur changement statut:', error);
       toast.error('Erreur lors du changement de statut');
     }
   };
@@ -144,8 +145,8 @@ export function EmplacementsConfig() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">Emplacements de Stockage</h2>
-          <p className="mt-1 text-sm text-gray-500">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-dark-text-primary">Emplacements de Stockage</h2>
+          <p className="mt-1 text-sm text-gray-500 dark:text-dark-text-muted">
             Configurez les emplacements où le matériel est stocké
           </p>
         </div>
@@ -162,13 +163,13 @@ export function EmplacementsConfig() {
       {/* Create/Edit Form */}
       {(isCreating || editingLocation) && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-dark-text-primary mb-4">
             {isCreating ? 'Créer un emplacement' : 'Modifier l\'emplacement'}
           </h3>
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                 Nom de l'emplacement *
               </label>
               <input
@@ -176,12 +177,12 @@ export function EmplacementsConfig() {
                 value={formData.nom || ''}
                 onChange={(e) => setFormData({ ...formData, nom: e.target.value })}
                 placeholder="Ex: Local du club"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                 Description
               </label>
               <textarea
@@ -189,7 +190,7 @@ export function EmplacementsConfig() {
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 placeholder="Description de l'emplacement (adresse, détails...)"
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md"
               />
             </div>
 
@@ -201,9 +202,9 @@ export function EmplacementsConfig() {
                   onChange={(e) => setFormData({ ...formData, actif: e.target.checked })}
                   className="mr-2"
                 />
-                <span className="text-sm font-medium text-gray-700">Emplacement actif</span>
+                <span className="text-sm font-medium text-gray-700 dark:text-dark-text-primary">Emplacement actif</span>
               </label>
-              <p className="mt-1 text-xs text-gray-500">
+              <p className="mt-1 text-xs text-gray-500 dark:text-dark-text-muted">
                 Les emplacements inactifs ne seront pas proposés lors de l'ajout de nouveau matériel
               </p>
             </div>
@@ -212,7 +213,7 @@ export function EmplacementsConfig() {
             <div className="flex items-center justify-end gap-3 pt-4 border-t">
               <button
                 onClick={handleCancel}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-primary bg-white border border-gray-300 dark:border-dark-border rounded-md hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary"
               >
                 <X className="h-4 w-4 inline mr-1" />
                 Annuler
@@ -234,23 +235,23 @@ export function EmplacementsConfig() {
       <div className="bg-white shadow-sm rounded-lg overflow-hidden">
         {locations.length === 0 ? (
           <div className="text-center py-12">
-            <MapPin className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-2 text-sm font-medium text-gray-900">Aucun emplacement</h3>
-            <p className="mt-1 text-sm text-gray-500">
+            <MapPin className="mx-auto h-12 w-12 text-gray-400 dark:text-dark-text-muted" />
+            <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-dark-text-primary">Aucun emplacement</h3>
+            <p className="mt-1 text-sm text-gray-500 dark:text-dark-text-muted">
               Commencez par créer votre premier emplacement de stockage
             </p>
           </div>
         ) : (
           <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+            <thead className="bg-gray-50 dark:bg-dark-bg-tertiary">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider">
                   Emplacement
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider">
                   Statut
                 </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-dark-text-muted uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
@@ -260,11 +261,11 @@ export function EmplacementsConfig() {
                 <tr key={location.id} className={cn(!location.actif && 'opacity-50')}>
                   <td className="px-6 py-4">
                     <div className="flex items-start">
-                      <MapPin className="h-5 w-5 text-gray-400 mt-0.5 mr-3 flex-shrink-0" />
+                      <MapPin className="h-5 w-5 text-gray-400 dark:text-dark-text-muted mt-0.5 mr-3 flex-shrink-0" />
                       <div>
-                        <div className="text-sm font-medium text-gray-900">{location.nom}</div>
+                        <div className="text-sm font-medium text-gray-900 dark:text-dark-text-primary">{location.nom}</div>
                         {location.description && (
-                          <div className="text-sm text-gray-500 mt-1">{location.description}</div>
+                          <div className="text-sm text-gray-500 dark:text-dark-text-muted mt-1">{location.description}</div>
                         )}
                       </div>
                     </div>
@@ -277,7 +278,7 @@ export function EmplacementsConfig() {
                         'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium transition-colors',
                         location.actif
                           ? 'bg-green-100 text-green-800 hover:bg-green-200'
-                          : 'bg-gray-100 text-gray-800 hover:bg-gray-200',
+                          : 'bg-gray-100 dark:bg-dark-bg-tertiary text-gray-800 hover:bg-gray-200',
                         (isCreating || editingLocation !== null) && 'cursor-not-allowed opacity-50'
                       )}
                     >
@@ -318,9 +319,9 @@ export function EmplacementsConfig() {
       </div>
 
       {/* Info Note */}
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-        <h3 className="text-sm font-medium text-gray-900 mb-2">Conseils</h3>
-        <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
+      <div className="bg-gray-50 dark:bg-dark-bg-tertiary border border-gray-200 dark:border-dark-border rounded-lg p-4">
+        <h3 className="text-sm font-medium text-gray-900 dark:text-dark-text-primary mb-2">Conseils</h3>
+        <ul className="text-sm text-gray-600 dark:text-dark-text-secondary space-y-1 list-disc list-inside">
           <li>Créez un emplacement pour chaque lieu de stockage physique du matériel</li>
           <li>Utilisez des noms clairs et explicites (ex: "Local Club", "Camionnette", "Chez responsable")</li>
           <li>Désactivez temporairement un emplacement au lieu de le supprimer pour conserver l'historique</li>

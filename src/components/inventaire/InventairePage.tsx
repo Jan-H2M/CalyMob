@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Package, ClipboardList, ShoppingCart } from 'lucide-react';
+import { Package, ClipboardList, ClipboardCheck, BookOpen } from 'lucide-react';
 import { cn } from '@/utils/utils';
 import { MaterielPage } from './materiel/MaterielPage';
 import { PretsPage } from './prets/PretsPage';
-import { StockPage } from './stock/StockPage';
+import { InventoryAuditPage } from './audit/InventoryAuditPage';
+import { InventoryDocumentation } from './documentation/InventoryDocumentation';
 
-type TabType = 'materiel' | 'prets' | 'stock';
+type TabType = 'materiel' | 'prets' | 'audit' | 'docs';
 
 interface TabDefinition {
   id: TabType;
@@ -28,10 +29,16 @@ const tabs: TabDefinition[] = [
     description: 'Suivi des prêts de matériel aux membres'
   },
   {
-    id: 'stock',
-    label: 'Stock',
-    icon: ShoppingCart,
-    description: 'Gestion des produits en stock (masques, palmes...)'
+    id: 'audit',
+    label: 'Inventaire',
+    icon: ClipboardCheck,
+    description: 'Contrôle annuel du matériel'
+  },
+  {
+    id: 'docs',
+    label: 'Documentation',
+    icon: BookOpen,
+    description: 'Guide d\'utilisation du module'
   }
 ];
 
@@ -42,14 +49,14 @@ export function InventairePage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Inventaire</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Gestion du matériel, des prêts et du stock
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-dark-text-primary">Inventaire</h1>
+        <p className="mt-1 text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
+          Gestion du matériel et des prêts
         </p>
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-gray-200">
+      <div className="border-b border-gray-200 dark:border-dark-border">
         <nav className="-mb-px flex space-x-8" aria-label="Tabs">
           {tabs.map((tab) => {
             const Icon = tab.icon;
@@ -61,14 +68,14 @@ export function InventairePage() {
                 onClick={() => setActiveTab(tab.id)}
                 className={cn(
                   isActive
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700',
+                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                    : 'border-transparent text-gray-500 dark:text-dark-text-muted hover:border-gray-300 dark:border-dark-border hover:text-gray-700 dark:text-dark-text-primary dark:hover:text-dark-text-primary',
                   'group inline-flex items-center border-b-2 py-4 px-1 text-sm font-medium transition-colors'
                 )}
               >
                 <Icon
                   className={cn(
-                    isActive ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-500',
+                    isActive ? 'text-blue-500 dark:text-blue-400' : 'text-gray-400 dark:text-dark-text-muted group-hover:text-gray-500 dark:text-dark-text-muted',
                     '-ml-0.5 mr-2 h-5 w-5'
                   )}
                 />
@@ -80,47 +87,11 @@ export function InventairePage() {
       </div>
 
       {/* Tab Content */}
-      <div className="bg-white rounded-lg shadow p-6">
+      <div>
         {activeTab === 'materiel' && <MaterielPage />}
-
         {activeTab === 'prets' && <PretsPage />}
-
-        {activeTab === 'stock' && <StockPage />}
-      </div>
-
-      {/* Dev Note */}
-      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-        <div className="flex">
-          <div className="flex-shrink-0">
-            <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-            </svg>
-          </div>
-          <div className="ml-3">
-            <h3 className="text-sm font-medium text-yellow-800">
-              Module en développement
-            </h3>
-            <div className="mt-2 text-sm text-yellow-700">
-              <p>
-                Ce module est actuellement en phase de développement.
-                Seul le superadmin a accès à cette page.
-              </p>
-              <p className="mt-2">
-                <strong>✅ Modules disponibles:</strong>
-              </p>
-              <ul className="list-disc list-inside mt-1 space-y-1">
-                <li><strong>Configuration</strong> (Paramètres → Inventaire): Types, checklists, cautions, emplacements</li>
-                <li><strong>Membres</strong>: Gestion centralisée dans Paramètres → Membres</li>
-                <li><strong>Matériel unitaire</strong>: Gestion du matériel avec photos et maintenance</li>
-                <li><strong>Prêts</strong>: Système de prêt avec cautions, checklists et signatures digitales</li>
-                <li><strong>Produits en stock</strong>: Gestion du stock, ventes et commandes fournisseurs</li>
-              </ul>
-              <p className="mt-2">
-                <strong>✅ Phase 1 TERMINÉE:</strong> Module inventaire complet et opérationnel!
-              </p>
-            </div>
-          </div>
-        </div>
+        {activeTab === 'audit' && <InventoryAuditPage />}
+        {activeTab === 'docs' && <InventoryDocumentation />}
       </div>
     </div>
   );

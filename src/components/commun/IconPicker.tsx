@@ -3,11 +3,47 @@
  *
  * Dropdown selector voor Lucide iconen met zoekfunctionaliteit
  * en categorisatie (Users, Finance, Operations, General).
+ * 
+ * PERFORMANCE: Only imports icons from the allowlist (~45 icons)
+ * instead of all 1000+ Lucide icons (~500KB savings)
  */
 
 import { useState, useRef, useEffect } from 'react';
-import * as LucideIcons from 'lucide-react';
-import { Search, ChevronDown } from 'lucide-react';
+import {
+  // UI icons for this component
+  Search, ChevronDown,
+  // Users category
+  User, Users, Shield, UserCheck, UserCog, UserPlus,
+  UserMinus, UserX, Award, Crown, Briefcase,
+  // Finance category
+  Wallet, CreditCard, Banknote, TrendingUp, TrendingDown,
+  PiggyBank, Receipt, DollarSign, Euro, Coins,
+  // Operations category
+  Calendar, Target, FileText, ClipboardList, CheckCircle,
+  Flag, Activity, BarChart, PieChart, Package,
+  // General category
+  Settings, Bell, Mail, Home, Star, Heart,
+  Tag, Hash, AlertCircle, Info, HelpCircle,
+  type LucideIcon
+} from 'lucide-react';
+
+/**
+ * Icon lookup map for dynamic rendering
+ */
+const ICON_MAP: Record<string, LucideIcon> = {
+  // Users
+  User, Users, Shield, UserCheck, UserCog, UserPlus,
+  UserMinus, UserX, Award, Crown, Briefcase,
+  // Finance
+  Wallet, CreditCard, Banknote, TrendingUp, TrendingDown,
+  PiggyBank, Receipt, DollarSign, Euro, Coins,
+  // Operations
+  Calendar, Target, FileText, ClipboardList, CheckCircle,
+  Flag, Activity, BarChart, PieChart, Package,
+  // General
+  Settings, Bell, Mail, Home, Star, Heart,
+  Tag, Hash, AlertCircle, Info, HelpCircle,
+};
 
 // Available Lucide icons per category
 export const AVAILABLE_ICONS = {
@@ -62,9 +98,9 @@ export default function IconPicker({ value, onChange, disabled }: IconPickerProp
     }
   }, [isOpen]);
 
-  // Render icon component dynamically
+  // Render icon component from the allowlist
   const renderIcon = (iconName: string, className?: string) => {
-    const Icon = (LucideIcons as any)[iconName];
+    const Icon = ICON_MAP[iconName];
     if (!Icon) return null;
     return <Icon className={className} />;
   };
@@ -107,7 +143,7 @@ export default function IconPicker({ value, onChange, disabled }: IconPickerProp
         className={`
           flex items-center gap-2 px-3 py-2 rounded-lg border
           ${disabled
-            ? 'bg-gray-100 dark:bg-dark-bg-secondary border-gray-300 dark:border-dark-border cursor-not-allowed opacity-50'
+            ? 'bg-gray-100 dark:bg-dark-bg-tertiary dark:bg-dark-bg-secondary border-gray-300 dark:border-dark-border cursor-not-allowed opacity-50'
             : 'bg-white dark:bg-dark-bg-primary border-gray-300 dark:border-dark-border hover:border-blue-500 cursor-pointer'
           }
           text-sm text-gray-700 dark:text-dark-text-primary
@@ -120,7 +156,7 @@ export default function IconPicker({ value, onChange, disabled }: IconPickerProp
             <span>{value}</span>
           </>
         ) : (
-          <span className="text-gray-400 dark:text-dark-text-tertiary">Choisir une icône</span>
+          <span className="text-gray-400 dark:text-dark-text-muted dark:text-dark-text-tertiary">Choisir une icône</span>
         )}
         <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
@@ -131,7 +167,7 @@ export default function IconPicker({ value, onChange, disabled }: IconPickerProp
           {/* Search Bar */}
           <div className="p-3 border-b border-gray-200 dark:border-dark-border">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-dark-text-tertiary" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-dark-text-muted dark:text-dark-text-tertiary" />
               <input
                 type="text"
                 value={searchTerm}
@@ -149,7 +185,7 @@ export default function IconPicker({ value, onChange, disabled }: IconPickerProp
           {/* Icon Grid */}
           <div className="max-h-96 overflow-y-auto p-3">
             {!hasResults ? (
-              <div className="text-center py-8 text-gray-400 dark:text-dark-text-tertiary text-sm">
+              <div className="text-center py-8 text-gray-400 dark:text-dark-text-muted dark:text-dark-text-tertiary text-sm">
                 Aucune icône trouvée
               </div>
             ) : (
@@ -159,7 +195,7 @@ export default function IconPicker({ value, onChange, disabled }: IconPickerProp
                 return (
                   <div key={category} className="mb-4 last:mb-0">
                     {/* Category Label */}
-                    <div className="text-xs font-medium text-gray-500 dark:text-dark-text-secondary mb-2 px-1">
+                    <div className="text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary mb-2 px-1">
                       {CATEGORY_LABELS[category as keyof typeof AVAILABLE_ICONS]}
                     </div>
 

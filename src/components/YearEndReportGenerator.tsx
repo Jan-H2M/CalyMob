@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { logger } from '@/utils/logger';
 import { 
   Card, 
   CardContent, 
@@ -87,7 +88,7 @@ export function YearEndReportGenerator({ clubId }: { clubId: string }) {
       
       setPreviousReports(reports);
     } catch (err) {
-      console.error('Error loading reports:', err);
+      logger.error('Error loading reports:', err);
     }
   };
 
@@ -107,7 +108,7 @@ export function YearEndReportGenerator({ clubId }: { clubId: string }) {
         });
       }
     } catch (err) {
-      console.error('Error loading year summary:', err);
+      logger.error('Error loading year summary:', err);
     }
   };
 
@@ -121,7 +122,7 @@ export function YearEndReportGenerator({ clubId }: { clubId: string }) {
         setFiscalYearStatus('not_started');
       }
     } catch (err) {
-      console.error('Error checking fiscal year status:', err);
+      logger.error('Error checking fiscal year status:', err);
     }
   };
 
@@ -167,7 +168,7 @@ export function YearEndReportGenerator({ clubId }: { clubId: string }) {
       }
     } catch (err: any) {
       setError(err.message || 'Erreur lors de la génération du rapport');
-      console.error('Error generating report:', err);
+      logger.error('Error generating report:', err);
     } finally {
       setGenerating(false);
       setProgress(0);
@@ -326,7 +327,7 @@ export function YearEndReportGenerator({ clubId }: { clubId: string }) {
               {previousReports.map(report => (
                 <div
                   key={report.id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary"
+                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary"
                 >
                   <div className="flex items-center gap-3">
                     <FileSpreadsheet className="h-8 w-8 text-green-600" />

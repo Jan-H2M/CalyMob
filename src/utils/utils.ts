@@ -2,6 +2,7 @@ import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { format, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { logger } from '@/utils/logger';
 
 // Utility pour combiner les classes Tailwind
 export function cn(...inputs: ClassValue[]) {
@@ -31,7 +32,7 @@ export function formatDate(date: Date | string | undefined | null | any, formatS
     } else if (date instanceof Date) {
       dateObj = date;
     } else {
-      console.error('Erreur lors du formatage de la date:', date);
+      logger.error('Erreur lors du formatage de la date:', date);
       return 'Date invalide';
     }
 
@@ -41,7 +42,7 @@ export function formatDate(date: Date | string | undefined | null | any, formatS
     }
     return format(dateObj, formatStr, { locale: fr });
   } catch (error) {
-    console.error('Erreur lors du formatage de la date:', date, error);
+    logger.error('Erreur lors du formatage de la date:', date, error);
     return 'Date invalide';
   }
 }
@@ -74,7 +75,7 @@ export function formatRelativeDate(date: Date | string | undefined | null): stri
     if (days < 365) return `Il y a ${Math.floor(days / 30)} mois`;
     return `Il y a ${Math.floor(days / 365)} ans`;
   } catch (error) {
-    console.error('Erreur lors du formatage de la date relative:', date, error);
+    logger.error('Erreur lors du formatage de la date relative:', date, error);
     return 'Date invalide';
   }
 }
@@ -187,7 +188,7 @@ export function findIncompleteMatch(
   return match ? { id: match.id } : null;
 }
 
-// Générer un hash pour la déduplication des événements VP Dive
+// Générer un hash pour la déduplication d'un événement importé
 export function generateEventHash(event: {
   titre: string;
   date_debut: Date | string;
@@ -239,7 +240,7 @@ export const CATEGORY_COLORS: Record<string, string> = {
   remboursement: 'bg-yellow-100 text-yellow-800',
   materiel: 'bg-indigo-100 text-indigo-800',
   formation: 'bg-teal-100 text-teal-800',
-  autre: 'bg-gray-100 text-gray-800',
+  autre: 'bg-gray-100 dark:bg-dark-bg-tertiary text-gray-800',
 };
 
 /**
@@ -249,11 +250,11 @@ export const CATEGORY_COLORS: Record<string, string> = {
  * @param categories - Array of categories from CategorizationService.getAllCategories()
  * @returns Tailwind classes string with light and dark mode variants
  */
-export function getCategoryColorClasses(categoryId: string | undefined, categories: any[]): string {
-  if (!categoryId) return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
+export function getCategoryColorClasses(categoryId: string | undefined, categories: Array<{ id: string; couleur?: string }>): string {
+  if (!categoryId) return 'bg-gray-100 dark:bg-dark-bg-tertiary dark:bg-gray-700 text-gray-800 dark:text-gray-200';
 
   const category = categories.find(c => c.id === categoryId);
-  if (!category) return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
+  if (!category) return 'bg-gray-100 dark:bg-dark-bg-tertiary dark:bg-gray-700 text-gray-800 dark:text-gray-200';
 
   // Map hex colors from Categorie.couleur to Tailwind classes with dark mode support
   const colorMap: Record<string, string> = {
@@ -271,18 +272,21 @@ export function getCategoryColorClasses(categoryId: string | undefined, categori
     '#14b8a6': 'bg-teal-100 dark:bg-teal-900/30 text-teal-800 dark:text-teal-400',           // subside (teal)
   };
 
-  return colorMap[category.couleur] || 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
+  return colorMap[category.couleur] || 'bg-gray-100 dark:bg-dark-bg-tertiary dark:bg-gray-700 text-gray-800 dark:text-gray-200';
 }
 
-// Couleurs pour les statuts
+// Couleurs pour les statuts des demandes de remboursement
 export const STATUS_COLORS: Record<string, string> = {
-  soumis: 'bg-blue-100 text-blue-800',
-  approuve: 'bg-green-100 text-green-800',
-  rembourse: 'bg-gray-100 text-gray-800',
-  refuse: 'bg-red-100 text-red-800',
-  brouillon: 'bg-gray-100 text-gray-800',
+  brouillon: 'bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary dark:bg-gray-800 dark:text-gray-300',
+  en_attente_validation: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+  approuve: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+  paiement_effectue: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300',
+  rembourse: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+  refuse: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+  cree_banque_attente_validation: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
+  // Pour les opérations/événements
   ouvert: 'bg-green-100 text-green-800',
-  ferme: 'bg-gray-100 text-gray-800',
+  ferme: 'bg-gray-100 dark:bg-dark-bg-tertiary text-gray-800',
   annule: 'bg-red-100 text-red-800',
 };
 

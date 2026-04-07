@@ -1,21 +1,41 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { logger } from '@/utils/logger';
+import { Timestamp, collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { User, UserRole, AuditLog } from '@/types/user.types';
+import { TransactionBancaire } from '@/types';
 import { PermissionService } from '@/services/permissionService';
 import { PasswordService } from '@/services/passwordService';
 import { UserService } from '@/services/userService';
 import { ClubEmailService } from '@/services/clubEmailService';
+import { FirebaseSettingsService } from '@/services/firebaseSettingsService';
+import { checkMemberBrowserCompatibility } from '@/services/compatibilityService';
+import type { CompatibilitySettings } from '@/types/settings.types';
 import { AuditLogList } from './AuditLogList';
 import { SendUserEmailModal } from './SendUserEmailModal';
+import { UserExercicesTab } from './UserExercicesTab';
+import { MedicalTab } from './MedicalTab';
+import { DocumentsTab } from './DocumentsTab';
 import type { EmailTemplateType } from '@/types/emailTemplates';
+import { ValueListSelector } from '@/components/commun/ValueListSelector';
+import { MemberCategorySelector } from '@/components/cotisations/MemberCategorySelector';
+import { MembershipSeasonService } from '@/services/membershipSeasonService';
+import { MEMBERSHIP_PERIOD_LABELS } from '@/types/cotisations.types';
 import {
   X, Save, Shield, User as UserIcon, Mail,
   Calendar, Clock, CheckCircle, XCircle, AlertTriangle,
-  Key, Trash2, Lock
+  Key, Trash2, Lock, CreditCard, Search, Smartphone, Bell, Globe,
+  Heart, FileText, Upload, Download, Eye, Link2, ExternalLink,
+  Activity, Fingerprint, ChevronLeft, ChevronRight
 } from 'lucide-react';
-import { formatDate } from '@/utils/utils';
+import { formatDate, formatMontant } from '@/utils/utils';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { generateDefaultPassword } from '@/utils/passwordGenerator';
+import { NIVEAU_OPTIONS, calculatePlongeurCode } from '@/utils/plongeurUtils';
+import { getRole, formatIBAN, cleanIBAN, isValidIBANFormat } from '@/utils/fieldMapper';
+import { IbanLookupModal } from './IbanLookupModal';
+import { useNavigate } from 'react-router-dom';
 
 interface UserDetailViewProps {
   user: User | null;
@@ -26,6 +46,129 @@ interface UserDetailViewProps {
   onChangeRole?: (userId: string, role: UserRole) => void;
   onDelete?: (userId: string) => void;
   currentUser: User | null;
+  /** Sorted/filtered user list for prev/next navigation */
+  userList?: User[];
+  /** Navigate to a different user */
+  onNavigate?: (user: User) => void;
+}
+function getMobileCompatibilityBadge(user: any, settings: CompatibilitySettings | null) {
+  if (!settings || !user.app_platform) return null;
+
+  const platform = user.app_platform; // 'ios' or 'android'
+  const osVersion = user.device_os_version;
+
+  if (!osVersion) return null;
+
+  let isCompatible = true;
+  let warningLevel: 'none' | 'warning' | 'error' = 'none';
+
+  if (platform === 'ios') {
+    const version = parseFloat(osVersion);
+    const minSupported = parseFloat(settings.calymob.ios.minSupported);
+    const minRecommended = parseFloat(settings.calymob.ios.minRecommended);
+
+    if (version < minSupported) {
+      warningLevel = 'error';
+      isCompatible = false;
+    } else if (version < minRecommended) {
+      warningLevel = 'warning';
+    }
+  } else if (platform === 'android') {
+    const apiLevel = parseInt(user.device_api_level || '0');
+    if (apiLevel > 0) {
+      const minSupported = settings.calymob.android.minSupported;
+      const minRecommended = settings.calymob.android.minRecommended;
+
+      if (apiLevel < minSupported) {
+        warningLevel = 'error';
+        isCompatible = false;
+      } else if (apiLevel < minRecommended) {
+        warningLevel = 'warning';
+      }
+    }
+  }
+
+  if (warningLevel === 'none') {
+    return (
+      <span className="inline-flex items-center px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded-full">
+        ✓ Compatible
+      </span>
+    );
+  }
+  if (warningLevel === 'warning') {
+    return (
+      <span className="inline-flex items-center px-2 py-1 text-xs font-medium text-orange-700 bg-orange-100 rounded-full">
+        ⚠ Update aanbevolen
+      </span>
+    );
+  }
+  if (warningLevel === 'error') {
+    return (
+      <span className="inline-flex items-center px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded-full">
+        ✗ Niet ondersteund
+      </span>
+    );
+  }
+  return null;
+}
+
+function getBrowserCompatibilityBadge(user: any, settings: CompatibilitySettings | null) {
+  if (!settings || !user.browser_name || !user.browser_version) return null;
+
+  const browserName = user.browser_name.toLowerCase();
+  const browserConfig = settings.calycompta.browsers[browserName.charAt(0).toUpperCase() + browserName.slice(1)];
+
+  if (!browserConfig) return null;
+
+  const version = parseInt(user.browser_version);
+  let warningLevel: 'none' | 'warning' | 'error' = 'none';
+
+  if (browserConfig.status === 'untested') {
+    warningLevel = 'warning';
+  } else if (browserConfig.minSupported && version < browserConfig.minSupported) {
+    warningLevel = 'error';
+  } else if (browserConfig.minRecommended && version < browserConfig.minRecommended) {
+    warningLevel = 'warning';
+  }
+
+  if (warningLevel === 'warning') {
+    return (
+      <span className="inline-flex items-center px-2 py-1 text-xs font-medium text-orange-700 bg-orange-100 rounded-full">
+        ⚠ {browserConfig.status === 'untested' ? 'Non testé' : 'Update recommandé'}
+      </span>
+    );
+  }
+  if (warningLevel === 'error') {
+    return (
+      <span className="inline-flex items-center px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded-full">
+        ✗ Non supporté
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded-full">
+      ✓ Compatible
+    </span>
+  );
+}
+
+function toDateInputValue(value?: Date | Timestamp | null): string {
+  if (!value) return '';
+
+  const date = value instanceof Timestamp ? value.toDate() : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  return date.toISOString().split('T')[0];
+}
+
+function isExpiredDate(value?: Date | Timestamp | null): boolean {
+  if (!value) return false;
+
+  const date = value instanceof Timestamp ? value.toDate() : new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+
+  return date < new Date();
 }
 
 export function UserDetailView({
@@ -36,23 +179,45 @@ export function UserDetailView({
   onActivate,
   onChangeRole,
   onDelete,
-  currentUser
+  currentUser,
+  userList,
+  onNavigate,
 }: UserDetailViewProps) {
   const { clubId, user: firebaseAuthUser } = useAuth();
   const isCreateMode = !user;
-  const [formData, setFormData] = useState<Partial<User>>({
-    email: '',
-    displayName: '',
-    firstName: '',
-    lastName: '',
-    phoneNumber: '',
-    role: 'user',
-    ...user,
-    // Ensure role is synced with app_role
-    role: user?.app_role || user?.role || 'user'
+  const [compatibilitySettings, setCompatibilitySettings] = useState<CompatibilitySettings | null>(null);
+  const [formData, setFormData] = useState<Partial<User>>(() => {
+    if (!user) {
+      return {
+        email: '',
+        displayName: '',
+        firstName: '',
+        lastName: '',
+        phoneNumber: '',
+        role: 'user',
+        clubStatuten: []
+      };
+    }
+    // Ensure role is synced with app_role using Field Mapper
+    const { role: _, ...userWithoutRole } = user as any;
+
+    // Initialize clubStatuten from existing data or migrate from deprecated fields
+    let clubStatuten = user.clubStatuten || [];
+    if (clubStatuten.length === 0) {
+      // Backwards compatibility: migrate from deprecated boolean fields
+      // Use capitalized values to match the value list
+      if (user.isCA) clubStatuten.push('CA');
+      if (user.isEncadrant) clubStatuten.push('Encadrants');
+    }
+
+    return {
+      ...userWithoutRole,
+      role: getRole(user),
+      clubStatuten
+    };
   });
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [activeTab, setActiveTab] = useState<'details' | 'permissions' | 'audit'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'permissions' | 'audit' | 'exercices' | 'app' | 'medical' | 'documents'>('details');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
   const [resetPassword, setResetPassword] = useState<string>(generateDefaultPassword());
@@ -60,26 +225,116 @@ export function UserDetailView({
   const [isResetting, setIsResetting] = useState(false);
   const [showSendEmailModal, setShowSendEmailModal] = useState(false);
   const [userNames, setUserNames] = useState<Record<string, string>>({});
+  const [showIbanLookup, setShowIbanLookup] = useState(false);
+  const [linkedTransactions, setLinkedTransactions] = useState<TransactionBancaire[]>([]);
+  const [loadingTransactions, setLoadingTransactions] = useState(false);
+  const [membershipSummaryLine, setMembershipSummaryLine] = useState<string | null>(null);
+  const navigate = useNavigate();
+
+  // Load linked transactions (cotisations)
+  useEffect(() => {
+    const loadLinkedTransactions = async () => {
+      if (!clubId || !user?.id) {
+        setLinkedTransactions([]);
+        return;
+      }
+
+      setLoadingTransactions(true);
+      try {
+        // Query transactions that have this member in matched_entities
+        const txRef = collection(db, 'clubs', clubId, 'transactions_bancaires');
+        const snapshot = await getDocs(txRef);
+
+        const linked: TransactionBancaire[] = [];
+        snapshot.docs.forEach(doc => {
+          const tx = { id: doc.id, ...doc.data() } as TransactionBancaire;
+          // Check if this transaction has this member linked
+          if (tx.matched_entities?.some(e => e.entity_type === 'member' && e.entity_id === user.id)) {
+            linked.push(tx);
+          }
+        });
+
+        // Sort by date descending
+        linked.sort((a, b) => {
+          const dateA = a.date_execution instanceof Timestamp ? a.date_execution.toDate() : new Date(a.date_execution);
+          const dateB = b.date_execution instanceof Timestamp ? b.date_execution.toDate() : new Date(b.date_execution);
+          return dateB.getTime() - dateA.getTime();
+        });
+
+        setLinkedTransactions(linked);
+      } catch (error) {
+        logger.error('Error loading linked transactions:', error);
+      } finally {
+        setLoadingTransactions(false);
+      }
+    };
+
+    loadLinkedTransactions();
+  }, [clubId, user?.id]);
+
+  // Load compatibility settings
+  useEffect(() => {
+    if (clubId) {
+      FirebaseSettingsService.getCompatibilitySettings(clubId).then(setCompatibilitySettings);
+    }
+  }, [clubId]);
 
   // Update formData when user changes (including lifras_id from Membre type)
   useEffect(() => {
     if (user) {
       setFormData({
-        email: user.email || '',
-        displayName: user.displayName || '',
-        firstName: user.firstName || '',
-        lastName: user.lastName || '',
-        phoneNumber: user.phoneNumber || '',
-        role: user.role || 'user',
         ...user,
-        // Explicitly include lifras_id from Membre type (user is actually Membre)
-        lifras_id: (user as any).lifras_id,
+        role: getRole(user), // Ensure role is correctly calculated
+        // Explicitly include lifras_id and plongeur fields from User type
+        lifras_id: user.lifras_id,
+        plongeur_niveau: user.plongeur_niveau,
+        plongeur_code: user.plongeur_code,
+        // Include IBAN fields
+        iban: (user as any).iban || '',
+        ibans: (user as any).ibans || [],
         // Include boolean fields explicitly to preserve false values
         isEncadrant: user.isEncadrant || false,
         isCA: user.isCA || false
       });
     }
   }, [user]);
+
+  useEffect(() => {
+    const loadMembershipSummary = async () => {
+      if (!clubId || !formData.membership_category_code) {
+        setMembershipSummaryLine(null);
+        return;
+      }
+
+      try {
+        const season = formData.membership_season_id
+          ? await MembershipSeasonService.getSeasonById(clubId, formData.membership_season_id)
+          : await MembershipSeasonService.getActiveSeason(clubId);
+
+        if (!season) {
+          setMembershipSummaryLine(null);
+          return;
+        }
+
+        const tariff = season.tariffs.find(t => t.code === formData.membership_category_code);
+        if (!tariff) {
+          setMembershipSummaryLine(null);
+          return;
+        }
+
+        const period = formData.membership_period || 'jan_dec';
+        const price = period === 'jan_dec' ? tariff.price_jan_dec : tariff.price_sept_dec;
+        const priceLabel = price !== null && price !== undefined ? ` · ${formatMontant(price)}` : '';
+
+        setMembershipSummaryLine(`${tariff.label} · ${MEMBERSHIP_PERIOD_LABELS[period]}${priceLabel}`);
+      } catch (error) {
+        logger.error('Error loading membership summary:', error);
+        setMembershipSummaryLine(null);
+      }
+    };
+
+    void loadMembershipSummary();
+  }, [clubId, formData.membership_category_code, formData.membership_period, formData.membership_season_id]);
 
   // Load user names for metadata display
   useEffect(() => {
@@ -103,7 +358,7 @@ export function UserDetailView({
         }
         setUserNames(names);
       } catch (error) {
-        console.error('Error loading user names:', error);
+        logger.error('Error loading user names:', error);
       }
     };
 
@@ -117,7 +372,7 @@ export function UserDetailView({
           const logs = await UserService.getAuditLogs(clubId, user.id, 100);
           setAuditLogs(logs);
         } catch (error) {
-          console.error('Error loading audit logs:', error);
+          logger.error('Error loading audit logs:', error);
           toast.error('Impossible de charger l\'historique');
         }
       }
@@ -200,10 +455,19 @@ export function UserDetailView({
 
       // Save only the specific field
       // For boolean fields (isCA, isEncadrant), preserve false values
+      const nullableDateFields = new Set([
+        'cotisation_validite',
+        'certificat_medical_date',
+        'certificat_medical_validite'
+      ]);
       const isBooleanField = typeof cleanValue === 'boolean';
-      const finalValue = isBooleanField ? cleanValue : (cleanValue || undefined);
+      const finalValue = cleanValue === null && nullableDateFields.has(field)
+        ? null
+        : isBooleanField
+          ? cleanValue
+          : (cleanValue || undefined);
 
-      console.log('🔍 [UserDetailView] handleFieldSave - Direct save to Firestore:', {
+      logger.debug('🔍 [UserDetailView] handleFieldSave - Direct save to Firestore:', {
         field,
         originalValue: value,
         cleanValue,
@@ -223,7 +487,7 @@ export function UserDetailView({
         onUpdate(user.id, { [field]: finalValue });
       }
     } catch (error) {
-      console.error(`Error saving ${field}:`, error);
+      logger.error(`Error saving ${field}:`, error);
       toast.error('Erreur lors de la sauvegarde');
     }
   };
@@ -236,6 +500,49 @@ export function UserDetailView({
         ...formData,
         clubId: 'calypso'
       });
+    }
+  };
+
+  const handleMembershipCategoryChange = async (
+    categoryCode: string,
+    period: 'jan_dec' | 'sept_dec',
+    seasonId: string
+  ) => {
+    const localUpdates = {
+      membership_category_code: categoryCode || undefined,
+      membership_period: categoryCode ? period : undefined,
+      membership_season_id: categoryCode ? seasonId : undefined
+    };
+
+    setFormData(prev => ({
+      ...prev,
+      ...localUpdates
+    }));
+
+    if (isCreateMode || !user || !clubId || !firebaseAuthUser) return;
+
+    const persistedUpdates = {
+      membership_category_code: categoryCode || null,
+      membership_period: categoryCode ? period : null,
+      membership_season_id: categoryCode ? seasonId : null
+    };
+
+    try {
+      await UserService.updateUser(clubId, user.id, persistedUpdates, firebaseAuthUser.uid);
+      toast.success('✓ Sauvegardé', { duration: 1500, position: 'bottom-right' });
+
+      if (onUpdate) {
+        onUpdate(user.id, persistedUpdates as Partial<User>);
+      }
+    } catch (error) {
+      logger.error('Error saving membership category:', error);
+      toast.error('Erreur lors de la sauvegarde');
+      setFormData(prev => ({
+        ...prev,
+        membership_category_code: user.membership_category_code,
+        membership_period: user.membership_period,
+        membership_season_id: user.membership_season_id
+      }));
     }
   };
 
@@ -261,7 +568,7 @@ export function UserDetailView({
       setResetPassword(generateDefaultPassword());
       setResetRequireChange(true);
     } catch (error: any) {
-      console.error('Error resetting password:', error);
+      logger.error('Error resetting password:', error);
       toast.error(error.message || 'Erreur lors de la réinitialisation du mot de passe');
     } finally {
       setIsResetting(false);
@@ -288,7 +595,7 @@ export function UserDetailView({
     // Fallback pour les rôles non configurés (ex: 'membre' pour club members sans accès app)
     if (!config) {
       return (
-        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
+        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium bg-gray-100 dark:bg-dark-bg-tertiary dark:bg-gray-800 text-gray-700 dark:text-dark-text-primary dark:text-gray-300">
           <Shield className="w-4 h-4" />
           {role === 'membre' ? 'Membre' : role}
         </span>
@@ -297,9 +604,8 @@ export function UserDetailView({
 
     return (
       <span
-        className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${
-          PermissionService.getRoleBadgeClass(role)
-        }`}
+        className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${PermissionService.getRoleBadgeClass(role)
+          }`}
         style={{ backgroundColor: `${config.color}20`, color: config.color }}
       >
         <Shield className="w-4 h-4" />
@@ -330,6 +636,43 @@ export function UserDetailView({
     if (!user) return [];
     return PermissionService.getUserPermissions(user);
   };
+
+  // Navigation: prev/next member
+  const currentIndex = user && userList ? userList.findIndex(u => u.id === user.id) : -1;
+  const hasPrev = currentIndex > 0;
+  const hasNext = userList ? currentIndex < userList.length - 1 : false;
+
+  const goToPrev = useCallback(() => {
+    if (hasPrev && userList && onNavigate) {
+      onNavigate(userList[currentIndex - 1]);
+    }
+  }, [hasPrev, userList, onNavigate, currentIndex]);
+
+  const goToNext = useCallback(() => {
+    if (hasNext && userList && onNavigate) {
+      onNavigate(userList[currentIndex + 1]);
+    }
+  }, [hasNext, userList, onNavigate, currentIndex]);
+
+  // Keyboard navigation: arrow left/right
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't navigate if user is typing in an input/select/textarea
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goToPrev();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        goToNext();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [goToPrev, goToNext]);
 
   if (!isCreateMode && !user) return null;
 
@@ -364,33 +707,59 @@ export function UserDetailView({
                 </h2>
                 {user && (
                   <div className="flex items-center gap-3 mt-2">
-                    {getRoleBadge(user.role)}
+                    {getRoleBadge(getRole(user))}
                     <div className="flex items-center gap-1">
                       {getStatusIcon()}
                       <span className="text-sm">
                         {user.metadata?.pendingActivation ? 'En attente d\'activation' :
-                         user.status === 'deleted' ? 'Supprimé' :
-                         user.status === 'suspended' ? 'Suspendu' :
-                         user.isActive ? 'Actif' : 'Inactif'}
+                          user.status === 'deleted' ? 'Supprimé' :
+                            user.status === 'suspended' ? 'Suspendu' :
+                              user.isActive ? 'Actif' : 'Inactif'}
                       </span>
                     </div>
                   </div>
                 )}
               </div>
             </div>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-white dark:bg-dark-bg-secondary/20 rounded-lg transition"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-1">
+              {/* Prev/Next navigation */}
+              {!isCreateMode && userList && userList.length > 1 && onNavigate && (
+                <>
+                  <button
+                    onClick={goToPrev}
+                    disabled={!hasPrev}
+                    className="p-2 hover:bg-white/20 rounded-lg transition disabled:opacity-30 disabled:cursor-not-allowed"
+                    title="Précédent (←)"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <span className="text-xs text-white/70 min-w-[3rem] text-center">
+                    {currentIndex + 1}/{userList.length}
+                  </span>
+                  <button
+                    onClick={goToNext}
+                    disabled={!hasNext}
+                    className="p-2 hover:bg-white/20 rounded-lg transition disabled:opacity-30 disabled:cursor-not-allowed"
+                    title="Suivant (→)"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                </>
+              )}
+              <button
+                onClick={onClose}
+                className="p-2 hover:bg-white/20 rounded-lg transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           {/* Action buttons in header */}
           {!isCreateMode && user && user.status !== 'deleted' && (
             <div className="flex gap-2 mt-4">
               {/* Firebase Activation Button (for pending members) */}
-              {user.metadata?.pendingActivation && (currentUser?.role === 'admin' || currentUser?.role === 'superadmin') && (
+              {user.metadata?.pendingActivation && currentUser && (getRole(currentUser) === 'admin' || getRole(currentUser) === 'superadmin') && (
                 <>
                   <button
                     onClick={async () => {
@@ -398,7 +767,7 @@ export function UserDetailView({
 
                       const toastId = toast.loading('Activation en cours...');
                       try {
-                        console.log('🔑 [UserDetailView] Activating user via Vercel Function:', {
+                        logger.debug('🔑 [UserDetailView] Activating user via bulk-invite API (single user):', {
                           userId: user.id,
                           email: user.email,
                           clubId: clubId
@@ -407,23 +776,17 @@ export function UserDetailView({
                         // Get auth token
                         const authToken = await firebaseAuthUser.getIdToken();
 
-                        // Call Vercel serverless function
-                        // Use environment variable for API URL or fallback to relative path
-                        const apiUrl = import.meta.env.VITE_API_URL
-                          ? `${import.meta.env.VITE_API_URL}/api/activate-user`
-                          : '/api/activate-user';
-
-                        console.log('🌐 [UserDetailView] Using API URL:', apiUrl);
-
-                        const response = await fetch(apiUrl, {
+                        // Call bulk-invite API with single user for reset-link flow
+                        const response = await fetch('/api/bulk-invite-users', {
                           method: 'POST',
                           headers: {
                             'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${authToken}`,
                           },
                           body: JSON.stringify({
-                            userId: user.id,
                             clubId: clubId,
-                            authToken: authToken
+                            userIds: [user.id],
+                            sendEmails: false,
                           }),
                         });
 
@@ -433,36 +796,43 @@ export function UserDetailView({
                         if (contentType && contentType.includes('application/json')) {
                           data = await response.json();
                         } else {
-                          // If response is not JSON, try to read it as text
                           const text = await response.text();
-                          console.error('❌ Non-JSON response:', text);
+                          logger.error('❌ Non-JSON response:', text);
                           data = { error: 'Server error: ' + text };
                         }
 
                         if (!response.ok) {
-                          console.error('❌ API Error Response:', data);
-                          const errorMessage = data.hint ? `${data.error}\n${data.hint}` : (data.error || 'Erreur lors de l\'activation');
+                          logger.error('❌ API Error Response:', data);
+                          const errorMessage = data.error || 'Erreur lors de l\'activation';
                           throw new Error(errorMessage);
                         }
 
-                        console.log('✅ [UserDetailView] Activation successful:', data);
+                        // Check if any member was actually activated
+                        const summary = data?.summary;
+                        if (summary && summary.activated === 0 && summary.failed === 0 && summary.alreadyActive === 0) {
+                          logger.error('❌ No members were processed:', data);
+                          throw new Error('Le membre n\'a pas pu être traité. Vérifiez son statut dans Firestore.');
+                        }
+
+                        if (summary?.failed > 0) {
+                          const failedResult = data?.results?.failed?.[0];
+                          const reason = failedResult?.reason || 'Erreur inconnue';
+                          logger.error('❌ Member activation failed:', failedResult);
+                          throw new Error(`Échec de l'activation: ${reason}`);
+                        }
+
+                        logger.debug('✅ [UserDetailView] Activation successful:', data);
 
                         toast.success(
-                          `✓ ${data.message}\n\nEmail: ${data.email}\nMot de passe temporaire: ${data.defaultPassword}\n\n⚠️ L'utilisateur doit changer son mot de passe à la première connexion`,
-                          {
-                            duration: 8000,
-                            id: toastId
-                          }
+                          `✓ Compte activé pour ${user.email}\n\nAucun email n'a été envoyé automatiquement depuis cette action.`,
+                          { duration: 6000, id: toastId }
                         );
 
                         // Close detail view to force refresh of user list
                         onClose();
                       } catch (error: any) {
-                        console.error('❌ [UserDetailView] Error activating Firebase account:', error);
-
-                        let errorMessage = error.message || 'Erreur lors de l\'activation';
-
-                        toast.error(errorMessage, { id: toastId });
+                        logger.error('❌ [UserDetailView] Error activating Firebase account:', error);
+                        toast.error(error.message || 'Erreur lors de l\'activation', { id: toastId });
                       }
                     }}
                     className="px-3 py-1.5 text-sm bg-amber-500/90 text-white rounded-lg hover:bg-amber-600 font-medium"
@@ -499,11 +869,10 @@ export function UserDetailView({
               {!user.metadata?.pendingActivation && canActivate() && onActivate && (
                 <button
                   onClick={() => onActivate(user.id, !user.isActive)}
-                  className={`px-3 py-1.5 text-sm rounded-lg font-medium ${
-                    user.isActive
-                      ? 'bg-white/20 text-white hover:bg-white/30'
-                      : 'bg-green-100/20 text-green-100 hover:bg-green-100/30'
-                  }`}
+                  className={`px-3 py-1.5 text-sm rounded-lg font-medium ${user.isActive
+                    ? 'bg-white/20 text-white hover:bg-white/30'
+                    : 'bg-green-100/20 text-green-100 hover:bg-green-100/30'
+                    }`}
                 >
                   {user.isActive ? 'Désactiver' : 'Activer'}
                 </button>
@@ -519,7 +888,7 @@ export function UserDetailView({
                 </button>
               )}
 
-              {(currentUser?.role === 'admin' || currentUser?.role === 'superadmin') && (
+              {currentUser && (getRole(currentUser) === 'admin' || getRole(currentUser) === 'superadmin') && (
                 <>
                   <button
                     onClick={() => setShowResetPasswordModal(true)}
@@ -558,33 +927,72 @@ export function UserDetailView({
             <nav className="flex">
               <button
                 onClick={() => setActiveTab('details')}
-                className={`px-6 py-3 font-medium text-sm border-b-2 transition ${
-                  activeTab === 'details'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
+                className={`px-4 py-3 font-medium text-sm border-b-2 transition ${activeTab === 'details'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary'
+                  }`}
               >
                 Détails
               </button>
               <button
-                onClick={() => setActiveTab('permissions')}
-                className={`px-6 py-3 font-medium text-sm border-b-2 transition ${
-                  activeTab === 'permissions'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
+                onClick={() => setActiveTab('medical')}
+                className={`px-4 py-3 font-medium text-sm border-b-2 transition flex items-center gap-1 ${activeTab === 'medical'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary'
+                  }`}
               >
-                Permissions
+                <Heart className="w-4 h-4" />
+                Médical
+              </button>
+              <button
+                onClick={() => setActiveTab('documents')}
+                className={`px-4 py-3 font-medium text-sm border-b-2 transition flex items-center gap-1 ${activeTab === 'documents'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary'
+                  }`}
+              >
+                <FileText className="w-4 h-4" />
+                Docs
+              </button>
+              <button
+                onClick={() => setActiveTab('permissions')}
+                className={`px-4 py-3 font-medium text-sm border-b-2 transition ${activeTab === 'permissions'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary'
+                  }`}
+              >
+                Droits
               </button>
               <button
                 onClick={() => setActiveTab('audit')}
-                className={`px-6 py-3 font-medium text-sm border-b-2 transition ${
-                  activeTab === 'audit'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
+                className={`px-4 py-3 font-medium text-sm border-b-2 transition ${activeTab === 'audit'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary'
+                  }`}
               >
-                Historique
+                Audit
+              </button>
+              <button
+                onClick={() => setActiveTab('exercices')}
+                className={`px-4 py-3 font-medium text-sm border-b-2 transition ${activeTab === 'exercices'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary'
+                  }`}
+              >
+                Exerc.
+              </button>
+              <button
+                onClick={() => setActiveTab('app')}
+                className={`px-4 py-3 font-medium text-sm border-b-2 transition flex items-center gap-1 ${activeTab === 'app'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary'
+                  }`}
+              >
+                <Smartphone className="w-4 h-4" />
+                App
+                {(user as any)?.app_installed && (
+                  <span className="w-2 h-2 bg-green-500 rounded-full" title="CalyMob installée" />
+                )}
               </button>
             </nav>
           </div>
@@ -607,8 +1015,8 @@ export function UserDetailView({
           )}
 
           {(activeTab === 'details' || isCreateMode) && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                     Email *
@@ -619,12 +1027,11 @@ export function UserDetailView({
                         type="email"
                         value={formData.email}
                         onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                          errors.email ? 'border-red-500' : 'border-gray-300'
-                        }`}
+                        className={`w-full h-10 px-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${errors.email ? 'border-red-500' : 'border-gray-300 dark:border-dark-border'
+                          }`}
                       />
                       {errors.email && (
-                        <p className="text-red-500 text-xs mt-1">{errors.email}</p>
+                        <p role="alert" className="text-red-500 text-xs mt-1">{errors.email}</p>
                       )}
                     </>
                   ) : (
@@ -634,30 +1041,88 @@ export function UserDetailView({
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       onBlur={() => handleFieldSave('email', formData.email)}
                       disabled={!canEdit()}
-                      className={`w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                        !canEdit() ? 'bg-gray-50 dark:bg-dark-bg-tertiary cursor-not-allowed' : ''
-                      }`}
+                      className={`w-full h-10 px-3 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 ${!canEdit() ? 'bg-gray-50 dark:bg-dark-bg-tertiary cursor-not-allowed' : ''
+                        }`}
                     />
                   )}
                 </div>
 
-                {/* LifrasID - editable */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
+                    Prénom
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.firstName || ''}
+                    onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+                    onBlur={() => handleFieldSave('firstName', formData.firstName)}
+                    disabled={!isCreateMode && !canEdit()}
+                    className={`w-full h-10 px-3 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 ${!isCreateMode && !canEdit() ? 'bg-gray-50 dark:bg-dark-bg-tertiary cursor-not-allowed' : ''
+                      }`}
+                  />
+                </div>
+
+                {/* Plongeur niveau et code - always visible, editable dropdown for admins */}
                 {!isCreateMode && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
-                      LifrasID
+                      Niveau de plongée
                     </label>
-                    <input
-                      type="text"
-                      value={(formData as any).lifras_id || ''}
-                      onChange={(e) => setFormData({ ...formData, lifras_id: e.target.value } as any)}
-                      onBlur={() => handleFieldSave('lifras_id', (formData as any).lifras_id)}
-                      disabled={!canEdit()}
-                      placeholder="Optionnel"
-                      className={`w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                        !canEdit() ? 'bg-gray-50 dark:bg-dark-bg-tertiary cursor-not-allowed' : ''
-                      }`}
-                    />
+                    {canEdit() ? (
+                      <select
+                        value={formData.plongeur_code || ''}
+                        onChange={async (e) => {
+                          const newCode = e.target.value;
+                          const option = NIVEAU_OPTIONS.find(o => o.code === newCode);
+                          const newNiveau = option?.fullName || '';
+                          setFormData({ ...formData, plongeur_code: newCode || undefined, plongeur_niveau: newNiveau || undefined });
+                          // Save both fields together
+                          if (user && clubId && firebaseAuthUser) {
+                            try {
+                              await UserService.updateUser(clubId, user.id, {
+                                plongeur_code: newCode || null,
+                                plongeur_niveau: newNiveau || null,
+                                is_diver: newCode ? newCode !== 'NAG' : false,
+                              }, firebaseAuthUser.uid);
+                              toast.success('✓ Niveau sauvegardé', { duration: 1500, position: 'bottom-right' });
+                              if (onUpdate) {
+                                onUpdate(user.id, { plongeur_code: newCode || undefined, plongeur_niveau: newNiveau || undefined, is_diver: newCode ? newCode !== 'NAG' : false });
+                              }
+                            } catch (error) {
+                              logger.error('Error saving niveau:', error);
+                              toast.error('Erreur lors de la sauvegarde du niveau');
+                            }
+                          }
+                        }}
+                        className="w-full h-10 px-3 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-dark-bg-secondary text-sm"
+                      >
+                        <option value="">— Aucun niveau —</option>
+                        {NIVEAU_OPTIONS.map(opt => (
+                          <option key={opt.code} value={opt.code}>
+                            {opt.label} — {opt.fullName}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="flex items-center gap-2 h-10">
+                        {formData.plongeur_code ? (
+                          <>
+                            <span className={`inline-flex items-center px-3 h-10 text-sm font-semibold rounded-lg ${
+                              formData.plongeur_code === 'NAG'
+                                ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300'
+                                : 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
+                            }`}>
+                              {NIVEAU_OPTIONS.find(o => o.code === formData.plongeur_code)?.label || formData.plongeur_code}
+                            </span>
+                            <span className="inline-flex items-center px-3 h-10 text-sm text-gray-700 dark:text-dark-text-primary bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg">
+                              {formData.plongeur_niveau || NIVEAU_OPTIONS.find(o => o.code === formData.plongeur_code)?.fullName || ''}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-sm text-gray-400 dark:text-dark-text-muted italic">Aucun niveau défini</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -671,27 +1136,27 @@ export function UserDetailView({
                     onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
                     onBlur={() => handleFieldSave('lastName', formData.lastName)}
                     disabled={!isCreateMode && !canEdit()}
-                    className={`w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                      !isCreateMode && !canEdit() ? 'bg-gray-50 cursor-not-allowed' : ''
-                    }`}
+                    className={`w-full h-10 px-3 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 ${!isCreateMode && !canEdit() ? 'bg-gray-50 dark:bg-dark-bg-tertiary cursor-not-allowed' : ''
+                      }`}
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
-                    Prénom
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.firstName || ''}
-                    onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
-                    onBlur={() => handleFieldSave('firstName', formData.firstName)}
-                    disabled={!isCreateMode && !canEdit()}
-                    className={`w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                      !isCreateMode && !canEdit() ? 'bg-gray-50 cursor-not-allowed' : ''
-                    }`}
-                  />
-                </div>
+                {clubId && (
+                  <div>
+                    <MemberCategorySelector
+                      categoryCode={formData.membership_category_code}
+                      period={formData.membership_period}
+                      seasonId={formData.membership_season_id}
+                      onChange={handleMembershipCategoryChange}
+                      disabled={!isCreateMode && !canEdit()}
+                      compact={true}
+                      categoryLabel="Type de membre"
+                      showSeasonInfo={false}
+                      showPeriodSelector={false}
+                      showSummary={false}
+                    />
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
@@ -703,12 +1168,11 @@ export function UserDetailView({
                     onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
                     onBlur={() => handleFieldSave('displayName', formData.displayName)}
                     disabled={!isCreateMode && !canEdit()}
-                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                      errors.displayName ? 'border-red-500' : 'border-gray-300'
-                    } ${!isCreateMode && !canEdit() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                    className={`w-full h-10 px-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${errors.displayName ? 'border-red-500' : 'border-gray-300 dark:border-dark-border'
+                      } ${!isCreateMode && !canEdit() ? 'bg-gray-50 dark:bg-dark-bg-tertiary cursor-not-allowed' : ''}`}
                   />
                   {errors.displayName && (
-                    <p className="text-red-500 text-xs mt-1">{errors.displayName}</p>
+                    <p role="alert" className="text-red-500 text-xs mt-1">{errors.displayName}</p>
                   )}
                 </div>
 
@@ -722,10 +1186,54 @@ export function UserDetailView({
                     onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })}
                     onBlur={() => handleFieldSave('phoneNumber', formData.phoneNumber)}
                     disabled={!isCreateMode && !canEdit()}
-                    className={`w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                      !isCreateMode && !canEdit() ? 'bg-gray-50 cursor-not-allowed' : ''
-                    }`}
+                    className={`w-full h-10 px-3 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 ${!isCreateMode && !canEdit() ? 'bg-gray-50 dark:bg-dark-bg-tertiary cursor-not-allowed' : ''
+                      }`}
                   />
+                </div>
+
+                {/* IBAN */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
+                    IBAN
+                  </label>
+                  <div className="relative flex gap-2">
+                    <div className="relative flex-1">
+                      <CreditCard className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-dark-text-muted" />
+                      <input
+                        type="text"
+                        value={formatIBAN(formData.iban) || ''}
+                        onChange={(e) => setFormData({ ...formData, iban: cleanIBAN(e.target.value) })}
+                        onBlur={() => {
+                          const iban = formData.iban;
+                          if (iban && !isValidIBANFormat(iban)) {
+                            toast.error('Format IBAN invalide');
+                            return;
+                          }
+                          handleFieldSave('iban', iban || null);
+                        }}
+                        disabled={!isCreateMode && !canEdit()}
+                        placeholder="BE12 3456 7890 1234"
+                        className={`w-full h-10 pl-10 pr-3 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 font-mono text-sm ${!isCreateMode && !canEdit() ? 'bg-gray-50 dark:bg-dark-bg-tertiary cursor-not-allowed' : ''
+                          }`}
+                      />
+                    </div>
+                    {/* Search IBAN button */}
+                    {!isCreateMode && canEdit() && (
+                      <button
+                        type="button"
+                        onClick={() => setShowIbanLookup(true)}
+                        className="p-2 text-gray-500 dark:text-dark-text-muted hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                        title="Rechercher IBAN dans les transactions"
+                      >
+                        <Search className="h-5 w-5" />
+                      </button>
+                    )}
+                  </div>
+                  {formData.ibans && formData.ibans.length > 1 && (
+                    <p className="mt-1 text-xs text-gray-500 dark:text-dark-text-muted">
+                      +{formData.ibans.length - 1} autre(s) IBAN détecté(s)
+                    </p>
+                  )}
                 </div>
 
                 {/* Role selector - always visible in edit mode if user can change roles */}
@@ -744,9 +1252,8 @@ export function UserDetailView({
                         }
                       }}
                       disabled={!isCreateMode && !canChangeRole()}
-                      className={`w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                        !isCreateMode && !canChangeRole() ? 'bg-gray-50 cursor-not-allowed' : ''
-                      }`}
+                      className={`w-full h-10 px-3 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 ${!isCreateMode && !canChangeRole() ? 'bg-gray-50 dark:bg-dark-bg-tertiary cursor-not-allowed' : ''
+                        }`}
                     >
                       {PermissionService.getAssignableRoles(currentUser).map(role => (
                         <option key={role} value={role}>
@@ -754,56 +1261,50 @@ export function UserDetailView({
                         </option>
                       ))}
                     </select>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-dark-text-muted">
+                      {formData.role === 'membre' && 'Membre du club sans accès à CalyCompta'}
+                      {formData.role === 'user' && 'Accès CalyCompta: ses propres dépenses et événements uniquement'}
+                      {formData.role === 'validateur' && 'Accès CalyCompta: toutes les opérations, transactions et rapports'}
+                      {formData.role === 'admin' && 'Accès CalyCompta complet + gestion des utilisateurs'}
+                      {formData.role === 'superadmin' && 'Accès CalyCompta complet + suppression utilisateurs'}
+                    </p>
                   </div>
                 )}
               </div>
 
-              {/* Comité d'Administration checkbox */}
-              <div className="border-t pt-6 space-y-4">
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    id="isCA"
-                    checked={formData.isCA || false}
-                    onChange={(e) => {
-                      const newValue = e.target.checked;
-                      setFormData({ ...formData, isCA: newValue });
+              {/* Fonction (Club Statuten) - Dynamic Value List */}
+              <div className="border-t pt-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
+                  Fonction
+                </label>
+                {clubId && (
+                  <ValueListSelector
+                    clubId={clubId}
+                    listId="fonction"
+                    value={formData.clubStatuten || []}
+                    onChange={(newValue) => {
+                      const selectedFonctions = newValue as string[];
+                      setFormData({
+                        ...formData,
+                        clubStatuten: selectedFonctions,
+                        // Maintain backwards compatibility with deprecated fields
+                        // Use capitalized values to match the value list
+                        isCA: selectedFonctions.includes('CA'),
+                        isEncadrant: selectedFonctions.includes('Encadrants')
+                      });
                       if (!isCreateMode && user && onUpdate) {
-                        handleFieldSave('isCA', newValue);
+                        handleFieldSave('clubStatuten', selectedFonctions);
                       }
                     }}
+                    mode="multi"
                     disabled={!isCreateMode && !canEdit()}
-                    className="h-4 w-4 rounded border-gray-300 dark:border-dark-border text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    showBadges={true}
                   />
-                  <label htmlFor="isCA" className="ml-3 text-sm font-medium text-gray-700 dark:text-dark-text-primary">
-                    Membre du Comité d'Administration
-                  </label>
-                </div>
-
-                {/* Encadrant checkbox */}
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    id="isEncadrant"
-                    checked={formData.isEncadrant || false}
-                    onChange={(e) => {
-                      const newValue = e.target.checked;
-                      setFormData({ ...formData, isEncadrant: newValue });
-                      if (!isCreateMode && user && onUpdate) {
-                        handleFieldSave('isEncadrant', newValue);
-                      }
-                    }}
-                    disabled={!isCreateMode && !canEdit()}
-                    className="h-4 w-4 rounded border-gray-300 dark:border-dark-border text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                  />
-                  <label htmlFor="isEncadrant" className="ml-3 text-sm font-medium text-gray-700 dark:text-dark-text-primary">
-                    Encadrant
-                  </label>
-                </div>
+                )}
               </div>
 
               {isCreateMode && (
-                <div className="border-t pt-6">
+                <div className="border-t pt-4">
                   <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
                     <div className="flex gap-3">
                       <AlertTriangle className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
@@ -817,52 +1318,156 @@ export function UserDetailView({
               )}
 
               {!isCreateMode && user && (
-                <div className="border-t pt-6 space-y-4">
-                  <div className="grid grid-cols-2 gap-6">
+                <div className="border-t pt-4 space-y-3">
+                  <div className="grid grid-cols-3 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
-                        <Calendar className="w-4 h-4 inline mr-1" />
-                        Date de création
+                      <label
+                        className="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-dark-text-primary"
+                        title="Cotisation valable jusqu'au"
+                      >
+                        <Clock className="mr-1 h-4 w-4 flex-shrink-0" />
+                        <span>Cotisation</span>
                       </label>
-                      <div className="text-gray-900 dark:text-dark-text-primary">{formatDate(user.createdAt)}</div>
+                      <input
+                        type="date"
+                        value={toDateInputValue((formData as any).cotisation_validite)}
+                        onChange={(e) => {
+                          const date = e.target.value ? new Date(e.target.value) : null;
+                          setFormData({ ...formData, cotisation_validite: date } as any);
+                        }}
+                        onBlur={() => handleFieldSave('cotisation_validite', (formData as any).cotisation_validite)}
+                        disabled={!isCreateMode && !canEdit()}
+                        className={`w-full h-10 px-3 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 ${!isCreateMode && !canEdit() ? 'bg-gray-50 dark:bg-dark-bg-tertiary cursor-not-allowed' : ''
+                          } ${isExpiredDate((formData as any).cotisation_validite)
+                            ? 'text-red-600 dark:text-red-400 font-semibold'
+                            : 'text-gray-900 dark:text-dark-text-primary'
+                          }`}
+                      />
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
-                        <Clock className="w-4 h-4 inline mr-1" />
-                        Dernière connexion
+                      <label
+                        className="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-dark-text-primary"
+                        title="Certificat médical validité Lifras"
+                      >
+                        <Calendar className="mr-1 h-4 w-4 flex-shrink-0" />
+                        <span>Certif. méd. validité</span>
                       </label>
-                      <div className="text-gray-900 dark:text-dark-text-primary">
-                        {user.lastLogin ? formatDate(user.lastLogin) : 'Jamais'}
-                      </div>
+                      <input
+                        type="date"
+                        value={toDateInputValue((formData as any).certificat_medical_validite)}
+                        onChange={(e) => {
+                          const date = e.target.value ? new Date(e.target.value) : null;
+                          setFormData({ ...formData, certificat_medical_validite: date } as any);
+                        }}
+                        onBlur={() => handleFieldSave('certificat_medical_validite', (formData as any).certificat_medical_validite)}
+                        disabled={!isCreateMode && !canEdit()}
+                        className={`w-full h-10 px-3 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 ${!isCreateMode && !canEdit() ? 'bg-gray-50 dark:bg-dark-bg-tertiary cursor-not-allowed' : ''
+                          } ${isExpiredDate((formData as any).certificat_medical_validite)
+                            ? 'text-red-600 dark:text-red-400 font-semibold'
+                            : 'text-gray-900 dark:text-dark-text-primary'
+                          }`}
+                      />
+                    </div>
+
+                    <div>
+                      <label
+                        className="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-dark-text-primary"
+                        title="Certificat médical date d'édition"
+                      >
+                        <Calendar className="mr-1 h-4 w-4 flex-shrink-0" />
+                        <span>Certif. méd. édition</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={toDateInputValue((formData as any).certificat_medical_date)}
+                        onChange={(e) => {
+                          const date = e.target.value ? new Date(e.target.value) : null;
+                          setFormData({ ...formData, certificat_medical_date: date } as any);
+                        }}
+                        onBlur={() => handleFieldSave('certificat_medical_date', (formData as any).certificat_medical_date)}
+                        disabled={!isCreateMode && !canEdit()}
+                        className={`w-full h-10 px-3 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500 ${!isCreateMode && !canEdit() ? 'bg-gray-50 dark:bg-dark-bg-tertiary cursor-not-allowed' : 'text-gray-900 dark:text-dark-text-primary'
+                          }`}
+                      />
                     </div>
                   </div>
 
-                  {user.metadata && (
-                    <div className="bg-gray-50 dark:bg-dark-bg-tertiary p-4 rounded-lg space-y-2">
-                      {user.metadata.createdBy && (
-                        <p className="text-sm text-gray-600 dark:text-dark-text-secondary">
-                          Créé par: <span className="font-medium">{userNames[user.metadata.createdBy] || user.metadata.createdBy}</span>
-                        </p>
-                      )}
-                      {user.metadata.activatedBy && (
-                        <p className="text-sm text-gray-600 dark:text-dark-text-secondary">
-                          Activé par: <span className="font-medium">{userNames[user.metadata.activatedBy] || user.metadata.activatedBy}</span>
-                          {user.metadata.activatedAt && (
-                            <span> le {formatDate(user.metadata.activatedAt)}</span>
-                          )}
-                        </p>
-                      )}
-                      {user.metadata.suspendedBy && (
-                        <p className="text-sm text-gray-600 dark:text-dark-text-secondary">
-                          Suspendu par: <span className="font-medium">{userNames[user.metadata.suspendedBy] || user.metadata.suspendedBy}</span>
-                          {user.metadata.suspendedReason && (
-                            <span> - Raison: {user.metadata.suspendedReason}</span>
-                          )}
-                        </p>
-                      )}
+                  {membershipSummaryLine && (
+                    <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-800 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-300">
+                      {membershipSummaryLine}
                     </div>
                   )}
+
+                  {/* Liaisons (transactions cotisation) */}
+                  <div className="border-t pt-4 mt-4">
+                    <h4 className="text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-3 flex items-center gap-2">
+                      <Link2 className="w-4 h-4" />
+                      Liaisons
+                    </h4>
+
+                    {loadingTransactions ? (
+                      <div className="text-sm text-gray-500 dark:text-dark-text-muted">Chargement...</div>
+                    ) : linkedTransactions.length === 0 ? (
+                      <div className="text-sm text-gray-400 dark:text-dark-text-muted italic">Aucune liaison</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {linkedTransactions.map(tx => {
+                          const txDate = tx.date_execution instanceof Timestamp
+                            ? tx.date_execution.toDate()
+                            : new Date(tx.date_execution);
+                          const linkedEntity = tx.matched_entities?.find(e => e.entity_type === 'member' && e.entity_id === user.id);
+                          const cotisationDate = linkedEntity?.cotisation_date instanceof Timestamp
+                            ? linkedEntity.cotisation_date.toDate()
+                            : linkedEntity?.cotisation_date ? new Date(linkedEntity.cotisation_date) : null;
+
+                          return (
+                            <div
+                              key={tx.id}
+                              className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg"
+                            >
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <CreditCard className="w-4 h-4 text-green-600 flex-shrink-0" />
+                                  <span className="font-medium text-green-800 dark:text-green-300 text-sm">
+                                    Cotisation
+                                  </span>
+                                  <span className="text-green-600 dark:text-green-400 font-semibold text-sm">
+                                    {formatMontant(tx.montant)}
+                                  </span>
+                                </div>
+                                <div className="text-xs text-green-600 dark:text-green-400 mt-1">
+                                  Transaction du {formatDate(txDate)}
+                                  {cotisationDate && (
+                                    <span className="ml-2">• Validité: {formatDate(cotisationDate)}</span>
+                                  )}
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => navigate(`/transactions?openTransaction=${tx.id}`)}
+                                className="p-1.5 text-green-600 hover:bg-green-100 dark:hover:bg-green-900/30 rounded transition-colors"
+                                title="Voir la transaction"
+                              >
+                                <ExternalLink className="w-4 h-4" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* User ID & LIFRAS ID */}
+                  <div className="bg-gray-50 dark:bg-dark-bg-tertiary p-3 rounded-lg space-y-1 mt-4">
+                    <p className="text-xs text-gray-500 dark:text-dark-text-muted">
+                      ID utilisateur: <span className="font-mono font-medium text-gray-700 dark:text-dark-text-primary">{user.id}</span>
+                    </p>
+                    {(formData as any).lifras_id && (
+                      <p className="text-xs text-gray-500 dark:text-dark-text-muted">
+                        ID LIFRAS: <span className="font-mono font-medium text-gray-700 dark:text-dark-text-primary">{(formData as any).lifras_id}</span>
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -872,10 +1477,10 @@ export function UserDetailView({
             <div className="space-y-6">
               <div className="bg-blue-50 p-4 rounded-lg">
                 <h3 className="font-medium text-blue-900 mb-2">
-                  Rôle actuel: {PermissionService.getRoleConfig(user.role).label}
+                  Rôle actuel: {PermissionService.getRoleConfig(getRole(user)).label}
                 </h3>
                 <p className="text-sm text-blue-700">
-                  {PermissionService.getRoleConfig(user.role).description}
+                  {PermissionService.getRoleConfig(getRole(user)).description}
                 </p>
               </div>
 
@@ -930,6 +1535,435 @@ export function UserDetailView({
                 users={currentUser ? [currentUser, user] : [user]}
               />
             </div>
+          )}
+
+          {activeTab === 'exercices' && user && clubId && (
+            <UserExercicesTab clubId={clubId} memberId={user.id} />
+          )}
+
+          {activeTab === 'app' && user && (
+            <div className="space-y-6">
+              {/* App Installation Status */}
+              <div className={`p-4 rounded-lg border ${(user as any).app_installed
+                ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                : 'bg-gray-50 dark:bg-dark-bg-tertiary border-gray-200 dark:border-dark-border'
+                }`}>
+                <div className="flex items-center gap-3">
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${(user as any).app_installed
+                    ? 'bg-green-100 dark:bg-green-900/30'
+                    : 'bg-gray-100 dark:bg-dark-bg-tertiary dark:bg-dark-bg-secondary'
+                    }`}>
+                    <Smartphone className={`w-6 h-6 ${(user as any).app_installed
+                      ? 'text-green-600 dark:text-green-400'
+                      : 'text-gray-400 dark:text-dark-text-muted'
+                      }`} />
+                  </div>
+                  <div>
+                    <h3 className={`font-medium ${(user as any).app_installed
+                      ? 'text-green-800 dark:text-green-200'
+                      : 'text-gray-700 dark:text-dark-text-primary'
+                      }`}>
+                      {(user as any).app_installed ? 'CalyMob installée' : 'CalyMob non installée'}
+                    </h3>
+                    {(user as any).app_installed && (user as any).app_last_opened && (
+                      <p className="text-sm text-green-600 dark:text-green-400">
+                        Dernière ouverture: {formatDate((user as any).app_last_opened)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+
+
+              {/* Web browser info - always show if we have browser data */}
+              {(user as any).browser_name && (
+                <div className="bg-white dark:bg-dark-bg-tertiary border border-gray-200 dark:border-dark-border rounded-lg p-4">
+                  <h4 className="font-medium text-gray-900 dark:text-dark-text-primary mb-4 flex items-center gap-2">
+                    <Globe className="w-4 h-4" />
+                    Informations navigateur
+                  </h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs text-gray-500 dark:text-dark-text-muted uppercase tracking-wide">Navigateur</label>
+                      <div className="flex items-center gap-2 mt-1">
+                        <p className="font-medium text-gray-900 dark:text-dark-text-primary">
+                          {(user as any).browser_name} {(user as any).browser_version}
+                        </p>
+                        {getBrowserCompatibilityBadge(user, compatibilitySettings)}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 dark:text-dark-text-muted uppercase tracking-wide">Plateforme</label>
+                      <p className="font-medium text-gray-900 dark:text-dark-text-primary mt-1">
+                        {(user as any).device_type || 'Web'}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 dark:text-dark-text-muted uppercase tracking-wide">Locale</label>
+                      <p className="font-medium text-gray-900 dark:text-dark-text-primary mt-1">
+                        {(user as any).device_locale || 'Inconnu'}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 dark:text-dark-text-muted uppercase tracking-wide">Dernière connexion</label>
+                      <p className="font-medium text-gray-900 dark:text-dark-text-primary mt-1">
+                        {(user as any).web_last_login ? formatDate((user as any).web_last_login) : 'Inconnue'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {(user as any).app_installed && (
+                <>
+                  {/* Device Info */}
+                  <div className="bg-white dark:bg-dark-bg-tertiary border border-gray-200 dark:border-dark-border rounded-lg p-4">
+                    <h4 className="font-medium text-gray-900 dark:text-dark-text-primary mb-4 flex items-center gap-2">
+                      <Smartphone className="w-4 h-4" />
+                      Informations appareil
+                    </h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs text-gray-500 dark:text-dark-text-muted uppercase tracking-wide">Plateforme</label>
+                        <p className="font-medium text-gray-900 dark:text-dark-text-primary flex items-center gap-2 mt-1">
+                          {(user as any).app_platform === 'ios' ? (
+                            <>
+                              <span className="text-lg">🍎</span> iOS
+                            </>
+                          ) : (user as any).app_platform === 'android' ? (
+                            <>
+                              <span className="text-lg">🤖</span> Android
+                            </>
+                          ) : (
+                            'Inconnu'
+                          )}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500 dark:text-dark-text-muted uppercase tracking-wide">Modèle</label>
+                        <p className="font-medium text-gray-900 dark:text-dark-text-primary mt-1">
+                          {(user as any).device_brand && (user as any).device_brand !== 'Apple' && (
+                            <span className="text-gray-500 dark:text-dark-text-muted mr-1">{(user as any).device_brand}</span>
+                          )}
+                          {(user as any).device_model || 'Inconnu'}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500 dark:text-dark-text-muted uppercase tracking-wide">Version OS</label>
+                        <div className="flex items-center gap-2 mt-1">
+                          <p className="font-medium text-gray-900 dark:text-dark-text-primary">
+                            {(user as any).device_os_version || 'Inconnu'}
+                          </p>
+                          {getMobileCompatibilityBadge(user, compatibilitySettings)}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500 dark:text-dark-text-muted uppercase tracking-wide">Version App</label>
+                        <p className="font-medium text-gray-900 dark:text-dark-text-primary mt-1">
+                          {(user as any).app_version || 'Inconnue'}
+                          {(user as any).app_build_number && (
+                            <span className="text-gray-500 dark:text-dark-text-muted ml-1">
+                              (build {(user as any).app_build_number})
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      {/* Nieuwe debug velden */}
+                      <div>
+                        <label className="text-xs text-gray-500 dark:text-dark-text-muted uppercase tracking-wide">Locale</label>
+                        <p className="font-medium text-gray-900 dark:text-dark-text-primary mt-1">
+                          {(user as any).device_locale || 'Inconnu'}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500 dark:text-dark-text-muted uppercase tracking-wide">Timezone</label>
+                        <p className="font-medium text-gray-900 dark:text-dark-text-primary mt-1">
+                          {(user as any).device_timezone || 'Inconnu'}
+                        </p>
+                      </div>
+                      {(user as any).device_screen_width && (user as any).device_screen_height && (
+                        <div>
+                          <label className="text-xs text-gray-500 dark:text-dark-text-muted uppercase tracking-wide">Écran</label>
+                          <p className="font-medium text-gray-900 dark:text-dark-text-primary mt-1">
+                            {(user as any).device_screen_width}×{(user as any).device_screen_height}
+                            {(user as any).device_pixel_ratio && (user as any).device_pixel_ratio !== 1 && (
+                              <span className="text-gray-500 dark:text-dark-text-muted ml-1">
+                                @{(user as any).device_pixel_ratio}x
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      )}
+                      {(user as any).device_is_physical === false && (
+                        <div>
+                          <label className="text-xs text-gray-500 dark:text-dark-text-muted uppercase tracking-wide">Type</label>
+                          <p className="font-medium text-orange-600 dark:text-orange-400 mt-1">
+                            Simulateur/Émulateur
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Dates */}
+                  <div className="bg-white dark:bg-dark-bg-tertiary border border-gray-200 dark:border-dark-border rounded-lg p-4">
+                    <h4 className="font-medium text-gray-900 dark:text-dark-text-primary mb-4 flex items-center gap-2">
+                      <Calendar className="w-4 h-4" />
+                      Historique
+                    </h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs text-gray-500 dark:text-dark-text-muted uppercase tracking-wide">Première installation</label>
+                        <p className="font-medium text-gray-900 dark:text-dark-text-primary mt-1">
+                          {(user as any).app_first_installed ? formatDate((user as any).app_first_installed) : 'Inconnue'}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500 dark:text-dark-text-muted uppercase tracking-wide">Dernière ouverture</label>
+                        <p className="font-medium text-gray-900 dark:text-dark-text-primary mt-1">
+                          {(user as any).app_last_opened ? formatDate((user as any).app_last_opened) : 'Inconnue'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Push Notifications */}
+                  <div className="bg-white dark:bg-dark-bg-tertiary border border-gray-200 dark:border-dark-border rounded-lg p-4">
+                    <h4 className="font-medium text-gray-900 dark:text-dark-text-primary mb-4 flex items-center gap-2">
+                      <Bell className="w-4 h-4" />
+                      Notifications Push
+                    </h4>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-700 dark:text-dark-text-primary">Statut</span>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${(user as any).notifications_enabled
+                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                          : 'bg-gray-100 dark:bg-dark-bg-tertiary dark:bg-dark-bg-secondary text-gray-600 dark:text-dark-text-secondary'
+                          }`}>
+                          {(user as any).notifications_enabled ? 'Activées' : 'Désactivées'}
+                        </span>
+                      </div>
+                      {(user as any).fcm_tokens && (user as any).fcm_tokens.length > 0 && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-700 dark:text-dark-text-primary">Appareils enregistrés</span>
+                          <span className="text-gray-900 dark:text-dark-text-primary font-medium">
+                            {(user as any).fcm_tokens.length}
+                          </span>
+                        </div>
+                      )}
+                      {(user as any).fcm_token_updated_at && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-700 dark:text-dark-text-primary">Dernière mise à jour token</span>
+                          <span className="text-gray-900 dark:text-dark-text-primary">
+                            {formatDate((user as any).fcm_token_updated_at)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Diagnostics (from CalyMob CrashlyticsService + DiagnosticService) */}
+                  {((user as any).diag_biometric || (user as any).diag_errors) && (
+                    <div className="bg-white dark:bg-dark-bg-tertiary border border-gray-200 dark:border-dark-border rounded-lg p-4">
+                      <h4 className="font-medium text-gray-900 dark:text-dark-text-primary mb-4 flex items-center gap-2">
+                        <Activity className="w-4 h-4" />
+                        Diagnostics
+                      </h4>
+
+                      {/* Biometric Status */}
+                      {(user as any).diag_biometric && (
+                        <div className="mb-4">
+                          <h5 className="text-xs text-gray-500 dark:text-dark-text-muted uppercase tracking-wide mb-2 flex items-center gap-1">
+                            <Fingerprint className="w-3 h-3" />
+                            Biométrie
+                          </h5>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-gray-700 dark:text-dark-text-primary">Disponible</span>
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                (user as any).diag_biometric.available
+                                  ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                                  : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+                              }`}>
+                                {(user as any).diag_biometric.available ? 'Oui' : 'Non'}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-gray-700 dark:text-dark-text-primary">Appareil supporté</span>
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                (user as any).diag_biometric.deviceSupported
+                                  ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                                  : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+                              }`}>
+                                {(user as any).diag_biometric.deviceSupported ? 'Oui' : 'Non'}
+                              </span>
+                            </div>
+                            {(user as any).diag_biometric.types && (
+                              <div className="col-span-2">
+                                <span className="text-sm text-gray-700 dark:text-dark-text-primary mr-2">Types:</span>
+                                <span className="text-sm font-medium text-gray-900 dark:text-dark-text-primary">
+                                  {(user as any).diag_biometric.types || 'Aucun'}
+                                </span>
+                              </div>
+                            )}
+                            {(user as any).diag_biometric.error && (
+                              <div className="col-span-2 bg-red-50 dark:bg-red-900/10 rounded p-2">
+                                <span className="text-xs text-red-600 dark:text-red-400 font-mono">
+                                  {(user as any).diag_biometric.error}
+                                </span>
+                              </div>
+                            )}
+                            {(user as any).diag_biometric.updated_at && (
+                              <div className="col-span-2 text-xs text-gray-400 dark:text-dark-text-muted">
+                                Mis à jour: {formatDate((user as any).diag_biometric.updated_at)}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Recent Errors */}
+                      {(user as any).diag_errors && (user as any).diag_errors.length > 0 && (
+                        <div>
+                          <h5 className="text-xs text-gray-500 dark:text-dark-text-muted uppercase tracking-wide mb-2 flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3" />
+                            Dernières erreurs ({(user as any).diag_errors.length})
+                          </h5>
+                          <div className="space-y-2 max-h-48 overflow-y-auto">
+                            {((user as any).diag_errors as Array<{domain: string; message: string; detail?: string; timestamp: string}>).map((err, i) => (
+                              <div key={i} className="bg-gray-50 dark:bg-dark-bg-secondary rounded p-2 text-xs">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="font-medium text-gray-900 dark:text-dark-text-primary uppercase">
+                                    {err.domain}
+                                  </span>
+                                  <span className="text-gray-400 dark:text-dark-text-muted">
+                                    {err.timestamp ? new Date(err.timestamp).toLocaleString('fr-BE') : ''}
+                                  </span>
+                                </div>
+                                <p className="text-gray-700 dark:text-dark-text-secondary">{err.message}</p>
+                                {err.detail && (
+                                  <p className="text-gray-500 dark:text-dark-text-muted font-mono mt-1 break-all">
+                                    {err.detail}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Web Login Info (CalyCompta) */}
+              {(user as any).device_platform === 'web' && (user as any).web_last_login && (
+                <div className="bg-white dark:bg-dark-bg-tertiary border border-gray-200 dark:border-dark-border rounded-lg p-4">
+                  <h4 className="font-medium text-gray-900 dark:text-dark-text-primary mb-4 flex items-center gap-2">
+                    <span className="text-lg">🌐</span>
+                    Connexion Web (CalyCompta)
+                  </h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs text-gray-500 dark:text-dark-text-muted uppercase tracking-wide">Navigateur</label>
+                      <div className="flex items-center gap-2 mt-1">
+                        <p className="font-medium text-gray-900 dark:text-dark-text-primary">
+                          {(user as any).browser_name || 'Inconnu'}
+                          {(user as any).browser_version && (
+                            <span className="text-gray-500 dark:text-dark-text-muted ml-1">
+                              v{(user as any).browser_version}
+                            </span>
+                          )}
+                        </p>
+                        {getBrowserCompatibilityBadge(user, compatibilitySettings)}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 dark:text-dark-text-muted uppercase tracking-wide">Type</label>
+                      <p className="font-medium text-gray-900 dark:text-dark-text-primary mt-1">
+                        {(user as any).device_type || 'Desktop'}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 dark:text-dark-text-muted uppercase tracking-wide">Locale</label>
+                      <p className="font-medium text-gray-900 dark:text-dark-text-primary mt-1">
+                        {(user as any).device_locale || 'Inconnu'}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 dark:text-dark-text-muted uppercase tracking-wide">Timezone</label>
+                      <p className="font-medium text-gray-900 dark:text-dark-text-primary mt-1">
+                        {(user as any).device_timezone || 'Inconnu'}
+                      </p>
+                    </div>
+                    {(user as any).device_screen_width && (user as any).device_screen_height && (
+                      <div>
+                        <label className="text-xs text-gray-500 dark:text-dark-text-muted uppercase tracking-wide">Écran</label>
+                        <p className="font-medium text-gray-900 dark:text-dark-text-primary mt-1">
+                          {(user as any).device_screen_width}×{(user as any).device_screen_height}
+                          {(user as any).device_pixel_ratio && (user as any).device_pixel_ratio !== 1 && (
+                            <span className="text-gray-500 dark:text-dark-text-muted ml-1">
+                              @{(user as any).device_pixel_ratio}x
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    )}
+                    <div>
+                      <label className="text-xs text-gray-500 dark:text-dark-text-muted uppercase tracking-wide">Dernière connexion web</label>
+                      <p className="font-medium text-gray-900 dark:text-dark-text-primary mt-1">
+                        {formatDate((user as any).web_last_login)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!(user as any).app_installed && !(user as any).web_last_login && (
+                <div className="bg-gray-50 dark:bg-dark-bg-tertiary border border-gray-200 dark:border-dark-border rounded-lg p-6 text-center">
+                  <Smartphone className="w-12 h-12 text-gray-300 dark:text-dark-text-muted mx-auto mb-3" />
+                  <p className="text-gray-600 dark:text-dark-text-secondary">
+                    Ce membre n'a pas encore installé l'application CalyMob.
+                  </p>
+                  <p className="text-sm text-gray-500 dark:text-dark-text-muted mt-2">
+                    Les informations apparaîtront ici une fois l'app installée et ouverte.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Onglet Médical */}
+          {activeTab === 'medical' && user && (
+            <MedicalTab
+              user={user}
+              clubId={clubId!}
+              currentUserId={firebaseAuthUser?.uid}
+              currentUserName={currentUser?.displayName || currentUser?.email}
+              canEdit={canEdit()}
+              onUpdate={(updates) => {
+                if (onUpdate) {
+                  onUpdate(user.id, updates);
+                }
+              }}
+            />
+          )}
+
+          {/* Onglet Documents */}
+          {activeTab === 'documents' && user && (
+            <DocumentsTab
+              user={user}
+              clubId={clubId!}
+              currentUserId={firebaseAuthUser?.uid}
+              currentUserName={currentUser?.displayName || currentUser?.email}
+              canEdit={canEdit()}
+              onUpdate={(updates) => {
+                if (onUpdate) {
+                  onUpdate(user.id, updates);
+                }
+              }}
+            />
           )}
         </div>
 
@@ -986,7 +2020,7 @@ export function UserDetailView({
                     type="text"
                     value={resetPassword}
                     onChange={(e) => setResetPassword(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full h-10 px-3 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-blue-500"
                     placeholder={generateDefaultPassword()}
                   />
                   <p className="text-xs text-gray-500 dark:text-dark-text-muted mt-1">
@@ -1042,6 +2076,23 @@ export function UserDetailView({
           isOpen={showSendEmailModal}
           onClose={() => setShowSendEmailModal(false)}
           onSend={handleSendEmail}
+        />
+      )}
+
+      {/* IBAN Lookup Modal */}
+      {showIbanLookup && clubId && (
+        <IbanLookupModal
+          clubId={clubId}
+          firstName={formData.firstName || ''}
+          lastName={formData.lastName || ''}
+          currentIban={(formData as any).iban}
+          onSelect={(iban) => {
+            setFormData({ ...formData, iban } as any);
+            handleFieldSave('iban', iban);
+            setShowIbanLookup(false);
+            toast.success('IBAN selectionne');
+          }}
+          onClose={() => setShowIbanLookup(false)}
         />
       )}
     </>

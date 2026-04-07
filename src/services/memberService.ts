@@ -1,4 +1,5 @@
 import { db } from '@/lib/firebase';
+import { logger } from '@/utils/logger';
 import {
   collection,
   doc,
@@ -16,7 +17,23 @@ import {
 } from 'firebase/firestore';
 import { Member, ImportResult } from '@/types/inventory';
 import { Membre } from '@/types';
-import * as XLSX from 'xlsx';
+// XLSX is loaded dynamically to reduce initial bundle size (~200KB)
+import { getFirstName, getLastName } from '@/utils/fieldMapper';
+import { calculatePlongeurCode } from '@/utils/plongeurUtils';
+
+// Interface for encoding correction mapping
+export interface EncodingCorrection {
+  original: string;
+  corrected: string;
+}
+
+// Interface for detected encoding issues
+export interface EncodingIssue {
+  row: number;
+  column: string;
+  value: string;
+  suggestedCorrection?: string;
+}
 
 /**
  * Service pour gérer les membres du module inventaire dans Firebase
@@ -75,11 +92,13 @@ export class MemberService {
 
       if (filters?.search) {
         const searchLower = filters.search.toLowerCase();
-        members = members.filter(m =>
-          m.nom.toLowerCase().includes(searchLower) ||
-          m.prenom.toLowerCase().includes(searchLower) ||
-          m.email.toLowerCase().includes(searchLower)
-        );
+        members = members.filter(m => {
+          const lastName = (getLastName(m) || '').toLowerCase();
+          const firstName = (getFirstName(m) || '').toLowerCase();
+          return lastName.includes(searchLower) ||
+            firstName.includes(searchLower) ||
+            m.email.toLowerCase().includes(searchLower);
+        });
       }
 
       // Calculer ancienneté et statut débutant
@@ -87,7 +106,7 @@ export class MemberService {
 
       return members;
     } catch (error) {
-      console.error('Erreur chargement membres:', error);
+      logger.error('Erreur chargement membres:', error);
       throw error;
     }
   }
@@ -111,7 +130,7 @@ export class MemberService {
 
       return this.calculateMemberStats(member);
     } catch (error) {
-      console.error('Erreur chargement membre:', error);
+      logger.error('Erreur chargement membre:', error);
       throw error;
     }
   }
@@ -141,10 +160,12 @@ export class MemberService {
 
       await setDoc(newMemberRef, memberWithStats);
 
-      console.log(`Membre créé: ${newMember.nom} ${newMember.prenom} (${newMember.id})`);
+      const lastName = getLastName(newMember) || '';
+      const firstName = getFirstName(newMember) || '';
+      logger.debug(`Membre créé: ${lastName} ${firstName} (${newMember.id})`);
       return newMemberRef.id;
     } catch (error) {
-      console.error('Erreur création membre:', error);
+      logger.error('Erreur création membre:', error);
       throw error;
     }
   }
@@ -179,9 +200,9 @@ export class MemberService {
         updatedAt: serverTimestamp()
       });
 
-      console.log(`Membre mis à jour: ${memberId}`);
+      logger.debug(`Membre mis à jour: ${memberId}`);
     } catch (error) {
-      console.error('Erreur mise à jour membre:', error);
+      logger.error('Erreur mise à jour membre:', error);
       throw error;
     }
   }
@@ -198,9 +219,9 @@ export class MemberService {
         updatedAt: serverTimestamp()
       });
 
-      console.log(`Membre désactivé (soft delete): ${memberId}`);
+      logger.debug(`Membre désactivé (soft delete): ${memberId}`);
     } catch (error) {
-      console.error('Erreur suppression membre:', error);
+      logger.error('Erreur suppression membre:', error);
       throw error;
     }
   }
@@ -212,8 +233,10 @@ export class MemberService {
   /**
    * Prévisualiser un import XLS (5 premières lignes)
    */
-  static async previewImport(file: File): Promise<{ columns: string[]; rows: any[] }> {
+  static async previewImport(file: File): Promise<{ columns: string[]; rows: any[]; encodingIssues: EncodingIssue[] }> {
     try {
+      // Dynamic import for code splitting - XLSX is ~200KB
+      const XLSX = await import('xlsx');
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data, { type: 'array' });
       const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -226,11 +249,139 @@ export class MemberService {
       const columns = jsonData[0] as string[];
       const rows = jsonData.slice(1, 6); // 5 premières lignes
 
-      return { columns, rows };
+      // Detect encoding issues in all data (not just preview rows)
+      const allRows = jsonData.slice(1);
+      const encodingIssues = this.detectEncodingIssues(allRows, columns);
+
+      return { columns, rows, encodingIssues };
     } catch (error) {
-      console.error('Erreur prévisualisation import:', error);
+      logger.error('Erreur prévisualisation import:', error);
       throw error;
     }
+  }
+
+  /**
+   * Detect encoding issues in imported data
+   * Common patterns: 鮶, 鶶, � and other non-standard characters in name fields
+   */
+  static detectEncodingIssues(rows: any[][], columns: string[]): EncodingIssue[] {
+    const issues: EncodingIssue[] = [];
+    const seenValues = new Set<string>(); // Avoid duplicates
+
+    // Columns that typically contain names (where encoding issues matter most)
+    const nameColumnPatterns = ['nom', 'prenom', 'prénom', 'name', 'localité', 'localite', 'adresse'];
+    const nameColumnIndexes: number[] = [];
+
+    columns.forEach((col, idx) => {
+      const colLower = col.toLowerCase();
+      if (nameColumnPatterns.some(p => colLower.includes(p))) {
+        nameColumnIndexes.push(idx);
+      }
+    });
+
+    // Regex to detect problematic characters
+    // Matches CJK characters (likely encoding errors), replacement chars, and HTML entities
+    const problematicPattern = /[\u4E00-\u9FFF\u3400-\u4DBF\uFFFD]|&#?\w+;|<[^>]+>/;
+
+    rows.forEach((row, rowIdx) => {
+      nameColumnIndexes.forEach(colIdx => {
+        const value = row[colIdx]?.toString().trim();
+        if (value && problematicPattern.test(value) && !seenValues.has(value)) {
+          seenValues.add(value);
+          issues.push({
+            row: rowIdx + 2, // +2 because: +1 for header, +1 for 1-indexed
+            column: columns[colIdx],
+            value: value,
+            suggestedCorrection: this.suggestCorrection(value)
+          });
+        }
+      });
+    });
+
+    return issues;
+  }
+
+  /**
+   * Try to suggest a correction for encoding issues
+   * Based on common patterns we've seen
+   */
+  static suggestCorrection(value: string): string | undefined {
+    // Remove HTML tags
+    let cleaned = value.replace(/<[^>]+>/g, '');
+
+    // Common replacements for encoding errors
+    const replacements: Record<string, string> = {
+      '鮶': 'é',
+      '鶶': 'é',
+      '閟': 'è',
+      '閞': 'ê',
+      '錮': 'ô',
+      '錩': 'î',
+      '錥': 'â',
+      '錢': 'û',
+      '鑉': 'ù',
+      '闘': 'à',
+      '\uFFFD': '', // Unicode replacement character
+    };
+
+    Object.entries(replacements).forEach(([bad, good]) => {
+      cleaned = cleaned.split(bad).join(good);
+    });
+
+    // If we made changes, return the suggestion
+    if (cleaned !== value) {
+      return cleaned;
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Get saved encoding corrections from Firestore settings
+   */
+  static async getEncodingCorrections(clubId: string): Promise<EncodingCorrection[]> {
+    try {
+      const settingsRef = doc(db, 'clubs', clubId, 'settings', 'import_corrections');
+      const snapshot = await getDoc(settingsRef);
+
+      if (snapshot.exists()) {
+        return snapshot.data().corrections || [];
+      }
+      return [];
+    } catch (error) {
+      logger.error('Erreur chargement corrections encodage:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Save encoding corrections to Firestore settings
+   */
+  static async saveEncodingCorrections(clubId: string, corrections: EncodingCorrection[]): Promise<void> {
+    try {
+      const settingsRef = doc(db, 'clubs', clubId, 'settings', 'import_corrections');
+      await setDoc(settingsRef, {
+        corrections,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      logger.debug(`Saved ${corrections.length} encoding corrections`);
+    } catch (error) {
+      logger.error('Erreur sauvegarde corrections encodage:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Apply saved encoding corrections to a value
+   */
+  static applyEncodingCorrections(value: string, corrections: EncodingCorrection[]): string {
+    let result = value;
+    corrections.forEach(correction => {
+      if (result.includes(correction.original)) {
+        result = result.split(correction.original).join(correction.corrected);
+      }
+    });
+    return result;
   }
 
   /**
@@ -249,7 +400,8 @@ export class MemberService {
   static async importMembersFromXLS(
     clubId: string,
     file: File,
-    columnMapping?: Record<string, string>
+    columnMapping?: Record<string, string>,
+    encodingCorrections?: EncodingCorrection[]
   ): Promise<ImportResult> {
     const result: ImportResult = {
       success: true,
@@ -260,7 +412,9 @@ export class MemberService {
     };
 
     try {
-      // Lire le fichier XLS (supporte HTML-based XLS de iClubSport/VP Dive)
+      // Dynamic import for code splitting - XLSX is ~200KB
+      const XLSX = await import('xlsx');
+      // Lire le fichier XLS (supporte les exports HTML-based type iClubSport)
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
       const sheetName = workbook.SheetNames[0];
@@ -275,7 +429,7 @@ export class MemberService {
 
       // Première ligne = headers
       const headers = data[0];
-      console.log(`📊 Import XLS: ${data.length - 1} lignes de données, ${headers.length} colonnes`);
+      logger.debug(`📊 Import XLS: ${data.length - 1} lignes de données, ${headers.length} colonnes`);
 
       // Trouver index des colonnes (format export.xls LIFRAS)
       const colIndexes = {
@@ -314,8 +468,20 @@ export class MemberService {
 
         try {
           const lifrasId = row[colIndexes.lifrasID]?.toString().trim();
-          const nom = row[colIndexes.nom]?.toString().trim();
-          const prenom = row[colIndexes.prenom]?.toString().trim();
+
+          // Apply encoding corrections if provided
+          let nom = row[colIndexes.nom]?.toString().trim();
+          let prenom = row[colIndexes.prenom]?.toString().trim();
+          let localite = row[colIndexes.localite]?.toString().trim();
+          let adresse = row[colIndexes.adresse]?.toString().trim();
+
+          if (encodingCorrections && encodingCorrections.length > 0) {
+            if (nom) nom = this.applyEncodingCorrections(nom, encodingCorrections);
+            if (prenom) prenom = this.applyEncodingCorrections(prenom, encodingCorrections);
+            if (localite) localite = this.applyEncodingCorrections(localite, encodingCorrections);
+            if (adresse) adresse = this.applyEncodingCorrections(adresse, encodingCorrections);
+          }
+
           const email = row[colIndexes.email]?.toString().trim()?.toLowerCase();
 
           // Validation basique
@@ -331,17 +497,20 @@ export class MemberService {
           // Vérifier doublon par LifrasID ou Email
           if (lifrasId && existingLifrasIds.has(lifrasId)) {
             result.skipped++;
-            console.log(`Membre existant (LifrasID ${lifrasId}): ${prenom} ${nom}`);
+            logger.debug(`Membre existant (LifrasID ${lifrasId}): ${prenom} ${nom}`);
             continue;
           }
 
           if (email && existingEmails.has(email)) {
             result.skipped++;
-            console.log(`Membre existant (email ${email}): ${prenom} ${nom}`);
+            logger.debug(`Membre existant (email ${email}): ${prenom} ${nom}`);
             continue;
           }
 
           // Créer le membre avec tous les champs disponibles
+          const plongeurNiveau = row[colIndexes.niveauPlongeur]?.toString().trim() || undefined;
+          const plongeurCode = calculatePlongeurCode(plongeurNiveau);
+
           const memberData: Omit<Member, 'id' | 'createdAt' | 'updatedAt' | 'isDebutant' | 'anciennete'> = {
             licence_lifras: lifrasId || undefined,
             nr_febras: row[colIndexes.nrFebras]?.toString().trim() || undefined,
@@ -349,15 +518,17 @@ export class MemberService {
             prenom,
             email: email || `${lifrasId}@temp.local`, // Email temporaire si manquant
             telephone: row[colIndexes.gsm]?.toString().trim() || undefined,
-            adresse: row[colIndexes.adresse]?.toString().trim() || undefined,
+            adresse: adresse || undefined,
             code_postal: row[colIndexes.codePostal]?.toString().trim() || undefined,
-            localite: row[colIndexes.localite]?.toString().trim() || undefined,
+            localite: localite || undefined,
             pays: row[colIndexes.pays]?.toString().trim() || undefined,
             ice: row[colIndexes.ice]?.toString().trim() || undefined,
             certificat_medical_date: this.parseExcelDate(row[colIndexes.certifDate]) || undefined,
             certificat_medical_validite: this.parseExcelDate(row[colIndexes.certifValidite]) || undefined,
             date_naissance: this.parseExcelDate(row[colIndexes.dateNaissance]) || undefined,
-            niveau_plongee: row[colIndexes.niveauPlongeur]?.toString().trim() || undefined,
+            plongeur_niveau: plongeurNiveau,
+            plongeur_code: plongeurCode,
+            niveau_plongee: plongeurNiveau, // Legacy field
             newsletter: this.parseExcelBoolean(row[colIndexes.newsletter]),
             statut: 'actif'
           };
@@ -380,11 +551,11 @@ export class MemberService {
 
       result.success = result.errors.length === 0;
 
-      console.log(`✅ Import terminé: ${result.added} ajoutés, ${result.updated} mis à jour, ${result.skipped} ignorés, ${result.errors.length} erreurs`);
+      logger.debug(`✅ Import terminé: ${result.added} ajoutés, ${result.updated} mis à jour, ${result.skipped} ignorés, ${result.errors.length} erreurs`);
 
       return result;
     } catch (error: any) {
-      console.error('❌ Erreur import XLS:', error);
+      logger.error('❌ Erreur import XLS:', error);
       throw error;
     }
   }
@@ -415,7 +586,7 @@ export class MemberService {
         cautionsEnCours: 0
       };
     } catch (error) {
-      console.error('Erreur chargement stats membre:', error);
+      logger.error('Erreur chargement stats membre:', error);
       throw error;
     }
   }
@@ -428,7 +599,7 @@ export class MemberService {
       // TODO: Implémenter quand la collection loans sera créée
       return [];
     } catch (error) {
-      console.error('Erreur chargement prêts membre:', error);
+      logger.error('Erreur chargement prêts membre:', error);
       throw error;
     }
   }
@@ -441,7 +612,7 @@ export class MemberService {
       // TODO: Implémenter quand la collection sales sera créée
       return [];
     } catch (error) {
-      console.error('Erreur chargement achats membre:', error);
+      logger.error('Erreur chargement achats membre:', error);
       throw error;
     }
   }
@@ -495,7 +666,7 @@ export class MemberService {
     detectColumn('date_adhesion', ['adhesion', 'adhésion', 'date', 'inscription']);
     detectColumn('statut', ['statut', 'status', 'état', 'etat']);
 
-    console.log('Mapping colonnes détecté:', mapping);
+    logger.debug('Mapping colonnes détecté:', mapping);
 
     return mapping;
   }
@@ -536,7 +707,7 @@ export class MemberService {
 
       return null;
     } catch (error) {
-      console.error('Erreur parsing date:', error);
+      logger.error('Erreur parsing date:', error);
       return null;
     }
   }
@@ -576,7 +747,7 @@ export class MemberService {
 
       return undefined;
     } catch (error) {
-      console.error('Erreur parsing date Excel:', error);
+      logger.error('Erreur parsing date Excel:', error);
       return undefined;
     }
   }

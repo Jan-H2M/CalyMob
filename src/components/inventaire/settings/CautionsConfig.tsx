@@ -4,6 +4,7 @@ import { InventoryConfigService } from '@/services/inventoryConfigService';
 import { CautionRule } from '@/types/inventory';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
+import { logger } from '@/utils/logger';
 
 const DEFAULT_CAUTION_RULES: CautionRule[] = [
   {
@@ -92,7 +93,7 @@ export function CautionsConfig() {
         setRules(DEFAULT_CAUTION_RULES);
       }
     } catch (error) {
-      console.error('Erreur chargement règles caution:', error);
+      logger.error('Erreur chargement règles caution:', error);
       toast.error('Erreur lors du chargement des règles');
       setRules(DEFAULT_CAUTION_RULES);
     } finally {
@@ -108,7 +109,7 @@ export function CautionsConfig() {
       toast.success('Règles de caution sauvegardées');
       setHasChanges(false);
     } catch (error) {
-      console.error('Erreur sauvegarde règles:', error);
+      logger.error('Erreur sauvegarde règles:', error);
       toast.error('Erreur lors de la sauvegarde');
     }
   };
@@ -179,7 +180,7 @@ export function CautionsConfig() {
 
       toast.success(`Caution "${rule.nom}" supprimée`);
     } catch (error) {
-      console.error('Erreur suppression caution:', error);
+      logger.error('Erreur suppression caution:', error);
       toast.error('Erreur lors de la suppression');
     }
   };
@@ -197,15 +198,15 @@ export function CautionsConfig() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">Règles de Caution</h2>
-          <p className="mt-1 text-sm text-gray-500">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-dark-text-primary">Règles de Caution</h2>
+          <p className="mt-1 text-sm text-gray-500 dark:text-dark-text-muted">
             Configurez les montants de caution et les règles de remboursement
           </p>
         </div>
         <div className="flex items-center gap-3">
           <button
             onClick={handleAddCaution}
-            className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+            className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-dark-border rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-dark-text-primary bg-white hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary"
           >
             <Plus className="h-4 w-4 mr-2" />
             Ajouter une caution
@@ -246,40 +247,40 @@ export function CautionsConfig() {
       {/* Caution Rules */}
       <div className="space-y-4">
         {rules.map((rule) => (
-          <div key={rule.id} className="bg-white border border-gray-200 rounded-lg p-6">
+          <div key={rule.id} className="bg-white border border-gray-200 dark:border-dark-border rounded-lg p-6">
             <div className="space-y-4">
               {/* Rule Header with Delete Button */}
               <div className="flex items-start justify-between">
                 <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                       Nom
                     </label>
                     <input
                       type="text"
                       value={rule.nom}
                       onChange={(e) => updateRule(rule.id, { nom: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md"
                       placeholder="Ex: Kit Base, Kit Complet..."
                     />
-                    <label className="block text-sm font-medium text-gray-700 mb-1 mt-3">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1 mt-3">
                       Description
                     </label>
                     <input
                       type="text"
                       value={rule.description}
                       onChange={(e) => updateRule(rule.id, { description: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md"
                       placeholder="Ex: Régulateur + BC + Lampe"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                       Montant de la caution
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <Euro className="h-4 w-4 text-gray-400" />
+                        <Euro className="h-4 w-4 text-gray-400 dark:text-dark-text-muted" />
                       </div>
                       <input
                         type="number"
@@ -287,7 +288,7 @@ export function CautionsConfig() {
                         onChange={(e) => updateRule(rule.id, { montant: parseFloat(e.target.value) || 0 })}
                         min="0"
                         step="10"
-                        className="pl-10 w-full px-3 py-2 border border-gray-300 rounded-md"
+                        className="pl-10 w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md"
                       />
                     </div>
                   </div>
@@ -303,13 +304,13 @@ export function CautionsConfig() {
 
               {/* Refund Percentages */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-3">
                   Pourcentage de remboursement selon l'état du matériel
                 </label>
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                   {Object.entries(rule.pourcentage_remboursement).map(([etat, pourcentage]) => (
                     <div key={etat}>
-                      <label className="block text-xs text-gray-600 mb-1 capitalize">
+                      <label className="block text-xs text-gray-600 dark:text-dark-text-secondary mb-1 capitalize">
                         {etat === 'excellent' && '⭐ Excellent'}
                         {etat === 'bon' && '✓ Bon'}
                         {etat === 'correct' && '~ Correct'}
@@ -327,10 +328,10 @@ export function CautionsConfig() {
                           )}
                           min="0"
                           max="100"
-                          className="w-full px-2 py-1.5 pr-6 text-sm border border-gray-300 rounded-md"
+                          className="w-full px-2 py-1.5 pr-6 text-sm border border-gray-300 dark:border-dark-border rounded-md"
                         />
                         <div className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none">
-                          <span className="text-xs text-gray-400">%</span>
+                          <span className="text-xs text-gray-400 dark:text-dark-text-muted">%</span>
                         </div>
                       </div>
                     </div>
@@ -341,18 +342,18 @@ export function CautionsConfig() {
               {/* Mode de validation */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                     Mode de validation
                   </label>
                   <select
                     value={rule.mode_validation}
                     onChange={(e) => updateRule(rule.id, { mode_validation: e.target.value as 'manuel' | 'auto' })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md"
                   >
                     <option value="manuel">Manuel</option>
                     <option value="auto">Automatique</option>
                   </select>
-                  <p className="mt-1 text-xs text-gray-500">
+                  <p className="mt-1 text-xs text-gray-500 dark:text-dark-text-muted">
                     {rule.mode_validation === 'manuel'
                       ? 'Le remboursement doit être validé manuellement'
                       : 'Le remboursement est automatique après inspection'}
@@ -360,19 +361,19 @@ export function CautionsConfig() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                     Délai de remboursement
                   </label>
                   <select
                     value={rule.delai_remboursement}
                     onChange={(e) => updateRule(rule.id, { delai_remboursement: e.target.value as CautionRule['delai_remboursement'] })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md"
                   >
                     <option value="immediat">Immédiat</option>
                     <option value="fin_semaine">Fin de semaine</option>
                     <option value="fin_mois">Fin de mois</option>
                   </select>
-                  <p className="mt-1 text-xs text-gray-500">
+                  <p className="mt-1 text-xs text-gray-500 dark:text-dark-text-muted">
                     {rule.delai_remboursement === 'immediat' && 'Remboursement le jour même du retour'}
                     {rule.delai_remboursement === 'fin_semaine' && 'Remboursement en fin de semaine'}
                     {rule.delai_remboursement === 'fin_mois' && 'Remboursement en fin de mois'}
@@ -385,31 +386,31 @@ export function CautionsConfig() {
       </div>
 
       {/* Example Calculations */}
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
-        <h3 className="text-sm font-medium text-gray-900 mb-3">Exemples de remboursement</h3>
+      <div className="bg-gray-50 dark:bg-dark-bg-tertiary border border-gray-200 dark:border-dark-border rounded-lg p-6">
+        <h3 className="text-sm font-medium text-gray-900 dark:text-dark-text-primary mb-3">Exemples de remboursement</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {rules.filter(r => r.id !== 'custom').map((rule) => (
-            <div key={rule.id} className="bg-white p-4 rounded border border-gray-200">
-              <h4 className="text-sm font-medium text-gray-900 mb-2">{rule.nom}</h4>
+            <div key={rule.id} className="bg-white p-4 rounded border border-gray-200 dark:border-dark-border">
+              <h4 className="text-sm font-medium text-gray-900 dark:text-dark-text-primary mb-2">{rule.nom}</h4>
               <div className="space-y-1 text-xs">
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Excellent:</span>
+                  <span className="text-gray-600 dark:text-dark-text-secondary">Excellent:</span>
                   <span className="font-medium">{(rule.montant * rule.pourcentage_remboursement.excellent / 100).toFixed(2)}€</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Bon:</span>
+                  <span className="text-gray-600 dark:text-dark-text-secondary">Bon:</span>
                   <span className="font-medium">{(rule.montant * rule.pourcentage_remboursement.bon / 100).toFixed(2)}€</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Correct:</span>
+                  <span className="text-gray-600 dark:text-dark-text-secondary">Correct:</span>
                   <span className="font-medium">{(rule.montant * rule.pourcentage_remboursement.correct / 100).toFixed(2)}€</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Mauvais:</span>
+                  <span className="text-gray-600 dark:text-dark-text-secondary">Mauvais:</span>
                   <span className="font-medium">{(rule.montant * rule.pourcentage_remboursement.mauvais / 100).toFixed(2)}€</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Perte:</span>
+                  <span className="text-gray-600 dark:text-dark-text-secondary">Perte:</span>
                   <span className="font-medium">{(rule.montant * rule.pourcentage_remboursement.perte / 100).toFixed(2)}€</span>
                 </div>
               </div>

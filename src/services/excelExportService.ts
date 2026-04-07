@@ -1,3 +1,4 @@
+import { logger } from '@/utils/logger';
 /**
  * Service d'export Excel pour les rapports
  *
@@ -5,7 +6,8 @@
  * avec graphiques, styles avancés et formatage professionnel
  */
 
-import ExcelJS from 'exceljs';
+// ExcelJS is loaded dynamically to reduce initial bundle size
+import type ExcelJS from 'exceljs';
 import { EventStatistics, ReportMetadata } from '@/types';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -19,7 +21,10 @@ export class ExcelExportService {
     data: EventStatistics,
     metadata: ReportMetadata
   ): Promise<void> {
-    console.log('📊 Génération export Excel rapport événements avec ExcelJS...');
+    logger.debug('📊 Génération export Excel rapport événements avec ExcelJS...');
+
+    // Dynamic import for code splitting - ExcelJS is a large library
+    const ExcelJS = await import('exceljs');
 
     // Créer un nouveau classeur
     const workbook = new ExcelJS.Workbook();
@@ -47,7 +52,7 @@ export class ExcelExportService {
     const fileName = this.generateFileName(metadata);
     saveAs(blob, fileName);
 
-    console.log(`✅ Export Excel généré: ${fileName}`);
+    logger.debug(`✅ Export Excel généré: ${fileName}`);
   }
 
   /**

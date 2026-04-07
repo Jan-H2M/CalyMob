@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { logger } from '@/utils/logger';
 import {
   Key,
   Save,
@@ -101,7 +102,7 @@ export default function IntegrationsSettings() {
         aiProviderService.setAnthropicKey(fbAnthropicKey);
       }
     } catch (error) {
-      console.error('Erreur lors du chargement des clés API:', error);
+      logger.error('Erreur lors du chargement des clés API:', error);
       toast.error('Erreur lors du chargement de la configuration');
     } finally {
       setIsLoading(false);
@@ -146,7 +147,7 @@ export default function IntegrationsSettings() {
 
       toast.success('✅ Configuration sauvegardée avec succès');
     } catch (error) {
-      console.error('Error saving config:', error);
+      logger.error('Error saving config:', error);
       toast.error('❌ Erreur lors de la sauvegarde');
     } finally {
       setIsSaving(false);
@@ -170,7 +171,7 @@ export default function IntegrationsSettings() {
         toast.error('❌ ' + result.message);
       }
     } catch (error) {
-      console.error('OpenAI test error:', error);
+      logger.error('OpenAI test error:', error);
       toast.error('Impossible de se connecter à OpenAI');
     } finally {
       setIsTestingOpenai(false);
@@ -194,7 +195,7 @@ export default function IntegrationsSettings() {
         toast.error('❌ ' + result.message);
       }
     } catch (error) {
-      console.error('Anthropic test error:', error);
+      logger.error('Anthropic test error:', error);
       toast.error('Impossible de se connecter à Claude');
     } finally {
       setIsTestingAnthropic(false);
@@ -222,13 +223,22 @@ export default function IntegrationsSettings() {
     setIsTestingGoogle(true);
     try {
       // Send test email to the current user
-      const result = await ClubEmailService.sendTestEmail(clubId, user.email);
+      const result = await ClubEmailService.sendTestEmail(
+        clubId,
+        user.email,
+        'Google Mail',
+        [
+          'Authentification OAuth2 réussie',
+          'Connexion à Gmail API établie',
+          'Envoi d\'emails activé',
+        ]
+      );
 
       if (result.success) {
         toast.success(`✅ Email de test envoyé avec succès à ${user.email}`, { duration: 5000 });
       }
-    } catch (error: any) {
-      console.error('Google Mail test error:', error);
+    } catch (error) {
+      logger.error('Google Mail test error:', error);
 
       // User-friendly error messages
       if (error.message?.includes('Token d\'authentification')) {
@@ -263,44 +273,22 @@ export default function IntegrationsSettings() {
 
     setIsTestingResend(true);
     try {
-      // Send test email via Resend
-      const response = await fetch('/api/send-resend', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          apiKey: resendApiKey.trim(),
-          from: `${resendFromName || 'Calypso Diving Club'} <${resendFromEmail || 'onboarding@resend.dev'}>`,
-          to: user.email,
-          subject: '🧪 Email de test - Resend',
-          html: `
-            <h1>🎉 Configuration Resend réussie !</h1>
-            <p>Bonjour,</p>
-            <p>Votre configuration Resend est correctement configurée et fonctionnelle.</p>
-            <p><strong>Détails:</strong></p>
-            <ul>
-              <li>✅ Clé API Resend valide</li>
-              <li>✅ Connexion à Resend API établie</li>
-              <li>✅ Envoi d'emails activé</li>
-            </ul>
-            <p>Vous pouvez maintenant utiliser Resend pour envoyer des emails automatisés depuis CalyCompta.</p>
-            <p style="color: #666; font-size: 12px; margin-top: 30px;">
-              Cet email a été envoyé automatiquement par CalyCompta via Resend API
-            </p>
-          `,
-        }),
-      });
+      const result = await ClubEmailService.sendTestEmail(
+        clubId,
+        user.email,
+        'Resend',
+        [
+          'Clé API Resend valide',
+          'Connexion à Resend API établie',
+          'Envoi d\'emails activé',
+        ]
+      );
 
-      const data = await response.json();
-
-      if (response.ok && data.success) {
+      if (result.success) {
         toast.success(`✅ Email de test envoyé avec succès via Resend à ${user.email}`, { duration: 5000 });
-      } else {
-        throw new Error(data.error || 'Erreur lors de l\'envoi');
       }
-    } catch (error: any) {
-      console.error('Resend test error:', error);
+    } catch (error) {
+      logger.error('Resend test error:', error);
       toast.error('❌ Impossible d\'envoyer l\'email via Resend. Vérifiez votre clé API', { duration: 5000 });
     } finally {
       setIsTestingResend(false);
@@ -311,7 +299,7 @@ export default function IntegrationsSettings() {
     return (
       <div className="bg-white dark:bg-dark-bg-secondary rounded-xl shadow-sm border border-gray-200 dark:border-dark-border">
         <div className="p-6 flex items-center justify-center">
-          <div className="flex items-center gap-2 text-gray-600">
+          <div className="flex items-center gap-2 text-gray-600 dark:text-dark-text-secondary">
             <Loader2 className="h-5 w-5 animate-spin" />
             <span>Chargement de la configuration...</span>
           </div>
@@ -353,16 +341,17 @@ export default function IntegrationsSettings() {
               {providerConfig.openai.enabled ? (
                 <CheckCircle className="h-5 w-5 text-green-500" />
               ) : (
-                <XCircle className="h-5 w-5 text-gray-400" />
+                <XCircle className="h-5 w-5 text-gray-400 dark:text-dark-text-muted" />
               )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
+              <label htmlFor="integrations-openaiKey-input" className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
                 Clé API OpenAI
               </label>
               <div className="relative">
                 <input
+                  id="integrations-openaiKey-input"
                   type={showOpenaiKey ? 'text' : 'password'}
                   value={openaiKey}
                   onChange={(e) => setOpenaiKey(e.target.value)}
@@ -375,13 +364,13 @@ export default function IntegrationsSettings() {
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 dark:bg-dark-bg-tertiary rounded transition-colors"
                 >
                   {showOpenaiKey ? (
-                    <EyeOff className="h-4 w-4 text-gray-500" />
+                    <EyeOff className="h-4 w-4 text-gray-500 dark:text-dark-text-muted" />
                   ) : (
-                    <Eye className="h-4 w-4 text-gray-500" />
+                    <Eye className="h-4 w-4 text-gray-500 dark:text-dark-text-muted" />
                   )}
                 </button>
               </div>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-500 dark:text-dark-text-muted mt-1">
                 Obtenez votre clé sur <a href="https://platform.openai.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">platform.openai.com</a>
               </p>
             </div>
@@ -390,7 +379,7 @@ export default function IntegrationsSettings() {
               <button
                 onClick={handleTestOpenAI}
                 disabled={isTestingOpenai}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors disabled:opacity-50"
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors disabled:opacity-50"
               >
                 {isTestingOpenai ? (
                   <>
@@ -422,16 +411,17 @@ export default function IntegrationsSettings() {
               {providerConfig.anthropic.enabled ? (
                 <CheckCircle className="h-5 w-5 text-green-500" />
               ) : (
-                <XCircle className="h-5 w-5 text-gray-400" />
+                <XCircle className="h-5 w-5 text-gray-400 dark:text-dark-text-muted" />
               )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
+              <label htmlFor="integrations-anthropicKey-input" className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
                 Clé API Anthropic
               </label>
               <div className="relative">
                 <input
+                  id="integrations-anthropicKey-input"
                   type={showAnthropicKey ? 'text' : 'password'}
                   value={anthropicKey}
                   onChange={(e) => setAnthropicKey(e.target.value)}
@@ -444,13 +434,13 @@ export default function IntegrationsSettings() {
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 dark:bg-dark-bg-tertiary rounded transition-colors"
                 >
                   {showAnthropicKey ? (
-                    <EyeOff className="h-4 w-4 text-gray-500" />
+                    <EyeOff className="h-4 w-4 text-gray-500 dark:text-dark-text-muted" />
                   ) : (
-                    <Eye className="h-4 w-4 text-gray-500" />
+                    <Eye className="h-4 w-4 text-gray-500 dark:text-dark-text-muted" />
                   )}
                 </button>
               </div>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-500 dark:text-dark-text-muted mt-1">
                 Obtenez votre clé sur <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer" className="text-purple-600 hover:underline">console.anthropic.com</a>
               </p>
             </div>
@@ -459,7 +449,7 @@ export default function IntegrationsSettings() {
               <button
                 onClick={handleTestAnthropic}
                 disabled={isTestingAnthropic}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors disabled:opacity-50"
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors disabled:opacity-50"
               >
                 {isTestingAnthropic ? (
                   <>
@@ -503,7 +493,7 @@ export default function IntegrationsSettings() {
                   'px-4 py-2 rounded-lg font-medium text-sm transition-all',
                   emailProvider === 'gmail'
                     ? 'bg-red-600 text-white shadow-sm'
-                    : 'bg-white dark:bg-dark-bg-secondary text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-dark-border hover:bg-gray-50'
+                    : 'bg-white dark:bg-dark-bg-secondary text-gray-700 dark:text-dark-text-primary dark:text-gray-300 border border-gray-200 dark:border-dark-border hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary'
                 )}
               >
                 Gmail API
@@ -514,7 +504,7 @@ export default function IntegrationsSettings() {
                   'px-4 py-2 rounded-lg font-medium text-sm transition-all',
                   emailProvider === 'resend'
                     ? 'bg-green-600 text-white shadow-sm'
-                    : 'bg-white dark:bg-dark-bg-secondary text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-dark-border hover:bg-gray-50'
+                    : 'bg-white dark:bg-dark-bg-secondary text-gray-700 dark:text-dark-text-primary dark:text-gray-300 border border-gray-200 dark:border-dark-border hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary'
                 )}
               >
                 Resend
@@ -540,17 +530,18 @@ export default function IntegrationsSettings() {
                 {resendApiKey ? (
                   <CheckCircle className="h-5 w-5 text-green-500" />
                 ) : (
-                  <XCircle className="h-5 w-5 text-gray-400" />
+                  <XCircle className="h-5 w-5 text-gray-400 dark:text-dark-text-muted" />
                 )}
               </div>
 
               {/* Resend API Key */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
+                <label htmlFor="integrations-resendApiKey-input" className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
                   Clé API Resend
                 </label>
                 <div className="relative">
                   <input
+                    id="integrations-resendApiKey-input"
                     type={showResendApiKey ? 'text' : 'password'}
                     value={resendApiKey}
                     onChange={(e) => setResendApiKey(e.target.value)}
@@ -563,13 +554,13 @@ export default function IntegrationsSettings() {
                     className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 dark:bg-dark-bg-tertiary rounded transition-colors"
                   >
                     {showResendApiKey ? (
-                      <EyeOff className="h-4 w-4 text-gray-500" />
+                      <EyeOff className="h-4 w-4 text-gray-500 dark:text-dark-text-muted" />
                     ) : (
-                      <Eye className="h-4 w-4 text-gray-500" />
+                      <Eye className="h-4 w-4 text-gray-500 dark:text-dark-text-muted" />
                     )}
                   </button>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 dark:text-dark-text-muted mt-1">
                   Obtenez votre clé sur <a href="https://resend.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-green-600 hover:underline">resend.com/api-keys</a>
                 </p>
               </div>
@@ -577,25 +568,33 @@ export default function IntegrationsSettings() {
               {/* From Email and Name */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
+                  <label htmlFor="integrations-resendFromEmail-input" className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
                     Email expéditeur
                   </label>
                   <input
+                    id="integrations-resendFromEmail-input"
                     type="email"
                     value={resendFromEmail}
                     onChange={(e) => setResendFromEmail(e.target.value)}
                     placeholder="onboarding@resend.dev"
                     className="w-full px-3 py-2 border border-gray-200 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
                   />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Utilisez onboarding@resend.dev pour les tests
-                  </p>
+                  {resendFromEmail === 'onboarding@resend.dev' ? (
+                    <p className="text-xs text-red-600 dark:text-red-400 mt-1 font-medium">
+                      onboarding@resend.dev est un domaine de test. Les emails ne seront PAS livrés aux destinataires externes. Configurez un domaine verifie sur resend.com/domains.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-500 dark:text-dark-text-muted mt-1">
+                      Utilisez un domaine verifie dans Resend pour que les emails soient livres
+                    </p>
+                  )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
+                  <label htmlFor="integrations-resendFromName-input" className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
                     Nom expéditeur
                   </label>
                   <input
+                    id="integrations-resendFromName-input"
                     type="text"
                     value={resendFromName}
                     onChange={(e) => setResendFromName(e.target.value)}
@@ -623,7 +622,7 @@ export default function IntegrationsSettings() {
                 <button
                   onClick={handleTestResend}
                   disabled={isTestingResend}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors disabled:opacity-50"
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors disabled:opacity-50"
                 >
                   {isTestingResend ? (
                     <>
@@ -655,16 +654,17 @@ export default function IntegrationsSettings() {
                 {googleClientId && googleClientSecret && googleRefreshToken ? (
                   <CheckCircle className="h-5 w-5 text-green-500" />
                 ) : (
-                  <XCircle className="h-5 w-5 text-gray-400" />
+                  <XCircle className="h-5 w-5 text-gray-400 dark:text-dark-text-muted" />
                 )}
               </div>
 
             {/* Client ID */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
+              <label htmlFor="integrations-googleClientId-input" className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
                 Client ID
               </label>
               <input
+                id="integrations-googleClientId-input"
                 type="text"
                 value={googleClientId}
                 onChange={(e) => setGoogleClientId(e.target.value)}
@@ -675,11 +675,12 @@ export default function IntegrationsSettings() {
 
             {/* Client Secret */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
+              <label htmlFor="integrations-googleClientSecret-input" className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
                 Client Secret
               </label>
               <div className="relative">
                 <input
+                  id="integrations-googleClientSecret-input"
                   type={showGoogleClientSecret ? 'text' : 'password'}
                   value={googleClientSecret}
                   onChange={(e) => setGoogleClientSecret(e.target.value)}
@@ -692,9 +693,9 @@ export default function IntegrationsSettings() {
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 dark:bg-dark-bg-tertiary rounded transition-colors"
                 >
                   {showGoogleClientSecret ? (
-                    <EyeOff className="h-4 w-4 text-gray-500" />
+                    <EyeOff className="h-4 w-4 text-gray-500 dark:text-dark-text-muted" />
                   ) : (
-                    <Eye className="h-4 w-4 text-gray-500" />
+                    <Eye className="h-4 w-4 text-gray-500 dark:text-dark-text-muted" />
                   )}
                 </button>
               </div>
@@ -702,11 +703,12 @@ export default function IntegrationsSettings() {
 
             {/* Refresh Token */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
+              <label htmlFor="integrations-googleRefreshToken-input" className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
                 Refresh Token
               </label>
               <div className="relative">
                 <input
+                  id="integrations-googleRefreshToken-input"
                   type={showGoogleRefreshToken ? 'text' : 'password'}
                   value={googleRefreshToken}
                   onChange={(e) => setGoogleRefreshToken(e.target.value)}
@@ -719,9 +721,9 @@ export default function IntegrationsSettings() {
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 dark:bg-dark-bg-tertiary rounded transition-colors"
                 >
                   {showGoogleRefreshToken ? (
-                    <EyeOff className="h-4 w-4 text-gray-500" />
+                    <EyeOff className="h-4 w-4 text-gray-500 dark:text-dark-text-muted" />
                   ) : (
-                    <Eye className="h-4 w-4 text-gray-500" />
+                    <Eye className="h-4 w-4 text-gray-500 dark:text-dark-text-muted" />
                   )}
                 </button>
               </div>
@@ -773,7 +775,7 @@ export default function IntegrationsSettings() {
               <button
                 onClick={handleTestGoogleMail}
                 disabled={isTestingGoogle}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors disabled:opacity-50"
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors disabled:opacity-50"
               >
                 {isTestingGoogle ? (
                   <>

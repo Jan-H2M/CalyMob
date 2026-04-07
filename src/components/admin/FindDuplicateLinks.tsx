@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'react-hot-toast';
+import { logger } from '@/utils/logger';
 
 interface MatchedEntity {
   entity_type: 'participant' | 'expense' | 'event' | 'member' | 'demand' | 'inscription';
@@ -79,7 +80,7 @@ export function FindDuplicateLinks() {
 
   const analyze = async () => {
     if (!clubId) {
-      toast.error('Geen club ID gevonden');
+      toast.error('Aucun identifiant de club trouvé');
       return;
     }
 
@@ -140,10 +141,10 @@ export function FindDuplicateLinks() {
         withDuplicates
       });
 
-      toast.success(`Analyse compleet! ${withDuplicates.length} transacties met duplicaten gevonden.`);
+      toast.success(`Analyse terminée ! ${withDuplicates.length} transactions avec doublons trouvées.`);
     } catch (error) {
-      console.error('Error analyzing:', error);
-      toast.error('Fout bij analyse: ' + (error as Error).message);
+      logger.error('Error analyzing:', error);
+      toast.error('Erreur lors de l\'analyse: ' + (error as Error).message);
     } finally {
       setAnalyzing(false);
     }
@@ -152,7 +153,7 @@ export function FindDuplicateLinks() {
   const fix = async () => {
     if (!clubId || !results?.withDuplicates.length) return;
 
-    if (!confirm(`Je gaat ${results.withDuplicates.length} transacties fixen. Doorgaan?`)) {
+    if (!confirm(`Vous allez corriger ${results.withDuplicates.length} transactions. Continuer ?`)) {
       return;
     }
 
@@ -170,16 +171,16 @@ export function FindDuplicateLinks() {
         });
 
         fixedCount++;
-        console.log(`✓ ${tx.numeroSequence}: ${tx.matchedEntities.length} → ${cleanedEntities.length} links (${removedCount} verwijderd)`);
+        logger.debug(`✓ ${tx.numeroSequence}: ${tx.matchedEntities.length} → ${cleanedEntities.length} liens (${removedCount} supprimés)`);
       }
 
-      toast.success(`${fixedCount} transacties gefixed!`);
+      toast.success(`${fixedCount} transactions corrigées !`);
 
       // Refresh analysis
       setTimeout(() => analyze(), 500);
     } catch (error) {
-      console.error('Error fixing:', error);
-      toast.error('Fout bij fixen: ' + (error as Error).message);
+      logger.error('Error fixing:', error);
+      toast.error('Erreur lors de la correction: ' + (error as Error).message);
     } finally {
       setFixing(false);
     }
@@ -212,18 +213,18 @@ export function FindDuplicateLinks() {
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">🔍 Find Multi-Linked Transactions</h1>
+      <h1 className="text-2xl font-bold mb-4">🔍 Transactions avec liens multiples</h1>
 
       {/* Statistics */}
       {results && (
         <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-4">
-          <div className="font-semibold mb-2">📊 Statistieken:</div>
+          <div className="font-semibold mb-2">📊 Statistiques :</div>
           <div className="space-y-1 text-sm">
-            <div>Total transacties: {results.totalTransactions}</div>
-            <div>Transacties met links: {results.transactionsWithLinks}</div>
-            <div>Transacties met &gt;1 link: {results.multiLinked.length}</div>
+            <div>Total transactions : {results.totalTransactions}</div>
+            <div>Transactions avec liens : {results.transactionsWithLinks}</div>
+            <div>Transactions avec &gt;1 lien : {results.multiLinked.length}</div>
             <div className="font-bold text-orange-600 dark:text-orange-400">
-              Transacties met duplicaten: {results.withDuplicates.length}
+              Transactions avec doublons : {results.withDuplicates.length}
             </div>
           </div>
         </div>
@@ -236,7 +237,7 @@ export function FindDuplicateLinks() {
           disabled={analyzing}
           className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400"
         >
-          {analyzing ? '⏳ Analyzing...' : '📋 Analyze'}
+          {analyzing ? '⏳ Analyse en cours...' : '📋 Analyser'}
         </button>
 
         <button
@@ -244,7 +245,7 @@ export function FindDuplicateLinks() {
           disabled={!results?.withDuplicates.length || fixing}
           className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:bg-gray-400"
         >
-          {fixing ? '⏳ Fixing...' : '🔧 Fix Duplicates'}
+          {fixing ? '⏳ Correction en cours...' : '🔧 Corriger les doublons'}
         </button>
 
         <button
@@ -259,7 +260,7 @@ export function FindDuplicateLinks() {
       {/* Results */}
       {results && results.multiLinked.length > 0 && (
         <div className="space-y-4">
-          <h2 className="text-xl font-semibold">🔗 Transacties met meerdere links:</h2>
+          <h2 className="text-xl font-semibold">🔗 Transactions avec plusieurs liens :</h2>
 
           {results.multiLinked.map((tx, index) => (
             <div
@@ -267,29 +268,29 @@ export function FindDuplicateLinks() {
               className={`border rounded-lg p-4 ${
                 tx.hasDuplicates
                   ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/10'
-                  : 'border-gray-300 dark:border-gray-700'
+                  : 'border-gray-300 dark:border-dark-border dark:border-gray-700'
               }`}
             >
               <div className="font-semibold mb-2">
                 [{index + 1}] {tx.numeroSequence}
-                {tx.hasDuplicates && <span className="ml-2 text-orange-600">⚠️ DUPLICATEN</span>}
+                {tx.hasDuplicates && <span className="ml-2 text-orange-600">⚠️ DOUBLONS</span>}
               </div>
 
               <div className="text-sm space-y-1 mb-3">
                 <div>Montant: {tx.montant}€</div>
-                <div>Datum: {tx.dateExecution?.toString()}</div>
-                <div>Contrepartie: {tx.contrepartieName || '(geen)'}</div>
-                <div>Aantal links: {tx.matchedCount}</div>
+                <div>Date: {tx.dateExecution?.toString()}</div>
+                <div>Contrepartie: {tx.contrepartieName || '(aucun)'}</div>
+                <div>Nombre de liens: {tx.matchedCount}</div>
               </div>
 
               {tx.hasDuplicates && (
                 <div className="bg-orange-100 dark:bg-orange-900/30 p-2 rounded mb-3">
                   <div className="font-semibold text-orange-700 dark:text-orange-300 mb-1">
-                    ⚠️ Duplicaten:
+                    ⚠️ Doublons :
                   </div>
                   {tx.duplicates.map((dup, idx) => (
                     <div key={idx} className="text-sm">
-                      - {dup.key} verschijnt {dup.count}x (indices: {dup.indices.join(', ')})
+                      - {dup.key} apparaît {dup.count}x (indices : {dup.indices.join(', ')})
                     </div>
                   ))}
                 </div>
@@ -300,7 +301,7 @@ export function FindDuplicateLinks() {
                 <div className="space-y-1">
                   {tx.matchedEntities.map((entity, idx) => (
                     <div key={idx} className="text-sm pl-4">
-                      [{idx + 1}] {entity.entity_type} | {entity.entity_id} | {entity.entity_name || '(geen)'}
+                      [{idx + 1}] {entity.entity_type} | {entity.entity_id} | {entity.entity_name || '(aucun)'}
                     </div>
                   ))}
                 </div>
@@ -312,7 +313,7 @@ export function FindDuplicateLinks() {
 
       {results && results.multiLinked.length === 0 && (
         <div className="text-green-600 font-semibold">
-          ✅ Geen transacties met meerdere links gevonden!
+          ✅ Aucune transaction avec plusieurs liens trouvée !
         </div>
       )}
     </div>

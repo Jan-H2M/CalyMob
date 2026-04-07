@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { X, User, Mail, Phone, Award, Calendar, Trash2 } from 'lucide-react';
-import { getMembreById, createMembre, updateMembre, deleteMembre } from '@/services/membreService';
+import { getMembreById, createMembre, updateMembre, deleteMembre, checkDuplicateName } from '@/services/membreService';
 import { Membre, MemberStatus } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
+import { getFirstName, getLastName, getPhone } from '@/utils/fieldMapper';
+import { calculatePlongeurCode, getPlongeurCodeLabel } from '@/utils/plongeurUtils';
 import toast from 'react-hot-toast';
 import { Timestamp } from 'firebase/firestore';
 import { cn } from '@/utils/utils';
+import { logger } from '@/utils/logger';
 
 interface Props {
   member: Membre;
@@ -17,11 +20,11 @@ interface Props {
 export function MembreDetailView({ member, isCreateMode, onClose, onSave }: Props) {
   const { clubId } = useAuth();
   const [formData, setFormData] = useState<Partial<Membre>>({
-    nom: member.nom || '',
-    prenom: member.prenom || '',
+    nom: getLastName(member) || '',
+    prenom: getFirstName(member) || '',
     email: member.email || '',
-    telephone: member.telephone || '',
-    niveau_plongee: member.niveau_plongee || '',
+    telephone: getPhone(member) || '',
+    plongeur_niveau: member.plongeur_niveau || member.niveau_plongee || '',
     lifras_id: member.lifras_id || '',
     date_adhesion: member.date_adhesion,
     member_status: member.member_status || 'active'
@@ -43,10 +46,14 @@ export function MembreDetailView({ member, isCreateMode, onClose, onSave }: Prop
 
     try {
       // TODO: Implement getMemberStats, getMemberLoans, getMemberSales in membreService
-      // For now, just skip loading stats/loans/sales
-      console.log('Stats/loans/sales loading not yet implemented in membreService');
+      // For now, set empty stats so the statistics section displays
+      setStats({
+        nbPrets: 0,
+        nbPretsActifs: 0,
+        nbAchats: 0
+      });
     } catch (error) {
-      console.error('Erreur chargement données membre:', error);
+      logger.error('Erreur chargement données membre:', error);
     }
   };
 
@@ -75,7 +82,7 @@ export function MembreDetailView({ member, isCreateMode, onClose, onSave }: Prop
       await updateMembre(clubId, member.id, { [field]: value });
       toast.success('✓ Sauvegardé', { duration: 1500, position: 'bottom-right' });
     } catch (error) {
-      console.error(`Error saving ${field}:`, error);
+      logger.error(`Error saving ${field}:`, error);
       toast.error('Erreur lors de la sauvegarde');
     }
   };
@@ -98,23 +105,32 @@ export function MembreDetailView({ member, isCreateMode, onClose, onSave }: Prop
     setSaving(true);
 
     try {
+      // Vérifier si un membre avec le même nom+prénom existe déjà
+      const existingMember = await checkDuplicateName(clubId, formData.nom!, formData.prenom!);
+      if (existingMember) {
+        toast.error(`Un membre "${formData.prenom} ${formData.nom}" existe déjà`);
+        setSaving(false);
+        return;
+      }
+
       await createMembre(clubId, {
         nom: formData.nom!,
         prenom: formData.prenom!,
         email: formData.email!,
         telephone: formData.telephone,
-        niveau_plongee: formData.niveau_plongee,
+        plongeur_niveau: formData.plongeur_niveau,
+        niveau_plongee: formData.plongeur_niveau, // Legacy field
         lifras_id: formData.lifras_id,
         date_adhesion: formData.date_adhesion,
         member_status: formData.member_status || 'active',
         has_app_access: false,
-        is_diver: true,
+        is_diver: !!formData.plongeur_niveau,
         has_lifras: !!formData.lifras_id
       });
       toast.success('Membre créé');
       onSave();
     } catch (error: any) {
-      console.error('Erreur sauvegarde membre:', error);
+      logger.error('Erreur sauvegarde membre:', error);
       toast.error(error.message || 'Erreur lors de la sauvegarde');
     } finally {
       setSaving(false);
@@ -124,8 +140,10 @@ export function MembreDetailView({ member, isCreateMode, onClose, onSave }: Prop
   const handleDelete = async () => {
     if (!clubId || !member.id) return;
 
+    const lastName = getLastName(member) || '';
+    const firstName = getFirstName(member) || '';
     const confirmed = window.confirm(
-      `Êtes-vous sûr de vouloir désactiver le membre "${member.nom} ${member.prenom}" ?\n\n` +
+      `Êtes-vous sûr de vouloir désactiver le membre "${lastName} ${firstName}" ?\n\n` +
       `Le membre sera marqué comme inactif mais ses données seront conservées.`
     );
 
@@ -136,7 +154,7 @@ export function MembreDetailView({ member, isCreateMode, onClose, onSave }: Prop
       toast.success('Membre désactivé');
       onSave();
     } catch (error: any) {
-      console.error('Erreur suppression membre:', error);
+      logger.error('Erreur suppression membre:', error);
       toast.error(error.message || 'Erreur lors de la suppression');
     }
   };
@@ -157,11 +175,30 @@ export function MembreDetailView({ member, isCreateMode, onClose, onSave }: Prop
     }
   };
 
-  const handleStatutChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleStatutChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newStatut = e.target.value as MemberStatus;
     setFormData({ ...formData, member_status: newStatut });
-    if (!isCreateMode) {
-      handleFieldSave('member_status', newStatut);
+    if (!isCreateMode && clubId && member.id) {
+      // Sync ALL active-related fields to avoid desynchronization
+      // (member_status, isActive, actif, status, has_app_access)
+      const isNowActive = newStatut === 'active';
+      const updateData: Record<string, any> = {
+        member_status: newStatut,
+        isActive: isNowActive,
+        actif: isNowActive,
+        status: isNowActive ? 'active' : 'inactive',
+      };
+      // When activating, also grant app access so email invite works
+      if (isNowActive) {
+        updateData.has_app_access = true;
+      }
+      try {
+        await updateMembre(clubId, member.id, updateData);
+        toast.success('✓ Sauvegardé', { duration: 1500, position: 'bottom-right' });
+      } catch (error) {
+        logger.error('Error saving member_status:', error);
+        toast.error('Erreur lors de la sauvegarde');
+      }
     }
   };
 
@@ -191,7 +228,7 @@ export function MembreDetailView({ member, isCreateMode, onClose, onSave }: Prop
               </div>
               <div>
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-dark-text-primary">
-                  {isCreateMode ? 'Nouveau membre' : `${member.nom} ${member.prenom}`}
+                  {isCreateMode ? 'Nouveau membre' : `${getLastName(member)} ${getFirstName(member)}`}
                 </h2>
                 {!isCreateMode && member.date_adhesion && (() => {
                   const oneYearAgo = new Date();
@@ -236,7 +273,7 @@ export function MembreDetailView({ member, isCreateMode, onClose, onSave }: Prop
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                     Nom *
                   </label>
                   <input
@@ -246,12 +283,12 @@ export function MembreDetailView({ member, isCreateMode, onClose, onSave }: Prop
                     onBlur={() => handleFieldSave('nom', formData.nom)}
                     disabled={isCreateMode}
                     placeholder="Dupont"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md bg-white dark:bg-dark-bg-primary text-gray-900 dark:text-dark-text-primary disabled:bg-gray-50 dark:disabled:bg-dark-bg-tertiary"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md bg-white dark:bg-dark-bg-primary text-gray-900 dark:text-dark-text-primary disabled:bg-gray-50 dark:bg-dark-bg-tertiary dark:disabled:bg-dark-bg-tertiary"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                     Prénom *
                   </label>
                   <input
@@ -261,16 +298,16 @@ export function MembreDetailView({ member, isCreateMode, onClose, onSave }: Prop
                     onBlur={() => handleFieldSave('prenom', formData.prenom)}
                     disabled={isCreateMode}
                     placeholder="Jean"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md bg-white dark:bg-dark-bg-primary text-gray-900 dark:text-dark-text-primary disabled:bg-gray-50 dark:disabled:bg-dark-bg-tertiary"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md bg-white dark:bg-dark-bg-primary text-gray-900 dark:text-dark-text-primary disabled:bg-gray-50 dark:bg-dark-bg-tertiary dark:disabled:bg-dark-bg-tertiary"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                     Email *
                   </label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-dark-text-muted" />
                     <input
                       type="email"
                       value={formData.email || ''}
@@ -278,17 +315,17 @@ export function MembreDetailView({ member, isCreateMode, onClose, onSave }: Prop
                       onBlur={() => handleFieldSave('email', formData.email)}
                       disabled={isCreateMode}
                       placeholder="jean.dupont@example.com"
-                      className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-dark-border rounded-md bg-white dark:bg-dark-bg-primary text-gray-900 dark:text-dark-text-primary disabled:bg-gray-50 dark:disabled:bg-dark-bg-tertiary"
+                      className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-dark-border rounded-md bg-white dark:bg-dark-bg-primary text-gray-900 dark:text-dark-text-primary disabled:bg-gray-50 dark:bg-dark-bg-tertiary dark:disabled:bg-dark-bg-tertiary"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                     Téléphone
                   </label>
                   <div className="relative">
-                    <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-dark-text-muted" />
                     <input
                       type="tel"
                       value={formData.telephone || ''}
@@ -296,31 +333,34 @@ export function MembreDetailView({ member, isCreateMode, onClose, onSave }: Prop
                       onBlur={() => handleFieldSave('telephone', formData.telephone)}
                       disabled={isCreateMode}
                       placeholder="+32 123 45 67 89"
-                      className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-dark-border rounded-md bg-white dark:bg-dark-bg-primary text-gray-900 dark:text-dark-text-primary disabled:bg-gray-50 dark:disabled:bg-dark-bg-tertiary"
+                      className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-dark-border rounded-md bg-white dark:bg-dark-bg-primary text-gray-900 dark:text-dark-text-primary disabled:bg-gray-50 dark:bg-dark-bg-tertiary dark:disabled:bg-dark-bg-tertiary"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                     Niveau de plongée
                   </label>
-                  <div className="relative">
-                    <Award className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <input
-                      type="text"
-                      value={formData.niveau_plongee || ''}
-                      onChange={(e) => setFormData({ ...formData, niveau_plongee: e.target.value })}
-                      onBlur={() => handleFieldSave('niveau_plongee', formData.niveau_plongee)}
-                      disabled={isCreateMode}
-                      placeholder="P1, P2, P3, Moniteur..."
-                      className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-dark-border rounded-md bg-white dark:bg-dark-bg-primary text-gray-900 dark:text-dark-text-primary disabled:bg-gray-50 dark:disabled:bg-dark-bg-tertiary"
-                    />
+                  <div className="flex items-center gap-2 px-3 py-2 border border-gray-200 dark:border-dark-border rounded-md bg-gray-50 dark:bg-dark-bg-tertiary">
+                    <Award className="h-4 w-4 text-gray-400 dark:text-dark-text-muted" />
+                    {(() => {
+                      const code = calculatePlongeurCode(formData.plongeur_niveau) || 'NB';
+                      const niveau = formData.plongeur_niveau || 'Non Breveté';
+                      return (
+                        <>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                            {code}
+                          </span>
+                          <span className="text-sm text-gray-700 dark:text-dark-text-primary">{niveau}</span>
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                     LifrasID
                   </label>
                   <input
@@ -330,36 +370,36 @@ export function MembreDetailView({ member, isCreateMode, onClose, onSave }: Prop
                     onBlur={() => handleFieldSave('lifras_id', formData.lifras_id)}
                     disabled={isCreateMode}
                     placeholder="12345678"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md bg-white dark:bg-dark-bg-primary text-gray-900 dark:text-dark-text-primary disabled:bg-gray-50 dark:disabled:bg-dark-bg-tertiary"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md bg-white dark:bg-dark-bg-primary text-gray-900 dark:text-dark-text-primary disabled:bg-gray-50 dark:bg-dark-bg-tertiary dark:disabled:bg-dark-bg-tertiary"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                     Date d'adhésion
                   </label>
                   <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-dark-text-muted" />
                     <input
                       type="date"
                       value={dateValue}
                       onChange={handleDateChange}
                       onBlur={handleDateBlur}
                       disabled={isCreateMode}
-                      className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-dark-border rounded-md bg-white dark:bg-dark-bg-primary text-gray-900 dark:text-dark-text-primary disabled:bg-gray-50 dark:disabled:bg-dark-bg-tertiary"
+                      className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-dark-border rounded-md bg-white dark:bg-dark-bg-primary text-gray-900 dark:text-dark-text-primary disabled:bg-gray-50 dark:bg-dark-bg-tertiary dark:disabled:bg-dark-bg-tertiary"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                     Statut
                   </label>
                   <select
                     value={formData.member_status}
                     onChange={handleStatutChange}
                     disabled={isCreateMode}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md bg-white dark:bg-dark-bg-primary text-gray-900 dark:text-dark-text-primary disabled:bg-gray-50 dark:disabled:bg-dark-bg-tertiary"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-md bg-white dark:bg-dark-bg-primary text-gray-900 dark:text-dark-text-primary disabled:bg-gray-50 dark:bg-dark-bg-tertiary dark:disabled:bg-dark-bg-tertiary"
                   >
                     <option value="active">Actif</option>
                     <option value="inactive">Inactif</option>
@@ -377,8 +417,15 @@ export function MembreDetailView({ member, isCreateMode, onClose, onSave }: Prop
                 </h3>
 
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {member.plongeur_code && (
+                    <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4">
+                      <div className="text-sm text-purple-700 dark:text-purple-300 mb-1">Niveau</div>
+                      <div className="text-2xl font-bold text-purple-900 dark:text-purple-100">{member.plongeur_code}</div>
+                      <div className="text-xs text-purple-600 dark:text-purple-400 mt-1">{member.plongeur_niveau}</div>
+                    </div>
+                  )}
                   <div className="bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg p-4">
-                    <div className="text-sm text-gray-500 dark:text-dark-text-secondary mb-1">Prêts totaux</div>
+                    <div className="text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary mb-1">Prêts totaux</div>
                     <div className="text-2xl font-bold text-gray-900 dark:text-dark-text-primary">{stats.nbPrets}</div>
                   </div>
                   <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
@@ -401,7 +448,7 @@ export function MembreDetailView({ member, isCreateMode, onClose, onSave }: Prop
             <div className="flex items-center justify-end gap-3">
               <button
                 onClick={onClose}
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-secondary bg-white dark:bg-dark-bg-primary border border-gray-300 dark:border-dark-border rounded-md hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary"
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-primary bg-white dark:bg-dark-bg-primary border border-gray-300 dark:border-dark-border rounded-md hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary"
               >
                 Annuler
               </button>

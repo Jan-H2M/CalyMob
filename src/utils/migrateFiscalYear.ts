@@ -1,3 +1,4 @@
+import { logger } from '@/utils/logger';
 // TEMPORARY MIGRATION UTILITY
 // Add fiscal_year_id to all existing transactions
 // This file can be deleted after migration is complete
@@ -11,7 +12,7 @@ export async function migrateFiscalYearIds(clubId: string): Promise<{
   skipped: number;
   errors: number;
 }> {
-  console.log('🚀 Starting fiscal_year_id migration...');
+  logger.debug('🚀 Starting fiscal_year_id migration...');
 
   // Load fiscal years
   const fyRef = collection(db, 'clubs', clubId, 'fiscal_years');
@@ -21,7 +22,7 @@ export async function migrateFiscalYearIds(clubId: string): Promise<{
     ...d.data()
   })) as FiscalYear[];
 
-  console.log(`📅 Found ${fiscalYears.length} fiscal years:`, fiscalYears.map(fy => `${fy.year} (${fy.id})`).join(', '));
+  logger.debug(`📅 Found ${fiscalYears.length} fiscal years:`, fiscalYears.map(fy => `${fy.year} (${fy.id})`).join(', '));
 
   if (fiscalYears.length === 0) {
     throw new Error('No fiscal years found. Create fiscal years first.');
@@ -31,7 +32,7 @@ export async function migrateFiscalYearIds(clubId: string): Promise<{
   const txRef = collection(db, 'clubs', clubId, 'transactions_bancaires');
   const txSnapshot = await getDocs(txRef);
 
-  console.log(`📊 Found ${txSnapshot.size} transactions to process`);
+  logger.debug(`📊 Found ${txSnapshot.size} transactions to process`);
 
   let updated = 0;
   let skipped = 0;
@@ -54,7 +55,7 @@ export async function migrateFiscalYearIds(clubId: string): Promise<{
     const fiscalYear = fiscalYears.find(fy => fy.year === year);
 
     if (!fiscalYear) {
-      console.warn(`⚠️ No fiscal year found for transaction ${data.numero_sequence} (date: ${txDate.toLocaleDateString()}, year: ${year})`);
+      logger.warn(`⚠️ No fiscal year found for transaction ${data.numero_sequence} (date: ${txDate.toLocaleDateString()}, year: ${year})`);
       errors++;
       continue;
     }
@@ -67,18 +68,18 @@ export async function migrateFiscalYearIds(clubId: string): Promise<{
       updated++;
 
       if (updated % 50 === 0) {
-        console.log(`✅ Progress: ${updated} updated, ${skipped} skipped, ${errors} errors`);
+        logger.debug(`✅ Progress: ${updated} updated, ${skipped} skipped, ${errors} errors`);
       }
     } catch (err) {
-      console.error(`❌ Error updating ${txDoc.id}:`, err);
+      logger.error(`❌ Error updating ${txDoc.id}:`, err);
       errors++;
     }
   }
 
-  console.log('\n🎉 MIGRATION COMPLETE!');
-  console.log(`✅ Updated: ${updated}`);
-  console.log(`⏭️ Skipped (already had fiscal_year_id): ${skipped}`);
-  console.log(`❌ Errors: ${errors}`);
+  logger.debug('\n🎉 MIGRATION COMPLETE!');
+  logger.debug(`✅ Updated: ${updated}`);
+  logger.debug(`⏭️ Skipped (already had fiscal_year_id): ${skipped}`);
+  logger.debug(`❌ Errors: ${errors}`);
 
   return { updated, skipped, errors };
 }

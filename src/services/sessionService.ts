@@ -3,7 +3,6 @@ import {
   getDoc,
   setDoc,
   updateDoc,
-  deleteDoc,
   collection,
   query,
   where,
@@ -12,7 +11,9 @@ import {
   Timestamp
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { logger } from '@/utils/logger';
 import { FirebaseSettingsService } from './firebaseSettingsService';
+import { checkBrowserCompatibility } from './compatibilityService';
 
 /**
  * Interface pour une session utilisateur
@@ -39,7 +40,7 @@ export interface UserSessionData {
  */
 export class SessionService {
   private static lastUpdateTime: number = 0;
-  private static updateDebounceMs: number = 60000; // 1 minute
+  private static updateDebounceMs: number = 10000; // 10 seconds - reduced from 60s to prevent session sync issues
   private static sessionId: string | null = null;
 
   /**
@@ -54,7 +55,23 @@ export class SessionService {
       const securitySettings = await FirebaseSettingsService.loadSecuritySettings(clubId);
 
       if (!securitySettings.autoLogoutEnabled) {
-        console.log('⚠️ Auto-logout désactivé, pas de création de session');
+        // Even with auto-logout disabled, we need to ensure any existing session
+        // has isActive: true to pass Firestore security rules
+        logger.debug('⚠️ Auto-logout désactivé, vérification session existante');
+        const sessionRef = doc(db, 'clubs', clubId, 'sessions', userId);
+        const sessionSnap = await getDoc(sessionRef);
+
+        if (sessionSnap.exists()) {
+          const sessionData = sessionSnap.data();
+          if (!sessionData.isActive) {
+            // Reactivate the session so Firestore rules pass
+            logger.debug('🔄 Réactivation session existante (auto-logout désactivé)');
+            await updateDoc(sessionRef, {
+              isActive: true,
+              lastActivityAt: Timestamp.now()
+            });
+          }
+        }
         return '';
       }
 
@@ -87,11 +104,11 @@ export class SessionService {
       localStorage.setItem('lastActivity', now.toMillis().toString());
 
       this.sessionId = sessionId;
-      console.log('✅ Session créée:', sessionId, 'Expire à:', expiresAt.toDate());
+      logger.debug('✅ Session créée:', { sessionId, expiresAt: expiresAt.toDate() });
 
       return sessionId;
     } catch (error) {
-      console.error('❌ Erreur création session:', error);
+      logger.error('❌ Erreur création session:', error);
       throw error;
     }
   }
@@ -107,7 +124,7 @@ export class SessionService {
     try {
       const sid = sessionId || this.sessionId || localStorage.getItem('sessionId');
       if (!sid) {
-        console.warn('⚠️ Pas de sessionId, impossible de mettre à jour l\'activité');
+        logger.warn('⚠️ Pas de sessionId, impossible de mettre à jour l\'activité');
         return;
       }
 
@@ -143,9 +160,9 @@ export class SessionService {
       // Mettre à jour localStorage
       localStorage.setItem('lastActivity', timestamp.toMillis().toString());
 
-      console.log('🔄 Session activité mise à jour (debounced 1 min)');
+      logger.debug('🔄 Session activité mise à jour (debounced 10s)');
     } catch (error) {
-      console.error('❌ Erreur mise à jour session:', error);
+      logger.error('❌ Erreur mise à jour session:', error);
       // Ne pas bloquer l'application si l'update échoue
     }
   }
@@ -153,6 +170,9 @@ export class SessionService {
   /**
    * Valider si la session est toujours active
    * Retourne true si valide, false si expirée
+   *
+   * Note: Returns false (not an error) if session doesn't exist yet.
+   * This allows AuthContext to create a new session on first login.
    */
   static async validateSession(
     clubId: string,
@@ -161,64 +181,135 @@ export class SessionService {
     try {
       const sid = sessionId || this.sessionId || localStorage.getItem('sessionId');
       if (!sid) {
-        console.log('⚠️ Pas de sessionId pour validation');
+        logger.debug('⚠️ Pas de sessionId pour validation');
         return false;
       }
 
-      // Vérification rapide localStorage d'abord (0ms latence)
-      const localLastActivity = localStorage.getItem('lastActivity');
-      if (localLastActivity) {
-        const securitySettings = await FirebaseSettingsService.loadSecuritySettings(clubId);
+      // Charger les settings
+      const securitySettings = await FirebaseSettingsService.loadSecuritySettings(clubId);
 
-        if (!securitySettings.autoLogoutEnabled) {
-          return true; // Si auto-logout désactivé, toujours valide
-        }
+      // Vérification rapide localStorage d'abord (0ms latence) - only if auto-logout enabled
+      if (securitySettings.autoLogoutEnabled) {
+        const localLastActivity = localStorage.getItem('lastActivity');
+        if (localLastActivity) {
+          const timeoutMs = securitySettings.idleTimeoutMinutes * 60 * 1000;
+          const now = Date.now();
+          const lastActivity = parseInt(localLastActivity, 10);
 
-        const timeoutMs = securitySettings.idleTimeoutMinutes * 60 * 1000;
-        const now = Date.now();
-        const lastActivity = parseInt(localLastActivity, 10);
-
-        if (now - lastActivity > timeoutMs) {
-          console.log('❌ Session expirée (vérification localStorage)');
-          return false;
+          if (now - lastActivity > timeoutMs) {
+            logger.debug('❌ Session expirée (vérification localStorage)');
+            return false;
+          }
         }
       }
 
       // Vérification Firestore (source de vérité)
-      const sessionRef = doc(db, 'clubs', clubId, 'sessions', sid);
-      const sessionSnap = await getDoc(sessionRef);
+      let sessionSnap;
+      try {
+        const sessionRef = doc(db, 'clubs', clubId, 'sessions', sid);
+        sessionSnap = await getDoc(sessionRef);
+      } catch (firestoreError: any) {
+        // Handle permission errors gracefully - session doesn't exist yet
+        if (firestoreError?.code === 'permission-denied' ||
+            firestoreError?.message?.includes('permission')) {
+          logger.debug('⚠️ Session non trouvée (permission error = session inexistante)');
+          return false;
+        }
+        throw firestoreError;
+      }
 
       if (!sessionSnap.exists()) {
-        console.log('❌ Session introuvable dans Firestore');
+        logger.debug('❌ Session introuvable dans Firestore');
         return false;
       }
 
       const sessionData = sessionSnap.data() as UserSessionData;
 
       if (!sessionData.isActive) {
-        console.log('❌ Session inactive');
+        logger.debug('❌ Session inactive');
         return false;
       }
 
       const now = Timestamp.now();
       const lastActivity = sessionData.lastActivityAt;
 
-      // Charger le timeout depuis settings
-      const securitySettings = await FirebaseSettingsService.loadSecuritySettings(clubId);
+      // Timeout check (only if auto-logout enabled)
+      if (!securitySettings.autoLogoutEnabled) {
+        logger.debug('✅ Session valide (auto-logout désactivé)');
+        return true;
+      }
+
       const timeoutMs = securitySettings.idleTimeoutMinutes * 60 * 1000;
 
       const timeSinceActivity = now.toMillis() - lastActivity.toMillis();
 
       if (timeSinceActivity > timeoutMs) {
-        console.log(`❌ Session expirée: ${Math.round(timeSinceActivity / 60000)} min depuis dernière activité (max: ${securitySettings.idleTimeoutMinutes} min)`);
+        logger.debug(`❌ Session expirée: ${Math.round(timeSinceActivity / 60000)} min depuis dernière activité (max: ${securitySettings.idleTimeoutMinutes} min)`);
         return false;
       }
 
-      console.log(`✅ Session valide: ${Math.round(timeSinceActivity / 60000)} min depuis dernière activité`);
+      logger.debug(`✅ Session valide: ${Math.round(timeSinceActivity / 60000)} min depuis dernière activité`);
       return true;
     } catch (error) {
-      console.error('❌ Erreur validation session:', error);
+      logger.error('❌ Erreur validation session:', error);
       // En cas d'erreur, considérer la session comme invalide (sécurité)
+      return false;
+    }
+  }
+
+  /**
+   * Assurer qu'une session valide existe avant une opération critique.
+   * Si la session est expirée ou proche de l'expiration, force un refresh immédiat.
+   *
+   * Utiliser cette méthode AVANT toute écriture Firestore importante pour éviter
+   * les erreurs permission-denied dues à un délai de synchronisation session.
+   *
+   * @returns true si la session est prête, false si impossible de valider
+   */
+  static async ensureValidSession(
+    clubId: string,
+    userId: string
+  ): Promise<boolean> {
+    try {
+      const sid = userId || this.sessionId || localStorage.getItem('sessionId');
+      if (!sid) {
+        logger.warn('⚠️ ensureValidSession: pas de sessionId');
+        return false;
+      }
+
+      // Charger les settings
+      const securitySettings = await FirebaseSettingsService.loadSecuritySettings(clubId);
+
+      // Si auto-logout désactivé, la session est toujours valide
+      if (!securitySettings.autoLogoutEnabled) {
+        return true;
+      }
+
+      // Forcer un refresh immédiat de la session (bypass debounce)
+      const timeoutMs = securitySettings.idleTimeoutMinutes * 60 * 1000;
+      const timestamp = Timestamp.now();
+      const expiresAt = Timestamp.fromMillis(timestamp.toMillis() + timeoutMs);
+
+      const sessionRef = doc(db, 'clubs', clubId, 'sessions', sid);
+
+      await updateDoc(sessionRef, {
+        lastActivityAt: timestamp,
+        expiresAt: expiresAt,
+        isActive: true
+      });
+
+      // Mettre à jour localStorage et reset debounce timer
+      localStorage.setItem('lastActivity', timestamp.toMillis().toString());
+      this.lastUpdateTime = Date.now();
+
+      logger.debug('✅ ensureValidSession: session rafraîchie avec succès');
+
+      // Petit délai pour s'assurer que Firestore a bien propagé la mise à jour
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+      return true;
+    } catch (error) {
+      logger.error('❌ ensureValidSession: erreur', error);
       return false;
     }
   }
@@ -233,7 +324,7 @@ export class SessionService {
     try {
       const sid = sessionId || this.sessionId || localStorage.getItem('sessionId');
       if (!sid) {
-        console.log('⚠️ Pas de sessionId pour terminer');
+        logger.debug('⚠️ Pas de sessionId pour terminer');
         return;
       }
 
@@ -251,9 +342,9 @@ export class SessionService {
 
       this.sessionId = null;
 
-      console.log('🚪 Session terminée:', sid);
+      logger.debug('🚪 Session terminée:', sid);
     } catch (error) {
-      console.error('❌ Erreur terminaison session:', error);
+      logger.error('❌ Erreur terminaison session:', error);
       // Nettoyer localStorage même en cas d'erreur
       localStorage.removeItem('sessionId');
       localStorage.removeItem('lastActivity');
@@ -292,18 +383,18 @@ export class SessionService {
       await Promise.all(promises);
 
       if (cleanedCount > 0) {
-        console.log(`🧹 ${cleanedCount} sessions expirées nettoyées`);
+        logger.debug(`🧹 ${cleanedCount} sessions expirées nettoyées`);
       }
 
       return cleanedCount;
     } catch (error) {
-      console.error('❌ Erreur nettoyage sessions:', error);
+      logger.error('❌ Erreur nettoyage sessions:', error);
       return 0;
     }
   }
 
   /**
-   * Obtenir les informations sur l'appareil
+   * Obtenir les informations sur l'appareil (type basique)
    */
   private static getDeviceInfo(): string {
     const ua = navigator.userAgent;
@@ -315,6 +406,91 @@ export class SessionService {
       return 'Tablet';
     } else {
       return 'Desktop';
+    }
+  }
+
+  /**
+   * Parser le browser name et version depuis userAgent
+   */
+  private static getBrowserInfo(): { name: string; version: string } {
+    const ua = navigator.userAgent;
+    let name = 'Unknown';
+    let version = '';
+
+    // Ordre important: plus spécifique d'abord
+    if (ua.includes('Edg/')) {
+      name = 'Edge';
+      version = ua.match(/Edg\/(\d+\.\d+)/)?.[1] || '';
+    } else if (ua.includes('OPR/') || ua.includes('Opera')) {
+      name = 'Opera';
+      version = ua.match(/(?:OPR|Opera)\/(\d+\.\d+)/)?.[1] || '';
+    } else if (ua.includes('Chrome/')) {
+      name = 'Chrome';
+      version = ua.match(/Chrome\/(\d+\.\d+)/)?.[1] || '';
+    } else if (ua.includes('Safari/') && !ua.includes('Chrome')) {
+      name = 'Safari';
+      version = ua.match(/Version\/(\d+\.\d+)/)?.[1] || '';
+    } else if (ua.includes('Firefox/')) {
+      name = 'Firefox';
+      version = ua.match(/Firefox\/(\d+\.\d+)/)?.[1] || '';
+    }
+
+    return { name, version };
+  }
+
+  /**
+   * Sauvegarder les informations de l'appareil web dans le membre
+   * Appelé lors du login pour tracking debugging
+   */
+  static async saveDeviceInfoToMember(
+    clubId: string,
+    userId: string
+  ): Promise<void> {
+    try {
+      const browserInfo = this.getBrowserInfo();
+      const deviceType = this.getDeviceInfo();
+
+      const deviceData = {
+        // Platform web
+        device_platform: 'web',
+        device_type: deviceType,
+        // Browser info
+        browser_name: browserInfo.name,
+        browser_version: browserInfo.version,
+        // Locale & timezone
+        device_locale: navigator.language || 'unknown',
+        device_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown',
+        // Screen info
+        device_screen_width: screen.width,
+        device_screen_height: screen.height,
+        device_pixel_ratio: window.devicePixelRatio || 1,
+        // Timestamp
+        web_last_login: serverTimestamp(),
+      };
+
+      const memberRef = doc(db, 'clubs', clubId, 'members', userId);
+      await updateDoc(memberRef, deviceData);
+
+      logger.debug('✅ Web device info sauvegardé:', {
+        browser: `${browserInfo.name} ${browserInfo.version}`,
+        device: deviceType,
+        locale: deviceData.device_locale,
+        timezone: deviceData.device_timezone,
+      });
+
+      // Check browser compatibility (non-blocking warning)
+      FirebaseSettingsService.getCompatibilitySettings(clubId)
+        .then(settings => {
+          const status = checkBrowserCompatibility(browserInfo.name, browserInfo.version, settings);
+          if (status.warningLevel !== 'none') {
+            // Store in sessionStorage voor gebruik in UI
+            sessionStorage.setItem('browserCompatibilityWarning', JSON.stringify(status));
+          }
+        })
+        .catch(err => logger.warn('Failed to check browser compatibility:', err));
+    } catch (error) {
+      // Ne pas bloquer le login si ça échoue
+      logger.warn('⚠️ Erreur sauvegarde web device info:', error);
     }
   }
 

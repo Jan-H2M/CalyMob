@@ -5,6 +5,7 @@ import { expenseReportService } from '@/services/expenseReportService';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { v4 as uuidv4 } from 'uuid';
+import { logger } from '@/utils/logger';
 
 interface ExpenseItem {
   id: string;
@@ -57,33 +58,33 @@ export function ExpenseReportModal({
   useEffect(() => {
     if (isOpen && appUser && user) {
       // Debug: voir les données disponibles
-      console.log('🔍 ExpenseReportModal - FULL appUser object:', JSON.stringify(appUser, null, 2));
-      console.log('🔍 ExpenseReportModal - firstName:', appUser.firstName);
-      console.log('🔍 ExpenseReportModal - lastName:', appUser.lastName);
-      console.log('🔍 ExpenseReportModal - displayName:', appUser.displayName);
-      console.log('🔍 ExpenseReportModal - user:', user);
+      logger.debug('🔍 ExpenseReportModal - FULL appUser object:', JSON.stringify(appUser, null, 2));
+      logger.debug('🔍 ExpenseReportModal - firstName:', appUser.firstName);
+      logger.debug('🔍 ExpenseReportModal - lastName:', appUser.lastName);
+      logger.debug('🔍 ExpenseReportModal - displayName:', appUser.displayName);
+      logger.debug('🔍 ExpenseReportModal - user:', user);
 
       // Construire le nom complet depuis firstName + lastName (priorité)
       let fullName = '';
       if (appUser.firstName && appUser.lastName) {
         fullName = `${appUser.firstName} ${appUser.lastName}`;
-        console.log('✅ Using firstName + lastName:', fullName);
+        logger.debug('✅ Using firstName + lastName:', fullName);
       } else if (appUser.firstName) {
         fullName = appUser.firstName;
-        console.log('✅ Using firstName only:', fullName);
+        logger.debug('✅ Using firstName only:', fullName);
       } else if (appUser.lastName) {
         fullName = appUser.lastName;
-        console.log('✅ Using lastName only:', fullName);
+        logger.debug('✅ Using lastName only:', fullName);
       } else if (appUser.displayName) {
         fullName = appUser.displayName;
-        console.log('⚠️ Using displayName (fallback):', fullName);
+        logger.debug('⚠️ Using displayName (fallback):', fullName);
       } else if (user.displayName) {
         fullName = user.displayName;
-        console.log('⚠️ Using user.displayName (fallback):', fullName);
+        logger.debug('⚠️ Using user.displayName (fallback):', fullName);
       } else {
         // Fallback: Email avant @
         fullName = user.email?.split('@')[0] || 'Utilisateur';
-        console.log('⚠️ Using email prefix (last resort):', fullName);
+        logger.debug('⚠️ Using email prefix (last resort):', fullName);
       }
 
       setFormData({
@@ -199,7 +200,7 @@ export function ExpenseReportModal({
       // Modal se fermera via le parent après la création
 
     } catch (error) {
-      console.error('Erreur génération PDF:', error);
+      logger.error('Erreur génération PDF:', error);
       toast.error('Erreur lors de la génération de la note de frais');
     } finally {
       setIsGenerating(false);
@@ -218,7 +219,7 @@ export function ExpenseReportModal({
           </h2>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors"
             disabled={isGenerating}
           >
             <X className="h-5 w-5" />
@@ -306,7 +307,7 @@ export function ExpenseReportModal({
             </h3>
 
             {formData.depenses.length === 0 ? (
-              <div className="text-center py-8 bg-gray-50 dark:bg-dark-bg-secondary rounded-lg border-2 border-dashed border-gray-300 dark:border-dark-border">
+              <div className="text-center py-8 bg-gray-50 dark:bg-dark-bg-tertiary dark:bg-dark-bg-secondary rounded-lg border-2 border-dashed border-gray-300 dark:border-dark-border">
                 <p className="text-gray-500 dark:text-dark-text-muted mb-4">Aucune dépense ajoutée</p>
               </div>
             ) : (
@@ -362,7 +363,7 @@ export function ExpenseReportModal({
 
             <button
               onClick={handleAddDepense}
-              className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2 border-2 border-dashed border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors"
+              className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2 border-2 border-dashed border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary transition-colors"
               disabled={isGenerating}
             >
               <Plus className="h-4 w-4" />
@@ -426,7 +427,7 @@ export function ExpenseReportModal({
         </div>
 
         {/* Footer */}
-        <div className="sticky bottom-0 bg-gray-50 dark:bg-dark-bg-secondary border-t border-gray-200 dark:border-dark-border px-6 py-4 flex items-center justify-end gap-3">
+        <div className="sticky bottom-0 bg-gray-50 dark:bg-dark-bg-tertiary dark:bg-dark-bg-secondary border-t border-gray-200 dark:border-dark-border px-6 py-4 flex items-center justify-end gap-3">
           <button
             onClick={onClose}
             className="px-4 py-2 text-gray-700 dark:text-dark-text-primary hover:bg-gray-200 dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors"

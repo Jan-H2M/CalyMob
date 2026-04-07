@@ -1,3 +1,4 @@
+import { logger } from '@/utils/logger';
 /**
  * Service de matching algorithmique pour inscriptions → transactions
  *
@@ -39,9 +40,9 @@ export class InscriptionMatchingService {
   ): Map<string, InscriptionMatch> {
     const matches = new Map<string, InscriptionMatch>();
 
-    console.log('🔍 MATCHING ALGORITHMIQUE DÉMARRÉ');
-    console.log(`  📋 ${inscriptions.length} inscriptions à matcher`);
-    console.log(`  💳 ${transactions.length} transactions candidates`);
+    logger.debug('🔍 MATCHING ALGORITHMIQUE DÉMARRÉ');
+    logger.debug(`  📋 ${inscriptions.length} inscriptions à matcher`);
+    logger.debug(`  💳 ${transactions.length} transactions candidates`);
 
     for (const inscription of inscriptions) {
       // Chercher la meilleure transaction pour cette inscription
@@ -51,16 +52,16 @@ export class InscriptionMatchingService {
         // Vérifier qu'une autre inscription n'a pas déjà pris cette transaction
         if (!matches.has(bestMatch.transaction_id)) {
           matches.set(bestMatch.transaction_id, bestMatch);
-          console.log(`  ✅ Match trouvé: ${inscription.membre_prenom} ${inscription.membre_nom} → ${bestMatch.score}%`);
+          logger.debug(`  ✅ Match trouvé: ${inscription.membre_prenom} ${inscription.membre_nom} → ${bestMatch.score}%`);
         } else {
-          console.log(`  ⚠️ Transaction déjà utilisée pour ${inscription.membre_prenom} ${inscription.membre_nom}`);
+          logger.debug(`  ⚠️ Transaction déjà utilisée pour ${inscription.membre_prenom} ${inscription.membre_nom}`);
         }
       } else {
-        console.log(`  ❌ Aucun match pour ${inscription.membre_prenom} ${inscription.membre_nom} (${inscription.prix}€)`);
+        logger.debug(`  ❌ Aucun match pour ${inscription.membre_prenom} ${inscription.membre_nom} (${inscription.prix}€)`);
       }
     }
 
-    console.log(`\n✅ ${matches.size} matches trouvés au total\n`);
+    logger.debug(`\n✅ ${matches.size} matches trouvés au total\n`);
     return matches;
   }
 

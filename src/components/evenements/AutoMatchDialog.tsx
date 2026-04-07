@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { logger } from '@/utils/logger';
 import {
   X, CheckCircle, AlertTriangle, Banknote, Check, XIcon, ChevronDown,
   TrendingUp, Calendar, User, Euro, FileText
@@ -52,7 +53,7 @@ export function AutoMatchDialog({
   const MIN_QUALITY_THRESHOLD = 50;
   const qualityMatches = matched.filter(m => m.quality.overall >= MIN_QUALITY_THRESHOLD);
 
-  console.log(`🎯 Auto-match quality filter: ${matched.length} total → ${qualityMatches.length} kept (≥${MIN_QUALITY_THRESHOLD}%)`);
+  logger.debug(`🎯 Auto-match quality filter: ${matched.length} total → ${qualityMatches.length} kept (≥${MIN_QUALITY_THRESHOLD}%)`);
 
   // Track status of each match: 'pending' | 'accepted' | 'rejected'
   const [matchStatus, setMatchStatus] = useState<Record<string, 'pending' | 'accepted' | 'rejected'>>(() => {
@@ -155,7 +156,7 @@ export function AutoMatchDialog({
       await onConfirm(finalMatches, autoMarkCash);
       onClose();
     } catch (error) {
-      console.error('Error confirming auto-match:', error);
+      logger.error('Error confirming auto-match:', error);
     } finally {
       setIsProcessing(false);
     }
@@ -242,7 +243,7 @@ export function AutoMatchDialog({
                     className={cn(
                       "border-2 rounded-lg p-4 transition-all",
                       status === 'accepted' && "bg-green-50 border-green-400",
-                      status === 'rejected' && "bg-gray-100 border-gray-400 opacity-60",
+                      status === 'rejected' && "bg-gray-100 dark:bg-dark-bg-tertiary border-gray-400 opacity-60",
                       status === 'pending' && quality.overall >= 80 && "border-green-200",
                       status === 'pending' && quality.overall < 80 && quality.overall >= 60 && "border-yellow-200",
                       status === 'pending' && quality.overall < 60 && "border-red-200"
@@ -268,7 +269,7 @@ export function AutoMatchDialog({
                             "px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-sm font-medium",
                             status === 'accepted'
                               ? "bg-green-600 text-white"
-                              : "bg-gray-100 text-gray-700 hover:bg-green-100 hover:text-green-700"
+                              : "bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary hover:bg-green-100 hover:text-green-700"
                           )}
                         >
                           <Check className="h-4 w-4" />
@@ -280,7 +281,7 @@ export function AutoMatchDialog({
                             "px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-sm font-medium",
                             status === 'rejected'
                               ? "bg-red-600 text-white"
-                              : "bg-gray-100 text-gray-700 hover:bg-red-100 hover:text-red-700"
+                              : "bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary hover:bg-red-100 hover:text-red-700"
                           )}
                         >
                           <XIcon className="h-4 w-4" />
@@ -335,7 +336,7 @@ export function AutoMatchDialog({
                           <span className="text-gray-600 dark:text-dark-text-secondary">• {formatMontant(selectedTx.montant)}</span>
                           <span className="text-gray-500 dark:text-dark-text-muted">• {formatDate(selectedTx.date_execution)}</span>
                         </div>
-                        <ChevronDown className={cn("h-4 w-4 text-gray-500 transition-transform", isExpanded && "rotate-180")} />
+                        <ChevronDown className={cn("h-4 w-4 text-gray-500 dark:text-dark-text-muted transition-transform", isExpanded && "rotate-180")} />
                       </button>
 
                       {/* Dropdown list */}
@@ -463,7 +464,7 @@ export function AutoMatchDialog({
           <div className="flex items-center gap-3 justify-end">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-primary bg-white dark:bg-dark-bg-secondary border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors"
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-primary bg-white dark:bg-dark-bg-secondary border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors"
             >
               Annuler
             </button>

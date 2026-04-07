@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Calendar, MapPin, Users, Euro, FileText, User } from 'lucide-react';
 import { Evenement } from '@/types';
 import { cn } from '@/utils/utils';
+import { logger } from '@/utils/logger';
 
 interface EventFormModalProps {
   event: Evenement | null;
@@ -48,7 +49,7 @@ export function EventFormModal({ event, isOpen, onClose, onSave }: EventFormModa
       await onSave(formData);
       onClose();
     } catch (error) {
-      console.error('Error saving event:', error);
+      logger.error('Error saving event:', error);
     } finally {
       setSaving(false);
     }

@@ -1,3 +1,4 @@
+import { logger } from '@/utils/logger';
 /**
  * Service de génération de rapports financiers
  *
@@ -33,21 +34,76 @@ import {
   EventMonthlyData,
   ParticipantStats
 } from '@/types';
-import { calypsoAccountCodes } from '@/config/calypso-accounts';
+import { AccountCodeService } from '@/services/accountCodeService';
 import { format, startOfYear, endOfYear, startOfQuarter, endOfQuarter, startOfMonth, endOfMonth } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
+function coerceDateLike(
+  value: unknown,
+  fallback: Date
+): Date {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value;
+  }
+
+  const converted = (value as { toDate?: () => Date } | null | undefined)?.toDate?.();
+  if (converted instanceof Date && !Number.isNaN(converted.getTime())) {
+    return converted;
+  }
+
+  if (value && typeof value === 'object') {
+    const timestampLike = value as {
+      seconds?: unknown;
+      nanoseconds?: unknown;
+      _seconds?: unknown;
+      _nanoseconds?: unknown;
+    };
+    const seconds = Number(timestampLike.seconds ?? timestampLike._seconds);
+    const nanoseconds = Number(timestampLike.nanoseconds ?? timestampLike._nanoseconds ?? 0);
+    if (Number.isFinite(seconds) && Number.isFinite(nanoseconds)) {
+      const parsed = new Date(seconds * 1000 + nanoseconds / 1_000_000);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+  }
+
+  if (typeof value === 'string' || typeof value === 'number') {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
+
+  return fallback;
+}
+
+function coerceYearLike(value: unknown, fallback: number = new Date().getFullYear()): number {
+  const parsed = Number(value);
+  if (Number.isFinite(parsed) && parsed >= 1900 && parsed <= 3000) {
+    return Math.trunc(parsed);
+  }
+  return fallback;
+}
+
+function toSafeIsoString(value: Date): string {
+  return Number.isNaN(value.getTime()) ? 'Invalid Date' : value.toISOString();
+}
+
 export class ReportService {
+  static getFiscalYearDateRange(fiscalYear: FiscalYear): { startDate: Date; endDate: Date } {
+    const fallbackYear = coerceYearLike(fiscalYear?.year);
+    return {
+      startDate: coerceDateLike(fiscalYear.start_date, new Date(fallbackYear, 0, 1)),
+      endDate: coerceDateLike(fiscalYear.end_date, new Date(fallbackYear, 11, 31, 23, 59, 59, 999)),
+    };
+  }
+
   /**
    * Génère une période de rapport depuis une année fiscale
    */
   static createPeriodFromFiscalYear(fiscalYear: FiscalYear, type: PeriodType = 'year'): ReportPeriod {
-    const startDate = fiscalYear.start_date instanceof Date
-      ? fiscalYear.start_date
-      : (fiscalYear.start_date as any).toDate();
-    const endDate = fiscalYear.end_date instanceof Date
-      ? fiscalYear.end_date
-      : (fiscalYear.end_date as any).toDate();
+    const { startDate, endDate } = this.getFiscalYearDateRange(fiscalYear);
 
     return {
       start_date: startDate,
@@ -80,9 +136,17 @@ export class ReportService {
     fiscalYearId?: string
   ): Promise<TransactionBancaire[]> {
     const transRef = collection(db, 'clubs', clubId, 'transactions_bancaires');
+    const fallbackYear = coerceYearLike(period?.fiscal_year);
+    const startDate = coerceDateLike(period.start_date, new Date(fallbackYear, 0, 1));
+    let endDate = coerceDateLike(period.end_date, new Date(fallbackYear, 11, 31, 23, 59, 59, 999));
 
-    console.log('🔍 Query transactions with DATE FILTER:', {
-      period: `${period.start_date.toISOString()} → ${period.end_date.toISOString()}`,
+    if (endDate.getTime() < startDate.getTime()) {
+      endDate = new Date(startDate);
+      endDate.setHours(23, 59, 59, 999);
+    }
+
+    logger.debug('🔍 Query transactions with DATE FILTER:', {
+      period: `${toSafeIsoString(startDate)} → ${toSafeIsoString(endDate)}`,
       fiscalYearId: fiscalYearId || 'not used - using date filter instead'
     });
 
@@ -90,13 +154,13 @@ export class ReportService {
     // This ensures backward compatibility and works even if transactions don't have fiscal_year_id
     const q = query(
       transRef,
-      where('date_execution', '>=', Timestamp.fromDate(period.start_date)),
-      where('date_execution', '<=', Timestamp.fromDate(period.end_date)),
+      where('date_execution', '>=', Timestamp.fromDate(startDate)),
+      where('date_execution', '<=', Timestamp.fromDate(endDate)),
       orderBy('date_execution', 'asc')
     );
 
     const snapshot = await getDocs(q);
-    console.log(`   📦 Transactions trouvées par date: ${snapshot.size}`);
+    logger.debug(`   📦 Transactions trouvées par date: ${snapshot.size}`);
 
     const transactions = snapshot.docs.map(doc => {
       const data = doc.data();
@@ -110,7 +174,7 @@ export class ReportService {
       } as TransactionBancaire;
     });
 
-    console.log(`   ✅ Returning ${transactions.length} transactions`);
+    logger.debug(`   ✅ Returning ${transactions.length} transactions`);
     return transactions;
   }
 
@@ -158,8 +222,8 @@ export class ReportService {
     clubId: string,
     period: ReportPeriod
   ): Promise<Operation[]> {
-    console.log('🔍 Recherche opérations (type=evenement) dans: clubs/' + clubId + '/operations');
-    console.log('   Période:', period.start_date, '→', period.end_date);
+    logger.debug('🔍 Recherche opérations (type=evenement) dans: clubs/' + clubId + '/operations');
+    logger.debug('   Période:', period.start_date, '→', period.end_date);
 
     const operationsRef = collection(db, 'clubs', clubId, 'operations');
 
@@ -172,7 +236,7 @@ export class ReportService {
     );
 
     const snapshot = await getDocs(q);
-    console.log('   📦 Opérations trouvées:', snapshot.size);
+    logger.debug('   📦 Opérations trouvées:', snapshot.size);
 
     return snapshot.docs.map(doc => {
       const data = doc.data();
@@ -196,8 +260,8 @@ export class ReportService {
     clubId: string,
     period: ReportPeriod
   ): Promise<Evenement[]> {
-    console.log('🔍 Recherche événements dans collection: clubs/' + clubId + '/operations');
-    console.log('   Période:', period.start_date, '→', period.end_date);
+    logger.debug('🔍 Recherche événements dans collection: clubs/' + clubId + '/operations');
+    logger.debug('   Période:', period.start_date, '→', period.end_date);
 
     // 🆕 MIGRATION: Read from 'operations' collection
     const eventRef = collection(db, 'clubs', clubId, 'operations');
@@ -229,17 +293,17 @@ export class ReportService {
         return dateA.getTime() - dateB.getTime();
       });
 
-    console.log('   📦 Événements trouvés après filtrage:', events.length);
+    logger.debug('   📦 Événements trouvés après filtrage:', events.length);
 
     // Si aucun résultat, essayer sans filtre pour voir si la collection existe
     if (events.length === 0) {
-      console.log('   ⚠️ Aucun événement trouvé avec filtres. Vérification collection...');
+      logger.debug('   ⚠️ Aucun événement trouvé avec filtres. Vérification collection...');
       const allEventsSnapshot = await getDocs(collection(db, 'clubs', clubId, 'operations'));
-      console.log('   📦 Total opérations dans la collection (sans filtre):', allEventsSnapshot.size);
+      logger.debug('   📦 Total opérations dans la collection (sans filtre):', allEventsSnapshot.size);
 
       if (allEventsSnapshot.size > 0) {
         const firstEvent = allEventsSnapshot.docs[0].data();
-        console.log('   🔍 Première opération (exemple):', {
+        logger.debug('   🔍 Première opération (exemple):', {
           id: allEventsSnapshot.docs[0].id,
           type: firstEvent.type,
           date_debut: firstEvent.date_debut,
@@ -331,7 +395,7 @@ export class ReportService {
       const isRevenue = trans.montant > 0;
 
       // Trouver le label du code comptable
-      const accountCode = calypsoAccountCodes.find(ac => ac.code === code);
+      const accountCode = AccountCodeService.getByCode(code);
       const label = accountCode?.label || code;
 
       if (isRevenue) {
@@ -539,7 +603,7 @@ export class ReportService {
     clubId: string,
     period: ReportPeriod
   ): Promise<EventStatistics> {
-    console.log('📊 Génération statistiques événements pour période:', period);
+    logger.debug('📊 Génération statistiques événements pour période:', period);
 
     // Récupérer tous les événements d'abord
     const events = await this.getEventsForPeriod(clubId, period);
@@ -547,7 +611,7 @@ export class ReportService {
     // Puis récupérer les inscriptions pour ces événements
     const registrations = await this.getRegistrationsForPeriod(clubId, period, events);
 
-    console.log(`   ✅ ${events.length} événements, ${registrations.length} inscriptions`);
+    logger.debug(`   ✅ ${events.length} événements, ${registrations.length} inscriptions`);
 
     // Total des événements
     const totalEvents = events.length;
@@ -675,8 +739,8 @@ export class ReportService {
     period: ReportPeriod,
     fiscalYear?: FiscalYear
   ): Promise<FinancialSummary> {
-    console.log('📊 Génération synthèse financière pour période:', period);
-    console.log('   📅 Fiscal Year ID:', fiscalYear?.id);
+    logger.debug('📊 Génération synthèse financière pour période:', period);
+    logger.debug('   📅 Fiscal Year ID:', fiscalYear?.id);
 
     // Récupérer toutes les données (pass fiscal_year_id to match TransactionsPage behavior)
     const [transactions, expenseClaims, events] = await Promise.all([
@@ -685,39 +749,42 @@ export class ReportService {
       this.getEventsForPeriod(clubId, period)
     ]);
 
-    console.log(`   ✅ ${transactions.length} transactions, ${expenseClaims.length} demandes, ${events.length} événements`);
+    logger.debug(`   ✅ ${transactions.length} transactions, ${expenseClaims.length} demandes, ${events.length} événements`);
 
     // Calculer soldes
+    // Fix: exclure les parent transactions pour éviter le double comptage
+    // (les children portent déjà les montants ventilés)
     const openingBalance = fiscalYear?.opening_balances.bank_current || 0;
+    const effectiveTransactions = transactions.filter(t => !t.is_parent);
 
-    const totalRevenue = transactions
+    const totalRevenue = effectiveTransactions
       .filter(t => t.montant > 0)
       .reduce((sum, t) => sum + t.montant, 0);
 
-    const totalExpense = transactions
+    const totalExpense = effectiveTransactions
       .filter(t => t.montant < 0)
       .reduce((sum, t) => sum + Math.abs(t.montant), 0);
 
     const netResult = totalRevenue - totalExpense;
     const closingBalance = openingBalance + netResult;
 
-    // Agrégations
-    const { revenue: revenueByCategory, expense: expenseByCategory } = this.aggregateByCategory(transactions);
-    const { revenue: revenueByAccount, expense: expenseByAccount } = this.aggregateByAccountCode(transactions);
-    const monthlyEvolution = this.calculateMonthlyEvolution(transactions, period);
-    const eventFinancials = await this.generateEventFinancials(clubId, events, transactions, expenseClaims);
+    // Agrégations (utiliser effectiveTransactions pour éviter double comptage)
+    const { revenue: revenueByCategory, expense: expenseByCategory } = this.aggregateByCategory(effectiveTransactions);
+    const { revenue: revenueByAccount, expense: expenseByAccount } = this.aggregateByAccountCode(effectiveTransactions);
+    const monthlyEvolution = this.calculateMonthlyEvolution(effectiveTransactions, period);
+    const eventFinancials = await this.generateEventFinancials(clubId, events, effectiveTransactions, expenseClaims);
 
-    // Transactions non réconciliées
-    const unreconciledTransactions = transactions.filter(t => !t.reconcilie);
+    // Transactions non réconciliées (exclure parents)
+    const unreconciledTransactions = effectiveTransactions.filter(t => !t.reconcilie);
 
     // Demandes en attente
     const pendingExpenseClaims = expenseClaims.filter(
-      ec => ec.statut === 'soumis' || ec.statut === 'en_attente_validation'
+      ec => ec.statut === 'en_attente_validation'
     );
 
-    // Statistiques
-    const transactionCount = transactions.length;
-    const reconciledCount = transactions.filter(t => t.reconcilie).length;
+    // Statistiques (exclure parents du comptage)
+    const transactionCount = effectiveTransactions.length;
+    const reconciledCount = effectiveTransactions.filter(t => t.reconcilie).length;
     const reconciliationRate = transactionCount > 0 ? (reconciledCount / transactionCount) * 100 : 0;
 
     return {

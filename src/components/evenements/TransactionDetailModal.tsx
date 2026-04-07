@@ -209,7 +209,7 @@ export function TransactionDetailModal({
                 "px-2.5 py-1 rounded-full text-sm font-medium",
                 transaction.reconcilie
                   ? "bg-green-100 text-green-700"
-                  : "bg-gray-100 text-gray-700"
+                  : "bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary"
               )}>
                 {transaction.reconcilie ? 'Réconciliée' : 'Non réconciliée'}
               </span>

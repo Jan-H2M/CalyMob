@@ -1,7 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { X, Search, Filter, Check, Euro, Calendar, User, FileText, CreditCard, Link2 } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { X, Search, Filter, Check, Calendar, User, CreditCard, Link2 } from 'lucide-react';
 import { DemandeRemboursement } from '@/types';
 import { formatMontant, formatDate, cn } from '@/utils/utils';
+import { logger } from '@/utils/logger';
+import {
+  isExpenseLinkedToOtherEvent as hasExpenseEventConflict
+} from '@/utils/operationFinancials';
 
 interface ExpenseLinkingPanelProps {
   isOpen: boolean;
@@ -13,22 +17,24 @@ interface ExpenseLinkingPanelProps {
   onLinkExpenses: (expenseIds: string[]) => Promise<void>;
 }
 
-const STATUT_COLORS = {
-  'brouillon': 'bg-gray-100 text-gray-700',
-  'soumis': 'bg-blue-100 text-blue-700',
-  'en_attente_validation': 'bg-yellow-100 text-yellow-700',
+const STATUT_COLORS: Record<DemandeRemboursement['statut'], string> = {
+  'brouillon': 'bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary',
+  'en_attente_validation': 'bg-amber-100 text-amber-700',
   'approuve': 'bg-green-100 text-green-700',
+  'paiement_effectue': 'bg-blue-100 text-blue-700',
   'rembourse': 'bg-purple-100 text-purple-700',
-  'refuse': 'bg-red-100 text-red-700'
+  'refuse': 'bg-red-100 text-red-700',
+  'cree_banque_attente_validation': 'bg-orange-100 text-orange-700'
 };
 
-const STATUT_LABELS = {
+const STATUT_LABELS: Record<DemandeRemboursement['statut'], string> = {
   'brouillon': 'Brouillon',
-  'soumis': 'Soumis',
   'en_attente_validation': 'En attente',
   'approuve': 'Approuvé',
+  'paiement_effectue': 'Paiement effectué',
   'rembourse': 'Remboursé',
-  'refuse': 'Refusé'
+  'refuse': 'Refusé',
+  'cree_banque_attente_validation': 'Créé en banque'
 };
 
 export function ExpenseLinkingPanel({
@@ -118,6 +124,11 @@ export function ExpenseLinkingPanel({
   }, [expenses, linkedExpenseIds, filterStatut, filterCategory, searchTerm, dateFrom, dateTo, montantFrom, montantTo]);
 
   const toggleSelection = (id: string) => {
+    const expense = filteredExpenses.find(item => item.id === id) || expenses.find(item => item.id === id);
+    if (expense && hasExpenseEventConflict(expense, eventId)) {
+      return;
+    }
+
     const newSelected = new Set(selectedIds);
     if (newSelected.has(id)) {
       newSelected.delete(id);
@@ -128,7 +139,11 @@ export function ExpenseLinkingPanel({
   };
 
   const selectAll = () => {
-    const allIds = new Set(filteredExpenses.map(e => e.id));
+    const allIds = new Set(
+      filteredExpenses
+        .filter(expense => !hasExpenseEventConflict(expense, eventId))
+        .map(expense => expense.id)
+    );
     setSelectedIds(allIds);
   };
 
@@ -144,14 +159,14 @@ export function ExpenseLinkingPanel({
       await onLinkExpenses(Array.from(selectedIds));
       onClose();
     } catch (error) {
-      console.error('Error linking expenses:', error);
+      logger.error('Error linking expenses:', error);
     } finally {
       setSaving(false);
     }
   };
 
   const isLinkedToOtherEvent = (expense: DemandeRemboursement) => {
-    return expense.evenement_id && expense.evenement_id !== eventId;
+    return hasExpenseEventConflict(expense, eventId);
   };
 
   const hasTransaction = (expense: DemandeRemboursement) => {
@@ -207,7 +222,6 @@ export function ExpenseLinkingPanel({
             >
               <option value="all">Tous statuts</option>
               <option value="brouillon">Brouillon</option>
-              <option value="soumis">Soumis</option>
               <option value="en_attente_validation">En attente</option>
               <option value="approuve">Approuvé</option>
               <option value="rembourse">Remboursé</option>
@@ -318,12 +332,18 @@ export function ExpenseLinkingPanel({
                 return (
                   <div
                     key={expense.id}
-                    onClick={() => toggleSelection(expense.id)}
+                    onClick={() => {
+                      if (!otherEvent) {
+                        toggleSelection(expense.id);
+                      }
+                    }}
                     className={cn(
-                      "border rounded-lg p-4 cursor-pointer transition-all",
+                      "border rounded-lg p-4 transition-all",
+                      otherEvent && "cursor-not-allowed opacity-60",
+                      !otherEvent && "cursor-pointer",
                       isSelected
                         ? "border-orange-500 bg-orange-50 shadow-sm"
-                        : "border-gray-200 hover:border-gray-300 hover:shadow-sm bg-white"
+                        : "border-gray-200 dark:border-dark-border hover:border-gray-300 dark:border-dark-border hover:shadow-sm bg-white"
                     )}
                   >
                     <div className="flex items-start gap-3">
@@ -333,7 +353,7 @@ export function ExpenseLinkingPanel({
                           "w-5 h-5 rounded border-2 flex items-center justify-center transition-colors",
                           isSelected
                             ? "border-orange-500 bg-orange-500"
-                            : "border-gray-300"
+                            : "border-gray-300 dark:border-dark-border"
                         )}>
                           {isSelected && <Check className="h-3 w-3 text-white" />}
                         </div>
@@ -382,7 +402,7 @@ export function ExpenseLinkingPanel({
                               {otherEvent && (
                                 <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full flex items-center gap-1">
                                   <Link2 className="h-3 w-3" />
-                                  Autre événement
+                                  Autre activité
                                 </span>
                               )}
                             </div>

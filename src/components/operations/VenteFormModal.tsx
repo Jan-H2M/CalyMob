@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { Operation } from '@/types';
 import toast from 'react-hot-toast';
+import { logger } from '@/utils/logger';
 
 interface VenteFormModalProps {
   isOpen: boolean;
@@ -49,7 +50,7 @@ export function VenteFormModal({ isOpen, onClose, onSave, vente }: VenteFormModa
       });
       onClose();
     } catch (error) {
-      console.error('Error saving vente:', error);
+      logger.error('Error saving vente:', error);
     } finally {
       setSaving(false);
     }
@@ -174,7 +175,7 @@ export function VenteFormModal({ isOpen, onClose, onSave, vente }: VenteFormModa
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors"
+              className="flex-1 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors"
             >
               Annuler
             </button>

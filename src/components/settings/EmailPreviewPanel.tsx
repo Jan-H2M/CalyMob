@@ -14,8 +14,8 @@ interface Props {
   htmlContent: string;
   subject: string;
   emailType: EmailTemplateType;
-  styles: any;
-  variables: any[];
+  styles: Record<string, string | number>;
+  variables: Array<{ name: string; value: unknown }>;
 }
 
 type ViewMode = 'preview' | 'code' | 'split';
@@ -122,7 +122,7 @@ export function EmailPreviewPanel({ htmlContent, subject, emailType, styles, var
                 <div className="border border-gray-200 dark:border-dark-border rounded-lg overflow-hidden">
                   <iframe
                     srcDoc={previewHtml}
-                    className="w-full h-[600px] bg-white"
+                    className="w-full h-[50vh] md:h-[600px] bg-white"
                     title="Email Preview"
                     sandbox="allow-same-origin"
                   />

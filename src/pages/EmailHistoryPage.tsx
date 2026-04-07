@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { logger } from '@/utils/logger';
 import { useNavigate } from 'react-router-dom';
 import {
   ChevronLeft,
@@ -42,7 +43,7 @@ export function EmailHistoryPage() {
         const data = await getEmailHistory(clubId);
         setEmails(data);
       } catch (error) {
-        console.error('Error loading email history:', error);
+        logger.error('Error loading email history:', error);
         toast.error('Erreur lors du chargement de l\'historique des emails');
       } finally {
         setLoading(false);
@@ -141,7 +142,7 @@ export function EmailHistoryPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Search */}
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 dark:text-dark-text-muted" />
               <input
                 type="text"
                 placeholder="Rechercher par destinataire, objet..."
@@ -190,7 +191,7 @@ export function EmailHistoryPage() {
           </div>
         ) : filteredEmails.length === 0 ? (
           <div className="bg-white dark:bg-dark-bg-secondary rounded-lg border border-gray-200 dark:border-dark-border p-12 text-center">
-            <Mail className="h-16 w-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+            <Mail className="h-16 w-16 text-gray-300 dark:text-dark-text-secondary mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 dark:text-dark-text-primary mb-2">
               Aucun email envoyé
             </h3>
@@ -203,22 +204,22 @@ export function EmailHistoryPage() {
             <table className="w-full">
               <thead className="bg-gray-50 dark:bg-dark-bg-tertiary border-b border-gray-200 dark:border-dark-border">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                     Type
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                     Date
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                     Heure
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                     Destinataire
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                     Statut
                   </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
@@ -227,7 +228,7 @@ export function EmailHistoryPage() {
                 {filteredEmails.map((email) => (
                   <tr
                     key={email.id}
-                    className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors"
+                    className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary transition-colors"
                   >
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-2">
@@ -236,13 +237,13 @@ export function EmailHistoryPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-2 text-sm text-gray-900 dark:text-dark-text-primary">
-                        <CalendarIcon className="h-4 w-4 text-gray-400" />
+                        <CalendarIcon className="h-4 w-4 text-gray-400 dark:text-dark-text-muted" />
                         {formatDate(email.createdAt)}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-2 text-sm text-gray-900 dark:text-dark-text-primary">
-                        <Clock className="h-4 w-4 text-gray-400" />
+                        <Clock className="h-4 w-4 text-gray-400 dark:text-dark-text-muted" />
                         {email.createdAt.toDate?.().toLocaleTimeString('fr-FR', {
                           hour: '2-digit',
                           minute: '2-digit'
@@ -270,7 +271,7 @@ export function EmailHistoryPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-right">
                       <button
                         onClick={() => setSelectedEmail(email)}
-                        className="inline-flex items-center justify-center p-2 text-gray-600 dark:text-dark-text-secondary hover:text-calypso-blue dark:hover:text-calypso-aqua hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors"
+                        className="inline-flex items-center justify-center p-2 text-gray-600 dark:text-dark-text-secondary hover:text-calypso-blue dark:hover:text-calypso-aqua hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors"
                         aria-label="Voir les détails"
                       >
                         <Eye className="h-5 w-5" />

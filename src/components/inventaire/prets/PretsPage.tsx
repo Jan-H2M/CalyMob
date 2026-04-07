@@ -5,11 +5,13 @@ import { getMembres } from '@/services/membreService';
 import { InventoryItemService } from '@/services/inventoryItemService';
 import { Loan, InventoryItem } from '@/types/inventory';
 import { Membre } from '@/types';
+import { getFirstName, getLastName } from '@/utils/fieldMapper';
 import { useAuth } from '@/contexts/AuthContext';
 import { PretDetailView } from './PretDetailView';
 import { PretCreationWizard } from './PretCreationWizard';
 import toast from 'react-hot-toast';
 import { cn } from '@/utils/utils';
+import { logger } from '@/utils/logger';
 
 export function PretsPage() {
   const { clubId } = useAuth();
@@ -70,7 +72,7 @@ export function PretsPage() {
       const statsData = await LoanService.getStats(clubId);
       setStats(statsData);
     } catch (error: any) {
-      console.error('Erreur chargement prêts:', error);
+      logger.error('Erreur chargement prêts:', error);
       toast.error(error.message || 'Erreur lors du chargement');
     } finally {
       setLoading(false);
@@ -105,7 +107,7 @@ export function PretsPage() {
 
   const getMemberName = (memberId: string) => {
     const member = members.find(m => m.id === memberId);
-    return member ? `${member.nom} ${member.prenom}` : 'Membre inconnu';
+    return member ? `${getFirstName(member)} ${getLastName(member)}` : 'Membre inconnu';
   };
 
   const getItemNames = (itemIds: string[]) => {
@@ -154,7 +156,7 @@ export function PretsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-dark-text-primary">Prêts de Matériel</h2>
-          <p className="mt-1 text-sm text-gray-500 dark:text-dark-text-secondary">
+          <p className="mt-1 text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
             Suivi des prêts de matériel aux membres
           </p>
         </div>
@@ -173,10 +175,10 @@ export function PretsPage() {
         <div className="bg-white dark:bg-dark-bg-secondary rounded-lg shadow p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500 dark:text-dark-text-secondary">Total</p>
+              <p className="text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">Total</p>
               <p className="text-2xl font-bold text-gray-900 dark:text-dark-text-primary">{stats.total}</p>
             </div>
-            <ClipboardList className="h-8 w-8 text-gray-400" />
+            <ClipboardList className="h-8 w-8 text-gray-400 dark:text-dark-text-muted" />
           </div>
         </div>
 
@@ -243,14 +245,14 @@ export function PretsPage() {
       {/* Filters */}
       <div className="bg-white dark:bg-dark-bg-secondary rounded-lg shadow p-4">
         <div className="flex items-center gap-2 mb-4">
-          <Filter className="h-5 w-5 text-gray-400" />
+          <Filter className="h-5 w-5 text-gray-400 dark:text-dark-text-muted" />
           <h3 className="text-sm font-medium text-gray-900 dark:text-dark-text-primary">Filtres</h3>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-dark-text-muted" />
             <input
               type="text"
               placeholder="Rechercher dans notes..."
@@ -281,7 +283,7 @@ export function PretsPage() {
             <option value="">Tous les membres</option>
             {members.filter(m => m.statut === 'actif').map(member => (
               <option key={member.id} value={member.id}>
-                {member.nom} {member.prenom}
+                {getFirstName(member)} {getLastName(member)}
               </option>
             ))}
           </select>
@@ -293,25 +295,25 @@ export function PretsPage() {
         <table className="min-w-full divide-y divide-gray-200 dark:divide-dark-border">
           <thead className="bg-gray-50 dark:bg-dark-bg-tertiary">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                 Membre
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                 Matériel
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                 Date prêt
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                 Retour prévu
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                 Caution
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                 Statut
               </th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                 Actions
               </th>
             </tr>
@@ -319,7 +321,7 @@ export function PretsPage() {
           <tbody className="divide-y divide-gray-200 dark:divide-dark-border">
             {loans.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-dark-text-secondary">
+                <td colSpan={7} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
                   Aucun prêt trouvé
                 </td>
               </tr>
@@ -327,20 +329,20 @@ export function PretsPage() {
               loans.map((loan) => (
                 <tr
                   key={loan.id}
-                  className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors"
+                  className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary transition-colors"
                 >
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-dark-text-primary">
                     {getMemberName(loan.memberId)}
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-500 dark:text-dark-text-secondary">
+                  <td className="px-6 py-4 text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
                     <div className="max-w-xs truncate" title={getItemNames(loan.itemIds)}>
                       {getItemNames(loan.itemIds)}
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-dark-text-secondary">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
                     {formatDate(loan.date_pret)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-dark-text-secondary">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
                     {formatDate(loan.date_retour_prevue)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-dark-text-primary">

@@ -4,6 +4,7 @@ import { TransactionBancaire } from '@/types';
 import { formatMontant, formatDate } from '@/utils/utils';
 import { db } from '@/lib/firebase';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { logger } from '@/utils/logger';
 
 interface TransactionPickerModalProps {
   clubId: string;
@@ -68,13 +69,13 @@ export function TransactionPickerModal({
           return b.date_execution.getTime() - a.date_execution.getTime();
         });
 
-      console.log(`[TransactionPicker] Loaded ${txList.length} transactions`);
+      logger.debug(`[TransactionPicker] Loaded ${txList.length} transactions`);
       setTransactions(txList);
       setFilteredTransactions(txList);
-    } catch (error: any) {
-      console.error('Erreur chargement transactions:', error);
-      console.error('Message:', error?.message);
-      console.error('Code:', error?.code);
+    } catch (error) {
+      logger.error('Erreur chargement transactions:', error);
+      logger.error('Message:', error?.message);
+      logger.error('Code:', error?.code);
     } finally {
       setLoading(false);
     }
@@ -169,7 +170,7 @@ export function TransactionPickerModal({
                         ? 'border-green-200 bg-green-50 hover:border-green-400'
                         : matchQuality === 'good'
                         ? 'border-amber-200 bg-amber-50 hover:border-amber-400'
-                        : 'border-gray-200 bg-white hover:border-gray-400'
+                        : 'border-gray-200 dark:border-dark-border bg-white hover:border-gray-400'
                     }`}
                   >
                     <div className="flex items-start justify-between">

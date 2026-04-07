@@ -1,3 +1,4 @@
+import { logger } from '@/utils/logger';
 /**
  * Location Detail View
  * 800px slide-out panel for viewing/editing dive locations
@@ -87,7 +88,7 @@ export function LocationDetailView({
   }, [onClose]);
 
   // Auto-save handler for individual fields
-  const handleFieldSave = async (field: keyof typeof editedData, value: any) => {
+  const handleFieldSave = async (field: keyof typeof editedData, value: string | number | boolean | null | undefined | unknown[]) => {
     if (isCreateMode || !onUpdate || !location) return;
 
     try {
@@ -106,7 +107,7 @@ export function LocationDetailView({
         position: 'bottom-right'
       });
     } catch (error) {
-      console.error(`Error saving ${field}:`, error);
+      logger.error(`Error saving ${field}:`, error);
       toast.error('Erreur lors de la sauvegarde');
     }
   };
@@ -136,7 +137,7 @@ export function LocationDetailView({
     setIsSaving(true);
     try {
       // Build data object, excluding undefined fields (Firestore doesn't accept undefined)
-      const locationData: any = {
+      const locationData: Record<string, unknown> = {
         name: editedData.name.trim(),
         country: editedData.country,
         tariffs: editedData.tariffs
@@ -167,7 +168,7 @@ export function LocationDetailView({
       toast.success('Lieu créé avec succès');
       onClose();
     } catch (error) {
-      console.error('Error creating location:', error);
+      logger.error('Error creating location:', error);
       toast.error('Erreur lors de la création');
     } finally {
       setIsSaving(false);
@@ -187,7 +188,7 @@ export function LocationDetailView({
       toast.success('Lieu supprimé avec succès');
       onClose();
     } catch (error) {
-      console.error('Error deleting location:', error);
+      logger.error('Error deleting location:', error);
       toast.error('Erreur lors de la suppression');
     }
   };
@@ -239,10 +240,11 @@ export function LocationDetailView({
               <div className="grid grid-cols-2 gap-3">
                 {/* Name - full width */}
                 <div className="col-span-2">
-                  <label className="block text-xs font-medium text-gray-700 dark:text-dark-text-primary mb-1">
+                  <label htmlFor="location-name-input" className="block text-xs font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                     Nom du lieu *
                   </label>
                   <input
+                    id="location-name-input"
                     type="text"
                     value={editedData.name}
                     onChange={(e) => setEditedData({ ...editedData, name: e.target.value })}
@@ -254,10 +256,11 @@ export function LocationDetailView({
 
                 {/* Address - full width */}
                 <div className="col-span-2">
-                  <label className="block text-xs font-medium text-gray-700 dark:text-dark-text-primary mb-1">
+                  <label htmlFor="location-address-input" className="block text-xs font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                     Adresse
                   </label>
                   <input
+                    id="location-address-input"
                     type="text"
                     value={editedData.address}
                     onChange={(e) => setEditedData({ ...editedData, address: e.target.value })}
@@ -269,10 +272,11 @@ export function LocationDetailView({
 
                 {/* Country */}
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-dark-text-primary mb-1">
+                  <label htmlFor="location-country-input" className="block text-xs font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                     Pays
                   </label>
                   <select
+                    id="location-country-input"
                     value={editedData.country}
                     onChange={(e) => {
                       setEditedData({ ...editedData, country: e.target.value });
@@ -290,10 +294,11 @@ export function LocationDetailView({
 
                 {/* Phone */}
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-dark-text-primary mb-1">
+                  <label htmlFor="location-phone-input" className="block text-xs font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                     Téléphone
                   </label>
                   <input
+                    id="location-phone-input"
                     type="tel"
                     value={editedData.phone}
                     onChange={(e) => setEditedData({ ...editedData, phone: e.target.value })}
@@ -305,10 +310,11 @@ export function LocationDetailView({
 
                 {/* Email */}
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-dark-text-primary mb-1">
+                  <label htmlFor="location-email-input" className="block text-xs font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                     Email
                   </label>
                   <input
+                    id="location-email-input"
                     type="email"
                     value={editedData.email}
                     onChange={(e) => setEditedData({ ...editedData, email: e.target.value })}
@@ -320,10 +326,11 @@ export function LocationDetailView({
 
                 {/* Website */}
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-dark-text-primary mb-1">
+                  <label htmlFor="location-website-input" className="block text-xs font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                     Site web
                   </label>
                   <input
+                    id="location-website-input"
                     type="url"
                     value={editedData.website}
                     onChange={(e) => setEditedData({ ...editedData, website: e.target.value })}
@@ -335,10 +342,11 @@ export function LocationDetailView({
 
                 {/* Description - full width, auto-expandable */}
                 <div className="col-span-2">
-                  <label className="block text-xs font-medium text-gray-700 dark:text-dark-text-primary mb-1">
+                  <label htmlFor="location-description-input" className="block text-xs font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                     Description
                   </label>
                   <textarea
+                    id="location-description-input"
                     ref={descriptionRef}
                     value={editedData.description}
                     onChange={(e) => {
@@ -354,10 +362,11 @@ export function LocationDetailView({
 
                 {/* Notes - full width, auto-expandable */}
                 <div className="col-span-2">
-                  <label className="block text-xs font-medium text-gray-700 dark:text-dark-text-primary mb-1">
+                  <label htmlFor="location-notes-input" className="block text-xs font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                     Commentaires
                   </label>
                   <textarea
+                    id="location-notes-input"
                     ref={notesRef}
                     value={editedData.notes}
                     onChange={(e) => {
@@ -394,7 +403,7 @@ export function LocationDetailView({
               <button
                 onClick={onClose}
                 disabled={isSaving}
-                className="px-4 py-2 border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 border border-gray-300 dark:border-dark-border text-gray-700 dark:text-dark-text-primary rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Annuler
               </button>

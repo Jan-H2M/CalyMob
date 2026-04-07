@@ -3,6 +3,8 @@
  * This prevents registration errors in Claude Code or other webview contexts
  */
 
+import { logger } from '@/utils/logger';
+
 export function disableServiceWorkers() {
   // Check if we're in development or if service workers should be disabled
   if (import.meta.env.DEV || import.meta.env.VITE_DISABLE_SERVICE_WORKERS === 'true') {
@@ -11,7 +13,7 @@ export function disableServiceWorkers() {
       // Create a mock service worker container
       const mockServiceWorker = {
         register: () => {
-          console.log('Service Worker registration blocked in development/webview');
+          logger.debug('Service Worker registration blocked in development/webview');
           return Promise.resolve({
             installing: null,
             waiting: null,

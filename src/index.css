@@ -48,3 +48,65 @@ body {
 .animate-slide-in {
   animation: slideIn 0.3s ease-out;
 }
+
+/* TipTap Editor Styles */
+.tiptap-editor {
+  min-height: 200px;
+}
+
+.tiptap-editor .ProseMirror {
+  min-height: 200px;
+  outline: none;
+}
+
+.tiptap-editor .ProseMirror p {
+  margin: 0.5em 0;
+}
+
+.tiptap-editor .ProseMirror p:first-child {
+  margin-top: 0;
+}
+
+.tiptap-editor .ProseMirror p:last-child {
+  margin-bottom: 0;
+}
+
+.tiptap-editor .ProseMirror ul,
+.tiptap-editor .ProseMirror ol {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+.tiptap-editor .ProseMirror li {
+  margin: 0.25em 0;
+}
+
+.tiptap-editor .ProseMirror a {
+  color: #3b82f6;
+  text-decoration: underline;
+}
+
+.tiptap-editor .ProseMirror a:hover {
+  color: #2563eb;
+}
+
+.tiptap-editor .ProseMirror p.is-editor-empty:first-child::before {
+  color: #9ca3af;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Dark mode styles for TipTap */
+.dark .tiptap-editor .ProseMirror a {
+  color: #60a5fa;
+}
+
+.dark .tiptap-editor .ProseMirror a:hover {
+  color: #93c5fd;
+}
+
+.dark .tiptap-editor .ProseMirror p.is-editor-empty:first-child::before {
+  color: #6b7280;
+}

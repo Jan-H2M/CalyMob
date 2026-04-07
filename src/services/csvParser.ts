@@ -2,6 +2,8 @@ import Papa from 'papaparse';
 import { TransactionBancaire, BankFormat, CSVMapping } from '@/types';
 import { generateTransactionHash, parseMontant, detecterCategorie } from '@/utils/utils';
 import { parse, format } from 'date-fns';
+import { logger } from '@/utils/logger';
+import { AccountCodeService } from '@/services/accountCodeService';
 
 // Configuration pour chaque format bancaire belge
 const BANK_MAPPINGS: Record<BankFormat, CSVMapping> = {
@@ -169,19 +171,32 @@ function parseDate(dateStr: string, format: string): Date {
     
     return new Date(cleaned);
   } catch (error) {
-    console.error('Erreur parsing date:', dateStr, error);
+    logger.error('Erreur parsing date:', dateStr, error);
     return new Date();
   }
+}
+
+// Résultat du parsing CSV avec transactions en attente
+export interface CSVParseResult {
+  transactions: Partial<TransactionBancaire>[];
+  errors: string[];
+  /** Transactions avec numéro de séquence incomplet (virements instantanés en cours) */
+  pendingTransactions: {
+    count: number;
+    totalAmount: number;
+    items: Array<{ date: Date; montant: number; contrepartie: string; communication: string }>;
+  };
 }
 
 // Parser le fichier CSV
 export async function parseCSVFile(
   file: File,
   bankFormat?: BankFormat
-): Promise<{ transactions: Partial<TransactionBancaire>[], errors: string[] }> {
+): Promise<CSVParseResult> {
   return new Promise((resolve) => {
     const errors: string[] = [];
     const transactions: Partial<TransactionBancaire>[] = [];
+    const pendingItems: CSVParseResult['pendingTransactions']['items'] = [];
 
     Papa.parse(file, {
       header: true,
@@ -196,62 +211,84 @@ export async function parseCSVFile(
         // Détecter le format si non fourni
         const headers = results.meta.fields || [];
         const detectedFormat = bankFormat || detectBankFormat(headers);
-        
+
         if (!detectedFormat) {
           errors.push('Format bancaire non reconnu. Veuillez vérifier le fichier CSV.');
-          resolve({ transactions: [], errors });
+          resolve({
+            transactions: [],
+            errors,
+            pendingTransactions: { count: 0, totalAmount: 0, items: [] }
+          });
           return;
         }
 
         const mapping = BANK_MAPPINGS[detectedFormat];
-        
+
         // Parser chaque ligne
         results.data.forEach((row: any, index: number) => {
           try {
-            const transaction = parseTransaction(row, mapping);
-            if (transaction) {
-              transactions.push(transaction);
+            const result = parseTransactionWithPending(row, mapping);
+            if (result.transaction) {
+              transactions.push(result.transaction);
+            } else if (result.pending) {
+              pendingItems.push(result.pending);
             }
           } catch (error) {
             errors.push(`Ligne ${index + 2}: ${error}`);
           }
         });
 
-        resolve({ transactions, errors });
+        const pendingTransactions = {
+          count: pendingItems.length,
+          totalAmount: pendingItems.reduce((sum, item) => sum + item.montant, 0),
+          items: pendingItems
+        };
+
+        resolve({ transactions, errors, pendingTransactions });
       },
       error: (error) => {
         errors.push(`Erreur de lecture: ${error.message}`);
-        resolve({ transactions: [], errors });
+        resolve({
+          transactions: [],
+          errors,
+          pendingTransactions: { count: 0, totalAmount: 0, items: [] }
+        });
       }
     });
   });
 }
 
-// Parser une transaction individuelle
-function parseTransaction(
+// Résultat du parsing d'une transaction individuelle
+interface ParseTransactionResult {
+  transaction: Partial<TransactionBancaire> | null;
+  pending: { date: Date; montant: number; contrepartie: string; communication: string } | null;
+}
+
+// Parser une transaction individuelle (avec détection des transactions en attente)
+function parseTransactionWithPending(
   row: any,
   mapping: CSVMapping
-): Partial<TransactionBancaire> | null {
+): ParseTransactionResult {
   // Ignorer les lignes vides
   if (!row || Object.values(row).every(v => !v)) {
-    return null;
+    return { transaction: null, pending: null };
   }
 
   const cols = mapping.columns;
-  
+
   // Extraire les données selon le mapping
   const montantStr = row[cols.montant!] || '0';
   const montant = parseMontant(montantStr);
-  
+
   // Ignorer les transactions à montant zéro
   if (montant === 0) {
-    return null;
+    return { transaction: null, pending: null };
   }
 
-  const dateExecution = cols.date_execution ? 
+  const dateExecution = cols.date_execution ?
     parseDate(row[cols.date_execution], mapping.date_format) : new Date();
-  
-  const dateValeur = cols.date_valeur ? 
+
+  const dateValeur = cols.date_valeur ?
     parseDate(row[cols.date_valeur], mapping.date_format) : dateExecution;
 
   const communication = row[cols.communication!] || '';
@@ -260,11 +297,19 @@ function parseTransaction(
   const details = row[cols.details!] || '';
   const numeroSequence = row[cols.numero_sequence!] || generateSequenceNumber(dateExecution);
 
-  // SKIP: Ignorer les numéros de séquence incomplets (BNP uniquement)
+  // PENDING: Transactions avec numéro de séquence incomplet (BNP uniquement)
   // Format incomplet: "YYYY-" (ex: "2025-")
   // Ces transactions seront disponibles après 1-2 jours avec le numéro complet
   if (mapping.bank === 'bnp' && isIncompleteSequenceNumber(numeroSequence)) {
-    return null;  // Skip cette transaction
+    return {
+      transaction: null,
+      pending: {
+        date: dateExecution,
+        montant: montant,
+        contrepartie: contrepartieNom,
+        communication: communication
+      }
+    };
   }
 
   // ENRICHISSEMENT: Extraire le nom du commerçant depuis le champ "Détails" BNP
@@ -324,7 +369,7 @@ function parseTransaction(
     });
   }
 
-  return transaction;
+  return { transaction, pending: null };
 }
 
 // Générer un numéro de séquence
@@ -342,19 +387,29 @@ export function exportTransactionsToCSV(transactions: TransactionBancaire[]): st
     'Contrepartie',
     'Communication',
     'Catégorie',
+    'Code Comptable',
+    'Libellé Code Comptable',
     'Réconcilié',
     'Événement'
   ];
 
-  const rows = transactions.map(tx => [
-    format(tx.date_execution, 'dd/MM/yyyy'),
-    tx.montant.toString().replace('.', ','),
-    tx.contrepartie_nom,
-    tx.communication,
-    tx.categorie || '',
-    tx.reconcilie ? 'Oui' : 'Non',
-    tx.evenement_id || ''
-  ]);
+  const rows = transactions.map(tx => {
+    const codeLabel = tx.code_comptable
+      ? (AccountCodeService.getByCode(tx.code_comptable)?.label || '')
+      : '';
+
+    return [
+      format(tx.date_execution, 'dd/MM/yyyy'),
+      tx.montant.toString().replace('.', ','),
+      tx.contrepartie_nom,
+      tx.communication,
+      tx.categorie || '',
+      tx.code_comptable || '',
+      codeLabel,
+      tx.reconcilie ? 'Oui' : 'Non',
+      tx.evenement_id || ''
+    ];
+  });
 
   const csv = Papa.unparse({
     fields: headers,

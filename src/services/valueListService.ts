@@ -1,3 +1,4 @@
+import { logger } from '@/utils/logger';
 /**
  * Value List Service
  *
@@ -55,7 +56,7 @@ export async function getValueList(clubId: string, listId: string): Promise<Valu
       createdBy: data.createdBy
     };
   } catch (error) {
-    console.error('Error fetching value list:', error);
+    logger.error('Error fetching value list:', error);
     throw error;
   }
 }
@@ -83,7 +84,7 @@ export async function getValueLists(clubId: string): Promise<ValueList[]> {
       };
     });
   } catch (error) {
-    console.error('Error fetching value lists:', error);
+    logger.error('Error fetching value lists:', error);
     throw error;
   }
 }
@@ -115,7 +116,7 @@ export async function getValueListsByCategory(
       };
     });
   } catch (error) {
-    console.error('Error fetching value lists by category:', error);
+    logger.error('Error fetching value lists by category:', error);
     throw error;
   }
 }
@@ -154,7 +155,7 @@ export async function createValueList(
 
     return listId;
   } catch (error) {
-    console.error('Error creating value list:', error);
+    logger.error('Error creating value list:', error);
     throw error;
   }
 }
@@ -173,12 +174,12 @@ export async function updateValueList(
     // Check if list exists and is not system type
     const docSnap = await getDoc(docRef);
     if (!docSnap.exists()) {
-      throw new Error('Waardelijst bestaat niet');
+      throw new Error('La liste de valeurs n\'existe pas');
     }
 
     const data = docSnap.data();
     if (data.type === 'system') {
-      throw new Error('Systeem lijsten kunnen niet gewijzigd worden');
+      throw new Error('Les listes système ne peuvent pas être modifiées');
     }
 
     const updateData: any = {
@@ -188,7 +189,7 @@ export async function updateValueList(
 
     await updateDoc(docRef, updateData);
   } catch (error) {
-    console.error('Error updating value list:', error);
+    logger.error('Error updating value list:', error);
     throw error;
   }
 }
@@ -203,17 +204,17 @@ export async function deleteValueList(clubId: string, listId: string): Promise<v
     // Check if list exists and is not system type
     const docSnap = await getDoc(docRef);
     if (!docSnap.exists()) {
-      throw new Error('Waardelijst bestaat niet');
+      throw new Error('La liste de valeurs n\'existe pas');
     }
 
     const data = docSnap.data();
     if (data.type === 'system') {
-      throw new Error('Systeem lijsten kunnen niet verwijderd worden');
+      throw new Error('Les listes système ne peuvent pas être supprimées');
     }
 
     await deleteDoc(docRef);
   } catch (error) {
-    console.error('Error deleting value list:', error);
+    logger.error('Error deleting value list:', error);
     throw error;
   }
 }
@@ -231,19 +232,19 @@ export async function addValueListItem(
     const docSnap = await getDoc(docRef);
 
     if (!docSnap.exists()) {
-      throw new Error('Waardelijst bestaat niet');
+      throw new Error('La liste de valeurs n\'existe pas');
     }
 
     const data = docSnap.data();
     if (data.type === 'system') {
-      throw new Error('Systeem lijsten kunnen niet gewijzigd worden');
+      throw new Error('Les listes système ne peuvent pas être modifiées');
     }
 
     const items: ValueListItem[] = data.items || [];
 
     // Check if value already exists
     if (items.some(item => item.value === itemData.value)) {
-      throw new Error('Item met deze waarde bestaat al');
+      throw new Error('Un élément avec cette valeur existe déjà');
     }
 
     // Calculate order (max + 1)
@@ -267,7 +268,7 @@ export async function addValueListItem(
       updatedAt: serverTimestamp()
     });
   } catch (error) {
-    console.error('Error adding value list item:', error);
+    logger.error('Error adding value list item:', error);
     throw error;
   }
 }
@@ -286,19 +287,19 @@ export async function updateValueListItem(
     const docSnap = await getDoc(docRef);
 
     if (!docSnap.exists()) {
-      throw new Error('Waardelijst bestaat niet');
+      throw new Error('La liste de valeurs n\'existe pas');
     }
 
     const data = docSnap.data();
     if (data.type === 'system') {
-      throw new Error('Systeem lijsten kunnen niet gewijzigd worden');
+      throw new Error('Les listes système ne peuvent pas être modifiées');
     }
 
     const items: ValueListItem[] = data.items || [];
     const itemIndex = items.findIndex(item => item.value === itemValue);
 
     if (itemIndex === -1) {
-      throw new Error('Item niet gevonden');
+      throw new Error('Élément introuvable');
     }
 
     // Update item
@@ -312,7 +313,7 @@ export async function updateValueListItem(
       updatedAt: serverTimestamp()
     });
   } catch (error) {
-    console.error('Error updating value list item:', error);
+    logger.error('Error updating value list item:', error);
     throw error;
   }
 }
@@ -330,12 +331,12 @@ export async function deleteValueListItem(
     const docSnap = await getDoc(docRef);
 
     if (!docSnap.exists()) {
-      throw new Error('Waardelijst bestaat niet');
+      throw new Error('La liste de valeurs n\'existe pas');
     }
 
     const data = docSnap.data();
     if (data.type === 'system') {
-      throw new Error('Systeem lijsten kunnen niet verwijderd worden');
+      throw new Error('Les listes système ne peuvent pas être supprimées');
     }
 
     const items: ValueListItem[] = data.items || [];
@@ -346,7 +347,7 @@ export async function deleteValueListItem(
       updatedAt: serverTimestamp()
     });
   } catch (error) {
-    console.error('Error deleting value list item:', error);
+    logger.error('Error deleting value list item:', error);
     throw error;
   }
 }
@@ -364,12 +365,12 @@ export async function reorderValueListItems(
     const docSnap = await getDoc(docRef);
 
     if (!docSnap.exists()) {
-      throw new Error('Waardelijst bestaat niet');
+      throw new Error('La liste de valeurs n\'existe pas');
     }
 
     const data = docSnap.data();
     if (data.type === 'system') {
-      throw new Error('Systeem lijsten kunnen niet gewijzigd worden');
+      throw new Error('Les listes système ne peuvent pas être modifiées');
     }
 
     const items: ValueListItem[] = data.items || [];
@@ -387,7 +388,7 @@ export async function reorderValueListItems(
       updatedAt: serverTimestamp()
     });
   } catch (error) {
-    console.error('Error reordering value list items:', error);
+    logger.error('Error reordering value list items:', error);
     throw error;
   }
 }
@@ -405,19 +406,19 @@ export async function toggleItemFavorite(
     const docSnap = await getDoc(docRef);
 
     if (!docSnap.exists()) {
-      throw new Error('Waardelijst bestaat niet');
+      throw new Error('La liste de valeurs n\'existe pas');
     }
 
     const data = docSnap.data();
     if (data.type === 'system') {
-      throw new Error('Systeem lijsten kunnen niet gewijzigd worden');
+      throw new Error('Les listes système ne peuvent pas être modifiées');
     }
 
     const items: ValueListItem[] = data.items || [];
     const item = items.find(i => i.value === itemValue);
 
     if (!item) {
-      throw new Error('Item niet gevonden');
+      throw new Error('Élément introuvable');
     }
 
     item.isFavorite = !item.isFavorite;
@@ -427,7 +428,7 @@ export async function toggleItemFavorite(
       updatedAt: serverTimestamp()
     });
   } catch (error) {
-    console.error('Error toggling item favorite:', error);
+    logger.error('Error toggling item favorite:', error);
     throw error;
   }
 }
@@ -462,7 +463,7 @@ export async function getValueListItem(
 
     return valueList.items.find(item => item.value === value) || null;
   } catch (error) {
-    console.error('Error fetching value list item:', error);
+    logger.error('Error fetching value list item:', error);
     return null;
   }
 }

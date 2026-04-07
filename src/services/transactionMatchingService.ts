@@ -1,3 +1,4 @@
+import { logger } from '@/utils/logger';
 /**
  * Service de matching automatique entre dépenses et transactions bancaires
  * Utilise le numéro de séquence dans le nom du fichier pour lier automatiquement
@@ -30,11 +31,11 @@ export function extractSequenceFromFilename(filename: string): string | null {
   const match = filename.match(regex);
 
   if (match && match[1]) {
-    console.log(`✅ Numéro de séquence extrait: "${match[1]}" depuis "${filename}"`);
+    logger.debug(`✅ Numéro de séquence extrait: "${match[1]}" depuis "${filename}"`);
     return match[1];
   }
 
-  console.log(`ℹ️ Aucun numéro de séquence trouvé dans "${filename}"`);
+  logger.debug(`ℹ️ Aucun numéro de séquence trouvé dans "${filename}"`);
   return null;
 }
 
@@ -50,19 +51,19 @@ export async function findTransactionBySequence(
   clubId: string
 ): Promise<TransactionBancaire | null> {
   try {
-    console.log(`🔍 Recherche transaction avec numero_sequence="${sequence}" pour club="${clubId}"`);
+    logger.debug(`🔍 Recherche transaction avec numero_sequence="${sequence}" pour club="${clubId}"`);
 
     const transactionsRef = collection(db, 'clubs', clubId, 'transactions_bancaires');
     const q = query(transactionsRef, where('numero_sequence', '==', sequence));
     const snapshot = await getDocs(q);
 
     if (snapshot.empty) {
-      console.log(`⚠️ Aucune transaction trouvée avec numero_sequence="${sequence}"`);
+      logger.debug(`⚠️ Aucune transaction trouvée avec numero_sequence="${sequence}"`);
       return null;
     }
 
     if (snapshot.size > 1) {
-      console.warn(`⚠️ Plusieurs transactions trouvées avec numero_sequence="${sequence}". Utilisation de la première.`);
+      logger.warn(`⚠️ Plusieurs transactions trouvées avec numero_sequence="${sequence}". Utilisation de la première.`);
     }
 
     const txDoc = snapshot.docs[0];
@@ -71,11 +72,11 @@ export async function findTransactionBySequence(
       ...txDoc.data()
     } as TransactionBancaire;
 
-    console.log(`✅ Transaction trouvée: ID=${transaction.id}, Montant=${transaction.montant}€, Contrepartie="${transaction.contrepartie_nom}"`);
+    logger.debug(`✅ Transaction trouvée: ID=${transaction.id}, Montant=${transaction.montant}€, Contrepartie="${transaction.contrepartie_nom}"`);
     return transaction;
 
   } catch (error) {
-    console.error(`❌ Erreur lors de la recherche de transaction:`, error);
+    logger.error(`❌ Erreur lors de la recherche de transaction:`, error);
     return null;
   }
 }
@@ -96,7 +97,7 @@ export async function autoLinkExpenseToTransaction(
   clubId: string
 ): Promise<void> {
   try {
-    console.log(`🔗 Liaison automatique: Dépense ${demandeId} → Transaction ${transactionId}`);
+    logger.debug(`🔗 Liaison automatique: Dépense ${demandeId} → Transaction ${transactionId}`);
 
     const transactionRef = doc(db, 'clubs', clubId, 'transactions_bancaires', transactionId);
 
@@ -117,10 +118,10 @@ export async function autoLinkExpenseToTransaction(
       updated_at: new Date()
     });
 
-    console.log(`✅ Liaison créée avec succès`);
+    logger.debug(`✅ Liaison créée avec succès`);
 
   } catch (error) {
-    console.error(`❌ Erreur lors de la liaison automatique:`, error);
+    logger.error(`❌ Erreur lors de la liaison automatique:`, error);
     throw error;
   }
 }
@@ -138,7 +139,7 @@ export async function unlinkExpenseFromTransaction(
   clubId: string
 ): Promise<void> {
   try {
-    console.log(`🔓 Déliage: Dépense ${demandeId} ← Transaction ${transactionId}`);
+    logger.debug(`🔓 Déliage: Dépense ${demandeId} ← Transaction ${transactionId}`);
 
     const transactionRef = doc(db, 'clubs', clubId, 'transactions_bancaires', transactionId);
     const transactionDoc = await getDoc(transactionRef);
@@ -162,10 +163,10 @@ export async function unlinkExpenseFromTransaction(
       updated_at: new Date()
     });
 
-    console.log(`✅ Déliage effectué avec succès`);
+    logger.debug(`✅ Déliage effectué avec succès`);
 
   } catch (error) {
-    console.error(`❌ Erreur lors du déliage:`, error);
+    logger.error(`❌ Erreur lors du déliage:`, error);
     throw error;
   }
 }
@@ -223,7 +224,7 @@ export async function analyzeBatchForTransactionMatch(
 }>> {
   const results = new Map();
 
-  console.log(`📊 Analyse de ${filenames.length} fichiers pour matching automatique`);
+  logger.debug(`📊 Analyse de ${filenames.length} fichiers pour matching automatique`);
 
   for (const filename of filenames) {
     const result = await analyzeFileForTransactionMatch(filename, clubId);
@@ -231,7 +232,7 @@ export async function analyzeBatchForTransactionMatch(
   }
 
   const matchedCount = Array.from(results.values()).filter(r => r.matched).length;
-  console.log(`✅ ${matchedCount}/${filenames.length} fichiers liés automatiquement à des transactions`);
+  logger.debug(`✅ ${matchedCount}/${filenames.length} fichiers liés automatiquement à des transactions`);
 
   return results;
 }

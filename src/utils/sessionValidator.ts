@@ -1,6 +1,7 @@
 import { SessionService } from '@/services/sessionService';
 import { signOut } from '@/lib/firebase';
 import toast from 'react-hot-toast';
+import { logger } from '@/utils/logger';
 
 /**
  * Utilitaire de validation de session au chargement de l'application
@@ -33,7 +34,7 @@ export class SessionValidator {
       const isLocalValid = SessionService.isLocalStorageSessionValid(timeoutMinutes);
 
       if (!isLocalValid) {
-        console.log('❌ Session expirée (localStorage check)');
+        logger.debug('❌ Session expirée (localStorage check)');
         await this.forceLogoutWithMessage(
           `Session expirée après ${timeoutMinutes} minutes d'inactivité`
         );
@@ -44,17 +45,17 @@ export class SessionValidator {
       const isFirestoreValid = await SessionService.validateSession(clubId);
 
       if (!isFirestoreValid) {
-        console.log('❌ Session expirée (Firestore check)');
+        logger.debug('❌ Session expirée (Firestore check)');
         await this.forceLogoutWithMessage(
           `Session expirée. Veuillez vous reconnecter.`
         );
         return false;
       }
 
-      console.log('✅ Session valide (localStorage + Firestore)');
+      logger.debug('✅ Session valide (localStorage + Firestore)');
       return true;
     } catch (error) {
-      console.error('❌ Erreur validation session:', error);
+      logger.error('❌ Erreur validation session:', error);
       // En cas d'erreur, déconnecter par sécurité
       await this.forceLogoutWithMessage(
         'Erreur de validation de session. Veuillez vous reconnecter.'
@@ -89,7 +90,7 @@ export class SessionValidator {
         window.location.href = '/connexion';
       }
     } catch (error) {
-      console.error('❌ Erreur lors de la déconnexion forcée:', error);
+      logger.error('❌ Erreur lors de la déconnexion forcée:', error);
 
       // Forcer le rechargement pour nettoyer l'état
       if (typeof window !== 'undefined') {
@@ -114,7 +115,7 @@ export class SessionValidator {
       const isValid = await SessionService.validateSession(clubId);
 
       if (!isValid) {
-        console.log('⏰ Vérification périodique: session expirée');
+        logger.debug('⏰ Vérification périodique: session expirée');
         await this.forceLogoutWithMessage(
           'Votre session a expiré pour des raisons de sécurité.'
         );
@@ -135,10 +136,10 @@ export class SessionValidator {
       // Mettre à jour localStorage immédiatement
       localStorage.setItem('lastActivity', Date.now().toString());
 
-      console.log('🔄 Session rafraîchie');
+      logger.debug('🔄 Session rafraîchie');
       return true;
     } catch (error) {
-      console.error('❌ Erreur rafraîchissement session:', error);
+      logger.error('❌ Erreur rafraîchissement session:', error);
       return false;
     }
   }

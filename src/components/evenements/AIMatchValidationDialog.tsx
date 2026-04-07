@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { logger } from '@/utils/logger';
 import {
   X,
   CheckCircle,
@@ -52,7 +53,7 @@ export function AIMatchValidationDialog({
       const transaction = transactions.find(t => t.id === transactionId);
       const inscription = inscriptions.find(i => i.id === analysis.inscription_id);
 
-      console.log('🔍 DEBUG Match validation:', {
+      logger.debug('🔍 DEBUG Match validation:', {
         transactionId,
         inscriptionId: analysis.inscription_id,
         foundTransaction: !!transaction,
@@ -62,7 +63,7 @@ export function AIMatchValidationDialog({
       });
 
       if (!transaction || !inscription) {
-        console.warn('⚠️ Match ignoré - Transaction ou Inscription non trouvée:', {
+        logger.warn('⚠️ Match ignoré - Transaction ou Inscription non trouvée:', {
           transactionId,
           inscriptionId: analysis.inscription_id,
           hasTransaction: !!transaction,
@@ -80,7 +81,7 @@ export function AIMatchValidationDialog({
     })
     .filter(Boolean) as MatchWithDetails[];
 
-  console.log('✅ matchesWithDetails prepared:', {
+  logger.debug('✅ matchesWithDetails prepared:', {
     totalMatches: matches.size,
     matchesWithDetails: matchesWithDetails.length,
     details: matchesWithDetails
@@ -94,7 +95,7 @@ export function AIMatchValidationDialog({
         initial.add(transactionId);
       }
     });
-    console.log('🔄 Initialisation sélections:', {
+    logger.debug('🔄 Initialisation sélections:', {
       total: matchesWithDetails.length,
       highConfidence: initial.size,
       ids: Array.from(initial)
@@ -107,17 +108,17 @@ export function AIMatchValidationDialog({
   const mediumConfidence = matchesWithDetails.filter(m => m.analysis.confidence >= 50 && m.analysis.confidence < 80).length;
 
   const handleToggleMatch = (transactionId: string) => {
-    console.log('🔘 Toggle match:', transactionId);
+    logger.debug('🔘 Toggle match:', transactionId);
     setSelectedMatches(prev => {
       const next = new Set(prev);
       const wasSelected = next.has(transactionId);
 
       if (wasSelected) {
         next.delete(transactionId);
-        console.log(`  ❌ Désélectionné ${transactionId}, reste: ${next.size}`);
+        logger.debug(`  ❌ Désélectionné ${transactionId}, reste: ${next.size}`);
       } else {
         next.add(transactionId);
-        console.log(`  ✅ Sélectionné ${transactionId}, total: ${next.size}`);
+        logger.debug(`  ✅ Sélectionné ${transactionId}, total: ${next.size}`);
       }
 
       return next;
@@ -141,25 +142,25 @@ export function AIMatchValidationDialog({
   };
 
   const handleValidate = () => {
-    console.log('✅ VALIDATION DÉMARRÉE');
-    console.log(`  📊 Sélectionnés: ${selectedMatches.size}`);
-    console.log(`  📋 IDs sélectionnés:`, Array.from(selectedMatches));
+    logger.debug('✅ VALIDATION DÉMARRÉE');
+    logger.debug(`  📊 Sélectionnés: ${selectedMatches.size}`);
+    logger.debug(`  📋 IDs sélectionnés:`, Array.from(selectedMatches));
 
     const validatedMatches = new Map<string, AIInscriptionMatchAnalysis>();
     selectedMatches.forEach(txId => {
       const analysis = matches.get(txId);
       if (analysis) {
         validatedMatches.set(txId, analysis);
-        console.log(`  ✅ Match validé: ${txId} → inscription ${analysis.inscription_id}`);
+        logger.debug(`  ✅ Match validé: ${txId} → inscription ${analysis.inscription_id}`);
       } else {
-        console.warn(`  ⚠️ Analysis non trouvée pour transaction ${txId}`);
+        logger.warn(`  ⚠️ Analysis non trouvée pour transaction ${txId}`);
       }
     });
 
-    console.log(`  💾 Total à sauvegarder: ${validatedMatches.size}`);
-    console.log('  🔄 Appel de onValidate...');
+    logger.debug(`  💾 Total à sauvegarder: ${validatedMatches.size}`);
+    logger.debug('  🔄 Appel de onValidate...');
     onValidate(validatedMatches);
-    console.log('  ✅ onValidate appelé');
+    logger.debug('  ✅ onValidate appelé');
   };
 
   return (
@@ -275,7 +276,7 @@ export function AIMatchValidationDialog({
                         ? isHighConfidence
                           ? "border-green-400 bg-green-50"
                           : "border-yellow-400 bg-yellow-50"
-                        : "border-gray-200 bg-white hover:border-gray-300"
+                        : "border-gray-200 dark:border-dark-border bg-white hover:border-gray-300 dark:border-dark-border"
                     )}
                     onClick={() => handleToggleMatch(transactionId)}
                   >
@@ -288,7 +289,7 @@ export function AIMatchValidationDialog({
                             "w-6 h-6 rounded border-2 flex items-center justify-center transition-colors",
                             isSelected
                               ? "border-green-600 bg-green-600"
-                              : "border-gray-300 bg-white"
+                              : "border-gray-300 dark:border-dark-border bg-white"
                           )}
                         >
                           {isSelected && <Check className="h-4 w-4 text-white" />}
@@ -410,7 +411,7 @@ export function AIMatchValidationDialog({
             <div className="flex items-center gap-3">
               <button
                 onClick={onClose}
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-primary bg-white dark:bg-dark-bg-secondary border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors"
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-primary bg-white dark:bg-dark-bg-secondary border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors"
               >
                 Annuler
               </button>

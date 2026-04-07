@@ -1,3 +1,4 @@
+import { logger } from '@/utils/logger';
 /**
  * Service centralisé pour nettoyer les liaisons orphelines
  *
@@ -126,10 +127,10 @@ export async function cleanAfterExpenseDelete(
       }
     }
 
-    console.log(`✅ Nettoyage dépense ${expenseId}: ${stats.transactionsUpdated} transactions mises à jour`);
+    logger.debug(`✅ Nettoyage dépense ${expenseId}: ${stats.transactionsUpdated} transactions mises à jour`);
     return stats;
   } catch (error) {
-    console.error('❌ Erreur nettoyage après suppression dépense:', error);
+    logger.error('❌ Erreur nettoyage après suppression dépense:', error);
     throw error;
   }
 }
@@ -230,10 +231,10 @@ export async function cleanAfterEventDelete(
       stats.expensesUpdated++;
     }
 
-    console.log(`✅ Nettoyage événement ${eventId}: ${stats.transactionsUpdated} TX, ${stats.inscriptionsUpdated} inscriptions supprimées, ${stats.expensesUpdated} dépenses`);
+    logger.debug(`✅ Nettoyage événement ${eventId}: ${stats.transactionsUpdated} TX, ${stats.inscriptionsUpdated} inscriptions supprimées, ${stats.expensesUpdated} dépenses`);
     return stats;
   } catch (error) {
-    console.error('❌ Erreur nettoyage après suppression événement:', error);
+    logger.error('❌ Erreur nettoyage après suppression événement:', error);
     throw error;
   }
 }
@@ -290,10 +291,10 @@ export async function cleanAfterInscriptionDelete(
       }
     }
 
-    console.log(`✅ Nettoyage inscription ${inscriptionId}: ${stats.transactionsUpdated} transactions mises à jour`);
+    logger.debug(`✅ Nettoyage inscription ${inscriptionId}: ${stats.transactionsUpdated} transactions mises à jour`);
     return stats;
   } catch (error) {
-    console.error('❌ Erreur nettoyage après suppression inscription:', error);
+    logger.error('❌ Erreur nettoyage après suppression inscription:', error);
     throw error;
   }
 }
@@ -323,10 +324,10 @@ export async function cleanAllOrphans(clubId: string): Promise<GlobalCleanupStat
   };
 
   try {
-    console.log('🧹 Début du nettoyage global des liaisons orphelines...');
+    logger.debug('🧹 Début du nettoyage global des liaisons orphelines...');
 
     // 1. Charger tous les IDs existants
-    console.log('📥 Chargement des IDs existants...');
+    logger.debug('📥 Chargement des IDs existants...');
 
     // 🆕 MIGRATION: Load from new collections (operations, operation_participants)
     const [expensesSnapshot, eventsSnapshot, inscriptionsSnapshot, membersSnapshot] = await Promise.all([
@@ -341,10 +342,10 @@ export async function cleanAllOrphans(clubId: string): Promise<GlobalCleanupStat
     const existingInscriptionIds = new Set(inscriptionsSnapshot.docs.map(d => d.id));
     const existingMemberIds = new Set(membersSnapshot.docs.map(d => d.id));
 
-    console.log(`✅ IDs chargés: ${existingExpenseIds.size} dépenses, ${existingEventIds.size} événements, ${existingInscriptionIds.size} inscriptions, ${existingMemberIds.size} membres`);
+    logger.debug(`✅ IDs chargés: ${existingExpenseIds.size} dépenses, ${existingEventIds.size} événements, ${existingInscriptionIds.size} inscriptions, ${existingMemberIds.size} membres`);
 
     // 2. Nettoyer les transactions
-    console.log('🔍 Vérification des transactions...');
+    logger.debug('🔍 Vérification des transactions...');
     const transactionsRef = collection(db, 'clubs', clubId, 'transactions_bancaires');
     const transactionsSnapshot = await getDocs(transactionsRef);
 
@@ -435,7 +436,7 @@ export async function cleanAllOrphans(clubId: string): Promise<GlobalCleanupStat
     }
 
     // 3. Nettoyer les inscriptions (transaction_id orphelin)
-    console.log('🔍 Vérification des inscriptions...');
+    logger.debug('🔍 Vérification des inscriptions...');
     const allTransactionIds = new Set(transactionsSnapshot.docs.map(d => d.id));
 
     for (const inscriptionDoc of inscriptionsSnapshot.docs) {
@@ -452,7 +453,7 @@ export async function cleanAllOrphans(clubId: string): Promise<GlobalCleanupStat
     }
 
     // 4. Nettoyer les dépenses (evenement_id orphelin)
-    console.log('🔍 Vérification des dépenses...');
+    logger.debug('🔍 Vérification des dépenses...');
     for (const expenseDoc of expensesSnapshot.docs) {
       const expense = expenseDoc.data() as DemandeRemboursement;
 
@@ -468,17 +469,17 @@ export async function cleanAllOrphans(clubId: string): Promise<GlobalCleanupStat
 
     stats.processingTimeMs = Date.now() - startTime;
 
-    console.log('✅ Nettoyage global terminé!');
-    console.log(`   📊 Statistiques:`);
-    console.log(`   • ${stats.transactionsUpdated} transactions mises à jour`);
-    console.log(`   • ${stats.inscriptionsUpdated} inscriptions mises à jour`);
-    console.log(`   • ${stats.expensesUpdated} dépenses mises à jour`);
-    console.log(`   • ${stats.totalLinksRemoved} liaisons orphelines supprimées`);
-    console.log(`   • Temps: ${stats.processingTimeMs}ms`);
+    logger.debug('✅ Nettoyage global terminé!');
+    logger.debug(`   📊 Statistiques:`);
+    logger.debug(`   • ${stats.transactionsUpdated} transactions mises à jour`);
+    logger.debug(`   • ${stats.inscriptionsUpdated} inscriptions mises à jour`);
+    logger.debug(`   • ${stats.expensesUpdated} dépenses mises à jour`);
+    logger.debug(`   • ${stats.totalLinksRemoved} liaisons orphelines supprimées`);
+    logger.debug(`   • Temps: ${stats.processingTimeMs}ms`);
 
     return stats;
   } catch (error) {
-    console.error('❌ Erreur lors du nettoyage global:', error);
+    logger.error('❌ Erreur lors du nettoyage global:', error);
     throw error;
   }
 }
@@ -501,7 +502,7 @@ export async function repairReconciliationStatus(clubId: string): Promise<{
   };
 
   try {
-    console.log('🔧 Réparation des statuts de réconciliation...');
+    logger.debug('🔧 Réparation des statuts de réconciliation...');
 
     const transactionsRef = collection(db, 'clubs', clubId, 'transactions_bancaires');
     const transactionsSnapshot = await getDocs(transactionsRef);
@@ -523,16 +524,16 @@ export async function repairReconciliationStatus(clubId: string): Promise<{
         });
 
         stats.transactionsFixed++;
-        console.log(`✅ Transaction ${txDoc.id}: reconcilie ${tx.reconcilie} → ${shouldBeReconciled}`);
+        logger.debug(`✅ Transaction ${txDoc.id}: reconcilie ${tx.reconcilie} → ${shouldBeReconciled}`);
       }
     }
 
     stats.processingTimeMs = Math.round(performance.now() - startTime);
-    console.log(`✅ Réparation terminée: ${stats.transactionsFixed}/${stats.transactionsChecked} transactions corrigées en ${stats.processingTimeMs}ms`);
+    logger.debug(`✅ Réparation terminée: ${stats.transactionsFixed}/${stats.transactionsChecked} transactions corrigées en ${stats.processingTimeMs}ms`);
 
     return stats;
   } catch (error) {
-    console.error('❌ Erreur lors de la réparation des statuts:', error);
+    logger.error('❌ Erreur lors de la réparation des statuts:', error);
     throw error;
   }
 }

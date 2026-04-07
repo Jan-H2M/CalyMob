@@ -7,9 +7,11 @@ import { PDFGenerationService } from '@/services/pdfGenerationService';
 import { EmailService } from '@/services/emailService';
 import { InventoryItem, Loan } from '@/types/inventory';
 import { Membre } from '@/types';
+import { getFirstName, getLastName } from '@/utils/fieldMapper';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { Timestamp } from 'firebase/firestore';
+import { logger } from '@/utils/logger';
 
 interface Props {
   onClose: () => void;
@@ -66,7 +68,7 @@ export function PretCreationWizard({ onClose, onComplete }: Props) {
       setMembers(membersData);
       setAvailableItems(itemsData);
     } catch (error) {
-      console.error('Erreur chargement données:', error);
+      logger.error('Erreur chargement données:', error);
       toast.error('Erreur lors du chargement');
     } finally {
       setLoading(false);
@@ -80,7 +82,7 @@ export function PretCreationWizard({ onClose, onComplete }: Props) {
       const caution = await LoanService.calculateCautionAmount(clubId, selectedItemIds);
       setMontantCaution(caution);
     } catch (error) {
-      console.error('Erreur calcul caution:', error);
+      logger.error('Erreur calcul caution:', error);
     }
   };
 
@@ -199,7 +201,7 @@ export function PretCreationWizard({ onClose, onComplete }: Props) {
 
           // Envoyer email de confirmation (async, ne pas bloquer)
           try {
-            console.log('[PretCreationWizard] Envoi email confirmation...');
+            logger.debug('[PretCreationWizard] Envoi email confirmation...');
             const emailResult = await EmailService.sendLoanConfirmation(
               clubId,
               fullLoan,
@@ -210,19 +212,19 @@ export function PretCreationWizard({ onClose, onComplete }: Props) {
             );
 
             if (emailResult.success) {
-              console.log('[PretCreationWizard] Email envoyé avec succès');
+              logger.debug('[PretCreationWizard] Email envoyé avec succès');
               toast.success('Email de confirmation envoyé', { duration: 2000 });
             } else {
-              console.warn('[PretCreationWizard] Échec envoi email:', emailResult.error);
+              logger.warn('[PretCreationWizard] Échec envoi email:', emailResult.error);
               toast('Prêt créé mais email non envoyé', { icon: '⚠️', duration: 3000 });
             }
           } catch (emailError) {
-            console.error('[PretCreationWizard] Erreur envoi email:', emailError);
+            logger.error('[PretCreationWizard] Erreur envoi email:', emailError);
             // Ne pas bloquer le workflow si email échoue
           }
         }
       } catch (pdfError) {
-        console.error('Erreur génération PDF:', pdfError);
+        logger.error('Erreur génération PDF:', pdfError);
         // Ne pas bloquer la création du prêt si le PDF échoue
         toast.error('Prêt créé mais erreur lors de la génération du PDF');
       }
@@ -231,7 +233,7 @@ export function PretCreationWizard({ onClose, onComplete }: Props) {
       toast.success(message);
       onComplete();
     } catch (error: any) {
-      console.error('Erreur création prêt:', error);
+      logger.error('Erreur création prêt:', error);
       toast.error(error.message || 'Erreur lors de la création');
     } finally {
       setLoading(false);
@@ -342,14 +344,14 @@ export function PretCreationWizard({ onClose, onComplete }: Props) {
               <h2 className="text-xl font-semibold text-gray-900 dark:text-dark-text-primary">
                 Nouveau prêt
               </h2>
-              <p className="text-sm text-gray-500 dark:text-dark-text-secondary">
+              <p className="text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
                 Étape {['member', 'items', 'details', 'signature'].indexOf(step) + 1} sur 4
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-dark-text-primary"
+            className="text-gray-400 dark:text-dark-text-muted hover:text-gray-600 dark:text-dark-text-secondary dark:hover:text-dark-text-primary"
           >
             <X className="h-6 w-6" />
           </button>
@@ -371,7 +373,7 @@ export function PretCreationWizard({ onClose, onComplete }: Props) {
                 {members.map(member => (
                   <label
                     key={member.id}
-                    className="flex items-center gap-3 p-3 border border-gray-200 dark:border-dark-border rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary"
+                    className="flex items-center gap-3 p-3 border border-gray-200 dark:border-dark-border rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary"
                   >
                     <input
                       type="radio"
@@ -383,10 +385,10 @@ export function PretCreationWizard({ onClose, onComplete }: Props) {
                     />
                     <div>
                       <p className="text-sm font-medium text-gray-900 dark:text-dark-text-primary">
-                        {member.nom} {member.prenom}
+                        {getFirstName(member)} {getLastName(member)}
                       </p>
                       {member.email && (
-                        <p className="text-xs text-gray-500 dark:text-dark-text-secondary">{member.email}</p>
+                        <p className="text-xs text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">{member.email}</p>
                       )}
                     </div>
                   </label>
@@ -409,7 +411,7 @@ export function PretCreationWizard({ onClose, onComplete }: Props) {
                 {availableItems.map(item => (
                   <label
                     key={item.id}
-                    className="flex items-center gap-3 p-3 border border-gray-200 dark:border-dark-border rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary"
+                    className="flex items-center gap-3 p-3 border border-gray-200 dark:border-dark-border rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary"
                   >
                     <input
                       type="checkbox"
@@ -422,7 +424,7 @@ export function PretCreationWizard({ onClose, onComplete }: Props) {
                         {item.numero_serie}
                       </p>
                       {item.nom && (
-                        <p className="text-xs text-gray-500 dark:text-dark-text-secondary">{item.nom}</p>
+                        <p className="text-xs text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">{item.nom}</p>
                       )}
                     </div>
                   </label>
@@ -452,13 +454,13 @@ export function PretCreationWizard({ onClose, onComplete }: Props) {
               {/* Summary */}
               <div className="bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg p-4 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-700 dark:text-dark-text-secondary">Membre</span>
+                  <span className="text-sm text-gray-700 dark:text-dark-text-primary">Membre</span>
                   <span className="text-sm font-medium text-gray-900 dark:text-dark-text-primary">
-                    {selectedMember?.nom} {selectedMember?.prenom}
+                    {selectedMember && `${getFirstName(selectedMember)} ${getLastName(selectedMember)}`}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-700 dark:text-dark-text-secondary">Matériel</span>
+                  <span className="text-sm text-gray-700 dark:text-dark-text-primary">Matériel</span>
                   <span className="text-sm font-medium text-gray-900 dark:text-dark-text-primary">
                     {selectedItems.length} article(s)
                   </span>
@@ -467,11 +469,11 @@ export function PretCreationWizard({ onClose, onComplete }: Props) {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                     Date de prêt
                   </label>
                   <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-dark-text-muted" />
                     <input
                       type="date"
                       value={datePret}
@@ -482,11 +484,11 @@ export function PretCreationWizard({ onClose, onComplete }: Props) {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                     Retour prévu *
                   </label>
                   <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-dark-text-muted" />
                     <input
                       type="date"
                       value={dateRetourPrevue}
@@ -498,7 +500,7 @@ export function PretCreationWizard({ onClose, onComplete }: Props) {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                   Montant de caution
                 </label>
                 <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
@@ -512,7 +514,7 @@ export function PretCreationWizard({ onClose, onComplete }: Props) {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-1">
                   Notes (optionnel)
                 </label>
                 <textarea
@@ -538,13 +540,13 @@ export function PretCreationWizard({ onClose, onComplete }: Props) {
 
               <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
                 <p className="text-sm text-yellow-800 dark:text-yellow-300">
-                  Le membre <strong>{selectedMember?.nom} {selectedMember?.prenom}</strong> doit signer pour confirmer le prêt
+                  Le membre <strong>{selectedMember && `${getFirstName(selectedMember)} ${getLastName(selectedMember)}`}</strong> doit signer pour confirmer le prêt
                   de <strong>{selectedItems.length}</strong> matériel(s) avec une caution de <strong>{montantCaution.toFixed(2)} €</strong>.
                 </p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
                   Signez dans le cadre ci-dessous
                 </label>
                 <div className="relative border-2 border-gray-300 dark:border-dark-border rounded-lg overflow-hidden">
@@ -564,7 +566,7 @@ export function PretCreationWizard({ onClose, onComplete }: Props) {
                 <div className="flex items-center justify-end gap-2 mt-2">
                   <button
                     onClick={clearSignature}
-                    className="px-3 py-1 text-sm text-gray-700 dark:text-dark-text-secondary hover:text-gray-900 dark:hover:text-dark-text-primary"
+                    className="px-3 py-1 text-sm text-gray-700 dark:text-dark-text-primary hover:text-gray-900 dark:text-dark-text-primary dark:hover:text-dark-text-primary"
                   >
                     Effacer
                   </button>
@@ -579,7 +581,7 @@ export function PretCreationWizard({ onClose, onComplete }: Props) {
           <button
             onClick={handleBack}
             disabled={step === 'member'}
-            className="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-secondary bg-white dark:bg-dark-bg-primary border border-gray-300 dark:border-dark-border rounded-md hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-primary bg-white dark:bg-dark-bg-primary border border-gray-300 dark:border-dark-border rounded-md hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
             Précédent
@@ -588,7 +590,7 @@ export function PretCreationWizard({ onClose, onComplete }: Props) {
           <div className="flex items-center gap-2">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-secondary hover:text-gray-900 dark:hover:text-dark-text-primary"
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-dark-text-primary hover:text-gray-900 dark:text-dark-text-primary dark:hover:text-dark-text-primary"
             >
               Annuler
             </button>

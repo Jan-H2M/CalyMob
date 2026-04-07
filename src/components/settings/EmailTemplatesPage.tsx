@@ -1,3 +1,4 @@
+import { logger } from '@/utils/logger';
 /**
  * Email Templates Page
  * List view for managing email templates
@@ -12,23 +13,28 @@ import {
   duplicateTemplate,
 } from '@/services/emailTemplateService';
 import { initializeUserEmailTemplates } from '@/services/templateInitializationService';
-import type { EmailTemplate } from '@/types/emailTemplates';
-import { Mail, Plus, Edit, Trash2, Copy, Search, Filter, ChevronLeft, Download } from 'lucide-react';
+import type { EmailTemplate, EmailTemplateType } from '@/types/emailTemplates';
+import { EMAIL_TYPE_LABELS } from '@/types/emailTemplates';
+import { Mail, Plus, Edit, Trash2, Copy, Search, Filter, ChevronLeft, Download, Wand2, Layers, Info } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { EmailTemplateEditor } from './EmailTemplateEditor';
+import { migrateTransactionsTemplates } from '@/scripts/migrateTransactionsTemplateZones';
 
-type EmailTemplateType = 'pending_demands' | 'accounting_codes' | 'account_activated' | 'password_reset' | 'events' | 'transactions' | 'members' | 'custom';
+/**
+ * Check if a template has editable zones
+ * Zone markers format: <!--ZONE:id:Label-->content<!--/ZONE:id-->
+ */
+function hasEditableZones(htmlContent: string): boolean {
+  return htmlContent.includes('<!--ZONE:') && htmlContent.includes('<!--/ZONE:');
+}
 
-const EMAIL_TYPE_LABELS: Record<EmailTemplateType, string> = {
-  pending_demands: 'Demandes en attente',
-  accounting_codes: 'Codes comptables',
-  account_activated: 'Activation manuelle',
-  password_reset: 'Réinitialisation administrateur',
-  events: 'Événements',
-  transactions: 'Transactions',
-  members: 'Membres',
-  custom: 'Personnalisé',
-};
+/**
+ * Count the number of editable zones in a template
+ */
+function countZones(htmlContent: string): number {
+  const matches = htmlContent.match(/<!--ZONE:/g);
+  return matches ? matches.length : 0;
+}
 
 export function EmailTemplatesPage() {
   const navigate = useNavigate();
@@ -41,6 +47,7 @@ export function EmailTemplatesPage() {
   const [selectedTemplate, setSelectedTemplate] = useState<EmailTemplate | null>(null);
   const [showEditor, setShowEditor] = useState(false);
   const [initializing, setInitializing] = useState(false);
+  const [migrating, setMigrating] = useState(false);
 
   // Load templates
   useEffect(() => {
@@ -80,7 +87,7 @@ export function EmailTemplatesPage() {
       setTemplates(data);
       setFilteredTemplates(data);
     } catch (error) {
-      console.error('Error loading templates:', error);
+      logger.error('Error loading templates:', error);
       toast.error('Erreur lors du chargement des templates');
     } finally {
       setLoading(false);
@@ -101,7 +108,7 @@ export function EmailTemplatesPage() {
       toast.success('Template supprimé');
       loadTemplates();
     } catch (error) {
-      console.error('Error deleting template:', error);
+      logger.error('Error deleting template:', error);
       toast.error('Erreur lors de la suppression');
     }
   }
@@ -114,7 +121,7 @@ export function EmailTemplatesPage() {
       toast.success('Template dupliqué');
       loadTemplates();
     } catch (error) {
-      console.error('Error duplicating template:', error);
+      logger.error('Error duplicating template:', error);
       toast.error('Erreur lors de la duplication');
     }
   }
@@ -146,18 +153,57 @@ export function EmailTemplatesPage() {
           `Erreur lors de l'initialisation: ${result.errors.join(', ')}`
         );
       }
-    } catch (error: any) {
-      console.error('Error initializing templates:', error);
+    } catch (error) {
+      logger.error('Error initializing templates:', error);
       toast.error('Erreur lors de l\'initialisation des templates');
     } finally {
       setInitializing(false);
     }
   }
 
-  // Check if user management templates exist
-  const hasUserTemplates = templates.some(
-    (t) => t.emailType === 'account_activated' || t.emailType === 'password_reset'
-  );
+  async function handleMigrateZones() {
+    if (!clubId) return;
+
+    const confirmed = window.confirm(
+      'Cette action va ajouter des zones modifiables aux templates de type "transactions".\n\n' +
+      'Les templates existants seront mis à jour pour permettre l\'édition de certaines sections avant envoi.\n\n' +
+      'Continuer ?'
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setMigrating(true);
+      const result = await migrateTransactionsTemplates(clubId);
+
+      if (result.success) {
+        toast.success(
+          `Migration terminée: ${result.templatesUpdated} template(s) mis à jour, ${result.templatesSkipped} ignoré(s)`
+        );
+        loadTemplates();
+      } else {
+        toast.error(
+          `Erreurs lors de la migration: ${result.errors.join(', ')}`
+        );
+      }
+    } catch (error: unknown) {
+      logger.error('Error migrating templates:', error);
+      toast.error('Erreur lors de la migration des templates');
+    } finally {
+      setMigrating(false);
+    }
+  }
+
+  // Check if default templates exist (user management + expense notifications + automated communication)
+  const hasAllDefaultTemplates =
+    templates.some((t) => t.emailType === 'account_activated') &&
+    templates.some((t) => t.emailType === 'password_reset') &&
+    templates.some((t) => t.emailType === 'expense_submitted') &&
+    templates.some((t) => t.emailType === 'expense_approved') &&
+    templates.some((t) => t.emailType === 'expense_reimbursed') &&
+    templates.some((t) => t.emailType === 'pending_demands') &&
+    templates.some((t) => t.emailType === 'accounting_codes') &&
+    templates.some((t) => t.emailType === 'bank_validation_pending');
 
   if (loading) {
     return (
@@ -205,14 +251,26 @@ export function EmailTemplatesPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            {!hasUserTemplates && (
+            {!hasAllDefaultTemplates && (
               <button
                 onClick={handleInitializeDefaults}
                 disabled={initializing}
                 className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
               >
                 <Download className="h-5 w-5" />
-                {initializing ? 'Initialisation...' : 'Initialiser templates utilisateurs'}
+                {initializing ? 'Initialisation...' : 'Initialiser templates par défaut'}
+              </button>
+            )}
+            {/* Migration button for adding zone markers to transactions templates */}
+            {templates.some((t) => t.emailType === 'transactions') && (
+              <button
+                onClick={handleMigrateZones}
+                disabled={migrating}
+                className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+                title="Ajouter des zones modifiables aux templates de transactions"
+              >
+                <Wand2 className="h-5 w-5" />
+                {migrating ? 'Migration...' : 'Activer zones éditables'}
               </button>
             )}
             <button
@@ -231,7 +289,7 @@ export function EmailTemplatesPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 dark:text-dark-text-muted" />
             <input
               type="text"
               placeholder="Rechercher par nom ou description..."
@@ -243,7 +301,7 @@ export function EmailTemplatesPage() {
 
           {/* Type Filter */}
           <div className="relative">
-            <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 dark:text-dark-text-muted" />
             <select
               value={selectedType}
               onChange={(e) => setSelectedType(e.target.value as EmailTemplateType | 'all')}
@@ -263,7 +321,7 @@ export function EmailTemplatesPage() {
       {/* Templates List */}
       {filteredTemplates.length === 0 ? (
         <div className="bg-white dark:bg-dark-bg-secondary rounded-lg border border-gray-200 dark:border-dark-border p-12 text-center">
-          <Mail className="h-16 w-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+          <Mail className="h-16 w-16 text-gray-300 dark:text-dark-text-secondary mx-auto mb-4" />
           <p className="text-gray-600 dark:text-dark-text-secondary mb-2">
             {searchQuery || selectedType !== 'all'
               ? 'Aucun template trouvé avec ces filtres'
@@ -279,86 +337,131 @@ export function EmailTemplatesPage() {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filteredTemplates.map((template) => (
-            <div
-              key={template.id}
-              className="bg-white dark:bg-dark-bg-secondary rounded-lg border border-gray-200 dark:border-dark-border p-5 hover:shadow-md transition-shadow"
-            >
-              {/* Header */}
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex-1">
-                  <h3 className="font-semibold text-gray-900 dark:text-dark-text-primary mb-1 flex items-center gap-2">
-                    {template.name}
-                    {template.isDefault && (
-                      <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded">
-                        Par défaut
+        <div className="bg-white dark:bg-dark-bg-secondary rounded-lg border border-gray-200 dark:border-dark-border overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-gray-50 dark:bg-dark-bg-tertiary border-b border-gray-200 dark:border-dark-border">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-dark-text-secondary uppercase tracking-wider">
+                  Nom
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-dark-text-secondary uppercase tracking-wider">
+                  Type
+                </th>
+                <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 dark:text-dark-text-secondary uppercase tracking-wider">
+                  <span className="flex items-center justify-center gap-1">
+                    Zones
+                    <span className="group relative">
+                      <Info className="h-3 w-3 text-gray-400 dark:text-dark-text-muted cursor-help" />
+                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 bg-gray-900 text-white text-xs rounded shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 font-normal normal-case">
+                        Les zones permettent de modifier certaines parties du template avant l'envoi
                       </span>
+                    </span>
+                  </span>
+                </th>
+                <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 dark:text-dark-text-secondary uppercase tracking-wider">
+                  Statut
+                </th>
+                <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 dark:text-dark-text-secondary uppercase tracking-wider">
+                  Utilisé
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-dark-text-secondary uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 dark:divide-dark-border">
+              {filteredTemplates.map((template) => (
+                <tr
+                  key={template.id}
+                  className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary transition-colors"
+                >
+                  {/* Name & Description */}
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-900 dark:text-dark-text-primary">
+                        {template.name}
+                      </span>
+                      {template.isDefault && (
+                        <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-1.5 py-0.5 rounded">
+                          Défaut
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary mt-0.5 truncate max-w-xs">
+                      {template.description}
+                    </p>
+                  </td>
+
+                  {/* Type */}
+                  <td className="px-4 py-3">
+                    <span className="text-xs bg-gray-100 dark:bg-dark-bg-tertiary dark:bg-gray-800 text-gray-700 dark:text-dark-text-primary dark:text-gray-300 px-2 py-1 rounded whitespace-nowrap">
+                      {EMAIL_TYPE_LABELS[template.emailType as EmailTemplateType] || template.emailType}
+                    </span>
+                  </td>
+
+                  {/* Zones */}
+                  <td className="px-4 py-3 text-center">
+                    {hasEditableZones(template.htmlContent) ? (
+                      <span
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400"
+                        title={`${countZones(template.htmlContent)} zone(s) modifiable(s)`}
+                      >
+                        <Layers className="h-3 w-3" />
+                        {countZones(template.htmlContent)}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-400 dark:text-dark-text-muted">—</span>
                     )}
-                  </h3>
-                  <p className="text-sm text-gray-600 dark:text-dark-text-secondary">
-                    {template.description}
-                  </p>
-                </div>
-                <div
-                  className={`px-2 py-1 rounded text-xs font-medium ${
-                    template.isActive
-                      ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                      : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
-                  }`}
-                >
-                  {template.isActive ? 'Actif' : 'Inactif'}
-                </div>
-              </div>
+                  </td>
 
-              {/* Type Badge */}
-              <div className="mb-3">
-                <span className="text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 px-2 py-1 rounded">
-                  {EMAIL_TYPE_LABELS[template.emailType as EmailTemplateType] || template.emailType}
-                </span>
-              </div>
+                  {/* Status */}
+                  <td className="px-4 py-3 text-center">
+                    <span
+                      className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
+                        template.isActive
+                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                          : 'bg-gray-100 dark:bg-dark-bg-tertiary dark:bg-gray-800 text-gray-600 dark:text-dark-text-secondary dark:text-dark-text-muted'
+                      }`}
+                    >
+                      {template.isActive ? 'Actif' : 'Inactif'}
+                    </span>
+                  </td>
 
-              {/* Stats */}
-              <div className="text-sm text-gray-600 dark:text-dark-text-secondary mb-4 space-y-1">
-                <div>Utilisé: {template.usageCount || 0} fois</div>
-                {template.lastUsed && (
-                  <div>
-                    Dernier envoi:{' '}
-                    {new Date(template.lastUsed).toLocaleDateString('fr-FR', {
-                      day: '2-digit',
-                      month: '2-digit',
-                      year: 'numeric',
-                    })}
-                  </div>
-                )}
-              </div>
+                  {/* Usage Count */}
+                  <td className="px-4 py-3 text-center text-sm text-gray-600 dark:text-dark-text-secondary">
+                    {template.usageCount || 0}×
+                  </td>
 
-              {/* Actions */}
-              <div className="flex items-center gap-2 pt-3 border-t border-gray-200 dark:border-dark-border">
-                <button
-                  onClick={() => handleEdit(template)}
-                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-sm text-calypso-blue dark:text-calypso-aqua hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
-                >
-                  <Edit className="h-4 w-4" />
-                  Modifier
-                </button>
-                <button
-                  onClick={() => handleDuplicate(template.id)}
-                  className="flex items-center justify-center gap-1.5 px-3 py-2 text-sm text-gray-600 dark:text-dark-text-secondary hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
-                  title="Dupliquer"
-                >
-                  <Copy className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => handleDelete(template.id)}
-                  className="flex items-center justify-center gap-1.5 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                  title="Supprimer"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          ))}
+                  {/* Actions */}
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => handleEdit(template)}
+                        className="p-1.5 text-calypso-blue dark:text-calypso-aqua hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+                        title="Modifier"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDuplicate(template.id)}
+                        className="p-1.5 text-gray-600 dark:text-dark-text-secondary hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-gray-800 rounded transition-colors"
+                        title="Dupliquer"
+                      >
+                        <Copy className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(template.id)}
+                        className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                        title="Supprimer"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 

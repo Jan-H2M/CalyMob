@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { Operation } from '@/types';
 import toast from 'react-hot-toast';
+import { logger } from '@/utils/logger';
 
 interface CotisationFormModalProps {
   isOpen: boolean;
@@ -79,7 +80,7 @@ export function CotisationFormModal({ isOpen, onClose, onSave, cotisation }: Cot
       await onSave(operationData);
       onClose();
     } catch (error) {
-      console.error('Error saving cotisation:', error);
+      logger.error('Error saving cotisation:', error);
     } finally {
       setSaving(false);
     }
@@ -195,7 +196,7 @@ export function CotisationFormModal({ isOpen, onClose, onSave, cotisation }: Cot
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors"
+              className="flex-1 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors"
             >
               Annuler
             </button>

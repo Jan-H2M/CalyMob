@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { logger } from '@/utils/logger';
 import { 
   X, 
   Upload, 
@@ -113,7 +114,7 @@ export function MultiFileImportModal({
       setProgress(null);
       onClose();
     } catch (error) {
-      console.error('Import error:', error);
+      logger.error('Import error:', error);
     } finally {
       setIsImporting(false);
     }
@@ -170,7 +171,7 @@ export function MultiFileImportModal({
               "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all",
               isDragging 
                 ? "border-calypso-blue bg-blue-50" 
-                : "border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+                : "border-gray-300 dark:border-dark-border hover:border-gray-400 hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary"
             )}
           >
             <Upload className="h-12 w-12 text-gray-400 dark:text-dark-text-muted mx-auto mb-3" />
@@ -284,7 +285,7 @@ export function MultiFileImportModal({
             <button
               onClick={onClose}
               disabled={isImporting}
-              className="flex-1 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:bg-dark-bg-tertiary transition-colors disabled:opacity-50"
+              className="flex-1 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary transition-colors disabled:opacity-50"
             >
               Annuler
             </button>

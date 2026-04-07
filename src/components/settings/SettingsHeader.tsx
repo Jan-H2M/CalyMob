@@ -16,7 +16,7 @@ export function SettingsHeader({ breadcrumb, title, description }: SettingsHeade
       {/* Back button + Breadcrumb */}
       <button
         onClick={() => navigate('/parametres')}
-        className="flex items-center gap-2 text-gray-600 dark:text-dark-text-secondary hover:text-gray-900 dark:hover:text-dark-text-primary transition-colors mb-4"
+        className="flex items-center gap-2 text-gray-600 dark:text-dark-text-secondary hover:text-gray-900 dark:text-dark-text-primary dark:hover:text-dark-text-primary transition-colors mb-4"
       >
         <ArrowLeft className="h-5 w-5" />
         <span className="text-sm">

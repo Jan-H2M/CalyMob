@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -8,6 +8,7 @@ import { PasswordService } from '@/services/passwordService';
 import { Eye, EyeOff, Loader2, Lock, Shield } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { cn } from '@/utils/utils';
+import { logger } from '@/utils/logger';
 
 // Validation schema
 const changePasswordSchema = z.object({
@@ -36,7 +37,7 @@ export function ChangePasswordForm() {
   });
 
   const onSubmit = async (data: ChangePasswordFormData) => {
-    if (!appUser) {
+    if (!appUser || !appUser.clubId) {
       toast.error('Vous devez être authentifié');
       return;
     }
@@ -47,7 +48,7 @@ export function ChangePasswordForm() {
       toast.success('Mot de passe changé avec succès !');
       navigate('/accueil');
     } catch (error: any) {
-      console.error('Erreur changement mot de passe:', error);
+      logger.error('Erreur changement mot de passe:', error);
 
       let errorMessage = 'Erreur lors du changement de mot de passe';
       if (error.code === 'auth/requires-recent-login') {
@@ -94,7 +95,7 @@ export function ChangePasswordForm() {
                   type={showNewPassword ? 'text' : 'password'}
                   className={cn(
                     "w-full px-4 py-2 pl-10 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all",
-                    errors.newPassword ? 'border-red-500' : 'border-gray-300'
+                    errors.newPassword ? 'border-red-500' : 'border-gray-300 dark:border-dark-border'
                   )}
                   placeholder="Minimum 6 caractères"
                   {...register('newPassword')}
@@ -106,6 +107,7 @@ export function ChangePasswordForm() {
                   onClick={() => setShowNewPassword(!showNewPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary"
                   tabIndex={-1}
+                  aria-label={showNewPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
                 >
                   {showNewPassword ? (
                     <EyeOff className="w-5 h-5" />
@@ -115,7 +117,7 @@ export function ChangePasswordForm() {
                 </button>
               </div>
               {errors.newPassword && (
-                <p className="mt-1 text-sm text-red-600">{errors.newPassword.message}</p>
+                <p role="alert" className="mt-1 text-sm text-red-600">{errors.newPassword.message}</p>
               )}
             </div>
 
@@ -130,7 +132,7 @@ export function ChangePasswordForm() {
                   type={showConfirmPassword ? 'text' : 'password'}
                   className={cn(
                     "w-full px-4 py-2 pl-10 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all",
-                    errors.confirmPassword ? 'border-red-500' : 'border-gray-300'
+                    errors.confirmPassword ? 'border-red-500' : 'border-gray-300 dark:border-dark-border'
                   )}
                   placeholder="Confirmer le mot de passe"
                   {...register('confirmPassword')}
@@ -142,6 +144,7 @@ export function ChangePasswordForm() {
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-dark-text-muted hover:text-gray-700 dark:text-dark-text-primary"
                   tabIndex={-1}
+                  aria-label={showConfirmPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
                 >
                   {showConfirmPassword ? (
                     <EyeOff className="w-5 h-5" />
@@ -151,7 +154,7 @@ export function ChangePasswordForm() {
                 </button>
               </div>
               {errors.confirmPassword && (
-                <p className="mt-1 text-sm text-red-600">{errors.confirmPassword.message}</p>
+                <p role="alert" className="mt-1 text-sm text-red-600">{errors.confirmPassword.message}</p>
               )}
             </div>
 

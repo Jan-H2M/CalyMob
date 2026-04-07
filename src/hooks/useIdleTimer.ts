@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { SessionService } from '@/services/sessionService';
+import { logger } from '@/utils/logger';
 
 export interface IdleTimerOptions {
   /**
@@ -133,7 +134,7 @@ export function useIdleTimer(options: IdleTimerOptions): IdleTimerState {
     const warningMs = (timeoutMinutes - warningBeforeMinutes) * 60 * 1000;
 
     warningTimeoutRef.current = setTimeout(() => {
-      console.log(`⏰ [IDLE TIMER] AVERTISSEMENT - Déconnexion dans ${warningBeforeMinutes} min si aucune activité`);
+      logger.debug(`⏰ [IDLE TIMER] AVERTISSEMENT - Déconnexion dans ${warningBeforeMinutes} min si aucune activité`);
       setIsWarning(true);
       startWarningCountdown();
       onWarning?.();
@@ -143,7 +144,7 @@ export function useIdleTimer(options: IdleTimerOptions): IdleTimerState {
     const idleMs = timeoutMinutes * 60 * 1000;
 
     idleTimeoutRef.current = setTimeout(() => {
-      console.log(`🚪 [IDLE TIMER] DÉCONNEXION - Inactivité détectée`);
+      logger.debug(`🚪 [IDLE TIMER] DÉCONNEXION - Inactivité détectée`);
       isIdleLogoutTriggeredRef.current = true; // Marquer que la déconnexion est légitime
       clearTimers();
       onIdle();
@@ -176,7 +177,7 @@ export function useIdleTimer(options: IdleTimerOptions): IdleTimerState {
     // Mettre à jour la session Firestore (debounced dans le service)
     if (clubId && userId) {
       SessionService.updateSessionActivity(clubId, userId).catch((error) => {
-        console.error('❌ Erreur update session activity:', error);
+        logger.error('❌ Erreur update session activity:', error);
       });
     }
 
@@ -186,7 +187,7 @@ export function useIdleTimer(options: IdleTimerOptions): IdleTimerState {
 
     // Only log during warning mode to avoid console spam
     if (isWarning) {
-      console.log('✅ [IDLE TIMER] Activité détectée pendant avertissement - Reset du timer');
+      logger.debug('✅ [IDLE TIMER] Activité détectée pendant avertissement - Reset du timer');
     }
     reset();
   }, [isWarning, reset, clubId, userId]);

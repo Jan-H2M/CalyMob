@@ -9,7 +9,8 @@ import {
   Tag,
   Calendar,
   FileSpreadsheet,
-  Waves
+  Waves,
+  Smartphone
 } from 'lucide-react';
 import { SettingsHeader } from './SettingsHeader';
 import { useNavigate } from 'react-router-dom';
@@ -39,8 +40,8 @@ export function SystemeSettings() {
     },
     {
       id: 'operations',
-      title: 'Activités VP Dive',
-      description: 'Import XLS avec inscriptions',
+      title: 'Activités',
+      description: 'Gestion des activités et événements',
       icon: <Waves className="h-8 w-8" />,
       iconBg: 'bg-blue-100 dark:bg-blue-900/30',
       iconColor: 'text-blue-600 dark:text-blue-400',
@@ -87,8 +88,8 @@ export function SystemeSettings() {
       title: 'Paramètres Généraux',
       description: 'Club, devise, seuils',
       icon: <SettingsIcon className="h-8 w-8" />,
-      iconBg: 'bg-gray-100 dark:bg-gray-900/30',
-      iconColor: 'text-gray-600 dark:text-gray-400',
+      iconBg: 'bg-gray-100 dark:bg-dark-bg-tertiary dark:bg-gray-900/30',
+      iconColor: 'text-gray-600 dark:text-dark-text-secondary dark:text-dark-text-muted',
       route: '/parametres/general'
     },
     {
@@ -126,6 +127,15 @@ export function SystemeSettings() {
       iconBg: 'bg-orange-100 dark:bg-orange-900/30',
       iconColor: 'text-orange-600 dark:text-orange-400',
       route: '/parametres/maintenance'
+    },
+    {
+      id: 'compatibility',
+      title: 'Compatibilité',
+      description: 'Versions apps/browsers supportées',
+      icon: <Smartphone className="h-8 w-8" />,
+      iconBg: 'bg-teal-100 dark:bg-teal-900/30',
+      iconColor: 'text-teal-600 dark:text-teal-400',
+      route: '/parametres/compatibilite'
     }
   ];
 

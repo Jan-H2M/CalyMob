@@ -1,3 +1,4 @@
+import { logger } from '@/utils/logger';
 /**
  * Service de déduplication des documents pour les dépenses
  * Génère un hash basé sur le contenu du fichier pour éviter les imports en double
@@ -27,7 +28,7 @@ export async function hashFile(file: File): Promise<string> {
 
     return hashHex;
   } catch (error) {
-    console.error('Erreur génération hash fichier:', error);
+    logger.error('Erreur génération hash fichier:', error);
     throw error;
   }
 }
@@ -50,7 +51,7 @@ export async function checkDocumentExists(
 
     return !snapshot.empty;
   } catch (error) {
-    console.error('Erreur vérification document:', error);
+    logger.error('Erreur vérification document:', error);
     return false; // En cas d'erreur, on laisse passer (mieux vaut un doublon qu'un blocage)
   }
 }
@@ -73,7 +74,7 @@ export async function analyzeBatchForDuplicates(
   const results = new Map();
   const seenHashes = new Set<string>(); // Pour détecter les doublons au sein du batch
 
-  console.log(`🔍 Analyse de ${files.length} fichier(s) pour déduplication...`);
+  logger.debug(`🔍 Analyse de ${files.length} fichier(s) pour déduplication...`);
 
   for (const file of files) {
     try {
@@ -94,13 +95,13 @@ export async function analyzeBatchForDuplicates(
       });
 
       if (isDuplicate) {
-        console.log(`⚠️ Doublon détecté (Firestore): ${file.name}`);
+        logger.debug(`⚠️ Doublon détecté (Firestore): ${file.name}`);
       }
       if (duplicateInBatch) {
-        console.log(`⚠️ Doublon détecté (batch): ${file.name}`);
+        logger.debug(`⚠️ Doublon détecté (batch): ${file.name}`);
       }
     } catch (error) {
-      console.error(`❌ Erreur analyse ${file.name}:`, error);
+      logger.error(`❌ Erreur analyse ${file.name}:`, error);
       // En cas d'erreur, on ajoute le fichier sans hash (sera traité normalement)
       results.set(file.name, {
         hash: '',
@@ -111,7 +112,7 @@ export async function analyzeBatchForDuplicates(
   }
 
   const duplicateCount = Array.from(results.values()).filter(r => r.isDuplicate || r.duplicateInBatch).length;
-  console.log(`✅ ${duplicateCount}/${files.length} doublon(s) détecté(s)`);
+  logger.debug(`✅ ${duplicateCount}/${files.length} doublon(s) détecté(s)`);
 
   return results;
 }
@@ -143,14 +144,14 @@ export async function checkDuplicatesInAllExpenses(
 ): Promise<DuplicateInfo[]> {
   const duplicates: DuplicateInfo[] = [];
 
-  console.log(`🔍 Vérification doublons pour ${files.length} fichier(s)...`);
+  logger.debug(`🔍 Vérification doublons pour ${files.length} fichier(s)...`);
 
   try {
     // 1. Récupérer TOUTES les dépenses du club
     const demandesRef = collection(db, 'clubs', clubId, 'demandes_remboursement');
     const snapshot = await getDocs(demandesRef);
 
-    console.log(`📂 Scanning ${snapshot.size} demandes...`);
+    logger.debug(`📂 Scanning ${snapshot.size} demandes...`);
 
     // 2. Calculer hash de chaque fichier à uploader
     const fileHashes = new Map<string, string>();
@@ -159,7 +160,7 @@ export async function checkDuplicatesInAllExpenses(
         const hash = await hashFile(file);
         fileHashes.set(file.name, hash);
       } catch (error) {
-        console.error(`❌ Erreur calcul hash ${file.name}:`, error);
+        logger.error(`❌ Erreur calcul hash ${file.name}:`, error);
       }
     }
 
@@ -179,7 +180,7 @@ export async function checkDuplicatesInAllExpenses(
 
           // Comparaison par hash (si disponible)
           if (existingDoc.file_hash && existingDoc.file_hash === fileHash) {
-            console.log(`⚠️ Doublon détecté (hash): ${file.name} → Dépense ${demande.id} (${demande.description})`);
+            logger.debug(`⚠️ Doublon détecté (hash): ${file.name} → Dépense ${demande.id} (${demande.description})`);
             duplicates.push({
               file,
               existingDoc,
@@ -197,7 +198,7 @@ export async function checkDuplicatesInAllExpenses(
             const typeMatch = existingDoc.type === file.type;
 
             if (nameMatch && sizeMatch && typeMatch) {
-              console.log(`⚠️ Doublon détecté (legacy): ${file.name} → Dépense ${demande.id}`);
+              logger.debug(`⚠️ Doublon détecté (legacy): ${file.name} → Dépense ${demande.id}`);
               duplicates.push({
                 file,
                 existingDoc,
@@ -213,11 +214,11 @@ export async function checkDuplicatesInAllExpenses(
       }
     }
 
-    console.log(`✅ ${duplicates.length} doublon(s) trouvé(s)`);
+    logger.debug(`✅ ${duplicates.length} doublon(s) trouvé(s)`);
     return duplicates;
 
   } catch (error) {
-    console.error('❌ Erreur vérification doublons:', error);
+    logger.error('❌ Erreur vérification doublons:', error);
     return []; // En cas d'erreur, on laisse passer (mieux vaut un doublon qu'un blocage)
   }
 }

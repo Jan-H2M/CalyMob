@@ -103,9 +103,9 @@ export function EmailHistoryDetailView({
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary rounded-lg transition-colors"
           >
-            <X className="h-5 w-5 text-gray-500 dark:text-dark-text-secondary" />
+            <X className="h-5 w-5 text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary" />
           </button>
         </div>
 
@@ -113,7 +113,7 @@ export function EmailHistoryDetailView({
         <div className="p-6 space-y-6">
           {/* Recipient Info */}
           <div className="bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg p-4 space-y-3">
-            <h3 className="text-sm font-semibold text-gray-700 dark:text-dark-text-secondary uppercase tracking-wide">
+            <h3 className="text-sm font-semibold text-gray-700 dark:text-dark-text-primary uppercase tracking-wide">
               Destinataire
             </h3>
             <div className="flex items-center gap-3">
@@ -137,7 +137,7 @@ export function EmailHistoryDetailView({
           <div className="space-y-4">
             {/* Subject */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
                 Objet
               </label>
               <div className="bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg p-3">
@@ -150,7 +150,7 @@ export function EmailHistoryDetailView({
             {/* Template Info */}
             {email.templateName && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
                   <FileText className="h-4 w-4 inline mr-1" />
                   Template utilisé
                 </label>
@@ -159,7 +159,7 @@ export function EmailHistoryDetailView({
                     {email.templateName}
                   </p>
                   {email.templateType && (
-                    <p className="text-xs text-gray-500 dark:text-dark-text-tertiary mt-1">
+                    <p className="text-xs text-gray-500 dark:text-dark-text-muted dark:text-dark-text-tertiary mt-1">
                       Type: {email.templateType}
                     </p>
                   )}
@@ -170,7 +170,7 @@ export function EmailHistoryDetailView({
             {/* Sender Info (for manual emails) */}
             {email.sendType === 'manual' && email.sentByName && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
                   Envoyé par
                 </label>
                 <div className="bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg p-3">
@@ -184,7 +184,7 @@ export function EmailHistoryDetailView({
             {/* Job Info (for automated emails) */}
             {email.sendType === 'automated' && email.jobName && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
                   Job planifié
                 </label>
                 <div className="bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg p-3">
@@ -198,7 +198,7 @@ export function EmailHistoryDetailView({
             {/* Timestamps */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
                   <Calendar className="h-4 w-4 inline mr-1" />
                   Créé le
                 </label>
@@ -210,7 +210,7 @@ export function EmailHistoryDetailView({
               </div>
               {email.sentAt && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
                     <Send className="h-4 w-4 inline mr-1" />
                     Envoyé le
                   </label>
@@ -222,6 +222,37 @@ export function EmailHistoryDetailView({
                 </div>
               )}
             </div>
+
+            {/* Provider & Technical Info */}
+            {(email.provider || email.emailType) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {email.provider && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
+                      <Mail className="h-4 w-4 inline mr-1" />
+                      Fournisseur
+                    </label>
+                    <div className="bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg p-3">
+                      <p className="text-sm text-gray-900 dark:text-dark-text-primary capitalize">
+                        {email.provider}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {email.emailType && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
+                      Type d'email
+                    </label>
+                    <div className="bg-gray-50 dark:bg-dark-bg-tertiary rounded-lg p-3">
+                      <p className="text-sm text-gray-900 dark:text-dark-text-primary">
+                        {email.emailType === 'bulk_invite' ? 'Invitation CalyMob' : email.emailType}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Error Message (if failed) */}
             {email.status === 'failed' && email.statusMessage && (
@@ -255,13 +286,13 @@ export function EmailHistoryDetailView({
           {/* Email Preview */}
           {showPreview && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-secondary mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
                 Contenu de l'email
               </label>
               <div className="border border-gray-200 dark:border-dark-border rounded-lg overflow-hidden">
                 <iframe
                   srcDoc={email.htmlContent}
-                  className="w-full h-[600px] bg-white"
+                  className="w-full h-[50vh] md:h-[600px] bg-white"
                   title="Email Preview"
                   sandbox="allow-same-origin"
                 />

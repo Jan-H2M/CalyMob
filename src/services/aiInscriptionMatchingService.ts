@@ -1,6 +1,7 @@
 import { TransactionBancaire, InscriptionEvenement, Evenement } from '@/types';
 import OpenAI from 'openai';
 import { AIMatchStorageService } from './aiMatchStorageService';
+import { logger } from '@/utils/logger';
 
 export interface AIInscriptionMatchAnalysis {
   inscription_id: string;
@@ -68,7 +69,7 @@ export class AIInscriptionMatchingService {
 
       return analysis;
     } catch (error) {
-      console.error('Erreur lors de l\'analyse IA:', error);
+      logger.error('Erreur lors de l\'analyse IA:', error);
       return null;
     }
   }
@@ -161,7 +162,7 @@ Si aucune correspondance acceptable n'est trouvée (confidence < 50), retourne i
       // Extraire le JSON de la réponse
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        console.error('Pas de JSON trouvé dans la réponse IA');
+        logger.error('Pas de JSON trouvé dans la réponse IA');
         return null;
       }
 
@@ -179,7 +180,7 @@ Si aucune correspondance acceptable n'est trouvée (confidence < 50), retourne i
         extracted_info: parsed.extracted_info || {}
       };
     } catch (error) {
-      console.error('Erreur parsing réponse IA:', error);
+      logger.error('Erreur parsing réponse IA:', error);
       return null;
     }
   }
@@ -213,7 +214,7 @@ Si aucune correspondance acceptable n'est trouvée (confidence < 50), retourne i
           await new Promise(resolve => setTimeout(resolve, 500));
         }
       } catch (error) {
-        console.error(`Erreur analyse IA transaction ${tx.id}:`, error);
+        logger.error(`Erreur analyse IA transaction ${tx.id}:`, error);
       }
     }
 
@@ -235,9 +236,9 @@ Si aucune correspondance acceptable n'est trouvée (confidence < 50), retourne i
     maxTransactionsToAnalyze: number = 100, // Augmenté à 100 par défaut
     onProgress?: (current: number, total: number, message: string) => void
   ): Promise<Map<string, AIInscriptionMatchAnalysis>> {
-    console.log('🔍 ANALYSE IA - Filtrage intelligent des transactions...');
-    console.log(`  📊 Total transactions disponibles: ${unmatchedTransactions.length}`);
-    console.log(`  📋 Inscriptions non-payées: ${unmatchedInscriptions.length}`);
+    logger.debug('🔍 ANALYSE IA - Filtrage intelligent des transactions...');
+    logger.debug(`  📊 Total transactions disponibles: ${unmatchedTransactions.length}`);
+    logger.debug(`  📋 Inscriptions non-payées: ${unmatchedInscriptions.length}`);
 
     // FILTRAGE INTELLIGENT : Ne garder que les transactions pertinentes
     const inscriptionAmounts = unmatchedInscriptions.map(i => i.prix).filter(p => p > 0);
@@ -245,7 +246,7 @@ Si aucune correspondance acceptable n'est trouvée (confidence < 50), retourne i
     let filteredTransactions = unmatchedTransactions;
 
     // Filtrer UNIQUEMENT les transactions positives (revenus) entre 0€ et 25€ (excursions plongée)
-    console.log(`  💰 Montants inscriptions: ${inscriptionAmounts.length > 0 ? Math.min(...inscriptionAmounts) + '€ - ' + Math.max(...inscriptionAmounts) + '€' : 'N/A'}`);
+    logger.debug(`  💰 Montants inscriptions: ${inscriptionAmounts.length > 0 ? Math.min(...inscriptionAmounts) + '€ - ' + Math.max(...inscriptionAmounts) + '€' : 'N/A'}`);
 
     filteredTransactions = unmatchedTransactions.filter(tx => {
       const amount = tx.montant; // Garder le signe
@@ -262,10 +263,10 @@ Si aucune correspondance acceptable n'est trouvée (confidence < 50), retourne i
       return amount > 0 && amount <= 25;
     });
 
-    console.log(`  ✂️ Après filtrage par montant (revenus entre 0€ et 25€, non réconciliées): ${filteredTransactions.length} transactions`);
+    logger.debug(`  ✂️ Après filtrage par montant (revenus entre 0€ et 25€, non réconciliées): ${filteredTransactions.length} transactions`);
 
     if (filteredTransactions.length === 0) {
-      console.warn('  ⚠️ Aucune transaction positive ≤25€ trouvée !');
+      logger.warn('  ⚠️ Aucune transaction positive ≤25€ trouvée !');
     }
 
     // Filtrer par date si contexte événement disponible
@@ -281,25 +282,25 @@ Si aucune correspondance acceptable n'est trouvée (confidence < 50), retourne i
         return txDate >= dateMin && txDate <= dateMax;
       });
 
-      console.log(`  📅 Après filtrage par date (±60 jours de ${eventDate.toISOString().split('T')[0]}): ${filteredTransactions.length} transactions`);
+      logger.debug(`  📅 Après filtrage par date (±60 jours de ${eventDate.toISOString().split('T')[0]}): ${filteredTransactions.length} transactions`);
     }
 
     // Limiter au nombre max (pour contrôler le coût)
     const txToAnalyze = filteredTransactions.slice(0, maxTransactionsToAnalyze);
 
-    console.log(`  🎯 Transactions envoyées à l'IA: ${txToAnalyze.length} (max: ${maxTransactionsToAnalyze})`);
-    console.log(`  💵 Coût estimé: $${(txToAnalyze.length * 0.01).toFixed(2)}`);
+    logger.debug(`  🎯 Transactions envoyées à l'IA: ${txToAnalyze.length} (max: ${maxTransactionsToAnalyze})`);
+    logger.debug(`  💵 Coût estimé: $${(txToAnalyze.length * 0.01).toFixed(2)}`);
 
     if (txToAnalyze.length > 0) {
-      console.log(`  📝 Exemples de noms (premiers 5): ${txToAnalyze.slice(0, 5).map(t => t.contrepartie_nom).join(', ')}...`);
+      logger.debug(`  📝 Exemples de noms (premiers 5): ${txToAnalyze.slice(0, 5).map(t => t.contrepartie_nom).join(', ')}...`);
 
       // LOG COMPLET: Afficher TOUS les noms des transactions envoyées
-      console.log(`\n  📋 LISTE COMPLÈTE des ${txToAnalyze.length} transactions envoyées à l'IA:`);
+      logger.debug(`\n  📋 LISTE COMPLÈTE des ${txToAnalyze.length} transactions envoyées à l'IA:`);
       txToAnalyze.forEach((tx, idx) => {
         const date = new Date(tx.date_execution).toISOString().split('T')[0];
-        console.log(`    ${idx + 1}. ${tx.contrepartie_nom} - ${tx.montant}€ - ${date} - ${tx.communication || 'N/A'}`);
+        logger.debug(`    ${idx + 1}. ${tx.contrepartie_nom} - ${tx.montant}€ - ${date} - ${tx.communication || 'N/A'}`);
       });
-      console.log('');
+      logger.debug('');
     }
 
     if (unmatchedInscriptions.length > 0) {
@@ -308,11 +309,11 @@ Si aucune correspondance acceptable n'est trouvée (confidence < 50), retourne i
         const nom = i.membre_nom || i.nom || '';
         return `${prenom} ${nom}`.trim() || 'Nom inconnu';
       }).join(', ');
-      console.log(`  👤 Noms inscriptions: ${inscriptionNames}`);
-      console.log(`  💵 Prix inscriptions: ${unmatchedInscriptions.map(i => `${i.prix || 0}€`).join(', ')}`);
+      logger.debug(`  👤 Noms inscriptions: ${inscriptionNames}`);
+      logger.debug(`  💵 Prix inscriptions: ${unmatchedInscriptions.map(i => `${i.prix || 0}€`).join(', ')}`);
 
       // DEBUG: Vérifier si les transactions correspondantes sont dans la liste envoyée
-      console.log(`\n  🔍 VÉRIFICATION: Transactions correspondant aux inscriptions dans la liste envoyée?`);
+      logger.debug(`\n  🔍 VÉRIFICATION: Transactions correspondant aux inscriptions dans la liste envoyée?`);
       for (const inscription of unmatchedInscriptions) {
         const nom = inscription.membre_nom || inscription.nom || '';
         const prenom = inscription.membre_prenom || inscription.prenom || '';
@@ -325,9 +326,9 @@ Si aucune correspondance acceptable n'est trouvée (confidence < 50), retourne i
         );
 
         if (found) {
-          console.log(`    ✅ ${nomComplet} (${inscription.prix}€) → TROUVÉ: ${found.contrepartie_nom} (${found.montant}€)`);
+          logger.debug(`    ✅ ${nomComplet} (${inscription.prix}€) → TROUVÉ: ${found.contrepartie_nom} (${found.montant}€)`);
         } else {
-          console.log(`    ❌ ${nomComplet} (${inscription.prix}€) → NON TROUVÉ dans les ${txToAnalyze.length} transactions envoyées`);
+          logger.debug(`    ❌ ${nomComplet} (${inscription.prix}€) → NON TROUVÉ dans les ${txToAnalyze.length} transactions envoyées`);
 
           // Chercher dans toutes les transactions filtrées (avant limite)
           const inFiltered = filteredTransactions.find(tx =>
@@ -336,7 +337,7 @@ Si aucune correspondance acceptable n'est trouvée (confidence < 50), retourne i
           );
 
           if (inFiltered) {
-            console.log(`      ℹ️ Mais trouvé dans filteredTransactions (${filteredTransactions.length} total)`);
+            logger.debug(`      ℹ️ Mais trouvé dans filteredTransactions (${filteredTransactions.length} total)`);
           } else {
             // Chercher dans TOUTES les transactions non-matchées
             const inAll = unmatchedTransactions.find(tx =>
@@ -349,24 +350,24 @@ Si aucune correspondance acceptable n'est trouvée (confidence < 50), retourne i
               const eventDate = eventContext ? new Date(eventContext.date_debut) : null;
               const daysDiff = eventDate ? Math.abs((txDate.getTime() - eventDate.getTime()) / (1000 * 60 * 60 * 24)) : null;
 
-              console.log(`      ⚠️ Trouvé dans unmatchedTransactions mais EXCLU par filtre:`);
-              console.log(`         Date tx: ${txDate.toISOString().split('T')[0]}`);
-              console.log(`         Date événement: ${eventDate?.toISOString().split('T')[0]}`);
-              console.log(`         Écart: ${daysDiff?.toFixed(0)} jours`);
-              console.log(`         Montant: ${inAll.montant}€ (inscription: ${inscription.prix}€)`);
-              console.log(`         reconciliation_status: ${inAll.reconciliation_status || 'undefined'}`);
-              console.log(`         matched_entities: ${inAll.matched_entities?.length || 0}`);
+              logger.debug(`      ⚠️ Trouvé dans unmatchedTransactions mais EXCLU par filtre:`);
+              logger.debug(`         Date tx: ${txDate.toISOString().split('T')[0]}`);
+              logger.debug(`         Date événement: ${eventDate?.toISOString().split('T')[0]}`);
+              logger.debug(`         Écart: ${daysDiff?.toFixed(0)} jours`);
+              logger.debug(`         Montant: ${inAll.montant}€ (inscription: ${inscription.prix}€)`);
+              logger.debug(`         reconciliation_status: ${inAll.reconciliation_status || 'undefined'}`);
+              logger.debug(`         matched_entities: ${inAll.matched_entities?.length || 0}`);
             } else {
-              console.log(`      ❌ NON TROUVÉ dans unmatchedTransactions (${unmatchedTransactions.length} total)`);
+              logger.debug(`      ❌ NON TROUVÉ dans unmatchedTransactions (${unmatchedTransactions.length} total)`);
             }
           }
         }
       }
-      console.log('');
+      logger.debug('');
     }
 
     if (txToAnalyze.length === 0) {
-      console.warn('⚠️ Aucune transaction pertinente trouvée après filtrage !');
+      logger.warn('⚠️ Aucune transaction pertinente trouvée après filtrage !');
       return new Map();
     }
 
@@ -407,22 +408,22 @@ Si aucune correspondance acceptable n'est trouvée (confidence < 50), retourne i
     const prompt = this.buildBatchPrompt(transactions, inscriptions, eventContext);
 
     // DEBUG: Sauvegarder le prompt complet dans la console pour inspection
-    console.log('\n\n═══════════════════════════════════════════════════════════════');
-    console.log('📄 PROMPT COMPLET ENVOYÉ À L\'IA (GPT-4o):');
-    console.log('═══════════════════════════════════════════════════════════════\n');
-    console.log(prompt);
-    console.log('\n═══════════════════════════════════════════════════════════════');
-    console.log('FIN DU PROMPT');
-    console.log('═══════════════════════════════════════════════════════════════\n\n');
+    logger.debug('\n\n═══════════════════════════════════════════════════════════════');
+    logger.debug('📄 PROMPT COMPLET ENVOYÉ À L\'IA (GPT-4o):');
+    logger.debug('═══════════════════════════════════════════════════════════════\n');
+    logger.debug(prompt);
+    logger.debug('\n═══════════════════════════════════════════════════════════════');
+    logger.debug('FIN DU PROMPT');
+    logger.debug('═══════════════════════════════════════════════════════════════\n\n');
 
     // Sauvegarder dans localStorage pour récupération facile
     try {
       localStorage.setItem('DEBUG_LAST_AI_PROMPT', prompt);
       localStorage.setItem('DEBUG_LAST_AI_PROMPT_DATE', new Date().toISOString());
-      console.log('💾 Prompt sauvegardé dans localStorage (clé: DEBUG_LAST_AI_PROMPT)');
-      console.log('📝 Pour copier le prompt complet, tapez dans la console: copy(localStorage.getItem("DEBUG_LAST_AI_PROMPT"))');
+      logger.debug('💾 Prompt sauvegardé dans localStorage (clé: DEBUG_LAST_AI_PROMPT)');
+      logger.debug('📝 Pour copier le prompt complet, tapez dans la console: copy(localStorage.getItem("DEBUG_LAST_AI_PROMPT"))');
     } catch (e) {
-      console.warn('⚠️ Impossible de sauvegarder dans localStorage:', e);
+      logger.warn('⚠️ Impossible de sauvegarder dans localStorage:', e);
     }
 
     if (onProgress) {
@@ -449,7 +450,7 @@ Si aucune correspondance acceptable n'est trouvée (confidence < 50), retourne i
 
       return matches;
     } catch (error) {
-      console.error('Erreur lors de l\'analyse batch IA:', error);
+      logger.error('Erreur lors de l\'analyse batch IA:', error);
       throw error;
     }
   }
@@ -610,7 +611,7 @@ Si AUCUN match n'est trouvé pour toutes les transactions, retourne un array vid
     const results = new Map<string, AIInscriptionMatchAnalysis>();
 
     try {
-      console.log('📄 Réponse IA brute:', responseText.substring(0, 500));
+      logger.debug('📄 Réponse IA brute:', responseText.substring(0, 500));
 
       // Méthode 1: Chercher un JSON array complet avec regex amélioré
       let jsonText = '';
@@ -622,29 +623,29 @@ Si AUCUN match n'est trouvé pour toutes les transactions, retourne un array vid
       if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
         jsonText = responseText.substring(firstBracket, lastBracket + 1);
       } else {
-        console.warn('❌ Pas de JSON array trouvé dans la réponse IA');
-        console.log('Réponse complète:', responseText);
+        logger.warn('❌ Pas de JSON array trouvé dans la réponse IA');
+        logger.debug('Réponse complète:', responseText);
         return results;
       }
 
       // Nettoyer le JSON (enlever les backticks markdown si présents)
       jsonText = jsonText.replace(/```json\s*/g, '').replace(/```\s*/g, '');
 
-      console.log('🔍 JSON extrait:', jsonText.substring(0, 300));
+      logger.debug('🔍 JSON extrait:', jsonText.substring(0, 300));
 
       const parsed = JSON.parse(jsonText);
 
       if (!Array.isArray(parsed)) {
-        console.error('❌ La réponse IA n\'est pas un array');
+        logger.error('❌ La réponse IA n\'est pas un array');
         return results;
       }
 
-      console.log(`📊 IA a retourné ${parsed.length} résultat(s)`);
+      logger.debug(`📊 IA a retourné ${parsed.length} résultat(s)`);
 
       // Convertir chaque match
       for (const item of parsed) {
         if (!item.transaction_id || !item.inscription_id || item.confidence < 50) {
-          console.log('⚠️ Match ignoré (invalide ou confiance < 50%):', item);
+          logger.debug('⚠️ Match ignoré (invalide ou confiance < 50%):', item);
           continue;
         }
 
@@ -656,12 +657,12 @@ Si AUCUN match n'est trouvé pour toutes les transactions, retourne un array vid
         });
       }
 
-      console.log(`✅ Batch AI: ${results.size} matches trouvés (${parsed.length - results.size} ignorés)`);
+      logger.debug(`✅ Batch AI: ${results.size} matches trouvés (${parsed.length - results.size} ignorés)`);
       return results;
 
     } catch (error) {
-      console.error('❌ Erreur parsing réponse batch IA:', error);
-      console.log('Réponse complète qui a échoué:', responseText);
+      logger.error('❌ Erreur parsing réponse batch IA:', error);
+      logger.debug('Réponse complète qui a échoué:', responseText);
       return results;
     }
   }

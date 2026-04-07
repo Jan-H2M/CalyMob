@@ -1,3 +1,4 @@
+import { logger } from '@/utils/logger';
 /**
  * ValueListsSettings Component
  *
@@ -57,7 +58,7 @@ export default function ValueListsSettings() {
       const lists = await ValueListService.getValueLists(clubId);
       setValueLists(lists);
     } catch (error) {
-      console.error('Error loading value lists:', error);
+      logger.error('Error loading value lists:', error);
       toast.error('Erreur lors du chargement des listes');
     } finally {
       setLoading(false);
@@ -83,7 +84,7 @@ export default function ValueListsSettings() {
   // Get type badge color
   const getTypeColor = (type: 'system' | 'club'): string => {
     const colorMap: Record<string, string> = {
-      gray: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+      gray: 'bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary dark:bg-gray-700 dark:text-gray-300',
       blue: 'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300'
     };
     return colorMap[TYPE_COLORS[type]] || colorMap['gray'];
@@ -97,7 +98,7 @@ export default function ValueListsSettings() {
           <h2 className="text-2xl font-bold text-gray-900 dark:text-dark-text-primary">
             Listes de valeurs
           </h2>
-          <p className="mt-1 text-sm text-gray-500 dark:text-dark-text-secondary">
+          <p className="mt-1 text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
             Gérez les dropdowns et options utilisés dans l'application
           </p>
         </div>
@@ -113,7 +114,7 @@ export default function ValueListsSettings() {
 
       {/* Search Bar */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 dark:text-dark-text-tertiary" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 dark:text-dark-text-muted dark:text-dark-text-tertiary" />
         <input
           type="text"
           value={searchTerm}
@@ -133,8 +134,8 @@ export default function ValueListsSettings() {
           <Loader className="w-8 h-8 animate-spin text-blue-600" />
         </div>
       ) : filteredLists.length === 0 ? (
-        <div className="text-center py-12 bg-gray-50 dark:bg-dark-bg-secondary rounded-lg">
-          <List className="w-12 h-12 text-gray-400 dark:text-dark-text-tertiary mx-auto mb-3" />
+        <div className="text-center py-12 bg-gray-50 dark:bg-dark-bg-tertiary dark:bg-dark-bg-secondary rounded-lg">
+          <List className="w-12 h-12 text-gray-400 dark:text-dark-text-muted dark:text-dark-text-tertiary mx-auto mb-3" />
           <p className="text-gray-600 dark:text-dark-text-secondary">
             {searchTerm
               ? 'Aucune liste trouvée avec ces filtres'
@@ -144,18 +145,18 @@ export default function ValueListsSettings() {
       ) : (
         <div className="bg-white dark:bg-dark-bg-primary border border-gray-200 dark:border-dark-border rounded-lg overflow-hidden">
           <table className="w-full">
-            <thead className="bg-gray-50 dark:bg-dark-bg-secondary border-b border-gray-200 dark:border-dark-border">
+            <thead className="bg-gray-50 dark:bg-dark-bg-tertiary dark:bg-dark-bg-secondary border-b border-gray-200 dark:border-dark-border">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                   Nom
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                   Type
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                   # Items
                 </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
@@ -164,7 +165,7 @@ export default function ValueListsSettings() {
               {filteredLists.map(list => (
                 <tr
                   key={list.id}
-                  className="hover:bg-gray-50 dark:hover:bg-dark-bg-secondary cursor-pointer transition-colors"
+                  className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-secondary cursor-pointer transition-colors"
                   onClick={() => handleOpenDetail(list)}
                 >
                   <td className="px-6 py-4">
@@ -172,7 +173,7 @@ export default function ValueListsSettings() {
                       {list.name}
                     </div>
                     {list.description && (
-                      <div className="text-sm text-gray-500 dark:text-dark-text-secondary mt-0.5">
+                      <div className="text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary mt-0.5">
                         {list.description}
                       </div>
                     )}
@@ -182,7 +183,7 @@ export default function ValueListsSettings() {
                       {TYPE_LABELS[list.type]}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-500 dark:text-dark-text-secondary">
+                  <td className="px-6 py-4 text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
                     {list.items.filter(i => i.active).length} actif{list.items.filter(i => i.active).length !== 1 ? 's' : ''}
                   </td>
                   <td className="px-6 py-4 text-right">

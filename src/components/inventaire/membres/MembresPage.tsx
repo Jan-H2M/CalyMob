@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Upload, Search, Filter, User, Mail, Phone, Award, Calendar, Eye } from 'lucide-react';
 import { getMembres } from '@/services/membreService';
 import { Membre } from '@/types';
+import { getFirstName, getLastName } from '@/utils/fieldMapper';
 import { useAuth } from '@/contexts/AuthContext';
 import { MembreImportModal } from './MembreImportModal';
 import { MembreDetailView } from './MembreDetailView';
 import toast from 'react-hot-toast';
 import { cn } from '@/utils/utils';
 import { formatDate } from '@/utils/utils';
+import { logger } from '@/utils/logger';
 
 export function MembresPage() {
   const { clubId } = useAuth();
@@ -45,7 +47,7 @@ export function MembresPage() {
       const membersData = await getMembres(clubId, filters);
       setMembers(membersData);
     } catch (error) {
-      console.error('Erreur chargement membres:', error);
+      logger.error('Erreur chargement membres:', error);
       toast.error('Erreur lors du chargement des membres');
     } finally {
       setLoading(false);
@@ -84,7 +86,7 @@ export function MembresPage() {
     await loadMembers();
   };
 
-  const niveaux = Array.from(new Set(members.map(m => m.niveau_plongee).filter(Boolean)));
+  const niveaux = Array.from(new Set(members.map(m => m.plongeur_niveau || m.niveau_plongee).filter(Boolean)));
 
   return (
     <div className="space-y-6">
@@ -94,14 +96,14 @@ export function MembresPage() {
           <h2 className="text-2xl font-bold text-gray-900 dark:text-dark-text-primary">
             Membres Inventaire
           </h2>
-          <p className="mt-1 text-sm text-gray-500 dark:text-dark-text-secondary">
+          <p className="mt-1 text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
             Gestion des membres ayant accès au matériel
           </p>
         </div>
         <div className="flex items-center gap-3">
           <button
             onClick={() => setShowImportModal(true)}
-            className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-dark-border rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-dark-text-secondary bg-white dark:bg-dark-bg-secondary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary"
+            className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-dark-border rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-dark-text-primary bg-white dark:bg-dark-bg-secondary hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary"
           >
             <Upload className="h-4 w-4 mr-2" />
             Importer XLS
@@ -122,7 +124,7 @@ export function MembresPage() {
           {/* Search */}
           <div className="md:col-span-2">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-dark-text-muted" />
               <input
                 type="text"
                 value={searchTerm}
@@ -165,7 +167,7 @@ export function MembresPage() {
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white dark:bg-dark-bg-secondary rounded-lg shadow-sm border border-gray-200 dark:border-dark-border p-4">
-          <div className="text-sm font-medium text-gray-500 dark:text-dark-text-secondary mb-1">
+          <div className="text-sm font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary mb-1">
             Total membres
           </div>
           <div className="text-2xl font-bold text-gray-900 dark:text-dark-text-primary">
@@ -173,7 +175,7 @@ export function MembresPage() {
           </div>
         </div>
         <div className="bg-white dark:bg-dark-bg-secondary rounded-lg shadow-sm border border-gray-200 dark:border-dark-border p-4">
-          <div className="text-sm font-medium text-gray-500 dark:text-dark-text-secondary mb-1">
+          <div className="text-sm font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary mb-1">
             Actifs
           </div>
           <div className="text-2xl font-bold text-green-600">
@@ -181,15 +183,15 @@ export function MembresPage() {
           </div>
         </div>
         <div className="bg-white dark:bg-dark-bg-secondary rounded-lg shadow-sm border border-gray-200 dark:border-dark-border p-4">
-          <div className="text-sm font-medium text-gray-500 dark:text-dark-text-secondary mb-1">
+          <div className="text-sm font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary mb-1">
             Inactifs
           </div>
-          <div className="text-2xl font-bold text-gray-600">
+          <div className="text-2xl font-bold text-gray-600 dark:text-dark-text-secondary">
             {members.filter(m => m.member_status === 'inactive').length}
           </div>
         </div>
         <div className="bg-white dark:bg-dark-bg-secondary rounded-lg shadow-sm border border-gray-200 dark:border-dark-border p-4">
-          <div className="text-sm font-medium text-gray-500 dark:text-dark-text-secondary mb-1">
+          <div className="text-sm font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary mb-1">
             Débutants (&lt;1 an)
           </div>
           <div className="text-2xl font-bold text-blue-600">
@@ -206,9 +208,9 @@ export function MembresPage() {
           </div>
         ) : members.length === 0 ? (
           <div className="text-center py-12">
-            <User className="mx-auto h-12 w-12 text-gray-400" />
+            <User className="mx-auto h-12 w-12 text-gray-400 dark:text-dark-text-muted" />
             <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-dark-text-primary">Aucun membre</h3>
-            <p className="mt-1 text-sm text-gray-500 dark:text-dark-text-secondary">
+            <p className="mt-1 text-sm text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
               Commencez par créer un membre ou importer depuis un fichier Excel
             </p>
           </div>
@@ -217,22 +219,22 @@ export function MembresPage() {
             <table className="min-w-full divide-y divide-gray-200 dark:divide-dark-border">
               <thead className="bg-gray-50 dark:bg-dark-bg-tertiary">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                     Membre
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                     Contact
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                     Niveau / Licence
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                     Ancienneté
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                     Statut
                   </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-dark-text-secondary uppercase tracking-wider">
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
@@ -241,7 +243,7 @@ export function MembresPage() {
                 {members.map((member) => (
                   <tr
                     key={member.id}
-                    className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors"
+                    className="hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary dark:bg-dark-bg-tertiary dark:hover:bg-dark-bg-tertiary transition-colors"
                   >
                     <td className="px-6 py-4">
                       <div className="flex items-center">
@@ -250,7 +252,7 @@ export function MembresPage() {
                         </div>
                         <div className="ml-4">
                           <div className="text-sm font-medium text-gray-900 dark:text-dark-text-primary">
-                            {member.nom} {member.prenom}
+                            {getFirstName(member)} {getLastName(member)}
                             {isDebutant(member) && (
                               <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200">
                                 Débutant
@@ -263,11 +265,11 @@ export function MembresPage() {
                     <td className="px-6 py-4">
                       <div className="text-sm text-gray-900 dark:text-dark-text-primary">
                         <div className="flex items-center gap-2 mb-1">
-                          <Mail className="h-3 w-3 text-gray-400" />
+                          <Mail className="h-3 w-3 text-gray-400 dark:text-dark-text-muted" />
                           {member.email}
                         </div>
                         {member.telephone && (
-                          <div className="flex items-center gap-2 text-gray-500 dark:text-dark-text-secondary">
+                          <div className="flex items-center gap-2 text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
                             <Phone className="h-3 w-3" />
                             {member.telephone}
                           </div>
@@ -276,14 +278,19 @@ export function MembresPage() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-sm">
-                        {member.niveau_plongee && (
+                        {(member.plongeur_niveau || member.niveau_plongee) && (
                           <div className="flex items-center gap-2 mb-1">
-                            <Award className="h-3 w-3 text-gray-400" />
-                            <span className="text-gray-900 dark:text-dark-text-primary">{member.niveau_plongee}</span>
+                            <Award className="h-3 w-3 text-gray-400 dark:text-dark-text-muted" />
+                            {member.plongeur_code && (
+                              <span className="px-2 py-0.5 text-xs font-semibold rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
+                                {member.plongeur_code}
+                              </span>
+                            )}
+                            <span className="text-gray-900 dark:text-dark-text-primary">{member.plongeur_niveau || member.niveau_plongee}</span>
                           </div>
                         )}
                         {member.lifras_id && (
-                          <div className="text-gray-500 dark:text-dark-text-secondary text-xs">
+                          <div className="text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary text-xs">
                             LIFRAS: {member.lifras_id}
                           </div>
                         )}
@@ -299,7 +306,7 @@ export function MembresPage() {
                                 return years.toFixed(1) + ' an' + (years >= 2 ? 's' : '');
                               })()}
                             </div>
-                            <div className="text-xs text-gray-500 dark:text-dark-text-secondary">
+                            <div className="text-xs text-gray-500 dark:text-dark-text-muted dark:text-dark-text-secondary">
                               Depuis {formatDate(member.date_adhesion)}
                             </div>
                           </>
@@ -311,7 +318,7 @@ export function MembresPage() {
                         'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
                         member.member_status === 'active'
                           ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200'
-                          : 'bg-gray-100 dark:bg-gray-900/30 text-gray-800 dark:text-gray-200'
+                          : 'bg-gray-100 dark:bg-dark-bg-tertiary dark:bg-gray-900/30 text-gray-800 dark:text-gray-200'
                       )}>
                         {member.member_status === 'active' ? 'Actif' : 'Inactif'}
                       </span>
