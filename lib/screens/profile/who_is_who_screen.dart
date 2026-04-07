@@ -141,7 +141,8 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
   }
 
   List<MemberProfile> _filterMembers(List<MemberProfile> members) {
-    var filtered = members;
+    // Montrer seulement les membres actifs (exclure inactive/deleted)
+    var filtered = members.where((m) => m.isActive).toList();
 
     // Filtre de recherche
     if (_searchQuery.isNotEmpty) {

@@ -138,7 +138,12 @@ class MemberService {
           'displayName': '${data['prenom'] ?? ''} ${data['nom'] ?? ''}'.trim(),
           'plongeur_code': data['plongeur_code'] ?? '',
           'email': data['email'] ?? '',
+          'member_status': data['member_status'] ?? data['status'],
         };
+      }).where((m) {
+        // Montrer seulement les membres actifs (null = actif par défaut)
+        final status = m['member_status'] as String?;
+        return status == null || status == 'active';
       }).toList();
 
       debugPrint('👥 ${members.length} membres trouvés dans le club');
@@ -202,6 +207,8 @@ class MemberService {
       final members = snapshot.docs
           .map((doc) => MemberProfile.fromFirestore(doc))
           .where((member) {
+        // Exclure les membres inactifs/supprimés
+        if (!member.isActive) return false;
         final fullName = '${member.prenom} ${member.nom}'.toLowerCase();
         final reverseName = '${member.nom} ${member.prenom}'.toLowerCase();
         return fullName.contains(queryLower) ||
