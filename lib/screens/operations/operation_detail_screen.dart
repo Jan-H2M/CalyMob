@@ -2633,140 +2633,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         return {'text': 'Non payé', 'color': Colors.red};
     }
   }
-}
-
-/// Dialog for selecting supplements during registration
-class _SupplementSelectionDialog extends StatefulWidget {
-  final String operationTitle;
-  final List<Supplement> supplements;
-  final double basePrice;
-
-  const _SupplementSelectionDialog({
-    required this.operationTitle,
-    required this.supplements,
-    required this.basePrice,
-  });
-
-  @override
-  State<_SupplementSelectionDialog> createState() => _SupplementSelectionDialogState();
-}
-
-class _SupplementSelectionDialogState extends State<_SupplementSelectionDialog> {
-  final Set<String> _selectedIds = {};
-
-  double get _supplementTotal {
-    return widget.supplements
-        .where((s) => _selectedIds.contains(s.id))
-        .fold(0.0, (sum, s) => sum + s.price);
-  }
-
-  double get _totalPrice => widget.basePrice + _supplementTotal;
-
-  List<SelectedSupplement> get _selectedSupplements {
-    return widget.supplements
-        .where((s) => _selectedIds.contains(s.id))
-        .map((s) => SelectedSupplement(id: s.id, name: s.name, price: s.price))
-        .toList();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Confirmer l\'inscription'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Voulez-vous vous inscrire à "${widget.operationTitle}" ?'),
-            const SizedBox(height: 16),
-
-            // Base price
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Prix de base:'),
-                Text(
-                  '${widget.basePrice.toStringAsFixed(2)} €',
-                  style: const TextStyle(fontWeight: FontWeight.w500),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 16),
-            const Divider(),
-            const SizedBox(height: 8),
-
-            // Supplements section
-            const Text(
-              'Suppléments optionnels:',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-
-            // Supplement checkboxes
-            ...widget.supplements.map((supplement) {
-              final isSelected = _selectedIds.contains(supplement.id);
-              return CheckboxListTile(
-                value: isSelected,
-                onChanged: (value) {
-                  setState(() {
-                    if (value == true) {
-                      _selectedIds.add(supplement.id);
-                    } else {
-                      _selectedIds.remove(supplement.id);
-                    }
-                  });
-                },
-                title: Text(supplement.name),
-                subtitle: Text('+${supplement.price.toStringAsFixed(2)} €'),
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-              );
-            }),
-
-            const SizedBox(height: 8),
-            const Divider(),
-            const SizedBox(height: 8),
-
-            // Total
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Total:',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-                Text(
-                  '${_totalPrice.toStringAsFixed(2)} €',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Annuler'),
-        ),
-        ElevatedButton(
-          onPressed: () => Navigator.pop(context, {
-            'supplements': _selectedSupplements,
-            'supplementTotal': _supplementTotal,
-          }),
-          child: const Text('S\'inscrire'),
-        ),
-      ],
-    );
-  }
 
   Future<void> _loadExerciceObservations() async {
     final operation = context.read<OperationProvider>().selectedOperation;
@@ -3036,5 +2902,139 @@ class _SupplementSelectionDialogState extends State<_SupplementSelectionDialog> 
       default:
         return Icons.circle_outlined;
     }
+  }
+}
+
+/// Dialog for selecting supplements during registration
+class _SupplementSelectionDialog extends StatefulWidget {
+  final String operationTitle;
+  final List<Supplement> supplements;
+  final double basePrice;
+
+  const _SupplementSelectionDialog({
+    required this.operationTitle,
+    required this.supplements,
+    required this.basePrice,
+  });
+
+  @override
+  State<_SupplementSelectionDialog> createState() => _SupplementSelectionDialogState();
+}
+
+class _SupplementSelectionDialogState extends State<_SupplementSelectionDialog> {
+  final Set<String> _selectedIds = {};
+
+  double get _supplementTotal {
+    return widget.supplements
+        .where((s) => _selectedIds.contains(s.id))
+        .fold(0.0, (sum, s) => sum + s.price);
+  }
+
+  double get _totalPrice => widget.basePrice + _supplementTotal;
+
+  List<SelectedSupplement> get _selectedSupplements {
+    return widget.supplements
+        .where((s) => _selectedIds.contains(s.id))
+        .map((s) => SelectedSupplement(id: s.id, name: s.name, price: s.price))
+        .toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Confirmer l\'inscription'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Voulez-vous vous inscrire à "${widget.operationTitle}" ?'),
+            const SizedBox(height: 16),
+
+            // Base price
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Prix de base:'),
+                Text(
+                  '${widget.basePrice.toStringAsFixed(2)} €',
+                  style: const TextStyle(fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 8),
+
+            // Supplements section
+            const Text(
+              'Suppléments optionnels:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+
+            // Supplement checkboxes
+            ...widget.supplements.map((supplement) {
+              final isSelected = _selectedIds.contains(supplement.id);
+              return CheckboxListTile(
+                value: isSelected,
+                onChanged: (value) {
+                  setState(() {
+                    if (value == true) {
+                      _selectedIds.add(supplement.id);
+                    } else {
+                      _selectedIds.remove(supplement.id);
+                    }
+                  });
+                },
+                title: Text(supplement.name),
+                subtitle: Text('+${supplement.price.toStringAsFixed(2)} €'),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+              );
+            }),
+
+            const SizedBox(height: 8),
+            const Divider(),
+            const SizedBox(height: 8),
+
+            // Total
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Total:',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                Text(
+                  '${_totalPrice.toStringAsFixed(2)} €',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Annuler'),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.pop(context, {
+            'supplements': _selectedSupplements,
+            'supplementTotal': _supplementTotal,
+          }),
+          child: const Text('S\'inscrire'),
+        ),
+      ],
+    );
   }
 }

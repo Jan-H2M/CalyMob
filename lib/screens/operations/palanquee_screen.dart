@@ -563,6 +563,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
     String memberName,
     String exerciceCode,
     String exerciceDescription,
+    String? membreNiveau,
   ) {
     final existing = _exerciceObservations[memberId]?[exerciceCode];
     String result = existing?.result ?? 'en_progres';
@@ -684,8 +685,11 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                         id: existing?.id ?? '',
                         memberId: memberId,
                         memberName: memberName,
+                        memberNiveau: membreNiveau ?? '',
                         contextType: 'operation',
                         contextId: widget.operation.id,
+                        contextDate: widget.operation.dateDebut ?? DateTime.now(),
+                        contextTitle: widget.operation.titre,
                         category: 'lifras',
                         exerciceCode: exerciceCode,
                         exerciceDescription: exerciceDescription,
@@ -998,12 +1002,13 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                                 return GestureDetector(
                                   onTap: () {
                                     final exercice = _exerciceCatalog.values
-                                        .firstWhere((ex) => ex.code == code, orElse: () => ExerciceLIFRAS(id: '', code: code, nom: code));
+                                        .firstWhere((ex) => ex.code == code, orElse: () => ExerciceLIFRAS(id: '', code: code, niveau: NiveauLIFRAS.nb, description: code));
                                     _showExerciseEvaluationSheet(
                                       p.membreId,
                                       '${(p.membreNom ?? "").toUpperCase()} ${p.membrePrenom ?? ""}',
                                       code,
-                                      exercice.nom,
+                                      exercice.description,
+                                      p.membreNiveau,
                                     );
                                   },
                                   child: Container(
@@ -1243,12 +1248,13 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                       return GestureDetector(
                         onTap: () {
                           final exercice = _exerciceCatalog.values
-                              .firstWhere((ex) => ex.code == code, orElse: () => ExerciceLIFRAS(id: '', code: code, nom: code));
+                              .firstWhere((ex) => ex.code == code, orElse: () => ExerciceLIFRAS(id: '', code: code, niveau: NiveauLIFRAS.nb, description: code));
                           _showExerciseEvaluationSheet(
                             p.membreId,
                             '${p.membreNom.toUpperCase()} ${p.membrePrenom}',
                             code,
-                            exercice.nom,
+                            exercice.description,
+                            p.membreNiveau,
                           );
                         },
                         child: Container(
