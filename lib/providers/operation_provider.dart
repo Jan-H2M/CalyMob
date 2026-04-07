@@ -14,6 +14,7 @@ class OperationProvider with ChangeNotifier {
   // Stream subscriptions for memory management
   StreamSubscription<List<Operation>>? _operationsSubscription;
   StreamSubscription<List<UserEventRegistration>>? _userRegistrationsSubscription;
+  StreamSubscription<List<ParticipantOperation>>? _participantsSubscription;
 
   List<Operation> _operations = [];
   Operation? _selectedOperation;
@@ -44,6 +45,7 @@ class OperationProvider with ChangeNotifier {
   void dispose() {
     _operationsSubscription?.cancel();
     _userRegistrationsSubscription?.cancel();
+    _participantsSubscription?.cancel();
     super.dispose();
   }
 
@@ -112,8 +114,8 @@ class OperationProvider with ChangeNotifier {
         final count = await _operationService.countParticipants(clubId, operationId);
         _participantCounts[operationId] = count;
 
-        // Charger la liste des participants
-        _selectedOperationParticipants = await _operationService.getParticipants(clubId, operationId);
+        // Écouter la liste des participants en temps réel (payment status updates)
+        _listenToParticipants(clubId, operationId);
 
         // Vérifier si utilisateur inscrit
         final isRegistered = await _operationService.isUserRegistered(
@@ -284,7 +286,29 @@ class OperationProvider with ChangeNotifier {
     }
   }
 
+  /// Écouter les participants en temps réel (stream)
+  /// Met à jour automatiquement quand le statut de paiement change dans Firestore
+  void _listenToParticipants(String clubId, String operationId) {
+    // Cancel any existing participants subscription
+    _participantsSubscription?.cancel();
+
+    _participantsSubscription = _operationService
+        .getParticipantsStream(clubId, operationId)
+        .listen(
+      (participants) {
+        _selectedOperationParticipants = participants;
+        _participantCounts[operationId] = participants.length;
+        notifyListeners();
+        debugPrint('🔄 [Stream] Participants mis à jour: ${participants.length}');
+      },
+      onError: (e) {
+        debugPrint('❌ Erreur stream participants: $e');
+      },
+    );
+  }
+
   /// Recharger la liste des participants pour l'opération sélectionnée
+  /// Note: With the stream listener active, this is mainly used as a fallback
   Future<void> reloadParticipants(String clubId, String operationId) async {
     try {
       _selectedOperationParticipants = await _operationService.getParticipants(

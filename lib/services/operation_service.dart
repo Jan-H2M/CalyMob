@@ -185,7 +185,7 @@ class OperationService {
     }
   }
 
-  /// Obtenir les participants d'une opération
+  /// Obtenir les participants d'une opération (one-time read)
   /// Uses subcollection: clubs/{clubId}/operations/{operationId}/inscriptions
   Future<List<ParticipantOperation>> getParticipants(
     String clubId,
@@ -202,8 +202,12 @@ class OperationService {
           .map((doc) => ParticipantOperation.fromFirestore(doc))
           .toList();
 
-      // Sort by date locally instead of in query (avoids needing composite index)
-      participants.sort((a, b) => a.dateInscription.compareTo(b.dateInscription));
+      // Sort by first name (prénom), then last name as tiebreaker
+      participants.sort((a, b) {
+        final firstNameCompare = (a.membrePrenom ?? '').toLowerCase().compareTo((b.membrePrenom ?? '').toLowerCase());
+        if (firstNameCompare != 0) return firstNameCompare;
+        return (a.membreNom ?? '').toLowerCase().compareTo((b.membreNom ?? '').toLowerCase());
+      });
 
       debugPrint('👥 ${participants.length} participants chargés pour $operationId');
       return participants;
@@ -211,6 +215,32 @@ class OperationService {
       debugPrint('❌ Erreur chargement participants: $e');
       return [];
     }
+  }
+
+  /// Stream des participants d'une opération (real-time updates)
+  /// Listens to changes in inscriptions subcollection for live payment status updates
+  Stream<List<ParticipantOperation>> getParticipantsStream(
+    String clubId,
+    String operationId,
+  ) {
+    return _firestore
+        .collection('clubs/$clubId/operations/$operationId/inscriptions')
+        .snapshots()
+        .map((snapshot) {
+      final participants = snapshot.docs
+          .map((doc) => ParticipantOperation.fromFirestore(doc))
+          .toList();
+
+      // Sort by first name (prénom), then last name as tiebreaker
+      participants.sort((a, b) {
+        final firstNameCompare = (a.membrePrenom ?? '').toLowerCase().compareTo((b.membrePrenom ?? '').toLowerCase());
+        if (firstNameCompare != 0) return firstNameCompare;
+        return (a.membreNom ?? '').toLowerCase().compareTo((b.membreNom ?? '').toLowerCase());
+      });
+
+      debugPrint('👥 [Stream] ${participants.length} participants mis à jour pour $operationId');
+      return participants;
+    });
   }
 
   /// Mettre à jour les exercices sélectionnés pour une inscription
