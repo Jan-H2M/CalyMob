@@ -21,6 +21,8 @@ class ParticipantOperation {
   final double supplementTotal; // Somme des prix des suppléments
   final String? paymentStatus; // Payment status: open, pending, paid, failed, canceled, expired
   final bool transactionMatched; // True when bank transaction is matched in CalyCompta
+  final String? transactionId; // ID of linked bank transaction (fallback source of truth)
+  final String? modePaiement; // Payment mode: 'bank', 'cash', 'other'
   final bool? present; // True when member has been marked present at the event
   final DateTime? presentAt; // Timestamp when marked present
   final String? presentBy; // User ID who marked them present
@@ -45,6 +47,8 @@ class ParticipantOperation {
     this.supplementTotal = 0,
     this.paymentStatus,
     this.transactionMatched = false,
+    this.transactionId,
+    this.modePaiement,
     this.present,
     this.presentAt,
     this.presentBy,
@@ -52,11 +56,21 @@ class ParticipantOperation {
     this.isGuest = false,
   });
 
-  /// Payment is confirmed but bank transaction not yet matched
-  bool get isPaidAwaitingBank => paye && !transactionMatched;
+  /// True when the bank-side reconciliation is considered done.
+  ///
+  /// Accepts either:
+  /// - transactionMatched=true (canonical flag written by CalyCompta)
+  /// - transactionId != null (fallback: a bank transaction is linked even
+  ///   if the transaction_matched flag got out of sync from legacy code
+  ///   paths that forgot to set it)
+  bool get _hasMatchedBankTransaction =>
+      transactionMatched || (transactionId != null && transactionId!.isNotEmpty);
 
-  /// Payment is fully confirmed (bank transaction matched)
-  bool get isFullyPaid => paye && transactionMatched;
+  /// Payment is confirmed but bank transaction not yet matched
+  bool get isPaidAwaitingBank => paye && !_hasMatchedBankTransaction && modePaiement != 'cash';
+
+  /// Payment is fully confirmed (bank transaction matched, or paid in cash)
+  bool get isFullyPaid => paye && (_hasMatchedBankTransaction || modePaiement == 'cash');
 
   /// Total price including supplements
   double get totalPrix => prix + supplementTotal;
@@ -64,10 +78,13 @@ class ParticipantOperation {
   /// Get display status for payment
   String get paymentDisplayStatus {
     // Fully paid with bank transaction matched
-    if (paye && transactionMatched) return 'Payé';
+    if (paye && _hasMatchedBankTransaction) return 'Payé';
+
+    // Paid in cash (no bank transaction involved)
+    if (paye && modePaiement == 'cash') return 'Espèces';
 
     // Paid but awaiting bank reconciliation
-    if (paye && !transactionMatched) return 'Payé via CalyMob\nEn attente banque';
+    if (paye) return 'Payé via CalyMob\nEn attente banque';
 
     // Check payment_status for pending states
     switch (paymentStatus) {
@@ -84,8 +101,9 @@ class ParticipantOperation {
 
   /// Get payment status category for styling
   String get paymentStatusCategory {
-    if (paye && transactionMatched) return 'paid';
-    if (paye && !transactionMatched) return 'pending_bank';
+    if (paye && _hasMatchedBankTransaction) return 'paid';
+    if (paye && modePaiement == 'cash') return 'cash';
+    if (paye) return 'pending_bank';
     switch (paymentStatus) {
       case 'qr_email_sent':
         return 'qr_sent';
@@ -132,6 +150,8 @@ class ParticipantOperation {
       supplementTotal: (data['supplement_total'] ?? 0).toDouble(),
       paymentStatus: data['payment_status'],
       transactionMatched: data['transaction_matched'] ?? false,
+      transactionId: data['transaction_id'] as String?,
+      modePaiement: data['mode_paiement'] as String?,
       present: data['present'],
       presentAt: (data['present_at'] as Timestamp?)?.toDate(),
       presentBy: data['present_by'],
@@ -179,6 +199,8 @@ class ParticipantOperation {
       'supplement_total': supplementTotal,
       'payment_status': paymentStatus,
       'transaction_matched': transactionMatched,
+      'transaction_id': transactionId,
+      'mode_paiement': modePaiement,
       'present': present,
       'present_at': presentAt != null ? Timestamp.fromDate(presentAt!) : null,
       'present_by': presentBy,
@@ -208,6 +230,8 @@ class ParticipantOperation {
     double? supplementTotal,
     String? paymentStatus,
     bool? transactionMatched,
+    String? transactionId,
+    String? modePaiement,
     bool? present,
     DateTime? presentAt,
     String? presentBy,
@@ -232,6 +256,8 @@ class ParticipantOperation {
       supplementTotal: supplementTotal ?? this.supplementTotal,
       paymentStatus: paymentStatus ?? this.paymentStatus,
       transactionMatched: transactionMatched ?? this.transactionMatched,
+      transactionId: transactionId ?? this.transactionId,
+      modePaiement: modePaiement ?? this.modePaiement,
       present: present ?? this.present,
       presentAt: presentAt ?? this.presentAt,
       presentBy: presentBy ?? this.presentBy,
