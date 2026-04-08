@@ -187,52 +187,6 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
     }
   }
 
-  Future<void> _handlePasswordReset() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Réinitialiser le mot de passe'),
-        content: const Text(
-          'Un email de réinitialisation sera envoyé à votre adresse email.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Annuler'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Envoyer'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true && mounted) {
-      try {
-        await context.read<AuthProvider>().sendPasswordResetEmail();
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ Email de réinitialisation envoyé'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('❌ Erreur: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    }
-  }
-
   Future<void> _handleLogout() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -745,13 +699,6 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
               context,
               MaterialPageRoute(builder: (_) => const SettingsScreen()),
             ),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.lock, color: Colors.blue),
-            title: const Text('Changer le mot de passe'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: _handlePasswordReset,
           ),
           const Divider(height: 1),
           ListTile(
