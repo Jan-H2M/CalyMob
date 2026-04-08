@@ -83,7 +83,7 @@ async function getBadgeCount(clubId, memberId) {
 /**
  * Verzamel FCM tokens en groepeer per member ID
  * Retourneert een Map van memberId -> { tokens: string[], badgeCount: number }
- * Logt ook warnings voor members met stale tokens (>30 dagen niet vernieuwd)
+ * Logt ook warnings voor members met stale tokens (>60 dagen niet vernieuwd)
  *
  * @param {string} clubId - Club ID
  * @param {Array} memberDocs - Array van Firestore document snapshots
@@ -95,9 +95,13 @@ function collectTokensAndMembers(memberDocs, senderId) {
   const tokenToMember = new Map(); // token -> { memberId, index }
   const memberTokenGroups = new Map(); // memberId -> [tokens]
   const recipientIds = [];
-  const staleTokenMembers = []; // Members met tokens ouder dan 30 dagen
+  const staleTokenMembers = []; // Members met tokens ouder dan 60 dagen
 
-  const STALE_TOKEN_DAYS = 30;
+  // Fix #10: verhoogd van 30 naar 60 dagen. Actieve gebruikers openen de
+  // app minstens 1x per 2 maanden tijdens het duikseizoen; een drempel van
+  // 30 dagen was te agressief en vulde de logs met false positives voor
+  // users die gewoon op vakantie waren.
+  const STALE_TOKEN_DAYS = 60;
   const staleThreshold = Date.now() - (STALE_TOKEN_DAYS * 24 * 60 * 60 * 1000);
 
   memberDocs.forEach(doc => {
@@ -233,6 +237,16 @@ async function sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload
   }
 
   await Promise.all(sendPromises);
+
+  // Fix #10: LOUD alert wanneer delivery degraded is. Een info-log werd
+  // in de praktijk nooit opgemerkt; door dit als console.error te loggen
+  // komt het in de Cloud Functions "errors" dashboard en triggered het
+  // onze Firebase alert policy.
+  if (totalFailure > totalSuccess && (totalSuccess + totalFailure) > 3) {
+    console.error(
+      `🚨 NOTIF DELIVERY DEGRADED (${category}): ${totalFailure} failures vs ${totalSuccess} successes — check token freshness en rules whitelist`
+    );
+  }
 
   return { successCount: totalSuccess, failureCount: totalFailure };
 }

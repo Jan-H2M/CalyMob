@@ -225,6 +225,26 @@ class AuthProvider with ChangeNotifier {
       _isLoading = true;
       notifyListeners();
 
+      // Fix #4: verwijder het FCM token VOOR we uitloggen, anders hebben we
+      // straks geen user-context meer om de Firestore-write mee te doen en
+      // blijft het token hangen op het member document. Gevolg zou zijn dat
+      // de volgende push naar deze user (bvb. na een herinstall met nieuwe
+      // token) nog steeds probeerde af te leveren op dit dode token, wat de
+      // delivery degraded en bij genoeg failures de Cloud Function de hele
+      // batch als falend rapporteert.
+      final uid = _currentUser?.uid;
+      if (uid != null) {
+        try {
+          await _notificationService.removeTokenFromFirestore(
+            FirebaseConfig.defaultClubId,
+            uid,
+          );
+        } catch (e) {
+          debugPrint('⚠️ removeTokenFromFirestore failed at logout: $e');
+        }
+      }
+      _notificationService.stopListeningForTokenRefresh();
+
       // 1. Supprimer session Firestore
       await _sessionService.deleteSession();
 
@@ -234,6 +254,7 @@ class AuthProvider with ChangeNotifier {
       _currentUser = null;
       _isLoading = false;
       _errorMessage = null;
+      _freshInstallHandled = false;
       CrashlyticsService.clearUserContext();
       _biometricService.setUserId(null);
       notifyListeners();
@@ -297,6 +318,14 @@ class AuthProvider with ChangeNotifier {
       }
 
       debugPrint('🗑️ Début suppression compte: $userId');
+
+      // Fix #4: eerst FCM token wegdoen zolang we nog geauthenticeerd zijn.
+      try {
+        await _notificationService.removeTokenFromFirestore(clubId, userId);
+      } catch (e) {
+        debugPrint('⚠️ removeTokenFromFirestore failed at deleteAccount: $e');
+      }
+      _notificationService.stopListeningForTokenRefresh();
 
       // 1. Supprimer les données utilisateur dans Firestore/Storage
       await _profileService.deleteUserData(clubId, userId);

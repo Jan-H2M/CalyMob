@@ -296,7 +296,50 @@ class NotificationService {
 
       // Vérifier si c'est la première installation (app_first_installed n'existe pas)
       final doc = await memberRef.get();
-      final isFirstInstall = doc.data()?['app_first_installed'] == null;
+      final existingData = doc.data();
+      final isFirstInstall = existingData?['app_first_installed'] == null;
+
+      // Fix #5: detecteer een app-update door de vorige version/build te
+      // vergelijken met de huidige. iOS APNs tokens blijven soms "plakken"
+      // aan een oude build en leveren stille delivery failures op. Bij een
+      // versie-change forceren we een volledige token-rotatie: oude token
+      // uit het fcm_tokens array verwijderen, deleteToken() bij FCM, dan
+      // een verse getToken() hieronder.
+      final previousVersion = existingData?['app_version'] as String?;
+      final previousBuild = existingData?['app_build_number'] as String?;
+      final isVersionChange = previousVersion != null &&
+          (previousVersion != appInfo['version'] ||
+              previousBuild != appInfo['buildNumber']);
+
+      if (isVersionChange) {
+        debugPrint(
+            '🔄 App-versie gewijzigd ($previousVersion+$previousBuild → ${appInfo['version']}+${appInfo['buildNumber']}) — force token rotatie');
+        try {
+          final oldToken = await _messaging.getToken();
+          if (oldToken != null) {
+            // Verwijder oude token uit het array zodat we geen dode
+            // duplicate bijhouden naast de verse token straks.
+            try {
+              await memberRef.update({
+                'fcm_tokens': FieldValue.arrayRemove([oldToken]),
+              });
+            } catch (e) {
+              debugPrint('⚠️ arrayRemove oude token faalde (niet erg): $e');
+            }
+          }
+          await _messaging.deleteToken();
+          debugPrint('✅ Oude FCM token ingetrokken — verse getToken() volgt');
+        } catch (e, stack) {
+          // Non-fatal: als rotatie faalt gebruiken we gewoon de bestaande
+          // token en loggen het naar Crashlytics voor diagnose.
+          debugPrint('⚠️ Force token rotatie faalde (non-fatal): $e');
+          CrashlyticsService.notificationError(
+            e,
+            stack,
+            'force token rotation failed on version change',
+          );
+        }
+      }
 
       // Préparer les données de base (ALTIJD gezet, onafhankelijk van FCM)
       updateData.addAll(<String, dynamic>{
