@@ -41,9 +41,11 @@ exports.checkNodaPaymentStatus = checkNodaPaymentStatus;
 const { onNewEventMessage } = require('./src/notifications/onNewEventMessage');
 exports.onNewEventMessage = onNewEventMessage;
 
-// Clean up unread counts when event is closed/cancelled
-const { onEventStatusChange } = require('./src/notifications/onEventStatusChange');
-exports.onEventStatusChange = onEventStatusChange;
+// NOTE (Fix #8): onEventStatusChange is removed. It attempted to decrement
+// per-member unread counts when an event was closed/cancelled, but the client
+// already excludes closed events from the count() query driving the badge.
+// That made the function both redundant and broken (wrong delta calculation).
+// See docs/NOTIFICATIONS_MASTER.md § Fix #8.
 
 // Push notifications for club announcements
 const { onNewAnnouncement } = require('./src/notifications/onNewAnnouncement');

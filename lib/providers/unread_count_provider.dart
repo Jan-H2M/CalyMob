@@ -173,6 +173,12 @@ class UnreadCountProvider extends ChangeNotifier {
   /// Schrijf de lokaal berekende counts terug naar het Firestore member document.
   /// Dit synchroniseert de server-side unread_counts (gebruikt door Cloud Functions
   /// voor APNs badge) met de client-side LocalReadTracker counts.
+  ///
+  /// BELANGRIJK (Fix #2): we gebruiken dot-notation per veld en schrijven
+  /// `unread_counts.total` NIET vanuit de client. De Cloud Functions beheren
+  /// `total` via `FieldValue.increment()`. Een volledige map-overwrite zou
+  /// atomische increments die tussen onze read en write plaatsvonden wegvagen
+  /// (race condition) en de badge laten terugspringen naar een stale waarde.
   Future<void> _syncCountsToFirestore(
     int announcements, int eventMessages, int teamMessages, int sessionMessages,
   ) async {
@@ -185,19 +191,15 @@ class UnreadCountProvider extends ChangeNotifier {
           .collection('members')
           .doc(_userId!);
 
-      final newTotal = announcements + eventMessages + teamMessages + sessionMessages;
-
       await memberRef.update({
-        'unread_counts': {
-          'announcements': announcements,
-          'event_messages': eventMessages,
-          'team_messages': teamMessages,
-          'session_messages': sessionMessages,
-          'total': newTotal,
-          'last_updated': FieldValue.serverTimestamp(),
-        },
+        'unread_counts.announcements': announcements,
+        'unread_counts.event_messages': eventMessages,
+        'unread_counts.team_messages': teamMessages,
+        'unread_counts.session_messages': sessionMessages,
+        'unread_counts.last_updated': FieldValue.serverTimestamp(),
       });
-      debugPrint('🔄 Badge sync: wrote unread_counts to Firestore (total: $newTotal)');
+      debugPrint(
+          '🔄 Badge sync: wrote unread_counts (ann=$announcements evt=$eventMessages team=$teamMessages sess=$sessionMessages) — total managed server-side');
     } catch (e) {
       debugPrint('⚠️ Badge sync failed: $e');
     }

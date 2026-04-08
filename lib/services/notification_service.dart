@@ -284,6 +284,9 @@ class NotificationService {
   /// Note: app_installed et device info worden ALTIJD gezet, ook zonder FCM token.
   /// Zo tellen gebruikers die notificaties weigeren toch mee in de adoptiecijfers.
   Future<void> saveTokenToFirestore(String clubId, String userId) async {
+    // Hijs updateData buiten de try-scope zodat het catch-block de veldnamen
+    // kan loggen (diagnose voor Firestore-rules whitelist drift).
+    final updateData = <String, dynamic>{};
     try {
       // Récupérer les informations de l'appareil et de l'app (altijd nodig)
       final deviceInfo = await _getDeviceInfo();
@@ -296,7 +299,7 @@ class NotificationService {
       final isFirstInstall = doc.data()?['app_first_installed'] == null;
 
       // Préparer les données de base (ALTIJD gezet, onafhankelijk van FCM)
-      final updateData = <String, dynamic>{
+      updateData.addAll(<String, dynamic>{
         // App installation tracking — altijd zetten
         'app_installed': true,
         'app_platform': deviceInfo['platform'],
@@ -313,7 +316,7 @@ class NotificationService {
         'device_screen_width': deviceInfo['screenWidth'],
         'device_screen_height': deviceInfo['screenHeight'],
         'device_pixel_ratio': deviceInfo['pixelRatio'],
-      };
+      });
 
       // Ajouter app_first_installed uniquement si c'est la première installation
       if (isFirstInstall) {
@@ -333,12 +336,30 @@ class NotificationService {
 
       await memberRef.update(updateData);
 
-      debugPrint('✅ App info${token != null ? ' + FCM token' : ''} sauvegardés dans Firestore');
+      debugPrint('OK saveTokenToFirestore (${updateData.keys.length} fields)${token != null ? " + FCM token" : ""}');
       debugPrint('   Platform: ${deviceInfo['platform']}, Model: ${deviceInfo['model']}');
       debugPrint('   App version: ${appInfo['version']} (${appInfo['buildNumber']})');
     } catch (e, stack) {
-      debugPrint('❌ Erreur sauvegarde app info/token FCM: $e');
-      CrashlyticsService.notificationError(e, stack, 'saveTokenToFirestore failed');
+      // LOUD failure: typically Firestore rules whitelist drift — a field in
+      // updateData is not in the members whitelist, so the rule's hasOnly()
+      // check rejects the entire write. Silent in the old code, which is how
+      // we ended up with 25 users showing as "Non installée" in the dashboard
+      // while the app had in fact been opened. Dump the field list so this
+      // failure mode is immediately diagnosable.
+      final fields = updateData.keys.join(', ');
+      debugPrint('CRITICAL saveTokenToFirestore FAILED: $e');
+      debugPrint('         Fields attempted: $fields');
+      debugPrint('         Likely Firestore rules whitelist drift: one of these');
+      debugPrint('         fields is not in the /clubs/{clubId}/members/{memberId}');
+      debugPrint('         whitelist, so hasOnly() rejects the whole write.');
+      debugPrint('         => app_installed NOT set. App-adoption dashboard will');
+      debugPrint('            show stale data for this user until rules are fixed');
+      debugPrint('            and the user reopens the app.');
+      CrashlyticsService.notificationError(
+        e,
+        stack,
+        'saveTokenToFirestore FAILED fields=[$fields]',
+      );
     }
   }
 
@@ -564,7 +585,15 @@ class NotificationService {
     }
   }
 
-  /// Mettre à jour le badge depuis le compteur Firestore unread_counts
+  /// Mettre à jour le badge depuis le compteur Firestore unread_counts.
+  ///
+  /// Fix #3: lees enkel `unread_counts.total`. De vorige implementatie
+  /// sommeerde ALLE int-velden in de map (dus total + alle categorieën),
+  /// wat resulteerde in een dubbele telling (badge toonde 2× het juiste
+  /// aantal). `total` wordt server-side beheerd via `FieldValue.increment`.
+  ///
+  /// Veiligheidsnet: als `total` ontbreekt of negatief is, vallen we terug
+  /// op de som van de categorie-velden.
   Future<void> updateBadgeFromFirestore(String clubId, String userId) async {
     try {
       final doc = await _firestore
@@ -575,12 +604,26 @@ class NotificationService {
       if (data == null) return;
 
       final unreadCounts = data['unread_counts'] as Map<String, dynamic>? ?? {};
-      int total = 0;
-      for (final value in unreadCounts.values) {
-        if (value is int) total += value;
+      int total = (unreadCounts['total'] as num?)?.toInt() ?? -1;
+
+      // Veiligheidsnet: ontbrekende of negatieve total → som categorieën
+      if (total < 0) {
+        total = 0;
+        for (final key in const [
+          'announcements',
+          'event_messages',
+          'team_messages',
+          'session_messages',
+          'medical_certificates',
+        ]) {
+          final value = unreadCounts[key];
+          if (value is num) total += value.toInt();
+        }
+        debugPrint(
+            '⚠️ unread_counts.total missing/negative — fallback sum = $total');
       }
 
-      await setBadge(total);
+      await setBadge(total.clamp(0, 9999));
     } catch (e) {
       debugPrint('⚠️ Badge Firestore update failed (non-fatal): $e');
     }

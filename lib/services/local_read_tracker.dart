@@ -9,9 +9,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///   lastRead_operation_{opId}
 ///   lastRead_team_{channelId}
 ///   lastRead_session_{sessionId}_{groupType}_{groupLevel}
+///   localReadTracker_globalBaseline  (Fix #7 — "Marquer tout comme lu")
 class LocalReadTracker {
   static const _prefix = 'lastRead_';
   static const _firstLaunchKey = 'localReadTracker_initialized';
+  static const _globalBaselineKey = 'localReadTracker_globalBaseline';
   SharedPreferences? _prefs;
 
   /// Singleton instance
@@ -23,8 +25,16 @@ class LocalReadTracker {
   /// zodat bestaande berichten niet als ongelezen tellen.
   DateTime? _installBaseline;
 
+  /// Globale "alles gelezen" baseline — gezet door [markAllAsRead] en
+  /// gebruikt door [getLastRead] om een floor te leggen op alle keys
+  /// tegelijk. Dit dekt ook conversaties die de user nog nooit opende.
+  DateTime? _globalReadBaseline;
+
   /// Haal de baseline op (null = niet eerste launch, gebruik gewoon _epoch)
   DateTime? get installBaseline => _installBaseline;
+
+  /// De globale "alles gelezen" baseline (null als nooit ingesteld).
+  DateTime? get globalReadBaseline => _globalReadBaseline;
 
   /// Initialiseer SharedPreferences. Moet 1x aangeroepen worden bij app start.
   Future<void> init() async {
@@ -40,15 +50,43 @@ class LocalReadTracker {
           '🆕 LocalReadTracker: verse installatie gedetecteerd, baseline=$_installBaseline');
     }
 
+    // Herlaad de globale baseline (als die al gezet werd in een vorige sessie)
+    final globalMillis = _prefs?.getInt(_globalBaselineKey);
+    if (globalMillis != null) {
+      _globalReadBaseline =
+          DateTime.fromMillisecondsSinceEpoch(globalMillis);
+    }
+
     debugPrint('✅ LocalReadTracker: geïnitialiseerd');
   }
 
   /// Haal de laatste gelezen timestamp op voor een key.
   /// Retourneert null als de key niet bestaat (= nooit gelezen).
+  ///
+  /// Als er een globale baseline gezet werd via [markAllAsRead], wordt
+  /// het maximum van (stored, globalBaseline) teruggegeven zodat "alles
+  /// als gelezen markeren" ook werkt voor conversaties waarvoor nog geen
+  /// individuele lastRead-timestamp bestond.
   DateTime? getLastRead(String key) {
     final millis = _prefs?.getInt('$_prefix$key');
-    if (millis == null) return null;
-    return DateTime.fromMillisecondsSinceEpoch(millis);
+    final stored =
+        millis == null ? null : DateTime.fromMillisecondsSinceEpoch(millis);
+
+    if (_globalReadBaseline == null) return stored;
+    if (stored == null) return _globalReadBaseline;
+    return stored.isAfter(_globalReadBaseline!)
+        ? stored
+        : _globalReadBaseline;
+  }
+
+  /// Markeer ALLES als gelezen tot op dit moment. Zet een globale
+  /// "now" baseline die [getLastRead] gebruikt als floor voor elke key.
+  /// Gebruikt door de "Marquer tout comme lu" knop in Settings (Fix #7).
+  Future<void> markAllAsRead() async {
+    final now = DateTime.now();
+    _globalReadBaseline = now;
+    await _prefs?.setInt(_globalBaselineKey, now.millisecondsSinceEpoch);
+    debugPrint('📖 LocalReadTracker: markAllAsRead — globalBaseline=$now');
   }
 
   /// Markeer een conversatie als gelezen op dit moment.
@@ -68,12 +106,14 @@ class LocalReadTracker {
     }
   }
 
-  /// Wis alle read timestamps (bij logout).
+  /// Wis alle read timestamps + globale baseline (bij logout).
   Future<void> resetAll() async {
     final keys = _prefs?.getKeys().where((k) => k.startsWith(_prefix)) ?? [];
     for (final key in keys) {
       await _prefs?.remove(key);
     }
+    await _prefs?.remove(_globalBaselineKey);
+    _globalReadBaseline = null;
     debugPrint('🗑️ LocalReadTracker: alles gewist');
   }
 }

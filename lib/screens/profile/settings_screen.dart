@@ -14,6 +14,9 @@ import '../../services/profile_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/biometric_service.dart';
 import '../../services/app_update_service.dart';
+import '../../services/local_read_tracker.dart';
+import '../../providers/unread_count_provider.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'ocean_settings_screen.dart';
 import 'privacy_policy_screen.dart';
 import 'change_password_screen.dart';
@@ -825,10 +828,117 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 );
               },
             ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(
+                Icons.mark_email_read,
+                color: AppColors.middenblauw,
+              ),
+              title: const Text('Marquer tout comme lu'),
+              subtitle: const Text(
+                'Remettre le badge à zéro et effacer les notifications en attente',
+                style: TextStyle(fontSize: 12),
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _markAllAsRead,
+            ),
           ],
         ],
       ),
     );
+  }
+
+  /// Fix #7: Marquer tout comme lu — zet wildcard baseline lokaal, reset
+  /// Firestore counters, clear badge, cancel alle pending notificaties,
+  /// en refresh de UnreadCountProvider.
+  Future<void> _markAllAsRead() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Tout marquer comme lu ?'),
+        content: const Text(
+          'Tous les messages et annonces non lus seront considérés comme lus. '
+          'Cette action ne peut pas être annulée.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.middenblauw,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Confirmer'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final userId = FirebaseAuth.instance.currentUser?.uid;
+      if (userId == null) {
+        throw Exception('Utilisateur non connecté');
+      }
+
+      // 1. Zet de globale "alles gelezen" baseline lokaal
+      await LocalReadTracker().markAllAsRead();
+
+      // 2. Reset Firestore counters via dot-notation
+      await FirebaseFirestore.instance
+          .collection('clubs')
+          .doc(_clubId)
+          .collection('members')
+          .doc(userId)
+          .update({
+        'unread_counts.announcements': 0,
+        'unread_counts.event_messages': 0,
+        'unread_counts.team_messages': 0,
+        'unread_counts.session_messages': 0,
+        'unread_counts.medical_certificates': 0,
+        'unread_counts.total': 0,
+        'unread_counts.last_updated': FieldValue.serverTimestamp(),
+      });
+
+      // 3. Wis badge + pending notificaties
+      await _notificationService.clearBadge();
+      try {
+        await FlutterLocalNotificationsPlugin().cancelAll();
+      } catch (e) {
+        debugPrint('⚠️ cancelAll failed (niet erg): $e');
+      }
+
+      // 4. Refresh de UnreadCountProvider zodat de UI direct bijwerkt
+      if (mounted) {
+        await context.read<UnreadCountProvider>().refresh();
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Tous les messages marqués comme lus'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Erreur: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   Widget _buildPrivacySection(MemberProfile profile) {

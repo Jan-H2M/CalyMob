@@ -45,6 +45,7 @@ import 'screens/announcements/announcement_detail_screen.dart';
 import 'screens/teams/team_chat_screen.dart';
 import 'screens/piscine/session_chat_screen.dart';
 import 'screens/piscine/session_detail_screen.dart';
+import 'screens/profile/medical_certification_screen.dart';
 
 // Models (pour la navigation depuis les notifications)
 import 'models/announcement.dart';
@@ -58,6 +59,9 @@ import 'config/firebase_config.dart';
 
 // Firestore (pour fetch depuis notifications)
 import 'package:cloud_firestore/cloud_firestore.dart';
+// hide AuthProvider — firebase_auth exports its own AuthProvider class which
+// clashes with our providers/auth_provider.dart.
+import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 
 // Sentry
 import 'package:sentry_flutter/sentry_flutter.dart';
@@ -367,6 +371,19 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                 ),
               );
             }
+          }
+          break;
+
+        // Fix #9: medical certificate status change
+        // De Cloud Function `onMedicalCertStatusChange` stuurt type='medical_certificate'.
+        case 'medical_certificate':
+          final medUserId = FirebaseAuth.instance.currentUser?.uid;
+          if (medUserId != null) {
+            _navigatorKey.currentState?.push(
+              MaterialPageRoute(
+                builder: (_) => MedicalCertificationScreen(userId: medUserId),
+              ),
+            );
           }
           break;
 

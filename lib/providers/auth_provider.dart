@@ -2,12 +2,14 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../services/auth_service.dart';
 import '../services/session_service.dart';
 import '../services/notification_service.dart';
 import '../services/profile_service.dart';
 import '../services/biometric_service.dart';
 import '../services/crashlytics_service.dart';
+import '../services/local_read_tracker.dart';
 import '../config/firebase_config.dart';
 
 /// Provider pour l'état d'authentification
@@ -26,6 +28,11 @@ class AuthProvider with ChangeNotifier {
   String? _displayName;
   bool _isLoading = false;
   String? _errorMessage;
+
+  /// Flag om te voorkomen dat we de fresh-install reset meerdere keren
+  /// aanroepen binnen dezelfde app-sessie (zowel auth-state listener als
+  /// login() triggeren anders beide).
+  bool _freshInstallHandled = false;
 
   // Getters
   User? get currentUser => _currentUser;
@@ -56,8 +63,18 @@ class AuthProvider with ChangeNotifier {
           userId: user.uid,
           clubId: FirebaseConfig.defaultClubId,
         );
+        // Fix #6: bij verse installatie moeten we de unread counters + badge
+        // resetten, anders blijven oude notificaties uit een vorige install
+        // spoken op de badge.
+        unawaited(
+          _resetUnreadCountersIfFreshInstall(
+            FirebaseConfig.defaultClubId,
+            user.uid,
+          ),
+        );
       } else {
         _displayName = null;
+        _freshInstallHandled = false;
         _notificationService.stopListeningForTokenRefresh();
       }
       notifyListeners();
@@ -69,6 +86,60 @@ class AuthProvider with ChangeNotifier {
     _authStateSubscription?.cancel();
     _notificationService.stopListeningForTokenRefresh();
     super.dispose();
+  }
+
+  /// Fix #6: Reset Firestore unread_counts + badge + pending notificaties
+  /// als dit een verse installatie is. De `LocalReadTracker.installBaseline`
+  /// wordt enkel gezet op de allereerste run na (re)installatie — perfect
+  /// signaal om oude badge-state op te ruimen.
+  ///
+  /// Zonder deze reset blijft `unread_counts.total` staan op wat de vorige
+  /// installatie achterliet (bvb. 12) en toont de badge onmiddellijk 12
+  /// ongelezen berichten die de user intussen al lang gezien heeft.
+  Future<void> _resetUnreadCountersIfFreshInstall(
+    String clubId,
+    String userId,
+  ) async {
+    if (_freshInstallHandled) return;
+    _freshInstallHandled = true;
+
+    try {
+      final tracker = LocalReadTracker();
+      await tracker.init();
+      if (tracker.installBaseline == null) {
+        // Niet de eerste run na install → niets doen
+        return;
+      }
+
+      debugPrint(
+          '🆕 Fresh install gedetecteerd — reset unread_counts + badge + pending notifs');
+
+      await _firestore
+          .collection('clubs')
+          .doc(clubId)
+          .collection('members')
+          .doc(userId)
+          .update({
+        'unread_counts.announcements': 0,
+        'unread_counts.event_messages': 0,
+        'unread_counts.team_messages': 0,
+        'unread_counts.session_messages': 0,
+        'unread_counts.medical_certificates': 0,
+        'unread_counts.total': 0,
+        'unread_counts.last_updated': FieldValue.serverTimestamp(),
+      });
+
+      await _notificationService.clearBadge();
+      try {
+        await FlutterLocalNotificationsPlugin().cancelAll();
+      } catch (e) {
+        debugPrint('⚠️ cancelAll failed (niet erg): $e');
+      }
+
+      debugPrint('✅ Fresh install reset OK');
+    } catch (e) {
+      debugPrint('⚠️ _resetUnreadCountersIfFreshInstall failed: $e');
+    }
   }
 
   /// Charger le nom d'affichage depuis Firestore
