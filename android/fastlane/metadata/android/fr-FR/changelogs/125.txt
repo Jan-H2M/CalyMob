@@ -1,0 +1,1 @@
+Cette mise à jour améliore la fiabilité des notifications, corrige l'affichage des paiements et apporte de petites améliorations au profil.
