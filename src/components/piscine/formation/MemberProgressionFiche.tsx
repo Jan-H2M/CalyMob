@@ -479,10 +479,13 @@ async function enrichAttendancesWithThemes(
     const sessionArrays = await Promise.all(sessionPromises);
     const allSessions = sessionArrays.flat();
 
-    // Build maps: operationId → session, also by date for fallback matching
+    // Build maps: sessionId → session (direct match for piscine scans),
+    // operationId → session (event scans), and date → session (fallback).
+    const sessionById = new Map<string, PiscineSession>();
     const sessionByOpId = new Map<string, PiscineSession>();
     const sessionByDate = new Map<string, PiscineSession>(); // 'YYYY-MM-DD' → session
     for (const s of allSessions) {
+      if (s.id) sessionById.set(s.id, s);
       if (s.operationId) sessionByOpId.set(s.operationId, s);
       const dateKey = s.date.toISOString().split('T')[0];
       sessionByDate.set(dateKey, s);
@@ -515,10 +518,15 @@ async function enrichAttendancesWithThemes(
 
       // Try to find matching piscine session
       let session: PiscineSession | undefined;
-      if (att.operation_id) {
+      // 1. Direct match via piscine_session_id (from piscine_sessions/*/attendees)
+      if (att.piscine_session_id) {
+        session = sessionById.get(att.piscine_session_id);
+      }
+      // 2. Via operation_id (event scans on a piscine operation)
+      if (!session && att.operation_id) {
         session = sessionByOpId.get(att.operation_id);
       }
-      // Fallback: match by date
+      // 3. Fallback: match by date
       if (!session) {
         const dateKey = att.checked_in_at.toISOString().split('T')[0];
         session = sessionByDate.get(dateKey);
