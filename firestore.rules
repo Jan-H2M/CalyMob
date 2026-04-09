@@ -25,6 +25,17 @@ service cloud.firestore {
         && getUserData(clubId).app_role == 'superadmin';
     }
 
+    // Encadrants and admins can manage attendee reassignments for piscine
+    function isPiscineFormationEditor(clubId) {
+      let userData = getUserData(clubId);
+      return isAdmin(clubId) || (
+        isAuthenticated()
+        && exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid))
+        && ('clubStatuten' in userData)
+        && userData.clubStatuten.hasAny(['encadrant', 'Encadrant', 'encadrants', 'Encadrants'])
+      );
+    }
+
     // Check if user has a valid session (timeout enforcement)
     // Simplified to avoid circular dependencies during login
     // NOTE: Returns true if session doesn't exist (for when autoLogoutEnabled is disabled)
@@ -480,6 +491,22 @@ service cloud.firestore {
         allow read: if isAuthenticated();
         // Création/Modification/Suppression: admin uniquement
         allow create, update, delete: if isAdmin(clubId) && hasValidSession(clubId);
+
+        // Attendees subcollection - scanner adds attendees here
+        match /attendees/{attendeeId} {
+          // Read: all authenticated club members
+          allow read: if isAuthenticated() &&
+            exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+          // Create: any authenticated club member can scan (mobile app scanner)
+          allow create: if isAuthenticated() &&
+            exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+          // Delete: admin only
+          allow delete: if isAdmin(clubId);
+          // Update: encadrants/admins can reassign a scanned member
+          allow update: if isPiscineFormationEditor(clubId) &&
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['assignedLevel', 'assignedCourseId', 'assignedToMemberId', 'remarks']);
+        }
 
         // Messages subcollection (discussions entre participants)
         match /messages/{messageId} {
