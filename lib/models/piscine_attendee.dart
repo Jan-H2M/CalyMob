@@ -8,6 +8,10 @@ class PiscineAttendee {
   final DateTime scannedAt;
   final String scannedBy;
   final bool isGuest;
+  final String? assignedLevel;
+  final String? assignedCourseId;
+  final String? assignedToMemberId;
+  final String? remarks;
 
   PiscineAttendee({
     required this.id,
@@ -16,6 +20,10 @@ class PiscineAttendee {
     required this.scannedAt,
     required this.scannedBy,
     this.isGuest = false,
+    this.assignedLevel,
+    this.assignedCourseId,
+    this.assignedToMemberId,
+    this.remarks,
   });
 
   factory PiscineAttendee.fromFirestore(DocumentSnapshot doc) {
@@ -27,6 +35,10 @@ class PiscineAttendee {
       scannedAt: (data['scannedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       scannedBy: data['scannedBy'] ?? '',
       isGuest: data['isGuest'] ?? false,
+      assignedLevel: data['assignedLevel'],
+      assignedCourseId: data['assignedCourseId'],
+      assignedToMemberId: data['assignedToMemberId'],
+      remarks: data['remarks'],
     );
   }
 
@@ -37,6 +49,10 @@ class PiscineAttendee {
       'scannedAt': Timestamp.fromDate(scannedAt),
       'scannedBy': scannedBy,
       'isGuest': isGuest,
+      if (assignedLevel != null) 'assignedLevel': assignedLevel,
+      if (assignedCourseId != null) 'assignedCourseId': assignedCourseId,
+      if (assignedToMemberId != null) 'assignedToMemberId': assignedToMemberId,
+      if (remarks != null) 'remarks': remarks,
     };
   }
 }

@@ -3,10 +3,9 @@ import 'package:provider/provider.dart';
 import '../../models/piscine_session.dart';
 import '../../models/piscine_attendee.dart';
 import '../../models/session_message.dart';
-import '../../models/member_profile.dart';
 import '../../services/piscine_session_service.dart';
+import '../../services/member_service.dart';
 import '../../services/session_message_service.dart';
-import '../../services/profile_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../utils/permission_helper.dart';
@@ -17,7 +16,6 @@ import '../../config/piscine_slots.dart';
 import '../../widgets/scanner_modal_sheet.dart';
 import 'theme_edit_dialog.dart';
 import 'session_chat_screen.dart';
-import 'add_attendee_dialog.dart';
 import 'session_evaluation_screen.dart';
 import '../../services/feature_flag_service.dart';
 
@@ -35,20 +33,10 @@ class SessionDetailScreen extends StatefulWidget {
 
 class _SessionDetailScreenState extends State<SessionDetailScreen> {
   final PiscineSessionService _sessionService = PiscineSessionService();
+  final MemberService _memberService = MemberService();
   final SessionMessageService _messageService = SessionMessageService();
-  final ProfileService _profileService = ProfileService();
   late Stream<PiscineSession?> _sessionStream;
   List<SessionChatGroup> _chatGroups = [];
-  MemberProfile? _userProfile;
-
-  /// Check if current user can scan attendance
-  bool get _canScan {
-    if (_userProfile == null) return false;
-    return PermissionHelper.canScan(
-      _userProfile!.clubStatuten,
-      fonctionDefaut: _userProfile!.fonctionDefaut,
-    );
-  }
 
   @override
   void initState() {
@@ -57,10 +45,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     final clubId = FirebaseConfig.defaultClubId;
     final userId = authProvider.currentUser?.uid;
 
-    _sessionStream = _sessionService.getSessionStream(clubId, widget.session.id);
-
-    // Load user profile for permission check
-    _loadUserProfile();
+    _sessionStream =
+        _sessionService.getSessionStream(clubId, widget.session.id);
 
     // Get available chat groups for this user
     if (userId != null) {
@@ -68,19 +54,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         session: widget.session,
         userId: userId,
       );
-    }
-  }
-
-  Future<void> _loadUserProfile() async {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final userId = authProvider.currentUser?.uid ?? '';
-    final clubId = FirebaseConfig.defaultClubId;
-
-    final profile = await _profileService.getProfile(clubId, userId);
-    if (mounted) {
-      setState(() {
-        _userProfile = profile;
-      });
     }
   }
 
@@ -99,51 +72,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     // Refresh after closing scanner
     if (mounted) {
       setState(() {});
-    }
-  }
-
-  /// Show dialog to add attendee manually
-  Future<void> _showAddAttendeeDialog() async {
-    final clubId = FirebaseConfig.defaultClubId;
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final currentUser = authProvider.currentUser;
-
-    if (currentUser == null) return;
-
-    final result = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (context) => AddAttendeeDialog(clubId: clubId),
-    );
-
-    if (result != null && mounted) {
-      try {
-        await _sessionService.addAttendee(
-          clubId: clubId,
-          sessionId: widget.session.id,
-          memberId: result['memberId'] as String,
-          memberName: result['memberName'] as String,
-          scannedBy: currentUser.uid,
-          isGuest: result['isGuest'] as bool,
-        );
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('${result['memberName']} ajouté'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Erreur: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
     }
   }
 
@@ -248,7 +176,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                     _buildGonflageSection(session, userId),
 
                     // Théorie section (if applicable)
-                    if (session.theorie != null && session.theorie!.isNotEmpty) ...[
+                    if (session.theorie != null &&
+                        session.theorie!.isNotEmpty) ...[
                       const SizedBox(height: 16),
                       _buildTheorieSection(session, userId, clubId),
                     ],
@@ -261,7 +190,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
                     // Attendees section - visible for all logged-in users
                     const SizedBox(height: 24),
-                    _buildAttendeesSection(clubId),
+                    _buildAttendeesSection(clubId, session),
                   ],
                 ),
               );
@@ -274,7 +203,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
   Widget _buildGonflageSection(PiscineSession session, String userId) {
     final gonflage = session.gonflage;
-    final totalCount = gonflage.values.fold<int>(0, (sum, list) => sum + list.length);
+    final totalCount =
+        gonflage.values.fold<int>(0, (sum, list) => sum + list.length);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -389,8 +319,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   ),
                 ] else
                   Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
                     child: Text(
                       'Aucun membre assigné',
                       style: TextStyle(
@@ -489,8 +419,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   ),
                 ),
                 // Theme if set
-                if (slotData.theme != null &&
-                    slotData.theme!.isNotEmpty) ...[
+                if (slotData.theme != null && slotData.theme!.isNotEmpty) ...[
                   const Divider(height: 1),
                   Padding(
                     padding: const EdgeInsets.symmetric(
@@ -558,7 +487,629 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     );
   }
 
-  Widget _buildAttendeesSection(String clubId) {
+  bool get _canManageAttendeeAssignments {
+    final memberProvider = Provider.of<MemberProvider>(context, listen: false);
+    final statuten = memberProvider.clubStatuten;
+    final normalized =
+        statuten.map((role) => role.toLowerCase().trim()).toList();
+    return PermissionHelper.isAdmin(statuten) ||
+        normalized.any((role) => role.startsWith('encadrant'));
+  }
+
+  String _slotHeureForLevel(String level) {
+    return level == PiscineLevel.niveau1
+        ? EncadrantSlots.premiereHeure
+        : EncadrantSlots.deuxiemeHeure;
+  }
+
+  String _levelLabel(String level) {
+    return 'Formation ${PiscineLevel.displayName(level)}';
+  }
+
+  String? _getNiveauEnFormation(String? plongeurCode) {
+    if (plongeurCode == null || plongeurCode.trim().isEmpty) return null;
+
+    switch (plongeurCode.trim().toUpperCase()) {
+      case 'NB':
+        return PiscineLevel.niveau1;
+      case '1':
+        return PiscineLevel.niveau2;
+      case '2':
+        return PiscineLevel.niveau3;
+      case '3':
+        return PiscineLevel.niveau4;
+      case '4':
+        return PiscineLevel.am;
+      case 'AM':
+      case 'MC':
+        return PiscineLevel.mc;
+      default:
+        return null;
+    }
+  }
+
+  bool _levelHasSessionContent(PiscineSession session, String level) {
+    final assignment = session.niveaux[level];
+    if (assignment == null) return false;
+
+    final courses = assignment.getCoursesForHeure(_slotHeureForLevel(level));
+    return assignment.encadrants.isNotEmpty ||
+        courses.isNotEmpty ||
+        (assignment.theme?.isNotEmpty ?? false) ||
+        (assignment.theme1ereHeure?.isNotEmpty ?? false) ||
+        (assignment.theme2emeHeure?.isNotEmpty ?? false);
+  }
+
+  List<String> _assignmentLevelsForSession(
+    PiscineSession session, {
+    String? naturalLevel,
+    String? assignedLevel,
+  }) {
+    final levels = <String>[];
+
+    for (final level in PiscineLevel.all) {
+      if (_levelHasSessionContent(session, level) ||
+          level == naturalLevel ||
+          level == assignedLevel) {
+        levels.add(level);
+      }
+    }
+
+    return levels.isNotEmpty ? levels : List<String>.from(PiscineLevel.all);
+  }
+
+  _ResolvedCourseOption? _findCourseInLevel(
+    PiscineSession session,
+    String level,
+    String courseId,
+  ) {
+    final assignment = session.niveaux[level];
+    if (assignment == null) return null;
+
+    final courses = assignment.getCoursesForHeure(_slotHeureForLevel(level));
+    for (var i = 0; i < courses.length; i++) {
+      final course = courses[i];
+      if (course.id == courseId) {
+        return _ResolvedCourseOption(
+          level: level,
+          courseId: course.id,
+          label: 'Groupe ${i + 1}',
+          theme: course.theme,
+        );
+      }
+    }
+
+    return null;
+  }
+
+  _ResolvedCourseOption? _resolveAssignedCourse(
+    PiscineSession session,
+    PiscineAttendee attendee,
+  ) {
+    final courseId = attendee.assignedCourseId;
+    if (courseId == null || courseId.isEmpty) return null;
+
+    final assignedLevel = attendee.assignedLevel;
+    if (assignedLevel != null && assignedLevel.isNotEmpty) {
+      final match = _findCourseInLevel(session, assignedLevel, courseId);
+      if (match != null) return match;
+    }
+
+    for (final level in PiscineLevel.all) {
+      final match = _findCourseInLevel(session, level, courseId);
+      if (match != null) return match;
+    }
+
+    return null;
+  }
+
+  _AttendeeAssignmentSummary? _resolveAttendeeAssignmentSummary(
+    PiscineSession session,
+    PiscineAttendee attendee,
+  ) {
+    final hasLevel =
+        attendee.assignedLevel != null && attendee.assignedLevel!.isNotEmpty;
+    final hasCourse = attendee.assignedCourseId != null &&
+        attendee.assignedCourseId!.isNotEmpty;
+    if (!hasLevel && !hasCourse) return null;
+
+    final resolvedCourse = _resolveAssignedCourse(session, attendee);
+    final level = attendee.assignedLevel ?? resolvedCourse?.level;
+    if (level == null || level.isEmpty) return null;
+
+    return _AttendeeAssignmentSummary(
+      label: resolvedCourse != null
+          ? '${_levelLabel(level)} · ${resolvedCourse.label}'
+          : _levelLabel(level),
+      theme: resolvedCourse?.theme,
+    );
+  }
+
+  Widget _buildAttendeeSubtitle(
+    PiscineSession session,
+    PiscineAttendee attendee,
+  ) {
+    final summary = _resolveAttendeeAssignmentSummary(session, attendee);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          _formatTime(attendee.scannedAt),
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey.shade500,
+          ),
+        ),
+        if (summary != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            summary.label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF4338CA),
+            ),
+          ),
+          if (summary.theme != null && summary.theme!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                summary.theme!,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey.shade600,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildGuestBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.orange.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.orange.withOpacity(0.3)),
+      ),
+      child: const Text(
+        'Invité',
+        style: TextStyle(
+          fontSize: 10,
+          color: Colors.orange,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  Widget? _buildAttendeeTrailing(
+    PiscineAttendee attendee,
+    bool canManageAssignments,
+  ) {
+    if (!attendee.isGuest && !canManageAssignments) return null;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (attendee.isGuest) _buildGuestBadge(),
+        if (canManageAssignments) ...[
+          if (attendee.isGuest) const SizedBox(width: 8),
+          Icon(
+            Icons.chevron_right,
+            color: Colors.grey.shade400,
+          ),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _showAttendeeAssignmentSheet({
+    required String clubId,
+    required PiscineSession session,
+    required PiscineAttendee attendee,
+  }) async {
+    final memberFuture = attendee.isGuest
+        ? Future<Map<String, dynamic>?>.value(null)
+        : _memberService.getMemberData(clubId, attendee.memberId);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: FutureBuilder<Map<String, dynamic>?>(
+            future: memberFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const SizedBox(
+                  height: 240,
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      color: AppColors.middenblauw,
+                    ),
+                  ),
+                );
+              }
+
+              final memberData = snapshot.data;
+              final naturalLevel = _getNiveauEnFormation(
+                memberData?['plongeur_code']?.toString(),
+              );
+              final currentSummary =
+                  _resolveAttendeeAssignmentSummary(session, attendee);
+              final availableLevels = _assignmentLevelsForSession(
+                session,
+                naturalLevel: naturalLevel,
+                assignedLevel: attendee.assignedLevel,
+              );
+
+              Future<void> applyAssignment({
+                String? assignedLevel,
+                String? assignedCourseId,
+              }) async {
+                final sheetNavigator = Navigator.of(sheetContext);
+                final sameLevel =
+                    (attendee.assignedLevel ?? '') == (assignedLevel ?? '');
+                final sameCourse = (attendee.assignedCourseId ?? '') ==
+                    (assignedCourseId ?? '');
+                if (sameLevel && sameCourse) {
+                  sheetNavigator.pop();
+                  return;
+                }
+
+                try {
+                  await _sessionService.updateAttendeeAssignment(
+                    clubId: clubId,
+                    sessionId: session.id,
+                    attendeeId: attendee.id,
+                    assignedLevel: assignedLevel,
+                    assignedCourseId: assignedCourseId,
+                  );
+
+                  if (sheetNavigator.canPop()) {
+                    sheetNavigator.pop();
+                  }
+                  if (!mounted) return;
+
+                  final message = assignedLevel == null
+                      ? 'Affectation réinitialisée pour ${attendee.memberName}'
+                      : 'Affectation mise à jour pour ${attendee.memberName}';
+
+                  ScaffoldMessenger.of(this.context).showSnackBar(
+                    SnackBar(
+                      content: Text(message),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(this.context).showSnackBar(
+                    SnackBar(
+                      content: Text('Erreur: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+
+              return Padding(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  8,
+                  16,
+                  16 + MediaQuery.of(context).viewInsets.bottom,
+                ),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.82,
+                  ),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Affectation formation',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          attendee.memberName,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (currentSummary != null) ...[
+                                const Text(
+                                  'Affectation actuelle',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF475569),
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  currentSummary.label,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF4338CA),
+                                  ),
+                                ),
+                                if (currentSummary.theme != null &&
+                                    currentSummary.theme!.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: Text(
+                                      currentSummary.theme!,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                              if (naturalLevel != null) ...[
+                                if (currentSummary != null)
+                                  const SizedBox(height: 10),
+                                const Text(
+                                  'Niveau détecté',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF475569),
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  _levelLabel(naturalLevel),
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              ],
+                              if (attendee.isGuest) ...[
+                                if (currentSummary != null ||
+                                    naturalLevel != null)
+                                  const SizedBox(height: 10),
+                                Text(
+                                  'Participant invité: choisissez un groupe manuellement si nécessaire.',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
+                              if (snapshot.hasError) ...[
+                                if (currentSummary != null ||
+                                    naturalLevel != null ||
+                                    attendee.isGuest)
+                                  const SizedBox(height: 10),
+                                Text(
+                                  'Impossible de relire le profil membre, les affectations manuelles restent disponibles.',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.orange.shade700,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 2,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: const BorderSide(color: Color(0xFFE2E8F0)),
+                          ),
+                          leading: const Icon(Icons.undo,
+                              color: AppColors.middenblauw),
+                          title:
+                              const Text('Revenir à l’affectation par défaut'),
+                          subtitle: Text(
+                            naturalLevel != null
+                                ? 'Utiliser le niveau détecté: ${_levelLabel(naturalLevel)}'
+                                : 'Supprimer toute affectation forcée pour ce participant.',
+                          ),
+                          trailing: attendee.assignedLevel == null &&
+                                  attendee.assignedCourseId == null
+                              ? const Icon(
+                                  Icons.check_circle,
+                                  color: AppColors.success,
+                                )
+                              : null,
+                          onTap: () => applyAssignment(),
+                        ),
+                        const SizedBox(height: 16),
+                        ...availableLevels.map((level) {
+                          final assignment = session.niveaux[level];
+                          final courses = assignment?.getCoursesForHeure(
+                                _slotHeureForLevel(level),
+                              ) ??
+                              const <LevelCourse>[];
+                          final hasParallelCourses = courses.length > 1;
+                          final singleTheme = courses.length == 1
+                              ? courses.first.theme
+                              : assignment?.getEffectiveTheme(
+                                  heure: _slotHeureForLevel(level),
+                                );
+                          final levelSelected =
+                              attendee.assignedLevel == level &&
+                                  (attendee.assignedCourseId == null ||
+                                      attendee.assignedCourseId!.isEmpty);
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(14),
+                              border:
+                                  Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(12, 12, 12, 6),
+                                  child: Row(
+                                    children: [
+                                      Text(
+                                        PiscineLevel.stars(level),
+                                        style: const TextStyle(fontSize: 18),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              _levelLabel(level),
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            Text(
+                                              'Créneau ${EncadrantSlots.timeForLevel(level)}',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.grey.shade600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                ListTile(
+                                  dense: true,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 2,
+                                  ),
+                                  leading: const Icon(
+                                    Icons.school_outlined,
+                                    color: AppColors.middenblauw,
+                                  ),
+                                  title: Text(_levelLabel(level)),
+                                  subtitle: Text(
+                                    hasParallelCourses
+                                        ? 'Sans groupe précis, à répartir ensuite'
+                                        : (singleTheme != null &&
+                                                singleTheme.isNotEmpty)
+                                            ? singleTheme
+                                            : 'Aucun thème défini',
+                                  ),
+                                  trailing: levelSelected
+                                      ? const Icon(
+                                          Icons.check_circle,
+                                          color: AppColors.success,
+                                        )
+                                      : null,
+                                  onTap: () => applyAssignment(
+                                    assignedLevel: level,
+                                  ),
+                                ),
+                                if (hasParallelCourses)
+                                  const Divider(height: 1),
+                                if (hasParallelCourses)
+                                  ...courses.asMap().entries.map((entry) {
+                                    final index = entry.key;
+                                    final course = entry.value;
+                                    final courseSelected =
+                                        attendee.assignedLevel == level &&
+                                            attendee.assignedCourseId ==
+                                                course.id;
+
+                                    return ListTile(
+                                      dense: true,
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                        horizontal: 20,
+                                        vertical: 2,
+                                      ),
+                                      leading: Container(
+                                        width: 30,
+                                        height: 30,
+                                        alignment: Alignment.center,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFEDE9FE),
+                                          borderRadius:
+                                              BorderRadius.circular(999),
+                                        ),
+                                        child: Text(
+                                          '${index + 1}',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFF5B21B6),
+                                          ),
+                                        ),
+                                      ),
+                                      title: Text('Groupe ${index + 1}'),
+                                      subtitle: Text(
+                                        (course.theme != null &&
+                                                course.theme!.isNotEmpty)
+                                            ? course.theme!
+                                            : 'Thème à définir',
+                                      ),
+                                      trailing: courseSelected
+                                          ? const Icon(
+                                              Icons.check_circle,
+                                              color: AppColors.success,
+                                            )
+                                          : null,
+                                      onTap: () => applyAssignment(
+                                        assignedLevel: level,
+                                        assignedCourseId: course.id,
+                                      ),
+                                    );
+                                  }),
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildAttendeesSection(String clubId, PiscineSession session) {
+    final canManageAssignments = _canManageAttendeeAssignments;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -586,22 +1137,25 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             ],
           ),
           child: StreamBuilder<List<PiscineAttendee>>(
-            stream: _sessionService.getAttendeesStream(clubId, widget.session.id),
+            stream:
+                _sessionService.getAttendeesStream(clubId, widget.session.id),
             builder: (context, snapshot) {
               final attendees = snapshot.data ?? [];
 
-              if (snapshot.connectionState == ConnectionState.waiting && attendees.isEmpty) {
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  attendees.isEmpty) {
                 return const Padding(
                   padding: EdgeInsets.all(24),
                   child: Center(
-                    child: CircularProgressIndicator(color: AppColors.middenblauw),
+                    child: CircularProgressIndicator(
+                      color: AppColors.middenblauw,
+                    ),
                   ),
                 );
               }
 
               return Column(
                 children: [
-                  // Header with count
                   Padding(
                     padding: const EdgeInsets.all(16),
                     child: Row(
@@ -619,16 +1173,19 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                           ),
                         ),
                         const SizedBox(width: 12),
-                        Text(
+                        const Text(
                           'Présents',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         const Spacer(),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.success,
                             borderRadius: BorderRadius.circular(12),
@@ -644,36 +1201,75 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                       ],
                     ),
                   ),
-                  // Évaluer button — behind feature flag
+                  if (canManageAssignments && attendees.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.swap_horiz,
+                              size: 18,
+                              color: AppColors.middenblauw,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Touchez un participant pour choisir son niveau ou son groupe parallèle.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   if (attendees.isNotEmpty)
                     StreamBuilder<bool>(
                       stream: FeatureFlagService().isCarnetFormationEnabled(
                         FirebaseConfig.defaultClubId,
                       ),
                       builder: (context, flagSnap) {
-                        if (flagSnap.data != true) return const SizedBox.shrink();
-                        final memberProvider = Provider.of<MemberProvider>(context, listen: false);
-                        final statuten = memberProvider.clubStatuten;
-                        final isEncadrant = PermissionHelper.isAdmin(statuten) ||
-                            statuten.contains('encadrant');
-                        if (!isEncadrant) return const SizedBox.shrink();
+                        if (flagSnap.data != true) {
+                          return const SizedBox.shrink();
+                        }
+                        if (!canManageAssignments) {
+                          return const SizedBox.shrink();
+                        }
                         return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
                           child: SizedBox(
                             width: double.infinity,
                             child: OutlinedButton.icon(
                               onPressed: () {
-                                Navigator.push(context, MaterialPageRoute(
-                                  builder: (_) => SessionEvaluationScreen(
-                                    session: widget.session,
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => SessionEvaluationScreen(
+                                      session: widget.session,
+                                    ),
                                   ),
-                                ));
+                                );
                               },
                               icon: const Icon(Icons.grading, size: 18),
                               label: const Text('Évaluer la session'),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: AppColors.primary,
-                                side: BorderSide(color: AppColors.primary.withOpacity(0.5)),
+                                side: BorderSide(
+                                  color: AppColors.primary.withOpacity(0.5),
+                                ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(10),
                                 ),
@@ -684,7 +1280,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                       },
                     ),
                   const Divider(height: 1),
-                  // List of attendees
                   if (attendees.isEmpty)
                     Padding(
                       padding: const EdgeInsets.all(24),
@@ -704,6 +1299,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                       separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (context, index) {
                         final attendee = attendees[index];
+                        final summary = _resolveAttendeeAssignmentSummary(
+                            session, attendee);
+
                         return Dismissible(
                           key: Key(attendee.id),
                           direction: DismissDirection.endToStart,
@@ -711,27 +1309,35 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                             color: Colors.red,
                             alignment: Alignment.centerRight,
                             padding: const EdgeInsets.only(right: 16),
-                            child: const Icon(Icons.delete, color: Colors.white),
+                            child:
+                                const Icon(Icons.delete, color: Colors.white),
                           ),
                           confirmDismiss: (direction) async {
                             return await showDialog<bool>(
-                              context: context,
-                              builder: (context) => AlertDialog(
-                                title: const Text('Supprimer?'),
-                                content: Text('Supprimer ${attendee.memberName} de la liste?'),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.of(context).pop(false),
-                                    child: const Text('Annuler'),
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: const Text('Supprimer?'),
+                                    content: Text(
+                                      'Supprimer ${attendee.memberName} de la liste?',
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.of(context).pop(false),
+                                        child: const Text('Annuler'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.of(context).pop(true),
+                                        style: TextButton.styleFrom(
+                                          foregroundColor: Colors.red,
+                                        ),
+                                        child: const Text('Supprimer'),
+                                      ),
+                                    ],
                                   ),
-                                  TextButton(
-                                    onPressed: () => Navigator.of(context).pop(true),
-                                    style: TextButton.styleFrom(foregroundColor: Colors.red),
-                                    child: const Text('Supprimer'),
-                                  ),
-                                ],
-                              ),
-                            ) ?? false;
+                                ) ??
+                                false;
                           },
                           onDismissed: (direction) async {
                             await _sessionService.removeAttendee(
@@ -739,16 +1345,25 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                               sessionId: widget.session.id,
                               attendeeId: attendee.id,
                             );
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('${attendee.memberName} supprimé'),
-                                  backgroundColor: Colors.orange,
-                                ),
-                              );
-                            }
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(this.context).showSnackBar(
+                              SnackBar(
+                                content:
+                                    Text('${attendee.memberName} supprimé'),
+                                backgroundColor: Colors.orange,
+                              ),
+                            );
                           },
                           child: ListTile(
+                            onTap: canManageAssignments
+                                ? () => _showAttendeeAssignmentSheet(
+                                      clubId: clubId,
+                                      session: session,
+                                      attendee: attendee,
+                                    )
+                                : null,
+                            isThreeLine: summary?.theme != null &&
+                                summary!.theme!.isNotEmpty,
                             leading: CircleAvatar(
                               backgroundColor: attendee.isGuest
                                   ? Colors.orange
@@ -764,34 +1379,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                               ),
                             ),
                             title: Text(attendee.memberName),
-                            subtitle: Text(
-                              _formatTime(attendee.scannedAt),
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade500,
-                              ),
+                            subtitle: _buildAttendeeSubtitle(session, attendee),
+                            trailing: _buildAttendeeTrailing(
+                              attendee,
+                              canManageAssignments,
                             ),
-                            trailing: attendee.isGuest
-                                ? Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.orange.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: Colors.orange.withOpacity(0.3)),
-                                    ),
-                                    child: const Text(
-                                      'Invité',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        color: Colors.orange,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  )
-                                : null,
                           ),
                         );
                       },
@@ -812,9 +1404,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   }
 
   Widget _buildChatGroupsSection(PiscineSession session, String clubId) {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final userId = authProvider.currentUser?.uid ?? '';
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -917,13 +1506,17 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
           // Cacher les niveaux vides (pas d'encadrants et pas de thème)
           final hasNoContent = levelAssignment.encadrants.isEmpty &&
-              (levelAssignment.theme == null || levelAssignment.theme!.isEmpty) &&
-              (levelAssignment.theme1ereHeure == null || levelAssignment.theme1ereHeure!.isEmpty) &&
-              (levelAssignment.theme2emeHeure == null || levelAssignment.theme2emeHeure!.isEmpty);
+              (levelAssignment.theme == null ||
+                  levelAssignment.theme!.isEmpty) &&
+              (levelAssignment.theme1ereHeure == null ||
+                  levelAssignment.theme1ereHeure!.isEmpty) &&
+              (levelAssignment.theme2emeHeure == null ||
+                  levelAssignment.theme2emeHeure!.isEmpty);
           if (hasNoContent) return const SizedBox.shrink();
 
           final isUserLevel = userEncadrantLevel == level;
-          final canEditTheme = isUserLevel;
+          final canEditTheme =
+              isUserLevel && !levelAssignment.hasParallelCourses;
 
           return _LevelCard(
             level: level,
@@ -992,6 +1585,30 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       }
     }
   }
+}
+
+class _ResolvedCourseOption {
+  final String level;
+  final String courseId;
+  final String label;
+  final String? theme;
+
+  const _ResolvedCourseOption({
+    required this.level,
+    required this.courseId,
+    required this.label,
+    this.theme,
+  });
+}
+
+class _AttendeeAssignmentSummary {
+  final String label;
+  final String? theme;
+
+  const _AttendeeAssignmentSummary({
+    required this.label,
+    this.theme,
+  });
 }
 
 class _SessionInfoCard extends StatelessWidget {
@@ -1065,7 +1682,9 @@ class _SessionInfoCard extends StatelessWidget {
                             ),
                           ),
                           child: Text(
-                            session.type == 'theorie' ? '📖 Théorie' : '🏊 Piscine',
+                            session.type == 'theorie'
+                                ? '📖 Théorie'
+                                : '🏊 Piscine',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
@@ -1247,9 +1866,8 @@ class _MemberTile extends StatelessWidget {
         children: [
           CircleAvatar(
             radius: 16,
-            backgroundColor: isCurrentUser
-                ? AppColors.middenblauw
-                : Colors.grey.shade300,
+            backgroundColor:
+                isCurrentUser ? AppColors.middenblauw : Colors.grey.shade300,
             child: Text(
               name.isNotEmpty ? name[0].toUpperCase() : '?',
               style: TextStyle(
@@ -1329,8 +1947,18 @@ class _LevelCard extends StatelessWidget {
     this.onEditTheme,
   });
 
+  String get _slotHeure => level == '1*'
+      ? EncadrantSlots.premiereHeure
+      : EncadrantSlots.deuxiemeHeure;
+
+  List<LevelCourse> get _courses => assignment.getCoursesForHeure(_slotHeure);
+
   /// Effectief thema: combineert per-uur thema's of valt terug op globaal thema
   String? get _effectiveTheme {
+    if (_courses.length > 1) return null;
+    if (_courses.length == 1)
+      return _courses.first.theme ??
+          assignment.getEffectiveTheme(heure: _slotHeure);
     final t1 = assignment.theme1ereHeure;
     final t2 = assignment.theme2emeHeure;
     final hasT1 = t1 != null && t1.isNotEmpty;
@@ -1344,6 +1972,7 @@ class _LevelCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasEncadrants = assignment.encadrants.isNotEmpty;
+    final hasParallelCourses = _courses.length > 1;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1393,7 +2022,9 @@ class _LevelCard extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        '${assignment.encadrants.length} encadrant(s)',
+                        hasParallelCourses
+                            ? '${_courses.length} cours parallèles · ${assignment.encadrants.length} encadrant(s)'
+                            : '${assignment.encadrants.length} encadrant(s)',
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.grey.shade600,
@@ -1433,7 +2064,7 @@ class _LevelCard extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Thème du jour',
+                      hasParallelCourses ? 'Cours parallèles' : 'Thème du jour',
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey.shade500,
@@ -1453,36 +2084,58 @@ class _LevelCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 4),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: _effectiveTheme != null && _effectiveTheme!.isNotEmpty
-                        ? AppColors.lichtblauw.withOpacity(0.1)
-                        : Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: _effectiveTheme != null && _effectiveTheme!.isNotEmpty
-                          ? AppColors.lichtblauw.withOpacity(0.3)
-                          : Colors.grey.shade200,
+                if (hasParallelCourses)
+                  Column(
+                    children: _courses
+                        .asMap()
+                        .entries
+                        .map((entry) => Padding(
+                              padding: EdgeInsets.only(
+                                  bottom: entry.key == _courses.length - 1
+                                      ? 0
+                                      : 10),
+                              child: _ParallelCourseTile(
+                                title: 'Groupe ${entry.key + 1}',
+                                theme: entry.value.theme,
+                                encadrants: entry.value.encadrants,
+                                currentUserId: currentUserId,
+                              ),
+                            ))
+                        .toList(),
+                  )
+                else
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color:
+                          _effectiveTheme != null && _effectiveTheme!.isNotEmpty
+                              ? AppColors.lichtblauw.withOpacity(0.1)
+                              : Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: _effectiveTheme != null &&
+                                _effectiveTheme!.isNotEmpty
+                            ? AppColors.lichtblauw.withOpacity(0.3)
+                            : Colors.grey.shade200,
+                      ),
+                    ),
+                    child: Text(
+                      _effectiveTheme?.isNotEmpty == true
+                          ? _effectiveTheme!
+                          : 'Pas encore défini',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: _effectiveTheme?.isNotEmpty == true
+                            ? Colors.black87
+                            : Colors.grey.shade500,
+                        fontStyle: _effectiveTheme?.isNotEmpty == true
+                            ? FontStyle.normal
+                            : FontStyle.italic,
+                      ),
                     ),
                   ),
-                  child: Text(
-                    _effectiveTheme?.isNotEmpty == true
-                        ? _effectiveTheme!
-                        : 'Pas encore défini',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: _effectiveTheme?.isNotEmpty == true
-                          ? Colors.black87
-                          : Colors.grey.shade500,
-                      fontStyle: _effectiveTheme?.isNotEmpty == true
-                          ? FontStyle.normal
-                          : FontStyle.italic,
-                    ),
-                  ),
-                ),
-                if (assignment.themeUpdatedBy != null)
+                if (!hasParallelCourses && assignment.themeUpdatedBy != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
@@ -1498,7 +2151,7 @@ class _LevelCard extends StatelessWidget {
           ),
 
           // Encadrants
-          if (hasEncadrants) ...[
+          if (hasEncadrants && !hasParallelCourses) ...[
             const Divider(height: 1),
             Padding(
               padding: const EdgeInsets.all(16),
@@ -1522,6 +2175,85 @@ class _LevelCard extends StatelessWidget {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ParallelCourseTile extends StatelessWidget {
+  final String title;
+  final String? theme;
+  final List<SessionAssignment> encadrants;
+  final String currentUserId;
+
+  const _ParallelCourseTile({
+    required this.title,
+    required this.theme,
+    required this.encadrants,
+    required this.currentUserId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F3FF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFC4B5FD)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFDDD6FE),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              title,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.6,
+                color: Color(0xFF4338CA),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            (theme != null && theme!.isNotEmpty) ? theme! : 'Thème à définir',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: (theme != null && theme!.isNotEmpty)
+                  ? Colors.black87
+                  : Colors.grey.shade500,
+              fontStyle: (theme != null && theme!.isNotEmpty)
+                  ? FontStyle.normal
+                  : FontStyle.italic,
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...encadrants.map((member) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: _MemberTile(
+                  name: member.fullName,
+                  isCurrentUser: member.membreId == currentUserId,
+                ),
+              )),
+          if (encadrants.isEmpty)
+            Text(
+              'Aucun encadrant',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade500,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
         ],
       ),
     );

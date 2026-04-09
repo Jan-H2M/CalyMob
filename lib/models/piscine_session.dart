@@ -5,11 +5,13 @@ class SessionAssignment {
   final String membreId;
   final String membreNom;
   final String membrePrenom;
+  final String? heure;
 
   SessionAssignment({
     required this.membreId,
     required this.membreNom,
     required this.membrePrenom,
+    this.heure,
   });
 
   factory SessionAssignment.fromMap(Map<String, dynamic> map) {
@@ -17,6 +19,7 @@ class SessionAssignment {
       membreId: map['membre_id'] ?? '',
       membreNom: map['membre_nom'] ?? '',
       membrePrenom: map['membre_prenom'] ?? '',
+      heure: map['heure'],
     );
   }
 
@@ -25,10 +28,69 @@ class SessionAssignment {
       'membre_id': membreId,
       'membre_nom': membreNom,
       'membre_prenom': membrePrenom,
+      if (heure != null) 'heure': heure,
     };
   }
 
   String get fullName => '$membrePrenom $membreNom';
+}
+
+class LevelCourse {
+  final String id;
+  final String heure;
+  final int order;
+  final String? theme;
+  final String? themeUpdatedBy;
+  final DateTime? themeUpdatedAt;
+  final String? notes;
+  final List<SessionAssignment> encadrants;
+
+  LevelCourse({
+    required this.id,
+    required this.heure,
+    required this.order,
+    this.theme,
+    this.themeUpdatedBy,
+    this.themeUpdatedAt,
+    this.notes,
+    required this.encadrants,
+  });
+
+  factory LevelCourse.fromMap(Map<String, dynamic> map, String heure, int index) {
+    return LevelCourse(
+      id: map['id'] ?? 'legacy_${heure}_$index',
+      heure: heure,
+      order: map['order'] ?? index,
+      theme: map['theme'],
+      themeUpdatedBy: map['theme_updated_by'] ?? map['themeUpdatedBy'],
+      themeUpdatedAt: (map['theme_updated_at'] as Timestamp?)?.toDate(),
+      notes: map['notes'],
+      encadrants: (map['encadrants'] as List<dynamic>?)
+              ?.map((e) => SessionAssignment.fromMap(e as Map<String, dynamic>))
+              .map((e) => SessionAssignment(
+                    membreId: e.membreId,
+                    membreNom: e.membreNom,
+                    membrePrenom: e.membrePrenom,
+                    heure: heure,
+                  ))
+              .toList() ??
+          [],
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'heure': heure,
+      'order': order,
+      'encadrants': encadrants.map((e) => e.toMap()).toList(),
+      if (theme != null) 'theme': theme,
+      if (themeUpdatedBy != null) 'theme_updated_by': themeUpdatedBy,
+      if (themeUpdatedAt != null)
+        'theme_updated_at': Timestamp.fromDate(themeUpdatedAt!),
+      if (notes != null) 'notes': notes,
+    };
+  }
 }
 
 /// Configuration d'un niveau dans une séance
@@ -40,6 +102,7 @@ class LevelAssignment {
   // Per-uur thema's (1ere_heure / 2eme_heure)
   final String? theme1ereHeure;
   final String? theme2emeHeure;
+  final Map<String, List<LevelCourse>>? coursesByHour;
 
   LevelAssignment({
     required this.encadrants,
@@ -48,19 +111,56 @@ class LevelAssignment {
     this.themeUpdatedAt,
     this.theme1ereHeure,
     this.theme2emeHeure,
+    this.coursesByHour,
   });
 
   factory LevelAssignment.fromMap(Map<String, dynamic> map) {
+    final rawCoursesByHour =
+        (map['courses_by_hour'] ?? map['coursesByHour']) as Map<String, dynamic>?;
+    final coursesByHour = <String, List<LevelCourse>>{};
+
+    if (rawCoursesByHour != null) {
+      for (final heure in ['1ere_heure', '2eme_heure']) {
+        final data = rawCoursesByHour[heure];
+        if (data is List) {
+          coursesByHour[heure] = data
+              .whereType<Map<String, dynamic>>()
+              .toList()
+              .asMap()
+              .entries
+              .map((entry) => LevelCourse.fromMap(entry.value, heure, entry.key))
+              .toList()
+            ..sort((a, b) => a.order.compareTo(b.order));
+        }
+      }
+    }
+
+    final legacyEncadrants = (map['encadrants'] as List<dynamic>?)
+            ?.map((e) => SessionAssignment.fromMap(e as Map<String, dynamic>))
+            .toList() ??
+        [];
+    final flattenedCourseEncadrants = coursesByHour.values
+        .expand((courses) => courses)
+        .expand((course) => course.encadrants)
+        .toList();
+    final firstTheme1 = coursesByHour['1ere_heure']
+        ?.cast<LevelCourse?>()
+        .firstWhere((course) => course?.theme?.isNotEmpty == true, orElse: () => null)
+        ?.theme;
+    final firstTheme2 = coursesByHour['2eme_heure']
+        ?.cast<LevelCourse?>()
+        .firstWhere((course) => course?.theme?.isNotEmpty == true, orElse: () => null)
+        ?.theme;
+
     return LevelAssignment(
-      encadrants: (map['encadrants'] as List<dynamic>?)
-              ?.map((e) => SessionAssignment.fromMap(e as Map<String, dynamic>))
-              .toList() ??
-          [],
-      theme: map['theme'],
+      encadrants:
+          flattenedCourseEncadrants.isNotEmpty ? flattenedCourseEncadrants : legacyEncadrants,
+      theme: map['theme'] ?? firstTheme1 ?? firstTheme2,
       themeUpdatedBy: map['theme_updated_by'],
       themeUpdatedAt: (map['theme_updated_at'] as Timestamp?)?.toDate(),
-      theme1ereHeure: map['theme_1ere_heure'],
-      theme2emeHeure: map['theme_2eme_heure'],
+      theme1ereHeure: map['theme_1ere_heure'] ?? firstTheme1,
+      theme2emeHeure: map['theme_2eme_heure'] ?? firstTheme2,
+      coursesByHour: coursesByHour.isEmpty ? null : coursesByHour,
     );
   }
 
@@ -75,6 +175,39 @@ class LevelAssignment {
     return theme;
   }
 
+  List<LevelCourse> getCoursesForHeure(String heure) {
+    final explicitCourses = coursesByHour?[heure] ?? const <LevelCourse>[];
+    if (explicitCourses.isNotEmpty) {
+      return explicitCourses;
+    }
+
+    final legacyMembers = encadrants
+        .where((member) => (member.heure ?? '1ere_heure') == heure)
+        .toList();
+    final legacyTheme = getEffectiveTheme(heure: heure);
+
+    if (legacyMembers.isEmpty && (legacyTheme == null || legacyTheme.isEmpty)) {
+      return const <LevelCourse>[];
+    }
+
+    return [
+      LevelCourse(
+        id: 'legacy-$heure',
+        heure: heure,
+        order: 0,
+        theme: legacyTheme,
+        themeUpdatedBy: themeUpdatedBy,
+        themeUpdatedAt: themeUpdatedAt,
+        encadrants: legacyMembers,
+      ),
+    ];
+  }
+
+  bool get hasParallelCourses {
+    if (coursesByHour == null) return false;
+    return coursesByHour!.values.any((courses) => courses.length > 1);
+  }
+
   Map<String, dynamic> toMap() {
     return {
       'encadrants': encadrants.map((e) => e.toMap()).toList(),
@@ -84,6 +217,10 @@ class LevelAssignment {
         'theme_updated_at': Timestamp.fromDate(themeUpdatedAt!),
       if (theme1ereHeure != null) 'theme_1ere_heure': theme1ereHeure,
       if (theme2emeHeure != null) 'theme_2eme_heure': theme2emeHeure,
+      if (coursesByHour != null)
+        'courses_by_hour': coursesByHour!.map(
+          (key, value) => MapEntry(key, value.map((course) => course.toMap()).toList()),
+        ),
     };
   }
 
@@ -94,6 +231,7 @@ class LevelAssignment {
     DateTime? themeUpdatedAt,
     String? theme1ereHeure,
     String? theme2emeHeure,
+    Map<String, List<LevelCourse>>? coursesByHour,
   }) {
     return LevelAssignment(
       encadrants: encadrants ?? this.encadrants,
@@ -102,6 +240,7 @@ class LevelAssignment {
       themeUpdatedAt: themeUpdatedAt ?? this.themeUpdatedAt,
       theme1ereHeure: theme1ereHeure ?? this.theme1ereHeure,
       theme2emeHeure: theme2emeHeure ?? this.theme2emeHeure,
+      coursesByHour: coursesByHour ?? this.coursesByHour,
     );
   }
 }

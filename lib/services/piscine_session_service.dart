@@ -88,8 +88,9 @@ class PiscineSessionService {
         .orderBy('date', descending: false)
         .snapshots()
         .map((snapshot) {
-      final sessions =
-          snapshot.docs.map((doc) => PiscineSession.fromFirestore(doc)).toList();
+      final sessions = snapshot.docs
+          .map((doc) => PiscineSession.fromFirestore(doc))
+          .toList();
 
       // Filter sessies waar het lid bij betrokken is
       return sessions.where((session) {
@@ -148,7 +149,8 @@ class PiscineSessionService {
   }
 
   /// Controleer of een lid toegang heeft tot een sessie
-  bool memberHasAccess(PiscineSession session, String membreId, String? userLevel) {
+  bool memberHasAccess(
+      PiscineSession session, String membreId, String? userLevel) {
     // Check of lid accueil is
     if (session.isAccueil(membreId)) return true;
 
@@ -237,8 +239,9 @@ class PiscineSessionService {
     return _attendeesCollection(clubId, sessionId)
         .orderBy('scannedAt', descending: false)
         .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => PiscineAttendee.fromFirestore(doc)).toList());
+        .map((snapshot) => snapshot.docs
+            .map((doc) => PiscineAttendee.fromFirestore(doc))
+            .toList());
   }
 
   /// Voeg een aanwezige toe
@@ -300,6 +303,20 @@ class PiscineSessionService {
         .get();
     if (snapshot.docs.isEmpty) return null;
     return PiscineAttendee.fromFirestore(snapshot.docs.first);
+  }
+
+  /// Met à jour l'affectation formation d'un participant scanné
+  Future<void> updateAttendeeAssignment({
+    required String clubId,
+    required String sessionId,
+    required String attendeeId,
+    String? assignedLevel,
+    String? assignedCourseId,
+  }) async {
+    await _attendeesCollection(clubId, sessionId).doc(attendeeId).update({
+      'assignedLevel': assignedLevel ?? FieldValue.delete(),
+      'assignedCourseId': assignedCourseId ?? FieldValue.delete(),
+    });
   }
 }
 
