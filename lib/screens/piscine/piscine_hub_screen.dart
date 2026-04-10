@@ -479,9 +479,14 @@ class _TeamChannelCard extends StatelessWidget {
                   color: AppColors.middenblauw.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Text(
-                  channel.type.icon,
-                  style: const TextStyle(fontSize: 24),
+                child: Icon(
+                  channel.type.iconData,
+                  color: channel.type == TeamChannelType.accueil
+                      ? AppColors.middenblauw
+                      : channel.type == TeamChannelType.gonflage
+                          ? const Color(0xFF0E8A75)
+                          : AppColors.donkerblauw,
+                  size: 24,
                 ),
               ),
               const SizedBox(width: 12),

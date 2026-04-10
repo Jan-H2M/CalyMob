@@ -340,8 +340,11 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
         elevation: 0,
         title: Row(
           children: [
-            Text(widget.channel.type.icon,
-                style: const TextStyle(fontSize: 24)),
+            Icon(
+              widget.channel.type.iconData,
+              color: Colors.white,
+              size: 24,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -516,11 +519,9 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
               ),
             Row(
               children: [
-                AttachmentPicker(onAttachmentSelected: _addAttachment),
-                IconButton(
-                  onPressed: _createPoll,
-                  icon: const Icon(Icons.poll_outlined),
-                  tooltip: 'Ajouter un sondage',
+                AttachmentPicker(
+                  onAttachmentSelected: _addAttachment,
+                  onCreatePoll: _createPoll,
                 ),
                 Expanded(
                   child: Container(

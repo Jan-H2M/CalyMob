@@ -61,13 +61,27 @@ class CommunicationHubScreen extends StatelessWidget {
                       unreadCount: unreadProvider.announcements,
                     ),
                     const SizedBox(height: 18),
-                    Text(
-                      'Canaux d\'équipe',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.86),
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                      ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Canaux d\'équipe',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.9),
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          'Affichés selon vos accès',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.68),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 10),
                     _TeamChannelsSection(
@@ -105,22 +119,44 @@ class _AnnouncementsCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(22),
           gradient: LinearGradient(
             colors: [
-              Colors.white.withValues(alpha: 0.18),
-              Colors.white.withValues(alpha: 0.1),
+              Colors.white.withValues(alpha: 0.22),
+              Colors.white.withValues(alpha: 0.12),
             ],
           ),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.donkerblauw.withValues(alpha: 0.12),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
         child: Row(
           children: [
-            Container(
-              width: 58,
-              height: 58,
-              decoration: BoxDecoration(
-                color: AppColors.middenblauw.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: const Icon(Icons.campaign, color: Colors.white, size: 28),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 58,
+                  height: 58,
+                  decoration: BoxDecoration(
+                    color: AppColors.middenblauw.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: const Icon(
+                    Icons.campaign,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+                if (unreadCount > 0)
+                  const Positioned(
+                    top: -2,
+                    right: -2,
+                    child: _UnreadDot(),
+                  ),
+              ],
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -141,8 +177,9 @@ class _AnnouncementsCard extends StatelessWidget {
                         ? '$unreadCount nouveau${unreadCount > 1 ? 'x' : ''}'
                         : 'Toutes les annonces sont lues',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.75),
+                      color: Colors.white.withValues(alpha: 0.88),
                       fontSize: 13,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
@@ -207,7 +244,7 @@ class _TeamChannelsSection extends StatelessWidget {
         return Column(
           children: channels
               .map((channel) => Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.only(bottom: 14),
                     child: _TeamChannelTile(channel: channel),
                   ))
               .toList(),
@@ -226,6 +263,7 @@ class _TeamChannelTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const clubId = FirebaseConfig.defaultClubId;
+    final accentColor = _accentColorFor(channel.type);
 
     return FutureBuilder<int>(
       future: _unreadCountService.countUnreadForTeamChannel(clubId, channel.id),
@@ -244,23 +282,62 @@ class _TeamChannelTile extends StatelessWidget {
           child: Ink(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(22),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.white.withValues(alpha: 0.96),
+                  Colors.white.withValues(alpha: 0.9),
+                ],
+              ),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.72),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.donkerblauw.withValues(alpha: 0.09),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
+                ),
+              ],
             ),
             child: Row(
               children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: AppColors.lichtblauw.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    channel.type.icon,
-                    style: const TextStyle(fontSize: 22),
-                  ),
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            accentColor.withValues(alpha: 0.24),
+                            accentColor.withValues(alpha: 0.08),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: accentColor.withValues(alpha: 0.18),
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Icon(
+                        channel.type.iconData,
+                        color: accentColor,
+                        size: 24,
+                      ),
+                    ),
+                    if (unreadCount > 0)
+                      const Positioned(
+                        top: -2,
+                        right: -2,
+                        child: _UnreadDot(),
+                      ),
+                  ],
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -270,50 +347,73 @@ class _TeamChannelTile extends StatelessWidget {
                       Text(
                         channel.name,
                         style: const TextStyle(
-                          color: Colors.black87,
+                          color: AppColors.donkerblauw,
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                      const SizedBox(height: 3),
+                      const SizedBox(height: 6),
                       Text(
                         channel.description ?? channel.type.description,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: Colors.grey.shade600,
-                          fontSize: 12,
+                          color: AppColors.donkerblauw.withValues(alpha: 0.72),
+                          fontSize: 12.5,
+                          height: 1.35,
                         ),
                       ),
                     ],
                   ),
                 ),
-                if (unreadCount > 0)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.middenblauw,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      '$unreadCount',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  )
-                else
-                  Icon(Icons.chevron_right, color: Colors.grey.shade500),
+                const SizedBox(width: 12),
+                Icon(Icons.chevron_right, color: Colors.grey.shade500),
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  static Color _accentColorFor(TeamChannelType type) {
+    switch (type) {
+      case TeamChannelType.general:
+        return AppColors.middenblauw;
+      case TeamChannelType.ca:
+        return AppColors.oranje;
+      case TeamChannelType.accueil:
+        return const Color(0xFF0D9B8A);
+      case TeamChannelType.encadrants:
+        return const Color(0xFF4C6FFF);
+      case TeamChannelType.gonflage:
+        return const Color(0xFFE86B7A);
+      case TeamChannelType.bureau:
+        return const Color(0xFF7B5CE1);
+    }
+  }
+}
+
+class _UnreadDot extends StatelessWidget {
+  const _UnreadDot();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 12,
+      height: 12,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFF4D4F),
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFFF4D4F).withValues(alpha: 0.32),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
     );
   }
 }

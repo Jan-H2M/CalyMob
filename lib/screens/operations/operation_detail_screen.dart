@@ -1,14 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../providers/operation_provider.dart';
 import '../../providers/event_message_provider.dart';
-import '../../providers/unread_count_provider.dart';
 import '../../widgets/loading_widget.dart';
 import '../../utils/date_formatter.dart';
 import '../../utils/currency_formatter.dart';
@@ -18,7 +16,6 @@ import '../../services/profile_service.dart';
 import '../../services/lifras_service.dart';
 import '../../services/operation_service.dart';
 import '../../services/payment_service.dart';
-import '../../services/local_read_tracker.dart';
 import '../../models/operation.dart';
 import '../../models/member_profile.dart';
 import '../../models/exercice_lifras.dart';
@@ -32,12 +29,12 @@ import 'add_guest_dialog.dart';
 import 'edit_event_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
-import 'package:intl/intl.dart';
 import '../../models/member_observation.dart';
 import '../../services/member_observation_service.dart';
 import 'palanquee_screen.dart';
 import '../../config/firebase_config.dart';
 import '../../widgets/observation_bottom_sheet.dart';
+import 'event_discussion_screen.dart';
 
 /// Écran de détail d'une opération avec bouton inscription
 class OperationDetailScreen extends StatefulWidget {
@@ -54,7 +51,8 @@ class OperationDetailScreen extends StatefulWidget {
   State<OperationDetailScreen> createState() => _OperationDetailScreenState();
 }
 
-class _OperationDetailScreenState extends State<OperationDetailScreen> with WidgetsBindingObserver {
+class _OperationDetailScreenState extends State<OperationDetailScreen>
+    with WidgetsBindingObserver {
   final ProfileService _profileService = ProfileService();
   final LifrasService _lifrasService = LifrasService();
   final OperationService _operationService = OperationService();
@@ -62,13 +60,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
   MemberProfile? _userProfile;
   List<ExerciceLIFRAS> _availableExercices = [];
   Map<String, ExerciceLIFRAS> _allExercicesMap = {};
-  Map<String, Map<String, MemberObservation>> _exerciceObservations = {}; // memberId -> exerciceCode -> observation
+  Map<String, Map<String, MemberObservation>> _exerciceObservations =
+      {}; // memberId -> exerciceCode -> observation
   List<String> _selectedExercices = [];
   bool _isLoadingExercices = false;
   ParticipantOperation? _userInscription;
-  final TextEditingController _messageController = TextEditingController();
-  bool _isDiscussionExpanded = false;
-  DateTime? _discussionLastReadBeforeOpen;
 
   /// Check if the current user is the creator (organisateur) of the event
   bool _isCurrentUserCreator(Operation operation) {
@@ -83,7 +79,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
     final memberProvider = context.read<MemberProvider>();
     final statuten = memberProvider.clubStatuten;
     final normalised = statuten.map((s) => s.toLowerCase().trim()).toList();
-    return normalised.contains('encadrant') || normalised.contains('encadrants');
+    return normalised.contains('encadrant') ||
+        normalised.contains('encadrants');
   }
 
   /// Check if operation date is today or in the past
@@ -99,7 +96,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
       operation.dateDebut!.month,
       operation.dateDebut!.day,
     );
-    return operationDate.isBefore(today) || operationDate.isAtSameMomentAs(today);
+    return operationDate.isBefore(today) ||
+        operationDate.isAtSameMomentAs(today);
   }
 
   @override
@@ -113,7 +111,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
 
   @override
   void dispose() {
-    _messageController.dispose();
     super.dispose();
   }
 
@@ -282,12 +279,14 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
             userId: userId,
             userName: userEmail,
             memberProfile: _userProfile,
-            selectedSupplements: result['supplements'] as List<SelectedSupplement>,
+            selectedSupplements:
+                result['supplements'] as List<SelectedSupplement>,
             supplementTotal: result['supplementTotal'] as double,
           );
 
           // Refresh participant list after registration
-          await operationProvider.reloadParticipants(widget.clubId, widget.operationId);
+          await operationProvider.reloadParticipants(
+              widget.clubId, widget.operationId);
 
           if (mounted) {
             await _loadUserInscription();
@@ -366,7 +365,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
           );
 
           // Refresh participant list after registration
-          await operationProvider.reloadParticipants(widget.clubId, widget.operationId);
+          await operationProvider.reloadParticipants(
+              widget.clubId, widget.operationId);
 
           if (mounted) {
             await _loadUserInscription();
@@ -514,7 +514,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.schedule, size: 22, color: Colors.blueGrey.shade700),
+                        Icon(Icons.schedule,
+                            size: 22, color: Colors.blueGrey.shade700),
                         const SizedBox(width: 8),
                         Text(
                           'Payer plus tard',
@@ -563,7 +564,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         memberLastName: memberLastName,
       );
       // Refresh participant list to show updated payment status
-      await operationProvider.reloadParticipants(widget.clubId, widget.operationId);
+      await operationProvider.reloadParticipants(
+          widget.clubId, widget.operationId);
     } else if (payNow == false && mounted) {
       // Set status to qr_on_site (will pay at the event)
       await _operationService.updatePaymentStatus(
@@ -573,7 +575,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         status: 'qr_on_site',
       );
       // Refresh participant list to show updated payment status
-      await operationProvider.reloadParticipants(widget.clubId, widget.operationId);
+      await operationProvider.reloadParticipants(
+          widget.clubId, widget.operationId);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -648,7 +651,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                 ),
                 const SizedBox(height: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: Colors.grey.shade100,
                     borderRadius: BorderRadius.circular(6),
@@ -673,12 +677,14 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                   decoration: BoxDecoration(
                     color: AppColors.lichtblauw.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.lichtblauw.withOpacity(0.3)),
+                    border: Border.all(
+                        color: AppColors.lichtblauw.withOpacity(0.3)),
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.info_outline, size: 18, color: AppColors.middenblauw),
+                      Icon(Icons.info_outline,
+                          size: 18, color: AppColors.middenblauw),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -735,7 +741,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Configuration bancaire non trouvée. Veuillez configurer l\'IBAN dans CalyCompta.'),
+              content: Text(
+                  'Configuration bancaire non trouvée. Veuillez configurer l\'IBAN dans CalyCompta.'),
               backgroundColor: Colors.orange,
             ),
           );
@@ -748,7 +755,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
       final beneficiaryName = bankData['beneficiaryName'] as String?;
       final bic = bankData['bic'] as String?;
 
-      if (iban == null || iban.isEmpty || beneficiaryName == null || beneficiaryName.isEmpty) {
+      if (iban == null ||
+          iban.isEmpty ||
+          beneficiaryName == null ||
+          beneficiaryName.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -768,7 +778,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         context: context,
         participantFirstName: participant.membrePrenom ?? '',
         participantLastName: participant.membreNom ?? '',
-        participantEmail: null, // Email not available on participant, QR code shown on screen
+        participantEmail:
+            null, // Email not available on participant, QR code shown on screen
         amount: participant.totalPrix,
         eventTitle: operation.titre ?? 'Événement',
         eventNumber: operation.eventNumber,
@@ -785,7 +796,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
             participantId: participant.id,
           );
           // Refresh participant list
-          await operationProvider.reloadParticipants(widget.clubId, widget.operationId);
+          await operationProvider.reloadParticipants(
+              widget.clubId, widget.operationId);
         },
       );
 
@@ -819,7 +831,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Confirmer la désinscription'),
-        content: Text('Voulez-vous vous désinscrire de "${operationProvider.selectedOperation?.titre}" ?'),
+        content: Text(
+            'Voulez-vous vous désinscrire de "${operationProvider.selectedOperation?.titre}" ?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -828,7 +841,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Se désinscrire', style: TextStyle(color: Colors.white)),
+            child: const Text('Se désinscrire',
+                style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -843,7 +857,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         );
 
         // Refresh participant list after unregistration
-        await operationProvider.reloadParticipants(widget.clubId, widget.operationId);
+        await operationProvider.reloadParticipants(
+            widget.clubId, widget.operationId);
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -876,7 +891,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
       _userProfile!.clubStatuten,
       fonctionDefaut: _userProfile!.fonctionDefaut,
     );
-    debugPrint('🔍 _canScan: clubStatuten=${_userProfile!.clubStatuten}, fonctionDefaut=${_userProfile!.fonctionDefaut}, result=$result');
+    debugPrint(
+        '🔍 _canScan: clubStatuten=${_userProfile!.clubStatuten}, fonctionDefaut=${_userProfile!.fonctionDefaut}, result=$result');
     return result;
   }
 
@@ -912,7 +928,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Invité ${result['prenom']} ${result['nom']} ajouté'),
+              content:
+                  Text('Invité ${result['prenom']} ${result['nom']} ajouté'),
               backgroundColor: Colors.green,
             ),
           );
@@ -957,7 +974,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Détail événement', style: TextStyle(color: Colors.white)),
+        title: const Text('Détail événement',
+            style: TextStyle(color: Colors.white)),
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
@@ -1000,145 +1018,150 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         opacity: 0.7,
         child: SafeArea(
           child: Consumer<OperationProvider>(
-        builder: (context, operationProvider, child) {
-          final operation = operationProvider.selectedOperation;
+            builder: (context, operationProvider, child) {
+              final operation = operationProvider.selectedOperation;
 
-          if (operationProvider.isLoading || operation == null) {
-            return const LoadingWidget(message: 'Chargement...');
-          }
+              if (operationProvider.isLoading || operation == null) {
+                return const LoadingWidget(message: 'Chargement...');
+              }
 
-          final participantCount = operationProvider.getParticipantCount(operation.id);
-          final isRegistered = operationProvider.isUserRegistered(operation.id);
-          final isOpen = operation.statut == 'ouvert';
-          final isFull = operation.capaciteMax != null && participantCount >= operation.capaciteMax!;
-          final canRegister = isOpen && !isFull && !isRegistered;
+              final participantCount =
+                  operationProvider.getParticipantCount(operation.id);
+              final isRegistered =
+                  operationProvider.isUserRegistered(operation.id);
+              final isOpen = operation.statut == 'ouvert';
+              final isFull = operation.capaciteMax != null &&
+                  participantCount >= operation.capaciteMax!;
+              final canRegister = isOpen && !isFull && !isRegistered;
 
-          // Get user's inscription to check payment status and price
-          final userInscription = _userInscription;
-          final isPaid = userInscription?.paye ?? false;
+              // Get user's inscription to check payment status and price
+              final userInscription = _userInscription;
+              final isPaid = userInscription?.paye ?? false;
 
-          // Calculate price based on user function if not already inscribed
-          // If inscribed, use the total price (base + supplements); otherwise calculate from tariffs
-          double inscriptionPrice;
-          if (userInscription != null) {
-            // Use the total price stored in the inscription (includes supplements)
-            inscriptionPrice = userInscription.totalPrix;
-          } else if (_userProfile != null) {
-            // Calculate price based on user's function
-            inscriptionPrice = TariffUtils.computeRegistrationPrice(
-              operation: operation,
-              profile: _userProfile!,
-            );
-          } else {
-            // Fallback to legacy prixMembre
-            inscriptionPrice = operation.prixMembre ?? 0.0;
-          }
+              // Calculate price based on user function if not already inscribed
+              // If inscribed, use the total price (base + supplements); otherwise calculate from tariffs
+              double inscriptionPrice;
+              if (userInscription != null) {
+                // Use the total price stored in the inscription (includes supplements)
+                inscriptionPrice = userInscription.totalPrix;
+              } else if (_userProfile != null) {
+                // Calculate price based on user's function
+                inscriptionPrice = TariffUtils.computeRegistrationPrice(
+                  operation: operation,
+                  profile: _userProfile!,
+                );
+              } else {
+                // Fallback to legacy prixMembre
+                inscriptionPrice = operation.prixMembre ?? 0.0;
+              }
 
-          return Column(
-            children: [
-              Expanded(
-                child: RefreshIndicator(
-                  onRefresh: () async {
-                    // Force reload participants and operation data
-                    await operationProvider.reloadParticipants(
-                      widget.clubId,
-                      widget.operationId,
-                    );
-                  },
-                  color: AppColors.primary,
-                  child: SingleChildScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Titre
-                      Text(
-                        operation.titre,
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+              return Column(
+                children: [
+                  Expanded(
+                    child: RefreshIndicator(
+                      onRefresh: () async {
+                        // Force reload participants and operation data
+                        await operationProvider.reloadParticipants(
+                          widget.clubId,
+                          widget.operationId,
+                        );
+                      },
+                      color: AppColors.primary,
+                      child: SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Titre
+                            Text(
+                              operation.titre,
+                              style: const TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+
+                            const SizedBox(height: 16),
+
+                            // Compact header: Date + Lieu sur la même ligne
+                            _buildCompactHeader(operation),
+
+                            const SizedBox(height: 12),
+
+                            // Prix + Niveau utilisateur
+                            _buildPriceAndLevel(operation),
+
+                            const SizedBox(height: 16),
+
+                            // Description accordion
+                            if (operation.description != null &&
+                                operation.description!.isNotEmpty) ...[
+                              _buildDescriptionAccordion(operation),
+                              const SizedBox(height: 12),
+                            ],
+
+                            // Documents accordion (uploaded via CalyCompta)
+                            if (operation
+                                .documentsJustificatifs.isNotEmpty) ...[
+                              DocumentsAccordion(
+                                documents: operation.documentsJustificatifs,
+                                initiallyExpanded: false,
+                              ),
+                              const SizedBox(height: 12),
+                            ],
+
+                            // 1. Communication accordion (message de l'organisateur)
+                            if (operation.communication != null &&
+                                operation.communication!.isNotEmpty) ...[
+                              _buildCommunicationAccordion(operation),
+                              const SizedBox(height: 12),
+                            ],
+
+                            // 2. Discussion (shared modern event chat)
+                            _buildDiscussionCard(operation),
+                            const SizedBox(height: 12),
+
+                            // 3. Inscribed members accordion (closed by default)
+                            _buildInscribedMembersAccordion(operationProvider),
+                            const SizedBox(height: 12),
+
+                            // 4. Palanquées button (plongee events — creator + encadrants only)
+                            if (operation.categorie == 'plongee' &&
+                                operationProvider
+                                    .selectedOperationParticipants.isNotEmpty &&
+                                _canManagePalanquees(operation)) ...[
+                              _buildPalanqueeButton(operationProvider),
+                              const SizedBox(height: 12),
+                            ],
+
+                            // 5. Course selection (only if registered AND plongee event) - exercises last
+                            if (isRegistered &&
+                                operation.categorie == 'plongee') ...[
+                              _buildCourseSelection(operationProvider),
+                            ],
+                          ],
                         ),
                       ),
-
-                      const SizedBox(height: 16),
-
-                      // Compact header: Date + Lieu sur la même ligne
-                      _buildCompactHeader(operation),
-
-                      const SizedBox(height: 12),
-
-                      // Prix + Niveau utilisateur
-                      _buildPriceAndLevel(operation),
-
-                      const SizedBox(height: 16),
-
-                      // Description accordion
-                      if (operation.description != null && operation.description!.isNotEmpty) ...[
-                        _buildDescriptionAccordion(operation),
-                        const SizedBox(height: 12),
-                      ],
-
-                      // Documents accordion (uploaded via CalyCompta)
-                      if (operation.documentsJustificatifs.isNotEmpty) ...[
-                        DocumentsAccordion(
-                          documents: operation.documentsJustificatifs,
-                          initiallyExpanded: false,
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-
-                      // 1. Communication accordion (message de l'organisateur)
-                      if (operation.communication != null && operation.communication!.isNotEmpty) ...[
-                        _buildCommunicationAccordion(operation),
-                        const SizedBox(height: 12),
-                      ],
-
-                      // 2. Discussion accordion (chat entre participants - ouvert à tous)
-                      _buildDiscussionAccordion(true),
-                      // Input field OUTSIDE ExpansionTile for iOS compatibility
-                      if (_isDiscussionExpanded)
-                        _buildStandaloneMessageInput(),
-                      const SizedBox(height: 12),
-
-                      // 3. Inscribed members accordion (closed by default)
-                      _buildInscribedMembersAccordion(operationProvider),
-                      const SizedBox(height: 12),
-
-                      // 4. Palanquées button (plongee events — creator + encadrants only)
-                      if (operation.categorie == 'plongee' &&
-                          operationProvider.selectedOperationParticipants.isNotEmpty &&
-                          _canManagePalanquees(operation)) ...[
-                        _buildPalanqueeButton(operationProvider),
-                        const SizedBox(height: 12),
-                      ],
-
-                      // 5. Course selection (only if registered AND plongee event) - exercises last
-                      if (isRegistered && operation.categorie == 'plongee') ...[
-                        _buildCourseSelection(operationProvider),
-                      ],
-                    ],
+                    ),
                   ),
-                ),
-                ),
-              ),
 
-              // Bottom buttons section
-              _buildBottomButtons(
-                operation: operation,
-                isRegistered: isRegistered,
-                canRegister: canRegister,
-                isOpen: isOpen,
-                isFull: isFull,
-                isPaid: isPaid,
-                inscriptionPrice: inscriptionPrice,
-                userInscription: userInscription,
-              ),
-            ],
-          );
-        },
-      ),
+                  // Bottom buttons section
+                  _buildBottomButtons(
+                    operation: operation,
+                    isRegistered: isRegistered,
+                    canRegister: canRegister,
+                    isOpen: isOpen,
+                    isFull: isFull,
+                    isPaid: isPaid,
+                    inscriptionPrice: inscriptionPrice,
+                    userInscription: userInscription,
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
@@ -1241,7 +1264,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
             ),
           ],
         ] else if (displayPrice == null || displayPrice == 0) ...[
-          const Icon(Icons.check_circle_outline, size: 18, color: Colors.white70),
+          const Icon(Icons.check_circle_outline,
+              size: 18, color: Colors.white70),
           const SizedBox(width: 6),
           const Text(
             'Gratuit',
@@ -1341,7 +1365,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                     onOpen: (link) async {
                       final uri = Uri.parse(link.url);
                       if (await canLaunchUrl(uri)) {
-                        await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        await launchUrl(uri,
+                            mode: LaunchMode.externalApplication);
                       }
                     },
                     text: description,
@@ -1366,15 +1391,18 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                       onTap: () async {
                         final uri = Uri.parse(operation.infoDocument!.url);
                         if (await canLaunchUrl(uri)) {
-                          await launchUrl(uri, mode: LaunchMode.externalApplication);
+                          await launchUrl(uri,
+                              mode: LaunchMode.externalApplication);
                         }
                       },
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
                         decoration: BoxDecoration(
                           color: AppColors.lichtblauw.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: AppColors.lichtblauw.withOpacity(0.5)),
+                          border: Border.all(
+                              color: AppColors.lichtblauw.withOpacity(0.5)),
                         ),
                         child: Row(
                           children: [
@@ -1486,134 +1514,116 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
     );
   }
 
-  /// Discussion accordion (chat entre participants)
-  Widget _buildDiscussionAccordion(bool isRegistered) {
+  void _openDiscussionScreen(Operation operation) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => EventDiscussionScreen(
+          clubId: widget.clubId,
+          operationId: widget.operationId,
+          operationTitle: operation.titre,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDiscussionCard(Operation operation) {
     final messageProvider = context.watch<EventMessageProvider>();
-    final authProvider = context.read<AuthProvider>();
-    final operationProvider = context.read<OperationProvider>();
-    final currentUserId = authProvider.currentUser?.uid ?? '';
-    final totalParticipants = operationProvider.selectedOperationParticipants.length;
 
     return StreamBuilder<List<EventMessage>>(
       stream: messageProvider.watchMessages(widget.clubId, widget.operationId),
       builder: (context, snapshot) {
         final messages = snapshot.data ?? [];
+        final lastMessage = messages.isNotEmpty ? messages.last : null;
+        final previewText = _buildDiscussionPreview(lastMessage);
 
         return Container(
           decoration: BoxDecoration(
-            border: Border.all(color: AppColors.lichtblauw.withOpacity(0.5)),
+            border:
+                Border.all(color: AppColors.lichtblauw.withValues(alpha: 0.5)),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: ClipRRect(
+          child: Material(
+            color: Colors.white.withValues(alpha: 0.9),
             borderRadius: BorderRadius.circular(12),
-            child: ExpansionTile(
-              initiallyExpanded: _isDiscussionExpanded,
-              onExpansionChanged: (expanded) {
-                setState(() {
-                  _isDiscussionExpanded = expanded;
-                });
-                // Mark messages as read when opening discussion
-                if (expanded && currentUserId.isNotEmpty) {
-                  // Sauvegarder l'ancien lastRead AVANT markAsRead pour le divider
-                  final tracker = LocalReadTracker();
-                  _discussionLastReadBeforeOpen = tracker.getLastRead('operation_${widget.operationId}')
-                      ?? tracker.installBaseline
-                      ?? DateTime(2024);
-
-                  messageProvider.markAsRead(
-                    operationId: widget.operationId,
-                    unreadProvider: Provider.of<UnreadCountProvider>(context, listen: false),
-                  );
-                }
-              },
-              backgroundColor: AppColors.lichtblauw.withOpacity(0.2),
-              collapsedBackgroundColor: Colors.white.withOpacity(0.9),
-              tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              leading: Icon(Icons.chat, color: AppColors.middenblauw),
-              title: Text(
-                'Discussion',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.donkerblauw,
-                ),
-              ),
-              trailing: const Icon(Icons.expand_more),
-              children: [
-                // Messages list only - input is outside ExpansionTile
-                Container(
-                  color: Colors.white,
-                  height: 250,
-                  child: Builder(
-                    builder: (context) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-
-                      if (snapshot.hasError) {
-                        return Center(
-                          child: Text('Erreur: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
-                        );
-                      }
-
-                      if (messages.isEmpty) {
-                        return Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
+            child: InkWell(
+              onTap: () => _openDiscussionScreen(operation),
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: AppColors.lichtblauw.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(
+                        Icons.chat_bubble_outline_rounded,
+                        color: AppColors.middenblauw,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
                             children: [
-                              Icon(Icons.chat_bubble_outline, size: 48, color: Colors.grey[400]),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Aucun message',
-                                style: TextStyle(color: Colors.grey[600]),
+                              Expanded(
+                                child: Text(
+                                  'Discussion',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.donkerblauw,
+                                  ),
+                                ),
                               ),
+                              if (messages.isNotEmpty)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.lichtblauw
+                                        .withValues(alpha: 0.2),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    '${messages.length}',
+                                    style: const TextStyle(
+                                      color: AppColors.middenblauw,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
-                        );
-                      }
-
-                      // Chercher l'index du premier message non lu
-                      int? newMsgIdx;
-                      if (_discussionLastReadBeforeOpen != null) {
-                        for (int i = 0; i < messages.length; i++) {
-                          if (messages[i].createdAt.isAfter(_discussionLastReadBeforeOpen!)) {
-                            newMsgIdx = i;
-                            break;
-                          }
-                        }
-                      }
-
-                      final hasDivider = newMsgIdx != null;
-                      final totalItems = messages.length + (hasDivider ? 1 : 0);
-
-                      // Use reverse: true to auto-scroll to bottom (like WhatsApp)
-                      return ListView.builder(
-                        padding: const EdgeInsets.all(12),
-                        reverse: true,
-                        itemCount: totalItems,
-                        itemBuilder: (context, revIndex) {
-                          // Convert reversed index to forward index
-                          final fwdIndex = totalItems - 1 - revIndex;
-
-                          // Show divider at the right position
-                          if (hasDivider && fwdIndex == newMsgIdx) {
-                            return _buildNewMessagesDivider();
-                          }
-
-                          // Adjust message index for items after divider
-                          final msgIndex = hasDivider && fwdIndex > newMsgIdx!
-                              ? fwdIndex - 1
-                              : fwdIndex;
-
-                          final message = messages[msgIndex];
-                          final isOwnMessage = message.senderId == currentUserId;
-                          return _buildMessageBubble(message, isOwnMessage, totalParticipants);
-                        },
-                      );
-                    },
-                  ),
+                          const SizedBox(height: 4),
+                          Text(
+                            previewText,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              height: 1.35,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Icon(Icons.chevron_right, color: Colors.grey.shade500),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         );
@@ -1621,223 +1631,35 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
     );
   }
 
-  /// Info message for non-registered users in discussion
-  Widget _buildDiscussionInfoForNonRegistered() {
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        children: [
-          Icon(Icons.info_outline, color: Colors.grey[600], size: 18),
-          const SizedBox(width: 8),
-          const Expanded(
-            child: Text(
-              'Inscrivez-vous pour participer à la discussion',
-              style: TextStyle(fontSize: 13, color: Colors.grey),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Standalone message input - OUTSIDE ExpansionTile for iOS compatibility
-  Widget _buildStandaloneMessageInput() {
-    final messageProvider = context.watch<EventMessageProvider>();
-    final authProvider = context.read<AuthProvider>();
-    final currentUserId = authProvider.currentUser?.uid ?? '';
-    final displayName = authProvider.displayName ?? 'Membre';
-
-    return Container(
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _messageController,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: InputDecoration(
-                hintText: 'Votre message...',
-                filled: true,
-                fillColor: Colors.grey[100],
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              ),
-              textInputAction: TextInputAction.send,
-              onSubmitted: (text) => _sendDiscussionMessage(messageProvider, currentUserId, displayName, text),
-            ),
-          ),
-          const SizedBox(width: 8),
-          IconButton(
-            onPressed: () {
-              final text = _messageController.text.trim();
-              if (text.isNotEmpty) {
-                _sendDiscussionMessage(messageProvider, currentUserId, displayName, text);
-              }
-            },
-            icon: const Icon(Icons.send),
-            color: AppColors.middenblauw,
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Send message helper
-  Future<void> _sendDiscussionMessage(
-    EventMessageProvider messageProvider,
-    String userId,
-    String displayName,
-    String text,
-  ) async {
-    if (text.trim().isEmpty) return;
-
-    try {
-      await messageProvider.sendMessage(
-        clubId: widget.clubId,
-        operationId: widget.operationId,
-        senderId: userId,
-        senderName: displayName,
-        message: text.trim(),
-      );
-      _messageController.clear();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red),
-        );
-      }
+  String _buildDiscussionPreview(EventMessage? lastMessage) {
+    if (lastMessage == null) {
+      return 'Ouvrir la discussion complète';
     }
-  }
 
-  /// Message bubble for chat - compact style with time on the right
-  Widget _buildNewMessagesDivider() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          Expanded(child: Divider(color: Colors.red.shade300, thickness: 1)),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Text(
-              'Nouveaux messages',
-              style: TextStyle(
-                color: Colors.red.shade400,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          Expanded(child: Divider(color: Colors.red.shade300, thickness: 1)),
-        ],
-      ),
-    );
-  }
+    final author = lastMessage.senderName.trim().isEmpty
+        ? 'Membre'
+        : lastMessage.senderName.trim();
 
-  Widget _buildMessageBubble(EventMessage message, bool isOwnMessage, int totalParticipants) {
-    final dateFormat = DateFormat('HH:mm');
-
-
-    return GestureDetector(
-      onLongPress: isOwnMessage ? () => _confirmDeleteEventMessage(message) : null,
-      child: Align(
-      alignment: isOwnMessage ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-        decoration: BoxDecoration(
-          color: isOwnMessage ? AppColors.lichtblauw.withOpacity(0.4) : Colors.grey[200],
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (!isOwnMessage)
-                    Text(
-                      message.senderName,
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.donkerblauw),
-                    ),
-                  Text(message.message, style: const TextStyle(fontSize: 14)),
-                ],
-              ),
-            ),
-            const SizedBox(width: 6),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  dateFormat.format(message.createdAt),
-                  style: TextStyle(fontSize: 9, color: Colors.grey[500]),
-                ),
-                if (isOwnMessage) ...[
-                  const SizedBox(width: 2),
-                  Icon(
-                    Icons.done,
-                    size: 14,
-                    color: Colors.grey[400],
-                  ),
-                ],
-              ],
-            ),
-          ],
-        ),
-      ),
-    ),
-    );
-  }
-
-  Future<void> _confirmDeleteEventMessage(EventMessage message) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Supprimer le message'),
-        content: const Text('Êtes-vous sûr de vouloir supprimer ce message ?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annuler'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Supprimer'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true && mounted) {
-      try {
-        final messageProvider = Provider.of<EventMessageProvider>(context, listen: false);
-        await messageProvider.deleteMessage(
-          clubId: widget.clubId,
-          operationId: widget.operationId,
-          messageId: message.id,
-        );
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red),
-          );
-        }
-      }
+    if (lastMessage.message.trim().isNotEmpty) {
+      return '$author: ${lastMessage.message.trim()}';
     }
+
+    if (lastMessage.attachments.isNotEmpty) {
+      final hasVideo = lastMessage.attachments.any((a) => a.isVideo);
+      final hasImage = lastMessage.attachments.any((a) => a.isImage);
+      final attachmentLabel = hasVideo
+          ? 'a envoyé une vidéo'
+          : hasImage
+              ? 'a envoyé une photo'
+              : 'a envoyé un document';
+      return '$author $attachmentLabel';
+    }
+
+    if (lastMessage.poll != null) {
+      return '$author a partagé un sondage';
+    }
+
+    return 'Ouvrir la discussion complète';
   }
 
   /// Inscribed members accordion (closed by default)
@@ -1846,7 +1668,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
     final authProvider = context.read<AuthProvider>();
     final currentUserId = authProvider.currentUser?.uid ?? '';
     // For plongee events, hide present indicator (no attendance tracking)
-    final isPlongeeEvent = operationProvider.selectedOperation?.categorie == 'plongee';
+    final isPlongeeEvent =
+        operationProvider.selectedOperation?.categorie == 'plongee';
 
     return Container(
       decoration: BoxDecoration(
@@ -1876,9 +1699,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
               GestureDetector(
                 onTap: () async {
                   await context.read<OperationProvider>().reloadParticipants(
-                    widget.clubId,
-                    widget.operationId,
-                  );
+                        widget.clubId,
+                        widget.operationId,
+                      );
                 },
                 child: Container(
                   padding: const EdgeInsets.all(6),
@@ -1914,7 +1737,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                 ),
               // Participant count badge
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 margin: const EdgeInsets.only(right: 8),
                 decoration: BoxDecoration(
                   color: AppColors.lichtblauw.withOpacity(0.5),
@@ -1959,44 +1783,60 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                         final displayName = prenom.isNotEmpty
                             ? '$prenom $displayNom'.trim()
                             : (displayNom.isNotEmpty ? displayNom : 'Anonyme');
-                        final isCurrentUser = participant.membreId == currentUserId;
+                        final isCurrentUser =
+                            participant.membreId == currentUserId;
                         final isGuest = participant.isGuest;
 
                         final isPresent = participant.present ?? false;
                         // Organizer can tap on unpaid participants to show payment QR
-                        final canShowPaymentCard = _canAddGuest && !participant.paye && participant.totalPrix > 0;
+                        final canShowPaymentCard = _canAddGuest &&
+                            !participant.paye &&
+                            participant.totalPrix > 0;
                         // Get payment status info for subtitle
-                        final paymentInfo = _getPaymentStatusInfo(participant.paymentStatusCategory);
+                        final paymentInfo = _getPaymentStatusInfo(
+                            participant.paymentStatusCategory);
 
                         return ListTile(
                           onTap: canShowPaymentCard
                               ? () => _showParticipantPaymentCard(
                                     participant: participant,
-                                    operation: operationProvider.selectedOperation!,
+                                    operation:
+                                        operationProvider.selectedOperation!,
                                   )
                               : null,
                           leading: CircleAvatar(
-                                  backgroundColor: isGuest
-                                      ? AppColors.oranje.withOpacity(0.3)
-                                      : (isCurrentUser ? AppColors.lichtblauw.withOpacity(0.5) : AppColors.lichtblauw.withOpacity(0.3)),
-                                  radius: 20,
-                                  child: isGuest
-                                      ? Icon(Icons.person_outline, size: 20, color: AppColors.oranje)
-                                      : Text(
-                                          prenom.isNotEmpty ? prenom[0].toUpperCase() : (displayNom.isNotEmpty ? displayNom[0].toUpperCase() : '?'),
-                                          style: TextStyle(
-                                            color: isCurrentUser ? AppColors.donkerblauw : AppColors.middenblauw,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 16,
-                                          ),
-                                        ),
-                                ),
+                            backgroundColor: isGuest
+                                ? AppColors.oranje.withOpacity(0.3)
+                                : (isCurrentUser
+                                    ? AppColors.lichtblauw.withOpacity(0.5)
+                                    : AppColors.lichtblauw.withOpacity(0.3)),
+                            radius: 20,
+                            child: isGuest
+                                ? Icon(Icons.person_outline,
+                                    size: 20, color: AppColors.oranje)
+                                : Text(
+                                    prenom.isNotEmpty
+                                        ? prenom[0].toUpperCase()
+                                        : (displayNom.isNotEmpty
+                                            ? displayNom[0].toUpperCase()
+                                            : '?'),
+                                    style: TextStyle(
+                                      color: isCurrentUser
+                                          ? AppColors.donkerblauw
+                                          : AppColors.middenblauw,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                          ),
                           title: Row(
                             children: [
                               Expanded(
                                 child: Text(
                                   displayName,
-                                  style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 15),
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: 15),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
@@ -2004,7 +1844,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                               if (isGuest) ...[
                                 const SizedBox(width: 8),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
                                     color: AppColors.oranje.withOpacity(0.2),
                                     borderRadius: BorderRadius.circular(4),
@@ -2023,9 +1864,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                               if (isCurrentUser && !isGuest) ...[
                                 const SizedBox(width: 8),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: AppColors.lichtblauw.withOpacity(0.3),
+                                    color:
+                                        AppColors.lichtblauw.withOpacity(0.3),
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: Text(
@@ -2066,16 +1909,22 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                                     children: participant.selectedSupplements
                                         .where((s) => s.name.isNotEmpty)
                                         .map((s) => Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 2),
                                               decoration: BoxDecoration(
-                                                color: AppColors.oranje.withOpacity(0.15),
-                                                borderRadius: BorderRadius.circular(4),
+                                                color: AppColors.oranje
+                                                    .withOpacity(0.15),
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
                                               ),
                                               child: Text(
                                                 '${s.name}: ${s.price.toStringAsFixed(2)} €',
                                                 style: TextStyle(
                                                   fontSize: 11,
-                                                  color: AppColors.oranje.withOpacity(0.9),
+                                                  color: AppColors.oranje
+                                                      .withOpacity(0.9),
                                                 ),
                                               ),
                                             ))
@@ -2089,58 +1938,76 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                                   child: Wrap(
                                     spacing: 4,
                                     runSpacing: 4,
-                                    children: participant.exercices
-                                        .map((exId) {
-                                          final ex = _allExercicesMap[exId];
-                                          final code = ex?.code ?? exId;
-                                          // Look up observation for this member + exercise
-                                          final obs = _exerciceObservations[participant.membreId]?[code];
-                                          final statusColor = _getObservationColor(obs?.result);
-                                          final isMonitor = _canManagePalanquees(
-                                            context.read<OperationProvider>().selectedOperation!,
-                                          );
-                                          return GestureDetector(
-                                            onTap: isMonitor ? () => _showExerciseEvaluationSheet(
-                                              memberId: participant.membreId,
-                                              memberName: '${participant.membrePrenom ?? ''} ${participant.membreNom ?? ''}'.trim(),
-                                              exerciceId: exId,
-                                              exerciceCode: code,
-                                              exerciceDescription: ex?.description ?? '',
-                                              existingObservation: obs,
-                                            ) : null,
-                                            child: Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                              decoration: BoxDecoration(
-                                                color: statusColor.withOpacity(0.15),
-                                                borderRadius: BorderRadius.circular(4),
-                                                border: Border.all(color: statusColor.withOpacity(0.4), width: 1),
-                                              ),
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  if (obs?.result != null)
-                                                    Padding(
-                                                      padding: const EdgeInsets.only(right: 3),
-                                                      child: Icon(
-                                                        _getObservationIcon(obs?.result),
-                                                        size: 12,
-                                                        color: statusColor,
-                                                      ),
-                                                    ),
-                                                  Text(
-                                                    code,
-                                                    style: TextStyle(
-                                                      fontSize: 11,
-                                                      color: statusColor,
-                                                      fontWeight: FontWeight.w600,
-                                                    ),
+                                    children: participant.exercices.map((exId) {
+                                      final ex = _allExercicesMap[exId];
+                                      final code = ex?.code ?? exId;
+                                      // Look up observation for this member + exercise
+                                      final obs = _exerciceObservations[
+                                          participant.membreId]?[code];
+                                      final statusColor =
+                                          _getObservationColor(obs?.result);
+                                      final isMonitor = _canManagePalanquees(
+                                        context
+                                            .read<OperationProvider>()
+                                            .selectedOperation!,
+                                      );
+                                      return GestureDetector(
+                                        onTap: isMonitor
+                                            ? () =>
+                                                _showExerciseEvaluationSheet(
+                                                  memberId:
+                                                      participant.membreId,
+                                                  memberName:
+                                                      '${participant.membrePrenom ?? ''} ${participant.membreNom ?? ''}'
+                                                          .trim(),
+                                                  exerciceId: exId,
+                                                  exerciceCode: code,
+                                                  exerciceDescription:
+                                                      ex?.description ?? '',
+                                                  existingObservation: obs,
+                                                )
+                                            : null,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color:
+                                                statusColor.withOpacity(0.15),
+                                            borderRadius:
+                                                BorderRadius.circular(4),
+                                            border: Border.all(
+                                                color: statusColor
+                                                    .withOpacity(0.4),
+                                                width: 1),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              if (obs?.result != null)
+                                                Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                          right: 3),
+                                                  child: Icon(
+                                                    _getObservationIcon(
+                                                        obs?.result),
+                                                    size: 12,
+                                                    color: statusColor,
                                                   ),
-                                                ],
+                                                ),
+                                              Text(
+                                                code,
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: statusColor,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
                                               ),
-                                            ),
-                                          );
-                                        })
-                                        .toList(),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    }).toList(),
                                   ),
                                 ),
                             ],
@@ -2151,18 +2018,25 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                               mainAxisAlignment: MainAxisAlignment.end,
                               children: [
                                 // Evaluate participant button (feature-flagged)
-                                if (_canManagePalanquees(operationProvider.selectedOperation!) &&
-                                    _isOperationTodayOrPast(operationProvider.selectedOperation!))
+                                if (_canManagePalanquees(
+                                        operationProvider.selectedOperation!) &&
+                                    _isOperationTodayOrPast(
+                                        operationProvider.selectedOperation!))
                                   Tooltip(
                                     message: 'Évaluer le participant',
                                     child: IconButton(
-                                      icon: Icon(Icons.assessment, size: 20, color: AppColors.middenblauw),
-                                      onPressed: () => _showObservationBottomSheet(
+                                      icon: Icon(Icons.assessment,
+                                          size: 20,
+                                          color: AppColors.middenblauw),
+                                      onPressed: () =>
+                                          _showObservationBottomSheet(
                                         participant: participant,
-                                        operation: operationProvider.selectedOperation!,
+                                        operation: operationProvider
+                                            .selectedOperation!,
                                       ),
                                       padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                      constraints: const BoxConstraints(
+                                          minWidth: 32, minHeight: 32),
                                     ),
                                   ),
                                 // Payment info
@@ -2170,7 +2044,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: canShowPaymentCard
-                                        ? Icon(Icons.qr_code_2, size: 22, color: Colors.blueGrey.shade400)
+                                        ? Icon(Icons.qr_code_2,
+                                            size: 22,
+                                            color: Colors.blueGrey.shade400)
                                         : _buildPaymentBadge(participant),
                                   ),
                                 ],
@@ -2307,10 +2183,12 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         child: ElevatedButton.icon(
           onPressed: _handleUnregister,
           icon: const Icon(Icons.cancel, color: Colors.white),
-          label: const Text('Se désinscrire', style: TextStyle(fontSize: 16, color: Colors.white)),
+          label: const Text('Se désinscrire',
+              style: TextStyle(fontSize: 16, color: Colors.white)),
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.red,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             elevation: 8,
             shadowColor: Colors.red.withOpacity(0.5),
           ),
@@ -2325,7 +2203,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         child: ElevatedButton(
           onPressed: null,
           style: ElevatedButton.styleFrom(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
           child: const Text('Événement fermé', style: TextStyle(fontSize: 16)),
         ),
@@ -2339,9 +2218,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         child: ElevatedButton(
           onPressed: null,
           style: ElevatedButton.styleFrom(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
-          child: const Text('Événement complet', style: TextStyle(fontSize: 16)),
+          child:
+              const Text('Événement complet', style: TextStyle(fontSize: 16)),
         ),
       );
     }
@@ -2352,10 +2233,15 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
       child: ElevatedButton.icon(
         onPressed: _handleRegister,
         icon: const Icon(Icons.check_circle, color: Colors.white),
-        label: const Text('S\'inscrire', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+        label: const Text('S\'inscrire',
+            style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.white)),
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.middenblauw,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           elevation: 8,
           shadowColor: AppColors.middenblauw.withOpacity(0.5),
         ),
@@ -2437,7 +2323,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
     final userLevel = _userProfile?.plongeurCode;
     final participants = operationProvider.selectedOperationParticipants;
     // Count participants who have selected at least one exercise
-    final participantsWithExercises = participants.where((p) => p.exercices.isNotEmpty).length;
+    final participantsWithExercises =
+        participants.where((p) => p.exercices.isNotEmpty).length;
 
     if (_isLoadingExercices) {
       return const Center(child: CircularProgressIndicator());
@@ -2492,7 +2379,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 margin: const EdgeInsets.only(right: 8),
                 decoration: BoxDecoration(
                   color: Colors.blue.shade100,
@@ -2547,7 +2435,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                     child: SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: _selectedExercices.isNotEmpty ? _saveExercices : null,
+                        onPressed: _selectedExercices.isNotEmpty
+                            ? _saveExercices
+                            : null,
                         icon: const Icon(Icons.save, size: 18),
                         label: Text(
                           _selectedExercices.isEmpty
@@ -2557,7 +2447,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.blue,
                           foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8)),
                         ),
                       ),
                     ),
@@ -2637,13 +2528,13 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
   Future<void> _loadExerciceObservations() async {
     final operation = context.read<OperationProvider>().selectedOperation;
     if (operation == null) return;
-    
+
     final service = MemberObservationService();
     final stream = service.getObservationsForSession(
       widget.clubId,
       operation.id,
     );
-    
+
     stream.listen((observations) {
       if (!mounted) return;
       final map = <String, Map<String, MemberObservation>>{};
@@ -2667,15 +2558,18 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
     final authProvider = context.read<AuthProvider>();
     final memberProvider = context.read<MemberProvider>();
     final currentUserId = authProvider.currentUser?.uid ?? '';
-    final currentUserName = '${memberProvider.prenom ?? ''} ${memberProvider.nom ?? ''}'.trim();
-    
+    final currentUserName =
+        '${memberProvider.prenom ?? ''} ${memberProvider.nom ?? ''}'.trim();
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       builder: (context) => ObservationBottomSheet(
         clubId: FirebaseConfig.defaultClubId,
         memberId: participant.membreId,
-        memberName: '${participant.membrePrenom ?? ''} ${participant.membreNom ?? ''}'.trim(),
+        memberName:
+            '${participant.membrePrenom ?? ''} ${participant.membreNom ?? ''}'
+                .trim(),
         memberNiveau: '', // Level not available from ParticipantOperation
         sessionId: operation.id,
         sessionTitle: operation.titre,
@@ -2697,15 +2591,17 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
   }) {
     final operation = context.read<OperationProvider>().selectedOperation;
     if (operation == null) return;
-    
+
     final authProvider = context.read<AuthProvider>();
     final memberProvider = context.read<MemberProvider>();
     final currentUserId = authProvider.currentUser?.uid ?? '';
-    final currentUserName = '${memberProvider.prenom ?? ''} ${memberProvider.nom ?? ''}'.trim();
-    
+    final currentUserName =
+        '${memberProvider.prenom ?? ''} ${memberProvider.nom ?? ''}'.trim();
+
     String? selectedResult = existingObservation?.result;
-    final noteController = TextEditingController(text: existingObservation?.note ?? '');
-    
+    final noteController =
+        TextEditingController(text: existingObservation?.note ?? '');
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -2738,11 +2634,12 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                     ),
                   ),
                   const SizedBox(height: 16),
-                  
+
                   // Title
                   Text(
                     'Évaluer: $exerciceCode',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -2750,96 +2647,121 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
                     style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                   ),
                   const SizedBox(height: 20),
-                  
+
                   // Status buttons
-                  Text('Résultat', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.grey[700])),
+                  Text('Résultat',
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[700])),
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      _buildResultButton('acquis', 'Acquis', Colors.green, selectedResult, (val) {
+                      _buildResultButton(
+                          'acquis', 'Acquis', Colors.green, selectedResult,
+                          (val) {
                         setSheetState(() => selectedResult = val);
                       }),
                       const SizedBox(width: 8),
-                      _buildResultButton('en_progres', 'En progrès', Colors.orange, selectedResult, (val) {
+                      _buildResultButton('en_progres', 'En progrès',
+                          Colors.orange, selectedResult, (val) {
                         setSheetState(() => selectedResult = val);
                       }),
                       const SizedBox(width: 8),
-                      _buildResultButton('a_revoir', 'À revoir', Colors.red, selectedResult, (val) {
+                      _buildResultButton(
+                          'a_revoir', 'À revoir', Colors.red, selectedResult,
+                          (val) {
                         setSheetState(() => selectedResult = val);
                       }),
                     ],
                   ),
                   const SizedBox(height: 16),
-                  
+
                   // Note field
-                  Text('Remarque', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.grey[700])),
+                  Text('Remarque',
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[700])),
                   const SizedBox(height: 8),
                   TextField(
                     controller: noteController,
                     maxLines: 3,
                     decoration: InputDecoration(
                       hintText: 'Ajouter une remarque...',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
                       contentPadding: const EdgeInsets.all(12),
                     ),
                   ),
                   const SizedBox(height: 20),
-                  
+
                   // Save button
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: selectedResult == null ? null : () async {
-                        final service = MemberObservationService();
-                        
-                        if (existingObservation != null) {
-                          // Update existing
-                          await service.updateObservation(
-                            widget.clubId,
-                            existingObservation.id,
-                            {
-                              'result': selectedResult,
-                              'note': noteController.text.trim(),
-                              'updatedAt': DateTime.now(),
+                      onPressed: selectedResult == null
+                          ? null
+                          : () async {
+                              final service = MemberObservationService();
+
+                              if (existingObservation != null) {
+                                // Update existing
+                                await service.updateObservation(
+                                  widget.clubId,
+                                  existingObservation.id,
+                                  {
+                                    'result': selectedResult,
+                                    'note': noteController.text.trim(),
+                                    'updatedAt': DateTime.now(),
+                                  },
+                                );
+                              } else {
+                                // Create new observation
+                                final participants = context
+                                    .read<OperationProvider>()
+                                    .selectedOperationParticipants;
+
+                                final obs = MemberObservation(
+                                  id: '',
+                                  memberId: memberId,
+                                  memberName: memberName,
+                                  memberNiveau: '',
+                                  contextType: operation.categorie == 'plongee'
+                                      ? 'plongee'
+                                      : 'piscine',
+                                  contextId: operation.id,
+                                  contextDate:
+                                      operation.dateDebut ?? DateTime.now(),
+                                  contextTitle: operation.titre,
+                                  category: 'exercice_lifras',
+                                  exerciceCode: exerciceCode,
+                                  exerciceDescription: exerciceDescription,
+                                  result: selectedResult,
+                                  note: noteController.text.trim(),
+                                  observerId: currentUserId,
+                                  observerName: currentUserName,
+                                  createdAt: DateTime.now(),
+                                );
+                                await service.addObservation(
+                                    widget.clubId, obs);
+                              }
+
+                              if (mounted) Navigator.pop(ctx);
                             },
-                          );
-                        } else {
-                          // Create new observation
-                          final participants = context.read<OperationProvider>()
-                              .selectedOperationParticipants;
-                          
-                          final obs = MemberObservation(
-                            id: '',
-                            memberId: memberId,
-                            memberName: memberName,
-                            memberNiveau: '',
-                            contextType: operation.categorie == 'plongee' ? 'plongee' : 'piscine',
-                            contextId: operation.id,
-                            contextDate: operation.dateDebut ?? DateTime.now(),
-                            contextTitle: operation.titre,
-                            category: 'exercice_lifras',
-                            exerciceCode: exerciceCode,
-                            exerciceDescription: exerciceDescription,
-                            result: selectedResult,
-                            note: noteController.text.trim(),
-                            observerId: currentUserId,
-                            observerName: currentUserName,
-                            createdAt: DateTime.now(),
-                          );
-                          await service.addObservation(widget.clubId, obs);
-                        }
-                        
-                        if (mounted) Navigator.pop(ctx);
-                      },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.teal,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                       ),
                       child: Text(
-                        existingObservation != null ? 'Modifier' : 'Enregistrer',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                        existingObservation != null
+                            ? 'Modifier'
+                            : 'Enregistrer',
+                        style: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w600),
                       ),
                     ),
                   ),
@@ -2852,8 +2774,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
       ),
     );
   }
-  
-  Widget _buildResultButton(String value, String label, Color color, String? selected, Function(String) onTap) {
+
+  Widget _buildResultButton(String value, String label, Color color,
+      String? selected, Function(String) onTap) {
     final isSelected = selected == value;
     return Expanded(
       child: GestureDetector(
@@ -2895,7 +2818,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen> with Widg
         return Colors.teal; // No evaluation yet
     }
   }
-  
+
   IconData _getObservationIcon(String? result) {
     switch (result) {
       case 'acquis':
@@ -2923,10 +2846,12 @@ class _SupplementSelectionDialog extends StatefulWidget {
   });
 
   @override
-  State<_SupplementSelectionDialog> createState() => _SupplementSelectionDialogState();
+  State<_SupplementSelectionDialog> createState() =>
+      _SupplementSelectionDialogState();
 }
 
-class _SupplementSelectionDialogState extends State<_SupplementSelectionDialog> {
+class _SupplementSelectionDialogState
+    extends State<_SupplementSelectionDialog> {
   final Set<String> _selectedIds = {};
 
   double get _supplementTotal {

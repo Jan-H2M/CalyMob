@@ -23,7 +23,7 @@ class _TeamsListScreenState extends State<TeamsListScreen> {
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
     final memberProvider = Provider.of<MemberProvider>(context);
-    final clubId = FirebaseConfig.defaultClubId;
+    const clubId = FirebaseConfig.defaultClubId;
     final userId = authProvider.currentUser?.uid;
     final userRoles = memberProvider.clubStatuten;
 
@@ -72,13 +72,13 @@ class _TeamsListScreenState extends State<TeamsListScreen> {
                       Icon(
                         Icons.groups_outlined,
                         size: 64,
-                        color: Colors.white.withOpacity(0.5),
+                        color: Colors.white.withValues(alpha: 0.5),
                       ),
                       const SizedBox(height: 16),
                       Text(
                         'Aucune équipe disponible',
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.7),
+                          color: Colors.white.withValues(alpha: 0.7),
                           fontSize: 16,
                         ),
                       ),
@@ -86,7 +86,7 @@ class _TeamsListScreenState extends State<TeamsListScreen> {
                       Text(
                         'Vous avez besoin du rôle "Accueil" ou "Encadrant"',
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.5),
+                          color: Colors.white.withValues(alpha: 0.5),
                           fontSize: 14,
                         ),
                         textAlign: TextAlign.center,
@@ -171,13 +171,18 @@ class _ChannelCard extends StatelessWidget {
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: channel.type == TeamChannelType.accueil
-                        ? Colors.blue.withOpacity(0.1)
-                        : Colors.purple.withOpacity(0.1),
+                        ? Colors.blue.withValues(alpha: 0.1)
+                        : Colors.purple.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: Text(
-                    channel.type.icon,
-                    style: const TextStyle(fontSize: 32),
+                  child: Icon(
+                    channel.type.iconData,
+                    color: channel.type == TeamChannelType.accueil
+                        ? Colors.blue.shade700
+                        : channel.type == TeamChannelType.gonflage
+                            ? Colors.teal.shade600
+                            : Colors.purple.shade700,
+                    size: 32,
                   ),
                 ),
 

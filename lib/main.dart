@@ -73,21 +73,22 @@ void main() async {
   // so we must NOT call it before — that causes a zone mismatch on web.
   await SentryFlutter.init(
     (options) {
-      options.dsn = 'https://c6c7e5f63f5700bf5cb4f2b02a6ea0b5@o4510996349386752.ingest.de.sentry.io/4510996559429712';
+      options.dsn =
+          'https://c6c7e5f63f5700bf5cb4f2b02a6ea0b5@o4510996349386752.ingest.de.sentry.io/4510996559429712';
       options.tracesSampleRate = 1.0;
-      options.environment = const String.fromEnvironment('ENV', defaultValue: 'production');
+      options.environment =
+          const String.fromEnvironment('ENV', defaultValue: 'production');
 
       // Session Replay — pour bug reporting (capture vidéo des sessions)
-      options.replay.sessionSampleRate = 0.1;   // 10% des sessions normales
-      options.replay.onErrorSampleRate = 1.0;   // 100% des sessions avec erreur
+      options.replay.sessionSampleRate = 0.1; // 10% des sessions normales
+      options.replay.onErrorSampleRate = 1.0; // 100% des sessions avec erreur
     },
     appRunner: () async {
       debugPrint('✅ Sentry initialisé');
 
       // Register Syncfusion license
       SyncfusionLicense.registerLicense(
-        'Ngo9BigBOggjHTQxAR8/V1JFaF1cXGFCf1FpRGpGfV5ycUVHYVZQRXxeQE0SNHVRdkdmWH1fcnVUR2FdU0J+W0pWYEg='
-      );
+          'Ngo9BigBOggjHTQxAR8/V1JFaF1cXGFCf1FpRGpGfV5ycUVHYVZQRXxeQE0SNHVRdkdmWH1fcnVUR2FdU0J+W0pWYEg=');
 
       try {
         // Initialiser Firebase avec les options de configuration
@@ -104,7 +105,8 @@ void main() async {
         if (!kIsWeb) {
           FlutterError.onError = (FlutterErrorDetails details) {
             FirebaseCrashlytics.instance.recordFlutterFatalError(details);
-            Sentry.captureException(details.exception, stackTrace: details.stack);
+            Sentry.captureException(details.exception,
+                stackTrace: details.stack);
           };
           debugPrint('✅ Crashlytics initialisé');
         }
@@ -120,7 +122,8 @@ void main() async {
 
         // Initialiser le service de notifications (pas sur web)
         if (!kIsWeb) {
-          FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+          FirebaseMessaging.onBackgroundMessage(
+              firebaseMessagingBackgroundHandler);
         }
 
         final notificationService = NotificationService();
@@ -139,16 +142,10 @@ void main() async {
         debugPrint('Stack trace: ${StackTrace.current}');
       }
 
-      // Use runZonedGuarded on ALL platforms to ensure zone consistency
-      // (fixes CALYMOB-D zone mismatch on web)
-      runZonedGuarded<Future<void>>(() async {
-        runApp(const MyApp());
-      }, (error, stack) {
-        if (!kIsWeb) {
-          FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-        }
-        Sentry.captureException(error, stackTrace: stack);
-      });
+      // appRunner already executes inside Sentry's zone. Wrapping runApp in an
+      // extra runZonedGuarded creates a different zone and triggers a web
+      // "Zone mismatch" assertion at startup.
+      runApp(const MyApp());
     },
   );
 }
@@ -245,7 +242,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     debugPrint('🔔 Notification tap - type: $type, data: $data');
 
     if (type == null || _navigatorKey.currentState == null) {
-      debugPrint('⚠️ Cannot handle notification tap: type=$type, navigator=${_navigatorKey.currentState != null}');
+      debugPrint(
+          '⚠️ Cannot handle notification tap: type=$type, navigator=${_navigatorKey.currentState != null}');
       return;
     }
 
@@ -332,7 +330,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               if (groupType == 'accueil') {
                 sessionGroupType = SessionGroupType.accueil;
                 displayName = 'Accueil';
-              } else if (groupType == 'niveau' && groupLevel != null && groupLevel.isNotEmpty) {
+              } else if (groupType == 'niveau' &&
+                  groupLevel != null &&
+                  groupLevel.isNotEmpty) {
                 sessionGroupType = SessionGroupType.niveau;
                 displayName = 'Niveau $groupLevel';
               }
@@ -391,7 +391,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           debugPrint('⚠️ Unknown notification type: $type');
       }
     } on TimeoutException {
-      debugPrint('⚠️ Notification tap: Firestore read timed out for type=$type');
+      debugPrint(
+          '⚠️ Notification tap: Firestore read timed out for type=$type');
     } catch (e) {
       debugPrint('❌ Error handling notification tap: $e');
     }
@@ -462,7 +463,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void _refreshUnreadCounts() {
     try {
       final unreadProvider = _navigatorKey.currentContext != null
-          ? Provider.of<UnreadCountProvider>(_navigatorKey.currentContext!, listen: false)
+          ? Provider.of<UnreadCountProvider>(_navigatorKey.currentContext!,
+              listen: false)
           : null;
       if (unreadProvider != null && unreadProvider.isListening) {
         unreadProvider.refresh();
@@ -477,7 +479,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (kIsWeb) return; // app_badge_plus not available on web (fixes CALYMOB-F)
     try {
       final unreadProvider = _navigatorKey.currentContext != null
-          ? Provider.of<UnreadCountProvider>(_navigatorKey.currentContext!, listen: false)
+          ? Provider.of<UnreadCountProvider>(_navigatorKey.currentContext!,
+              listen: false)
           : null;
       if (unreadProvider != null) {
         _notificationService.setBadge(unreadProvider.total);
@@ -509,80 +512,81 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           ChangeNotifierProvider(create: (_) => UnreadCountProvider()),
         ],
         child: MaterialApp(
-        navigatorKey: _navigatorKey,
-        // BugReportOverlay est maintenant DANS le MaterialApp via builder,
-        // pour avoir accès au Navigator, MediaQuery, et Theme.
-        builder: (context, child) {
-          return RepaintBoundary(
-            key: repaintBoundaryKey,
-            child: BugReportOverlay(
-              navigatorKey: _navigatorKey,
-              child: child ?? const SizedBox(),
+          navigatorKey: _navigatorKey,
+          // BugReportOverlay est maintenant DANS le MaterialApp via builder,
+          // pour avoir accès au Navigator, MediaQuery, et Theme.
+          builder: (context, child) {
+            return RepaintBoundary(
+              key: repaintBoundaryKey,
+              child: BugReportOverlay(
+                navigatorKey: _navigatorKey,
+                child: child ?? const SizedBox(),
+              ),
+            );
+          },
+          title: 'CalyMob',
+          debugShowCheckedModeBanner: false,
+          // Localisation française pour Syncfusion Calendar
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+            SfGlobalLocalizations.delegate,
+          ],
+          supportedLocales: const [
+            Locale('fr', 'FR'),
+          ],
+          locale: const Locale('fr', 'FR'),
+          theme: ThemeData(
+            primarySwatch: Colors.blue,
+            useMaterial3: true,
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: AppColors.middenblauw, // Thème maritime
+              brightness: Brightness.light,
             ),
-          );
-        },
-        title: 'CalyMob',
-        debugShowCheckedModeBanner: false,
-        // Localisation française pour Syncfusion Calendar
-        localizationsDelegates: const [
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-          SfGlobalLocalizations.delegate,
-        ],
-        supportedLocales: const [
-          Locale('fr', 'FR'),
-        ],
-        locale: const Locale('fr', 'FR'),
-        theme: ThemeData(
-          primarySwatch: Colors.blue,
-          useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: AppColors.middenblauw, // Thème maritime
-            brightness: Brightness.light,
-          ),
-          appBarTheme: const AppBarTheme(
-            centerTitle: false,
-            elevation: 0,
-            backgroundColor: Colors.transparent,
-            foregroundColor: Colors.white,
-            iconTheme: IconThemeData(color: Colors.white),
-          ),
-          cardTheme: CardThemeData(
-            elevation: 2,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          elevatedButtonTheme: ElevatedButtonThemeData(
-            style: ElevatedButton.styleFrom(
+            appBarTheme: const AppBarTheme(
+              centerTitle: false,
               elevation: 0,
-              backgroundColor: AppColors.middenblauw,
+              backgroundColor: Colors.transparent,
               foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              iconTheme: IconThemeData(color: Colors.white),
+            ),
+            cardTheme: CardThemeData(
+              elevation: 2,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
+            elevatedButtonTheme: ElevatedButtonThemeData(
+              style: ElevatedButton.styleFrom(
+                elevation: 0,
+                backgroundColor: AppColors.middenblauw,
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+            inputDecorationTheme: InputDecorationTheme(
+              filled: true,
+              fillColor: Colors.grey[50],
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey[300]!),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey[300]!),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: AppColors.middenblauw, width: 2),
+              ),
+            ),
           ),
-          inputDecorationTheme: InputDecorationTheme(
-            filled: true,
-            fillColor: Colors.grey[50],
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey[300]!),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey[300]!),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: AppColors.middenblauw, width: 2),
-            ),
-          ),
-        ),
-        home: const LoginScreen(),
+          home: const LoginScreen(),
         ),
       ),
     );

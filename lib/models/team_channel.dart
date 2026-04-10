@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import 'poll.dart';
 import 'session_message.dart' show MessageAttachment;
 
@@ -114,6 +115,23 @@ extension TeamChannelTypeExtension on TeamChannelType {
         return '🎈';
       case TeamChannelType.bureau:
         return '📋';
+    }
+  }
+
+  IconData get iconData {
+    switch (this) {
+      case TeamChannelType.general:
+        return Icons.chat_bubble_outline_rounded;
+      case TeamChannelType.ca:
+        return Icons.badge_outlined;
+      case TeamChannelType.accueil:
+        return Icons.qr_code_scanner_rounded;
+      case TeamChannelType.encadrants:
+        return Icons.school_outlined;
+      case TeamChannelType.gonflage:
+        return Icons.air_rounded;
+      case TeamChannelType.bureau:
+        return Icons.assignment_outlined;
     }
   }
 }

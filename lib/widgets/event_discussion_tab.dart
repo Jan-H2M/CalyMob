@@ -37,6 +37,7 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
 
   EventMessage? _replyingTo;
   Poll? _pendingPoll;
+  bool _hasCheckedParticipation = false;
   bool _isUploading = false;
   bool _initialScrollDone = false;
   DateTime? _lastReadBeforeOpen;
@@ -55,16 +56,19 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
     super.dispose();
   }
 
-  void _checkParticipation() {
+  Future<void> _checkParticipation() async {
     final authProvider = context.read<AuthProvider>();
     final messageProvider = context.read<EventMessageProvider>();
     final userId = authProvider.currentUser?.uid ?? '';
 
-    messageProvider.checkParticipation(
+    await messageProvider.checkParticipation(
       clubId: widget.clubId,
       operationId: widget.operationId,
       userId: userId,
     );
+
+    if (!mounted) return;
+    setState(() => _hasCheckedParticipation = true);
   }
 
   Future<void> _markMessagesAsRead() async {
@@ -95,6 +99,16 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
     final displayName = authProvider.displayName;
 
     if (currentUser == null) return;
+    if (!_hasCheckedParticipation ||
+        !messageProvider.isParticipant(widget.operationId)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Inscrivez-vous pour participer à la discussion'),
+        ),
+      );
+      return;
+    }
 
     setState(() => _isUploading = true);
 
@@ -348,6 +362,8 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
     final authProvider = context.watch<AuthProvider>();
     final messageProvider = context.watch<EventMessageProvider>();
     final currentUserId = authProvider.currentUser?.uid ?? '';
+    final canWrite = _hasCheckedParticipation &&
+        messageProvider.isParticipant(widget.operationId);
 
     return Column(
       children: [
@@ -447,7 +463,7 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
             },
           ),
         ),
-        _buildMessageInput(),
+        canWrite ? _buildMessageInput() : _buildReadOnlyInfo(),
       ],
     );
   }
@@ -615,11 +631,9 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
           if (_pendingAttachments.isNotEmpty) _buildPendingAttachmentsBar(),
           Row(
             children: [
-              AttachmentPicker(onAttachmentSelected: _addAttachment),
-              IconButton(
-                onPressed: _createPoll,
-                icon: const Icon(Icons.poll_outlined),
-                tooltip: 'Ajouter un sondage',
+              AttachmentPicker(
+                onAttachmentSelected: _addAttachment,
+                onCreatePoll: _createPoll,
               ),
               Expanded(
                 child: TextField(
@@ -660,6 +674,30 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
                       tooltip: 'Envoyer',
                     ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReadOnlyInfo() {
+    final bottomSafeArea = MediaQuery.of(context).padding.bottom;
+
+    return Container(
+      padding: EdgeInsets.fromLTRB(12, 10, 12, 10 + bottomSafeArea),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Colors.grey[300]!)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline, color: Colors.grey[600], size: 18),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              'Inscrivez-vous pour participer à la discussion',
+              style: TextStyle(fontSize: 13, color: Colors.grey),
+            ),
           ),
         ],
       ),

@@ -469,11 +469,9 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
               ),
             Row(
               children: [
-                AttachmentPicker(onAttachmentSelected: _addAttachment),
-                IconButton(
-                  onPressed: _createPoll,
-                  icon: const Icon(Icons.poll_outlined),
-                  tooltip: 'Ajouter un sondage',
+                AttachmentPicker(
+                  onAttachmentSelected: _addAttachment,
+                  onCreatePoll: _createPoll,
                 ),
                 Expanded(
                   child: Container(
