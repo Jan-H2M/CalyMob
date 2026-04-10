@@ -11,6 +11,27 @@ const admin = require('firebase-admin');
 const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithBadge, filterByPreference } = require('../utils/badge-helper');
 const { EVENT_EXPIRY_GRACE_DAYS } = require('../utils/constants');
 
+function buildNotificationBody(message = {}) {
+  const text = String(message.message || '').trim();
+  if (text) {
+    return text.length > 100 ? `${text.substring(0, 97)}...` : text;
+  }
+
+  if (message.poll && message.poll.question) {
+    return `📊 ${message.poll.question}`;
+  }
+
+  const attachments = Array.isArray(message.attachments) ? message.attachments : [];
+  if (attachments.some((attachment) => attachment.type === 'video')) {
+    return '🎬 A partagé une vidéo';
+  }
+  if (attachments.length > 0) {
+    return `📎 ${attachments.length} pièce(s) jointe(s)`;
+  }
+
+  return 'Nouveau message';
+}
+
 /**
  * Firestore trigger for new event messages (Gen2)
  */
@@ -58,8 +79,6 @@ exports.onNewEventMessage = onDocumentCreated(
       // 2. Get only PARTICIPANTS of this event (not all club members)
       const senderId = message.sender_id;
       const senderName = message.sender_name || 'Quelqu\'un';
-      const messageText = message.message || '';
-
       // 2a. Get inscriptions to find participant IDs
       const inscriptionsSnapshot = await admin.firestore()
         .collection('clubs')
@@ -115,22 +134,16 @@ exports.onNewEventMessage = onDocumentCreated(
       // Check if this is a reply
       const isReply = !!message.reply_to_id;
       const replyPreview = message.reply_to_preview;
-      const hasAttachments = message.attachments && message.attachments.length > 0;
+      const fallbackBody = buildNotificationBody(message);
 
       let notificationTitle = `${senderName} - ${eventTitle}`;
       let notificationBody;
 
       if (isReply && replyPreview) {
         notificationTitle = `${senderName} a répondu à ${replyPreview.sender_name}`;
-        notificationBody = messageText.length > 80
-          ? messageText.substring(0, 77) + '...'
-          : messageText;
-      } else if (hasAttachments && !messageText) {
-        notificationBody = `📎 ${message.attachments.length} pièce(s) jointe(s)`;
+        notificationBody = fallbackBody;
       } else {
-        notificationBody = messageText.length > 100
-          ? messageText.substring(0, 97) + '...'
-          : messageText;
+        notificationBody = fallbackBody;
       }
 
       const basePayload = {

@@ -36,6 +36,14 @@ class LocalReadTracker {
   /// De globale "alles gelezen" baseline (null als nooit ingesteld).
   DateTime? get globalReadBaseline => _globalReadBaseline;
 
+  DateTime _dateTimeFromStoredEpoch(int epoch) {
+    // Backward compatibility: oudere builds schreven milliseconden weg.
+    if (epoch.abs() < 100000000000000) {
+      return DateTime.fromMillisecondsSinceEpoch(epoch);
+    }
+    return DateTime.fromMicrosecondsSinceEpoch(epoch);
+  }
+
   /// Initialiseer SharedPreferences. Moet 1x aangeroepen worden bij app start.
   Future<void> init() async {
     _prefs ??= await SharedPreferences.getInstance();
@@ -53,8 +61,7 @@ class LocalReadTracker {
     // Herlaad de globale baseline (als die al gezet werd in een vorige sessie)
     final globalMillis = _prefs?.getInt(_globalBaselineKey);
     if (globalMillis != null) {
-      _globalReadBaseline =
-          DateTime.fromMillisecondsSinceEpoch(globalMillis);
+      _globalReadBaseline = _dateTimeFromStoredEpoch(globalMillis);
     }
 
     debugPrint('✅ LocalReadTracker: geïnitialiseerd');
@@ -69,14 +76,11 @@ class LocalReadTracker {
   /// individuele lastRead-timestamp bestond.
   DateTime? getLastRead(String key) {
     final millis = _prefs?.getInt('$_prefix$key');
-    final stored =
-        millis == null ? null : DateTime.fromMillisecondsSinceEpoch(millis);
+    final stored = millis == null ? null : _dateTimeFromStoredEpoch(millis);
 
     if (_globalReadBaseline == null) return stored;
     if (stored == null) return _globalReadBaseline;
-    return stored.isAfter(_globalReadBaseline!)
-        ? stored
-        : _globalReadBaseline;
+    return stored.isAfter(_globalReadBaseline!) ? stored : _globalReadBaseline;
   }
 
   /// Markeer ALLES als gelezen tot op dit moment. Zet een globale
@@ -85,7 +89,7 @@ class LocalReadTracker {
   Future<void> markAllAsRead() async {
     final now = DateTime.now();
     _globalReadBaseline = now;
-    await _prefs?.setInt(_globalBaselineKey, now.millisecondsSinceEpoch);
+    await _prefs?.setInt(_globalBaselineKey, now.microsecondsSinceEpoch);
     debugPrint('📖 LocalReadTracker: markAllAsRead — globalBaseline=$now');
   }
 
@@ -93,7 +97,7 @@ class LocalReadTracker {
   Future<void> markAsRead(String key) async {
     await _prefs?.setInt(
       '$_prefix$key',
-      DateTime.now().millisecondsSinceEpoch,
+      DateTime.now().microsecondsSinceEpoch,
     );
     debugPrint('📖 LocalReadTracker: $key gelezen');
   }

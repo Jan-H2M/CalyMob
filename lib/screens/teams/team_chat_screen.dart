@@ -1,13 +1,21 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../../config/app_colors.dart';
+import '../../config/firebase_config.dart';
+import '../../models/poll.dart';
 import '../../models/team_channel.dart';
-import '../../services/team_channel_service.dart';
-import '../../services/local_read_tracker.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/unread_count_provider.dart';
-import '../../config/firebase_config.dart';
+import '../../services/local_read_tracker.dart';
+import '../../services/team_channel_service.dart';
+import '../../widgets/attachment_display.dart';
+import '../../widgets/attachment_picker.dart';
+import '../../widgets/message_reactions.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
-import '../../theme/calypso_theme.dart';
+import '../../widgets/poll_compose_dialog.dart';
+import '../../widgets/poll_widget.dart';
 
 class TeamChatScreen extends StatefulWidget {
   final TeamChannel channel;
@@ -26,9 +34,12 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode();
+  final List<_PendingAttachment> _pendingAttachments = [];
 
   bool _isSending = false;
   bool _hasMarkedAsRead = false;
+  bool _initialScrollDone = false;
+  Poll? _pendingPoll;
 
   @override
   void initState() {
@@ -44,58 +55,83 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
     super.dispose();
   }
 
+  Color get _teamColor {
+    switch (widget.channel.type) {
+      case TeamChannelType.general:
+        return AppColors.middenblauw;
+      case TeamChannelType.ca:
+        return const Color(0xFF31507A);
+      case TeamChannelType.accueil:
+        return Colors.blue;
+      case TeamChannelType.encadrants:
+        return const Color(0xFF5B5BD6);
+      case TeamChannelType.gonflage:
+        return AppColors.oranje;
+      case TeamChannelType.bureau:
+        return const Color(0xFF0E8A75);
+    }
+  }
+
   Future<void> _markMessagesAsRead() async {
     if (_hasMarkedAsRead) return;
     _hasMarkedAsRead = true;
 
-    // Lokaal markeren als gelezen + badge refresh
     final tracker = LocalReadTracker();
     await tracker.init();
     await tracker.markAsRead('team_${widget.channel.id}');
 
-    if (mounted) {
-      final unreadProvider = Provider.of<UnreadCountProvider>(context, listen: false);
-      await unreadProvider.refresh();
-    }
+    if (!mounted) return;
+    final unreadProvider = context.read<UnreadCountProvider>();
+    await unreadProvider.refresh();
   }
 
   Future<void> _sendMessage() async {
-    final message = _messageController.text.trim();
-    if (message.isEmpty || _isSending) return;
+    final text = _messageController.text.trim();
+    if ((text.isEmpty && _pendingAttachments.isEmpty && _pendingPoll == null) ||
+        _isSending) {
+      return;
+    }
 
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final clubId = FirebaseConfig.defaultClubId;
+    final authProvider = context.read<AuthProvider>();
+    const clubId = FirebaseConfig.defaultClubId;
     final userId = authProvider.currentUser?.uid;
-    final userName = authProvider.displayName ?? authProvider.currentUser?.email ?? 'Anonyme';
+    final userName = authProvider.displayName ??
+        authProvider.currentUser?.email ??
+        'Anonyme';
 
     if (userId == null) return;
 
     setState(() => _isSending = true);
 
     try {
+      final attachments = <TeamMessageAttachment>[];
+      for (final pending in _pendingAttachments) {
+        final attachment = await _channelService.uploadAttachment(
+          clubId: clubId,
+          channelId: widget.channel.id,
+          file: pending.file,
+          type: pending.type,
+        );
+        attachments.add(attachment);
+      }
+
       await _channelService.sendMessage(
         clubId: clubId,
         channelId: widget.channel.id,
         senderId: userId,
         senderName: userName,
-        message: message,
+        message: text,
+        attachments: attachments,
+        poll: _pendingPoll,
       );
 
-      if (!mounted) return;
-
       _messageController.clear();
-
-      // Scroll to bottom
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
-        }
+      setState(() {
+        _pendingAttachments.clear();
+        _pendingPoll = null;
       });
+
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -111,10 +147,184 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
     }
   }
 
+  Future<void> _toggleReaction(String messageId, String emoji) async {
+    final userId = context.read<AuthProvider>().currentUser?.uid;
+    if (userId == null) return;
+
+    await _channelService.toggleReaction(
+      clubId: FirebaseConfig.defaultClubId,
+      channelId: widget.channel.id,
+      messageId: messageId,
+      emoji: emoji,
+      userId: userId,
+    );
+  }
+
+  Future<void> _togglePollVote(String messageId, String optionId) async {
+    final userId = context.read<AuthProvider>().currentUser?.uid;
+    if (userId == null) return;
+
+    await _channelService.togglePollVote(
+      clubId: FirebaseConfig.defaultClubId,
+      channelId: widget.channel.id,
+      messageId: messageId,
+      optionId: optionId,
+      userId: userId,
+    );
+  }
+
+  Future<void> _closePoll(String messageId) async {
+    await _channelService.closePoll(
+      clubId: FirebaseConfig.defaultClubId,
+      channelId: widget.channel.id,
+      messageId: messageId,
+    );
+  }
+
+  Future<void> _deleteMessage(String messageId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Supprimer le message'),
+        content: const Text('Voulez-vous supprimer ce message ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await _channelService.deleteMessage(
+        clubId: FirebaseConfig.defaultClubId,
+        channelId: widget.channel.id,
+        messageId: messageId,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erreur: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _showMessageOptions(TeamMessage message, bool isOwn) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Réagir',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final emoji in MessageReactions.quickReactions)
+                      ActionChip(
+                        label: Text(emoji),
+                        onPressed: () async {
+                          Navigator.of(sheetContext).pop();
+                          await _toggleReaction(message.id, emoji);
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.copy_outlined),
+                  title: const Text('Copier'),
+                  onTap: () async {
+                    Navigator.of(sheetContext).pop();
+                    await Clipboard.setData(
+                      ClipboardData(text: message.message),
+                    );
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Message copié')),
+                    );
+                  },
+                ),
+                if (isOwn)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading:
+                        const Icon(Icons.delete_outline, color: Colors.red),
+                    title: const Text(
+                      'Supprimer',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      _deleteMessage(message.id);
+                    },
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _createPoll() async {
+    final poll = await showPollComposerDialog(context);
+    if (poll == null || !mounted) return;
+    setState(() => _pendingPoll = poll);
+  }
+
+  void _addAttachment(File file, String type) {
+    setState(() {
+      _pendingAttachments.add(_PendingAttachment(file: file, type: type));
+    });
+  }
+
+  void _removeAttachment(int index) {
+    setState(() {
+      _pendingAttachments.removeAt(index);
+    });
+  }
+
+  void _scrollToBottom() {
+    if (!_scrollController.hasClients) return;
+    _scrollController.animateTo(
+      _scrollController.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
-    final clubId = FirebaseConfig.defaultClubId;
+    final authProvider = context.watch<AuthProvider>();
+    const clubId = FirebaseConfig.defaultClubId;
     final userId = authProvider.currentUser?.uid;
 
     if (userId == null) {
@@ -123,19 +333,15 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
       );
     }
 
-    final isAccueil = widget.channel.type == TeamChannelType.accueil;
-
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        backgroundColor: (isAccueil ? Colors.blue : Colors.purple).withOpacity(0.9),
+        backgroundColor: _teamColor.withValues(alpha: 0.92),
         elevation: 0,
         title: Row(
           children: [
-            Text(
-              widget.channel.type.icon,
-              style: const TextStyle(fontSize: 24),
-            ),
+            Text(widget.channel.type.icon,
+                style: const TextStyle(fontSize: 24)),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -152,7 +358,7 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
                   Text(
                     'Canal permanent',
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.7),
+                      color: Colors.white.withValues(alpha: 0.72),
                       fontSize: 12,
                     ),
                   ),
@@ -161,10 +367,6 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
             ),
           ],
         ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
       ),
       body: OceanGradientBackground(
         creatures: CreatureSet.jellyfish,
@@ -172,10 +374,10 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              // Messages list
               Expanded(
                 child: StreamBuilder<List<TeamMessage>>(
-                  stream: _channelService.getMessages(clubId, widget.channel.id),
+                  stream:
+                      _channelService.getMessages(clubId, widget.channel.id),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Center(
@@ -185,23 +387,11 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
 
                     if (snapshot.hasError) {
                       return Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.error_outline,
-                              size: 64,
-                              color: Colors.red.shade300,
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'Erreur de chargement',
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.7),
-                                fontSize: 16,
-                              ),
-                            ),
-                          ],
+                        child: Text(
+                          'Erreur de chargement',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.8),
+                          ),
                         ),
                       );
                     }
@@ -216,28 +406,26 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
                             Icon(
                               Icons.forum_outlined,
                               size: 64,
-                              color: Colors.white.withOpacity(0.5),
+                              color: Colors.white.withValues(alpha: 0.5),
                             ),
                             const SizedBox(height: 16),
                             Text(
                               'Aucun message',
                               style: TextStyle(
-                                color: Colors.white.withOpacity(0.7),
+                                color: Colors.white.withValues(alpha: 0.75),
                                 fontSize: 16,
                               ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Commencez la conversation avec votre équipe !',
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.5),
-                                fontSize: 14,
-                              ),
-                              textAlign: TextAlign.center,
                             ),
                           ],
                         ),
                       );
+                    }
+
+                    if (!_initialScrollDone) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        _initialScrollDone = true;
+                        _scrollToBottom();
+                      });
                     }
 
                     return ListView.builder(
@@ -247,8 +435,6 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
                       itemBuilder: (context, index) {
                         final message = messages[index];
                         final isOwn = message.senderId == userId;
-
-                        // Check if we should show date header
                         final showDateHeader = index == 0 ||
                             !_isSameDay(
                               messages[index - 1].createdAt,
@@ -257,11 +443,22 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
 
                         return Column(
                           children: [
-                            if (showDateHeader) _DateHeader(date: message.createdAt),
+                            if (showDateHeader)
+                              _DateHeader(date: message.createdAt),
                             _MessageBubble(
                               message: message,
                               isOwn: isOwn,
-                              teamColor: isAccueil ? Colors.blue : Colors.purple,
+                              teamColor: _teamColor,
+                              currentUserId: userId,
+                              onLongPress: () =>
+                                  _showMessageOptions(message, isOwn),
+                              onToggleReaction: (emoji) =>
+                                  _toggleReaction(message.id, emoji),
+                              onVote: (optionId) =>
+                                  _togglePollVote(message.id, optionId),
+                              onClosePoll: isOwn && message.hasPoll
+                                  ? () => _closePoll(message.id)
+                                  : null,
                             ),
                           ],
                         );
@@ -270,80 +467,112 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
                   },
                 ),
               ),
-
-              // Message input
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 8,
-                      offset: const Offset(0, -2),
-                    ),
-                  ],
-                ),
-                child: SafeArea(
-                  top: false,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade100,
-                            borderRadius: BorderRadius.circular(24),
-                          ),
-                          child: TextField(
-                            controller: _messageController,
-                            focusNode: _focusNode,
-                            decoration: InputDecoration(
-                              hintText: 'Message à l\'équipe...',
-                              hintStyle: TextStyle(color: Colors.grey.shade500),
-                              border: InputBorder.none,
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 12,
-                              ),
-                            ),
-                            maxLines: null,
-                            textCapitalization: TextCapitalization.sentences,
-                            onSubmitted: (_) => _sendMessage(),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Material(
-                        color: isAccueil ? Colors.blue : Colors.purple,
-                        borderRadius: BorderRadius.circular(24),
-                        child: InkWell(
-                          onTap: _isSending ? null : _sendMessage,
-                          borderRadius: BorderRadius.circular(24),
-                          child: Container(
-                            padding: const EdgeInsets.all(12),
-                            child: _isSending
-                                ? const SizedBox(
-                                    width: 24,
-                                    height: 24,
-                                    child: CircularProgressIndicator(
-                                      color: Colors.white,
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(
-                                    Icons.send,
-                                    color: Colors.white,
-                                    size: 24,
-                                  ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              _buildComposer(),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildComposer() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 8,
+            offset: Offset(0, -2),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_pendingPoll != null)
+              _PendingPollCard(
+                poll: _pendingPoll!,
+                onRemove: () => setState(() => _pendingPoll = null),
+              ),
+            if (_pendingAttachments.isNotEmpty)
+              SizedBox(
+                height: 70,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _pendingAttachments.length,
+                  itemBuilder: (context, index) {
+                    final attachment = _pendingAttachments[index];
+                    return PendingAttachmentPreview(
+                      file: attachment.file,
+                      type: attachment.type,
+                      onRemove: () => _removeAttachment(index),
+                    );
+                  },
+                ),
+              ),
+            Row(
+              children: [
+                AttachmentPicker(onAttachmentSelected: _addAttachment),
+                IconButton(
+                  onPressed: _createPoll,
+                  icon: const Icon(Icons.poll_outlined),
+                  tooltip: 'Ajouter un sondage',
+                ),
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    child: TextField(
+                      controller: _messageController,
+                      focusNode: _focusNode,
+                      decoration: InputDecoration(
+                        hintText: _pendingPoll != null
+                            ? 'Ajoutez un contexte si besoin...'
+                            : 'Message à l\'équipe...',
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
+                        ),
+                      ),
+                      maxLines: null,
+                      textCapitalization: TextCapitalization.sentences,
+                      onSubmitted: (_) => _sendMessage(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Material(
+                  color: _teamColor,
+                  borderRadius: BorderRadius.circular(24),
+                  child: InkWell(
+                    onTap: _isSending ? null : _sendMessage,
+                    borderRadius: BorderRadius.circular(24),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: _isSending
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Icon(Icons.send,
+                              color: Colors.white, size: 24),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -362,10 +591,8 @@ class _DateHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final isToday = date.year == now.year &&
-        date.month == now.month &&
-        date.day == now.day;
-
+    final isToday =
+        date.year == now.year && date.month == now.month && date.day == now.day;
     final yesterday = now.subtract(const Duration(days: 1));
     final isYesterday = date.year == yesterday.year &&
         date.month == yesterday.month &&
@@ -373,12 +600,11 @@ class _DateHeader extends StatelessWidget {
 
     String text;
     if (isToday) {
-      text = "Aujourd'hui";
+      text = 'Aujourd\'hui';
     } else if (isYesterday) {
       text = 'Hier';
     } else {
-      final weekdays = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-      text = '${weekdays[date.weekday - 1]} ${date.day}/${date.month}';
+      text = '${date.day}/${date.month}/${date.year}';
     }
 
     return Padding(
@@ -387,7 +613,7 @@ class _DateHeader extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.3),
+            color: Colors.black.withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Text(
@@ -408,100 +634,185 @@ class _MessageBubble extends StatelessWidget {
   final TeamMessage message;
   final bool isOwn;
   final Color teamColor;
+  final String currentUserId;
+  final VoidCallback onLongPress;
+  final ValueChanged<String> onToggleReaction;
+  final ValueChanged<String> onVote;
+  final VoidCallback? onClosePoll;
 
   const _MessageBubble({
     required this.message,
     required this.isOwn,
     required this.teamColor,
+    required this.currentUserId,
+    required this.onLongPress,
+    required this.onToggleReaction,
+    required this.onVote,
+    this.onClosePoll,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        mainAxisAlignment:
-            isOwn ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (!isOwn) ...[
-            CircleAvatar(
-              radius: 16,
-              backgroundColor: teamColor,
-              child: Text(
-                message.senderName.isNotEmpty
-                    ? message.senderName[0].toUpperCase()
-                    : '?',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
+    final bubbleColor = isOwn ? teamColor : Colors.white;
+    final textColor = isOwn ? Colors.white : Colors.black87;
+
+    return GestureDetector(
+      onLongPress: onLongPress,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Row(
+          mainAxisAlignment:
+              isOwn ? MainAxisAlignment.end : MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            if (!isOwn) ...[
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: teamColor,
+                child: Text(
+                  message.senderName.isEmpty
+                      ? '?'
+                      : message.senderName[0].toUpperCase(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
+            Flexible(
+              child: Container(
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width * 0.78,
+                ),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: bubbleColor,
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(16),
+                    topRight: const Radius.circular(16),
+                    bottomLeft: Radius.circular(isOwn ? 16 : 4),
+                    bottomRight: Radius.circular(isOwn ? 4 : 16),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (!isOwn)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          message.senderName,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: teamColor,
+                          ),
+                        ),
+                      ),
+                    if (message.message.isNotEmpty)
+                      Text(
+                        message.message,
+                        style: TextStyle(color: textColor, fontSize: 15),
+                      ),
+                    if (message.hasAttachments)
+                      AttachmentDisplay(
+                        attachments: message.attachments,
+                        compact: true,
+                      ),
+                    if (message.hasPoll)
+                      ChatPollWidget(
+                        poll: message.poll!,
+                        currentUserId: currentUserId,
+                        onVote: onVote,
+                        onClose: onClosePoll,
+                        canClose: onClosePoll != null,
+                      ),
+                    if (message.reactions.isNotEmpty)
+                      MessageReactions(
+                        reactions: message.reactions,
+                        currentUserId: currentUserId,
+                        onToggleReaction: onToggleReaction,
+                        compact: true,
+                      ),
+                    const SizedBox(height: 4),
+                    Text(
+                      message.formattedTime,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: isOwn
+                            ? Colors.white.withValues(alpha: 0.72)
+                            : Colors.grey.shade500,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-            const SizedBox(width: 8),
           ],
-          Flexible(
-            child: Container(
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.7,
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                color: isOwn ? teamColor : Colors.white,
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(16),
-                  topRight: const Radius.circular(16),
-                  bottomLeft: Radius.circular(isOwn ? 16 : 4),
-                  bottomRight: Radius.circular(isOwn ? 4 : 16),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (!isOwn)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Text(
-                        message.senderName,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: teamColor,
-                        ),
-                      ),
-                    ),
-                  Text(
-                    message.message,
-                    style: TextStyle(
-                      color: isOwn ? Colors.white : Colors.black87,
-                      fontSize: 15,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    message.formattedTime,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: isOwn
-                          ? Colors.white.withOpacity(0.7)
-                          : Colors.grey.shade500,
-                    ),
-                  ),
-                ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PendingPollCard extends StatelessWidget {
+  final Poll poll;
+  final VoidCallback onRemove;
+
+  const _PendingPollCard({
+    required this.poll,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.poll_outlined, color: Colors.blue),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              poll.question,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
-          if (isOwn) const SizedBox(width: 8),
+          IconButton(
+            onPressed: onRemove,
+            icon: const Icon(Icons.close),
+          ),
         ],
       ),
     );
   }
+}
+
+class _PendingAttachment {
+  final File file;
+  final String type;
+
+  _PendingAttachment({
+    required this.file,
+    required this.type,
+  });
 }

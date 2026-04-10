@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'session_message.dart' show MessageAttachment;
+import 'poll.dart';
 
 /// Preview d'un message pour les réponses
 class ReplyPreview {
@@ -36,6 +37,8 @@ class EventMessage {
   final String? replyToId;
   final ReplyPreview? replyToPreview;
   final List<MessageAttachment> attachments;
+  final Map<String, List<String>> reactions;
+  final Poll? poll;
 
   EventMessage({
     required this.id,
@@ -46,6 +49,8 @@ class EventMessage {
     this.replyToId,
     this.replyToPreview,
     this.attachments = const [],
+    this.reactions = const {},
+    this.poll,
   });
 
   /// Créer depuis Firestore
@@ -60,12 +65,17 @@ class EventMessage {
       createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
       replyToId: data['reply_to_id'],
       replyToPreview: data['reply_to_preview'] != null
-          ? ReplyPreview.fromMap(data['reply_to_preview'] as Map<String, dynamic>)
+          ? ReplyPreview.fromMap(
+              data['reply_to_preview'] as Map<String, dynamic>)
           : null,
       attachments: (data['attachments'] as List<dynamic>?)
               ?.map((a) => MessageAttachment.fromMap(a as Map<String, dynamic>))
               .toList() ??
           [],
+      reactions: _parseReactions(data['reactions']),
+      poll: data['poll'] != null
+          ? Poll.fromMap(data['poll'] as Map<String, dynamic>)
+          : null,
     );
   }
 
@@ -80,6 +90,8 @@ class EventMessage {
       if (replyToPreview != null) 'reply_to_preview': replyToPreview!.toMap(),
       if (attachments.isNotEmpty)
         'attachments': attachments.map((a) => a.toMap()).toList(),
+      if (reactions.isNotEmpty) 'reactions': reactions,
+      if (poll != null) 'poll': poll!.toMap(),
     };
   }
 
@@ -89,6 +101,9 @@ class EventMessage {
     String? replyToId,
     ReplyPreview? replyToPreview,
     List<MessageAttachment>? attachments,
+    Map<String, List<String>>? reactions,
+    Poll? poll,
+    bool clearPoll = false,
   }) {
     return EventMessage(
       id: id,
@@ -99,6 +114,8 @@ class EventMessage {
       replyToId: replyToId ?? this.replyToId,
       replyToPreview: replyToPreview ?? this.replyToPreview,
       attachments: attachments ?? this.attachments,
+      reactions: reactions ?? this.reactions,
+      poll: clearPoll ? null : (poll ?? this.poll),
     );
   }
 
@@ -107,4 +124,19 @@ class EventMessage {
 
   /// Est une réponse à un autre message
   bool get isReply => replyToId != null;
+
+  bool get hasPoll => poll != null;
+
+  static Map<String, List<String>> _parseReactions(dynamic rawReactions) {
+    if (rawReactions is! Map) return const {};
+
+    final parsed = <String, List<String>>{};
+    for (final entry in rawReactions.entries) {
+      parsed[entry.key.toString()] = (entry.value as List<dynamic>?)
+              ?.map((uid) => uid.toString())
+              .toList() ??
+          const [];
+    }
+    return parsed;
+  }
 }

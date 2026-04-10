@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../models/event_message.dart';
+import '../models/poll.dart';
 import '../models/session_message.dart' show MessageAttachment;
 import '../services/event_message_service.dart';
 import '../services/local_read_tracker.dart';
@@ -92,6 +93,7 @@ class EventMessageProvider with ChangeNotifier {
     String? replyToId,
     ReplyPreview? replyToPreview,
     List<MessageAttachment>? attachments,
+    Poll? poll,
   }) async {
     try {
       final messageId = await _eventMessageService.sendMessage(
@@ -103,6 +105,7 @@ class EventMessageProvider with ChangeNotifier {
         replyToId: replyToId,
         replyToPreview: replyToPreview,
         attachments: attachments,
+        poll: poll,
       );
 
       // Recharger les messages
@@ -169,6 +172,50 @@ class EventMessageProvider with ChangeNotifier {
       debugPrint('❌ Erreur suppression message: $e');
       rethrow;
     }
+  }
+
+  Future<void> toggleReaction({
+    required String clubId,
+    required String operationId,
+    required String messageId,
+    required String emoji,
+    required String userId,
+  }) {
+    return _eventMessageService.toggleReaction(
+      clubId: clubId,
+      operationId: operationId,
+      messageId: messageId,
+      emoji: emoji,
+      userId: userId,
+    );
+  }
+
+  Future<void> togglePollVote({
+    required String clubId,
+    required String operationId,
+    required String messageId,
+    required String optionId,
+    required String userId,
+  }) {
+    return _eventMessageService.togglePollVote(
+      clubId: clubId,
+      operationId: operationId,
+      messageId: messageId,
+      optionId: optionId,
+      userId: userId,
+    );
+  }
+
+  Future<void> closePoll({
+    required String clubId,
+    required String operationId,
+    required String messageId,
+  }) {
+    return _eventMessageService.closePoll(
+      clubId: clubId,
+      operationId: operationId,
+      messageId: messageId,
+    );
   }
 
   /// Réinitialiser l'erreur pour un événement

@@ -10,6 +10,110 @@ const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithBadge, filterByPreference } = require('../utils/badge-helper');
 
+function normalizeRoles(roles = []) {
+  return roles
+    .map((role) => String(role || '').trim().toLowerCase())
+    .map((role) => {
+      switch (role) {
+        case 'm':
+        case 'membre':
+        case 'member':
+          return 'member';
+        case 'ca':
+        case 'conseil administration':
+          return 'ca';
+        case 'e':
+        case 'encadrant':
+        case 'encadrants':
+          return 'encadrant';
+        case 'a':
+        case 'accueil':
+          return 'accueil';
+        case 'g':
+        case 'gonflage':
+          return 'gonflage';
+        case 'bs':
+        case 'banque signature':
+        case 'bureau':
+          return 'bs';
+        default:
+          return role;
+      }
+    });
+}
+
+function inferChannelInfo(channelId, channelData = {}) {
+  if (channelData.type) {
+    return {
+      channelName: channelData.name || 'Équipe',
+      channelType: channelData.type,
+    };
+  }
+
+  switch (channelId) {
+    case 'general':
+      return { channelName: 'General', channelType: 'general' };
+    case 'equipe_ca':
+      return { channelName: 'CA', channelType: 'ca' };
+    case 'equipe_accueil':
+      return { channelName: 'Équipe Accueil', channelType: 'accueil' };
+    case 'equipe_gonflage':
+      return { channelName: 'Équipe Gonflage', channelType: 'gonflage' };
+    case 'bureau':
+      return { channelName: 'Bureau', channelType: 'bureau' };
+    default:
+      return { channelName: 'Équipe Encadrants', channelType: 'encadrants' };
+  }
+}
+
+function hasAdminAccess(memberData = {}) {
+  const appRole = String(memberData.app_role || '').toLowerCase();
+  return appRole === 'admin' || appRole === 'superadmin';
+}
+
+function memberHasChannelAccess(memberData = {}, channelType) {
+  if (hasAdminAccess(memberData)) return true;
+
+  const normalizedRoles = new Set(normalizeRoles(memberData.clubStatuten || []));
+
+  switch (channelType) {
+    case 'general':
+      return true;
+    case 'ca':
+      return normalizedRoles.has('ca');
+    case 'accueil':
+      return normalizedRoles.has('accueil');
+    case 'gonflage':
+      return normalizedRoles.has('gonflage');
+    case 'bureau':
+      return normalizedRoles.has('bs') || normalizedRoles.has('ca');
+    case 'encadrants':
+    default:
+      return normalizedRoles.has('encadrant');
+  }
+}
+
+function buildNotificationBody(message = {}) {
+  const text = String(message.message || '').trim();
+  if (text) {
+    return text.length > 100 ? `${text.substring(0, 97)}...` : text;
+  }
+
+  if (message.poll && message.poll.question) {
+    return `📊 ${message.poll.question}`;
+  }
+
+  const attachments = Array.isArray(message.attachments) ? message.attachments : [];
+  if (attachments.some((attachment) => attachment.type === 'video')) {
+    return '🎬 A partagé une vidéo';
+  }
+  if (attachments.length > 0) {
+    return `📎 ${attachments.length} pièce(s) jointe(s)`;
+  }
+
+  return 'Nouveau message';
+}
+
 /**
  * Firestore trigger for new team channel messages (Gen2)
  */
@@ -34,55 +138,26 @@ exports.onNewTeamMessage = onDocumentCreated(
         .doc(channelId)
         .get();
 
-      let channelName = 'Équipe';
-      let channelType = 'encadrants';
+      const { channelName, channelType } = inferChannelInfo(
+        channelId,
+        channelDoc.exists ? channelDoc.data() : {},
+      );
 
-      if (channelDoc.exists) {
-        const channelData = channelDoc.data();
-        channelName = channelData.name || channelName;
-        channelType = channelData.type || channelType;
-      } else {
-        // Infer from channel ID
-        if (channelId === 'equipe_accueil') {
-          channelName = 'Équipe Accueil';
-          channelType = 'accueil';
-        } else if (channelId === 'equipe_encadrants') {
-          channelName = 'Équipe Encadrants';
-          channelType = 'encadrants';
-        }
-      }
-
-      // 2. Get all members with the relevant role
-      const roleToQuery = channelType === 'accueil' ? 'accueil' : 'encadrant';
-      const roleCapitalized = roleToQuery.charAt(0).toUpperCase() + roleToQuery.slice(1);
-
-      // Query for members with this role in their clubStatuten
-      const [membersLowercase, membersCapitalized] = await Promise.all([
-        admin.firestore()
-          .collection('clubs')
-          .doc(clubId)
-          .collection('members')
-          .where('clubStatuten', 'array-contains', roleToQuery)
-          .get(),
-        admin.firestore()
-          .collection('clubs')
-          .doc(clubId)
-          .collection('members')
-          .where('clubStatuten', 'array-contains', roleCapitalized)
-          .get()
-      ]);
-
-      // Combine and dedupe members
-      const memberMap = new Map();
-      membersLowercase.forEach(doc => memberMap.set(doc.id, doc));
-      membersCapitalized.forEach(doc => memberMap.set(doc.id, doc));
+      // 2. Get all club members and filter on the server side for channel access
+      const membersSnapshot = await admin.firestore()
+        .collection('clubs')
+        .doc(clubId)
+        .collection('members')
+        .get();
 
       const senderId = message.sender_id;
 
       // 3. Collect FCM tokens using helper function
-      // Convert memberMap to array for the helper function, then filter by preference
-      const allMemberDocs = Array.from(memberMap.values());
-      const memberDocs = filterByPreference(allMemberDocs, 'team_messages');
+      const accessibleDocs = membersSnapshot.docs.filter((doc) => {
+        if (!doc.exists) return false;
+        return memberHasChannelAccess(doc.data(), channelType);
+      });
+      const memberDocs = filterByPreference(accessibleDocs, 'team_messages');
       const { tokens, memberTokenGroups, recipientIds } = collectTokensAndMembers(memberDocs, senderId);
 
       if (tokens.length === 0) {
@@ -94,12 +169,8 @@ exports.onNewTeamMessage = onDocumentCreated(
 
       // 4. Prepare notification payload
       const senderName = message.sender_name || 'Quelqu\'un';
-      const messageText = message.message || '';
-
       const notificationTitle = `${senderName} - ${channelName}`;
-      const notificationBody = messageText.length > 100
-        ? messageText.substring(0, 97) + '...'
-        : messageText;
+      const notificationBody = buildNotificationBody(message);
 
       const basePayload = {
         notification: {

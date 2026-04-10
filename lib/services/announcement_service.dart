@@ -289,6 +289,7 @@ class AnnouncementService {
       url: url,
       filename: filename,
       size: fileSize,
+      storagePath: storagePath,
     );
   }
 }

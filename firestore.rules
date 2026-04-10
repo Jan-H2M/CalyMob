@@ -25,6 +25,63 @@ service cloud.firestore {
         && getUserData(clubId).app_role == 'superadmin';
     }
 
+    function isClubMember(clubId) {
+      return isAuthenticated()
+        && exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+    }
+
+    function hasClubStatut(clubId, statuten) {
+      let userData = getUserData(clubId);
+      return isClubMember(clubId)
+        && ('clubStatuten' in userData)
+        && userData.clubStatuten.hasAny(statuten);
+    }
+
+    function hasEncadrantRole(clubId) {
+      return hasClubStatut(clubId, ['encadrant', 'Encadrant', 'encadrants', 'Encadrants', 'E']);
+    }
+
+    function hasAccueilRole(clubId) {
+      return hasClubStatut(clubId, ['accueil', 'Accueil', 'A']);
+    }
+
+    function hasGonflageRole(clubId) {
+      return hasClubStatut(clubId, ['gonflage', 'Gonflage', 'G']);
+    }
+
+    function hasCARole(clubId) {
+      return hasClubStatut(clubId, ['ca', 'CA', 'comite', 'Comite', 'comité', 'Comité']);
+    }
+
+    function hasBureauRole(clubId) {
+      return hasClubStatut(clubId, [
+        'BS', 'bs', 'Banque Signature', 'banque signature',
+        'bureau', 'Bureau', 'tresorier', 'trésorier', 'secretaire', 'secrétaire'
+      ]);
+    }
+
+    function canAccessTeamChannel(clubId, channelId) {
+      return isAdmin(clubId) || (
+        isClubMember(clubId) && (
+          channelId == 'general' ||
+          (channelId == 'equipe_ca' && hasCARole(clubId)) ||
+          (channelId == 'equipe_accueil' && hasAccueilRole(clubId)) ||
+          (channelId == 'equipe_encadrants' && hasEncadrantRole(clubId)) ||
+          (channelId == 'equipe_gonflage' && hasGonflageRole(clubId)) ||
+          (channelId == 'bureau' && (hasBureauRole(clubId) || hasCARole(clubId)))
+        )
+      );
+    }
+
+    function teamChannelTypeMatches(channelId, type) {
+      return (channelId == 'general' && type == 'general')
+        || (channelId == 'equipe_ca' && type == 'ca')
+        || (channelId == 'equipe_accueil' && type == 'accueil')
+        || (channelId == 'equipe_encadrants' && type == 'encadrants')
+        || (channelId == 'equipe_gonflage' && type == 'gonflage')
+        || (channelId == 'bureau' && type == 'bureau');
+    }
+
     // Encadrants and admins can manage attendee reassignments for piscine
     function isPiscineFormationEditor(clubId) {
       let userData = getUserData(clubId);
@@ -333,7 +390,7 @@ service cloud.firestore {
           // Modification: uniquement pour marquer comme lu (read_by)
           allow update: if isAuthenticated()
             && hasValidSession(clubId)
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by']);
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by', 'reactions', 'poll']);
         }
       }
 
@@ -521,38 +578,38 @@ service cloud.firestore {
           // Modification: uniquement pour marquer comme lu (read_by)
           allow update: if isAuthenticated()
             && hasValidSession(clubId)
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by']);
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by', 'reactions', 'poll']);
         }
       }
 
-      // Team channels (canaux d'équipe permanents: Accueil, Encadrants, Gonflage)
+      // Team channels (canaux d'équipe permanents)
       match /team_channels/{channelId} {
-        // Lecture: membres authentifiés du club (l'app filtre par rôle)
-        allow read: if isAuthenticated() &&
-          exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
-        // Création: membres authentifiés peuvent créer le canal au premier message
-        allow create: if isAuthenticated() &&
-          exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
-        // Modification: membres authentifiés (pour mise à jour metadata)
-        allow update: if isAuthenticated() &&
-          exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+        // Lecture: autorisée uniquement si le membre a accès à ce canal
+        allow read: if canAccessTeamChannel(clubId, channelId);
+        // Création: un membre autorisé peut initialiser le canal, mais le type doit correspondre à l'ID
+        allow create: if canAccessTeamChannel(clubId, channelId)
+          && hasValidSession(clubId)
+          && teamChannelTypeMatches(channelId, request.resource.data.type);
+        // Modification metadata: admin uniquement
+        allow update: if isAdmin(clubId) && hasValidSession(clubId);
         // Suppression: admin uniquement
-        allow delete: if isAdmin(clubId);
+        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
 
         // Messages subcollection - team chat messages
         match /messages/{messageId} {
-          // Lecture: membres authentifiés du club (l'app filtre par rôle)
-          allow read: if isAuthenticated() &&
-            exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+          // Lecture: seuls les membres autorisés au canal
+          allow read: if canAccessTeamChannel(clubId, channelId);
           // Création: membres authentifiés peuvent envoyer des messages
-          allow create: if isAuthenticated() &&
-            exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)) &&
+          allow create: if canAccessTeamChannel(clubId, channelId) &&
+            hasValidSession(clubId) &&
             request.resource.data.sender_id == request.auth.uid;
-          // Modification: pour marquer comme lu (read_by array)
-          allow update: if isAuthenticated() &&
-            exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+          // Modification: réactions, votes/clôture de sondage ou marquage comme lu
+          allow update: if canAccessTeamChannel(clubId, channelId) &&
+            hasValidSession(clubId) &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by', 'reactions', 'poll']);
           // Suppression: auteur ou admin
           allow delete: if isAuthenticated() &&
+            hasValidSession(clubId) &&
             (resource.data.sender_id == request.auth.uid || isAdmin(clubId));
         }
       }

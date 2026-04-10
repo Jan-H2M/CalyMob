@@ -32,6 +32,7 @@ class UnreadCountProvider extends ChangeNotifier {
   String? _clubId;
   String? _userId;
   List<String> _roles = const [];
+  bool _includeAllTeamChannels = false;
 
   // === Cache keys voor SharedPreferences ===
   static const _cachePrefix = 'unread_cache_';
@@ -54,7 +55,8 @@ class UnreadCountProvider extends ChangeNotifier {
   /// Start periodic refresh voor alle berichttypes.
   /// [roles] zijn de clubStatuten van de user (bijv. ['accueil', 'encadrant']).
   void listen(String clubId, String userId,
-      {List<String> roles = const []}) async {
+      {List<String> roles = const [],
+      bool includeAllTeamChannels = false}) async {
     if (_isListening) {
       debugPrint('ℹ️ UnreadCountProvider: al actief');
       return;
@@ -65,6 +67,7 @@ class UnreadCountProvider extends ChangeNotifier {
     _clubId = clubId;
     _userId = userId;
     _roles = roles;
+    _includeAllTeamChannels = includeAllTeamChannels;
     _isListening = true;
 
     // Initialiseer LocalReadTracker
@@ -131,8 +134,11 @@ class UnreadCountProvider extends ChangeNotifier {
 
     _isRefreshing = true;
     try {
-      final counts = await _service.refreshAllCounts(_clubId!, _roles);
-
+      final counts = await _service.refreshAllCounts(
+        _clubId!,
+        _roles,
+        includeAllTeamChannels: _includeAllTeamChannels,
+      );
       final newAnnouncements = counts['announcements'] ?? 0;
       final newEventMessages = counts['event_messages'] ?? 0;
       final newTeamMessages = counts['team_messages'] ?? 0;
@@ -161,7 +167,10 @@ class UnreadCountProvider extends ChangeNotifier {
       // Sync counts terug naar Firestore member document
       // zodat Cloud Functions het correcte badge-aantal gebruiken
       await _syncCountsToFirestore(
-        newAnnouncements, newEventMessages, newTeamMessages, newSessionMessages,
+        newAnnouncements,
+        newEventMessages,
+        newTeamMessages,
+        newSessionMessages,
       );
     } catch (e) {
       debugPrint('❌ UnreadCountProvider refresh error: $e');
@@ -180,7 +189,10 @@ class UnreadCountProvider extends ChangeNotifier {
   /// atomische increments die tussen onze read en write plaatsvonden wegvagen
   /// (race condition) en de badge laten terugspringen naar een stale waarde.
   Future<void> _syncCountsToFirestore(
-    int announcements, int eventMessages, int teamMessages, int sessionMessages,
+    int announcements,
+    int eventMessages,
+    int teamMessages,
+    int sessionMessages,
   ) async {
     if (_clubId == null || _userId == null) return;
 
@@ -235,6 +247,7 @@ class UnreadCountProvider extends ChangeNotifier {
     _clubId = null;
     _userId = null;
     _roles = const [];
+    _includeAllTeamChannels = false;
     _announcements = 0;
     _eventMessages = 0;
     _teamMessages = 0;

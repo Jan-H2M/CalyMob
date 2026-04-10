@@ -2,7 +2,10 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:path/path.dart' as path;
+import '../models/poll.dart';
 import '../models/team_channel.dart';
+import '../services/local_read_tracker.dart';
+import '../utils/club_role_utils.dart';
 
 /// Service pour la gestion des canaux d'équipe permanents
 class TeamChannelService {
@@ -20,9 +23,7 @@ class TeamChannelService {
   /// Référence à la collection de messages d'un canal
   CollectionReference<Map<String, dynamic>> _messagesCollection(
       String clubId, String channelId) {
-    return _channelsCollection(clubId)
-        .doc(channelId)
-        .collection('messages');
+    return _channelsCollection(clubId).doc(channelId).collection('messages');
   }
 
   /// Obtenir ou créer un canal par type
@@ -45,34 +46,20 @@ class TeamChannelService {
 
   /// Stream des canaux disponibles pour un utilisateur
   Stream<List<TeamChannel>> getChannelsForUser(
-      String clubId, List<String> userRoles) {
-    // Filtrer les types de canaux basés sur les rôles de l'utilisateur
-    final availableTypes = <TeamChannelType>[];
-
-    if (userRoles.contains('accueil') || userRoles.contains('Accueil')) {
-      availableTypes.add(TeamChannelType.accueil);
-    }
-
-    if (userRoles.contains('encadrant') || userRoles.contains('Encadrant')) {
-      availableTypes.add(TeamChannelType.encadrants);
-    }
-
-    if (userRoles.contains('gonflage') || userRoles.contains('Gonflage')) {
-      availableTypes.add(TeamChannelType.gonflage);
-    }
-
-    if (availableTypes.isEmpty) {
-      return Stream.value([]);
-    }
+      String clubId, List<String> userRoles,
+      {bool includeAllChannels = false}) {
+    final availableTypes = ClubRoleUtils.getVisibleTeamChannelTypes(
+      userRoles,
+      includeAllChannels: includeAllChannels,
+    );
 
     // Récupérer les canaux correspondants
     return _channelsCollection(clubId)
         .where('type', whereIn: availableTypes.map((t) => t.value).toList())
         .snapshots()
         .map((snapshot) {
-      final channels = snapshot.docs
-          .map((doc) => TeamChannel.fromFirestore(doc))
-          .toList();
+      final channels =
+          snapshot.docs.map((doc) => TeamChannel.fromFirestore(doc)).toList();
 
       // Ajouter les canaux manquants
       for (final type in availableTypes) {
@@ -80,6 +67,10 @@ class TeamChannelService {
           channels.add(TeamChannel.defaultForType(type));
         }
       }
+
+      channels.sort((a, b) => TeamChannelType.values
+          .indexOf(a.type)
+          .compareTo(TeamChannelType.values.indexOf(b.type)));
 
       return channels;
     });
@@ -103,16 +94,23 @@ class TeamChannelService {
     required String senderName,
     required String message,
     List<TeamMessageAttachment>? attachments,
+    Poll? poll,
   }) async {
     // S'assurer que le canal existe
     await _channelsCollection(clubId).doc(channelId).get().then((doc) async {
       if (!doc.exists) {
         // Déterminer le type basé sur l'ID
         TeamChannelType type;
-        if (channelId == 'equipe_accueil') {
+        if (channelId == TeamChannelType.general.id) {
+          type = TeamChannelType.general;
+        } else if (channelId == TeamChannelType.ca.id) {
+          type = TeamChannelType.ca;
+        } else if (channelId == 'equipe_accueil') {
           type = TeamChannelType.accueil;
         } else if (channelId == 'equipe_gonflage') {
           type = TeamChannelType.gonflage;
+        } else if (channelId == TeamChannelType.bureau.id) {
+          type = TeamChannelType.bureau;
         } else {
           type = TeamChannelType.encadrants;
         }
@@ -126,6 +124,7 @@ class TeamChannelService {
       senderName: senderName,
       message: message,
       attachments: attachments ?? [],
+      poll: poll,
       createdAt: DateTime.now(),
     );
 
@@ -137,6 +136,21 @@ class TeamChannelService {
 
   // markAsRead, markAllAsRead, getUnreadCount, getUnreadCountStream, getAllUnreadCountsStream verwijderd
   // → read tracking gaat nu via LocalReadTracker + UnreadCountService
+
+  Future<int> countUnreadForChannel(String clubId, String channelId) async {
+    final tracker = LocalReadTracker();
+    await tracker.init();
+    final lastRead = tracker.getLastRead('team_$channelId') ??
+        tracker.installBaseline ??
+        DateTime(2024, 1, 1);
+
+    final snapshot = await _messagesCollection(clubId, channelId)
+        .where('created_at', isGreaterThan: Timestamp.fromDate(lastRead))
+        .count()
+        .get();
+
+    return snapshot.count ?? 0;
+  }
 
   /// Upload une pièce jointe
   Future<TeamMessageAttachment> uploadAttachment({
@@ -161,6 +175,126 @@ class TeamChannelService {
       url: url,
       filename: filename,
       size: fileSize,
+      storagePath: storagePath,
     );
+  }
+
+  Future<void> toggleReaction({
+    required String clubId,
+    required String channelId,
+    required String messageId,
+    required String emoji,
+    required String userId,
+  }) async {
+    final messageRef = _messagesCollection(clubId, channelId).doc(messageId);
+
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(messageRef);
+      if (!snapshot.exists) return;
+
+      final message = TeamMessage.fromFirestore(snapshot);
+      final reactions = message.reactions.map(
+        (key, value) => MapEntry(key, List<String>.from(value)),
+      );
+      final users = List<String>.from(reactions[emoji] ?? const []);
+
+      if (users.contains(userId)) {
+        users.remove(userId);
+      } else {
+        users.add(userId);
+      }
+
+      if (users.isEmpty) {
+        reactions.remove(emoji);
+      } else {
+        reactions[emoji] = users;
+      }
+
+      transaction.update(messageRef, {'reactions': reactions});
+    });
+  }
+
+  Future<void> togglePollVote({
+    required String clubId,
+    required String channelId,
+    required String messageId,
+    required String optionId,
+    required String userId,
+  }) async {
+    final messageRef = _messagesCollection(clubId, channelId).doc(messageId);
+
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(messageRef);
+      if (!snapshot.exists) return;
+
+      final message = TeamMessage.fromFirestore(snapshot);
+      final poll = message.poll;
+      if (poll == null || poll.isClosed) return;
+
+      final options = poll.options
+          .map((option) =>
+              option.copyWith(votes: List<String>.from(option.votes)))
+          .toList();
+      final selectedIndex =
+          options.indexWhere((option) => option.id == optionId);
+      if (selectedIndex == -1) return;
+
+      final hasSelectedOption = options[selectedIndex].votes.contains(userId);
+
+      if (!poll.allowMultiple) {
+        for (var i = 0; i < options.length; i++) {
+          final updatedVotes = List<String>.from(options[i].votes)
+            ..remove(userId);
+          options[i] = options[i].copyWith(votes: updatedVotes);
+        }
+        if (!hasSelectedOption) {
+          final updatedVotes = List<String>.from(options[selectedIndex].votes)
+            ..add(userId);
+          options[selectedIndex] =
+              options[selectedIndex].copyWith(votes: updatedVotes);
+        }
+      } else {
+        final updatedVotes = List<String>.from(options[selectedIndex].votes);
+        if (hasSelectedOption) {
+          updatedVotes.remove(userId);
+        } else {
+          updatedVotes.add(userId);
+        }
+        options[selectedIndex] =
+            options[selectedIndex].copyWith(votes: updatedVotes);
+      }
+
+      transaction.update(
+          messageRef, {'poll': poll.copyWith(options: options).toMap()});
+    });
+  }
+
+  Future<void> closePoll({
+    required String clubId,
+    required String channelId,
+    required String messageId,
+  }) async {
+    final messageRef = _messagesCollection(clubId, channelId).doc(messageId);
+
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(messageRef);
+      if (!snapshot.exists) return;
+
+      final message = TeamMessage.fromFirestore(snapshot);
+      final poll = message.poll;
+      if (poll == null || poll.isClosed) return;
+
+      transaction.update(messageRef, {
+        'poll': poll.copyWith(closedAt: DateTime.now()).toMap(),
+      });
+    });
+  }
+
+  Future<void> deleteMessage({
+    required String clubId,
+    required String channelId,
+    required String messageId,
+  }) async {
+    await _messagesCollection(clubId, channelId).doc(messageId).delete();
   }
 }

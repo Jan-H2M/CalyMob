@@ -83,6 +83,10 @@ exports.onNewTeamMessage = onNewTeamMessage;
 const { sessionReminder } = require('./src/notifications/sessionReminder');
 exports.sessionReminder = sessionReminder;
 
+// Weekly cleanup for old chat messages and orphaned attachments
+const { cleanupOldMessages } = require('./src/maintenance/cleanupOldMessages');
+exports.cleanupOldMessages = cleanupOldMessages;
+
 // Push notification when a new outdoor event/dive is created
 const { onNewOperation } = require('./src/notifications/onNewOperation');
 exports.onNewOperation = onNewOperation;

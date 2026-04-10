@@ -10,6 +10,27 @@ const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithBadge, filterByPreference } = require('../utils/badge-helper');
 
+function buildNotificationBody(message = {}) {
+  const text = String(message.message || '').trim();
+  if (text) {
+    return text.length > 100 ? `${text.substring(0, 97)}...` : text;
+  }
+
+  if (message.poll && message.poll.question) {
+    return `📊 ${message.poll.question}`;
+  }
+
+  const attachments = Array.isArray(message.attachments) ? message.attachments : [];
+  if (attachments.some((attachment) => attachment.type === 'video')) {
+    return '🎬 A partagé une vidéo';
+  }
+  if (attachments.length > 0) {
+    return `📎 ${attachments.length} pièce(s) jointe(s)`;
+  }
+
+  return 'Nouveau message';
+}
+
 /**
  * Firestore trigger for new piscine session messages (Gen2)
  */
@@ -123,8 +144,6 @@ exports.onNewSessionMessage = onDocumentCreated(
 
       // 5. Prepare notification payload
       const senderName = message.sender_name || 'Quelqu\'un';
-      const messageText = message.message || '';
-
       let groupName = 'Piscine';
       if (groupType === 'accueil') {
         groupName = 'Accueil';
@@ -135,9 +154,7 @@ exports.onNewSessionMessage = onDocumentCreated(
       }
 
       const notificationTitle = `${senderName} - ${groupName} (${dateStr})`;
-      const notificationBody = messageText.length > 100
-        ? messageText.substring(0, 97) + '...'
-        : messageText;
+      const notificationBody = buildNotificationBody(message);
 
       const basePayload = {
         notification: {

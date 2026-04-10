@@ -4,6 +4,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import '../models/event_message.dart';
+import '../models/poll.dart';
 import '../models/session_message.dart' show MessageAttachment;
 
 /// Service de gestion des messages liés aux événements
@@ -38,11 +39,11 @@ class EventMessageService {
           .orderBy('created_at', descending: false)
           .get();
 
-      final messages = snapshot.docs
-          .map((doc) => EventMessage.fromFirestore(doc))
-          .toList();
+      final messages =
+          snapshot.docs.map((doc) => EventMessage.fromFirestore(doc)).toList();
 
-      debugPrint('✅ ${messages.length} messages chargés pour event $operationId');
+      debugPrint(
+          '✅ ${messages.length} messages chargés pour event $operationId');
       return messages;
     } catch (e) {
       debugPrint('❌ Erreur chargement messages: $e');
@@ -60,6 +61,7 @@ class EventMessageService {
     String? replyToId,
     ReplyPreview? replyToPreview,
     List<MessageAttachment>? attachments,
+    Poll? poll,
   }) async {
     try {
       final eventMessage = EventMessage(
@@ -71,6 +73,7 @@ class EventMessageService {
         replyToId: replyToId,
         replyToPreview: replyToPreview,
         attachments: attachments ?? [],
+        poll: poll,
       );
 
       final docRef = await _firestore
@@ -121,7 +124,126 @@ class EventMessageService {
       url: url,
       filename: filename,
       size: fileSize,
+      storagePath: storagePath,
     );
+  }
+
+  Future<void> toggleReaction({
+    required String clubId,
+    required String operationId,
+    required String messageId,
+    required String emoji,
+    required String userId,
+  }) async {
+    final messageRef = _firestore
+        .collection('clubs/$clubId/operations/$operationId/messages')
+        .doc(messageId);
+
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(messageRef);
+      if (!snapshot.exists) return;
+
+      final message = EventMessage.fromFirestore(snapshot);
+      final reactions = message.reactions.map(
+        (key, value) => MapEntry(key, List<String>.from(value)),
+      );
+      final users = List<String>.from(reactions[emoji] ?? const []);
+
+      if (users.contains(userId)) {
+        users.remove(userId);
+      } else {
+        users.add(userId);
+      }
+
+      if (users.isEmpty) {
+        reactions.remove(emoji);
+      } else {
+        reactions[emoji] = users;
+      }
+
+      transaction.update(messageRef, {'reactions': reactions});
+    });
+  }
+
+  Future<void> togglePollVote({
+    required String clubId,
+    required String operationId,
+    required String messageId,
+    required String optionId,
+    required String userId,
+  }) async {
+    final messageRef = _firestore
+        .collection('clubs/$clubId/operations/$operationId/messages')
+        .doc(messageId);
+
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(messageRef);
+      if (!snapshot.exists) return;
+
+      final message = EventMessage.fromFirestore(snapshot);
+      final poll = message.poll;
+      if (poll == null || poll.isClosed) return;
+
+      final options = poll.options
+          .map((option) =>
+              option.copyWith(votes: List<String>.from(option.votes)))
+          .toList();
+      final selectedIndex =
+          options.indexWhere((option) => option.id == optionId);
+      if (selectedIndex == -1) return;
+
+      final hasSelectedOption = options[selectedIndex].votes.contains(userId);
+
+      if (!poll.allowMultiple) {
+        for (var i = 0; i < options.length; i++) {
+          final updatedVotes = List<String>.from(options[i].votes)
+            ..remove(userId);
+          options[i] = options[i].copyWith(votes: updatedVotes);
+        }
+        if (!hasSelectedOption) {
+          final updatedVotes = List<String>.from(options[selectedIndex].votes)
+            ..add(userId);
+          options[selectedIndex] =
+              options[selectedIndex].copyWith(votes: updatedVotes);
+        }
+      } else {
+        final updatedVotes = List<String>.from(options[selectedIndex].votes);
+        if (hasSelectedOption) {
+          updatedVotes.remove(userId);
+        } else {
+          updatedVotes.add(userId);
+        }
+        options[selectedIndex] =
+            options[selectedIndex].copyWith(votes: updatedVotes);
+      }
+
+      transaction.update(messageRef, {
+        'poll': poll.copyWith(options: options).toMap(),
+      });
+    });
+  }
+
+  Future<void> closePoll({
+    required String clubId,
+    required String operationId,
+    required String messageId,
+  }) async {
+    final messageRef = _firestore
+        .collection('clubs/$clubId/operations/$operationId/messages')
+        .doc(messageId);
+
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(messageRef);
+      if (!snapshot.exists) return;
+
+      final message = EventMessage.fromFirestore(snapshot);
+      final poll = message.poll;
+      if (poll == null || poll.isClosed) return;
+
+      transaction.update(messageRef, {
+        'poll': poll.copyWith(closedAt: DateTime.now()).toMap(),
+      });
+    });
   }
 
   /// Récupérer un message par ID

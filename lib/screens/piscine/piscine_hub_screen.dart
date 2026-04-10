@@ -9,6 +9,7 @@ import '../../models/piscine_session.dart';
 import '../../models/team_channel.dart';
 import '../../services/piscine_session_service.dart';
 import '../../services/team_channel_service.dart';
+import '../../utils/club_role_utils.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 
 import 'availability_screen.dart';
@@ -46,7 +47,8 @@ class _PiscineHubScreenState extends State<PiscineHubScreen>
   @override
   Widget build(BuildContext context) {
     final unreadProvider = context.watch<UnreadCountProvider>();
-    final unreadSeances = unreadProvider.sessionMessages + unreadProvider.teamMessages;
+    final unreadSeances =
+        unreadProvider.sessionMessages + unreadProvider.teamMessages;
 
     return Scaffold(
       body: OceanGradientBackground(
@@ -60,7 +62,8 @@ class _PiscineHubScreenState extends State<PiscineHubScreen>
                 child: Row(
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                      icon: const Icon(Icons.arrow_back,
+                          color: Colors.white, size: 28),
                       onPressed: () => Navigator.pop(context),
                     ),
                     const Expanded(
@@ -81,7 +84,7 @@ class _PiscineHubScreenState extends State<PiscineHubScreen>
               Container(
                 margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.15),
+                  color: Colors.white.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: TabBar(
@@ -174,12 +177,12 @@ class _SeancesTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
     final memberProvider = Provider.of<MemberProvider>(context);
-    final clubId = FirebaseConfig.defaultClubId;
+    const clubId = FirebaseConfig.defaultClubId;
     final userId = authProvider.currentUser?.uid;
 
     if (userId == null) {
-      return const Center(child: Text('Niet verbonden',
-          style: TextStyle(color: Colors.white)));
+      return const Center(
+          child: Text('Niet verbonden', style: TextStyle(color: Colors.white)));
     }
 
     return SingleChildScrollView(
@@ -212,16 +215,19 @@ class _SeancesTab extends StatelessWidget {
               }
 
               return Column(
-                children: sessions.map((session) => _SessionCard(
-                  session: session,
-                  userId: userId,
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => SessionDetailScreen(session: session),
-                    ),
-                  ),
-                )).toList(),
+                children: sessions
+                    .map((session) => _SessionCard(
+                          session: session,
+                          userId: userId,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  SessionDetailScreen(session: session),
+                            ),
+                          ),
+                        ))
+                    .toList(),
               );
             },
           ),
@@ -232,7 +238,12 @@ class _SeancesTab extends StatelessWidget {
           const _SectionLabel(text: "Canaux d'équipe"),
           StreamBuilder<List<TeamChannel>>(
             stream: _channelService.getChannelsForUser(
-              clubId, memberProvider.clubStatuten,
+              clubId,
+              memberProvider.clubStatuten,
+              includeAllChannels: ClubRoleUtils.hasAdminAccess(
+                memberProvider.clubStatuten,
+                appRole: memberProvider.appRole,
+              ),
             ),
             builder: (context, snapshot) {
               final channels = snapshot.data ?? [];
@@ -244,15 +255,17 @@ class _SeancesTab extends StatelessWidget {
               }
 
               return Column(
-                children: channels.map((channel) => _TeamChannelCard(
-                  channel: channel,
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => TeamChatScreen(channel: channel),
-                    ),
-                  ),
-                )).toList(),
+                children: channels
+                    .map((channel) => _TeamChannelCard(
+                          channel: channel,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => TeamChatScreen(channel: channel),
+                            ),
+                          ),
+                        ))
+                    .toList(),
               );
             },
           ),
@@ -269,18 +282,18 @@ class _SeancesTab extends StatelessWidget {
       padding: const EdgeInsets.all(24),
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.1),
+        color: Colors.white.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.2)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
       ),
       child: Column(
         children: [
-          Icon(icon, size: 40, color: Colors.white.withOpacity(0.4)),
+          Icon(icon, size: 40, color: Colors.white.withValues(alpha: 0.4)),
           const SizedBox(height: 8),
           Text(
             text,
             style: TextStyle(
-              color: Colors.white.withOpacity(0.6),
+              color: Colors.white.withValues(alpha: 0.6),
               fontSize: 14,
             ),
           ),
@@ -306,7 +319,7 @@ class _SectionLabel extends StatelessWidget {
           fontSize: 11,
           fontWeight: FontWeight.w800,
           letterSpacing: 1.2,
-          color: Colors.white.withOpacity(0.6),
+          color: Colors.white.withValues(alpha: 0.6),
         ),
       ),
     );
@@ -373,8 +386,11 @@ class _SessionCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.calendar_today,
-                          size: 16, color: AppColors.donkerblauw),
+                      const Icon(
+                        Icons.calendar_today,
+                        size: 16,
+                        color: AppColors.donkerblauw,
+                      ),
                       const SizedBox(width: 8),
                       Text(
                         session.formattedDate,
@@ -387,10 +403,10 @@ class _SessionCard extends StatelessWidget {
                     ],
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                     decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.1),
+                      color: Colors.green.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
@@ -460,7 +476,7 @@ class _TeamChannelCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: AppColors.middenblauw.withOpacity(0.1),
+                  color: AppColors.middenblauw.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(

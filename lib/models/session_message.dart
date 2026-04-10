@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'poll.dart';
 
 /// Type de groupe de discussion
 enum SessionGroupType {
@@ -57,16 +58,18 @@ extension SessionGroupTypeExtension on SessionGroupType {
 
 /// Pièce jointe dans un message
 class MessageAttachment {
-  final String type; // 'image' ou 'pdf'
+  final String type; // 'image', 'pdf' ou 'video'
   final String url;
   final String filename;
   final int size;
+  final String? storagePath;
 
   MessageAttachment({
     required this.type,
     required this.url,
     required this.filename,
     required this.size,
+    this.storagePath,
   });
 
   factory MessageAttachment.fromMap(Map<String, dynamic> map) {
@@ -75,6 +78,7 @@ class MessageAttachment {
       url: map['url'] ?? '',
       filename: map['filename'] ?? '',
       size: map['size'] ?? 0,
+      storagePath: map['storage_path'],
     );
   }
 
@@ -84,11 +88,30 @@ class MessageAttachment {
       'url': url,
       'filename': filename,
       'size': size,
+      if (storagePath != null) 'storage_path': storagePath,
     };
   }
 
   bool get isImage => type == 'image';
   bool get isPdf => type == 'pdf';
+  bool get isVideo => type == 'video';
+
+  MessageAttachment copyWith({
+    String? type,
+    String? url,
+    String? filename,
+    int? size,
+    String? storagePath,
+    bool clearStoragePath = false,
+  }) {
+    return MessageAttachment(
+      type: type ?? this.type,
+      url: url ?? this.url,
+      filename: filename ?? this.filename,
+      size: size ?? this.size,
+      storagePath: clearStoragePath ? null : (storagePath ?? this.storagePath),
+    );
+  }
 }
 
 /// Message dans un groupe de discussion de séance
@@ -100,6 +123,8 @@ class SessionMessage {
   final SessionGroupType groupType;
   final String? groupLevel; // Uniquement si groupType = niveau
   final List<MessageAttachment> attachments;
+  final Map<String, List<String>> reactions;
+  final Poll? poll;
   final DateTime createdAt;
 
   SessionMessage({
@@ -110,6 +135,8 @@ class SessionMessage {
     required this.groupType,
     this.groupLevel,
     this.attachments = const [],
+    this.reactions = const {},
+    this.poll,
     required this.createdAt,
   });
 
@@ -121,12 +148,17 @@ class SessionMessage {
       senderId: data['sender_id'] ?? '',
       senderName: data['sender_name'] ?? '',
       message: data['message'] ?? '',
-      groupType: SessionGroupTypeExtension.fromString(data['group_type'] ?? 'encadrants'),
+      groupType: SessionGroupTypeExtension.fromString(
+          data['group_type'] ?? 'encadrants'),
       groupLevel: data['group_level'],
       attachments: (data['attachments'] as List<dynamic>?)
               ?.map((a) => MessageAttachment.fromMap(a as Map<String, dynamic>))
               .toList() ??
           [],
+      reactions: _parseReactions(data['reactions']),
+      poll: data['poll'] != null
+          ? Poll.fromMap(data['poll'] as Map<String, dynamic>)
+          : null,
       createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
@@ -139,6 +171,8 @@ class SessionMessage {
       'group_type': groupType.value,
       if (groupLevel != null) 'group_level': groupLevel,
       'attachments': attachments.map((a) => a.toMap()).toList(),
+      if (reactions.isNotEmpty) 'reactions': reactions,
+      if (poll != null) 'poll': poll!.toMap(),
       'created_at': Timestamp.fromDate(createdAt),
     };
   }
@@ -159,6 +193,9 @@ class SessionMessage {
     SessionGroupType? groupType,
     String? groupLevel,
     List<MessageAttachment>? attachments,
+    Map<String, List<String>>? reactions,
+    Poll? poll,
+    bool clearPoll = false,
     DateTime? createdAt,
   }) {
     return SessionMessage(
@@ -169,8 +206,26 @@ class SessionMessage {
       groupType: groupType ?? this.groupType,
       groupLevel: groupLevel ?? this.groupLevel,
       attachments: attachments ?? this.attachments,
+      reactions: reactions ?? this.reactions,
+      poll: clearPoll ? null : (poll ?? this.poll),
       createdAt: createdAt ?? this.createdAt,
     );
+  }
+
+  bool get hasAttachments => attachments.isNotEmpty;
+  bool get hasPoll => poll != null;
+
+  static Map<String, List<String>> _parseReactions(dynamic rawReactions) {
+    if (rawReactions is! Map) return const {};
+
+    final parsed = <String, List<String>>{};
+    for (final entry in rawReactions.entries) {
+      parsed[entry.key.toString()] = (entry.value as List<dynamic>?)
+              ?.map((uid) => uid.toString())
+              .toList() ??
+          const [];
+    }
+    return parsed;
   }
 }
 

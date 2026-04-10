@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:path/path.dart' as path;
+import '../models/poll.dart';
 import '../models/session_message.dart';
 import '../models/piscine_session.dart';
 
@@ -35,10 +36,8 @@ class SessionMessageService {
       query = query.where('group_level', isEqualTo: groupLevel);
     }
 
-    return query
-        .orderBy('created_at', descending: false)
-        .snapshots()
-        .map((snapshot) => snapshot.docs
+    return query.orderBy('created_at', descending: false).snapshots().map(
+        (snapshot) => snapshot.docs
             .map((doc) => SessionMessage.fromFirestore(doc))
             .toList());
   }
@@ -53,6 +52,7 @@ class SessionMessageService {
     required SessionGroupType groupType,
     String? groupLevel,
     List<MessageAttachment>? attachments,
+    Poll? poll,
   }) async {
     final messageData = SessionMessage(
       id: '',
@@ -62,6 +62,7 @@ class SessionMessageService {
       groupType: groupType,
       groupLevel: groupLevel,
       attachments: attachments ?? [],
+      poll: poll,
       createdAt: DateTime.now(),
     );
 
@@ -97,7 +98,128 @@ class SessionMessageService {
       url: url,
       filename: filename,
       size: fileSize,
+      storagePath: storagePath,
     );
+  }
+
+  Future<void> toggleReaction({
+    required String clubId,
+    required String sessionId,
+    required String messageId,
+    required String emoji,
+    required String userId,
+  }) async {
+    final messageRef = _messagesCollection(clubId, sessionId).doc(messageId);
+
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(messageRef);
+      if (!snapshot.exists) return;
+
+      final message = SessionMessage.fromFirestore(snapshot);
+      final reactions = message.reactions.map(
+        (key, value) => MapEntry(key, List<String>.from(value)),
+      );
+      final users = List<String>.from(reactions[emoji] ?? const []);
+
+      if (users.contains(userId)) {
+        users.remove(userId);
+      } else {
+        users.add(userId);
+      }
+
+      if (users.isEmpty) {
+        reactions.remove(emoji);
+      } else {
+        reactions[emoji] = users;
+      }
+
+      transaction.update(messageRef, {'reactions': reactions});
+    });
+  }
+
+  Future<void> togglePollVote({
+    required String clubId,
+    required String sessionId,
+    required String messageId,
+    required String optionId,
+    required String userId,
+  }) async {
+    final messageRef = _messagesCollection(clubId, sessionId).doc(messageId);
+
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(messageRef);
+      if (!snapshot.exists) return;
+
+      final message = SessionMessage.fromFirestore(snapshot);
+      final poll = message.poll;
+      if (poll == null || poll.isClosed) return;
+
+      final options = poll.options
+          .map((option) =>
+              option.copyWith(votes: List<String>.from(option.votes)))
+          .toList();
+      final selectedIndex =
+          options.indexWhere((option) => option.id == optionId);
+      if (selectedIndex == -1) return;
+
+      final hasSelectedOption = options[selectedIndex].votes.contains(userId);
+
+      if (!poll.allowMultiple) {
+        for (var i = 0; i < options.length; i++) {
+          final updatedVotes = List<String>.from(options[i].votes)
+            ..remove(userId);
+          options[i] = options[i].copyWith(votes: updatedVotes);
+        }
+        if (!hasSelectedOption) {
+          final updatedVotes = List<String>.from(options[selectedIndex].votes)
+            ..add(userId);
+          options[selectedIndex] =
+              options[selectedIndex].copyWith(votes: updatedVotes);
+        }
+      } else {
+        final updatedVotes = List<String>.from(options[selectedIndex].votes);
+        if (hasSelectedOption) {
+          updatedVotes.remove(userId);
+        } else {
+          updatedVotes.add(userId);
+        }
+        options[selectedIndex] =
+            options[selectedIndex].copyWith(votes: updatedVotes);
+      }
+
+      transaction.update(messageRef, {
+        'poll': poll.copyWith(options: options).toMap(),
+      });
+    });
+  }
+
+  Future<void> closePoll({
+    required String clubId,
+    required String sessionId,
+    required String messageId,
+  }) async {
+    final messageRef = _messagesCollection(clubId, sessionId).doc(messageId);
+
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(messageRef);
+      if (!snapshot.exists) return;
+
+      final message = SessionMessage.fromFirestore(snapshot);
+      final poll = message.poll;
+      if (poll == null || poll.isClosed) return;
+
+      transaction.update(messageRef, {
+        'poll': poll.copyWith(closedAt: DateTime.now()).toMap(),
+      });
+    });
+  }
+
+  Future<void> deleteMessage({
+    required String clubId,
+    required String sessionId,
+    required String messageId,
+  }) async {
+    await _messagesCollection(clubId, sessionId).doc(messageId).delete();
   }
 
   /// Obtenir les groupes de chat disponibles pour un utilisateur dans une session
@@ -116,7 +238,8 @@ class SessionMessageService {
     }
 
     // Vérifier si l'utilisateur est encadrant (tous les encadrants ont accès au chat encadrants)
-    final isAnyEncadrant = session.allEncadrants.any((e) => e.membreId == userId);
+    final isAnyEncadrant =
+        session.allEncadrants.any((e) => e.membreId == userId);
     if (isAnyEncadrant) {
       groups.add(SessionChatGroup(
         type: SessionGroupType.encadrants,

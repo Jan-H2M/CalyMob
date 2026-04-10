@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/session_message.dart' show MessageAttachment;
+import 'video_attachment.dart';
 
 /// Widget pour afficher les pièces jointes dans un message
 class AttachmentDisplay extends StatelessWidget {
@@ -22,6 +23,11 @@ class AttachmentDisplay extends StatelessWidget {
       children: attachments.map((attachment) {
         if (attachment.isImage) {
           return _buildImageAttachment(context, attachment);
+        } else if (attachment.isVideo) {
+          return VideoAttachment(
+            attachment: attachment,
+            compact: compact,
+          );
         } else {
           return _buildPdfAttachment(context, attachment);
         }
@@ -29,7 +35,8 @@ class AttachmentDisplay extends StatelessWidget {
     );
   }
 
-  Widget _buildImageAttachment(BuildContext context, MessageAttachment attachment) {
+  Widget _buildImageAttachment(
+      BuildContext context, MessageAttachment attachment) {
     return GestureDetector(
       onTap: () => _showFullScreenImage(context, attachment),
       child: Container(
@@ -74,7 +81,8 @@ class AttachmentDisplay extends StatelessWidget {
     );
   }
 
-  Widget _buildPdfAttachment(BuildContext context, MessageAttachment attachment) {
+  Widget _buildPdfAttachment(
+      BuildContext context, MessageAttachment attachment) {
     return GestureDetector(
       onTap: () => _openPdf(attachment),
       child: Container(
@@ -122,7 +130,8 @@ class AttachmentDisplay extends StatelessWidget {
     );
   }
 
-  void _showFullScreenImage(BuildContext context, MessageAttachment attachment) {
+  void _showFullScreenImage(
+      BuildContext context, MessageAttachment attachment) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => _FullScreenImageView(attachment: attachment),

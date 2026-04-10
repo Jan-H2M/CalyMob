@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'local_read_tracker.dart';
+import '../utils/club_role_utils.dart';
 
 /// Service die ongelezen tellingen berekent via lokale timestamps
 /// + Firestore count() queries. Geen read_by arrays meer.
@@ -51,8 +52,12 @@ class UnreadCountService {
 
       // Dedupliceer op doc ID (een nieuw announcement met reply telt maar 1x)
       final unreadIds = <String>{};
-      for (final doc in results[0].docs) unreadIds.add(doc.id);
-      for (final doc in results[1].docs) unreadIds.add(doc.id);
+      for (final doc in results[0].docs) {
+        unreadIds.add(doc.id);
+      }
+      for (final doc in results[1].docs) {
+        unreadIds.add(doc.id);
+      }
       return unreadIds.length;
     } catch (e) {
       debugPrint('❌ countUnreadAnnouncements error: $e');
@@ -93,7 +98,7 @@ class UnreadCountService {
       });
 
       final counts = await Future.wait(futures);
-      return counts.fold<int>(0, (sum, c) => sum + c);
+      return counts.fold<int>(0, (total, value) => total + value);
     } catch (e) {
       debugPrint('❌ countUnreadEventMessages error: $e');
       return 0;
@@ -108,8 +113,7 @@ class UnreadCountService {
   /// Gebruikt door de operations list voor individuele badges.
   Future<int> countUnreadForOperation(String clubId, String operationId) async {
     try {
-      final lastRead =
-          _tracker.getLastRead('operation_$operationId') ?? _epoch;
+      final lastRead = _tracker.getLastRead('operation_$operationId') ?? _epoch;
 
       final query = _firestore
           .collection('clubs/$clubId/operations/$operationId/messages')
@@ -127,23 +131,12 @@ class UnreadCountService {
   // TEAM MESSAGES — per channel
   // ============================================================
 
-  Future<int> countUnreadTeamMessages(
-      String clubId, List<String> roles) async {
-    final normalizedRoles = roles.map((r) => r.toLowerCase()).toList();
-    final channelIds = <String>[];
-
-    if (normalizedRoles.contains('accueil')) {
-      channelIds.add('equipe_accueil');
-    }
-    if (normalizedRoles.contains('encadrant') ||
-        normalizedRoles.contains('encadrants')) {
-      channelIds.add('equipe_encadrants');
-    }
-    if (normalizedRoles.contains('gonflage')) {
-      channelIds.add('equipe_gonflage');
-    }
-
-    if (channelIds.isEmpty) return 0;
+  Future<int> countUnreadTeamMessages(String clubId, List<String> roles,
+      {bool includeAllChannels = false}) async {
+    final channelIds = ClubRoleUtils.getVisibleTeamChannelIds(
+      roles,
+      includeAllChannels: includeAllChannels,
+    );
 
     try {
       // Parallel queries per channel (sneller dan sequentieel)
@@ -159,9 +152,25 @@ class UnreadCountService {
       });
 
       final counts = await Future.wait(futures);
-      return counts.fold<int>(0, (sum, c) => sum + c);
+      return counts.fold<int>(0, (total, value) => total + value);
     } catch (e) {
       debugPrint('❌ countUnreadTeamMessages error: $e');
+      return 0;
+    }
+  }
+
+  Future<int> countUnreadForTeamChannel(String clubId, String channelId) async {
+    try {
+      final lastRead = _tracker.getLastRead('team_$channelId') ?? _epoch;
+
+      final query = _firestore
+          .collection('clubs/$clubId/team_channels/$channelId/messages')
+          .where('created_at', isGreaterThan: Timestamp.fromDate(lastRead));
+
+      final snapshot = await query.count().get().timeout(_queryTimeout);
+      return snapshot.count ?? 0;
+    } catch (e) {
+      debugPrint('❌ countUnreadForTeamChannel error: $e');
       return 0;
     }
   }
@@ -175,10 +184,9 @@ class UnreadCountService {
 
   Future<int> countUnreadSessionMessages(
       String clubId, List<String> roles) async {
-    final normalizedRoles = roles.map((r) => r.toLowerCase()).toList();
+    final normalizedRoles = ClubRoleUtils.normalizeRoles(roles);
     final hasAccueil = normalizedRoles.contains('accueil');
-    final hasEncadrant = normalizedRoles.contains('encadrant') ||
-        normalizedRoles.contains('encadrants');
+    final hasEncadrant = normalizedRoles.contains('encadrant');
 
     if (!hasAccueil && !hasEncadrant) return 0;
 
@@ -204,13 +212,13 @@ class UnreadCountService {
       final futures = <Future<int>>[];
       for (final sessionDoc in sessionsSnapshot.docs) {
         for (final groupType in groupTypes) {
-          futures.add(_countUnreadForSessionGroup(
-              clubId, sessionDoc.id, groupType));
+          futures.add(
+              _countUnreadForSessionGroup(clubId, sessionDoc.id, groupType));
         }
       }
 
       final counts = await Future.wait(futures);
-      return counts.fold<int>(0, (sum, c) => sum + c);
+      return counts.fold<int>(0, (total, value) => total + value);
     } catch (e) {
       debugPrint('❌ countUnreadSessionMessages error: $e');
       return 0;
@@ -225,11 +233,9 @@ class UnreadCountService {
       final lastRead = _tracker.getLastRead(key) ?? _epoch;
 
       final query = _firestore
-          .collection(
-              'clubs/$clubId/piscine_sessions/$sessionId/messages')
+          .collection('clubs/$clubId/piscine_sessions/$sessionId/messages')
           .where('group_type', isEqualTo: groupType)
-          .where('created_at',
-              isGreaterThan: Timestamp.fromDate(lastRead));
+          .where('created_at', isGreaterThan: Timestamp.fromDate(lastRead));
 
       final snapshot = await query.count().get().timeout(_queryTimeout);
       return snapshot.count ?? 0;
@@ -244,12 +250,16 @@ class UnreadCountService {
 
   /// Bereken alle ongelezen counts in één keer.
   /// Retourneert een map met categorie → count.
-  Future<Map<String, int>> refreshAllCounts(
-      String clubId, List<String> roles) async {
+  Future<Map<String, int>> refreshAllCounts(String clubId, List<String> roles,
+      {bool includeAllTeamChannels = false}) async {
     final results = await Future.wait([
       countUnreadAnnouncements(clubId),
       countUnreadEventMessages(clubId),
-      countUnreadTeamMessages(clubId, roles),
+      countUnreadTeamMessages(
+        clubId,
+        roles,
+        includeAllChannels: includeAllTeamChannels,
+      ),
       countUnreadSessionMessages(clubId, roles),
     ]);
 

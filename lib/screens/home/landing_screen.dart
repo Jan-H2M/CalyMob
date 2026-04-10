@@ -1,21 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../providers/unread_count_provider.dart';
 import '../../services/app_update_service.dart';
+import '../../utils/club_role_utils.dart';
 import '../../widgets/ocean_background.dart';
 import '../../widgets/ocean/ocean_config.dart';
 import '../auth/login_screen.dart';
 import '../operations/operations_list_screen.dart';
+import '../communication/communication_hub_screen.dart';
 import '../expenses/financial_screen.dart';
 import '../profile/profile_screen.dart';
 import '../profile/who_is_who_screen.dart';
-import '../announcements/announcements_screen.dart';
 import '../piscine/availability_screen.dart';
 
 /// Landing page avec thème maritime animé et boutons ronds
@@ -47,7 +47,8 @@ class _LandingScreenState extends State<LandingScreen> {
       final packageInfo = await PackageInfo.fromPlatform();
       if (mounted) {
         setState(() {
-          _versionString = 'Version ${packageInfo.version} (${packageInfo.buildNumber})';
+          _versionString =
+              'Version ${packageInfo.version} (${packageInfo.buildNumber})';
         });
       }
     } catch (e) {
@@ -70,36 +71,45 @@ class _LandingScreenState extends State<LandingScreen> {
     final uid = authProvider.currentUser?.uid;
     if (uid == null) return;
 
-    final roles = memberProvider.clubStatuten ?? [];
+    final roles = memberProvider.clubStatuten;
+    final includeAllTeamChannels = ClubRoleUtils.hasAdminAccess(
+      roles,
+      appRole: memberProvider.appRole,
+    );
     setState(() {
       _clubStatuten = roles.isNotEmpty ? roles : null;
     });
 
-    final unreadProvider = Provider.of<UnreadCountProvider>(context, listen: false);
+    final unreadProvider =
+        Provider.of<UnreadCountProvider>(context, listen: false);
     if (!unreadProvider.isListening) {
-      unreadProvider.listen(FirebaseConfig.defaultClubId, uid, roles: roles);
+      unreadProvider.listen(
+        FirebaseConfig.defaultClubId,
+        uid,
+        roles: roles,
+        includeAllTeamChannels: includeAllTeamChannels,
+      );
     }
   }
 
   bool _hasPiscineRole() {
     if (_clubStatuten == null) return false;
-    final roles = _clubStatuten!.map((s) => s.toLowerCase()).toList();
+    final roles = ClubRoleUtils.normalizeRoles(_clubStatuten!);
     return roles.contains('accueil') ||
-           roles.contains('encadrant') ||
-           roles.contains('encadrants') ||
-           roles.contains('gonflage');
+        roles.contains('encadrant') ||
+        roles.contains('gonflage');
   }
 
   List<String> _getPiscineRoles() {
     if (_clubStatuten == null) return [];
-    final roles = _clubStatuten!.map((s) => s.toLowerCase()).toList();
+    final roles = ClubRoleUtils.normalizeRoles(_clubStatuten!);
     final piscineRoles = <String>[];
-    if (roles.contains('encadrant') || roles.contains('encadrants')) {
+    if (roles.contains('encadrant')) {
       piscineRoles.add('encadrant');
     }
     if (roles.contains('accueil')) piscineRoles.add('accueil');
     if (roles.contains('gonflage')) piscineRoles.add('gonflage');
-    if (roles.contains('encadrant') || roles.contains('encadrants')) {
+    if (roles.contains('encadrant')) {
       piscineRoles.add('theorie');
     }
     return piscineRoles;
@@ -124,16 +134,21 @@ class _LandingScreenState extends State<LandingScreen> {
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Déconnecter', style: TextStyle(color: Colors.white)),
+            child: const Text('Déconnecter',
+                style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
 
     if (confirmed == true && context.mounted) {
-      await context.read<AuthProvider>().logout();
-      context.read<MemberProvider>().clear();
-      context.read<UnreadCountProvider>().clear();
+      final authProvider = context.read<AuthProvider>();
+      final memberProvider = context.read<MemberProvider>();
+      final unreadProvider = context.read<UnreadCountProvider>();
+
+      await authProvider.logout();
+      memberProvider.clear();
+      unreadProvider.clear();
 
       if (context.mounted) {
         Navigator.of(context).pushReplacement(
@@ -153,7 +168,9 @@ class _LandingScreenState extends State<LandingScreen> {
       backgroundColor: Colors.black,
       body: OceanBackground(
         params: _oceanParams,
-        fixedHour: (_oceanParams != null && !_oceanParams!.useRealTime) ? _oceanParams!.fixedHour : null,
+        fixedHour: (_oceanParams != null && !_oceanParams!.useRealTime)
+            ? _oceanParams!.fixedHour
+            : null,
         child: SafeArea(
           child: Column(
             children: [
@@ -187,12 +204,15 @@ class _LandingScreenState extends State<LandingScreen> {
               Text(
                 userName,
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      shadows: [
-                        const Shadow(offset: Offset(0, 1), blurRadius: 4, color: Colors.black38),
-                      ],
-                    ),
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                  shadows: [
+                    const Shadow(
+                        offset: Offset(0, 1),
+                        blurRadius: 4,
+                        color: Colors.black38),
+                  ],
+                ),
                 textAlign: TextAlign.center,
               ),
 
@@ -214,16 +234,19 @@ class _LandingScreenState extends State<LandingScreen> {
                           badgeCount: unreadProvider.eventMessages,
                           onTap: () => Navigator.push(
                             context,
-                            MaterialPageRoute(builder: (_) => const OperationsListScreen()),
+                            MaterialPageRoute(
+                                builder: (_) => const OperationsListScreen()),
                           ),
                         ),
                         _GlossyButton(
                           title: 'Communication',
                           icon: Icons.campaign,
-                          badgeCount: unreadProvider.announcements,
+                          badgeCount: unreadProvider.announcements +
+                              unreadProvider.teamMessages,
                           onTap: () => Navigator.push(
                             context,
-                            MaterialPageRoute(builder: (_) => const AnnouncementsScreen()),
+                            MaterialPageRoute(
+                                builder: (_) => const CommunicationHubScreen()),
                           ),
                         ),
                         if (_hasPiscineRole())
@@ -237,7 +260,8 @@ class _LandingScreenState extends State<LandingScreen> {
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (_) => AvailabilityScreen(userRoles: roles),
+                                    builder: (_) =>
+                                        AvailabilityScreen(userRoles: roles),
                                   ),
                                 );
                               }
@@ -257,7 +281,8 @@ class _LandingScreenState extends State<LandingScreen> {
                           icon: Icons.people,
                           onTap: () => Navigator.push(
                             context,
-                            MaterialPageRoute(builder: (_) => const WhoIsWhoScreen()),
+                            MaterialPageRoute(
+                                builder: (_) => const WhoIsWhoScreen()),
                           ),
                         ),
                         _GlossyButton(
@@ -265,7 +290,8 @@ class _LandingScreenState extends State<LandingScreen> {
                           icon: Icons.account_balance_wallet,
                           onTap: () => Navigator.push(
                             context,
-                            MaterialPageRoute(builder: (_) => const FinancialScreen()),
+                            MaterialPageRoute(
+                                builder: (_) => const FinancialScreen()),
                           ),
                         ),
                         _GlossyButton(
@@ -273,7 +299,8 @@ class _LandingScreenState extends State<LandingScreen> {
                           icon: Icons.person,
                           onTap: () => Navigator.push(
                             context,
-                            MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                            MaterialPageRoute(
+                                builder: (_) => const ProfileScreen()),
                           ),
                         ),
                       ],
@@ -331,16 +358,19 @@ class _GlossyButton extends StatelessWidget {
               gradient: RadialGradient(
                 center: const Alignment(-0.3, -0.4),
                 colors: [
-                  Colors.white.withOpacity( 0.25),
-                  AppColors.middenblauw.withOpacity( 0.6),
-                  AppColors.donkerblauw.withOpacity( 0.8),
+                  Colors.white.withValues(alpha: 0.25),
+                  AppColors.middenblauw.withValues(alpha: 0.6),
+                  AppColors.donkerblauw.withValues(alpha: 0.8),
                 ],
                 stops: const [0.0, 0.5, 1.0],
               ),
-              border: Border.all(color: Colors.white.withOpacity( 0.2), width: 1),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.2),
+                width: 1,
+              ),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.donkerblauw.withOpacity( 0.4),
+                  color: AppColors.donkerblauw.withValues(alpha: 0.4),
                   blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
@@ -356,24 +386,28 @@ class _GlossyButton extends StatelessWidget {
                     top: -2,
                     right: -2,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         color: Colors.red,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: Colors.white, width: 2),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity( 0.3),
+                            color: Colors.black.withValues(alpha: 0.3),
                             blurRadius: 4,
                             offset: const Offset(0, 2),
                           ),
                         ],
                       ),
-                      constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+                      constraints:
+                          const BoxConstraints(minWidth: 22, minHeight: 22),
                       child: Text(
                         badgeCount > 99 ? '99+' : badgeCount.toString(),
                         style: const TextStyle(
-                          color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
                         ),
                         textAlign: TextAlign.center,
                       ),
@@ -390,7 +424,8 @@ class _GlossyButton extends StatelessWidget {
               fontWeight: FontWeight.w600,
               color: Colors.white,
               shadows: [
-                Shadow(offset: Offset(0, 1), blurRadius: 3, color: Colors.black45),
+                Shadow(
+                    offset: Offset(0, 1), blurRadius: 3, color: Colors.black45),
               ],
             ),
             textAlign: TextAlign.center,

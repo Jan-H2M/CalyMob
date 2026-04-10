@@ -3,9 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 
-/// Widget pour sélectionner des pièces jointes (images et PDFs)
+/// Widget pour sélectionner des pièces jointes (images, vidéos et PDFs)
 class AttachmentPicker extends StatelessWidget {
   final Function(File file, String type) onAttachmentSelected;
+  static const int _maxFileSizeBytes = 50 * 1024 * 1024;
 
   const AttachmentPicker({
     super.key,
@@ -66,7 +67,8 @@ class AttachmentPicker extends StatelessWidget {
                     color: Colors.green.shade100,
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Icon(Icons.photo_library, color: Colors.green.shade700),
+                  child:
+                      Icon(Icons.photo_library, color: Colors.green.shade700),
                 ),
                 title: const Text('Choisir une image'),
                 subtitle: const Text('Depuis la galerie'),
@@ -91,6 +93,39 @@ class AttachmentPicker extends StatelessWidget {
                   _pickPdf(context);
                 },
               ),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade100,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(Icons.videocam, color: Colors.orange.shade700),
+                ),
+                title: const Text('Filmer une vidéo'),
+                subtitle: const Text('Utiliser la caméra'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickVideoFromCamera(context);
+                },
+              ),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.purple.shade100,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child:
+                      Icon(Icons.video_library, color: Colors.purple.shade700),
+                ),
+                title: const Text('Choisir une vidéo'),
+                subtitle: const Text('Depuis la galerie'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickVideoFromGallery(context);
+                },
+              ),
             ],
           ),
         ),
@@ -109,7 +144,8 @@ class AttachmentPicker extends StatelessWidget {
       );
 
       if (image != null) {
-        onAttachmentSelected(File(image.path), 'image');
+        if (!context.mounted) return;
+        await _handlePickedFile(context, File(image.path), 'image');
       }
     } catch (e) {
       if (context.mounted) {
@@ -134,7 +170,8 @@ class AttachmentPicker extends StatelessWidget {
       );
 
       if (image != null) {
-        onAttachmentSelected(File(image.path), 'image');
+        if (!context.mounted) return;
+        await _handlePickedFile(context, File(image.path), 'image');
       }
     } catch (e) {
       if (context.mounted) {
@@ -156,7 +193,12 @@ class AttachmentPicker extends StatelessWidget {
       );
 
       if (result != null && result.files.single.path != null) {
-        onAttachmentSelected(File(result.files.single.path!), 'pdf');
+        if (!context.mounted) return;
+        await _handlePickedFile(
+          context,
+          File(result.files.single.path!),
+          'pdf',
+        );
       }
     } catch (e) {
       if (context.mounted) {
@@ -168,6 +210,75 @@ class AttachmentPicker extends StatelessWidget {
         );
       }
     }
+  }
+
+  Future<void> _pickVideoFromCamera(BuildContext context) async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? video = await picker.pickVideo(
+        source: ImageSource.camera,
+        maxDuration: const Duration(minutes: 5),
+      );
+
+      if (video != null) {
+        if (!context.mounted) return;
+        await _handlePickedFile(context, File(video.path), 'video');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur vidéo: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickVideoFromGallery(BuildContext context) async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? video = await picker.pickVideo(
+        source: ImageSource.gallery,
+        maxDuration: const Duration(minutes: 10),
+      );
+
+      if (video != null) {
+        if (!context.mounted) return;
+        await _handlePickedFile(context, File(video.path), 'video');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur sélection vidéo: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _handlePickedFile(
+    BuildContext context,
+    File file,
+    String type,
+  ) async {
+    final fileSize = await file.length();
+    if (fileSize > _maxFileSizeBytes) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Le fichier dépasse 50 MB.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    onAttachmentSelected(file, type);
   }
 }
 
@@ -198,6 +309,20 @@ class PendingAttachmentPreview extends StatelessWidget {
                 width: 60,
                 height: 60,
                 fit: BoxFit.cover,
+              ),
+            )
+          else if (type == 'video')
+            Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                color: Colors.purple.shade100,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.play_circle_fill,
+                color: Colors.purple.shade700,
+                size: 32,
               ),
             )
           else

@@ -1,15 +1,20 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../models/event_message.dart';
+import '../models/poll.dart';
 import '../models/session_message.dart' show MessageAttachment;
-import '../providers/event_message_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/event_message_provider.dart';
 import '../providers/unread_count_provider.dart';
 import '../services/local_read_tracker.dart';
-import 'package:intl/intl.dart';
 import 'attachment_display.dart';
 import 'attachment_picker.dart';
+import 'message_reactions.dart';
+import 'poll_compose_dialog.dart';
+import 'poll_widget.dart';
 
 class EventDiscussionTab extends StatefulWidget {
   final String clubId;
@@ -28,15 +33,12 @@ class EventDiscussionTab extends StatefulWidget {
 class _EventDiscussionTabState extends State<EventDiscussionTab> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-
-  // État pour les réponses
-  EventMessage? _replyingTo;
-
-  // État pour les pièces jointes
   final List<_PendingAttachment> _pendingAttachments = [];
-  bool _isUploading = false;
 
-  // Timestamp de dernière lecture (pour le divider "Nouveaux messages")
+  EventMessage? _replyingTo;
+  Poll? _pendingPoll;
+  bool _isUploading = false;
+  bool _initialScrollDone = false;
   DateTime? _lastReadBeforeOpen;
 
   @override
@@ -54,9 +56,8 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
   }
 
   void _checkParticipation() {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final messageProvider =
-        Provider.of<EventMessageProvider>(context, listen: false);
+    final authProvider = context.read<AuthProvider>();
+    final messageProvider = context.read<EventMessageProvider>();
     final userId = authProvider.currentUser?.uid ?? '';
 
     messageProvider.checkParticipation(
@@ -66,35 +67,30 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
     );
   }
 
-  /// Marquer tous les messages comme lus quand on ouvre la discussion
   Future<void> _markMessagesAsRead() async {
-    // Sauvegarder l'ancien lastRead AVANT de marquer comme lu
-    // pour pouvoir afficher le divider "Nouveaux messages"
     final tracker = LocalReadTracker();
+    await tracker.init();
     final key = 'operation_${widget.operationId}';
-    _lastReadBeforeOpen = tracker.getLastRead(key)
-        ?? tracker.installBaseline
-        ?? DateTime(2024);
+    _lastReadBeforeOpen =
+        tracker.getLastRead(key) ?? tracker.installBaseline ?? DateTime(2024);
 
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final messageProvider = Provider.of<EventMessageProvider>(context, listen: false);
-    final unreadProvider = Provider.of<UnreadCountProvider>(context, listen: false);
-    final userId = authProvider.currentUser?.uid ?? '';
-    if (userId.isEmpty) return;
-
-    await messageProvider.markAsRead(
-      operationId: widget.operationId,
-      unreadProvider: unreadProvider,
-    );
+    if (!mounted) return;
+    final unreadProvider = context.read<UnreadCountProvider>();
+    await context.read<EventMessageProvider>().markAsRead(
+          operationId: widget.operationId,
+          unreadProvider: unreadProvider,
+        );
   }
 
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
-    if (text.isEmpty && _pendingAttachments.isEmpty) return;
+    if ((text.isEmpty && _pendingAttachments.isEmpty && _pendingPoll == null) ||
+        _isUploading) {
+      return;
+    }
 
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final messageProvider =
-        Provider.of<EventMessageProvider>(context, listen: false);
+    final authProvider = context.read<AuthProvider>();
+    final messageProvider = context.read<EventMessageProvider>();
     final currentUser = authProvider.currentUser;
     final displayName = authProvider.displayName;
 
@@ -103,22 +99,17 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
     setState(() => _isUploading = true);
 
     try {
-      // Upload des pièces jointes
-      List<MessageAttachment>? attachments;
-      if (_pendingAttachments.isNotEmpty) {
-        attachments = [];
-        for (final pending in _pendingAttachments) {
-          final attachment = await messageProvider.uploadAttachment(
-            clubId: widget.clubId,
-            operationId: widget.operationId,
-            file: pending.file,
-            type: pending.type,
-          );
-          attachments.add(attachment);
-        }
+      final attachments = <MessageAttachment>[];
+      for (final pending in _pendingAttachments) {
+        final attachment = await messageProvider.uploadAttachment(
+          clubId: widget.clubId,
+          operationId: widget.operationId,
+          file: pending.file,
+          type: pending.type,
+        );
+        attachments.add(attachment);
       }
 
-      // Créer le preview de réponse si nécessaire
       ReplyPreview? replyPreview;
       if (_replyingTo != null) {
         replyPreview = messageProvider.createReplyPreview(_replyingTo!);
@@ -133,31 +124,25 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
         replyToId: _replyingTo?.id,
         replyToPreview: replyPreview,
         attachments: attachments,
+        poll: _pendingPoll,
       );
 
       _messageController.clear();
       setState(() {
         _replyingTo = null;
         _pendingAttachments.clear();
+        _pendingPoll = null;
       });
 
-      // Scroll to bottom
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erreur: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erreur: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     } finally {
       if (mounted) {
         setState(() => _isUploading = false);
@@ -165,16 +150,46 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
     }
   }
 
+  Future<void> _toggleReaction(String messageId, String emoji) async {
+    final userId = context.read<AuthProvider>().currentUser?.uid;
+    if (userId == null) return;
+
+    await context.read<EventMessageProvider>().toggleReaction(
+          clubId: widget.clubId,
+          operationId: widget.operationId,
+          messageId: messageId,
+          emoji: emoji,
+          userId: userId,
+        );
+  }
+
+  Future<void> _togglePollVote(String messageId, String optionId) async {
+    final userId = context.read<AuthProvider>().currentUser?.uid;
+    if (userId == null) return;
+
+    await context.read<EventMessageProvider>().togglePollVote(
+          clubId: widget.clubId,
+          operationId: widget.operationId,
+          messageId: messageId,
+          optionId: optionId,
+          userId: userId,
+        );
+  }
+
+  Future<void> _closePoll(String messageId) async {
+    await context.read<EventMessageProvider>().closePoll(
+          clubId: widget.clubId,
+          operationId: widget.operationId,
+          messageId: messageId,
+        );
+  }
+
   void _startReplyTo(EventMessage message) {
-    setState(() {
-      _replyingTo = message;
-    });
+    setState(() => _replyingTo = message);
   }
 
   void _cancelReply() {
-    setState(() {
-      _replyingTo = null;
-    });
+    setState(() => _replyingTo = null);
   }
 
   void _addAttachment(File file, String type) {
@@ -189,22 +204,159 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
     });
   }
 
+  Future<void> _createPoll() async {
+    final poll = await showPollComposerDialog(context);
+    if (poll == null || !mounted) return;
+    setState(() => _pendingPoll = poll);
+  }
+
+  Future<void> _copyMessage(String text) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Message copié')),
+    );
+  }
+
+  Future<void> _confirmDeleteMessage(EventMessage message) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Supprimer le message'),
+        content: const Text('Êtes-vous sûr de vouloir supprimer ce message ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await context.read<EventMessageProvider>().deleteMessage(
+            clubId: widget.clubId,
+            operationId: widget.operationId,
+            messageId: message.id,
+          );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Message supprimé'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erreur: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _showMessageOptions(EventMessage message, bool isOwn) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final emoji in MessageReactions.quickReactions)
+                      ActionChip(
+                        label: Text(emoji),
+                        onPressed: () async {
+                          Navigator.of(sheetContext).pop();
+                          await _toggleReaction(message.id, emoji);
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.reply),
+                  title: const Text('Répondre'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _startReplyTo(message);
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.copy_outlined),
+                  title: const Text('Copier'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _copyMessage(message.message);
+                  },
+                ),
+                if (isOwn)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading:
+                        const Icon(Icons.delete_outline, color: Colors.red),
+                    title: const Text(
+                      'Supprimer',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      _confirmDeleteMessage(message);
+                    },
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _scrollToBottom() {
+    if (!_scrollController.hasClients) return;
+    _scrollController.animateTo(
+      _scrollController.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
-    final messageProvider = Provider.of<EventMessageProvider>(context);
-    final currentUser = authProvider.currentUser;
-    final currentUserId = currentUser?.uid ?? '';
-
-    final isParticipant = messageProvider.isParticipant(widget.operationId);
+    final authProvider = context.watch<AuthProvider>();
+    final messageProvider = context.watch<EventMessageProvider>();
+    final currentUserId = authProvider.currentUser?.uid ?? '';
 
     return Column(
       children: [
-        // Messages list
         Expanded(
           child: StreamBuilder<List<EventMessage>>(
             stream: messageProvider.watchMessages(
-                widget.clubId, widget.operationId),
+              widget.clubId,
+              widget.operationId,
+            ),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
@@ -231,8 +383,11 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.chat_bubble_outline,
-                          size: 80, color: Colors.grey[400]),
+                      Icon(
+                        Icons.chat_bubble_outline,
+                        size: 80,
+                        color: Colors.grey[400],
+                      ),
                       const SizedBox(height: 16),
                       Text(
                         'Aucun message',
@@ -241,32 +396,21 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
                           color: Colors.grey[600],
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Soyez le premier à poser une question',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[500],
-                        ),
-                      ),
                     ],
                   ),
                 );
               }
 
-              // After build, scroll to bottom
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (_scrollController.hasClients) {
-                  _scrollController.jumpTo(
-                    _scrollController.position.maxScrollExtent,
-                  );
-                }
-              });
+              if (!_initialScrollDone) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _initialScrollDone = true;
+                  _scrollToBottom();
+                });
+              }
 
-              // Chercher l'index du premier message non lu
               int? newMessagesDividerIndex;
               if (_lastReadBeforeOpen != null) {
-                for (int i = 0; i < messages.length; i++) {
+                for (var i = 0; i < messages.length; i++) {
                   if (messages[i].createdAt.isAfter(_lastReadBeforeOpen!)) {
                     newMessagesDividerIndex = i;
                     break;
@@ -274,7 +418,6 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
                 }
               }
 
-              // Calculer le nombre total d'items (messages + divider éventuel)
               final hasNewDivider = newMessagesDividerIndex != null;
               final totalItems = messages.length + (hasNewDivider ? 1 : 0);
 
@@ -283,27 +426,27 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
                 padding: const EdgeInsets.all(16),
                 itemCount: totalItems,
                 itemBuilder: (context, index) {
-                  // Insérer le divider "Nouveaux messages" à la bonne position
                   if (hasNewDivider && index == newMessagesDividerIndex) {
                     return _buildNewMessagesDivider();
                   }
 
-                  // Ajuster l'index pour les messages après le divider
-                  final messageIndex = hasNewDivider && index > newMessagesDividerIndex!
-                      ? index - 1
-                      : index;
-
+                  final messageIndex =
+                      hasNewDivider && index > newMessagesDividerIndex!
+                          ? index - 1
+                          : index;
                   final message = messages[messageIndex];
                   final isOwnMessage = message.senderId == currentUserId;
 
-                  return _buildMessageBubble(message, isOwnMessage);
+                  return _buildMessageBubble(
+                    message: message,
+                    isOwnMessage: isOwnMessage,
+                    currentUserId: currentUserId,
+                  );
                 },
               );
             },
           ),
         ),
-
-        // Input bar - tous les membres authentifiés peuvent envoyer des messages
         _buildMessageInput(),
       ],
     );
@@ -332,7 +475,11 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
     );
   }
 
-  Widget _buildMessageBubble(EventMessage message, bool isOwnMessage) {
+  Widget _buildMessageBubble({
+    required EventMessage message,
+    required bool isOwnMessage,
+    required String currentUserId,
+  }) {
     final dateFormat = DateFormat('HH:mm');
 
     return GestureDetector(
@@ -343,7 +490,7 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
           margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.75,
+            maxWidth: MediaQuery.of(context).size.width * 0.8,
           ),
           decoration: BoxDecoration(
             color: isOwnMessage ? Colors.blue[100] : Colors.grey[200],
@@ -352,7 +499,6 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Sender name (only for other users' messages)
               if (!isOwnMessage)
                 Text(
                   message.senderName,
@@ -363,35 +509,38 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
                   ),
                 ),
               if (!isOwnMessage) const SizedBox(height: 4),
-
-              // Reply preview (if this is a reply)
               if (message.isReply && message.replyToPreview != null)
                 _buildReplyPreview(message.replyToPreview!),
-
-              // Message text
               if (message.message.isNotEmpty)
                 Text(
                   message.message,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    color: Colors.black87,
-                  ),
+                  style: const TextStyle(fontSize: 15, color: Colors.black87),
                 ),
-
-              // Attachments
               if (message.hasAttachments)
                 AttachmentDisplay(
                   attachments: message.attachments,
                   compact: true,
                 ),
-
+              if (message.hasPoll)
+                ChatPollWidget(
+                  poll: message.poll!,
+                  currentUserId: currentUserId,
+                  onVote: (optionId) => _togglePollVote(message.id, optionId),
+                  onClose: isOwnMessage ? () => _closePoll(message.id) : null,
+                  canClose: isOwnMessage,
+                ),
+              if (message.reactions.isNotEmpty)
+                MessageReactions(
+                  reactions: message.reactions,
+                  currentUserId: currentUserId,
+                  onToggleReaction: (emoji) =>
+                      _toggleReaction(message.id, emoji),
+                  compact: true,
+                ),
               const SizedBox(height: 4),
               Text(
                 dateFormat.format(message.createdAt),
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey[600],
-                ),
+                style: TextStyle(fontSize: 11, color: Colors.grey[600]),
               ),
             ],
           ),
@@ -405,13 +554,10 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.05),
+        color: Colors.black.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(8),
         border: Border(
-          left: BorderSide(
-            color: Colors.blue.shade400,
-            width: 3,
-          ),
+          left: BorderSide(color: Colors.blue.shade400, width: 3),
         ),
       ),
       child: Column(
@@ -441,96 +587,9 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
     );
   }
 
-  void _showMessageOptions(EventMessage message, bool isOwnMessage) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.reply),
-                title: const Text('Répondre'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _startReplyTo(message);
-                },
-              ),
-              if (isOwnMessage)
-                ListTile(
-                  leading: const Icon(Icons.delete_outline, color: Colors.red),
-                  title: const Text('Supprimer', style: TextStyle(color: Colors.red)),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _confirmDeleteMessage(message);
-                  },
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _confirmDeleteMessage(EventMessage message) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Supprimer le message'),
-        content: const Text('Êtes-vous sûr de vouloir supprimer ce message ?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Annuler'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Supprimer'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true && mounted) {
-      try {
-        final messageProvider = Provider.of<EventMessageProvider>(context, listen: false);
-        await messageProvider.deleteMessage(
-          clubId: widget.clubId,
-          operationId: widget.operationId,
-          messageId: message.id,
-        );
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Message supprimé'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Erreur: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    }
-  }
-
   Widget _buildMessageInput() {
-    // Use viewInsets.bottom for keyboard height, padding.bottom for safe area
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
     final bottomSafeArea = MediaQuery.of(context).padding.bottom;
-    // When keyboard is visible, use keyboard height; otherwise use safe area
     final bottomPadding = keyboardHeight > 0 ? keyboardHeight : bottomSafeArea;
 
     return Container(
@@ -542,34 +601,36 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
       ),
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border(
-          top: BorderSide(color: Colors.grey[300]!),
-        ),
+        border: Border(top: BorderSide(color: Colors.grey[300]!)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Reply preview bar
           if (_replyingTo != null) _buildReplyingToBar(),
-
-          // Pending attachments preview
+          if (_pendingPoll != null)
+            _PendingPollCard(
+              poll: _pendingPoll!,
+              onRemove: () => setState(() => _pendingPoll = null),
+            ),
           if (_pendingAttachments.isNotEmpty) _buildPendingAttachmentsBar(),
-
-          // Input row
           Row(
             children: [
-              // Attachment picker
               AttachmentPicker(onAttachmentSelected: _addAttachment),
-
-              // Text input
+              IconButton(
+                onPressed: _createPoll,
+                icon: const Icon(Icons.poll_outlined),
+                tooltip: 'Ajouter un sondage',
+              ),
               Expanded(
                 child: TextField(
                   controller: _messageController,
                   textCapitalization: TextCapitalization.sentences,
                   decoration: InputDecoration(
                     hintText: _replyingTo != null
-                        ? 'Repondre...'
-                        : 'Votre message...',
+                        ? 'Répondre...'
+                        : _pendingPoll != null
+                            ? 'Ajoutez un contexte si besoin...'
+                            : 'Votre message...',
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(24),
                       borderSide: BorderSide(color: Colors.grey[300]!),
@@ -586,8 +647,6 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
                 ),
               ),
               const SizedBox(width: 8),
-
-              // Send button
               _isUploading
                   ? const SizedBox(
                       width: 24,
@@ -614,12 +673,7 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
       decoration: BoxDecoration(
         color: Colors.blue.shade50,
         borderRadius: BorderRadius.circular(8),
-        border: Border(
-          left: BorderSide(
-            color: Colors.blue.shade400,
-            width: 3,
-          ),
-        ),
+        border: Border(left: BorderSide(color: Colors.blue.shade400, width: 3)),
       ),
       child: Row(
         children: [
@@ -628,7 +682,7 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Repondre a ${_replyingTo!.senderName}',
+                  'Répondre à ${_replyingTo!.senderName}',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
@@ -640,10 +694,7 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
                   _replyingTo!.message.length > 50
                       ? '${_replyingTo!.message.substring(0, 50)}...'
                       : _replyingTo!.message,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[700],
-                  ),
+                  style: TextStyle(fontSize: 12, color: Colors.grey[700]),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -681,7 +732,44 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
   }
 }
 
-/// Classe helper pour les pièces jointes en attente
+class _PendingPollCard extends StatelessWidget {
+  final Poll poll;
+  final VoidCallback onRemove;
+
+  const _PendingPollCard({
+    required this.poll,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.poll_outlined, color: Colors.blue),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              poll.question,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          IconButton(onPressed: onRemove, icon: const Icon(Icons.close)),
+        ],
+      ),
+    );
+  }
+}
+
 class _PendingAttachment {
   final File file;
   final String type;
