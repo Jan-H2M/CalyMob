@@ -1,0 +1,1 @@
+Nouveau hub de communication avec chat enrichi (images, réponses, réactions). Gestion des groupes de participants pour les séances piscine. Amélioration de la fiche de progression avec les scans piscine. Corrections de bugs : notifications, paiements et profil.
