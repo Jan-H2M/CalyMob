@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
@@ -10,6 +11,7 @@ import '../../models/session_message.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/unread_count_provider.dart';
 import '../../services/local_read_tracker.dart';
+import '../../services/profile_service.dart';
 import '../../services/session_message_service.dart';
 import '../../widgets/attachment_display.dart';
 import '../../widgets/attachment_picker.dart';
@@ -34,14 +36,29 @@ class SessionChatScreen extends StatefulWidget {
 
 class _SessionChatScreenState extends State<SessionChatScreen> {
   final SessionMessageService _messageService = SessionMessageService();
+  final ProfileService _profileService = ProfileService();
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode();
   final List<_PendingAttachment> _pendingAttachments = [];
 
+  /// Cache de photo Futures par senderId
+  final Map<String, Future<String?>> _photoFutureCache = {};
+
   bool _isSending = false;
   bool _initialScrollDone = false;
   Poll? _pendingPoll;
+
+  /// Haal de foto URL op voor een member (cached Future)
+  Future<String?> _getPhotoUrl(String senderId) {
+    return _photoFutureCache.putIfAbsent(senderId, () async {
+      final profile = await _profileService.getProfile(
+        FirebaseConfig.defaultClubId,
+        senderId,
+      );
+      return (profile?.hasPhoto == true) ? profile!.photoUrl : null;
+    });
+  }
 
   @override
   void initState() {
@@ -399,19 +416,25 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
                           children: [
                             if (showDateHeader)
                               _DateHeader(date: message.createdAt),
-                            _MessageBubble(
-                              message: message,
-                              isOwn: isOwn,
-                              currentUserId: userId,
-                              onLongPress: () =>
-                                  _showMessageOptions(message, isOwn),
-                              onToggleReaction: (emoji) =>
-                                  _toggleReaction(message.id, emoji),
-                              onVote: (optionId) =>
-                                  _togglePollVote(message.id, optionId),
-                              onClosePoll: isOwn && message.hasPoll
-                                  ? () => _closePoll(message.id)
-                                  : null,
+                            FutureBuilder<String?>(
+                              future: isOwn ? Future.value(null) : _getPhotoUrl(message.senderId),
+                              builder: (context, snapshot) {
+                                return _MessageBubble(
+                                  message: message,
+                                  isOwn: isOwn,
+                                  currentUserId: userId,
+                                  senderPhotoUrl: snapshot.data,
+                                  onLongPress: () =>
+                                      _showMessageOptions(message, isOwn),
+                                  onToggleReaction: (emoji) =>
+                                      _toggleReaction(message.id, emoji),
+                                  onVote: (optionId) =>
+                                      _togglePollVote(message.id, optionId),
+                                  onClosePoll: isOwn && message.hasPoll
+                                      ? () => _closePoll(message.id)
+                                      : null,
+                                );
+                              },
                             ),
                           ],
                         );
@@ -584,6 +607,7 @@ class _MessageBubble extends StatelessWidget {
   final SessionMessage message;
   final bool isOwn;
   final String currentUserId;
+  final String? senderPhotoUrl;
   final VoidCallback onLongPress;
   final ValueChanged<String> onToggleReaction;
   final ValueChanged<String> onVote;
@@ -593,6 +617,7 @@ class _MessageBubble extends StatelessWidget {
     required this.message,
     required this.isOwn,
     required this.currentUserId,
+    this.senderPhotoUrl,
     required this.onLongPress,
     required this.onToggleReaction,
     required this.onVote,
@@ -617,16 +642,21 @@ class _MessageBubble extends StatelessWidget {
               CircleAvatar(
                 radius: 16,
                 backgroundColor: AppColors.middenblauw,
-                child: Text(
-                  message.senderName.isEmpty
-                      ? '?'
-                      : message.senderName[0].toUpperCase(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
-                ),
+                backgroundImage: senderPhotoUrl != null
+                    ? CachedNetworkImageProvider(senderPhotoUrl!)
+                    : null,
+                child: senderPhotoUrl == null
+                    ? Text(
+                        message.senderName.isEmpty
+                            ? '?'
+                            : message.senderName[0].toUpperCase(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      )
+                    : null,
               ),
               const SizedBox(width: 8),
             ],

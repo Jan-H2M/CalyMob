@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
@@ -9,6 +10,7 @@ import '../../models/team_channel.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/unread_count_provider.dart';
 import '../../services/local_read_tracker.dart';
+import '../../services/profile_service.dart';
 import '../../services/team_channel_service.dart';
 import '../../widgets/attachment_display.dart';
 import '../../widgets/attachment_picker.dart';
@@ -31,10 +33,14 @@ class TeamChatScreen extends StatefulWidget {
 
 class _TeamChatScreenState extends State<TeamChatScreen> {
   final TeamChannelService _channelService = TeamChannelService();
+  final ProfileService _profileService = ProfileService();
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode();
   final List<_PendingAttachment> _pendingAttachments = [];
+
+  /// Cache de photo Futures par senderId
+  final Map<String, Future<String?>> _photoFutureCache = {};
 
   bool _isSending = false;
   bool _hasMarkedAsRead = false;
@@ -53,6 +59,17 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
     _scrollController.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  /// Haal de foto URL op voor een member (cached Future)
+  Future<String?> _getPhotoUrl(String senderId) {
+    return _photoFutureCache.putIfAbsent(senderId, () async {
+      final profile = await _profileService.getProfile(
+        FirebaseConfig.defaultClubId,
+        senderId,
+      );
+      return (profile?.hasPhoto == true) ? profile!.photoUrl : null;
+    });
   }
 
   Color get _teamColor {
@@ -448,20 +465,26 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
                           children: [
                             if (showDateHeader)
                               _DateHeader(date: message.createdAt),
-                            _MessageBubble(
-                              message: message,
-                              isOwn: isOwn,
-                              teamColor: _teamColor,
-                              currentUserId: userId,
-                              onLongPress: () =>
-                                  _showMessageOptions(message, isOwn),
-                              onToggleReaction: (emoji) =>
-                                  _toggleReaction(message.id, emoji),
-                              onVote: (optionId) =>
-                                  _togglePollVote(message.id, optionId),
-                              onClosePoll: isOwn && message.hasPoll
-                                  ? () => _closePoll(message.id)
-                                  : null,
+                            FutureBuilder<String?>(
+                              future: isOwn ? Future.value(null) : _getPhotoUrl(message.senderId),
+                              builder: (context, snapshot) {
+                                return _MessageBubble(
+                                  message: message,
+                                  isOwn: isOwn,
+                                  teamColor: _teamColor,
+                                  currentUserId: userId,
+                                  senderPhotoUrl: snapshot.data,
+                                  onLongPress: () =>
+                                      _showMessageOptions(message, isOwn),
+                                  onToggleReaction: (emoji) =>
+                                      _toggleReaction(message.id, emoji),
+                                  onVote: (optionId) =>
+                                      _togglePollVote(message.id, optionId),
+                                  onClosePoll: isOwn && message.hasPoll
+                                      ? () => _closePoll(message.id)
+                                      : null,
+                                );
+                              },
                             ),
                           ],
                         );
@@ -636,6 +659,7 @@ class _MessageBubble extends StatelessWidget {
   final bool isOwn;
   final Color teamColor;
   final String currentUserId;
+  final String? senderPhotoUrl;
   final VoidCallback onLongPress;
   final ValueChanged<String> onToggleReaction;
   final ValueChanged<String> onVote;
@@ -646,6 +670,7 @@ class _MessageBubble extends StatelessWidget {
     required this.isOwn,
     required this.teamColor,
     required this.currentUserId,
+    this.senderPhotoUrl,
     required this.onLongPress,
     required this.onToggleReaction,
     required this.onVote,
@@ -670,16 +695,21 @@ class _MessageBubble extends StatelessWidget {
               CircleAvatar(
                 radius: 16,
                 backgroundColor: teamColor,
-                child: Text(
-                  message.senderName.isEmpty
-                      ? '?'
-                      : message.senderName[0].toUpperCase(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
-                ),
+                backgroundImage: senderPhotoUrl != null
+                    ? CachedNetworkImageProvider(senderPhotoUrl!)
+                    : null,
+                child: senderPhotoUrl == null
+                    ? Text(
+                        message.senderName.isEmpty
+                            ? '?'
+                            : message.senderName[0].toUpperCase(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      )
+                    : null,
               ),
               const SizedBox(width: 8),
             ],

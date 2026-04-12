@@ -58,6 +58,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   final OperationService _operationService = OperationService();
 
   MemberProfile? _userProfile;
+  MemberProfile? _organisateurProfile;
   List<ExerciceLIFRAS> _availableExercices = [];
   Map<String, ExerciceLIFRAS> _allExercicesMap = {};
   Map<String, Map<String, MemberObservation>> _exerciceObservations =
@@ -124,8 +125,24 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           userId,
         );
 
+    // Load organiser profile (for phone number display)
+    _loadOrganisateurProfile();
+
     // Load user's inscription to get selected exercices
     _loadUserInscription();
+  }
+
+  Future<void> _loadOrganisateurProfile() async {
+    final operation = context.read<OperationProvider>().selectedOperation;
+    final orgId = operation?.organisateurId;
+    if (orgId == null || orgId.isEmpty) return;
+
+    final profile = await _profileService.getProfile(widget.clubId, orgId);
+    if (mounted) {
+      setState(() {
+        _organisateurProfile = profile;
+      });
+    }
   }
 
   Future<void> _loadUserProfile() async {
@@ -1087,6 +1104,54 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
                             // Compact header: Date + Lieu sur la même ligne
                             _buildCompactHeader(operation),
+
+                            // Responsable sortie + téléphone
+                            Builder(builder: (_) {
+                              final responsableNom = (operation.organisateurNom != null && operation.organisateurNom!.isNotEmpty)
+                                  ? operation.organisateurNom!
+                                  : _organisateurProfile?.fullName;
+                              if (responsableNom == null || responsableNom.isEmpty) return const SizedBox.shrink();
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.person, size: 18, color: Colors.white70),
+                                    const SizedBox(width: 6),
+                                    Flexible(
+                                      child: Text(
+                                        'Responsable : $responsableNom',
+                                        style: const TextStyle(fontSize: 14, color: Colors.white),
+                                      ),
+                                    ),
+                                    if (_organisateurProfile?.phoneNumber != null &&
+                                        _organisateurProfile!.phoneNumber!.isNotEmpty) ...[
+                                      const SizedBox(width: 12),
+                                      GestureDetector(
+                                        onTap: () => launchUrl(
+                                          Uri.parse('tel:${_organisateurProfile!.phoneNumber!}'),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(Icons.phone, size: 16, color: Colors.white70),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              _organisateurProfile!.phoneNumber!,
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                                color: Colors.white,
+                                                decoration: TextDecoration.underline,
+                                                decorationColor: Colors.white70,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              );
+                            }),
 
                             const SizedBox(height: 12),
 

@@ -1,8 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../config/app_colors.dart';
+import '../config/firebase_config.dart';
 import '../models/event_message.dart';
 import '../models/poll.dart';
 import '../models/session_message.dart' show MessageAttachment;
@@ -10,6 +13,7 @@ import '../providers/auth_provider.dart';
 import '../providers/event_message_provider.dart';
 import '../providers/unread_count_provider.dart';
 import '../services/local_read_tracker.dart';
+import '../services/profile_service.dart';
 import 'attachment_display.dart';
 import 'attachment_picker.dart';
 import 'message_reactions.dart';
@@ -33,7 +37,11 @@ class EventDiscussionTab extends StatefulWidget {
 class _EventDiscussionTabState extends State<EventDiscussionTab> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final ProfileService _profileService = ProfileService();
   final List<_PendingAttachment> _pendingAttachments = [];
+
+  /// Cache de photo Futures par senderId
+  final Map<String, Future<String?>> _photoFutureCache = {};
 
   EventMessage? _replyingTo;
   Poll? _pendingPoll;
@@ -41,6 +49,17 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
   bool _isUploading = false;
   bool _initialScrollDone = false;
   DateTime? _lastReadBeforeOpen;
+
+  /// Haal de foto URL op voor een member (cached Future)
+  Future<String?> _getPhotoUrl(String senderId) {
+    return _photoFutureCache.putIfAbsent(senderId, () async {
+      final profile = await _profileService.getProfile(
+        FirebaseConfig.defaultClubId,
+        senderId,
+      );
+      return (profile?.hasPhoto == true) ? profile!.photoUrl : null;
+    });
+  }
 
   @override
   void initState() {
@@ -500,13 +519,44 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
 
     return GestureDetector(
       onLongPress: () => _showMessageOptions(message, isOwnMessage),
-      child: Align(
-        alignment: isOwnMessage ? Alignment.centerRight : Alignment.centerLeft,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Row(
+          mainAxisAlignment: isOwnMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            if (!isOwnMessage) ...[
+              FutureBuilder<String?>(
+                future: _getPhotoUrl(message.senderId),
+                builder: (context, snapshot) {
+                  return CircleAvatar(
+                    radius: 16,
+                    backgroundColor: AppColors.middenblauw,
+                    backgroundImage: snapshot.data != null
+                        ? CachedNetworkImageProvider(snapshot.data!)
+                        : null,
+                    child: snapshot.data == null
+                        ? Text(
+                            message.senderName.isEmpty
+                                ? '?'
+                                : message.senderName[0].toUpperCase(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          )
+                        : null,
+                  );
+                },
+              ),
+              const SizedBox(width: 8),
+            ],
+            Flexible(
+              child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.8,
+            maxWidth: MediaQuery.of(context).size.width * 0.75,
           ),
           decoration: BoxDecoration(
             color: isOwnMessage ? Colors.blue[100] : Colors.grey[200],
@@ -560,6 +610,9 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
               ),
             ],
           ),
+        ),
+            ), // Flexible
+          ],
         ),
       ),
     );
