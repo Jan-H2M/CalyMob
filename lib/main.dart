@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode, kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
@@ -73,11 +73,20 @@ void main() async {
   // so we must NOT call it before — that causes a zone mismatch on web.
   await SentryFlutter.init(
     (options) {
-      options.dsn =
-          'https://c6c7e5f63f5700bf5cb4f2b02a6ea0b5@o4510996349386752.ingest.de.sentry.io/4510996559429712';
-      options.tracesSampleRate = 1.0;
-      options.environment =
-          const String.fromEnvironment('ENV', defaultValue: 'production');
+      options.dsn = kDebugMode
+          ? '' // Désactivé en debug — pas d'envoi vers Sentry
+          : 'https://c6c7e5f63f5700bf5cb4f2b02a6ea0b5@o4510996349386752.ingest.de.sentry.io/4510996559429712';
+      options.tracesSampleRate = kReleaseMode ? 0.2 : 0.0; // 20% en prod, 0 en debug
+      options.environment = kReleaseMode
+          ? const String.fromEnvironment('ENV', defaultValue: 'production')
+          : 'debug';
+      options.debug = kDebugMode;
+
+      // Ne pas envoyer d'événements en debug mode (sécurité supplémentaire)
+      options.beforeSend = (event, hint) {
+        if (kDebugMode) return null; // drop l'événement
+        return event;
+      };
 
       // Session Replay — pour bug reporting (capture vidéo des sessions)
       options.replay.sessionSampleRate = 0.1; // 10% des sessions normales
