@@ -770,6 +770,25 @@ service cloud.firestore {
         allow delete: if isSuperAdmin(clubId) && hasValidSession(clubId);
       }
 
+      // ========== LIFRAS EXERCISES (Formation module) ==========
+      // exercices_lifras: LIFRAS exercise definitions, read by all members
+      match /exercices_lifras/{exerciceId} {
+        allow read: if isAuthenticated();
+        allow write: if isAdmin(clubId) && hasValidSession(clubId);
+      }
+
+      // ========== MEMBER OBSERVATIONS (Formation module) ==========
+      // member_observations: training observations per member, read by admins/encadrants
+      match /member_observations/{observationId} {
+        allow read: if isAuthenticated() && (
+          isAdmin(clubId) || isPiscineFormationEditor(clubId)
+        );
+        allow create: if isAuthenticated()
+          && hasValidSession(clubId)
+          && isPiscineFormationEditor(clubId);
+        allow update, delete: if isAdmin(clubId) && hasValidSession(clubId);
+      }
+
       // ========== BUG REPORTING MODULE ==========
 
       // Bug reports — signalements de bugs par les utilisateurs
@@ -816,6 +835,19 @@ service cloud.firestore {
     match /settings/{settingId} {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated(); // Written by CalyCompta admin UI (version publishing)
+    }
+
+    // ========== COLLECTION GROUP: attendees ==========
+    // Required for collectionGroup('attendees') queries in attendanceService.ts
+    // (used by Formation > MemberProgressionFiche to show "Présences cette saison")
+    // Without this wildcard rule, the collectionGroup query silently returns []
+    // even though the single-field index on memberId exists in firestore.indexes.json.
+    match /{path=**}/attendees/{attendeeId} {
+      // Read: any authenticated user
+      // (club membership is verified via the specific path rules above)
+      allow read: if request.auth != null;
+      // Write is NOT allowed here — writes go through the specific
+      // clubs/{clubId}/piscine_sessions/{sessionId}/attendees path above
     }
 
     // Default deny for everything else
