@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Users, Search, UserPlus, X, ChevronDown } from 'lucide-react';
+import { Users, Search, UserPlus, X, ChevronDown, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { PiscineParticipantsService } from '@/services/piscineParticipantsService';
 import { SessionParticipant, SessionFormation, FormationGroup } from '@/types/piscine.types';
@@ -145,6 +145,7 @@ export const ParticipantsTab: React.FC<Props> = ({ sessionId, totalScanned }) =>
   const [allMembers, setAllMembers] = useState<Membre[]>([]);
   const [showAddPanel, setShowAddPanel] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // ── Subscribe to formations + participants ─────────────────────────
   useEffect(() => {
@@ -152,9 +153,16 @@ export const ParticipantsTab: React.FC<Props> = ({ sessionId, totalScanned }) =>
     const unsub1 = PiscineParticipantsService.subscribeToFormations(clubId, sessionId, f => {
       setFormations(f);
       setLoading(false);
+      setLoadError(null);
+    }, (err) => {
+      console.error('[SessionParticipantsTab] load error:', err);
+      setLoadError(err.message);
+      setLoading(false);
     });
     const unsub2 = PiscineParticipantsService.subscribeToParticipants(clubId, sessionId, p => {
       setParticipants(p);
+    }, (err) => {
+      console.error('[SessionParticipantsTab] participants error:', err);
     });
     return () => { unsub1(); unsub2(); };
   }, [clubId, sessionId]);
@@ -248,6 +256,16 @@ export const ParticipantsTab: React.FC<Props> = ({ sessionId, totalScanned }) =>
   if (loading) return (
     <div className="flex items-center justify-center py-16">
       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+    </div>
+  );
+
+  if (loadError) return (
+    <div className="flex items-center gap-3 p-4 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400">
+      <AlertCircle className="w-5 h-5 flex-shrink-0" />
+      <div>
+        <p className="text-sm font-medium">Erreur de chargement</p>
+        <p className="text-xs mt-0.5 opacity-75">{loadError}</p>
+      </div>
     </div>
   );
 

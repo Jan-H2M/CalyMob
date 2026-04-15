@@ -21,10 +21,14 @@ export class PiscineParticipantsService {
 
   static subscribeToFormations(
     clubId: string, sessionId: string,
-    cb: (formations: SessionFormation[]) => void
+    cb: (formations: SessionFormation[]) => void,
+    onError?: (err: Error) => void
   ): () => void {
     const q = query(this.formationsCol(clubId, sessionId), orderBy('order', 'asc'));
-    return onSnapshot(q, snap => cb(snap.docs.map(d => this.docToFormation(d))));
+    return onSnapshot(q,
+      snap => cb(snap.docs.map(d => this.docToFormation(d))),
+      err => onError?.(err)
+    );
   }
 
   // ── Formations: ensure default formations exist ─────────────────────
@@ -66,10 +70,14 @@ export class PiscineParticipantsService {
 
   static subscribeToParticipants(
     clubId: string, sessionId: string,
-    cb: (participants: SessionParticipant[]) => void
+    cb: (participants: SessionParticipant[]) => void,
+    onError?: (err: Error) => void
   ): () => void {
     const q = query(this.participantsCol(clubId, sessionId), orderBy('scannedAt', 'asc'));
-    return onSnapshot(q, snap => cb(snap.docs.map(d => this.docToParticipant(d))));
+    return onSnapshot(q,
+      snap => cb(snap.docs.map(d => this.docToParticipant(d))),
+      err => onError?.(err)
+    );
   }
 
   // ── Participants: add (scan or manual) ──────────────────────────────
