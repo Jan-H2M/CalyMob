@@ -38,6 +38,69 @@ platform :ios do
     )
   end
 
+  desc "Submit uploaded build to App Store Review (uses existing build, no binary upload)"
+  lane :submit do |options|
+    api_key = app_store_connect_api_key(
+      key_id: "BHUKT6FFGF",
+      issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"] || "280e011a-f492-43fb-b0eb-727ddaa8c6c9",
+      key_filepath: "~/.private_keys/AuthKey_BHUKT6FFGF.p8",
+      in_house: false
+    )
+
+    version = options[:version] || "1.5.4"
+    build = options[:build] || "130"
+
+    deliver(
+      api_key: api_key,
+      app_version: version,
+      build_number: build,
+      skip_binary_upload: true,
+      skip_screenshots: true,
+      skip_metadata: true,
+      submit_for_review: true,
+      automatic_release: true,
+      force: true,
+      reject_if_possible: true,
+      precheck_include_in_app_purchases: false,
+      run_precheck_before_submit: false,
+      submission_information: {
+        add_id_info_uses_idfa: false,
+        export_compliance_uses_encryption: false,
+        content_rights_contains_third_party_content: false
+      }
+    )
+  end
+
+  desc "Update What's New (release notes) on the current editable version via ASC API"
+  lane :update_notes do |options|
+    require "spaceship"
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+      key_id: "BHUKT6FFGF",
+      issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"] || "280e011a-f492-43fb-b0eb-727ddaa8c6c9",
+      filepath: File.expand_path("~/.private_keys/AuthKey_BHUKT6FFGF.p8")
+    )
+    app = Spaceship::ConnectAPI::App.find("be.calypsodc.calymob")
+    UI.message("App: #{app.name} (id=#{app.id})")
+    version = app.get_edit_app_store_version
+    if version.nil?
+      UI.message("No editable version — looking at in-review version")
+      version = app.get_in_review_app_store_version
+    end
+    UI.message("Version: #{version.version_string} — state: #{version.app_store_state}")
+    locs = version.get_app_store_version_localizations
+    fr = locs.find { |l| l.locale == "fr-FR" }
+    notes_path = File.join(File.dirname(__FILE__), "metadata", "fr-FR", "release_notes.txt")
+    notes = File.read(notes_path).strip
+    UI.message("Reading notes from #{notes_path}")
+    if fr
+      fr.update(attributes: { whats_new: notes })
+      UI.success("Updated fr-FR whats_new (#{notes.length} chars)")
+    else
+      version.create_app_store_version_localization(attributes: { locale: "fr-FR", whats_new: notes })
+      UI.success("Created fr-FR localization")
+    end
+  end
+
   desc "Validate API key connection"
   lane :validate do
     api_key = app_store_connect_api_key(

@@ -1,0 +1,2 @@
+Correction de l'affichage des exercices de formation.
+Les plongeurs 4 etoiles voient desormais correctement les exercices AM (Assistant Moniteur) au lieu des exercices P4.
