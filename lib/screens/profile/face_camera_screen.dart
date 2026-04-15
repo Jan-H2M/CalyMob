@@ -317,57 +317,67 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
           painter: FaceOverlayPainter(),
         ),
 
-        // Instructions en haut
+        // Titre compact en haut (ne couvre pas le cercle)
         Positioned(
-          top: 20,
-          left: 0,
-          right: 0,
+          top: 12,
+          left: 16,
+          right: 16,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            margin: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.75),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.diversity_3,
+                  color: Colors.lightBlueAccent,
+                  size: 22,
+                ),
+                SizedBox(width: 8),
+                Text(
+                  'Who\'s Who Calypso',
+                  style: TextStyle(
+                    color: Colors.lightBlueAccent,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // Instructions en bas (au-dessus du bouton de capture)
+        Positioned(
+          bottom: 140,
+          left: 16,
+          right: 16,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             decoration: BoxDecoration(
               color: Colors.black.withOpacity(0.75),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Column(
               children: [
-                const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.diversity_3,
-                      color: Colors.lightBlueAccent,
-                      size: 28,
-                    ),
-                    SizedBox(width: 8),
-                    Text(
-                      'Who\'s Who Calypso',
-                      style: TextStyle(
-                        color: Colors.lightBlueAccent,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
                 const Text(
                   'Positionnez votre visage dans le cercle',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 16,
+                    fontSize: 15,
                     fontWeight: FontWeight.bold,
                   ),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Text(
-                  'Votre photo permet aux nouveaux membres de vous reconnaître, '
-                  'et à vous de les reconnaître aussi ! '
-                  'C\'est l\'esprit Calypso : convivial et accueillant 🤿',
+                  'Votre photo permet aux membres de vous reconnaître 🤿',
                   style: TextStyle(
                     color: Colors.grey[300],
-                    fontSize: 13,
+                    fontSize: 12,
                   ),
                   textAlign: TextAlign.center,
                 ),
