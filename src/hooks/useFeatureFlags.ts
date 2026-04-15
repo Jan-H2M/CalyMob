@@ -18,8 +18,8 @@ interface UseFeatureFlagsResult {
 }
 
 const DEFAULT_FLAGS: FeatureFlags = {
-  carnetFormationEnabled: false,
-  carnetFormationAdminOnly: true,
+  carnetFormationEnabled: true,
+  carnetFormationAdminOnly: false,
 };
 
 // ─── Hook: Raw feature flags ─────────────────────────────────────────────────
@@ -41,8 +41,8 @@ export function useFeatureFlags(clubId: string): UseFeatureFlagsResult {
         if (snap.exists()) {
           const data = snap.data();
           setFlags({
-            carnetFormationEnabled: data.carnetFormationEnabled ?? false,
-            carnetFormationAdminOnly: data.carnetFormationAdminOnly ?? true,
+            carnetFormationEnabled: data.carnetFormationEnabled ?? true,
+            carnetFormationAdminOnly: data.carnetFormationAdminOnly ?? false,
           });
         } else {
           setFlags(DEFAULT_FLAGS);
