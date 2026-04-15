@@ -47,12 +47,17 @@ const PLONGEUR_TO_PISCINE_LEVEL: Record<string, string> = {
   '4': '4*', 'AM': 'AM', 'MC': 'MC',
 };
 
+/** Normalize plongeur_code: strip trailing '*' so '4*' → '4', '1*' → '1', etc. */
+function normalizeCode(code: string): string {
+  return code.replace(/\*$/, '').trim();
+}
+
 function getTargetNiveau(plongeurCode: string): NiveauLIFRAS | null {
-  return TARGET_MAP[plongeurCode]?.exerciseNiveau ?? null;
+  return TARGET_MAP[normalizeCode(plongeurCode)]?.exerciseNiveau ?? null;
 }
 
 function getTargetLabel(plongeurCode: string): string {
-  return TARGET_MAP[plongeurCode]?.goalLabel ?? '';
+  return TARGET_MAP[normalizeCode(plongeurCode)]?.goalLabel ?? '';
 }
 
 /** Get the start of the current diving season (September 1) */
@@ -91,20 +96,21 @@ export function MemberProgressionFiche({
 
   const targetNiveau = getTargetNiveau(plongeurCode);
   const targetLabel = getTargetLabel(plongeurCode);
+  const normalizedCode = normalizeCode(plongeurCode);
   // Current level label based on plongeur_code
   const CURRENT_LABELS: Record<string, string> = {
     'NB': 'Non Breveté', '1': 'Plongeur 1★', '2': 'Plongeur 2★',
     '3': 'Plongeur 3★', '4': 'Plongeur 4★', 'AM': 'Assistant Moniteur',
     'MC': 'Moniteur Club', 'MF': 'Moniteur Fédéral', 'MN': 'Moniteur National',
   };
-  const currentLabel = CURRENT_LABELS[plongeurCode] || plongeurCode;
+  const currentLabel = CURRENT_LABELS[normalizedCode] || plongeurCode;
 
   useEffect(() => {
     if (!clubId || !memberId) return;
     setLoading(true);
 
     const seasonStart = getSeasonStart();
-    const piscineLevel = PLONGEUR_TO_PISCINE_LEVEL[plongeurCode];
+    const piscineLevel = PLONGEUR_TO_PISCINE_LEVEL[normalizedCode];
 
     const promises: Promise<any>[] = [
       exerciceValideService.getExercicesValides(clubId, memberId),
