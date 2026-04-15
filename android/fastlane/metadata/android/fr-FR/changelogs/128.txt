@@ -1,0 +1,2 @@
+Correction d’un problème d’installation sur Android. Amélioration de l’écran photo de profil : les instructions ne masquent plus le cercle de cadrage.
+

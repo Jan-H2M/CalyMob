@@ -101,6 +101,35 @@ platform :ios do
     end
   end
 
+  desc "Show App Store review status (editable + in-review + live versions)"
+  lane :status do
+    require "spaceship"
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+      key_id: "BHUKT6FFGF",
+      issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"] || "280e011a-f492-43fb-b0eb-727ddaa8c6c9",
+      filepath: File.expand_path("~/.private_keys/AuthKey_BHUKT6FFGF.p8")
+    )
+    app = Spaceship::ConnectAPI::App.find("be.calypsodc.calymob")
+    UI.important("App: #{app.name} (id=#{app.id})")
+
+    edit = app.get_edit_app_store_version
+    if edit
+      UI.important("Editable: #{edit.version_string} — #{edit.app_store_state}")
+      b = edit.build
+      UI.message("  Build: #{b ? "#{b.version} (processing=#{b.processing_state})" : "NONE"}")
+      fr = edit.get_app_store_version_localizations.find { |l| l.locale == "fr-FR" }
+      UI.message("  What's New (fr-FR): #{fr && fr.whats_new ? fr.whats_new.to_s.gsub("\n", " / ")[0..200] : "EMPTY"}")
+    else
+      UI.message("No editable version")
+    end
+
+    rev = app.get_in_review_app_store_version
+    UI.important("In review: #{rev ? rev.version_string + " — " + rev.app_store_state : "none"}")
+
+    live = app.get_live_app_store_version
+    UI.important("Live: #{live ? live.version_string + " — " + live.app_store_state : "none"}")
+  end
+
   desc "Validate API key connection"
   lane :validate do
     api_key = app_store_connect_api_key(

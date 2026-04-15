@@ -31,6 +31,30 @@ Upload IPA to App Store Connect (TestFlight)
 
 Upload IPA directly to App Store for review
 
+### ios submit
+
+```sh
+[bundle exec] fastlane ios submit
+```
+
+Submit uploaded build to App Store Review (uses existing build, no binary upload)
+
+### ios update_notes
+
+```sh
+[bundle exec] fastlane ios update_notes
+```
+
+Update What's New (release notes) on the current editable version via ASC API
+
+### ios status
+
+```sh
+[bundle exec] fastlane ios status
+```
+
+Show App Store review status (editable + in-review + live versions)
+
 ### ios validate
 
 ```sh
