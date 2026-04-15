@@ -19,12 +19,14 @@ class PalanqueeScreen extends StatefulWidget {
   final List<ParticipantOperation> participants;
   final String clubId;
   final String userId;
+  final bool canEdit;
   const PalanqueeScreen({
     Key? key,
     required this.operation,
     required this.participants,
     required this.clubId,
     required this.userId,
+    this.canEdit = false,
   }) : super(key: key);
 
   @override
@@ -839,39 +841,58 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
-          // Auto-assign
-          IconButton(
-            onPressed: _isLoading ? null : _autoAssign,
-            icon: const Icon(Icons.auto_fix_high),
-            tooltip: 'Auto-assigner',
-          ),
-          // PDF
+          // Auto-assign — organisateur uniquement
+          if (widget.canEdit)
+            IconButton(
+              onPressed: _isLoading ? null : _autoAssign,
+              icon: const Icon(Icons.auto_fix_high),
+              tooltip: 'Auto-assigner',
+            ),
+          // PDF — tout le monde
           IconButton(
             onPressed: _isLoading ? null : _generatePdf,
             icon: const Icon(Icons.picture_as_pdf),
             tooltip: 'Fiche de palanquée (PDF)',
           ),
-          // Save
-          IconButton(
-            onPressed: (_hasChanges && !_isSaving) ? _save : null,
-            icon: _isSaving
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                  )
-                : Icon(
-                    Icons.save,
-                    color: _hasChanges ? AppColors.oranje : Colors.white38,
-                  ),
-            tooltip: 'Sauvegarder',
-          ),
+          // Save — organisateur uniquement
+          if (widget.canEdit)
+            IconButton(
+              onPressed: (_hasChanges && !_isSaving) ? _save : null,
+              icon: _isSaving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : Icon(
+                      Icons.save,
+                      color: _hasChanges ? AppColors.oranje : Colors.white38,
+                    ),
+              tooltip: 'Sauvegarder',
+            ),
         ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
+                // Read-only banner voor niet-organisateurs
+                if (!widget.canEdit)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    color: Colors.blue.shade50,
+                    child: const Row(
+                      children: [
+                        Icon(Icons.lock_outline, size: 15, color: Colors.blueGrey),
+                        SizedBox(width: 6),
+                        Text(
+                          'Lecture seule — seul l\'organisateur peut modifier',
+                          style: TextStyle(fontSize: 12, color: Colors.blueGrey),
+                        ),
+                      ],
+                    ),
+                  ),
                 // Info bar
                 _buildInfoBar(),
                 // Content
@@ -883,23 +904,24 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                       _buildUnassignedPanel(),
                       // Palanquées
                       ..._palanquees.map((pal) => _buildPalanqueeCard(pal)),
-                      // Ajouter palanquée button
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        child: OutlinedButton.icon(
-                          onPressed: _addPalanquee,
-                          icon: const Icon(Icons.add),
-                          label: const Text('Ajouter une palanquée'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.middenblauw,
-                            side: const BorderSide(color: AppColors.middenblauw),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                      // Ajouter palanquée button — organisateur uniquement
+                      if (widget.canEdit)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          child: OutlinedButton.icon(
+                            onPressed: _addPalanquee,
+                            icon: const Icon(Icons.add),
+                            label: const Text('Ajouter une palanquée'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.middenblauw,
+                              side: const BorderSide(color: AppColors.middenblauw),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -1060,7 +1082,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                       ),
                     ),
                   ),
-                  onTap: () => _showAssignToBottomSheet(p),
+                  onTap: widget.canEdit ? () => _showAssignToBottomSheet(p) : null,
                 );
               }).toList(),
       ),
@@ -1135,11 +1157,12 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
                 const Spacer(),
                 Icon(statusIcon, color: statusColor == Colors.green ? Colors.greenAccent : statusColor, size: 18),
                 const SizedBox(width: 4),
-                // Supprimer palanquée
-                InkWell(
-                  onTap: () => _confirmRemovePalanquee(pal.numero),
-                  child: const Icon(Icons.delete_outline, color: Colors.white54, size: 18),
-                ),
+                // Supprimer palanquée — organisateur uniquement
+                if (widget.canEdit)
+                  InkWell(
+                    onTap: () => _confirmRemovePalanquee(pal.numero),
+                    child: const Icon(Icons.delete_outline, color: Colors.white54, size: 18),
+                  ),
               ],
             ),
           ),
@@ -1182,33 +1205,34 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
           else
             ...pal.participants.map((p) => _buildParticipantTile(pal.numero, p)),
 
-          // Ajouter button
-          InkWell(
-            onTap: () => _showAddMemberBottomSheet(pal.numero),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              decoration: BoxDecoration(
-                border: Border(top: BorderSide(color: Colors.grey[200]!)),
-                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
-              ),
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.add, size: 16, color: AppColors.middenblauw),
-                  SizedBox(width: 4),
-                  Text(
-                    'Ajouter',
-                    style: TextStyle(
-                      color: AppColors.middenblauw,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
+          // Ajouter button — organisateur uniquement
+          if (widget.canEdit)
+            InkWell(
+              onTap: () => _showAddMemberBottomSheet(pal.numero),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  border: Border(top: BorderSide(color: Colors.grey[200]!)),
+                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.add, size: 16, color: AppColors.middenblauw),
+                    SizedBox(width: 4),
+                    Text(
+                      'Ajouter',
+                      style: TextStyle(
+                        color: AppColors.middenblauw,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -1218,7 +1242,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
     final level = p.niveau.isNotEmpty ? p.niveau : _getLevelForMember(p.membreId);
     return Dismissible(
       key: ValueKey('${palanqueeNumero}_${p.membreId}'),
-      direction: DismissDirection.endToStart,
+      direction: widget.canEdit ? DismissDirection.endToStart : DismissDirection.none,
       background: Container(
         color: Colors.red[50],
         alignment: Alignment.centerRight,
@@ -1226,6 +1250,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
         child: const Icon(Icons.remove_circle, color: Colors.red),
       ),
       confirmDismiss: (_) async {
+        if (!widget.canEdit) return false;
         _removeFromPalanquee(palanqueeNumero, p.membreId);
         return false; // We handle the removal manually
       },

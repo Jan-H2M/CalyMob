@@ -2324,6 +2324,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       onTap: () async {
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
         final userId = authProvider.currentUser?.uid ?? '';
+        final isOrganisateur = _isCurrentUserCreator(operation);
         final result = await Navigator.push<bool>(
           context,
           MaterialPageRoute(
@@ -2332,6 +2333,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               participants: participants,
               clubId: widget.clubId,
               userId: userId,
+              canEdit: isOrganisateur,
             ),
           ),
         );
