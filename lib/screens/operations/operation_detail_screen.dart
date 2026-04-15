@@ -188,11 +188,13 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       _isLoadingExercices = true;
     });
 
-    final niveau = NiveauLIFRASExtension.fromCode(_userProfile!.plongeurCode);
-    if (niveau != null) {
+    // Map plongeur_code to the TARGET niveau (exercises to reach the NEXT level)
+    // e.g. 4* member → loads AM exercises (not P4)
+    final targetNiveau = _targetNiveauForCode(_userProfile!.plongeurCode);
+    if (targetNiveau != null) {
       final exercices = await _lifrasService.getExercicesByNiveau(
         widget.clubId,
-        niveau,
+        targetNiveau,
       );
 
       if (mounted) {
@@ -205,6 +207,24 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       setState(() {
         _isLoadingExercices = false;
       });
+    }
+  }
+
+  /// Returns the LIFRAS niveau of exercises a member needs to reach their NEXT level.
+  /// e.g. plongeurCode '4' or '4*' → NiveauLIFRAS.am (exercises to become AM)
+  NiveauLIFRAS? _targetNiveauForCode(String? code) {
+    if (code == null) return null;
+    // Normalize: strip trailing '*' so '4*' == '4'
+    final normalized = code.replaceAll('*', '').trim().toUpperCase();
+    switch (normalized) {
+      case 'NB': return NiveauLIFRAS.nb;  // NB → do NB exercises → become 1*
+      case '1':  return NiveauLIFRAS.p2;  // 1* → do P2 exercises → become 2*
+      case '2':  return NiveauLIFRAS.p3;  // 2* → do P3 exercises → become 3*
+      case '3':  return NiveauLIFRAS.p4;  // 3* → do P4 exercises → become 4*
+      case '4':  return NiveauLIFRAS.am;  // 4* → do AM exercises → become AM
+      case 'AM': return NiveauLIFRAS.mc;  // AM → do MC exercises → become MC
+      case 'MC': return NiveauLIFRAS.mf;  // MC → do MF exercises → become MF
+      default:   return null;
     }
   }
 
