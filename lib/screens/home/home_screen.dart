@@ -12,6 +12,8 @@ import '../../providers/expense_provider.dart';
 import '../../services/profile_service.dart';
 import '../../services/compatibility_service.dart';
 import '../../services/app_update_service.dart';
+import '../../services/avatar_nudge_service.dart';
+import '../profile/profile_screen.dart';
 import '../../models/compatibility_settings.dart';
 import '../../utils/permission_helper.dart';
 import '../../widgets/operation_card.dart';
@@ -59,7 +61,120 @@ class _HomeScreenState extends State<HomeScreen> {
 
       // Check for app update
       _checkForAppUpdate();
+
+      // Check si on doit inviter l'utilisateur à ajouter une photo
+      _checkAvatarNudge(userId);
     });
+  }
+
+  Future<void> _checkAvatarNudge(String userId) async {
+    try {
+      // Laisser la page se stabiliser + éviter conflit avec le dialog update
+      await Future.delayed(const Duration(milliseconds: 1200));
+      if (!mounted) return;
+
+      final memberProvider = context.read<MemberProvider>();
+      final hasPhoto = (memberProvider.photoUrl ?? '').isNotEmpty;
+
+      final should = await AvatarNudgeService.shouldShow(
+        userId: userId,
+        hasPhoto: hasPhoto,
+      );
+      if (!should || !mounted) return;
+
+      _showAvatarNudgeDialog(userId);
+    } catch (e) {
+      print('⚠️ Avatar nudge check failed: $e');
+    }
+  }
+
+  void _showAvatarNudgeDialog(String userId) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.middenblauw.withOpacity(0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.account_circle_outlined,
+                color: AppColors.middenblauw,
+                size: 28,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text('Montrez-vous au club \u{1F30A}'),
+            ),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Chez Calypso, on plonge en équipe. Ajoutez votre photo pour que les autres membres vous reconnaissent et se sentent à l\'aise avec vous — surtout les nouveaux !',
+              style: TextStyle(fontSize: 15, height: 1.35),
+            ),
+            SizedBox(height: 14),
+            _NudgeBullet(
+              icon: Icons.favorite_outline,
+              text: 'Un visage, c\'est un nom qu\'on retient',
+            ),
+            SizedBox(height: 8),
+            _NudgeBullet(
+              icon: Icons.groups_outlined,
+              text: 'On se retrouve plus vite dans sa palanquée',
+            ),
+            SizedBox(height: 8),
+            _NudgeBullet(
+              icon: Icons.waving_hand_outlined,
+              text: 'Accueillir les nouveaux devient plus facile',
+            ),
+            SizedBox(height: 14),
+            Text(
+              'Vous pouvez la changer ou la retirer quand vous voulez.',
+              style: TextStyle(fontSize: 12.5, color: Colors.black54),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await AvatarNudgeService.markShown(userId);
+              if (mounted) Navigator.of(ctx).pop();
+            },
+            child: const Text('Plus tard'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.middenblauw,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              await AvatarNudgeService.markShown(userId);
+              if (!mounted) return;
+              Navigator.of(ctx).pop();
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const ProfileScreen(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.add_a_photo_outlined, size: 18),
+            label: const Text('Ajouter ma photo'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _checkForAppUpdate() async {
@@ -576,6 +691,31 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         );
       },
+    );
+  }
+}
+
+/// Petit item à puce pour le dialog "Ajoutez votre photo".
+class _NudgeBullet extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _NudgeBullet({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: AppColors.middenblauw),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(fontSize: 13.5, height: 1.35),
+          ),
+        ),
+      ],
     );
   }
 }
