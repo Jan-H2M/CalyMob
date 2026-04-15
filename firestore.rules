@@ -565,6 +565,20 @@ service cloud.firestore {
               .hasOnly(['assignedLevel', 'assignedCourseId', 'assignedToMemberId', 'remarks']);
         }
 
+        // ── Participants tab: gescande/manueel toegevoegde deelnemers ──
+        match /session_participants/{participantId} {
+          allow read: if isAuthenticated();
+          allow create: if isAuthenticated() && hasValidSession(clubId);
+          allow update: if isAuthenticated() && hasValidSession(clubId);
+          allow delete: if isAdmin(clubId) && hasValidSession(clubId);
+        }
+
+        // ── Participants tab: formation-configuratie (groepen per niveau) ──
+        match /session_formations/{formationId} {
+          allow read: if isAuthenticated();
+          allow write: if isAuthenticated() && hasValidSession(clubId);
+        }
+
         // Messages subcollection (discussions entre participants)
         match /messages/{messageId} {
           // Lecture: tous les membres authentifiés
