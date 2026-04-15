@@ -268,3 +268,48 @@ export interface AvailabilityFilter {
   month: number;
   role?: 'accueil' | 'encadrant' | 'gonflage' | 'theorie' | 'all';
 }
+
+// ============ Types voor de Participants tab ============
+
+/**
+ * Een gescand / manueel toegevoegd lid voor een piscine sessie.
+ * Subcollectie: /clubs/{clubId}/piscine_sessions/{sessionId}/session_participants
+ */
+export interface SessionParticipant {
+  id: string;
+  memberId: string;
+  memberNom: string;
+  memberPrenom: string;
+  memberLevel: string;             // 'P1★' | 'P2★' | 'NB' | ...
+  formationId: string | null;      // null = réserve de répartition
+  groupId: string | null;          // null = à répartir (in wachtrij van formation)
+  scannedAt: Date;
+  isManuallyAdded: boolean;
+  remarks?: string;
+  photoURL?: string;
+}
+
+/**
+ * Eén groep binnen een formation.
+ */
+export interface FormationGroup {
+  id: string;                      // 'group_1' | 'group_2'
+  label: string;                   // 'GROUPE 1' | 'GROUPE 2'
+  monitorId: string | null;
+  monitorName: string | null;
+  monitorRole: string | null;      // 'Moniteur Fédéral' | 'Assistant Moniteur' | ...
+  theme: string | null;
+}
+
+/**
+ * Eén formation (niveau) binnen de Participants tab.
+ * Subcollectie: /clubs/{clubId}/piscine_sessions/{sessionId}/session_formations
+ */
+export interface SessionFormation {
+  id: string;
+  level: string;                   // '1*' | '2*' | '3*' | ...
+  levelLabel: string;              // 'FORMATION 1★'
+  groups: FormationGroup[];
+  courseMode: 'parallel' | 'single';
+  order: number;
+}

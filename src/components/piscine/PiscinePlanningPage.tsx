@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Calendar, Users, Settings, Plus, ChevronLeft, ChevronRight, Book } from 'lucide-react';
+import { Calendar, Users, Settings, Plus, ChevronLeft, ChevronRight, Book, ListChecks } from 'lucide-react';
+import { ParticipantsTab } from './ParticipantsTab';
 import { AvailabilityGrid } from './AvailabilityGrid';
 import { SessionTimelineCard } from './SessionTimelineCard';
 import { MemberAssignmentModal } from './MemberAssignmentModal';
@@ -13,7 +14,7 @@ import { type GonflageSlot } from '@/types/piscineSlots';
 import { useAuth } from '@/contexts/AuthContext';
 import { logger } from '@/utils/logger';
 
-type TabType = 'planning' | 'disponibilites';
+type TabType = 'planning' | 'disponibilites' | 'participants';
 
 const MONTH_NAMES_SHORT = [
   'jan', 'fév', 'mar', 'avr', 'mai', 'jun',
@@ -182,23 +183,7 @@ export const PiscinePlanningPage: React.FC = () => {
     return d < now;
   };
 
-  // Group sessions by month for visual separators
-  const sessionsWithSeparators = useMemo(() => {
-    const result: { type: 'separator'; label: string }[] | { type: 'session'; session: PiscineSession }[] = [];
-    let currentMonth = -1;
-
-    for (const session of sessions) {
-      const m = session.date.getMonth();
-      const y = session.date.getFullYear();
-      const monthKey = y * 12 + m;
-
-      if (monthKey !== currentMonth) {
-        currentMonth = monthKey;
-        // We'll handle separators differently in the render
-      }
-    }
-    return sessions;
-  }, [sessions]);
+  // (sessions worden rechtstreeks gerenderd, geen separator-groepering nodig)
 
   const handleAssignMember = useCallback((
     sessionId: string,
@@ -483,6 +468,17 @@ export const PiscinePlanningPage: React.FC = () => {
             <Users className="w-4 h-4" />
             Disponibilités
           </button>
+          <button
+            onClick={() => setActiveTab('participants')}
+            className={`py-2.5 px-4 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+              activeTab === 'participants'
+                ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+            }`}
+          >
+            <ListChecks className="w-4 h-4" />
+            Participants
+          </button>
         </nav>
       </div>
 
@@ -492,6 +488,19 @@ export const PiscinePlanningPage: React.FC = () => {
 
         {activeTab === 'disponibilites' && (
           <AvailabilityGrid year={selectedYear} month={selectedMonth} />
+        )}
+
+        {activeTab === 'participants' && selectedSession && (
+          <ParticipantsTab
+            sessionId={selectedSession.id}
+            totalScanned={0}
+          />
+        )}
+
+        {activeTab === 'participants' && !selectedSession && (
+          <div className="text-center py-12 text-gray-400 dark:text-gray-500">
+            Sélectionnez une séance pour voir les participants
+          </div>
         )}
       </div>
 
