@@ -1,0 +1,1 @@
+Ajout du responsable de sortie et affichage des photos de profil dans les discussions.
