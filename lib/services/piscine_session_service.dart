@@ -254,11 +254,13 @@ class PiscineSessionService {
     bool isGuest = false,
   }) async {
     // Check of lid al aanwezig is
-    final existing = await _attendeesCollection(clubId, sessionId)
-        .where('memberId', isEqualTo: memberId)
-        .get();
+    final alreadyPresent = await isAttendeePresent(
+      clubId: clubId,
+      sessionId: sessionId,
+      memberId: memberId,
+    );
 
-    if (existing.docs.isNotEmpty) {
+    if (alreadyPresent) {
       throw Exception('Ce membre est déjà marqué présent');
     }
 
@@ -286,10 +288,16 @@ class PiscineSessionService {
     required String sessionId,
     required String memberId,
   }) async {
-    final existing = await _attendeesCollection(clubId, sessionId)
-        .where('memberId', isEqualTo: memberId)
-        .get();
-    return existing.docs.isNotEmpty;
+    try {
+      final existing = await _attendeesCollection(clubId, sessionId)
+          .where('memberId', isEqualTo: memberId)
+          .get();
+      return existing.docs.isNotEmpty;
+    } catch (e) {
+      // Fallback: fetch all attendees and filter in memory if index missing
+      final all = await _attendeesCollection(clubId, sessionId).get();
+      return all.docs.any((doc) => doc.data()['memberId'] == memberId);
+    }
   }
 
   /// Haal aanwezige op basis van memberId
