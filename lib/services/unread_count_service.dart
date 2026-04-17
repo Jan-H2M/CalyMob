@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'local_read_tracker.dart';
 import '../utils/club_role_utils.dart';
@@ -74,8 +75,16 @@ class UnreadCountService {
 
   Future<int> countUnreadEventMessages(String clubId) async {
     try {
-      // Haal max N meest recente open evenementen op (beperkt queries)
-      final opsSnapshot = await _firestore
+      // Fix 2026-04-17: filter op events waar user daadwerkelijk is
+      // ingeschreven. Zonder deze filter tellen berichten uit events mee
+      // waar de gebruiker niks mee te maken heeft — zie CODEX_STATUS.md
+      // sessie-historiek (A3 notificatie-incident).
+      final userId = FirebaseAuth.instance.currentUser?.uid;
+      if (userId == null) return 0;
+
+      // Haal parallel: (a) max N meest recente open evenementen, (b) alle
+      // inscriptions van deze user in deze club.
+      final opsFuture = _firestore
           .collection('clubs/$clubId/operations')
           .where('type', isEqualTo: 'evenement')
           .where('statut', isEqualTo: 'ouvert')
@@ -84,8 +93,33 @@ class UnreadCountService {
           .get()
           .timeout(_queryTimeout);
 
+      final inscriptionsFuture = _firestore
+          .collectionGroup('inscriptions')
+          .where('membre_id', isEqualTo: userId)
+          .get()
+          .timeout(_queryTimeout);
+
+      final results = await Future.wait([opsFuture, inscriptionsFuture]);
+      final opsSnapshot = results[0];
+      final inscriptionsSnapshot = results[1];
+
+      // Build set van operation-IDs waar user is ingeschreven.
+      // Path pattern: clubs/{clubId}/operations/{opId}/inscriptions/{inscId}
+      final inscribedOpIds = <String>{};
+      for (final doc in inscriptionsSnapshot.docs) {
+        final opRef = doc.reference.parent.parent;
+        if (opRef != null) inscribedOpIds.add(opRef.id);
+      }
+      if (inscribedOpIds.isEmpty) return 0;
+
+      // Filter open events op inscriptions
+      final participatingDocs = opsSnapshot.docs
+          .where((opDoc) => inscribedOpIds.contains(opDoc.id))
+          .toList();
+      if (participatingDocs.isEmpty) return 0;
+
       // Tel ongelezen berichten per operatie parallel (sneller dan sequentieel)
-      final futures = opsSnapshot.docs.map((opDoc) async {
+      final futures = participatingDocs.map((opDoc) async {
         final lastRead =
             _tracker.getLastRead('operation_${opDoc.id}') ?? _epoch;
 
@@ -111,8 +145,26 @@ class UnreadCountService {
 
   /// Tel ongelezen berichten voor EEN specifieke operatie.
   /// Gebruikt door de operations list voor individuele badges.
+  ///
+  /// Fix 2026-04-17: retourneert 0 als de gebruiker niet ingeschreven is voor
+  /// deze operatie. Zonder deze check verschijnen rode badges op events waar
+  /// de gebruiker niks mee te maken heeft — zie CODEX_STATUS.md
+  /// sessie-historiek (A3 notificatie-incident).
   Future<int> countUnreadForOperation(String clubId, String operationId) async {
     try {
+      final userId = FirebaseAuth.instance.currentUser?.uid;
+      if (userId == null) return 0;
+
+      // Check of user ingeschreven is in deze operatie
+      final inscriptionCheck = await _firestore
+          .collection('clubs/$clubId/operations/$operationId/inscriptions')
+          .where('membre_id', isEqualTo: userId)
+          .limit(1)
+          .get()
+          .timeout(_queryTimeout);
+
+      if (inscriptionCheck.docs.isEmpty) return 0;
+
       final lastRead = _tracker.getLastRead('operation_$operationId') ?? _epoch;
 
       final query = _firestore
