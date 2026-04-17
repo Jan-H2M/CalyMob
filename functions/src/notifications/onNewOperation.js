@@ -41,12 +41,29 @@ exports.onNewOperation = onDocumentCreated(
         return null;
       }
 
+      // 2bis. Migration/backfill guard.
+      // See CODEX_STATUS.md sessie-historiek 2026-04-17 (A3 incident).
+      // Skip the push when this document is a backfill import or an event
+      // whose start date has already passed — in both cases an alert to all
+      // members would be wrong.
+      const description = String(operation.description || '');
+      if (description.includes('Importé depuis') || operation.migration_source || operation._backfill === true) {
+        console.log(`Skipping push: operation marked as import/migration (description match or migration_source flag)`);
+        return null;
+      }
+      const dateDebutRaw = operation.date_debut;
+      const dateDebut = dateDebutRaw && dateDebutRaw.toDate ? dateDebutRaw.toDate() : dateDebutRaw;
+      const triggerTime = event.time ? new Date(event.time) : new Date();
+      if (dateDebut && new Date(dateDebut).getTime() < triggerTime.getTime()) {
+        console.log(`Skipping push: date_debut (${new Date(dateDebut).toISOString()}) is before trigger time (${triggerTime.toISOString()}) — likely backfill or historical record`);
+        return null;
+      }
+
       const eventTitle = operation.titre || operation.title || 'Nouvel événement';
       const lieu = operation.lieu || 'Lieu à confirmer';
 
       // 3. Format date for notification body
       let formattedDate = '';
-      const dateDebut = operation.date_debut?.toDate ? operation.date_debut.toDate() : operation.date_debut;
       if (dateDebut) {
         formattedDate = new Date(dateDebut).toLocaleDateString('fr-BE', {
           weekday: 'long',
