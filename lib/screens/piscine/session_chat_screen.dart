@@ -15,6 +15,7 @@ import '../../services/profile_service.dart';
 import '../../services/session_message_service.dart';
 import '../../widgets/attachment_display.dart';
 import '../../widgets/attachment_picker.dart';
+import '../../widgets/message_edit_sheet.dart';
 import '../../widgets/message_reactions.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/poll_compose_dialog.dart';
@@ -211,6 +212,73 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
     );
   }
 
+  Future<void> _editMessage(SessionMessage message) async {
+    final result = await showMessageEditSheet(
+      context,
+      initialText: message.message,
+      initialAttachments: message.attachments,
+    );
+    if (result == null || !mounted) return;
+
+    if (result.text.isEmpty &&
+        result.keptAttachments.isEmpty &&
+        result.newFiles.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Le message ne peut pas être vide')),
+      );
+      return;
+    }
+
+    const clubId = FirebaseConfig.defaultClubId;
+    final sessionId = widget.session.id;
+
+    try {
+      final newUploaded = <MessageAttachment>[];
+      for (final nf in result.newFileTuples) {
+        final uploaded = await _messageService.uploadAttachment(
+          clubId: clubId,
+          sessionId: sessionId,
+          file: nf.file,
+          type: nf.type,
+        );
+        newUploaded.add(uploaded);
+      }
+
+      final keptIds = result.keptAttachments
+          .map((a) => a.storagePath ?? a.url)
+          .toSet();
+      final removed = message.attachments
+          .where((a) => !keptIds.contains(a.storagePath ?? a.url))
+          .toList();
+
+      final mergedAttachments = <MessageAttachment>[
+        ...message.attachments.where(
+          (a) => keptIds.contains(a.storagePath ?? a.url),
+        ),
+        ...newUploaded,
+      ];
+
+      await _messageService.updateMessage(
+        clubId: clubId,
+        sessionId: sessionId,
+        messageId: message.id,
+        newText: result.text,
+        attachments: mergedAttachments,
+        removedAttachments: removed,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Message modifié')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
   Future<void> _showMessageOptions(SessionMessage message, bool isOwn) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -260,6 +328,16 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
                     );
                   },
                 ),
+                if (isOwn && !message.hasPoll)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.edit_outlined),
+                    title: const Text('Modifier'),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      _editMessage(message);
+                    },
+                  ),
                 if (isOwn)
                   ListTile(
                     contentPadding: EdgeInsets.zero,

@@ -126,6 +126,7 @@ class SessionMessage {
   final Map<String, List<String>> reactions;
   final Poll? poll;
   final DateTime createdAt;
+  final DateTime? editedAt;
 
   SessionMessage({
     required this.id,
@@ -138,6 +139,7 @@ class SessionMessage {
     this.reactions = const {},
     this.poll,
     required this.createdAt,
+    this.editedAt,
   });
 
   factory SessionMessage.fromFirestore(DocumentSnapshot doc) {
@@ -160,6 +162,7 @@ class SessionMessage {
           ? Poll.fromMap(data['poll'] as Map<String, dynamic>)
           : null,
       createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      editedAt: (data['edited_at'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -174,6 +177,7 @@ class SessionMessage {
       if (reactions.isNotEmpty) 'reactions': reactions,
       if (poll != null) 'poll': poll!.toMap(),
       'created_at': Timestamp.fromDate(createdAt),
+      if (editedAt != null) 'edited_at': Timestamp.fromDate(editedAt!),
     };
   }
 
@@ -197,6 +201,7 @@ class SessionMessage {
     Poll? poll,
     bool clearPoll = false,
     DateTime? createdAt,
+    DateTime? editedAt,
   }) {
     return SessionMessage(
       id: id ?? this.id,
@@ -209,11 +214,13 @@ class SessionMessage {
       reactions: reactions ?? this.reactions,
       poll: clearPoll ? null : (poll ?? this.poll),
       createdAt: createdAt ?? this.createdAt,
+      editedAt: editedAt ?? this.editedAt,
     );
   }
 
   bool get hasAttachments => attachments.isNotEmpty;
   bool get hasPoll => poll != null;
+  bool get isEdited => editedAt != null;
 
   static Map<String, List<String>> _parseReactions(dynamic rawReactions) {
     if (rawReactions is! Map) return const {};

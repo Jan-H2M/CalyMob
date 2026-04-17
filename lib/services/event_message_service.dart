@@ -312,5 +312,47 @@ class EventMessageService {
     }
   }
 
+  /// Modifier un message existant (auteur uniquement).
+  ///
+  /// Update [message] + [attachments] + [edited_at] in Firestore. Attachments
+  /// die verwijderd werden (d.w.z. in [removedAttachments]) worden daarna ook
+  /// uit Firebase Storage verwijderd (best-effort — errors worden gelogd maar
+  /// rethrow'en niet).
+  Future<void> updateMessage({
+    required String clubId,
+    required String operationId,
+    required String messageId,
+    required String newText,
+    required List<MessageAttachment> attachments,
+    List<MessageAttachment> removedAttachments = const [],
+  }) async {
+    try {
+      await _firestore
+          .collection('clubs/$clubId/operations/$operationId/messages')
+          .doc(messageId)
+          .update({
+        'message': newText,
+        'attachments': attachments.map((a) => a.toMap()).toList(),
+        'edited_at': Timestamp.fromDate(DateTime.now()),
+      });
+
+      // Best-effort cleanup van storage voor verwijderde attachments.
+      for (final removed in removedAttachments) {
+        final p = removed.storagePath;
+        if (p == null || p.isEmpty) continue;
+        try {
+          await _storage.ref().child(p).delete();
+        } catch (e) {
+          debugPrint('⚠️ Kon attachment niet verwijderen uit Storage: $p ($e)');
+        }
+      }
+
+      debugPrint('✅ Message bijgewerkt: $messageId');
+    } catch (e) {
+      debugPrint('❌ Erreur mise à jour message: $e');
+      rethrow;
+    }
+  }
+
   // markMessagesAsRead verwijderd → LocalReadTracker.markAsRead('operation_$opId')
 }

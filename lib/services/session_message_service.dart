@@ -222,6 +222,32 @@ class SessionMessageService {
     await _messagesCollection(clubId, sessionId).doc(messageId).delete();
   }
 
+  /// Modifier un message existant (auteur uniquement).
+  Future<void> updateMessage({
+    required String clubId,
+    required String sessionId,
+    required String messageId,
+    required String newText,
+    required List<MessageAttachment> attachments,
+    List<MessageAttachment> removedAttachments = const [],
+  }) async {
+    await _messagesCollection(clubId, sessionId).doc(messageId).update({
+      'message': newText,
+      'attachments': attachments.map((a) => a.toMap()).toList(),
+      'edited_at': Timestamp.fromDate(DateTime.now()),
+    });
+
+    for (final removed in removedAttachments) {
+      final p = removed.storagePath;
+      if (p == null || p.isEmpty) continue;
+      try {
+        await _storage.ref().child(p).delete();
+      } catch (_) {
+        // Best effort — storage cleanup mag de update niet blokkeren.
+      }
+    }
+  }
+
   /// Obtenir les groupes de chat disponibles pour un utilisateur dans une session
   List<SessionChatGroup> getAvailableGroups({
     required PiscineSession session,

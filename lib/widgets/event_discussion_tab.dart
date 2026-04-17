@@ -16,6 +16,7 @@ import '../services/local_read_tracker.dart';
 import '../services/profile_service.dart';
 import 'attachment_display.dart';
 import 'attachment_picker.dart';
+import 'message_edit_sheet.dart';
 import 'message_reactions.dart';
 import 'poll_compose_dialog.dart';
 import 'poll_widget.dart';
@@ -251,6 +252,72 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
     );
   }
 
+  Future<void> _editMessage(EventMessage message) async {
+    final result = await showMessageEditSheet(
+      context,
+      initialText: message.message,
+      initialAttachments: message.attachments,
+    );
+    if (result == null || !mounted) return;
+
+    if (result.text.isEmpty &&
+        result.keptAttachments.isEmpty &&
+        result.newFiles.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Le message ne peut pas être vide')),
+      );
+      return;
+    }
+
+    final messageProvider = context.read<EventMessageProvider>();
+
+    try {
+      final newUploaded = <MessageAttachment>[];
+      for (final nf in result.newFileTuples) {
+        final uploaded = await messageProvider.uploadAttachment(
+          clubId: widget.clubId,
+          operationId: widget.operationId,
+          file: nf.file,
+          type: nf.type,
+        );
+        newUploaded.add(uploaded);
+      }
+
+      final keptIds = result.keptAttachments
+          .map((a) => a.storagePath ?? a.url)
+          .toSet();
+      final removed = message.attachments
+          .where((a) => !keptIds.contains(a.storagePath ?? a.url))
+          .toList();
+
+      final mergedAttachments = <MessageAttachment>[
+        ...message.attachments.where(
+          (a) => keptIds.contains(a.storagePath ?? a.url),
+        ),
+        ...newUploaded,
+      ];
+
+      await messageProvider.updateMessage(
+        clubId: widget.clubId,
+        operationId: widget.operationId,
+        messageId: message.id,
+        newText: result.text,
+        attachments: mergedAttachments,
+        removedAttachments: removed,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Message modifié')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
   Future<void> _confirmDeleteMessage(EventMessage message) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -345,6 +412,16 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
                     _copyMessage(message.message);
                   },
                 ),
+                if (isOwn && !message.hasPoll)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.edit_outlined),
+                    title: const Text('Modifier'),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      _editMessage(message);
+                    },
+                  ),
                 if (isOwn)
                   ListTile(
                     contentPadding: EdgeInsets.zero,

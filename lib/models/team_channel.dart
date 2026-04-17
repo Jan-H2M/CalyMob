@@ -195,6 +195,7 @@ class TeamMessage {
   final Map<String, List<String>> reactions;
   final Poll? poll;
   final DateTime createdAt;
+  final DateTime? editedAt;
 
   TeamMessage({
     required this.id,
@@ -205,6 +206,7 @@ class TeamMessage {
     this.reactions = const {},
     this.poll,
     required this.createdAt,
+    this.editedAt,
   });
 
   factory TeamMessage.fromFirestore(DocumentSnapshot doc) {
@@ -225,6 +227,7 @@ class TeamMessage {
           ? Poll.fromMap(data['poll'] as Map<String, dynamic>)
           : null,
       createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      editedAt: (data['edited_at'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -237,6 +240,7 @@ class TeamMessage {
       if (reactions.isNotEmpty) 'reactions': reactions,
       if (poll != null) 'poll': poll!.toMap(),
       'created_at': Timestamp.fromDate(createdAt),
+      if (editedAt != null) 'edited_at': Timestamp.fromDate(editedAt!),
     };
   }
 
@@ -249,6 +253,7 @@ class TeamMessage {
 
   bool get hasAttachments => attachments.isNotEmpty;
   bool get hasPoll => poll != null;
+  bool get isEdited => editedAt != null;
 
   static Map<String, List<String>> _parseReactions(dynamic rawReactions) {
     if (rawReactions is! Map) return const {};

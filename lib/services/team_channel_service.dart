@@ -297,4 +297,30 @@ class TeamChannelService {
   }) async {
     await _messagesCollection(clubId, channelId).doc(messageId).delete();
   }
+
+  /// Modifier un message existant (auteur uniquement).
+  Future<void> updateMessage({
+    required String clubId,
+    required String channelId,
+    required String messageId,
+    required String newText,
+    required List<TeamMessageAttachment> attachments,
+    List<TeamMessageAttachment> removedAttachments = const [],
+  }) async {
+    await _messagesCollection(clubId, channelId).doc(messageId).update({
+      'message': newText,
+      'attachments': attachments.map((a) => a.toMap()).toList(),
+      'edited_at': Timestamp.fromDate(DateTime.now()),
+    });
+
+    for (final removed in removedAttachments) {
+      final p = removed.storagePath;
+      if (p == null || p.isEmpty) continue;
+      try {
+        await _storage.ref().child(p).delete();
+      } catch (_) {
+        // Best effort — storage cleanup mag de update niet blokkeren.
+      }
+    }
+  }
 }

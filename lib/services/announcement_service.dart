@@ -259,6 +259,42 @@ class AnnouncementService {
     }
   }
 
+  /// Modifier une réponse existante (auteur uniquement).
+  Future<void> updateReply({
+    required String clubId,
+    required String announcementId,
+    required String replyId,
+    required String newText,
+    required List<MessageAttachment> attachments,
+    List<MessageAttachment> removedAttachments = const [],
+  }) async {
+    try {
+      await _firestore
+          .collection('clubs/$clubId/announcements/$announcementId/replies')
+          .doc(replyId)
+          .update({
+        'message': newText,
+        'attachments': attachments.map((a) => a.toMap()).toList(),
+        'edited_at': Timestamp.fromDate(DateTime.now()),
+      });
+
+      for (final removed in removedAttachments) {
+        final p = removed.storagePath;
+        if (p == null || p.isEmpty) continue;
+        try {
+          await _storage.ref().child(p).delete();
+        } catch (e) {
+          debugPrint('⚠️ Kon attachment niet verwijderen uit Storage: $p ($e)');
+        }
+      }
+
+      debugPrint('✅ Réponse mise à jour: $replyId');
+    } catch (e) {
+      debugPrint('❌ Erreur mise à jour réponse: $e');
+      rethrow;
+    }
+  }
+
   // markReplyAsRead, markAllRepliesAsRead, getUnreadRepliesCountStream verwijderd
   // → read tracking gaat nu via LocalReadTracker + UnreadCountService
 

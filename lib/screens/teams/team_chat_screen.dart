@@ -14,6 +14,7 @@ import '../../services/profile_service.dart';
 import '../../services/team_channel_service.dart';
 import '../../widgets/attachment_display.dart';
 import '../../widgets/attachment_picker.dart';
+import '../../widgets/message_edit_sheet.dart';
 import '../../widgets/message_reactions.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/poll_compose_dialog.dart';
@@ -198,6 +199,77 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
     );
   }
 
+  Future<void> _editMessage(TeamMessage message) async {
+    final result = await showMessageEditSheet(
+      context,
+      initialText: message.message,
+      initialAttachments: message.attachments,
+    );
+    if (result == null || !mounted) return;
+
+    // Tenminste tekst OF een attachment vereist.
+    if (result.text.isEmpty &&
+        result.keptAttachments.isEmpty &&
+        result.newFiles.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Le message ne peut pas être vide')),
+      );
+      return;
+    }
+
+    const clubId = FirebaseConfig.defaultClubId;
+    final channelId = widget.channel.id;
+
+    try {
+      // Upload eventuele nieuwe files.
+      final newUploaded = <TeamMessageAttachment>[];
+      for (final nf in result.newFileTuples) {
+        final uploaded = await _channelService.uploadAttachment(
+          clubId: clubId,
+          channelId: channelId,
+          file: nf.file,
+          type: nf.type,
+        );
+        newUploaded.add(uploaded);
+      }
+
+      // Bepaal welke bestaande attachments verwijderd zijn.
+      final keptIds = result.keptAttachments
+          .map((a) => a.storagePath ?? a.url)
+          .toSet();
+      final removed = message.attachments
+          .where((a) => !keptIds.contains(a.storagePath ?? a.url))
+          .toList();
+
+      // Concat: bewaarde bestaande attachments (zelfde type) + nieuwe.
+      final mergedAttachments = <TeamMessageAttachment>[
+        ...message.attachments.where(
+          (a) => keptIds.contains(a.storagePath ?? a.url),
+        ),
+        ...newUploaded,
+      ];
+
+      await _channelService.updateMessage(
+        clubId: clubId,
+        channelId: channelId,
+        messageId: message.id,
+        newText: result.text,
+        attachments: mergedAttachments,
+        removedAttachments: removed,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Message modifié')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
   Future<void> _deleteMessage(String messageId) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -289,6 +361,16 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
                     );
                   },
                 ),
+                if (isOwn && !message.hasPoll)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.edit_outlined),
+                    title: const Text('Modifier'),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      _editMessage(message);
+                    },
+                  ),
                 if (isOwn)
                   ListTile(
                     contentPadding: EdgeInsets.zero,

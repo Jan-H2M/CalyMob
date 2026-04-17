@@ -10,6 +10,7 @@ class AnnouncementReply {
   final String senderName;
   final String message;
   final DateTime createdAt;
+  final DateTime? editedAt;
   final String? replyToId;
   final ReplyPreview? replyToPreview;
   final List<MessageAttachment> attachments;
@@ -20,6 +21,7 @@ class AnnouncementReply {
     required this.senderName,
     required this.message,
     required this.createdAt,
+    this.editedAt,
     this.replyToId,
     this.replyToPreview,
     this.attachments = const [],
@@ -35,6 +37,7 @@ class AnnouncementReply {
       senderName: data['sender_name'] ?? '',
       message: data['message'] ?? '',
       createdAt: (data['created_at'] as Timestamp).toDate(),
+      editedAt: (data['edited_at'] as Timestamp?)?.toDate(),
       replyToId: data['reply_to_id'],
       replyToPreview: data['reply_to_preview'] != null
           ? ReplyPreview.fromMap(data['reply_to_preview'] as Map<String, dynamic>)
@@ -53,6 +56,7 @@ class AnnouncementReply {
       'sender_name': senderName,
       'message': message,
       'created_at': Timestamp.fromDate(createdAt),
+      if (editedAt != null) 'edited_at': Timestamp.fromDate(editedAt!),
       if (replyToId != null) 'reply_to_id': replyToId,
       if (replyToPreview != null) 'reply_to_preview': replyToPreview!.toMap(),
       if (attachments.isNotEmpty)
@@ -63,6 +67,7 @@ class AnnouncementReply {
   /// Copier avec modifications
   AnnouncementReply copyWith({
     String? message,
+    DateTime? editedAt,
     String? replyToId,
     ReplyPreview? replyToPreview,
     List<MessageAttachment>? attachments,
@@ -73,6 +78,7 @@ class AnnouncementReply {
       senderName: senderName,
       message: message ?? this.message,
       createdAt: createdAt,
+      editedAt: editedAt ?? this.editedAt,
       replyToId: replyToId ?? this.replyToId,
       replyToPreview: replyToPreview ?? this.replyToPreview,
       attachments: attachments ?? this.attachments,
@@ -84,4 +90,7 @@ class AnnouncementReply {
 
   /// Est une réponse à un autre message
   bool get isReply => replyToId != null;
+
+  /// Of deze reply bewerkt is na het originele versturen.
+  bool get isEdited => editedAt != null;
 }

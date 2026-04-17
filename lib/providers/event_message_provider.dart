@@ -174,6 +174,31 @@ class EventMessageProvider with ChangeNotifier {
     }
   }
 
+  /// Modifier un message existant (auteur uniquement).
+  Future<void> updateMessage({
+    required String clubId,
+    required String operationId,
+    required String messageId,
+    required String newText,
+    required List<MessageAttachment> attachments,
+    List<MessageAttachment> removedAttachments = const [],
+  }) async {
+    try {
+      await _eventMessageService.updateMessage(
+        clubId: clubId,
+        operationId: operationId,
+        messageId: messageId,
+        newText: newText,
+        attachments: attachments,
+        removedAttachments: removedAttachments,
+      );
+    } catch (e) {
+      _errorByOperation[operationId] = e.toString();
+      debugPrint('❌ Erreur mise à jour message: $e');
+      rethrow;
+    }
+  }
+
   Future<void> toggleReaction({
     required String clubId,
     required String operationId,

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../config/app_assets.dart';
@@ -14,6 +15,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/unread_count_provider.dart';
 import '../../widgets/attachment_display.dart';
 import '../../widgets/attachment_picker.dart';
+import '../../widgets/message_edit_sheet.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 
 class AnnouncementDetailScreen extends StatefulWidget {
@@ -544,13 +546,125 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
     );
   }
 
+  Future<void> _copyReply(String text) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Message copié')),
+    );
+  }
+
+  Future<void> _deleteReply(AnnouncementReply reply) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Supprimer la réponse'),
+        content: const Text('Voulez-vous supprimer cette réponse ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await _announcementService.deleteReply(
+        clubId: widget.clubId,
+        announcementId: widget.announcement.id,
+        replyId: reply.id,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Future<void> _editReply(AnnouncementReply reply) async {
+    final result = await showMessageEditSheet(
+      context,
+      initialText: reply.message,
+      initialAttachments: reply.attachments,
+    );
+    if (result == null || !mounted) return;
+
+    if (result.text.isEmpty &&
+        result.keptAttachments.isEmpty &&
+        result.newFiles.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Le message ne peut pas être vide')),
+      );
+      return;
+    }
+
+    try {
+      final newUploaded = <MessageAttachment>[];
+      for (final nf in result.newFileTuples) {
+        final uploaded =
+            await _announcementService.uploadAnnouncementAttachment(
+          clubId: widget.clubId,
+          announcementId: widget.announcement.id,
+          file: nf.file,
+          type: nf.type,
+        );
+        newUploaded.add(uploaded);
+      }
+
+      final keptIds = result.keptAttachments
+          .map((a) => a.storagePath ?? a.url)
+          .toSet();
+      final removed = reply.attachments
+          .where((a) => !keptIds.contains(a.storagePath ?? a.url))
+          .toList();
+
+      final mergedAttachments = <MessageAttachment>[
+        ...reply.attachments.where(
+          (a) => keptIds.contains(a.storagePath ?? a.url),
+        ),
+        ...newUploaded,
+      ];
+
+      await _announcementService.updateReply(
+        clubId: widget.clubId,
+        announcementId: widget.announcement.id,
+        replyId: reply.id,
+        newText: result.text,
+        attachments: mergedAttachments,
+        removedAttachments: removed,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Message modifié')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
   void _showReplyOptions(AnnouncementReply reply) {
+    final currentUserId =
+        Provider.of<AuthProvider>(context, listen: false).currentUser?.uid ?? '';
+    final isOwn = reply.senderId == currentUserId;
+
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (context) => SafeArea(
+      builder: (sheetContext) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: Column(
@@ -558,12 +672,43 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
             children: [
               ListTile(
                 leading: const Icon(Icons.reply),
-                title: const Text('Repondre'),
+                title: const Text('Répondre'),
                 onTap: () {
-                  Navigator.pop(context);
+                  Navigator.pop(sheetContext);
                   _startReplyTo(reply);
                 },
               ),
+              if (reply.message.isNotEmpty)
+                ListTile(
+                  leading: const Icon(Icons.copy_outlined),
+                  title: const Text('Copier'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _copyReply(reply.message);
+                  },
+                ),
+              if (isOwn)
+                ListTile(
+                  leading: const Icon(Icons.edit_outlined),
+                  title: const Text('Modifier'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _editReply(reply);
+                  },
+                ),
+              if (isOwn)
+                ListTile(
+                  leading:
+                      const Icon(Icons.delete_outline, color: Colors.red),
+                  title: const Text(
+                    'Supprimer',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _deleteReply(reply);
+                  },
+                ),
             ],
           ),
         ),
