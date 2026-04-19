@@ -291,8 +291,20 @@ String generatePaymentCommunication({
   required String participantFirstName,
   required String participantLastName,
 }) {
-  // 1. Code événement (déjà en lettres depuis CalyCompta, ex: PAAAG)
-  final code = eventNumber ?? eventId?.substring(0, 6).toUpperCase() ?? '';
+  // 1. Code événement (déjà en lettres depuis CalyCompta, ex: PAAAG).
+  //    On N'UTILISE PAS le doc-id en fallback: un code comme "M2EPVK"
+  //    (format [A-Z]\d[A-Z]{4}) ne correspond à aucun regex de
+  //    CalyCompta's eventNumberMatchingService (qui attend [PS][A-Z]{4}
+  //    ou \d[A-Z0-9]{5}) et casserait donc le matching automatique à
+  //    l'import bancaire. Si eventNumber manque, on laisse le code vide
+  //    — l'organisateur devra lier la transaction manuellement, mais au
+  //    moins on ne produit pas une fausse référence non-matchable.
+  final code = eventNumber ?? '';
+  if (code.isEmpty) {
+    // ignore: avoid_print
+    print('[generatePaymentCommunication] WARN: missing eventNumber for event $eventId; '
+        'bank transfer will NOT auto-match at import. Fix the event to have an event_number.');
+  }
 
   // 2. Nom de l'événement avec chiffres remplacés par mots français
   String name = replaceDigitsWithFrenchWords(eventTitle);
