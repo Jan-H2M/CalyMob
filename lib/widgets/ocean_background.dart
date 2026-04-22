@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import '../utils/solar_time.dart';
 import 'ocean/ocean_config.dart';
 import 'ocean/ocean_creatures.dart';
 
@@ -157,9 +158,11 @@ class _OceanBackgroundState extends State<OceanBackground>
   }
 
   double _currentHour() {
+    // Manuele override (settings slider): toon exact het gekozen tabel-uur.
     if (widget.fixedHour != null) return widget.fixedHour!;
-    final now = DateTime.now();
-    return now.hour + now.minute / 60.0 + now.second / 3600.0;
+    // Anders: remap de werkelijke lokale tijd naar de tabel zodat zon en maan
+    // op- en ondergaan op de echte tijden voor Antwerpen (DST automatisch).
+    return SolarTime.currentTableHour();
   }
 
   @override
