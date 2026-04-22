@@ -27,9 +27,15 @@ class Operation {
   final List<Tariff> eventTariffs; // Nouveau: tarifs flexibles par fonction
   final List<Supplement> supplements; // Suppléments optionnels (location combinaison, etc.)
 
-  // Organisateur
+  // Organisateur (can be reassigned after creation)
   final String? organisateurId;
   final String? organisateurNom;
+
+  /// Firebase UID of the user who originally created this operation. Used to
+  /// authorize later changes (e.g. reassigning the responsable). Set at
+  /// creation time and never changed afterwards. Distinct from the
+  /// `created_by` source tag (e.g. 'manual', 'transaction') used elsewhere.
+  final String? creatorUserId;
 
   // Communication
   final String? communication; // Message de l'organisateur aux participants
@@ -63,6 +69,7 @@ class Operation {
     this.supplements = const [],
     this.organisateurId,
     this.organisateurNom,
+    this.creatorUserId,
     this.communication,
     this.documentsJustificatifs = const [],
     this.infoDocument,
@@ -93,6 +100,7 @@ class Operation {
       supplements: _parseSupplements(data['supplements']),
       organisateurId: data['organisateur_id'],
       organisateurNom: data['organisateur_nom'],
+      creatorUserId: data['creator_user_id'],
       communication: data['communication'],
       documentsJustificatifs: _parseDocuments(data['documents_justificatifs']),
       infoDocument: data['info_document'] != null

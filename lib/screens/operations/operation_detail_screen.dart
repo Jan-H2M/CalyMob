@@ -67,11 +67,24 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   bool _isLoadingExercices = false;
   ParticipantOperation? _userInscription;
 
-  /// Check if the current user is the creator (organisateur) of the event
+  /// Check if the current user is the creator (organisateur) of the event.
+  /// Uses the new `creator_user_id` field when present; falls back to
+  /// `organisateur_id` for legacy events created before that field existed.
   bool _isCurrentUserCreator(Operation operation) {
     final authProvider = context.read<AuthProvider>();
     final currentUserId = authProvider.currentUser?.uid;
-    return currentUserId != null && operation.organisateurId == currentUserId;
+    if (currentUserId == null) return false;
+    final creatorId = operation.creatorUserId ?? operation.organisateurId;
+    return creatorId != null && creatorId == currentUserId;
+  }
+
+  /// Check if the current user can edit the responsable (and other event
+  /// settings). Admins can always edit; otherwise only the original creator.
+  bool _canEditEvent(Operation operation) {
+    if (_isCurrentUserCreator(operation)) return true;
+    final memberProvider = context.read<MemberProvider>();
+    final role = memberProvider.appRole?.toLowerCase();
+    return role == 'admin' || role == 'superadmin';
   }
 
   /// Check if user can manage palanquées (creator or encadrant)
@@ -995,6 +1008,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       operationId: widget.operationId,
       operationTitle: operation?.titre ?? 'Événement',
       isPiscine: false,
+      eventEndDate: operation?.dateFin ?? operation?.dateDebut,
     );
 
     // Refresh participants list after closing scanner
@@ -1017,8 +1031,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          // Edit button - only visible to the event creator
-          if (operation != null && _isCurrentUserCreator(operation))
+          // Edit button - visible to the original creator and to admins
+          if (operation != null && _canEditEvent(operation))
             IconButton(
               icon: const Icon(Icons.edit, color: Colors.white, size: 22),
               tooltip: 'Modifier l\'événement',

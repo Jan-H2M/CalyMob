@@ -7,6 +7,8 @@ import '../../config/firebase_config.dart';
 import '../../models/operation.dart';
 import '../../models/tariff.dart';
 import '../../providers/activity_provider.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/member_provider.dart';
 import '../../services/operation_service.dart';
 
 /// Écran d'édition d'un événement existant
@@ -44,6 +46,15 @@ class _EditEventScreenState extends State<EditEventScreen> {
   bool _saving = false;
   bool _hasChanges = false;
 
+  // Responsable (organisateur) — can be reassigned by admins or the original
+  // creator. When updated, we rewrite both organisateur_id and
+  // organisateur_nom so the phone-number lookup (which uses organisateur_id)
+  // stays in sync with the displayed name.
+  String? _organisateurId;
+  String? _organisateurNom;
+  List<_EncadrantOption> _encadrants = [];
+  bool _loadingEncadrants = false;
+
   @override
   void initState() {
     super.initState();
@@ -61,6 +72,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
     _dateDebut = op.dateDebut ?? DateTime.now();
     _dateFin = op.dateFin;
     _statut = op.statut;
+    _organisateurId = op.organisateurId;
+    _organisateurNom = op.organisateurNom;
 
     // Copier les tarifs existants en version éditable
     _tariffs = op.eventTariffs.map((t) => _EditableTariff.fromTariff(t)).toList();
@@ -70,6 +83,196 @@ class _EditEventScreenState extends State<EditEventScreen> {
     _descriptionController.addListener(_markChanged);
     _capaciteController.addListener(_markChanged);
     _communicationController.addListener(_markChanged);
+
+    // Preload the list of encadrants so the picker opens instantly.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadEncadrants());
+  }
+
+  /// Check whether the current user can change the responsable. Admins can
+  /// always edit; otherwise only the original creator of the event. Falls
+  /// back to `organisateur_id` for legacy events where `creator_user_id`
+  /// wasn't recorded.
+  bool get _canEditResponsable {
+    final authProvider = context.read<AuthProvider>();
+    final memberProvider = context.read<MemberProvider>();
+    final currentUserId = authProvider.currentUser?.uid;
+    if (currentUserId == null) return false;
+
+    final role = memberProvider.appRole?.toLowerCase();
+    if (role == 'admin' || role == 'superadmin') return true;
+
+    final creatorId =
+        widget.operation.creatorUserId ?? widget.operation.organisateurId;
+    return creatorId != null && creatorId == currentUserId;
+  }
+
+  /// Query Firestore for all members flagged as "Encadrants" and cache them
+  /// for the picker. We prefer the `clubStatuten` array (canonical in the
+  /// rest of the codebase) and match case-insensitively on both the
+  /// singular and plural forms.
+  Future<void> _loadEncadrants() async {
+    if (_loadingEncadrants) return;
+    setState(() => _loadingEncadrants = true);
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('clubs')
+          .doc(widget.clubId)
+          .collection('members')
+          .get();
+
+      final options = <_EncadrantOption>[];
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final statuten = data['clubStatuten'];
+        final isEncadrant = statuten is List &&
+            statuten.any((s) {
+              final v = s.toString().toLowerCase().trim();
+              return v == 'encadrant' || v == 'encadrants';
+            });
+        if (!isEncadrant) continue;
+
+        final prenom = (data['prenom'] ?? '').toString().trim();
+        final nom = (data['nom'] ?? '').toString().trim();
+        final displayName = [prenom, nom]
+            .where((p) => p.isNotEmpty)
+            .join(' ')
+            .trim();
+        if (displayName.isEmpty) continue;
+
+        options.add(_EncadrantOption(
+          id: doc.id,
+          displayName: displayName,
+        ));
+      }
+
+      options.sort((a, b) =>
+          a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
+
+      if (mounted) {
+        setState(() {
+          _encadrants = options;
+          _loadingEncadrants = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _loadingEncadrants = false);
+      debugPrint('❌ EditEventScreen: failed to load encadrants - $e');
+    }
+  }
+
+  /// Open a bottom-sheet picker and, if the user taps an encadrant, rewrite
+  /// both id and name so they stay in sync.
+  Future<void> _pickResponsable() async {
+    if (_loadingEncadrants && _encadrants.isEmpty) {
+      // Still loading — wait until the list is ready.
+      await _loadEncadrants();
+    }
+
+    final selected = await showModalBottomSheet<_EncadrantOption>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: DraggableScrollableSheet(
+            initialChildSize: 0.7,
+            minChildSize: 0.4,
+            maxChildSize: 0.95,
+            expand: false,
+            builder: (_, scrollController) {
+              return Column(
+                children: [
+                  const SizedBox(height: 8),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Choisir un responsable',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.donkerblauw,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Encadrants du club',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Divider(height: 1),
+                  if (_encadrants.isEmpty)
+                    Expanded(
+                      child: Center(
+                        child: Text(
+                          _loadingEncadrants
+                              ? 'Chargement...'
+                              : 'Aucun encadrant trouvé',
+                          style: TextStyle(color: Colors.grey[600]),
+                        ),
+                      ),
+                    )
+                  else
+                    Expanded(
+                      child: ListView.separated(
+                        controller: scrollController,
+                        itemCount: _encadrants.length,
+                        separatorBuilder: (_, __) =>
+                            Divider(height: 1, color: Colors.grey[200]),
+                        itemBuilder: (_, i) {
+                          final enc = _encadrants[i];
+                          final isCurrent = enc.id == _organisateurId;
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor:
+                                  AppColors.lichtblauw.withOpacity(0.3),
+                              child: Text(
+                                enc.displayName.isNotEmpty
+                                    ? enc.displayName[0].toUpperCase()
+                                    : '?',
+                                style: TextStyle(
+                                  color: AppColors.donkerblauw,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            title: Text(enc.displayName),
+                            trailing: isCurrent
+                                ? Icon(Icons.check_circle,
+                                    color: AppColors.middenblauw)
+                                : null,
+                            onTap: () => Navigator.of(ctx).pop(enc),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+
+    if (selected != null && selected.id != _organisateurId) {
+      setState(() {
+        _organisateurId = selected.id;
+        _organisateurNom = selected.displayName;
+        _hasChanges = true;
+      });
+    }
   }
 
   @override
@@ -193,6 +396,18 @@ class _EditEventScreenState extends State<EditEventScreen> {
             ? _communicationController.text.trim()
             : null,
       };
+
+      // Persist organisateur change only if we have a valid id — and always
+      // rewrite id + nom together so the phone-number lookup (keyed on id)
+      // stays in sync with the label the user sees. Guarded by
+      // `_canEditResponsable` on the UI side; the service layer / Firestore
+      // rules enforce the same invariant server-side.
+      if (_canEditResponsable &&
+          _organisateurId != null &&
+          _organisateurId!.isNotEmpty) {
+        data['organisateur_id'] = _organisateurId;
+        data['organisateur_nom'] = _organisateurNom ?? '';
+      }
 
       // Date fin optionnelle
       if (_dateFin != null) {
@@ -379,6 +594,10 @@ class _EditEventScreenState extends State<EditEventScreen> {
                 ]),
                 const SizedBox(height: 16),
 
+                // Responsable (organisateur)
+                _buildResponsableSection(),
+                const SizedBox(height: 16),
+
                 // Capacité
                 _buildSectionCard(children: [
                   _buildLabel('Capacité max', icon: Icons.group),
@@ -420,6 +639,80 @@ class _EditEventScreenState extends State<EditEventScreen> {
         ),
       ),
     );
+  }
+
+  // ============================================================
+  // RESPONSABLE SECTION
+  // ============================================================
+
+  Widget _buildResponsableSection() {
+    final canEdit = _canEditResponsable;
+    final label = (_organisateurNom?.trim().isNotEmpty ?? false)
+        ? _organisateurNom!.trim()
+        : 'Non défini';
+    final hasId = (_organisateurId?.trim().isNotEmpty ?? false);
+
+    return _buildSectionCard(children: [
+      _buildLabel('Responsable', icon: Icons.person),
+      const SizedBox(height: 8),
+      InkWell(
+        onTap: canEdit ? _pickResponsable : null,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          decoration: BoxDecoration(
+            color: canEdit ? Colors.grey[50] : Colors.grey[100],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[300]!),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.account_circle,
+                size: 20,
+                color: AppColors.middenblauw,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: hasId
+                        ? AppColors.donkerblauw
+                        : Colors.grey[500],
+                    fontWeight:
+                        hasId ? FontWeight.w500 : FontWeight.normal,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (canEdit)
+                Icon(
+                  _loadingEncadrants
+                      ? Icons.hourglass_empty
+                      : Icons.arrow_drop_down,
+                  color: Colors.grey[600],
+                )
+              else
+                Icon(Icons.lock_outline,
+                    size: 16, color: Colors.grey[400]),
+            ],
+          ),
+        ),
+      ),
+      if (!canEdit) ...[
+        const SizedBox(height: 6),
+        Text(
+          'Seul l\'organisateur initial ou un admin peut modifier le responsable.',
+          style: TextStyle(
+            fontSize: 11,
+            color: Colors.grey[600],
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+      ],
+    ]);
   }
 
   // ============================================================
@@ -820,4 +1113,14 @@ class _EditableTariff {
       displayOrder: t.displayOrder,
     );
   }
+}
+
+/// Lightweight representation of a member who can be picked as responsable.
+/// We only need the id (to rewrite `organisateur_id` — the key for the
+/// phone-number lookup) and a display label.
+class _EncadrantOption {
+  final String id;
+  final String displayName;
+
+  const _EncadrantOption({required this.id, required this.displayName});
 }
