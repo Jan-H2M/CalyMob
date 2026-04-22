@@ -48,7 +48,7 @@ class ExerciceValideService {
     });
   }
 
-  /// Valider un exercice pour un membre
+  /// Valider un exercice pour un membre (flow moniteur — status = validated)
   Future<String> validateExercise({
     required String clubId,
     required String memberId,
@@ -59,6 +59,8 @@ class ExerciceValideService {
     String? moniteurId,
     String? notes,
     String? lieu,
+    String? sessionId,
+    String? themaId,
   }) async {
     try {
       debugPrint('✏️ Validation exercice ${exercice.code} pour membre $memberId');
@@ -71,6 +73,10 @@ class ExerciceValideService {
         moniteurId: moniteurId,
         notes: notes,
         lieu: lieu,
+        status: ExerciceValideStatus.validated,
+        declaredByMember: false,
+        sessionId: sessionId,
+        themaId: themaId,
       );
 
       final docRef = await _firestore
@@ -81,6 +87,94 @@ class ExerciceValideService {
       return docRef.id;
     } catch (e) {
       debugPrint('❌ Erreur validation exercice: $e');
+      rethrow;
+    }
+  }
+
+  /// Self-declaration door een member (CalyMob "Je l'ai fait"-flow).
+  ///
+  /// Dwingt `status='pending'` en `declared_by_member=true` af. Moniteur
+  /// velden blijven leeg en worden bij validatie door een encadrant
+  /// aangevuld via [setStatus].
+  ///
+  /// Returns het ID van het nieuw aangemaakte document.
+  Future<String> declareByMember({
+    required String clubId,
+    required String memberId,
+    required ExerciceLIFRAS exercice,
+    required DateTime dateDeclaration,
+    String? sessionId,
+    String? themaId,
+    String? notes,
+    String? lieu,
+  }) async {
+    try {
+      debugPrint('📝 Self-declaration ${exercice.code} par membre $memberId');
+
+      final declaration = ExerciceValide.selfDeclaration(
+        exercice: exercice,
+        dateDeclaration: dateDeclaration,
+        memberId: memberId,
+        sessionId: sessionId,
+        themaId: themaId,
+        notes: notes,
+        lieu: lieu,
+      );
+
+      final docRef = await _firestore
+          .collection('clubs/$clubId/members/$memberId/exercices_valides')
+          .add(declaration.toFirestore());
+
+      debugPrint('✅ Déclaration pending créée: ${docRef.id}');
+      return docRef.id;
+    } catch (e) {
+      debugPrint('❌ Erreur self-declaration exercice: $e');
+      rethrow;
+    }
+  }
+
+  /// Transition van status door een moniteur (pending → validated / refused,
+  /// of refused → validated voor her-validatie).
+  ///
+  /// Vult moniteur_nom + moniteur_id in. Bij [ExerciceValideStatus.refused]
+  /// kan een optionele [refusedReason] meegegeven worden; bij een re-validation
+  /// wordt refused_reason gewist.
+  Future<void> setStatus({
+    required String clubId,
+    required String memberId,
+    required String exerciceValideId,
+    required ExerciceValideStatus newStatus,
+    required String moniteurId,
+    required String moniteurNom,
+    String? refusedReason,
+  }) async {
+    try {
+      debugPrint('🔄 setStatus $exerciceValideId → ${newStatus.code}');
+
+      final updates = <String, dynamic>{
+        'status': newStatus.code,
+        'moniteur_id': moniteurId,
+        'moniteur_nom': moniteurNom,
+        'updated_at': FieldValue.serverTimestamp(),
+      };
+
+      if (newStatus == ExerciceValideStatus.refused) {
+        if (refusedReason != null && refusedReason.isNotEmpty) {
+          updates['refused_reason'] = refusedReason;
+        }
+      } else if (newStatus == ExerciceValideStatus.validated) {
+        // Wis eventuele vorige refusal-reden bij re-validation
+        updates['refused_reason'] = FieldValue.delete();
+      }
+
+      await _firestore
+          .collection('clubs/$clubId/members/$memberId/exercices_valides')
+          .doc(exerciceValideId)
+          .update(updates);
+
+      debugPrint('✅ Status transitie voltooid');
+    } catch (e) {
+      debugPrint('❌ Erreur setStatus: $e');
       rethrow;
     }
   }
@@ -152,8 +246,42 @@ class ExerciceValideService {
     }
   }
 
-  /// Vérifier si un exercice est déjà validé pour un membre
+  /// Vérifier si un exercice est déjà validé (status = validated) pour un membre.
+  ///
+  /// Documents met status = 'pending' of 'refused' tellen **niet** mee. Voor
+  /// een volledige check (inclusief pending/refused) kan je beter de provider
+  /// state raadplegen.
   Future<bool> isExerciseValidated({
+    required String clubId,
+    required String memberId,
+    required String exerciceId,
+  }) async {
+    try {
+      final snapshot = await _firestore
+          .collection('clubs/$clubId/members/$memberId/exercices_valides')
+          .where('exercice_id', isEqualTo: exerciceId)
+          .get();
+
+      // Legacy docs zonder status veld gelden als 'validated' — daarom
+      // kunnen we niet filteren op status in de query zelf (composite index
+      // issue) en doen we een client-side filter.
+      return snapshot.docs.any((doc) {
+        final data = doc.data();
+        final statusCode = data['status'] as String?;
+        final status = ExerciceValideStatusExtension.fromCode(statusCode);
+        return status == ExerciceValideStatus.validated;
+      });
+    } catch (e) {
+      debugPrint('❌ Erreur vérification exercice validé: $e');
+      return false;
+    }
+  }
+
+  /// Zoekt een bestaand ExerciceValide-document voor dit exerciceId,
+  /// ongeacht status. Handig om bij een nieuwe self-declaration te
+  /// detecteren of er al een (refused) doc bestaat dat upgedate moet worden
+  /// i.p.v. een nieuw doc aan te maken.
+  Future<ExerciceValide?> findByExerciceId({
     required String clubId,
     required String memberId,
     required String exerciceId,
@@ -164,18 +292,22 @@ class ExerciceValideService {
           .where('exercice_id', isEqualTo: exerciceId)
           .limit(1)
           .get();
-
-      return snapshot.docs.isNotEmpty;
+      if (snapshot.docs.isEmpty) return null;
+      return ExerciceValide.fromFirestore(snapshot.docs.first);
     } catch (e) {
-      debugPrint('❌ Erreur vérification exercice validé: $e');
-      return false;
+      debugPrint('❌ Erreur findByExerciceId: $e');
+      return null;
     }
   }
 
-  /// Obtenir les exercices validés groupés par niveau
+  /// Obtenir les exercices validés groupés par niveau.
+  ///
+  /// Let op: dit groepeert **alle** statussen (pending/validated/refused)
+  /// tenzij [onlyValidated] op true staat.
   Map<NiveauLIFRAS, List<ExerciceValide>> groupByNiveau(
-    List<ExerciceValide> exercices,
-  ) {
+    List<ExerciceValide> exercices, {
+    bool onlyValidated = false,
+  }) {
     final grouped = <NiveauLIFRAS, List<ExerciceValide>>{};
 
     // Initialize all niveaux in order
@@ -185,6 +317,7 @@ class ExerciceValideService {
 
     // Group exercises
     for (final exercice in exercices) {
+      if (onlyValidated && !exercice.isValidated) continue;
       grouped[exercice.exerciceNiveau]!.add(exercice);
     }
 
@@ -194,14 +327,23 @@ class ExerciceValideService {
     return grouped;
   }
 
-  /// Obtenir les statistiques des exercices validés
+  /// Obtenir les statistiques des exercices.
+  ///
+  /// Returnt counts opgesplitst per status zodat de UI de progress bar
+  /// correct kan opbouwen (validated telt mee, pending/refused niet).
   Map<String, dynamic> getStats(List<ExerciceValide> exercices) {
-    final grouped = groupByNiveau(exercices);
+    final validated = exercices.where((e) => e.isValidated).toList();
+    final pending = exercices.where((e) => e.isPending).toList();
+    final refused = exercices.where((e) => e.isRefused).toList();
+    final groupedValidated = groupByNiveau(validated);
 
     return {
       'total': exercices.length,
-      'byNiveau': grouped.map((key, value) => MapEntry(key.code, value.length)),
-      'lastValidation': exercices.isNotEmpty ? exercices.first.dateValidation : null,
+      'validatedCount': validated.length,
+      'pendingCount': pending.length,
+      'refusedCount': refused.length,
+      'byNiveau': groupedValidated.map((key, value) => MapEntry(key.code, value.length)),
+      'lastValidation': validated.isNotEmpty ? validated.first.dateValidation : null,
     };
   }
 }

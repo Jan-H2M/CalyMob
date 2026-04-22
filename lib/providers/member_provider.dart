@@ -28,6 +28,14 @@ class MemberProvider with ChangeNotifier {
   String? get phoneNumber => _memberData?['phone_number'] as String?;
   String? get photoUrl => _memberData?['photo_url'] as String?;
 
+  /// LIFRAS plongeur code ("1*", "2*", "3*", "4*", "AM", "MC", ...)
+  /// Determineert het brevet-niveau van de member.
+  String? get plongeurCode => _memberData?['plongeur_code'] as String?;
+
+  /// True wanneer de member actief aan een formation deelneemt.
+  /// Een 1★ + formation_active=true traint voor P2, etc.
+  bool get formationActive => _memberData?['formation_active'] == true;
+
   /// Club statuten (functies binnen de club: encadrant, accueil, etc.)
   List<String> get clubStatuten {
     final statuten = _memberData?['clubStatuten'];

@@ -1,19 +1,32 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../config/firebase_config.dart';
-import '../../config/app_assets.dart';
 import '../../models/exercice_valide.dart';
 import '../../models/exercice_lifras.dart';
+import '../../providers/exercice_valide_provider.dart';
+import '../../providers/member_provider.dart';
 import '../../services/exercice_valide_service.dart';
+import '../../services/lifras_service.dart';
 import '../../utils/date_formatter.dart';
-import 'validate_exercise_screen.dart';
+import '../../utils/plongeur_utils.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import 'self_declare_exercise_sheet.dart';
+import 'validate_exercise_screen.dart';
 
-/// Écran affichant les exercices validés d'un membre
+/// Écran affichant les exercices LIFRAS d'un membre.
+///
+/// Deux modes:
+/// - **isOwnProfile == true** → 3 sections "À faire / En attente / Validés"
+///   pour de la member's target-niveau, avec een "Je l'ai fait"-knop per
+///   oefening in de À-faire lijst.
+/// - **isOwnProfile == false** → klassieke readonly lijst van validated
+///   exercices met filter-chips (oude gedrag), eventueel met CRUD voor
+///   moniteurs.
 class MemberExercisesScreen extends StatefulWidget {
   final String memberId;
   final String memberName;
-  final bool isMonitor; // Si l'utilisateur actuel est moniteur (peut éditer)
-  final bool isOwnProfile; // Si c'est le profil de l'utilisateur lui-même
+  final bool isMonitor; // L'utilisateur actuel est moniteur (peut éditer)
+  final bool isOwnProfile; // C'est le profil de l'utilisateur lui-même
 
   const MemberExercisesScreen({
     super.key,
@@ -29,8 +42,15 @@ class MemberExercisesScreen extends StatefulWidget {
 
 class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
   final ExerciceValideService _service = ExerciceValideService();
+  final LifrasService _lifrasService = LifrasService();
   final String _clubId = FirebaseConfig.defaultClubId;
 
+  // Catalog for self-declaration view
+  List<ExerciceLIFRAS> _catalog = [];
+  NiveauLIFRAS? _targetNiveau;
+  bool _isLoadingCatalog = false;
+
+  // Classic view state (non-self)
   List<ExerciceValide> _exercices = [];
   bool _isLoading = true;
   String? _errorMessage;
@@ -39,7 +59,59 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
   @override
   void initState() {
     super.initState();
-    _loadExercices();
+    if (widget.isOwnProfile) {
+      // For self: listen to the stream of exercices_valides + load catalog
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final provider = context.read<ExerciceValideProvider>();
+        provider.listenToMemberExercices(_clubId, widget.memberId);
+        _loadCatalog();
+      });
+    } else {
+      _loadExercices();
+    }
+  }
+
+  Future<void> _loadCatalog() async {
+    final memberProvider = context.read<MemberProvider>();
+
+    // Determine target niveau: formation_active → next brevet, else current
+    final target = PlongeurUtils.getTargetNiveau(
+      plongeurCode: memberProvider.plongeurCode,
+      formationActive: memberProvider.formationActive,
+    );
+
+    if (target == null) {
+      debugPrint(
+          '⚠️ Aucun niveau cible pour plongeur_code="${memberProvider.plongeurCode}"');
+      if (mounted) {
+        setState(() {
+          _catalog = [];
+          _targetNiveau = null;
+        });
+      }
+      return;
+    }
+
+    setState(() {
+      _isLoadingCatalog = true;
+      _targetNiveau = target;
+    });
+
+    try {
+      final exercices =
+          await _lifrasService.getExercicesByNiveau(_clubId, target);
+      if (!mounted) return;
+      setState(() {
+        _catalog = exercices;
+        _isLoadingCatalog = false;
+      });
+    } catch (e) {
+      debugPrint('❌ Erreur chargement catalogue: $e');
+      if (!mounted) return;
+      setState(() {
+        _isLoadingCatalog = false;
+      });
+    }
   }
 
   Future<void> _loadExercices() async {
@@ -49,7 +121,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
     });
 
     try {
-      _exercices = await _service.getMemberExercicesValides(_clubId, widget.memberId);
+      _exercices =
+          await _service.getMemberExercicesValides(_clubId, widget.memberId);
     } catch (e) {
       _errorMessage = e.toString();
     } finally {
@@ -61,13 +134,13 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
     }
   }
 
+  // ============================================================
+  // Classic (non-self) view helpers — unchanged behavior
+  // ============================================================
+
   List<ExerciceValide> get _filteredExercices {
     if (_filterNiveau == null) return _exercices;
     return _exercices.where((e) => e.exerciceNiveau == _filterNiveau).toList();
-  }
-
-  Map<NiveauLIFRAS, List<ExerciceValide>> get _groupedExercices {
-    return _service.groupByNiveau(_filteredExercices);
   }
 
   Future<void> _deleteExercice(ExerciceValide exercice) async {
@@ -75,7 +148,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Supprimer ?'),
-        content: Text('Voulez-vous supprimer la validation de "${exercice.exerciceCode}" ?'),
+        content: Text(
+            'Voulez-vous supprimer la validation de "${exercice.exerciceCode}" ?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -84,7 +158,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Supprimer', style: TextStyle(color: Colors.white)),
+            child: const Text('Supprimer',
+                style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -120,6 +195,10 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
     }
   }
 
+  // ============================================================
+  // Build
+  // ============================================================
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -128,7 +207,10 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Exercices validés', style: TextStyle(color: Colors.white)),
+            Text(
+              widget.isOwnProfile ? 'Mes exercices' : 'Exercices validés',
+              style: const TextStyle(color: Colors.white),
+            ),
             Text(
               widget.memberName,
               style: const TextStyle(fontSize: 14, color: Colors.white70),
@@ -139,7 +221,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          if (widget.isMonitor)
+          if (widget.isMonitor && !widget.isOwnProfile)
             IconButton(
               icon: const Icon(Icons.add),
               onPressed: () async {
@@ -158,38 +240,672 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
               },
               tooltip: 'Valider un exercice',
             ),
+          if (widget.isOwnProfile)
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: _loadCatalog,
+              tooltip: 'Rafraîchir',
+            ),
         ],
       ),
       body: OceanGradientBackground(
         creatures: CreatureSet.fish,
         child: SafeArea(
-          child: _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _errorMessage != null
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
-                          const SizedBox(height: 16),
-                          Text(_errorMessage!, textAlign: TextAlign.center),
-                          const SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: _loadExercices,
-                            child: const Text('Réessayer'),
-                          ),
-                        ],
-                      ),
-                    )
-                  : _exercices.isEmpty
-                      ? _buildEmptyState()
-                      : _buildContent(),
+          child:
+              widget.isOwnProfile ? _buildSelfView() : _buildClassicView(),
         ),
       ),
     );
   }
 
-  Widget _buildEmptyState() {
+  // ============================================================
+  // Self view — 3 sections
+  // ============================================================
+
+  Widget _buildSelfView() {
+    return Consumer<ExerciceValideProvider>(
+      builder: (context, provider, _) {
+        if (_isLoadingCatalog || provider.isLoading) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (_targetNiveau == null) {
+          return _buildNoNiveauState();
+        }
+
+        // Split catalog into 3 sections based on provider state
+        final validated = <ExerciceLIFRAS>[];
+        final pending = <ExerciceLIFRAS>[];
+        final todo = <ExerciceLIFRAS>[];
+
+        for (final ex in _catalog) {
+          final match =
+              provider.exercicesValides.where((e) => e.exerciceId == ex.id);
+          if (match.isEmpty) {
+            todo.add(ex);
+            continue;
+          }
+          // Prefer validated status if any doc exists with that status
+          if (match.any((e) => e.isValidated)) {
+            validated.add(ex);
+          } else if (match.any((e) => e.isPending)) {
+            pending.add(ex);
+          } else {
+            // Only refused → back to todo so member can re-declare
+            todo.add(ex);
+          }
+        }
+
+        final totalCatalog = _catalog.length;
+        final progressFraction =
+            totalCatalog == 0 ? 0.0 : validated.length / totalCatalog;
+
+        return RefreshIndicator(
+          onRefresh: () async {
+            await _loadCatalog();
+          },
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              // Progress header
+              _buildProgressHeader(
+                niveau: _targetNiveau!,
+                validated: validated.length,
+                pending: pending.length,
+                total: totalCatalog,
+                progress: progressFraction,
+              ),
+              const SizedBox(height: 20),
+
+              // Section: À faire
+              _buildSection(
+                title: 'À faire',
+                icon: Icons.radio_button_unchecked,
+                iconColor: Colors.blueGrey,
+                emptyText:
+                    'Tu as déclaré ou validé tous les exercices de ${_targetNiveau!.code} 🎉',
+                children: todo
+                    .map((ex) => _buildTodoCard(ex, provider))
+                    .toList(),
+              ),
+              const SizedBox(height: 20),
+
+              // Section: En attente
+              _buildSection(
+                title: 'En attente de validation',
+                icon: Icons.schedule,
+                iconColor: Colors.orange,
+                emptyText: null,
+                children: pending.map((ex) {
+                  final match = provider.exercicesValides.firstWhere(
+                    (e) => e.exerciceId == ex.id && e.isPending,
+                    orElse: () => provider.exercicesValides
+                        .firstWhere((e) => e.exerciceId == ex.id),
+                  );
+                  return _buildPendingCard(ex, match);
+                }).toList(),
+              ),
+              const SizedBox(height: 20),
+
+              // Section: Validés
+              _buildSection(
+                title: 'Validés',
+                icon: Icons.check_circle,
+                iconColor: Colors.green,
+                emptyText: 'Aucun exercice validé pour le moment',
+                children: validated.map((ex) {
+                  final match = provider.exercicesValides.firstWhere(
+                    (e) => e.exerciceId == ex.id && e.isValidated,
+                    orElse: () => provider.exercicesValides
+                        .firstWhere((e) => e.exerciceId == ex.id),
+                  );
+                  return _buildValidatedCard(ex, match);
+                }).toList(),
+              ),
+              const SizedBox(height: 40),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildProgressHeader({
+    required NiveauLIFRAS niveau,
+    required int validated,
+    required int pending,
+    required int total,
+    required double progress,
+  }) {
+    final niveauColor = _getNiveauColor(niveau);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: niveauColor,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Center(
+                  child: Text(
+                    niveau.code,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Objectif: ${niveau.label}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    Text(
+                      '$validated / $total exercices validés',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey[700],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (pending > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.orange[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange[200]!),
+                  ),
+                  child: Text(
+                    '$pending en attente',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange[800],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: progress.clamp(0.0, 1.0),
+              backgroundColor: Colors.grey[200],
+              color: niveauColor,
+              minHeight: 8,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSection({
+    required String title,
+    required IconData icon,
+    required Color iconColor,
+    required String? emptyText,
+    required List<Widget> children,
+  }) {
+    if (children.isEmpty && emptyText == null) {
+      // Skip empty 'En attente' section entirely
+      return const SizedBox.shrink();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 18, color: iconColor),
+            const SizedBox(width: 6),
+            Text(
+              title,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+                color: Colors.grey[800],
+              ),
+            ),
+            const SizedBox(width: 6),
+            if (children.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: iconColor.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  children.length.toString(),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: iconColor,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (children.isEmpty && emptyText != null)
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.grey[200]!),
+            ),
+            child: Text(
+              emptyText,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey[600],
+              ),
+            ),
+          )
+        else
+          ...children,
+      ],
+    );
+  }
+
+  Widget _buildTodoCard(
+      ExerciceLIFRAS exercice, ExerciceValideProvider provider) {
+    final niveauColor = _getNiveauColor(exercice.niveau);
+
+    // Check if this exercise has a refused declaration — show the refusal reason
+    final refused = provider.exercicesValides
+        .where((e) => e.exerciceId == exercice.id && e.isRefused)
+        .toList();
+    final wasRefused = refused.isNotEmpty;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: wasRefused
+            ? BorderSide(color: Colors.red[200]!)
+            : BorderSide.none,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: niveauColor,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Center(
+                    child: Text(
+                      exercice.niveau.code,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        exercice.code,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        exercice.description,
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (wasRefused) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.red[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red[100]!),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.cancel_outlined,
+                        size: 16, color: Colors.red[700]),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Précédente demande refusée',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.red[800],
+                            ),
+                          ),
+                          if (refused.first.refusedReason != null &&
+                              refused.first.refusedReason!.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              refused.first.refusedReason!,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.red[700],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => _openSelfDeclareSheet(exercice),
+                  icon: const Icon(Icons.check_circle_outline, size: 18),
+                  label: Text(wasRefused ? 'Redemander' : 'Je l\'ai fait'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.teal,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPendingCard(
+      ExerciceLIFRAS exercice, ExerciceValide declaration) {
+    final niveauColor = _getNiveauColor(exercice.niveau);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: niveauColor,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Center(
+                child: Text(
+                  exercice.niveau.code,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              right: -4,
+              bottom: -4,
+              child: Container(
+                width: 18,
+                height: 18,
+                decoration: BoxDecoration(
+                  color: Colors.orange,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
+                child: const Icon(Icons.schedule,
+                    size: 10, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+        title: Text(
+          exercice.code,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(exercice.description),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(Icons.calendar_today,
+                    size: 12, color: Colors.grey[600]),
+                const SizedBox(width: 4),
+                Text(
+                  'Déclaré ${DateFormatter.formatRelative(declaration.dateValidation)}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildValidatedCard(
+      ExerciceLIFRAS exercice, ExerciceValide validation) {
+    final niveauColor = _getNiveauColor(exercice.niveau);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: niveauColor,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Center(
+                child: Text(
+                  exercice.niveau.code,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              right: -4,
+              bottom: -4,
+              child: Container(
+                width: 18,
+                height: 18,
+                decoration: BoxDecoration(
+                  color: Colors.green,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
+                child: const Icon(Icons.check,
+                    size: 10, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+        title: Text(
+          exercice.code,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(exercice.description),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(Icons.calendar_today,
+                    size: 12, color: Colors.grey[600]),
+                const SizedBox(width: 4),
+                Text(
+                  DateFormatter.formatMedium(validation.dateValidation),
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
+                if (validation.moniteurNom.isNotEmpty) ...[
+                  const SizedBox(width: 12),
+                  Icon(Icons.person, size: 12, color: Colors.grey[600]),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      validation.moniteurNom,
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoNiveauState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.help_outline, size: 64, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            Text(
+              'Niveau non déterminé',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[700],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Ton niveau de plongeur n\'est pas encore défini dans ton profil. '
+              'Contacte un responsable du club pour le mettre à jour.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey[600]),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openSelfDeclareSheet(ExerciceLIFRAS exercice) async {
+    await SelfDeclareExerciseSheet.show(
+      context,
+      exercice: exercice,
+      memberId: widget.memberId,
+    );
+    // Stream auto-updates the list via provider — no manual refresh needed.
+  }
+
+  // ============================================================
+  // Classic view (non-self) — preserved from original implementation
+  // ============================================================
+
+  Widget _buildClassicView() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_errorMessage != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
+            const SizedBox(height: 16),
+            Text(_errorMessage!, textAlign: TextAlign.center),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _loadExercices,
+              child: const Text('Réessayer'),
+            ),
+          ],
+        ),
+      );
+    }
+    if (_exercices.isEmpty) {
+      return _buildClassicEmptyState();
+    }
+    return _buildClassicContent();
+  }
+
+  Widget _buildClassicEmptyState() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -197,9 +913,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
           Icon(Icons.assignment_outlined, size: 80, color: Colors.grey[400]),
           const SizedBox(height: 16),
           Text(
-            widget.isOwnProfile
-                ? 'Vous n\'avez pas encore d\'exercices validés'
-                : 'Aucun exercice validé',
+            'Aucun exercice validé',
             style: TextStyle(
               fontSize: 18,
               color: Colors.grey[600],
@@ -237,7 +951,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
     );
   }
 
-  Widget _buildContent() {
+  Widget _buildClassicContent() {
     final stats = _service.getStats(_exercices);
 
     return Column(
@@ -249,11 +963,13 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildStat('Total', stats['total'].toString(), Colors.teal),
+              _buildStat(
+                  'Total', stats['validatedCount'].toString(), Colors.teal),
               if (stats['lastValidation'] != null)
                 _buildStat(
                   'Dernière',
-                  DateFormatter.formatShort(stats['lastValidation'] as DateTime),
+                  DateFormatter.formatShort(
+                      stats['lastValidation'] as DateTime),
                   Colors.blue,
                 ),
             ],
@@ -273,23 +989,30 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                 selectedColor: Colors.teal[100],
               ),
               const SizedBox(width: 8),
-              ..._getAvailableNiveaux().map((niveau) => Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: FilterChip(
-                      label: Text(niveau.code),
-                      selected: _filterNiveau == niveau,
-                      onSelected: (_) => setState(() => _filterNiveau = niveau),
-                      selectedColor: _getNiveauColor(niveau).withOpacity(0.3),
-                      avatar: CircleAvatar(
-                        backgroundColor: _getNiveauColor(niveau),
-                        radius: 10,
-                        child: Text(
-                          _exercices.where((e) => e.exerciceNiveau == niveau).length.toString(),
-                          style: const TextStyle(fontSize: 10, color: Colors.white),
-                        ),
+              ..._getAvailableNiveaux().map(
+                (niveau) => Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: FilterChip(
+                    label: Text(niveau.code),
+                    selected: _filterNiveau == niveau,
+                    onSelected: (_) =>
+                        setState(() => _filterNiveau = niveau),
+                    selectedColor: _getNiveauColor(niveau).withOpacity(0.3),
+                    avatar: CircleAvatar(
+                      backgroundColor: _getNiveauColor(niveau),
+                      radius: 10,
+                      child: Text(
+                        _exercices
+                            .where((e) => e.exerciceNiveau == niveau)
+                            .length
+                            .toString(),
+                        style: const TextStyle(
+                            fontSize: 10, color: Colors.white),
                       ),
                     ),
-                  )),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -303,7 +1026,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
               itemCount: _filteredExercices.length,
               itemBuilder: (context, index) {
                 final exercice = _filteredExercices[index];
-                return _buildExerciceCard(exercice);
+                return _buildClassicCard(exercice);
               },
             ),
           ),
@@ -336,12 +1059,11 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
 
   List<NiveauLIFRAS> _getAvailableNiveaux() {
     final niveaux = _exercices.map((e) => e.exerciceNiveau).toSet().toList();
-    // Sort by enum order
     niveaux.sort((a, b) => a.index.compareTo(b.index));
     return niveaux;
   }
 
-  Widget _buildExerciceCard(ExerciceValide exercice) {
+  Widget _buildClassicCard(ExerciceValide exercice) {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
@@ -374,7 +1096,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
             const SizedBox(height: 4),
             Row(
               children: [
-                Icon(Icons.calendar_today, size: 12, color: Colors.grey[600]),
+                Icon(Icons.calendar_today,
+                    size: 12, color: Colors.grey[600]),
                 const SizedBox(width: 4),
                 Text(
                   DateFormatter.formatMedium(exercice.dateValidation),
@@ -386,7 +1109,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                 Expanded(
                   child: Text(
                     exercice.moniteurNom,
-                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    style:
+                        TextStyle(fontSize: 12, color: Colors.grey[600]),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -396,7 +1120,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
               const SizedBox(height: 2),
               Row(
                 children: [
-                  Icon(Icons.location_on, size: 12, color: Colors.grey[600]),
+                  Icon(Icons.location_on,
+                      size: 12, color: Colors.grey[600]),
                   const SizedBox(width: 4),
                   Text(
                     exercice.lieu!,
@@ -428,12 +1153,12 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                 ],
               )
             : null,
-        onTap: () => _showExerciceDetails(exercice),
+        onTap: () => _showClassicDetails(exercice),
       ),
     );
   }
 
-  void _showExerciceDetails(ExerciceValide exercice) {
+  void _showClassicDetails(ExerciceValide exercice) {
     showModalBottomSheet(
       context: context,
       builder: (context) => Container(
@@ -445,7 +1170,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: _getNiveauColor(exercice.exerciceNiveau),
                     borderRadius: BorderRadius.circular(8),
@@ -478,7 +1204,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
             const Divider(height: 32),
             _buildDetailRow(Icons.calendar_today, 'Date de validation',
                 DateFormatter.formatLong(exercice.dateValidation)),
-            _buildDetailRow(Icons.person, 'Moniteur', exercice.moniteurNom),
+            _buildDetailRow(
+                Icons.person, 'Moniteur', exercice.moniteurNom),
             if (exercice.lieu != null && exercice.lieu!.isNotEmpty)
               _buildDetailRow(Icons.location_on, 'Lieu', exercice.lieu!),
             if (exercice.notes != null && exercice.notes!.isNotEmpty)

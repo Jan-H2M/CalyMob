@@ -91,6 +91,10 @@ exports.cleanupOldMessages = cleanupOldMessages;
 const { onNewOperation } = require('./src/notifications/onNewOperation');
 exports.onNewOperation = onNewOperation;
 
+// Push notification when a member self-declares a LIFRAS exercise from CalyMob
+const { onExerciceDeclared } = require('./src/notifications/onExerciceDeclared');
+exports.onExerciceDeclared = onExerciceDeclared;
+
 // Push notification when a member is assigned to a pool session task
 const { onPiscineTaskAssigned } = require('./src/notifications/onPiscineTaskAssigned');
 exports.onPiscineTaskAssigned = onPiscineTaskAssigned;

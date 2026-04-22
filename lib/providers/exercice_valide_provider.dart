@@ -89,6 +89,8 @@ class ExerciceValideProvider with ChangeNotifier {
     String? moniteurId,
     String? notes,
     String? lieu,
+    String? sessionId,
+    String? themaId,
   }) async {
     _isLoading = true;
     _errorMessage = null;
@@ -105,6 +107,8 @@ class ExerciceValideProvider with ChangeNotifier {
         moniteurId: moniteurId,
         notes: notes,
         lieu: lieu,
+        sessionId: sessionId,
+        themaId: themaId,
       );
 
       debugPrint('✅ Exercice validé via provider: $id');
@@ -116,6 +120,43 @@ class ExerciceValideProvider with ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  /// Self-declaration door een member (CalyMob "Je l'ai fait"-flow).
+  ///
+  /// Creëert een pending document zonder dat de provider's loading-flag
+  /// wordt geactiveerd (de Firestore stream werkt `_exercicesValides`
+  /// automatisch bij, dus we hoeven geen expliciete refresh te doen).
+  Future<String> declareByMember({
+    required String clubId,
+    required String memberId,
+    required ExerciceLIFRAS exercice,
+    required DateTime dateDeclaration,
+    String? sessionId,
+    String? themaId,
+    String? notes,
+    String? lieu,
+  }) async {
+    _errorMessage = null;
+    try {
+      final id = await _service.declareByMember(
+        clubId: clubId,
+        memberId: memberId,
+        exercice: exercice,
+        dateDeclaration: dateDeclaration,
+        sessionId: sessionId,
+        themaId: themaId,
+        notes: notes,
+        lieu: lieu,
+      );
+      debugPrint('✅ Self-declaration via provider: $id');
+      return id;
+    } catch (e) {
+      _errorMessage = e.toString();
+      debugPrint('❌ Erreur self-declaration: $e');
+      notifyListeners();
+      rethrow;
     }
   }
 
@@ -185,9 +226,36 @@ class ExerciceValideProvider with ChangeNotifier {
     }
   }
 
-  /// Obtenir les exercices groupés par niveau
+  /// Obtenir les exercices groupés par niveau (toutes statuts confondus).
   Map<NiveauLIFRAS, List<ExerciceValide>> get exercicesGroupedByNiveau {
     return _service.groupByNiveau(_exercicesValides);
+  }
+
+  /// Obtenir uniquement les exercices validés (status = validated),
+  /// groupés par niveau.
+  Map<NiveauLIFRAS, List<ExerciceValide>> get validatedGroupedByNiveau {
+    return _service.groupByNiveau(_exercicesValides, onlyValidated: true);
+  }
+
+  /// Alle exercices met status = validated (legacy-docs inbegrepen).
+  List<ExerciceValide> get validatedExercices =>
+      _exercicesValides.where((e) => e.isValidated).toList();
+
+  /// Alle pending self-declarations die nog op moniteur-validatie wachten.
+  List<ExerciceValide> get pendingExercices =>
+      _exercicesValides.where((e) => e.isPending).toList();
+
+  /// Alle refused declarations (met optionele refused_reason).
+  List<ExerciceValide> get refusedExercices =>
+      _exercicesValides.where((e) => e.isRefused).toList();
+
+  /// True wanneer er voor een gegeven exerciceId al een validated OF pending
+  /// document bestaat (refused docs tellen niet — die mag de member opnieuw
+  /// declareren).
+  bool hasValidatedOrPendingFor(String exerciceId) {
+    return _exercicesValides.any((e) =>
+        e.exerciceId == exerciceId &&
+        (e.isValidated || e.isPending));
   }
 
   /// Obtenir les statistiques
