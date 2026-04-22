@@ -8,6 +8,7 @@ import '../../config/firebase_config.dart';
 import '../../models/piscine_session.dart';
 import '../../models/poll.dart';
 import '../../models/session_message.dart';
+import '../../widgets/message_hover_caret.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/unread_count_provider.dart';
 import '../../services/local_read_tracker.dart';
@@ -707,13 +708,16 @@ class _MessageBubble extends StatelessWidget {
     final bubbleColor = isOwn ? AppColors.middenblauw : Colors.white;
     final textColor = isOwn ? Colors.white : Colors.black87;
 
-    return GestureDetector(
-      onLongPress: onLongPress,
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Row(
-          mainAxisAlignment:
-              isOwn ? MainAxisAlignment.end : MainAxisAlignment.start,
+    return MessageHoverCaret(
+      onTap: onLongPress,
+      alignEnd: isOwn,
+      child: GestureDetector(
+        onLongPress: onLongPress,
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Row(
+            mainAxisAlignment:
+                isOwn ? MainAxisAlignment.end : MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             if (!isOwn) ...[
@@ -817,6 +821,7 @@ class _MessageBubble extends StatelessWidget {
             ),
           ],
         ),
+      ),
       ),
     );
   }

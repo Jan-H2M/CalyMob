@@ -8,6 +8,7 @@ import '../config/app_colors.dart';
 import '../config/firebase_config.dart';
 import '../models/event_message.dart';
 import '../models/poll.dart';
+import 'message_hover_caret.dart';
 import '../models/session_message.dart' show MessageAttachment;
 import '../providers/auth_provider.dart';
 import '../providers/event_message_provider.dart';
@@ -594,12 +595,15 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
   }) {
     final dateFormat = DateFormat('HH:mm');
 
-    return GestureDetector(
-      onLongPress: () => _showMessageOptions(message, isOwnMessage),
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Row(
-          mainAxisAlignment: isOwnMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
+    return MessageHoverCaret(
+      onTap: () => _showMessageOptions(message, isOwnMessage),
+      alignEnd: isOwnMessage,
+      child: GestureDetector(
+        onLongPress: () => _showMessageOptions(message, isOwnMessage),
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Row(
+            mainAxisAlignment: isOwnMessage ? MainAxisAlignment.end : MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             if (!isOwnMessage) ...[
@@ -692,7 +696,8 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildReplyPreview(ReplyPreview preview) {

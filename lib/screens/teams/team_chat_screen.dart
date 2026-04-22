@@ -13,6 +13,7 @@ import '../../services/local_read_tracker.dart';
 import '../../services/profile_service.dart';
 import '../../services/team_channel_service.dart';
 import '../../widgets/attachment_display.dart';
+import '../../widgets/message_hover_caret.dart';
 import '../../widgets/attachment_picker.dart';
 import '../../widgets/message_edit_sheet.dart';
 import '../../widgets/message_reactions.dart';
@@ -764,14 +765,17 @@ class _MessageBubble extends StatelessWidget {
     final bubbleColor = isOwn ? teamColor : Colors.white;
     final textColor = isOwn ? Colors.white : Colors.black87;
 
-    return GestureDetector(
-      onLongPress: onLongPress,
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Row(
-          mainAxisAlignment:
-              isOwn ? MainAxisAlignment.end : MainAxisAlignment.start,
-          crossAxisAlignment: CrossAxisAlignment.end,
+    return MessageHoverCaret(
+      onTap: onLongPress,
+      alignEnd: isOwn,
+      child: GestureDetector(
+        onLongPress: onLongPress,
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Row(
+            mainAxisAlignment:
+                isOwn ? MainAxisAlignment.end : MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             if (!isOwn) ...[
               CircleAvatar(
@@ -874,6 +878,7 @@ class _MessageBubble extends StatelessWidget {
             ),
           ],
         ),
+      ),
       ),
     );
   }

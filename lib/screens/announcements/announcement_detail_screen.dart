@@ -8,6 +8,7 @@ import '../../config/app_assets.dart';
 import '../../models/announcement.dart';
 import '../../models/announcement_reply.dart';
 import '../../models/session_message.dart' show MessageAttachment;
+import '../../widgets/message_hover_caret.dart';
 import '../../models/event_message.dart' show ReplyPreview;
 import '../../services/announcement_service.dart';
 import '../../services/local_read_tracker.dart';
@@ -461,9 +462,12 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
   }
 
   Widget _buildReplyBubble(AnnouncementReply reply, bool isOwnReply, DateFormat dateFormat) {
-    return GestureDetector(
-      onLongPress: () => _showReplyOptions(reply),
-      child: Align(
+    return MessageHoverCaret(
+      onTap: () => _showReplyOptions(reply),
+      alignEnd: isOwnReply,
+      child: GestureDetector(
+        onLongPress: () => _showReplyOptions(reply),
+        child: Align(
         alignment: isOwnReply ? Alignment.centerRight : Alignment.centerLeft,
         child: Container(
           margin: const EdgeInsets.only(bottom: 12),
@@ -520,6 +524,7 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }
