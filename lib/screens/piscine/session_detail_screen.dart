@@ -67,6 +67,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       operationId: widget.session.id,
       operationTitle: 'Piscine ${widget.session.formattedDate}',
       isPiscine: true,
+      eventEndDate: widget.session.date,
     );
 
     // Refresh after closing scanner

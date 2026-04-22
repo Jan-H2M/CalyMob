@@ -392,6 +392,119 @@ class OperationService {
     }
   }
 
+  /// Désinscrire un membre après un scan (correction d'erreur).
+  ///
+  /// Stratégie :
+  /// - Si l'inscription est un walk-in créé par le scanner ET non payée → on
+  ///   supprime complètement l'inscription (elle n'existait que parce qu'on
+  ///   a scanné le membre).
+  /// - Sinon (inscription pré-existante ou déjà payée) → on réinitialise
+  ///   uniquement les champs de présence (`present`, `present_at`,
+  ///   `present_by`, `present_by_name`). L'inscription elle-même reste.
+  ///
+  /// Retourne un [UnmarkPresentResult] qui permet de restaurer l'état
+  /// précédent (undo) pendant ~5 secondes côté UI.
+  Future<UnmarkPresentResult> unmarkAsPresent({
+    required String clubId,
+    required String operationId,
+    required String memberId,
+  }) async {
+    try {
+      final snapshot = await _firestore
+          .collection('clubs/$clubId/operations/$operationId/inscriptions')
+          .where('membre_id', isEqualTo: memberId)
+          .get();
+
+      if (snapshot.docs.isEmpty) {
+        throw Exception('Inscription non trouvée');
+      }
+
+      final doc = snapshot.docs.first;
+      final data = doc.data();
+      final isWalkIn = data['walk_in'] == true;
+      final isPaid = data['paye'] == true;
+
+      if (isWalkIn && !isPaid) {
+        // Safe to delete - inscription only existed because of the scan
+        await doc.reference.delete();
+        debugPrint('✅ Walk-in inscription supprimée: member $memberId');
+        return UnmarkPresentResult(
+          deletedInscription: true,
+          inscriptionId: doc.id,
+          previousData: Map<String, dynamic>.from(data),
+        );
+      }
+
+      // Keep inscription, just reset present fields
+      final previousPresent = data['present'];
+      final previousPresentAt = data['present_at'];
+      final previousPresentBy = data['present_by'];
+      final previousPresentByName = data['present_by_name'];
+
+      await doc.reference.update({
+        'present': false,
+        'present_at': FieldValue.delete(),
+        'present_by': FieldValue.delete(),
+        'present_by_name': FieldValue.delete(),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      debugPrint('✅ Présence annulée pour member $memberId (inscription conservée)');
+      return UnmarkPresentResult(
+        deletedInscription: false,
+        inscriptionId: doc.id,
+        previousData: {
+          'present': previousPresent,
+          'present_at': previousPresentAt,
+          'present_by': previousPresentBy,
+          'present_by_name': previousPresentByName,
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Erreur annulation présence: $e');
+      rethrow;
+    }
+  }
+
+  /// Restaure l'état précédent après un [unmarkAsPresent] — utilisé pour
+  /// l'action "Annuler" dans le snackbar après désinscription.
+  Future<void> restoreFromUnmark({
+    required String clubId,
+    required String operationId,
+    required UnmarkPresentResult result,
+  }) async {
+    try {
+      final inscriptionsRef = _firestore
+          .collection('clubs/$clubId/operations/$operationId/inscriptions');
+
+      if (result.deletedInscription) {
+        // Re-create the deleted walk-in document with the same ID
+        await inscriptionsRef.doc(result.inscriptionId).set(result.previousData);
+        debugPrint('↩️ Walk-in inscription restaurée: ${result.inscriptionId}');
+      } else {
+        // Restore the present fields on the existing inscription
+        final update = <String, dynamic>{
+          'present': result.previousData['present'] ?? true,
+          'updated_at': FieldValue.serverTimestamp(),
+        };
+        if (result.previousData['present_at'] != null) {
+          update['present_at'] = result.previousData['present_at'];
+        }
+        if (result.previousData['present_by'] != null) {
+          update['present_by'] = result.previousData['present_by'];
+        }
+        if (result.previousData['present_by_name'] != null) {
+          update['present_by_name'] = result.previousData['present_by_name'];
+        }
+        await inscriptionsRef.doc(result.inscriptionId).update(update);
+        debugPrint('↩️ Présence restaurée pour inscription ${result.inscriptionId}');
+      }
+    } catch (e) {
+      debugPrint('❌ Erreur restauration: $e');
+      rethrow;
+    }
+  }
+
   /// Mark a participant's payment as received (by organizer on site)
   /// Sets paye=true with timestamp, updates payment_status for data consistency
   Future<void> markParticipantAsPaid({
@@ -748,4 +861,90 @@ class OperationService {
       return [];
     }
   }
+
+  /// Récupère les opérations (évènements) auxquelles ce membre a été marqué
+  /// présent dans les [days] derniers jours, triées par date descendante.
+  ///
+  /// Utilisé par le picker de self-declaration (CalyMob "Je l'ai fait"-flow).
+  /// Filtre sur `present == true` pour ne garder que les évènements où le
+  /// membre était effectivement présent (pas seulement inscrit).
+  Future<List<Operation>> getRecentAttendedOperations({
+    required String clubId,
+    required String memberId,
+    int days = 30,
+  }) async {
+    try {
+      final now = DateTime.now();
+      final cutoff = now.subtract(Duration(days: days));
+
+      // 1. Load all events starting in the last N days
+      final snapshot = await _firestore
+          .collection('clubs/$clubId/operations')
+          .where('type', isEqualTo: 'evenement')
+          .where('date_debut', isGreaterThanOrEqualTo: Timestamp.fromDate(cutoff))
+          .where('date_debut', isLessThanOrEqualTo: Timestamp.fromDate(now))
+          .orderBy('date_debut', descending: true)
+          .get();
+
+      final operations = snapshot.docs
+          .map((doc) => Operation.fromFirestore(doc))
+          .toList();
+
+      if (operations.isEmpty) {
+        debugPrint('📅 Aucun évènement dans les $days derniers jours');
+        return [];
+      }
+
+      // 2. For each operation check presence in parallel
+      final checks = await Future.wait(
+        operations.map((op) async {
+          try {
+            final inscriptionSnap = await _firestore
+                .collection('clubs/$clubId/operations/${op.id}/inscriptions')
+                .where('membre_id', isEqualTo: memberId)
+                .where('present', isEqualTo: true)
+                .limit(1)
+                .get();
+            return inscriptionSnap.docs.isNotEmpty ? op : null;
+          } catch (_) {
+            // Fallback if composite index missing: filter client-side
+            final all = await _firestore
+                .collection('clubs/$clubId/operations/${op.id}/inscriptions')
+                .where('membre_id', isEqualTo: memberId)
+                .limit(1)
+                .get();
+            if (all.docs.isEmpty) return null;
+            return all.docs.first.data()['present'] == true ? op : null;
+          }
+        }),
+      );
+
+      final attended = checks.whereType<Operation>().toList();
+      debugPrint(
+          '📅 ${attended.length}/${operations.length} évènements attendus par $memberId');
+      return attended;
+    } catch (e) {
+      debugPrint('❌ Erreur getRecentAttendedOperations: $e');
+      return [];
+    }
+  }
+}
+
+/// Résultat d'un [OperationService.unmarkAsPresent] utilisé pour l'undo.
+///
+/// - `deletedInscription == true`  → l'inscription a été supprimée (walk-in
+///   non payée). `previousData` contient toutes les données du document
+///   pour le recréer à l'identique via [OperationService.restoreFromUnmark].
+/// - `deletedInscription == false` → seuls les champs `present*` ont été
+///   réinitialisés. `previousData` contient uniquement ces champs.
+class UnmarkPresentResult {
+  final bool deletedInscription;
+  final String inscriptionId;
+  final Map<String, dynamic> previousData;
+
+  UnmarkPresentResult({
+    required this.deletedInscription,
+    required this.inscriptionId,
+    required this.previousData,
+  });
 }

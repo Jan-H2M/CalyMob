@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import '../models/piscine_session.dart';
 import '../models/piscine_attendee.dart';
 
@@ -282,6 +283,20 @@ class PiscineSessionService {
     await _attendeesCollection(clubId, sessionId).doc(attendeeId).delete();
   }
 
+  /// Restaure un participant supprimé par erreur (undo après [removeAttendee]).
+  ///
+  /// Recrée le document avec le même [attendeeId] et les mêmes données que
+  /// l'original — ce qui permet au stream de refléter immédiatement l'état
+  /// précédent comme s'il n'avait jamais été supprimé.
+  Future<void> restoreAttendee({
+    required String clubId,
+    required String sessionId,
+    required String attendeeId,
+    required Map<String, dynamic> data,
+  }) async {
+    await _attendeesCollection(clubId, sessionId).doc(attendeeId).set(data);
+  }
+
   /// Check of een lid al aanwezig is gemarkeerd
   Future<bool> isAttendeePresent({
     required String clubId,
@@ -311,6 +326,61 @@ class PiscineSessionService {
         .get();
     if (snapshot.docs.isEmpty) return null;
     return PiscineAttendee.fromFirestore(snapshot.docs.first);
+  }
+
+  /// Récupère les sessions de piscine où ce membre était présent (scanné)
+  /// dans les [days] derniers jours, triées par date descendante.
+  ///
+  /// Utilisé par le picker de self-declaration (CalyMob "Je l'ai fait"-flow).
+  ///
+  /// Implémentation: load les sessions des N derniers jours + vérifie
+  /// la subcollection `attendees` par session (pas de collectionGroup query
+  /// pour éviter les index composites + règles FS).
+  Future<List<PiscineSession>> getRecentAttendedSessions({
+    required String clubId,
+    required String memberId,
+    int days = 30,
+  }) async {
+    try {
+      final now = DateTime.now();
+      final cutoff = now.subtract(Duration(days: days));
+
+      // 1. Load all sessions in the last N days (past + today)
+      final snapshot = await _sessionsCollection(clubId)
+          .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(cutoff))
+          .where('date', isLessThanOrEqualTo: Timestamp.fromDate(now))
+          .orderBy('date', descending: true)
+          .get();
+
+      final sessions = snapshot.docs
+          .map((doc) => PiscineSession.fromFirestore(doc))
+          .toList();
+
+      if (sessions.isEmpty) {
+        debugPrint('📅 Aucune session piscine dans les $days derniers jours');
+        return [];
+      }
+
+      // 2. For each session check attendance in parallel
+      final checks = await Future.wait(
+        sessions.map((s) async {
+          final present = await isAttendeePresent(
+            clubId: clubId,
+            sessionId: s.id,
+            memberId: memberId,
+          );
+          return present ? s : null;
+        }),
+      );
+
+      final attended = checks.whereType<PiscineSession>().toList();
+      debugPrint(
+          '📅 ${attended.length}/${sessions.length} sessions piscine attendues par $memberId');
+      return attended;
+    } catch (e) {
+      debugPrint('❌ Erreur getRecentAttendedSessions: $e');
+      return [];
+    }
   }
 
   /// Met à jour l'affectation formation d'un participant scanné

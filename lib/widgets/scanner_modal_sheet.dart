@@ -21,12 +21,19 @@ class ScannerModalSheet extends StatefulWidget {
   final String operationTitle;
   final bool isPiscine;
 
+  /// Fin de l'événement (ou date de la sessie piscine). Sert à déterminer
+  /// jusqu'à quand un participant scanné par erreur peut être désinscrit
+  /// (= jusqu'à la fin du jour de `eventEndDate`). Si null, la désinscription
+  /// reste toujours possible.
+  final DateTime? eventEndDate;
+
   const ScannerModalSheet({
     super.key,
     required this.clubId,
     required this.operationId,
     required this.operationTitle,
     this.isPiscine = false,
+    this.eventEndDate,
   });
 
   /// Show the scanner modal as a bottom sheet
@@ -36,6 +43,7 @@ class ScannerModalSheet extends StatefulWidget {
     required String operationId,
     required String operationTitle,
     bool isPiscine = false,
+    DateTime? eventEndDate,
   }) {
     return showModalBottomSheet(
       context: context,
@@ -46,6 +54,7 @@ class ScannerModalSheet extends StatefulWidget {
         operationId: operationId,
         operationTitle: operationTitle,
         isPiscine: isPiscine,
+        eventEndDate: eventEndDate,
       ),
     );
   }
@@ -377,6 +386,149 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
+  }
+
+  // ========== UITSCHRIJVEN (correction d'erreur de scan) ==========
+
+  /// Vérifie si la désinscription est encore possible : jusqu'à la fin du jour
+  /// de [widget.eventEndDate] inclus. Si `eventEndDate` est null → toujours
+  /// autorisé.
+  bool _canUnregister() {
+    final endDate = widget.eventEndDate;
+    if (endDate == null) return true;
+    final endOfDay = DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59);
+    return DateTime.now().isBefore(endOfDay);
+  }
+
+  /// Affiche le dialog de confirmation avant de désinscrire.
+  Future<bool> _confirmUnregister(String memberName) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Désinscrire ?'),
+        content: Text(
+          'Annuler l\'enregistrement de $memberName ? '
+          'Cette action retire son scan de la liste de présence.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Désinscrire'),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
+  }
+
+  /// Désinscription d'un attendee piscine avec undo.
+  /// La confirmation est déjà gérée par [Dismissible.confirmDismiss],
+  /// donc on saute directement à l'action.
+  Future<void> _unregisterPiscineAttendee(PiscineAttendee attendee) async {
+    if (!mounted) return;
+
+    // Snapshot pour undo
+    final snapshotData = attendee.toMap();
+    try {
+      await _piscineService.removeAttendee(
+        clubId: widget.clubId,
+        sessionId: widget.operationId,
+        attendeeId: attendee.id,
+      );
+    } catch (e) {
+      if (mounted) _showErrorToast('Erreur: ${e.toString()}');
+      return;
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('${attendee.memberName} désinscrit'),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 5),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          action: SnackBarAction(
+            label: 'Annuler',
+            textColor: Colors.white,
+            onPressed: () async {
+              try {
+                await _piscineService.restoreAttendee(
+                  clubId: widget.clubId,
+                  sessionId: widget.operationId,
+                  attendeeId: attendee.id,
+                  data: snapshotData,
+                );
+              } catch (e) {
+                if (mounted) _showErrorToast('Impossible d\'annuler: $e');
+              }
+            },
+          ),
+        ),
+      );
+  }
+
+  /// Désinscription d'un participant événement avec undo.
+  /// La confirmation est déjà gérée par [Dismissible.confirmDismiss].
+  Future<void> _unregisterOperationParticipant(ParticipantOperation participant) async {
+    final name =
+        '${participant.membrePrenom ?? ''} ${participant.membreNom ?? ''}'.trim();
+    final displayName = name.isEmpty ? 'ce participant' : name;
+
+    if (!mounted) return;
+
+    UnmarkPresentResult result;
+    try {
+      result = await _operationService.unmarkAsPresent(
+        clubId: widget.clubId,
+        operationId: widget.operationId,
+        memberId: participant.membreId,
+      );
+    } catch (e) {
+      if (mounted) _showErrorToast('Erreur: ${e.toString()}');
+      return;
+    }
+
+    if (!mounted) return;
+    final message = result.deletedInscription
+        ? '$displayName désinscrit'
+        : 'Présence annulée pour $displayName';
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 5),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          action: SnackBarAction(
+            label: 'Annuler',
+            textColor: Colors.white,
+            onPressed: () async {
+              try {
+                await _operationService.restoreFromUnmark(
+                  clubId: widget.clubId,
+                  operationId: widget.operationId,
+                  result: result,
+                );
+              } catch (e) {
+                if (mounted) _showErrorToast('Impossible d\'annuler: $e');
+              }
+            },
+          ),
+        ),
+      );
   }
 
   @override
@@ -809,7 +961,16 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
             itemBuilder: (context, index) {
               final attendee = sortedAttendees[index];
               final isLatest = index == 0 && _lastAddedName == attendee.memberName;
-              return _buildPiscineAttendeeCard(attendee, isLatest);
+              final card = _buildPiscineAttendeeCard(attendee, isLatest);
+              if (!_canUnregister()) return card;
+              return Dismissible(
+                key: ValueKey('piscine-${attendee.id}'),
+                direction: DismissDirection.endToStart,
+                background: _buildDismissBackground(),
+                confirmDismiss: (_) => _confirmUnregister(attendee.memberName),
+                onDismissed: (_) => _unregisterPiscineAttendee(attendee),
+                child: card,
+              );
             },
           );
         },
@@ -839,12 +1000,49 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
                   '${participant.membrePrenom ?? ''} ${participant.membreNom ?? ''}'
                       .trim();
               final isLatest = index == 0 && _lastAddedName == name;
-              return _buildOperationParticipantCard(participant, isLatest);
+              final card = _buildOperationParticipantCard(participant, isLatest);
+              if (!_canUnregister()) return card;
+              final displayName = name.isEmpty ? 'ce participant' : name;
+              return Dismissible(
+                key: ValueKey('op-${participant.membreId}'),
+                direction: DismissDirection.endToStart,
+                background: _buildDismissBackground(),
+                confirmDismiss: (_) => _confirmUnregister(displayName),
+                onDismissed: (_) => _unregisterOperationParticipant(participant),
+                child: card,
+              );
             },
           );
         },
       );
     }
+  }
+
+  /// Fond rouge affiché lors du swipe pour désinscrire.
+  Widget _buildDismissBackground() {
+    return Container(
+      alignment: Alignment.centerRight,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(
+        color: Colors.red,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: const Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Text(
+            'Désinscrire',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+          ),
+          SizedBox(width: 8),
+          Icon(Icons.person_remove, color: Colors.white, size: 24),
+        ],
+      ),
+    );
   }
 
   Widget _buildEmptyState() {
