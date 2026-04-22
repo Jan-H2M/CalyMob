@@ -112,6 +112,7 @@ coverage/
 
 # Fastlane auto-generated
 android/fastlane/report.xml
+ios/fastlane/report.xml
 android/fastlane/README.md
 
 # Build artifacts (don't commit APKs/IPAs)
