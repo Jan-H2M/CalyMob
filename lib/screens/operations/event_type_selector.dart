@@ -17,13 +17,13 @@ class EventTypeSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBodyBehindAppBar: true,
+      backgroundColor: AppColors.backgroundGrey,
       appBar: AppBar(
         title: const Text(
           'Nouvelle activité',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppColors.donkerblauw,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         leading: IconButton(
@@ -31,54 +31,42 @@ class EventTypeSelector extends StatelessWidget {
           onPressed: onClose,
         ),
       ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              AppColors.donkerblauw,
-              AppColors.middenblauw,
-              AppColors.lichtblauw.withOpacity(0.8),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            children: [
+              const SizedBox(height: 32),
+              // Subtitle
+              const Text(
+                'Sélectionnez le type d\'événement à créer',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: AppColors.donkerblauw,
+                  fontWeight: FontWeight.w500,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 32),
+              // Category cards
+              _buildCategoryCard(
+                context,
+                icon: Icons.scuba_diving,
+                label: 'Plongée',
+                description: 'Sélectionner un lieu de plongée',
+                color: AppColors.middenblauw,
+                category: 'plongee',
+              ),
+              const SizedBox(height: 20),
+              _buildCategoryCard(
+                context,
+                icon: Icons.directions_boat,
+                label: 'Sortie',
+                description: 'Événement festif ou sortie club',
+                color: AppColors.oranje,
+                category: 'sortie',
+              ),
             ],
-          ),
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(
-              children: [
-                const SizedBox(height: 40),
-                // Subtitle
-                Text(
-                  'Sélectionnez le type d\'événement à créer',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.white.withOpacity(0.9),
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 48),
-                // Category cards
-                _buildCategoryCard(
-                  context,
-                  icon: Icons.scuba_diving,
-                  label: 'Plongée',
-                  description: 'Sélectionner un lieu de plongée',
-                  color: AppColors.middenblauw,
-                  category: 'plongee',
-                ),
-                const SizedBox(height: 20),
-                _buildCategoryCard(
-                  context,
-                  icon: Icons.directions_boat,
-                  label: 'Sortie',
-                  description: 'Événement festif ou sortie club',
-                  color: AppColors.oranje,
-                  category: 'sortie',
-                ),
-              ],
-            ),
           ),
         ),
       ),
@@ -101,11 +89,12 @@ class EventTypeSelector extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey[200]!),
           boxShadow: [
             BoxShadow(
-              color: AppColors.donkerblauw.withOpacity(0.2),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
+              color: AppColors.donkerblauw.withOpacity(0.08),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
             ),
           ],
         ),

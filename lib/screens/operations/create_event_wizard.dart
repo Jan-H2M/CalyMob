@@ -10,6 +10,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../providers/activity_provider.dart';
 import '../../services/dive_location_service.dart';
+import '../../services/fiscal_year_service.dart';
 import '../../services/operation_service.dart';
 import '../../services/session_service.dart';
 
@@ -181,6 +182,29 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
       // Refresh session to prevent permission-denied on expired session
       await SessionService().touchActivity();
 
+      // Lookup dynamique de l'année fiscale ouverte (mirror CalyCompta)
+      // La règle Firestore `canModifyFiscalYearData` exige que le document
+      // `fiscal_years/{id}` existe et ait `status == 'open'`. Hardcoder
+      // `FY${year}` provoque permission-denied si l'ID diffère ou si l'année
+      // n'est pas encore ouverte.
+      final fiscalYearId =
+          await FiscalYearService().getCurrentOpenFiscalYearId(_clubId);
+      if (fiscalYearId == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Aucune année fiscale ouverte. Contactez un administrateur pour ouvrir l\'année.',
+              ),
+              backgroundColor: AppColors.error,
+              duration: Duration(seconds: 6),
+            ),
+          );
+          setState(() => _saving = false);
+        }
+        return;
+      }
+
       // Generate event number
       final eventNumber = await _operationService.generateEventNumber(_clubId, isDive);
 
@@ -217,8 +241,12 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
         'organisateur_id': userId,
         'event_tariffs': tariffsData,
         'club_id': _clubId,
-        'fiscal_year_id': 'FY${_dateDebut.year}',
+        'fiscal_year_id': fiscalYearId,
+        // Source tag (keep 'manual' for consistency with CalyCompta).
         'created_by': 'manual',
+        // Firebase UID of the original creator — used to authorize later
+        // responsable changes. Distinct from created_by source tag above.
+        'creator_user_id': userId,
       };
 
       await _operationService.createOperation(clubId: _clubId, data: data);
@@ -234,6 +262,19 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
         );
         Navigator.of(context).pop(); // Return to list
       }
+    } on FirebaseException catch (e) {
+      if (!mounted) return;
+      final isPermission = e.code == 'permission-denied';
+      final msg = isPermission
+          ? 'Permission refusée. Vérifiez que l\'année fiscale est ouverte ou contactez un administrateur.'
+          : 'Erreur Firestore (${e.code}) : ${e.message ?? e.code}';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(msg),
+          backgroundColor: AppColors.error,
+          duration: const Duration(seconds: 6),
+        ),
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -251,13 +292,13 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBodyBehindAppBar: true,
+      backgroundColor: AppColors.backgroundGrey,
       appBar: AppBar(
         title: const Text(
           'Nouvel événement',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppColors.donkerblauw,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         leading: _currentStep == 2 && widget.eventCategory == 'plongee' && _selectedLocation != null
@@ -276,33 +317,18 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
                 onPressed: () => Navigator.of(context).pop(),
               ),
       ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              AppColors.donkerblauw,
-              AppColors.middenblauw.withOpacity(0.9),
-              AppColors.lichtblauw.withOpacity(0.4),
-              Colors.white,
-            ],
-            stops: const [0.0, 0.15, 0.3, 0.45],
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // Step indicator
-              _buildStepIndicator(),
-              // Content
-              Expanded(
-                child: _currentStep == 1
-                    ? _buildLocationStep()
-                    : _buildDetailsStep(),
-              ),
-            ],
-          ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Step indicator
+            _buildStepIndicator(),
+            // Content
+            Expanded(
+              child: _currentStep == 1
+                  ? _buildLocationStep()
+                  : _buildDetailsStep(),
+            ),
+          ],
         ),
       ),
     );
@@ -318,7 +344,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
     }
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       child: Row(
         children: [
           _buildStepDot(1, isStep1 || _currentStep == 2),
@@ -326,8 +352,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
             child: Container(
               height: 2,
               color: _currentStep >= 2
-                  ? Colors.white
-                  : Colors.white.withOpacity(0.3),
+                  ? AppColors.donkerblauw
+                  : Colors.grey[300],
             ),
           ),
           _buildStepDot(2, _currentStep == 2),
@@ -343,14 +369,14 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
           width: 28,
           height: 28,
           decoration: BoxDecoration(
-            color: active ? Colors.white : Colors.white.withOpacity(0.3),
+            color: active ? AppColors.donkerblauw : Colors.grey[300],
             shape: BoxShape.circle,
           ),
           child: Center(
             child: Text(
               '$step',
               style: TextStyle(
-                color: active ? AppColors.donkerblauw : Colors.white,
+                color: active ? Colors.white : Colors.grey[700],
                 fontWeight: FontWeight.bold,
                 fontSize: 14,
               ),
@@ -361,7 +387,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
         Text(
           step == 1 ? 'Lieu' : 'Détails',
           style: TextStyle(
-            color: active ? Colors.white : Colors.white.withOpacity(0.5),
+            color: active ? AppColors.donkerblauw : Colors.grey[600],
             fontSize: 11,
             fontWeight: active ? FontWeight.w600 : FontWeight.normal,
           ),
@@ -391,19 +417,19 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
           child: Text(
             'Étape 1/2 : Sélection du lieu',
             style: TextStyle(
-              fontSize: 14,
-              color: Colors.white.withOpacity(0.8),
+              fontSize: 13,
+              color: Colors.grey[600],
               fontWeight: FontWeight.w500,
             ),
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(24, 0, 24, 6),
           child: Text(
             'Choisir un lieu de plongée',
-            style: const TextStyle(
-              fontSize: 18,
-              color: Colors.white,
+            style: TextStyle(
+              fontSize: 20,
+              color: AppColors.donkerblauw,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -414,7 +440,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
             'Sélectionnez un lieu pour pré-remplir les tarifs et les informations de l\'événement.',
             style: TextStyle(
               fontSize: 13,
-              color: Colors.white.withOpacity(0.7),
+              color: Colors.grey[700],
             ),
           ),
         ),
@@ -435,7 +461,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
         Expanded(
           child: _loadingLocations
               ? const Center(
-                  child: CircularProgressIndicator(color: Colors.white),
+                  child: CircularProgressIndicator(color: AppColors.middenblauw),
                 )
               : filteredLocations.isEmpty
                   ? _buildEmptyLocations()
@@ -455,9 +481,16 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.1),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.2)),
+        border: Border.all(color: Colors.grey[300]!),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.donkerblauw.withOpacity(0.04),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
       ),
       child: Row(
         children: [
@@ -466,7 +499,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
               'Événement hors plongée ou lieu non répertorié ?',
               style: TextStyle(
                 fontSize: 13,
-                color: Colors.white.withOpacity(0.8),
+                color: Colors.grey[700],
               ),
             ),
           ),
@@ -474,8 +507,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
           ElevatedButton(
             onPressed: _saving ? null : _onCreateManual,
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: AppColors.middenblauw,
+              backgroundColor: AppColors.middenblauw,
+              foregroundColor: Colors.white,
               elevation: 0,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               shape: RoundedRectangleBorder(
@@ -495,16 +528,31 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
   Widget _buildSearchBar() {
     return TextField(
       onChanged: (value) => setState(() => _searchQuery = value),
-      style: const TextStyle(color: Colors.white),
+      style: const TextStyle(
+        color: AppColors.donkerblauw,
+        fontSize: 15,
+      ),
+      cursorColor: AppColors.middenblauw,
       decoration: InputDecoration(
-        hintText: 'Rechercher un lieu...',
-        hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
-        prefixIcon: Icon(Icons.search, color: Colors.white.withOpacity(0.7)),
+        hintText: 'Rechercher un lieu…',
+        hintStyle: TextStyle(color: Colors.grey[500]),
+        prefixIcon: Icon(Icons.search, color: AppColors.middenblauw),
+        suffixIcon: _searchQuery.isNotEmpty
+            ? IconButton(
+                icon: Icon(Icons.close, color: Colors.grey[500], size: 20),
+                onPressed: () => setState(() => _searchQuery = ''),
+                tooltip: 'Effacer',
+              )
+            : null,
         filled: true,
-        fillColor: Colors.white.withOpacity(0.15),
-        border: OutlineInputBorder(
+        fillColor: Colors.white,
+        enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
+          borderSide: BorderSide(color: Colors.grey[300]!),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: AppColors.middenblauw, width: 2),
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       ),
@@ -516,19 +564,19 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.location_off, size: 48, color: Colors.white.withOpacity(0.5)),
+          Icon(Icons.location_off, size: 48, color: Colors.grey[400]),
           const SizedBox(height: 16),
           Text(
             _searchQuery.isNotEmpty ? 'Aucun lieu trouvé' : 'Aucun lieu configuré',
-            style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 16),
+            style: TextStyle(color: Colors.grey[600], fontSize: 16),
           ),
           if (_searchQuery.isEmpty) ...[
             const SizedBox(height: 12),
             TextButton(
               onPressed: _loadLocations,
-              child: Text(
+              child: const Text(
                 'Rafraîchir',
-                style: TextStyle(color: Colors.white.withOpacity(0.9)),
+                style: TextStyle(color: AppColors.middenblauw),
               ),
             ),
           ],
@@ -549,13 +597,13 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: isSelected ? AppColors.middenblauw : Colors.transparent,
-            width: 2,
+            color: isSelected ? AppColors.middenblauw : Colors.grey[200]!,
+            width: isSelected ? 2 : 1,
           ),
           boxShadow: [
             BoxShadow(
-              color: AppColors.donkerblauw.withOpacity(0.1),
-              blurRadius: 8,
+              color: AppColors.donkerblauw.withOpacity(0.05),
+              blurRadius: 6,
               offset: const Offset(0, 2),
             ),
           ],
@@ -675,8 +723,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
             Text(
               'Étape 2/2 : Détails de l\'événement',
               style: TextStyle(
-                fontSize: 14,
-                color: Colors.white.withOpacity(0.8),
+                fontSize: 13,
+                color: Colors.grey[600],
                 fontWeight: FontWeight.w500,
               ),
             ),
