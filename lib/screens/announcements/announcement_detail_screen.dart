@@ -48,6 +48,9 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
   // Timestamp de dernière lecture (pour le divider "Nouveaux messages")
   DateTime? _lastReadBeforeOpen;
 
+  // Auto-scroll vers le bas à l'ouverture pour voir les dernières communications
+  bool _initialScrollDone = false;
+
   @override
   void initState() {
     super.initState();
@@ -256,6 +259,19 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
                             _lastKnownReplyCount = newReplies.length;
                             _cachedReplies = newReplies;
                             debugPrint('📝 Updated cache with ${_cachedReplies.length} replies');
+
+                            // Premier rendu avec données : scroll automatique vers le bas
+                            // pour afficher les dernières communications
+                            if (!_initialScrollDone) {
+                              _initialScrollDone = true;
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (_scrollController.hasClients) {
+                                  _scrollController.jumpTo(
+                                    _scrollController.position.maxScrollExtent,
+                                  );
+                                }
+                              });
+                            }
                           }
                           final replies = _cachedReplies;
                           debugPrint('📋 Displaying ${replies.length} replies (cached: ${_cachedReplies.length})');
