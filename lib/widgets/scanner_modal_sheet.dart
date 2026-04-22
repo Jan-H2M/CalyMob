@@ -169,15 +169,42 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
     }
 
     // 3. VALIDATE: Check cotisation AND certificat médical
-    final cotisationValid = member.cotisationStatus == ValidationStatus.valid;
-    final certificatValid = member.certificatStatus == ValidationStatus.valid;
+    //
+    // Blocking states (red alarm, entry refused): expired or missing.
+    // Warning state (orange overlay, operator confirms): expires within 30 days.
+    bool isBlocking(ValidationStatus s) =>
+        s == ValidationStatus.expired || s == ValidationStatus.missing;
+    bool isWarning(ValidationStatus s) => s == ValidationStatus.warning;
 
-    if (!cotisationValid || !certificatValid) {
-      // Show ALARM overlay!
+    final cotisationStatus = member.cotisationStatus;
+    final certificatStatus = member.certificatStatus;
+
+    final hasBlocking =
+        isBlocking(cotisationStatus) || isBlocking(certificatStatus);
+    final hasWarning =
+        isWarning(cotisationStatus) || isWarning(certificatStatus);
+
+    if (hasBlocking) {
+      // Red ACCÈS REFUSÉ overlay — blocks entry.
       if (mounted) {
-        await AlarmOverlay.show(context, member);
+        await AlarmOverlay.show(
+          context,
+          member,
+          severity: AlarmSeverity.critical,
+        );
       }
       return;
+    }
+
+    if (hasWarning) {
+      // Orange ATTENTION overlay — operator may confirm or cancel.
+      if (!mounted) return;
+      final proceed = await AlarmOverlay.show(
+        context,
+        member,
+        severity: AlarmSeverity.warning,
+      );
+      if (proceed != true) return;
     }
 
     // 4. All OK - register the member

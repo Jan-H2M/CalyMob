@@ -1,33 +1,60 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../config/app_colors.dart';
 import '../models/member_profile.dart';
 import 'package:intl/intl.dart';
 
-/// Red alarm overlay shown when member validation fails
-/// Shows member name and what's wrong (expired certificate, unpaid cotisation)
+/// Severity of the alarm overlay.
+///
+/// * [critical] — blocks entry (red, "ACCÈS REFUSÉ"). Used for expired / missing
+///   cotisation or certificat médical.
+/// * [warning] — non-blocking caution (orange, "ATTENTION"). Used when a
+///   certificate or cotisation expires soon (within 30 days). The operator can
+///   still confirm and register the member.
+enum AlarmSeverity { critical, warning }
+
+/// Alarm overlay shown when member validation yields a warning or blocks entry.
+///
+/// Shows member name and what's wrong (expired/expiring certificate, unpaid
+/// cotisation). Colour and copy adapt to [AlarmSeverity].
 class AlarmOverlay extends StatefulWidget {
   final MemberProfile member;
-  final VoidCallback onDismiss;
+  final AlarmSeverity severity;
+  final VoidCallback onConfirm;
+  final VoidCallback? onCancel;
 
   const AlarmOverlay({
     super.key,
     required this.member,
-    required this.onDismiss,
+    required this.onConfirm,
+    this.onCancel,
+    this.severity = AlarmSeverity.critical,
   });
 
   @override
   State<AlarmOverlay> createState() => _AlarmOverlayState();
 
-  /// Show the alarm overlay as a full-screen dialog
-  static Future<void> show(BuildContext context, MemberProfile member) {
-    return showDialog(
+  /// Show the alarm overlay as a full-screen dialog.
+  ///
+  /// Returns:
+  /// * `true` when the operator confirms (critical: acknowledges the block;
+  ///   warning: chooses "Continuer" to register anyway).
+  /// * `false` when the operator cancels (warning only — tap "Annuler").
+  static Future<bool?> show(
+    BuildContext context,
+    MemberProfile member, {
+    AlarmSeverity severity = AlarmSeverity.critical,
+  }) {
+    return showDialog<bool>(
       context: context,
       barrierDismissible: false,
       barrierColor: Colors.transparent,
       builder: (context) => AlarmOverlay(
         member: member,
-        onDismiss: () => Navigator.of(context).pop(),
+        severity: severity,
+        onConfirm: () => Navigator.of(context).pop(true),
+        onCancel: severity == AlarmSeverity.warning
+            ? () => Navigator.of(context).pop(false)
+            : null,
       ),
     );
   }
@@ -42,7 +69,7 @@ class _AlarmOverlayState extends State<AlarmOverlay>
   void initState() {
     super.initState();
 
-    // Play system alert sound
+    // Play alert feedback (stronger for critical, lighter for warning)
     _playAlarmSound();
 
     // Pulsing animation
@@ -59,23 +86,42 @@ class _AlarmOverlayState extends State<AlarmOverlay>
   }
 
   void _playAlarmSound() {
-    // Use haptic feedback (vibration) as primary alert
+    if (widget.severity == AlarmSeverity.warning) {
+      // Light, non-alarming feedback for an expiring — not expired — state.
+      HapticFeedback.mediumImpact();
+      SystemSound.play(SystemSoundType.click);
+      return;
+    }
+
+    // Critical: strong repeated haptic + alert sound.
     HapticFeedback.heavyImpact();
-    
-    // Play multiple times for alert effect
+
     Future.delayed(const Duration(milliseconds: 200), () {
       HapticFeedback.heavyImpact();
     });
     Future.delayed(const Duration(milliseconds: 400), () {
       HapticFeedback.heavyImpact();
     });
-    
-    // Also play system click sound repeatedly
+
     SystemSound.play(SystemSoundType.alert);
     Future.delayed(const Duration(milliseconds: 300), () {
       SystemSound.play(SystemSoundType.alert);
     });
   }
+
+  // ---- severity-dependent visuals ----
+
+  MaterialColor get _accent => widget.severity == AlarmSeverity.warning
+      ? Colors.orange
+      : Colors.red;
+
+  String get _title => widget.severity == AlarmSeverity.warning
+      ? 'ATTENTION'
+      : 'ACCÈS REFUSÉ';
+
+  IconData get _headerIcon => widget.severity == AlarmSeverity.warning
+      ? Icons.warning_amber_rounded
+      : Icons.warning_amber_rounded;
 
   @override
   void dispose() {
@@ -89,27 +135,29 @@ class _AlarmOverlayState extends State<AlarmOverlay>
     final certificatStatus = widget.member.certificatStatus;
     final dateFormat = DateFormat('dd/MM/yyyy');
 
+    final isWarning = widget.severity == AlarmSeverity.warning;
+
     return AnimatedBuilder(
       animation: _pulseAnimation,
       builder: (context, child) {
         return Container(
-          color: Colors.red.withOpacity(0.9 * _pulseAnimation.value),
+          color: _accent.withOpacity(0.9 * _pulseAnimation.value),
           child: SafeArea(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 // Warning icon
                 Icon(
-                  Icons.warning_amber_rounded,
+                  _headerIcon,
                   size: 120 * _pulseAnimation.value,
                   color: Colors.white,
                 ),
 
                 const SizedBox(height: 24),
 
-                // ACCÈS REFUSÉ title
+                // Title
                 Text(
-                  'ACCÈS REFUSÉ',
+                  _title,
                   style: TextStyle(
                     fontSize: 36,
                     fontWeight: FontWeight.bold,
@@ -139,10 +187,10 @@ class _AlarmOverlayState extends State<AlarmOverlay>
                     children: [
                       Text(
                         widget.member.fullName,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 28,
                           fontWeight: FontWeight.bold,
-                          color: Colors.red,
+                          color: _accent,
                         ),
                         textAlign: TextAlign.center,
                       ),
@@ -162,7 +210,7 @@ class _AlarmOverlayState extends State<AlarmOverlay>
 
                 const SizedBox(height: 32),
 
-                // Error messages
+                // Error / warning messages
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 24),
                   padding: const EdgeInsets.all(20),
@@ -203,29 +251,80 @@ class _AlarmOverlayState extends State<AlarmOverlay>
 
                 const SizedBox(height: 48),
 
-                // OK button
-                ElevatedButton(
-                  onPressed: widget.onDismiss,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: Colors.red,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 64,
-                      vertical: 20,
+                // Buttons: warning shows Annuler + Continuer, critical shows OK
+                if (isWarning)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      OutlinedButton(
+                        onPressed: widget.onCancel ?? widget.onConfirm,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white, width: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 28,
+                            vertical: 18,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                        ),
+                        child: const Text(
+                          'ANNULER',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      ElevatedButton(
+                        onPressed: widget.onConfirm,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: _accent,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 32,
+                            vertical: 18,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                          elevation: 8,
+                        ),
+                        child: const Text(
+                          'CONTINUER',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  ElevatedButton(
+                    onPressed: widget.onConfirm,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: _accent,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 64,
+                        vertical: 20,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                      elevation: 8,
                     ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
+                    child: const Text(
+                      'OK',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                    elevation: 8,
                   ),
-                  child: const Text(
-                    'OK',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
               ],
             ),
           ),
@@ -238,28 +337,29 @@ class _AlarmOverlayState extends State<AlarmOverlay>
     required IconData icon,
     required String message,
   }) {
+    final prefix = widget.severity == AlarmSeverity.warning ? '⚠️' : '❌';
     return Row(
       children: [
         Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: Colors.red.withOpacity(0.1),
+            color: _accent.withOpacity(0.1),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(
             icon,
-            color: Colors.red,
+            color: _accent,
             size: 28,
           ),
         ),
         const SizedBox(width: 16),
         Expanded(
           child: Text(
-            '❌ $message',
-            style: const TextStyle(
+            '$prefix $message',
+            style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,
-              color: Colors.red,
+              color: _accent,
             ),
           ),
         ),
