@@ -13,6 +13,7 @@ import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/member_provider.dart';
+import '../../services/camera_permission_service.dart';
 import '../../utils/date_formatter.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 
@@ -43,6 +44,11 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
 
   Future<void> _pickImageFromCamera() async {
     try {
+      // Vérifier/demander la permission caméra avant la capture
+      final hasPermission =
+          await CameraPermissionService.handlePermissionWithDialog(context);
+      if (!hasPermission || !mounted) return;
+
       final XFile? photo = await _imagePicker.pickImage(
         source: ImageSource.camera,
         maxWidth: 1920,
@@ -124,6 +130,14 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
 
   Future<void> _scanDocument() async {
     try {
+      // Vérifier/demander la permission caméra avant le scanner natif.
+      // VisionKit (iOS) et ML Kit (Android) exigent tous les deux la permission
+      // CAMERA — sans ça, le scanner s'ouvre puis échoue silencieusement sur
+      // certains OEMs (Samsung OneUI / Android 16).
+      final hasPermission =
+          await CameraPermissionService.handlePermissionWithDialog(context);
+      if (!hasPermission || !mounted) return;
+
       // cunning_document_scanner uses native iOS VisionKit / Android ML Kit
       // Returns List<String> with file paths on both platforms
       debugPrint('🔍 Scanner: Starting document scan...');

@@ -79,7 +79,7 @@ class CameraPermissionService {
           ],
         ),
         content: const Text(
-          'Pour scanner vos justificatifs, CalyMob a besoin d\'accéder à la caméra.',
+          'CalyMob a besoin d\'accéder à la caméra pour prendre des photos (profil, justificatifs, pièces jointes).',
         ),
         actions: [
           TextButton(
@@ -122,7 +122,7 @@ class CameraPermissionService {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'L\'accès à la caméra a été refusé. Pour scanner des documents, activez la caméra dans les réglages.',
+              'L\'accès à la caméra a été refusé. Pour prendre des photos dans CalyMob, activez la caméra dans les réglages.',
             ),
             SizedBox(height: 12),
             Text(
@@ -164,7 +164,7 @@ class CameraPermissionService {
           ],
         ),
         content: const Text(
-          'L\'accès à la caméra est restreint sur cet appareil. Utilisez l\'option "Galerie" pour sélectionner des photos existantes.',
+          'L\'accès à la caméra est restreint sur cet appareil. Si possible, utilisez l\'option "Galerie" pour sélectionner une photo existante.',
         ),
         actions: [
           ElevatedButton(

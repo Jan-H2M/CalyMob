@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 /// Écran de capture photo avec vérification que le visage est bien positionné
 class FaceCameraScreen extends StatefulWidget {
@@ -34,6 +35,24 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
   /// Initialiser la caméra
   Future<void> _initializeCamera() async {
     try {
+      // Defense in depth : vérifier la permission caméra avant toute init.
+      // Le flow amont (profile_screen._addOrChangePhoto) la demande déjà,
+      // mais sans cette vérification ici, availableCameras() / initialize()
+      // échouent silencieusement sur Android 13+ (surtout Samsung OneUI/Android 16).
+      final camStatus = await Permission.camera.status;
+      if (!camStatus.isGranted) {
+        final requested = await Permission.camera.request();
+        if (!requested.isGranted) {
+          if (mounted) {
+            setState(() {
+              _errorMessage =
+                  'Accès caméra refusé. Activez la caméra dans les réglages de l\'appareil pour prendre une photo de profil.';
+            });
+          }
+          return;
+        }
+      }
+
       final cameras = await availableCameras();
       if (cameras.isEmpty) {
         setState(() {

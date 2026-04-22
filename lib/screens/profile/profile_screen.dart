@@ -12,6 +12,7 @@ import '../../models/member_profile.dart';
 import '../../services/profile_service.dart';
 import '../../services/member_service.dart';
 import '../../services/medical_certification_service.dart';
+import '../../services/camera_permission_service.dart';
 import '../../models/medical_certification.dart';
 import '../../widgets/certification_status_badge.dart';
 import 'medical_certification_screen.dart';
@@ -72,6 +73,12 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
 
   Future<void> _addOrChangePhoto() async {
     try {
+      // 0. Vérifier/demander la permission caméra avant de lancer l'écran
+      //    (sinon la caméra échoue silencieusement sur Android 13+ / Samsung OneUI)
+      final hasPermission =
+          await CameraPermissionService.handlePermissionWithDialog(context);
+      if (!hasPermission || !mounted) return;
+
       // 1. Lancer la caméra avec détection de visage
       final photoFile = await Navigator.push<File>(
         context,

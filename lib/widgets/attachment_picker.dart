@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
+import '../services/camera_permission_service.dart';
 
 /// Widget pour sélectionner des pièces jointes (images, vidéos et PDFs)
 class AttachmentPicker extends StatelessWidget {
@@ -179,6 +180,11 @@ class AttachmentPicker extends StatelessWidget {
 
   Future<void> _pickFromCamera(BuildContext context) async {
     try {
+      // Vérifier/demander la permission caméra avant d'ouvrir le picker
+      final hasPermission =
+          await CameraPermissionService.handlePermissionWithDialog(context);
+      if (!hasPermission || !context.mounted) return;
+
       final ImagePicker picker = ImagePicker();
       final XFile? image = await picker.pickImage(
         source: ImageSource.camera,
@@ -232,6 +238,11 @@ class AttachmentPicker extends StatelessWidget {
 
   Future<void> _pickVideoFromCamera(BuildContext context) async {
     try {
+      // Vérifier/demander la permission caméra avant d'ouvrir le picker
+      final hasPermission =
+          await CameraPermissionService.handlePermissionWithDialog(context);
+      if (!hasPermission || !context.mounted) return;
+
       final ImagePicker picker = ImagePicker();
       final XFile? video = await picker.pickVideo(
         source: ImageSource.camera,
