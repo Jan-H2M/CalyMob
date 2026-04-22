@@ -50,7 +50,15 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
   final _descriptionController = TextEditingController();
   final _capaciteController = TextEditingController();
   final _budgetController = TextEditingController(text: '0.00');
-  final _organisateurController = TextEditingController();
+
+  // Responsable picker state. On stocke id + nom ensemble pour que le lookup
+  // du numéro de téléphone (via organisateur_id) reste cohérent avec le nom
+  // affiché. Auparavant, un TextFormField libre permettait de saisir un nom
+  // arbitraire, mais organisateur_id restait toujours userId -> mismatch.
+  String? _organisateurId;
+  String? _organisateurNom;
+  List<_EncadrantOption> _encadrants = [];
+  bool _loadingEncadrants = false;
 
   DateTime _dateDebut = DateTime(
     DateTime.now().year, DateTime.now().month, DateTime.now().day, 14, 0,
@@ -72,10 +80,19 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
       _loadLocations();
     }
 
-    // Pré-remplir l'organisateur
+    // Pré-remplir l'organisateur avec l'utilisateur courant.
+    // On écrit id + nom ensemble pour éviter le mismatch (ancien bug :
+    // nom typé manuellement -> organisateur_id restait userId).
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      final authProvider = context.read<AuthProvider>();
       final memberProvider = context.read<MemberProvider>();
-      _organisateurController.text = memberProvider.displayName;
+      if (!mounted) return;
+      setState(() {
+        _organisateurId = authProvider.currentUser?.uid;
+        _organisateurNom = memberProvider.displayName;
+      });
+      // Précharger la liste des encadrants pour que le picker s'ouvre vite.
+      _loadEncadrants();
     });
   }
 
@@ -85,8 +102,228 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
     _descriptionController.dispose();
     _capaciteController.dispose();
     _budgetController.dispose();
-    _organisateurController.dispose();
     super.dispose();
+  }
+
+  // ============================================================
+  // RESPONSABLE PICKER (encadrants)
+  // ============================================================
+
+  /// Charge la liste des encadrants du club pour le picker.
+  /// Même logique que edit_event_screen.dart — on filtre sur `clubStatuten`
+  /// contenant "encadrant"/"encadrants" (case-insensitive).
+  Future<void> _loadEncadrants() async {
+    if (_loadingEncadrants) return;
+    setState(() => _loadingEncadrants = true);
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('clubs')
+          .doc(_clubId)
+          .collection('members')
+          .get();
+
+      final options = <_EncadrantOption>[];
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final statuten = data['clubStatuten'];
+        final isEncadrant = statuten is List &&
+            statuten.any((s) {
+              final v = s.toString().toLowerCase().trim();
+              return v == 'encadrant' || v == 'encadrants';
+            });
+        if (!isEncadrant) continue;
+
+        final prenom = (data['prenom'] ?? '').toString().trim();
+        final nom = (data['nom'] ?? '').toString().trim();
+        final displayName = [prenom, nom]
+            .where((p) => p.isNotEmpty)
+            .join(' ')
+            .trim();
+        if (displayName.isEmpty) continue;
+
+        options.add(_EncadrantOption(
+          id: doc.id,
+          displayName: displayName,
+        ));
+      }
+
+      options.sort((a, b) =>
+          a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
+
+      if (mounted) {
+        setState(() {
+          _encadrants = options;
+          _loadingEncadrants = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _loadingEncadrants = false);
+      debugPrint('❌ CreateEventWizard: failed to load encadrants - $e');
+    }
+  }
+
+  /// Ouvre un bottom-sheet picker ; si l'utilisateur choisit un encadrant,
+  /// on réécrit id + nom ensemble.
+  Future<void> _pickResponsable() async {
+    if (_loadingEncadrants && _encadrants.isEmpty) {
+      await _loadEncadrants();
+    }
+
+    final selected = await showModalBottomSheet<_EncadrantOption>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: DraggableScrollableSheet(
+            initialChildSize: 0.7,
+            minChildSize: 0.4,
+            maxChildSize: 0.95,
+            expand: false,
+            builder: (_, scrollController) {
+              return Column(
+                children: [
+                  const SizedBox(height: 8),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Choisir un responsable',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.donkerblauw,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Encadrants du club',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Divider(height: 1),
+                  if (_encadrants.isEmpty)
+                    Expanded(
+                      child: Center(
+                        child: Text(
+                          _loadingEncadrants
+                              ? 'Chargement...'
+                              : 'Aucun encadrant trouvé',
+                          style: TextStyle(color: Colors.grey[600]),
+                        ),
+                      ),
+                    )
+                  else
+                    Expanded(
+                      child: ListView.separated(
+                        controller: scrollController,
+                        itemCount: _encadrants.length,
+                        separatorBuilder: (_, __) =>
+                            Divider(height: 1, color: Colors.grey[200]),
+                        itemBuilder: (_, i) {
+                          final enc = _encadrants[i];
+                          final isCurrent = enc.id == _organisateurId;
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor:
+                                  AppColors.lichtblauw.withOpacity(0.3),
+                              child: Text(
+                                enc.displayName.isNotEmpty
+                                    ? enc.displayName[0].toUpperCase()
+                                    : '?',
+                                style: TextStyle(
+                                  color: AppColors.donkerblauw,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            title: Text(enc.displayName),
+                            trailing: isCurrent
+                                ? Icon(Icons.check_circle,
+                                    color: AppColors.middenblauw)
+                                : null,
+                            onTap: () => Navigator.of(ctx).pop(enc),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+
+    if (selected != null && selected.id != _organisateurId) {
+      setState(() {
+        _organisateurId = selected.id;
+        _organisateurNom = selected.displayName;
+      });
+    }
+  }
+
+  /// Champ de sélection du responsable (bouton qui ouvre le picker).
+  Widget _buildResponsableField() {
+    final label = (_organisateurNom?.trim().isNotEmpty ?? false)
+        ? _organisateurNom!.trim()
+        : 'Choisir un responsable';
+    final hasValue = (_organisateurId?.trim().isNotEmpty ?? false);
+
+    return InkWell(
+      onTap: _pickResponsable,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.grey[50],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey[300]!),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.account_circle,
+              size: 20,
+              color: AppColors.middenblauw,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: hasValue
+                      ? AppColors.donkerblauw
+                      : Colors.grey[500],
+                  fontWeight:
+                      hasValue ? FontWeight.w500 : FontWeight.normal,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Icon(
+              _loadingEncadrants
+                  ? Icons.hourglass_empty
+                  : Icons.arrow_drop_down,
+              color: Colors.grey[600],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _loadLocations() async {
@@ -237,8 +474,14 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
         if (_selectedLocation != null) 'lieu_id': _selectedLocation!.id,
         if (_capaciteController.text.isNotEmpty)
           'capacite_max': int.tryParse(_capaciteController.text),
-        'organisateur_nom': _organisateurController.text.trim(),
-        'organisateur_id': userId,
+        // Écrire id + nom ensemble depuis le picker pour que le lookup du
+        // numéro de téléphone (keyed sur organisateur_id) reste cohérent
+        // avec le nom affiché. Fallback sur userId si le picker n'a pas
+        // encore été initialisé (edge case très rare).
+        'organisateur_nom': (_organisateurNom ?? '').trim(),
+        'organisateur_id': (_organisateurId != null && _organisateurId!.isNotEmpty)
+            ? _organisateurId
+            : userId,
         'event_tariffs': tariffsData,
         'club_id': _clubId,
         'fiscal_year_id': fiscalYearId,
@@ -853,15 +1096,12 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
           ),
           const SizedBox(height: 16),
 
-          // Organisateur
+          // Responsable (organisateur) — picker encadrants
           _buildSectionCard(
             children: [
-              _buildLabel('Organisateur', icon: Icons.person),
+              _buildLabel('Responsable', icon: Icons.person),
               const SizedBox(height: 8),
-              TextFormField(
-                controller: _organisateurController,
-                decoration: _inputDecoration('Nom de l\'organisateur'),
-              ),
+              _buildResponsableField(),
             ],
           ),
           const SizedBox(height: 16),
@@ -1401,4 +1641,15 @@ class _EditableTariff {
       displayOrder: t.displayOrder,
     );
   }
+}
+
+
+/// Lightweight representation d'un membre qui peut être choisi comme
+/// responsable. Id (= clé pour organisateur_id et donc pour le lookup
+/// du téléphone) + label d'affichage.
+class _EncadrantOption {
+  final String id;
+  final String displayName;
+
+  const _EncadrantOption({required this.id, required this.displayName});
 }
