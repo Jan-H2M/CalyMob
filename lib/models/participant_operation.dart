@@ -20,6 +20,7 @@ class ParticipantOperation {
   final List<SelectedSupplement> selectedSupplements; // Suppléments sélectionnés (snapshot)
   final double supplementTotal; // Somme des prix des suppléments
   final String? paymentStatus; // Payment status: open, pending, paid, failed, canceled, expired
+  final DateTime? paymentStatusAt; // Timestamp of last payment_status update (= last QR email sent time when status is 'qr_email_sent')
   final bool transactionMatched; // True when bank transaction is matched in CalyCompta
   final String? transactionId; // ID of linked bank transaction (fallback source of truth)
   final String? modePaiement; // Payment mode: 'bank', 'cash', 'other'
@@ -46,6 +47,7 @@ class ParticipantOperation {
     this.selectedSupplements = const [],
     this.supplementTotal = 0,
     this.paymentStatus,
+    this.paymentStatusAt,
     this.transactionMatched = false,
     this.transactionId,
     this.modePaiement,
@@ -149,6 +151,7 @@ class ParticipantOperation {
       selectedSupplements: _parseSelectedSupplements(data['selected_supplements']),
       supplementTotal: (data['supplement_total'] ?? 0).toDouble(),
       paymentStatus: data['payment_status'],
+      paymentStatusAt: (data['payment_status_at'] as Timestamp?)?.toDate(),
       transactionMatched: data['transaction_matched'] ?? false,
       transactionId: data['transaction_id'] as String?,
       modePaiement: data['mode_paiement'] as String?,
@@ -229,6 +232,7 @@ class ParticipantOperation {
     List<SelectedSupplement>? selectedSupplements,
     double? supplementTotal,
     String? paymentStatus,
+    DateTime? paymentStatusAt,
     bool? transactionMatched,
     String? transactionId,
     String? modePaiement,
@@ -255,6 +259,7 @@ class ParticipantOperation {
       selectedSupplements: selectedSupplements ?? this.selectedSupplements,
       supplementTotal: supplementTotal ?? this.supplementTotal,
       paymentStatus: paymentStatus ?? this.paymentStatus,
+      paymentStatusAt: paymentStatusAt ?? this.paymentStatusAt,
       transactionMatched: transactionMatched ?? this.transactionMatched,
       transactionId: transactionId ?? this.transactionId,
       modePaiement: modePaiement ?? this.modePaiement,

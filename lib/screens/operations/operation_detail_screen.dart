@@ -2196,6 +2196,16 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               const SizedBox(height: 12),
             ],
 
+            // Show inscription status card (payment mode) if registered but not yet paid
+            if (isRegistered && !isPaid && userInscription != null) ...[
+              _buildInscriptionStatusCard(
+                inscription: userInscription,
+                operation: operation,
+                inscriptionPrice: inscriptionPrice,
+              ),
+              const SizedBox(height: 12),
+            ],
+
             // Register/Unregister button
             _buildActionButton(
               isRegistered: isRegistered,
@@ -2265,6 +2275,262 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Build inscription status card: shows payment mode (on-site or email QR)
+  /// for a registered but not-yet-paid participant. Tappable to open options.
+  Widget _buildInscriptionStatusCard({
+    required ParticipantOperation inscription,
+    required dynamic operation,
+    required double inscriptionPrice,
+  }) {
+    final isEmail = inscription.paymentStatus == 'qr_email_sent';
+
+    final Color bgColor = isEmail
+        ? Colors.blue.shade50
+        : Colors.blueGrey.shade50;
+    final Color borderColor = isEmail
+        ? Colors.blue.shade200
+        : Colors.blueGrey.shade200;
+    final Color accentColor = isEmail
+        ? Colors.blue.shade700
+        : Colors.blueGrey.shade700;
+    final IconData icon = isEmail
+        ? Icons.mark_email_read_outlined
+        : Icons.qr_code_scanner;
+
+    final String title = 'Inscrit';
+    final String subtitle = isEmail
+        ? 'QR code envoyé par email'
+        : 'Paiement sur place via QR code';
+
+    String? timestampLine;
+    if (isEmail && inscription.paymentStatusAt != null) {
+      final dt = inscription.paymentStatusAt!;
+      final dd = dt.day.toString().padLeft(2, '0');
+      final mm = dt.month.toString().padLeft(2, '0');
+      final hh = dt.hour.toString().padLeft(2, '0');
+      final mi = dt.minute.toString().padLeft(2, '0');
+      timestampLine = 'le $dd/$mm/${dt.year} à $hh:$mi';
+    }
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _showPaymentOptionsSheet(
+          inscription: inscription,
+          operation: operation,
+          inscriptionPrice: inscriptionPrice,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: borderColor),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: accentColor, size: 24),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: accentColor,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: accentColor.withOpacity(0.85),
+                      ),
+                    ),
+                    if (timestampLine != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        timestampLine,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: accentColor.withOpacity(0.7),
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Icon(Icons.more_horiz, color: accentColor.withOpacity(0.6), size: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Bottom sheet shown when tapping the inscription status card.
+  /// Options depend on current payment_status:
+  ///  - qr_on_site (or null) → "Recevoir le QR par email"
+  ///  - qr_email_sent         → "Renvoyer le QR par email" + "Passer à paiement sur place"
+  Future<void> _showPaymentOptionsSheet({
+    required ParticipantOperation inscription,
+    required dynamic operation,
+    required double inscriptionPrice,
+  }) async {
+    final isEmail = inscription.paymentStatus == 'qr_email_sent';
+    final memberProvider = context.read<MemberProvider>();
+    final authProvider = context.read<AuthProvider>();
+    final userId = authProvider.currentUser?.uid ?? '';
+    final memberEmail = authProvider.currentUser?.email ?? '';
+    final memberFirstName = memberProvider.prenom ?? '';
+    final memberLastName = memberProvider.nom ?? '';
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Handle bar
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Options de paiement',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.donkerblauw,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                isEmail
+                    ? 'Vous avez choisi de recevoir le QR code par email.'
+                    : 'Vous avez choisi de payer sur place via QR code.',
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+              ),
+              const SizedBox(height: 20),
+
+              // Primary action: send / resend QR email
+              ElevatedButton.icon(
+                onPressed: () async {
+                  Navigator.pop(sheetCtx);
+                  await _operationService.updatePaymentStatus(
+                    clubId: widget.clubId,
+                    operationId: widget.operationId,
+                    participantId: userId,
+                    status: 'qr_email_sent',
+                  );
+                  await _sendPaymentEmail(
+                    operation: operation,
+                    amount: inscriptionPrice,
+                    participantId: userId,
+                    memberEmail: memberEmail,
+                    memberFirstName: memberFirstName,
+                    memberLastName: memberLastName,
+                  );
+                  if (mounted) {
+                    await context
+                        .read<OperationProvider>()
+                        .reloadParticipants(widget.clubId, widget.operationId);
+                  }
+                },
+                icon: const Icon(Icons.email_outlined),
+                label: Text(
+                  isEmail
+                      ? 'Renvoyer le QR code par email'
+                      : 'Recevoir le QR code par email',
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue.shade600,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+
+              // Secondary action (only when currently email): switch to on-site
+              if (isEmail) ...[
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    Navigator.pop(sheetCtx);
+                    await _operationService.updatePaymentStatus(
+                      clubId: widget.clubId,
+                      operationId: widget.operationId,
+                      participantId: userId,
+                      status: 'qr_on_site',
+                    );
+                    if (mounted) {
+                      await context
+                          .read<OperationProvider>()
+                          .reloadParticipants(
+                              widget.clubId, widget.operationId);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                              'Vous pourrez payer sur place lors de l\'événement'),
+                          backgroundColor: Colors.blueGrey,
+                        ),
+                      );
+                    }
+                  },
+                  icon: Icon(Icons.qr_code_scanner,
+                      color: Colors.blueGrey.shade700),
+                  label: Text(
+                    'Passer à paiement sur place',
+                    style: TextStyle(color: Colors.blueGrey.shade800),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: Colors.blueGrey.shade300),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: 10),
+              TextButton(
+                onPressed: () => Navigator.pop(sheetCtx),
+                child: Text(
+                  'Annuler',
+                  style: TextStyle(color: Colors.grey.shade600),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
