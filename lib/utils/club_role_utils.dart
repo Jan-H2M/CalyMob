@@ -40,11 +40,20 @@ class ClubRoleUtils {
     List<String> roles, {
     bool includeAllChannels = false,
   }) {
+    final normalized = normalizeRoles(roles);
+    final hasBS = normalized.contains('bs');
+
+    // Bureau is strikt confidentieel: enkel leden met 'Banque Signature' (BS).
+    // Zelfs de admin-override (includeAllChannels=true) mag dit kanaal NIET
+    // openen — Bureau is voor bank-signataires, niet voor algemene admins.
     if (includeAllChannels) {
-      return List<TeamChannelType>.from(TeamChannelType.values);
+      final all = List<TeamChannelType>.from(TeamChannelType.values);
+      if (!hasBS) {
+        all.remove(TeamChannelType.bureau);
+      }
+      return all;
     }
 
-    final normalized = normalizeRoles(roles);
     final availableTypes = <TeamChannelType>[TeamChannelType.general];
 
     if (normalized.contains('ca')) {
@@ -59,7 +68,7 @@ class ClubRoleUtils {
     if (normalized.contains('gonflage')) {
       availableTypes.add(TeamChannelType.gonflage);
     }
-    if (normalized.contains('bs')) {
+    if (hasBS) {
       availableTypes.add(TeamChannelType.bureau);
     }
 

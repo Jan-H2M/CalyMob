@@ -72,9 +72,16 @@ function hasAdminAccess(memberData = {}) {
 }
 
 function memberHasChannelAccess(memberData = {}, channelType) {
-  if (hasAdminAccess(memberData)) return true;
-
   const normalizedRoles = new Set(normalizeRoles(memberData.clubStatuten || []));
+
+  // Bureau is strikt confidentieel: enkel leden met 'Banque Signature' (BS)
+  // krijgen dit kanaal. Admin-override telt hier NIET (zelfs app_role=admin
+  // of superadmin krijgt geen Bureau-notificatie zonder BS).
+  if (channelType === 'bureau') {
+    return normalizedRoles.has('bs');
+  }
+
+  if (hasAdminAccess(memberData)) return true;
 
   switch (channelType) {
     case 'general':
@@ -85,8 +92,6 @@ function memberHasChannelAccess(memberData = {}, channelType) {
       return normalizedRoles.has('accueil');
     case 'gonflage':
       return normalizedRoles.has('gonflage');
-    case 'bureau':
-      return normalizedRoles.has('bs') || normalizedRoles.has('ca');
     case 'encadrants':
     default:
       return normalizedRoles.has('encadrant');
