@@ -83,6 +83,10 @@ exports.onNewTeamMessage = onNewTeamMessage;
 const { sessionReminder } = require('./src/notifications/sessionReminder');
 exports.sessionReminder = sessionReminder;
 
+// Daily payment reminder draft for events 3 days away
+const { eventPaymentReminder } = require('./src/notifications/eventPaymentReminder');
+exports.eventPaymentReminder = eventPaymentReminder;
+
 // Weekly cleanup for old chat messages and orphaned attachments
 const { cleanupOldMessages } = require('./src/maintenance/cleanupOldMessages');
 exports.cleanupOldMessages = cleanupOldMessages;
