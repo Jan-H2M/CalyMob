@@ -465,9 +465,216 @@ async function sendEmailViaResend(apiKey, from, to, subject, html, attachments =
 }
 
 /**
+ * Core per-member payment email send logic, shared by the
+ * `sendPaymentQrEmail` callable (invoked from CalyMob) and the
+ * `sendPaymentReminder` callable (invoked from CalyCompta, which
+ * iterates this helper per member in the QR group).
+ *
+ * Behavior is identical to the original inline callable body — this
+ * function is a pure extraction so we don't round-trip through a
+ * callable interface when re-sending reminder emails server-side.
+ *
+ * Input shape matches the original `request.data` shape:
+ *   { clubId, operationId, participantId, memberEmail, memberFirstName,
+ *     memberLastName, amount, operationTitle, operationNumber?, operationDate? }
+ *
+ * Throws `HttpsError` on recoverable failures; the caller is expected
+ * to translate unexpected errors to `HttpsError('internal', ...)`.
+ */
+async function sendPaymentEmailForMember(db, input) {
+  const {
+    clubId,
+    operationId,
+    participantId,
+    memberEmail,
+    memberFirstName,
+    memberLastName,
+    amount,
+    operationTitle,
+    operationNumber,
+    operationDate,
+  } = input;
+
+  console.log(`📧 [sendPaymentQrEmail] Sending payment email for operation ${operationId} to ${memberEmail}`);
+
+  // 1. Get bank settings
+  const bankSettingsDoc = await db.collection('clubs').doc(clubId)
+    .collection('settings').doc('bank').get();
+
+  if (!bankSettingsDoc.exists) {
+    throw new HttpsError('failed-precondition', 'Bank settings not configured. Please configure IBAN in CalyCompta.');
+  }
+
+  const bankSettings = bankSettingsDoc.data();
+  const { iban, beneficiaryName, bic } = bankSettings;
+
+  if (!iban || !beneficiaryName) {
+    throw new HttpsError('failed-precondition', 'IBAN or beneficiary name not configured');
+  }
+
+  // 2. Get email config (Resend API)
+  const emailConfigDoc = await db.collection('clubs').doc(clubId)
+    .collection('settings').doc('email_config').get();
+
+  if (!emailConfigDoc.exists) {
+    throw new HttpsError('failed-precondition', 'Email configuration not found');
+  }
+
+  const emailConfig = emailConfigDoc.data();
+
+  if (!emailConfig.resend?.apiKey) {
+    throw new HttpsError('failed-precondition', 'Resend API key not configured');
+  }
+
+  // 3. Get general settings for club name and logo
+  const generalSettingsDoc = await db.collection('clubs').doc(clubId)
+    .collection('settings').doc('general').get();
+
+  const generalSettings = generalSettingsDoc.exists ? generalSettingsDoc.data() : {};
+  const clubName = generalSettings.clubName || 'Club';
+  const logoUrl = generalSettings.logoUrl || '';
+
+  // 4. Load email template with type 'event_payment' from Firestore
+  console.log(`📄 [sendPaymentQrEmail] Looking for email template with emailType='event_payment'`);
+
+  const templatesSnapshot = await db.collection('clubs').doc(clubId)
+    .collection('email_templates')
+    .where('emailType', '==', 'event_payment')
+    .where('isActive', '==', true)
+    .limit(1)
+    .get();
+
+  let templateHtml, templateSubject;
+
+  if (templatesSnapshot.empty) {
+    // Use default template (hardcoded fallback)
+    console.log('⚠️ [sendPaymentQrEmail] No active event_payment template found, using default');
+    templateHtml = getDefaultTemplateHtml();
+    templateSubject = 'Paiement pour {{eventTitle}} - {{amountFormatted}}';
+  } else {
+    // Use template from Firestore
+    const templateDoc = templatesSnapshot.docs[0].data();
+    templateHtml = templateDoc.htmlContent;
+    templateSubject = templateDoc.subject || 'Paiement pour {{eventTitle}}';
+    console.log(`✅ [sendPaymentQrEmail] Using template: ${templatesSnapshot.docs[0].id}`);
+  }
+
+  // 5. Ensure the operation has a valid event_number, then generate
+  //    the payment communication. If the caller already passed a valid
+  //    operationNumber we reuse it; otherwise we fetch/generate-and-save
+  //    one on the operation doc so future bank imports can auto-match.
+  let effectiveEventNumber = operationNumber;
+  if (!effectiveEventNumber
+    || (!/^[PS][A-Z]{4}$/.test(effectiveEventNumber) && !/^\d[A-Z0-9]{5}$/.test(effectiveEventNumber))) {
+    effectiveEventNumber = await ensureEventNumber(db, clubId, operationId);
+    console.log(`📧 [sendPaymentQrEmail] Using ensured event_number=${effectiveEventNumber} for ${operationId}`);
+  }
+
+  const paymentReference = generatePaymentCommunication(
+    effectiveEventNumber,
+    operationId,
+    operationTitle,
+    operationDate,
+    memberFirstName,
+    memberLastName
+  );
+
+  // 6. Generate EPC payload
+  const epcPayload = generateEpcPayload({
+    beneficiaryName,
+    iban,
+    bic,
+    amount,
+    description: paymentReference,
+  });
+
+  // 7. Generate QR code as base64
+  const qrCodeBase64 = await generateQrCodeBase64(epcPayload);
+
+  // 8. Prepare template variables
+  // Use CID reference for the QR code image (will be embedded as attachment)
+  const amountFormatted = formatAmount(amount);
+  const ibanFormatted = formatIbanDisplay(iban);
+  const eventDateFormatted = formatDateDisplay(operationDate);
+
+  const templateData = {
+    recipientName: memberFirstName || memberLastName || memberEmail.split('@')[0],
+    firstName: memberFirstName || '',
+    lastName: memberLastName || '',
+    eventTitle: operationTitle,
+    eventDate: eventDateFormatted,
+    amount: amount,
+    amountFormatted: amountFormatted,
+    iban: iban,
+    ibanFormatted: ibanFormatted,
+    beneficiaryName: beneficiaryName,
+    paymentReference: paymentReference,
+    qrCodeImage: 'cid:qrcode',  // CID reference for embedded image
+    clubName: clubName,
+    logoUrl: logoUrl,
+    appUrl: 'https://calycompta.vercel.app',
+  };
+
+  // 9. Render template with Handlebars
+  const compiledHtml = Handlebars.compile(templateHtml);
+  const compiledSubject = Handlebars.compile(templateSubject);
+
+  const renderedHtml = compiledHtml(templateData);
+  const renderedSubject = compiledSubject(templateData);
+
+  // 10. Send email via Resend with QR code as CID embedded attachment
+  const from = `${emailConfig.resend.fromName || clubName} <${emailConfig.resend.fromEmail}>`;
+
+  // Prepare QR code attachment with Content-ID for inline display
+  const attachments = [
+    {
+      filename: 'qrcode.png',
+      content: qrCodeBase64,
+      content_id: 'qrcode',
+    },
+  ];
+
+  const result = await sendEmailViaResend(
+    emailConfig.resend.apiKey,
+    from,
+    memberEmail,
+    renderedSubject,
+    renderedHtml,
+    attachments
+  );
+
+  console.log(`✅ [sendPaymentQrEmail] Email sent successfully to ${memberEmail}, id: ${result.id}`);
+
+  // 11. Log to email_history collection
+  try {
+    await db.collection('clubs').doc(clubId).collection('email_history').add({
+      type: 'event_payment',
+      to: memberEmail,
+      subject: renderedSubject,
+      sentAt: admin.firestore.FieldValue.serverTimestamp(),
+      operationId,
+      participantId,
+      amount,
+      resendId: result.id,
+      status: 'sent',
+    });
+  } catch (logError) {
+    console.warn('Warning: Failed to log email to history:', logError);
+    // Don't throw - email was sent successfully
+  }
+
+  return {
+    success: true,
+    message: 'Payment email sent successfully',
+    emailId: result.id,
+  };
+}
+
+/**
  * Main Cloud Function: sendPaymentQrEmail
  *
- * Callable from CalyMob app
+ * Callable from CalyMob app. Thin wrapper around `sendPaymentEmailForMember`
+ * that performs input validation and consistent error translation.
  */
 const sendPaymentQrEmail = onCall(
   {
@@ -480,18 +687,7 @@ const sendPaymentQrEmail = onCall(
     const db = admin.firestore();
 
     // Validate input
-    const {
-      clubId,
-      operationId,
-      participantId,
-      memberEmail,
-      memberFirstName,
-      memberLastName,
-      amount,
-      operationTitle,
-      operationNumber,
-      operationDate,
-    } = request.data;
+    const { clubId, operationId, memberEmail, amount, operationTitle } = request.data;
 
     if (!clubId || !operationId || !memberEmail || !amount || !operationTitle) {
       throw new HttpsError('invalid-argument', 'Missing required fields');
@@ -501,181 +697,8 @@ const sendPaymentQrEmail = onCall(
       throw new HttpsError('invalid-argument', 'Amount must be a positive number');
     }
 
-    console.log(`📧 [sendPaymentQrEmail] Sending payment email for operation ${operationId} to ${memberEmail}`);
-
     try {
-      // 1. Get bank settings
-      const bankSettingsDoc = await db.collection('clubs').doc(clubId)
-        .collection('settings').doc('bank').get();
-
-      if (!bankSettingsDoc.exists) {
-        throw new HttpsError('failed-precondition', 'Bank settings not configured. Please configure IBAN in CalyCompta.');
-      }
-
-      const bankSettings = bankSettingsDoc.data();
-      const { iban, beneficiaryName, bic } = bankSettings;
-
-      if (!iban || !beneficiaryName) {
-        throw new HttpsError('failed-precondition', 'IBAN or beneficiary name not configured');
-      }
-
-      // 2. Get email config (Resend API)
-      const emailConfigDoc = await db.collection('clubs').doc(clubId)
-        .collection('settings').doc('email_config').get();
-
-      if (!emailConfigDoc.exists) {
-        throw new HttpsError('failed-precondition', 'Email configuration not found');
-      }
-
-      const emailConfig = emailConfigDoc.data();
-
-      if (!emailConfig.resend?.apiKey) {
-        throw new HttpsError('failed-precondition', 'Resend API key not configured');
-      }
-
-      // 3. Get general settings for club name and logo
-      const generalSettingsDoc = await db.collection('clubs').doc(clubId)
-        .collection('settings').doc('general').get();
-
-      const generalSettings = generalSettingsDoc.exists ? generalSettingsDoc.data() : {};
-      const clubName = generalSettings.clubName || 'Club';
-      const logoUrl = generalSettings.logoUrl || '';
-
-      // 4. Load email template with type 'event_payment' from Firestore
-      console.log(`📄 [sendPaymentQrEmail] Looking for email template with emailType='event_payment'`);
-
-      const templatesSnapshot = await db.collection('clubs').doc(clubId)
-        .collection('email_templates')
-        .where('emailType', '==', 'event_payment')
-        .where('isActive', '==', true)
-        .limit(1)
-        .get();
-
-      let templateHtml, templateSubject;
-
-      if (templatesSnapshot.empty) {
-        // Use default template (hardcoded fallback)
-        console.log('⚠️ [sendPaymentQrEmail] No active event_payment template found, using default');
-        templateHtml = getDefaultTemplateHtml();
-        templateSubject = 'Paiement pour {{eventTitle}} - {{amountFormatted}}';
-      } else {
-        // Use template from Firestore
-        const templateDoc = templatesSnapshot.docs[0].data();
-        templateHtml = templateDoc.htmlContent;
-        templateSubject = templateDoc.subject || 'Paiement pour {{eventTitle}}';
-        console.log(`✅ [sendPaymentQrEmail] Using template: ${templatesSnapshot.docs[0].id}`);
-      }
-
-      // 5. Ensure the operation has a valid event_number, then generate
-      //    the payment communication. If the caller already passed a valid
-      //    operationNumber we reuse it; otherwise we fetch/generate-and-save
-      //    one on the operation doc so future bank imports can auto-match.
-      let effectiveEventNumber = operationNumber;
-      if (!effectiveEventNumber
-        || (!/^[PS][A-Z]{4}$/.test(effectiveEventNumber) && !/^\d[A-Z0-9]{5}$/.test(effectiveEventNumber))) {
-        effectiveEventNumber = await ensureEventNumber(db, clubId, operationId);
-        console.log(`📧 [sendPaymentQrEmail] Using ensured event_number=${effectiveEventNumber} for ${operationId}`);
-      }
-
-      const paymentReference = generatePaymentCommunication(
-        effectiveEventNumber,
-        operationId,
-        operationTitle,
-        operationDate,
-        memberFirstName,
-        memberLastName
-      );
-
-      // 6. Generate EPC payload
-      const epcPayload = generateEpcPayload({
-        beneficiaryName,
-        iban,
-        bic,
-        amount,
-        description: paymentReference,
-      });
-
-      // 7. Generate QR code as base64
-      const qrCodeBase64 = await generateQrCodeBase64(epcPayload);
-
-      // 8. Prepare template variables
-      // Use CID reference for the QR code image (will be embedded as attachment)
-      const amountFormatted = formatAmount(amount);
-      const ibanFormatted = formatIbanDisplay(iban);
-      const eventDateFormatted = formatDateDisplay(operationDate);
-
-      const templateData = {
-        recipientName: memberFirstName || memberLastName || memberEmail.split('@')[0],
-        firstName: memberFirstName || '',
-        lastName: memberLastName || '',
-        eventTitle: operationTitle,
-        eventDate: eventDateFormatted,
-        amount: amount,
-        amountFormatted: amountFormatted,
-        iban: iban,
-        ibanFormatted: ibanFormatted,
-        beneficiaryName: beneficiaryName,
-        paymentReference: paymentReference,
-        qrCodeImage: 'cid:qrcode',  // CID reference for embedded image
-        clubName: clubName,
-        logoUrl: logoUrl,
-        appUrl: 'https://calycompta.vercel.app',
-      };
-
-      // 9. Render template with Handlebars
-      const compiledHtml = Handlebars.compile(templateHtml);
-      const compiledSubject = Handlebars.compile(templateSubject);
-
-      const renderedHtml = compiledHtml(templateData);
-      const renderedSubject = compiledSubject(templateData);
-
-      // 10. Send email via Resend with QR code as CID embedded attachment
-      const from = `${emailConfig.resend.fromName || clubName} <${emailConfig.resend.fromEmail}>`;
-
-      // Prepare QR code attachment with Content-ID for inline display
-      const attachments = [
-        {
-          filename: 'qrcode.png',
-          content: qrCodeBase64,
-          content_id: 'qrcode',
-        },
-      ];
-
-      const result = await sendEmailViaResend(
-        emailConfig.resend.apiKey,
-        from,
-        memberEmail,
-        renderedSubject,
-        renderedHtml,
-        attachments
-      );
-
-      console.log(`✅ [sendPaymentQrEmail] Email sent successfully to ${memberEmail}, id: ${result.id}`);
-
-      // 11. Log to email_history collection
-      try {
-        await db.collection('clubs').doc(clubId).collection('email_history').add({
-          type: 'event_payment',
-          to: memberEmail,
-          subject: renderedSubject,
-          sentAt: admin.firestore.FieldValue.serverTimestamp(),
-          operationId,
-          participantId,
-          amount,
-          resendId: result.id,
-          status: 'sent',
-        });
-      } catch (logError) {
-        console.warn('Warning: Failed to log email to history:', logError);
-        // Don't throw - email was sent successfully
-      }
-
-      return {
-        success: true,
-        message: 'Payment email sent successfully',
-        emailId: result.id,
-      };
-
+      return await sendPaymentEmailForMember(db, request.data);
     } catch (error) {
       console.error('❌ [sendPaymentQrEmail] Error:', error);
 
@@ -688,4 +711,4 @@ const sendPaymentQrEmail = onCall(
   }
 );
 
-module.exports = { sendPaymentQrEmail };
+module.exports = { sendPaymentQrEmail, sendPaymentEmailForMember };

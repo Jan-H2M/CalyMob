@@ -19,6 +19,10 @@ admin.initializeApp();
 const { sendPaymentQrEmail } = require('./src/payment/sendPaymentQrEmail');
 exports.sendPaymentQrEmail = sendPaymentQrEmail;
 
+// Payment reminder — called by CalyCompta to send QR emails + post message in event chat
+const { sendPaymentReminder } = require('./src/payment/sendPaymentReminder');
+exports.sendPaymentReminder = sendPaymentReminder;
+
 // =============================================================================
 // NODA PAYMENT FUNCTIONS (Gen2) - DEPRECATED, kept for backward compatibility
 // =============================================================================
