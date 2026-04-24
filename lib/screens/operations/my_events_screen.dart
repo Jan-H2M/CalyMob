@@ -216,21 +216,34 @@ class _MyEventsScreenState extends State<MyEventsScreen> with SingleTickerProvid
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.euro, size: 16, color: Colors.grey),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${participant.totalPrix.toStringAsFixed(2)} €',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
+                      if (operation.priceTbd) ...[
+                        const Icon(Icons.hourglass_empty, size: 16, color: Colors.orange),
+                        const SizedBox(width: 4),
+                        const Text(
+                          'Prix à confirmer',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFFB45309),
+                          ),
                         ),
-                      ),
+                      ] else ...[
+                        const Icon(Icons.euro, size: 16, color: Colors.grey),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${participant.totalPrix.toStringAsFixed(2)} €',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
 
-                  // Bouton payer si non payé et événement à venir
-                  if (!participant.paye && !registration.isPast)
+                  // Bouton payer si non payé et événement à venir (hide when price not yet set)
+                  if (!operation.priceTbd && !participant.paye && !registration.isPast)
                     ElevatedButton.icon(
                       onPressed: () {
                         // TODO: Implémenter paiement (Phase 3)

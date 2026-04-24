@@ -341,8 +341,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           if (mounted) {
             await _loadUserInscription();
 
-            // If there's a price, show payment options dialog
-            if (totalPrice > 0 && _userInscription != null) {
+            // If there's a price, show payment options dialog.
+            // Skip when priceTbd — the organiser will bill later.
+            if (totalPrice > 0 && !operation.priceTbd && _userInscription != null) {
               await _showPaymentOptionsDialog(
                 operation: operation,
                 amount: totalPrice,
@@ -421,8 +422,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           if (mounted) {
             await _loadUserInscription();
 
-            // If there's a price, show payment options dialog
-            if (basePrice > 0 && _userInscription != null) {
+            // If there's a price, show payment options dialog.
+            // Skip when priceTbd — the organiser will bill later.
+            if (basePrice > 0 && !operation.priceTbd && _userInscription != null) {
               await _showPaymentOptionsDialog(
                 operation: operation,
                 amount: basePrice,
@@ -1327,8 +1329,21 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
     return Row(
       children: [
+        // Prix à confirmer (organiser hasn't set a price yet)
+        if (operation.priceTbd) ...[
+          const Icon(Icons.hourglass_empty, size: 18, color: Colors.white70),
+          const SizedBox(width: 6),
+          const Text(
+            'Prix à confirmer',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
+        ]
         // Prix (personnalisé selon fonction)
-        if (displayPrice != null && displayPrice > 0) ...[
+        else if (displayPrice != null && displayPrice > 0) ...[
           const Icon(Icons.euro, size: 18, color: Colors.white70),
           const SizedBox(width: 6),
           Flexible(

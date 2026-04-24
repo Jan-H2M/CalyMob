@@ -26,6 +26,11 @@ class Operation {
   final double? prixNonMembre; // Legacy: prix pour non-membres
   final List<Tariff> eventTariffs; // Nouveau: tarifs flexibles par fonction
   final List<Supplement> supplements; // Suppléments optionnels (location combinaison, etc.)
+  /// Price-to-be-determined flag. When true the event's price has not yet
+  /// been set — UI displays "Prix à confirmer" instead of "Gratuit" / price.
+  /// Registration stays open; the payment link/QR is sent later once the
+  /// organiser fills in [eventTariffs] and clears this flag in CalyCompta.
+  final bool priceTbd;
 
   // Organisateur (can be reassigned after creation)
   final String? organisateurId;
@@ -67,6 +72,7 @@ class Operation {
     this.prixNonMembre,
     this.eventTariffs = const [],
     this.supplements = const [],
+    this.priceTbd = false,
     this.organisateurId,
     this.organisateurNom,
     this.creatorUserId,
@@ -98,6 +104,7 @@ class Operation {
       prixNonMembre: (data['prix_non_membre'] as num?)?.toDouble(),
       eventTariffs: _parseTariffs(data['event_tariffs']),
       supplements: _parseSupplements(data['supplements']),
+      priceTbd: data['price_tbd'] == true,
       organisateurId: data['organisateur_id'],
       organisateurNom: data['organisateur_nom'],
       creatorUserId: data['creator_user_id'],

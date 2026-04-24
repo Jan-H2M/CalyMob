@@ -521,7 +521,24 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                           ],
                           const Spacer(),
                           // Price badge (alleen voor operations met prijs)
-                          if (!item.isPiscine && item.prix != null && item.prix! > 0)
+                          if (!item.isPiscine && item.operation?.priceTbd == true)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.withOpacity(0.25),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Text(
+                                'Prix à confirmer',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFFB45309),
+                                ),
+                              ),
+                            )
+                          else if (!item.isPiscine && item.prix != null && item.prix! > 0)
                             Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 8, vertical: 4),
