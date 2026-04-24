@@ -59,11 +59,18 @@ class MemberProvider with ChangeNotifier {
       hasClubFunction('Encadrants') ||
       clubStatuten.any((s) => s.toLowerCase().startsWith('encadrant'));
 
+  /// Check if user is an organisateur (matches lowercase/uppercase name + single-letter code)
+  bool get isOrganisateur =>
+      hasClubFunction('organisateur') ||
+      hasClubFunction('Organisateur') ||
+      hasClubFunction('o') ||
+      hasClubFunction('O');
+
   /// Check if user is member of CA (Conseil d'Administration)
   bool get isCA => hasClubFunction('CA');
 
-  /// Check if user can create events (encadrant or CA)
-  bool get canCreateEvents => isEncadrant || isCA;
+  /// Check if user can create events (Organisateur fonction)
+  bool get canCreateEvents => isOrganisateur;
 
   /// Check if user is accueil
   bool get isAccueil => hasClubFunction('accueil') || hasClubFunction('Accueil');
