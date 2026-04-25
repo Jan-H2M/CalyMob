@@ -87,9 +87,26 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     return role == 'admin' || role == 'superadmin';
   }
 
-  /// Check if user can manage palanquées (creator or encadrant)
+  /// Check if the current user is the responsable (organisateur) currently
+  /// assigned to the event. Distinct from `_isCurrentUserCreator`, which
+  /// matches the original creator stamped at creation time.
+  bool _isCurrentUserResponsable(Operation operation) {
+    final authProvider = context.read<AuthProvider>();
+    final currentUserId = authProvider.currentUser?.uid;
+    if (currentUserId == null) return false;
+    return operation.organisateurId != null &&
+        operation.organisateurId == currentUserId;
+  }
+
+  /// Check if user can manage palanquées (creator, current responsable, or encadrant).
+  ///
+  /// Granting access to the current responsable matters when an event has been
+  /// reassigned: `creator_user_id` is stamped once at creation and never
+  /// changes, so without this fallback a reassigned responsable would lose
+  /// palanquée and evaluation rights even though they're now in charge.
   bool _canManagePalanquees(Operation operation) {
     if (_isCurrentUserCreator(operation)) return true;
+    if (_isCurrentUserResponsable(operation)) return true;
     final memberProvider = context.read<MemberProvider>();
     final statuten = memberProvider.clubStatuten;
     final normalised = statuten.map((s) => s.toLowerCase().trim()).toList();
@@ -2639,7 +2656,12 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       onTap: () async {
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
         final userId = authProvider.currentUser?.uid ?? '';
-        final isOrganisateur = _isCurrentUserCreator(operation);
+        // canEdit must mirror the visibility check on this button: if the user
+        // is allowed to see and tap the palanquées entry, they're allowed to
+        // edit. Previously this was the stricter `_isCurrentUserCreator`,
+        // which left encadrants and reassigned responsables in read-only mode
+        // even though they could open the screen — surfaced as "no access".
+        final canEdit = _canManagePalanquees(operation);
         final result = await Navigator.push<bool>(
           context,
           MaterialPageRoute(
@@ -2648,7 +2670,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               participants: participants,
               clubId: widget.clubId,
               userId: userId,
-              canEdit: isOrganisateur,
+              canEdit: canEdit,
             ),
           ),
         );
