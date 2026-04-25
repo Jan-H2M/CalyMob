@@ -52,6 +52,10 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
   bool _initialScrollDone = false;
   DateTime? _lastReadBeforeOpen;
 
+  /// Key sur le divider "Nouveaux messages" — sert à scroller exactement
+  /// jusqu'à la première ligne non-lue à l'ouverture du chat.
+  final GlobalKey _newMessagesDividerKey = GlobalKey();
+
   /// Haal de foto URL op voor een member (cached Future)
   Future<String?> _getPhotoUrl(String senderId) {
     return _photoFutureCache.putIfAbsent(senderId, () async {
@@ -454,6 +458,39 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
     );
   }
 
+  /// Saute immédiatement à la fin de la liste, sans animation. Utilisé à
+  /// l'ouverture pour éviter qu'on voie un scroll parasite quand la liste
+  /// est encore en train de mesurer ses items (avatars async).
+  void _jumpToBottom() {
+    if (!_scrollController.hasClients) return;
+    _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+  }
+
+  /// Scroll initial à l'ouverture du chat:
+  /// - s'il y a un divider "Nouveaux messages", on aligne ce divider en haut
+  ///   du viewport pour que le membre commence sa lecture aux non-lus.
+  /// - sinon on saute au dernier message.
+  ///
+  /// On répète l'opération sur quelques frames pour absorber les changements
+  /// de hauteur dus aux avatars / images qui arrivent en async.
+  Future<void> _performInitialScroll() async {
+    for (var attempt = 0; attempt < 4; attempt++) {
+      if (!mounted) return;
+      final dividerContext = _newMessagesDividerKey.currentContext;
+      if (dividerContext != null && dividerContext.mounted) {
+        await Scrollable.ensureVisible(
+          dividerContext,
+          alignment: 0.15,
+          duration: Duration.zero,
+          curve: Curves.linear,
+        );
+      } else {
+        _jumpToBottom();
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 90));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
@@ -515,9 +552,9 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
               }
 
               if (!_initialScrollDone) {
+                _initialScrollDone = true;
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _initialScrollDone = true;
-                  _scrollToBottom();
+                  _performInitialScroll();
                 });
               }
 
@@ -567,6 +604,7 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
 
   Widget _buildNewMessagesDivider() {
     return Padding(
+      key: _newMessagesDividerKey,
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
         children: [

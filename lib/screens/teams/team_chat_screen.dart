@@ -421,6 +421,19 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
     );
   }
 
+  /// Scroll robuste à la fin de la liste à l'ouverture. On répète l'opération
+  /// sur quelques frames pour absorber les changements de hauteur dus aux
+  /// avatars qui se chargent en async.
+  Future<void> _performInitialScrollToBottom() async {
+    for (var attempt = 0; attempt < 4; attempt++) {
+      if (!mounted) return;
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 90));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
@@ -525,9 +538,9 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
                     }
 
                     if (!_initialScrollDone) {
+                      _initialScrollDone = true;
                       WidgetsBinding.instance.addPostFrameCallback((_) {
-                        _initialScrollDone = true;
-                        _scrollToBottom();
+                        _performInitialScrollToBottom();
                       });
                     }
 

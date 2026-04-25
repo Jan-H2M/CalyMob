@@ -52,6 +52,10 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
   // Auto-scroll vers le bas à l'ouverture pour voir les dernières communications
   bool _initialScrollDone = false;
 
+  /// Key sur le divider "Nouveaux messages" — utilisée pour scroller
+  /// directement à la première communication non-lue à l'ouverture.
+  final GlobalKey _newMessagesDividerKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
@@ -261,16 +265,13 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
                             _cachedReplies = newReplies;
                             debugPrint('📝 Updated cache with ${_cachedReplies.length} replies');
 
-                            // Premier rendu avec données : scroll automatique vers le bas
-                            // pour afficher les dernières communications
+                            // Premier rendu avec données : scroll vers la première
+                            // communication non-lue (divider "Nouveaux messages") ;
+                            // sinon vers le dernier reply.
                             if (!_initialScrollDone) {
                               _initialScrollDone = true;
                               WidgetsBinding.instance.addPostFrameCallback((_) {
-                                if (_scrollController.hasClients) {
-                                  _scrollController.jumpTo(
-                                    _scrollController.position.maxScrollExtent,
-                                  );
-                                }
+                                _performInitialScroll();
                               });
                             }
                           }
@@ -440,6 +441,7 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
 
   Widget _buildNewMessagesDivider() {
     return Padding(
+      key: _newMessagesDividerKey,
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
         children: [
@@ -459,6 +461,37 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
         ],
       ),
     );
+  }
+
+  /// Saute à la fin de la liste sans animation. Utilisé en fallback quand
+  /// il n'y a pas de divider "Nouveaux messages".
+  void _jumpToBottom() {
+    if (!_scrollController.hasClients) return;
+    _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+  }
+
+  /// Scroll initial robuste à l'ouverture du chat:
+  /// - cible le divider "Nouveaux messages" si présent (alignement haut),
+  /// - sinon saute au dernier message.
+  ///
+  /// L'opération est répétée sur quelques frames pour absorber les changements
+  /// de hauteur dus aux avatars / images qui chargent en async.
+  Future<void> _performInitialScroll() async {
+    for (var attempt = 0; attempt < 4; attempt++) {
+      if (!mounted) return;
+      final dividerContext = _newMessagesDividerKey.currentContext;
+      if (dividerContext != null && dividerContext.mounted) {
+        await Scrollable.ensureVisible(
+          dividerContext,
+          alignment: 0.15,
+          duration: Duration.zero,
+          curve: Curves.linear,
+        );
+      } else {
+        _jumpToBottom();
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 90));
+    }
   }
 
   Widget _buildReplyBubble(AnnouncementReply reply, bool isOwnReply, DateFormat dateFormat) {

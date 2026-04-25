@@ -10,22 +10,6 @@ class AttachmentPicker extends StatelessWidget {
   final VoidCallback? onCreatePoll;
   static const int _maxFileSizeBytes = 50 * 1024 * 1024;
   static const double _menuWidth = 220;
-  static const List<String> _mediaExtensions = [
-    'jpg',
-    'jpeg',
-    'png',
-    'gif',
-    'webp',
-    'heic',
-    'heif',
-    'bmp',
-    'mp4',
-    'mov',
-    'm4v',
-    'avi',
-    'mkv',
-    'webm',
-  ];
   static const List<String> _videoExtensions = [
     'mp4',
     'mov',
@@ -151,21 +135,23 @@ class AttachmentPicker extends StatelessWidget {
 
   Future<void> _pickMediaFromLibrary(BuildContext context) async {
     try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: _mediaExtensions,
+      // Utilise image_picker pour ouvrir la vraie galerie Photos (iOS)
+      // au lieu de l'app Files. Permet la sélection multiple de photos
+      // et vidéos en une seule fois.
+      final ImagePicker picker = ImagePicker();
+      final List<XFile> mediaFiles = await picker.pickMultipleMedia(
+        imageQuality: 85,
       );
 
-      if (result == null || result.files.single.path == null) return;
+      if (mediaFiles.isEmpty) return;
 
-      final file = File(result.files.single.path!);
-      final extension = (result.files.single.extension ??
-              result.files.single.name.split('.').last)
-          .toLowerCase();
-      final type = _videoExtensions.contains(extension) ? 'video' : 'image';
-
-      if (!context.mounted) return;
-      await _handlePickedFile(context, file, type);
+      for (final media in mediaFiles) {
+        if (!context.mounted) return;
+        final extension = media.path.split('.').last.toLowerCase();
+        final type =
+            _videoExtensions.contains(extension) ? 'video' : 'image';
+        await _handlePickedFile(context, File(media.path), type);
+      }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
