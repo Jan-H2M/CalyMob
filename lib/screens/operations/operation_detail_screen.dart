@@ -2423,7 +2423,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     final isEmail = inscription.paymentStatus == 'qr_email_sent';
     final memberProvider = context.read<MemberProvider>();
     final authProvider = context.read<AuthProvider>();
-    final userId = authProvider.currentUser?.uid ?? '';
     final memberEmail = authProvider.currentUser?.email ?? '';
     final memberFirstName = memberProvider.prenom ?? '';
     final memberLastName = memberProvider.nom ?? '';
@@ -2474,16 +2473,19 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               ElevatedButton.icon(
                 onPressed: () async {
                   Navigator.pop(sheetCtx);
+                  // CALYMOB-1C: must be the Firestore inscription doc id,
+                  // not the auth uid. Inscriptions are created with .add()
+                  // so doc.id is auto-generated and not equal to userId.
                   await _operationService.updatePaymentStatus(
                     clubId: widget.clubId,
                     operationId: widget.operationId,
-                    participantId: userId,
+                    participantId: inscription.id,
                     status: 'qr_email_sent',
                   );
                   await _sendPaymentEmail(
                     operation: operation,
                     amount: inscriptionPrice,
-                    participantId: userId,
+                    participantId: inscription.id,
                     memberEmail: memberEmail,
                     memberFirstName: memberFirstName,
                     memberLastName: memberLastName,
@@ -2516,10 +2518,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                 OutlinedButton.icon(
                   onPressed: () async {
                     Navigator.pop(sheetCtx);
+                    // CALYMOB-1C: pass the inscription doc id, not the auth uid.
                     await _operationService.updatePaymentStatus(
                       clubId: widget.clubId,
                       operationId: widget.operationId,
-                      participantId: userId,
+                      participantId: inscription.id,
                       status: 'qr_on_site',
                     );
                     if (mounted) {
