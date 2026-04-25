@@ -1245,11 +1245,14 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                             _buildInscribedMembersAccordion(operationProvider),
                             const SizedBox(height: 12),
 
-                            // 4. Palanquées button (plongee events — creator + encadrants only)
+                            // 4. Palanquées button (plongee events).
+                            // Visible to all members; canEdit is gated inside
+                            // _buildPalanqueeButton so non-managers (who don't
+                            // pass _canManagePalanquees) automatically land on
+                            // the read-only view inside PalanqueeScreen.
                             if (operation.categorie == 'plongee' &&
                                 operationProvider
-                                    .selectedOperationParticipants.isNotEmpty &&
-                                _canManagePalanquees(operation)) ...[
+                                    .selectedOperationParticipants.isNotEmpty) ...[
                               _buildPalanqueeButton(operationProvider),
                               const SizedBox(height: 12),
                             ],
