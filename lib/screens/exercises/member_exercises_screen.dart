@@ -10,15 +10,17 @@ import '../../services/lifras_service.dart';
 import '../../utils/date_formatter.dart';
 import '../../utils/plongeur_utils.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
-import 'self_declare_exercise_sheet.dart';
 import 'validate_exercise_screen.dart';
 
 /// Écran affichant les exercices LIFRAS d'un membre.
 ///
 /// Deux modes:
-/// - **isOwnProfile == true** → 3 sections "À faire / En attente / Validés"
-///   pour de la member's target-niveau, avec een "Je l'ai fait"-knop per
-///   oefening in de À-faire lijst.
+/// - **isOwnProfile == true** → liste condensée 'À faire / Validés' pour le
+///   target-niveau du membre. Lecture seule: la validation passe désormais
+///   par les observations encadrants (Carnet de Formation) qui déclenchent
+///   automatiquement la création d'un exercice validé via la Cloud Function
+///   `onObservationAcquis`. Les anciennes déclarations 'pending' éventuelles
+///   sont affichées comme à-faire avec une petite étiquette discrète.
 /// - **isOwnProfile == false** → klassieke readonly lijst van validated
 ///   exercices met filter-chips (oude gedrag), eventueel met CRUD voor
 ///   moniteurs.
@@ -259,7 +261,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
   }
 
   // ============================================================
-  // Self view — 3 sections
+  // Self view — compact 2-section list (À faire / Validés)
   // ============================================================
 
   Widget _buildSelfView() {
@@ -273,10 +275,12 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
           return _buildNoNiveauState();
         }
 
-        // Split catalog into 3 sections based on provider state
+        // Split catalog into 2 sections: validated + todo. Pending declarations
+        // (legacy self-declare flow) are rolled into 'todo' with a discrete
+        // 'demande envoyée' tag so members still see their request status.
         final validated = <ExerciceLIFRAS>[];
-        final pending = <ExerciceLIFRAS>[];
         final todo = <ExerciceLIFRAS>[];
+        final pendingIds = <String>{};
 
         for (final ex in _catalog) {
           final match =
@@ -285,13 +289,13 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
             todo.add(ex);
             continue;
           }
-          // Prefer validated status if any doc exists with that status
           if (match.any((e) => e.isValidated)) {
             validated.add(ex);
           } else if (match.any((e) => e.isPending)) {
-            pending.add(ex);
+            todo.add(ex);
+            pendingIds.add(ex.id);
           } else {
-            // Only refused → back to todo so member can re-declare
+            // Only refused → back to todo
             todo.add(ex);
           }
         }
@@ -311,43 +315,28 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
               _buildProgressHeader(
                 niveau: _targetNiveau!,
                 validated: validated.length,
-                pending: pending.length,
                 total: totalCatalog,
                 progress: progressFraction,
               ),
               const SizedBox(height: 20),
 
-              // Section: À faire
+              // Section: À faire (compact)
               _buildSection(
                 title: 'À faire',
                 icon: Icons.radio_button_unchecked,
                 iconColor: Colors.blueGrey,
-                emptyText:
-                    'Tu as déclaré ou validé tous les exercices de ${_targetNiveau!.code} 🎉',
+                emptyText: 'Tous les exercices de ${_targetNiveau!.code} '
+                    'sont validés 🎉',
                 children: todo
-                    .map((ex) => _buildTodoCard(ex, provider))
+                    .map((ex) => _buildTodoRow(
+                          ex,
+                          isPending: pendingIds.contains(ex.id),
+                        ))
                     .toList(),
               ),
               const SizedBox(height: 20),
 
-              // Section: En attente
-              _buildSection(
-                title: 'En attente de validation',
-                icon: Icons.schedule,
-                iconColor: Colors.orange,
-                emptyText: null,
-                children: pending.map((ex) {
-                  final match = provider.exercicesValides.firstWhere(
-                    (e) => e.exerciceId == ex.id && e.isPending,
-                    orElse: () => provider.exercicesValides
-                        .firstWhere((e) => e.exerciceId == ex.id),
-                  );
-                  return _buildPendingCard(ex, match);
-                }).toList(),
-              ),
-              const SizedBox(height: 20),
-
-              // Section: Validés
+              // Section: Validés (compact)
               _buildSection(
                 title: 'Validés',
                 icon: Icons.check_circle,
@@ -359,7 +348,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                     orElse: () => provider.exercicesValides
                         .firstWhere((e) => e.exerciceId == ex.id),
                   );
-                  return _buildValidatedCard(ex, match);
+                  return _buildValidatedRow(ex, match);
                 }).toList(),
               ),
               const SizedBox(height: 40),
@@ -373,7 +362,6 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
   Widget _buildProgressHeader({
     required NiveauLIFRAS niveau,
     required int validated,
-    required int pending,
     required int total,
     required double progress,
   }) {
@@ -437,24 +425,6 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                   ],
                 ),
               ),
-              if (pending > 0)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.orange[50],
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.orange[200]!),
-                  ),
-                  child: Text(
-                    '$pending en attente',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.orange[800],
-                    ),
-                  ),
-                ),
             ],
           ),
           const SizedBox(height: 12),
@@ -541,294 +511,182 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
     );
   }
 
-  Widget _buildTodoCard(
-      ExerciceLIFRAS exercice, ExerciceValideProvider provider) {
+  /// Compact one-line row used for both 'À faire' and 'Validés'.
+  /// Tap on a validated row → bottom sheet with full details.
+  Widget _buildExerciceRow({
+    required ExerciceLIFRAS exercice,
+    required bool isValidated,
+    String? trailingText,
+    String? hintTag,
+    VoidCallback? onTap,
+  }) {
     final niveauColor = _getNiveauColor(exercice.niveau);
+    final muted = !isValidated;
 
-    // Check if this exercise has a refused declaration — show the refusal reason
-    final refused = provider.exercicesValides
-        .where((e) => e.exerciceId == exercice.id && e.isRefused)
-        .toList();
-    final wasRefused = refused.isNotEmpty;
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: wasRefused
-            ? BorderSide(color: Colors.red[200]!)
-            : BorderSide.none,
-      ),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Niveau badge / status indicator
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: isValidated ? Colors.green : niveauColor.withOpacity(0.18),
+                borderRadius: BorderRadius.circular(6),
+                border: isValidated
+                    ? null
+                    : Border.all(color: niveauColor.withOpacity(0.4)),
+              ),
+              child: Center(
+                child: isValidated
+                    ? const Icon(Icons.check, size: 16, color: Colors.white)
+                    : Text(
+                        exercice.niveau.code,
+                        style: TextStyle(
+                          color: niveauColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 10,
+                        ),
+                      ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            // Code (bold) + description (one line, ellipsis)
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        exercice.code,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: muted ? Colors.grey[800] : Colors.grey[900],
+                        ),
+                      ),
+                      if (hintTag != null) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.orange[50],
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            hintTag,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.orange[800],
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  Text(
+                    exercice.description,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (trailingText != null) ...[
+              const SizedBox(width: 8),
+              Text(
+                trailingText,
+                style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTodoRow(ExerciceLIFRAS exercice, {bool isPending = false}) {
+    return _buildExerciceRow(
+      exercice: exercice,
+      isValidated: false,
+      hintTag: isPending ? 'demande envoyée' : null,
+    );
+  }
+
+  Widget _buildValidatedRow(
+      ExerciceLIFRAS exercice, ExerciceValide validation) {
+    return _buildExerciceRow(
+      exercice: exercice,
+      isValidated: true,
+      trailingText: DateFormatter.formatShort(validation.dateValidation),
+      onTap: () => _showValidatedDetails(exercice, validation),
+    );
+  }
+
+  void _showValidatedDetails(
+      ExerciceLIFRAS exercice, ExerciceValide validation) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(24),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
                 Container(
-                  width: 38,
-                  height: 38,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: niveauColor,
-                    borderRadius: BorderRadius.circular(8),
+                    color: _getNiveauColor(exercice.niveau),
+                    borderRadius: BorderRadius.circular(6),
                   ),
-                  child: Center(
-                    child: Text(
-                      exercice.niveau.code,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                      ),
+                  child: Text(
+                    exercice.niveau.code,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        exercice.code,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        exercice.description,
-                        style: const TextStyle(fontSize: 13),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            if (wasRefused) ...[
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.red[50],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red[100]!),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.cancel_outlined,
-                        size: 16, color: Colors.red[700]),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Précédente demande refusée',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.red[800],
-                            ),
-                          ),
-                          if (refused.first.refusedReason != null &&
-                              refused.first.refusedReason!.isNotEmpty) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              refused.first.refusedReason!,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.red[700],
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            const SizedBox(height: 10),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                ElevatedButton.icon(
-                  onPressed: () => _openSelfDeclareSheet(exercice),
-                  icon: const Icon(Icons.check_circle_outline, size: 18),
-                  label: Text(wasRefused ? 'Redemander' : 'Je l\'ai fait'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.teal,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 8),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                  child: Text(
+                    exercice.code,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
                 ),
               ],
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPendingCard(
-      ExerciceLIFRAS exercice, ExerciceValide declaration) {
-    final niveauColor = _getNiveauColor(exercice.niveau);
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: niveauColor,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Center(
-                child: Text(
-                  exercice.niveau.code,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              right: -4,
-              bottom: -4,
-              child: Container(
-                width: 18,
-                height: 18,
-                decoration: BoxDecoration(
-                  color: Colors.orange,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2),
-                ),
-                child: const Icon(Icons.schedule,
-                    size: 10, color: Colors.white),
-              ),
-            ),
-          ],
-        ),
-        title: Text(
-          exercice.code,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(exercice.description),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Icon(Icons.calendar_today,
-                    size: 12, color: Colors.grey[600]),
-                const SizedBox(width: 4),
-                Text(
-                  'Déclaré ${DateFormatter.formatRelative(declaration.dateValidation)}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildValidatedCard(
-      ExerciceLIFRAS exercice, ExerciceValide validation) {
-    final niveauColor = _getNiveauColor(exercice.niveau);
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: niveauColor,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Center(
-                child: Text(
-                  exercice.niveau.code,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              right: -4,
-              bottom: -4,
-              child: Container(
-                width: 18,
-                height: 18,
-                decoration: BoxDecoration(
-                  color: Colors.green,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2),
-                ),
-                child: const Icon(Icons.check,
-                    size: 10, color: Colors.white),
-              ),
-            ),
-          ],
-        ),
-        title: Text(
-          exercice.code,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(exercice.description),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Icon(Icons.calendar_today,
-                    size: 12, color: Colors.grey[600]),
-                const SizedBox(width: 4),
-                Text(
-                  DateFormatter.formatMedium(validation.dateValidation),
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                ),
-                if (validation.moniteurNom.isNotEmpty) ...[
-                  const SizedBox(width: 12),
-                  Icon(Icons.person, size: 12, color: Colors.grey[600]),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      validation.moniteurNom,
-                      style:
-                          TextStyle(fontSize: 12, color: Colors.grey[600]),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ],
-            ),
+            const SizedBox(height: 12),
+            Text(exercice.description, style: const TextStyle(fontSize: 15)),
+            const Divider(height: 32),
+            _buildDetailRow(Icons.calendar_today, 'Validé le',
+                DateFormatter.formatLong(validation.dateValidation)),
+            if (validation.moniteurNom.isNotEmpty)
+              _buildDetailRow(Icons.person, 'Moniteur', validation.moniteurNom),
+            if (validation.lieu != null && validation.lieu!.isNotEmpty)
+              _buildDetailRow(Icons.location_on, 'Lieu', validation.lieu!),
+            if (validation.notes != null && validation.notes!.isNotEmpty)
+              _buildDetailRow(Icons.notes, 'Notes', validation.notes!),
+            const SizedBox(height: 8),
           ],
         ),
       ),
@@ -863,15 +721,6 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
         ),
       ),
     );
-  }
-
-  Future<void> _openSelfDeclareSheet(ExerciceLIFRAS exercice) async {
-    await SelfDeclareExerciseSheet.show(
-      context,
-      exercice: exercice,
-      memberId: widget.memberId,
-    );
-    // Stream auto-updates the list via provider — no manual refresh needed.
   }
 
   // ============================================================
