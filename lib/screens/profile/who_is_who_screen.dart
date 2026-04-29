@@ -59,19 +59,23 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
     _bubblesController.repeat();
   }
 
+  /// Permission gate voor exercise-management (LIFRAS-validatie).
+  /// Vereist admin OF (Encadrant-functie + Moniteur-niveau MC/MF/MN).
+  /// Mirrors canValidateLifras() in firestore.rules + fieldMapper.ts.
   Future<void> _checkPermissions() async {
     final userId = context.read<AuthProvider>().currentUser?.uid ?? '';
-    if (userId.isNotEmpty) {
-      // Check if user is a monitor
-      final isMonitor = await _memberService.isMonitor(_clubId, userId);
+    if (userId.isEmpty) return;
 
-      // Check if user is admin based on clubStatuten
-      final profile = await _profileService.getProfile(_clubId, userId);
-      final isAdmin = profile != null && PermissionHelper.isAdmin(profile.clubStatuten);
+    final profile = await _profileService.getProfile(_clubId, userId);
+    if (profile == null) return;
 
-      if (mounted) {
-        setState(() => _canManageExercises = isMonitor || isAdmin);
-      }
+    final canValidate = PermissionHelper.canValidateLifras(
+      clubStatuten: profile.clubStatuten,
+      plongeurCode: profile.plongeurCode,
+    );
+
+    if (mounted) {
+      setState(() => _canManageExercises = canValidate);
     }
   }
 

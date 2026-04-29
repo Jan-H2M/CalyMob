@@ -42,7 +42,10 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
   final MedicalCertificationService _certService = MedicalCertificationService();
 
   bool _isLoading = false;
-  bool _canManageExercises = false; // Monitor, admin, or super admin
+  // True als de gebruiker LIFRAS-validatie mag uitvoeren — admin OF
+  // (Encadrant-functie + Moniteur-niveau MC/MF/MN). Mirrors
+  // canValidateLifras() in firestore.rules + fieldMapper.ts.
+  bool _canManageExercises = false;
 
   @override
   void initState() {
@@ -57,17 +60,18 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
 
   Future<void> _checkPermissions() async {
     final userId = context.read<AuthProvider>().currentUser?.uid ?? '';
-    if (userId.isNotEmpty) {
-      // Check if user is a monitor
-      final isMonitor = await _memberService.isMonitor(_clubId, userId);
+    if (userId.isEmpty) return;
 
-      // Check if user is admin based on clubStatuten
-      final profile = await _profileService.getProfile(_clubId, userId);
-      final isAdmin = profile != null && PermissionHelper.isAdmin(profile.clubStatuten);
+    final profile = await _profileService.getProfile(_clubId, userId);
+    if (profile == null) return;
 
-      if (mounted) {
-        setState(() => _canManageExercises = isMonitor || isAdmin);
-      }
+    final canValidate = PermissionHelper.canValidateLifras(
+      clubStatuten: profile.clubStatuten,
+      plongeurCode: profile.plongeurCode,
+    );
+
+    if (mounted) {
+      setState(() => _canManageExercises = canValidate);
     }
   }
 

@@ -488,13 +488,18 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     );
   }
 
+  /// True als de huidige gebruiker pedagogische beslissingen mag nemen op
+  /// piscine-attendees (niveau-toewijzing, observaties, "Évaluer la session").
+  /// Vereist Encadrant-functie ÉN Moniteur-niveau (MC/MF/MN), of admin —
+  /// gespiegeld op `canValidateLifras(clubId)` in firestore.rules.
   bool get _canManageAttendeeAssignments {
     final memberProvider = Provider.of<MemberProvider>(context, listen: false);
     final statuten = memberProvider.clubStatuten;
-    final normalized =
-        statuten.map((role) => role.toLowerCase().trim()).toList();
-    return PermissionHelper.isAdmin(statuten) ||
-        normalized.any((role) => role.startsWith('encadrant'));
+    final plongeurCode = memberProvider.plongeurCode;
+    return PermissionHelper.canValidateLifras(
+      clubStatuten: statuten,
+      plongeurCode: plongeurCode,
+    );
   }
 
   String _slotHeureForLevel(String level) {
