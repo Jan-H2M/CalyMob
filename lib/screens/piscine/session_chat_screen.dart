@@ -18,6 +18,7 @@ import '../../widgets/attachment_display.dart';
 import '../../widgets/attachment_picker.dart';
 import '../../widgets/message_edit_sheet.dart';
 import '../../widgets/message_reactions.dart';
+import '../../widgets/linkified_message_text.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/poll_compose_dialog.dart';
 import '../../widgets/poll_widget.dart';
@@ -794,9 +795,10 @@ class _MessageBubble extends StatelessWidget {
                         ),
                       ),
                     if (message.message.isNotEmpty)
-                      Text(
-                        message.message,
+                      LinkifiedMessageText(
+                        text: message.message,
                         style: TextStyle(color: textColor, fontSize: 15),
+                        linkColor: isOwn ? Colors.white : Colors.blue,
                       ),
                     if (message.hasAttachments)
                       AttachmentDisplay(

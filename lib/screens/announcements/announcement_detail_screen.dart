@@ -17,6 +17,7 @@ import '../../providers/unread_count_provider.dart';
 import '../../widgets/attachment_display.dart';
 import '../../widgets/attachment_picker.dart';
 import '../../widgets/message_edit_sheet.dart';
+import '../../widgets/linkified_message_text.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 
 class AnnouncementDetailScreen extends StatefulWidget {
@@ -397,8 +398,8 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
           const SizedBox(height: 8),
 
           // Message
-          Text(
-            widget.announcement.message,
+          LinkifiedMessageText(
+            text: widget.announcement.message,
             style: const TextStyle(
               fontSize: 15,
               color: Colors.black87,
@@ -539,8 +540,8 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
 
               // Message
               if (reply.message.isNotEmpty)
-                Text(
-                  reply.message,
+                LinkifiedMessageText(
+                  text: reply.message,
                   style: const TextStyle(fontSize: 15, color: Colors.black87),
                 ),
 

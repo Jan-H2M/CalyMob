@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/announcement.dart';
+import 'linkified_message_text.dart';
 import 'package:intl/intl.dart';
 
 class AnnouncementCard extends StatelessWidget {
@@ -132,8 +133,8 @@ class AnnouncementCard extends StatelessWidget {
                 const SizedBox(height: 8),
 
                 // Message
-                Text(
-                  announcement.message,
+                LinkifiedMessageText(
+                  text: announcement.message,
                   style: TextStyle(
                     fontSize: 15,
                     color: Colors.grey[800],
