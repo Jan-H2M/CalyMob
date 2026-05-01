@@ -7,6 +7,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../providers/unread_count_provider.dart';
 import '../../services/app_update_service.dart';
+import '../../services/avatar_nudge_service.dart';
 import '../../utils/club_role_utils.dart';
 import '../../widgets/ocean_background.dart';
 import '../../widgets/ocean/ocean_config.dart';
@@ -30,6 +31,7 @@ class _LandingScreenState extends State<LandingScreen> {
   String _versionString = '';
   List<String>? _clubStatuten;
   OceanParams? _oceanParams;
+  bool _avatarNudgeChecked = false;
 
   @override
   void initState() {
@@ -37,9 +39,15 @@ class _LandingScreenState extends State<LandingScreen> {
     _loadVersionInfo();
     _loadOceanParams();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initFromMemberProvider();
-      _checkForAppUpdate();
+      _runInitialPrompts();
     });
+  }
+
+  Future<void> _runInitialPrompts() async {
+    if (!mounted) return;
+    _initFromMemberProvider();
+    await _checkForAppUpdate();
+    await _checkAvatarNudge();
   }
 
   Future<void> _loadVersionInfo() async {
@@ -118,6 +126,122 @@ class _LandingScreenState extends State<LandingScreen> {
   Future<void> _checkForAppUpdate() async {
     if (!mounted) return;
     await AppUpdateService.showUpdateDialogIfNeeded(context);
+  }
+
+  Future<void> _checkAvatarNudge() async {
+    if (_avatarNudgeChecked || !mounted) return;
+
+    final authProvider = context.read<AuthProvider>();
+    final memberProvider = context.read<MemberProvider>();
+    final userId = authProvider.currentUser?.uid ?? '';
+    if (userId.isEmpty) return;
+
+    _avatarNudgeChecked = true;
+
+    try {
+      // Laat eventuele andere dialogs eerst uitwerken voor we de nudge tonen.
+      await Future.delayed(const Duration(milliseconds: 1200));
+      if (!mounted) return;
+
+      final hasPhoto = (memberProvider.photoUrl ?? '').isNotEmpty;
+      final shouldShow = await AvatarNudgeService.shouldShow(
+        userId: userId,
+        hasPhoto: hasPhoto,
+      );
+      if (!shouldShow || !mounted) return;
+
+      _showAvatarNudgeDialog(userId);
+    } catch (e) {
+      debugPrint('Avatar nudge check failed: $e');
+    }
+  }
+
+  void _showAvatarNudgeDialog(String userId) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.middenblauw.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.account_circle_outlined,
+                color: AppColors.middenblauw,
+                size: 28,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text('Montrez-vous au club'),
+            ),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Chez Calypso, on plonge en équipe. Ajoutez votre photo pour que les autres membres vous reconnaissent et se sentent à l\'aise avec vous, surtout les nouveaux.',
+              style: TextStyle(fontSize: 15, height: 1.35),
+            ),
+            SizedBox(height: 14),
+            _AvatarNudgeBullet(
+              icon: Icons.favorite_outline,
+              text: 'Un visage, c\'est un nom qu\'on retient',
+            ),
+            SizedBox(height: 8),
+            _AvatarNudgeBullet(
+              icon: Icons.groups_outlined,
+              text: 'On se retrouve plus vite dans sa palanquée',
+            ),
+            SizedBox(height: 8),
+            _AvatarNudgeBullet(
+              icon: Icons.waving_hand_outlined,
+              text: 'Accueillir les nouveaux devient plus facile',
+            ),
+            SizedBox(height: 14),
+            Text(
+              'Vous pouvez la changer ou la retirer quand vous voulez.',
+              style: TextStyle(fontSize: 12.5, color: Colors.black54),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await AvatarNudgeService.markShown(userId);
+              if (!dialogContext.mounted) return;
+              Navigator.of(dialogContext).pop();
+            },
+            child: const Text('Plus tard'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () async {
+              await AvatarNudgeService.markShown(userId);
+              if (!mounted || !dialogContext.mounted) return;
+              Navigator.of(dialogContext).pop();
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ProfileScreen()),
+              );
+            },
+            icon: const Icon(Icons.add_a_photo_outlined, size: 18),
+            label: const Text('Ajouter ma photo'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.middenblauw,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _handleLogout(BuildContext context) async {
@@ -325,6 +449,33 @@ class _LandingScreenState extends State<LandingScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _AvatarNudgeBullet extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _AvatarNudgeBullet({
+    required this.icon,
+    required this.text,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: AppColors.middenblauw),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(fontSize: 14),
+          ),
+        ),
+      ],
     );
   }
 }
