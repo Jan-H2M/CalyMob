@@ -97,6 +97,11 @@ exports.eventPaymentReminder = eventPaymentReminder;
 const { onInscriptionPaymentChange } = require('./src/notifications/onInscriptionPaymentChange');
 exports.onInscriptionPaymentChange = onInscriptionPaymentChange;
 
+// Auto-mark a member as present on a paid dive event (event_category === 'plongee').
+// Fires when `paye` flips falsy → true on the inscription. Refunds are NOT auto-reverted.
+const { onInscriptionPaidMarkPresent } = require('./src/notifications/onInscriptionPaidMarkPresent');
+exports.onInscriptionPaidMarkPresent = onInscriptionPaidMarkPresent;
+
 // Weekly cleanup for old chat messages and orphaned attachments
 const { cleanupOldMessages } = require('./src/maintenance/cleanupOldMessages');
 exports.cleanupOldMessages = cleanupOldMessages;
