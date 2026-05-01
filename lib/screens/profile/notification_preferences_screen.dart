@@ -32,6 +32,7 @@ class _NotificationPreferencesScreenState
     'session_messages': true,
     'session_reminders': true,
     'medical_certificates': true,
+    'exercise_declarations': true,
   };
 
   @override
@@ -264,6 +265,20 @@ class _NotificationPreferencesScreenState
                           title: 'Certificats médicaux',
                           subtitle:
                               'Quand ton certificat est approuvé ou refusé',
+                        ),
+
+                        const Divider(height: 1),
+
+                        // Exercise declarations digest (encadrants only — those
+                        // without the role won't ever receive these anyway, but
+                        // the toggle stays visible so opt-out is consistent).
+                        _buildPreferenceTile(
+                          key: 'exercise_declarations',
+                          icon: Icons.school_outlined,
+                          iconColor: Colors.indigo,
+                          title: 'Déclarations d\'exercices',
+                          subtitle:
+                              'Récapitulatif quotidien (19h) des exercices à valider — encadrants',
                         ),
                       ],
                     ),

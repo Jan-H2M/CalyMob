@@ -1,0 +1,3 @@
+Paiement des événements plus clair, avec QR code sur place ou par email.
+Nouveau fond d'écran océan qui change selon l'heure.
+Corrections et améliorations.

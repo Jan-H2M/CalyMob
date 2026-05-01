@@ -58,6 +58,15 @@ exports.onExerciceDeclared = onDocumentCreated(
     region: 'europe-west1',
   },
   async (event) => {
+    // ============================================================
+    // KILL SWITCH — disabled 2026-04-30 by Jan: too many notifications,
+    // encadrants overwhelmed. Whole club was getting a push per
+    // self-declaration. Re-enable only after redesign (digest + in-app
+    // counter, see TODO in CLAUDE.md / discussion 2026-04-30).
+    // ============================================================
+    logger.info('[onExerciceDeclared] DISABLED — see kill switch comment');
+    return null;
+    // eslint-disable-next-line no-unreachable
     const { clubId, memberId, docId } = event.params;
     const snap = event.data;
     if (!snap) {

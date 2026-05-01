@@ -1,0 +1,3 @@
+• Palanquées : le bouton est désormais visible pour tous les membres en lecture seule.
+• Discussions : ouverture directement sur le premier message non-lu.
+• Pièces jointes : sélection multiple de photos et vidéos depuis la galerie.
