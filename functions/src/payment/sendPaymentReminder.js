@@ -69,12 +69,12 @@ const sendPaymentReminder = onCall(
     const { clubId, operationId, overrideText } = request.data || {};
 
     if (!clubId || !operationId) {
-      throw new HttpsError('invalid-argument', 'Missing clubId or operationId');
+      throw new HttpsError('invalid-argument', 'clubId ou operationId manquant');
     }
 
     // 2. Require authenticated caller
     if (!request.auth || !request.auth.uid) {
-      throw new HttpsError('unauthenticated', 'Must be logged in to send a payment reminder');
+      throw new HttpsError('unauthenticated', 'Vous devez être connecté pour envoyer un rappel de paiement');
     }
 
     const sentBy = request.auth.uid;
@@ -89,7 +89,7 @@ const sendPaymentReminder = onCall(
 
     let operationSnap = await operationRef.get();
     if (!operationSnap.exists) {
-      throw new HttpsError('not-found', `Operation ${operationId} not found`);
+      throw new HttpsError('not-found', `Événement ${operationId} introuvable`);
     }
 
     // 4. Send-time refresh: recompute draft from CURRENT inscription state so
@@ -110,19 +110,19 @@ const sendPaymentReminder = onCall(
 
     // 5. Validate state
     if (!paymentReminder) {
-      throw new HttpsError('failed-precondition', 'No pending reminder to send');
+      throw new HttpsError('failed-precondition', 'Aucun rappel en attente à envoyer');
     }
     if (paymentReminder.status === 'sent') {
-      throw new HttpsError('already-exists', 'Reminder already sent');
+      throw new HttpsError('already-exists', 'Le rappel a déjà été envoyé');
     }
     if (paymentReminder.status === 'cancelled') {
-      throw new HttpsError('failed-precondition', 'Reminder was cancelled — wait for tomorrow\'s preparation or recompute manually');
+      throw new HttpsError('failed-precondition', 'Le rappel a été annulé — attendez la préparation de demain ou recalculez manuellement');
     }
     if (paymentReminder.status === 'cleared') {
       throw new HttpsError('failed-precondition', 'Plus aucun paiement en attente — tous les participants ont payé.');
     }
     if (paymentReminder.status !== 'pending') {
-      throw new HttpsError('failed-precondition', `Reminder in unexpected state "${paymentReminder.status}"`);
+      throw new HttpsError('failed-precondition', `Rappel dans un état inattendu : "${paymentReminder.status}"`);
     }
 
     // overrideText still wins if the admin manually edited the text in the
@@ -132,7 +132,7 @@ const sendPaymentReminder = onCall(
       : paymentReminder.text;
 
     if (!messageText) {
-      throw new HttpsError('failed-precondition', 'Reminder has no message text');
+      throw new HttpsError('failed-precondition', 'Le rappel ne contient aucun texte');
     }
 
     // 6. Send QR emails for every member in the qr_email group
@@ -156,7 +156,7 @@ const sendPaymentReminder = onCall(
           membre_id: membreId || null,
           inscription_id: inscriptionId || null,
           status: 'failed',
-          error: 'Invalid group entry (missing membre_id or inscription_id)',
+          error: 'Entrée invalide (membre_id ou inscription_id manquant)',
         };
       }
 
@@ -172,7 +172,7 @@ const sendPaymentReminder = onCall(
             membre_id: membreId,
             inscription_id: inscriptionId,
             status: 'failed',
-            error: 'Inscription not found',
+            error: 'Inscription introuvable',
           };
         }
 
@@ -181,7 +181,7 @@ const sendPaymentReminder = onCall(
             membre_id: membreId,
             inscription_id: inscriptionId,
             status: 'failed',
-            error: 'Member not found',
+            error: 'Membre introuvable',
           };
         }
 
@@ -205,7 +205,7 @@ const sendPaymentReminder = onCall(
             membre_id: membreId,
             inscription_id: inscriptionId,
             status: 'failed',
-            error: 'No positive amount on inscription (montant/prix both unusable)',
+            error: 'Aucun montant valide sur l\'inscription (montant/prix tous deux invalides)',
           };
         }
 
@@ -215,7 +215,7 @@ const sendPaymentReminder = onCall(
             membre_id: membreId,
             inscription_id: inscriptionId,
             status: 'failed',
-            error: 'Member has no email on record',
+            error: 'Le membre n\'a pas d\'email enregistré',
           };
         }
 

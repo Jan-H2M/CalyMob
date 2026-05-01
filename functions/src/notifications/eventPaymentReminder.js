@@ -94,36 +94,38 @@ function buildAdminNotificationHtml(preparedDrafts) {
           <span style="color:#666;font-size:13px;">${escapeHtml(d.date)}</span>
         </td>
         <td style="padding:12px;border-bottom:1px solid #eee;vertical-align:top;color:#333;">
-          ${d.qrCount} via QR-mail<br>
+          ${d.qrCount} via email QR<br>
           ${d.surPlaceCount} sur place
         </td>
         <td style="padding:12px;border-bottom:1px solid #eee;vertical-align:top;">
-          <a href="${link}" style="background:#d97706;color:#fff;padding:8px 14px;border-radius:6px;text-decoration:none;display:inline-block;font-weight:600;font-size:13px;">Openen in CalyCompta →</a>
+          <a href="${link}" style="background:#d97706;color:#fff;padding:8px 14px;border-radius:6px;text-decoration:none;display:inline-block;font-weight:600;font-size:13px;">Ouvrir dans CalyCompta →</a>
         </td>
       </tr>`;
   }).join('');
 
   return `<!DOCTYPE html>
-<html lang="nl"><head><meta charset="utf-8"><title>Betalingsreminders klaar</title></head>
+<html lang="fr"><head><meta charset="utf-8"><title>Rappels de paiement prêts</title></head>
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f5;margin:0;padding:24px;color:#111;">
   <div style="max-width:640px;margin:0 auto;background:#fff;border-radius:8px;padding:28px;border:1px solid #e5e5e5;">
-    <h1 style="margin:0 0 8px 0;font-size:20px;color:#111;">🔔 Betalingsreminders klaar voor verzending</h1>
+    <h1 style="margin:0 0 8px 0;font-size:20px;color:#111;">🔔 Rappels de paiement prêts à envoyer</h1>
     <p style="color:#555;margin:0 0 20px 0;font-size:14px;line-height:1.5;">
-      Onderstaande events vinden binnen 3 dagen plaats en hebben nog onbetaalde deelnemers.
-      Open het event in CalyCompta, ga naar het tabblad <strong>Inscriptions</strong> en klik op
-      <em>"Prévisualiser et envoyer"</em> om de reminder te versturen.
-      Banner-cijfers updaten live wanneer betalingen binnenkomen.
+      Les événements ci-dessous ont lieu dans les 3 prochains jours et certains paiements
+      sont encore en attente. Ouvrez l'événement dans CalyCompta, allez dans l'onglet
+      <strong>Inscriptions</strong> et cliquez sur <em>"Prévisualiser et envoyer"</em>
+      pour envoyer le rappel. Les compteurs de la bannière se mettent à jour en direct
+      à mesure que les paiements arrivent.
     </p>
     <table style="width:100%;border-collapse:collapse;font-size:14px;">
       <thead><tr style="background:#fafafa;">
-        <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #e5e5e5;">Event</th>
-        <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #e5e5e5;">Onbetaald</th>
-        <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #e5e5e5;">Actie</th>
+        <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #e5e5e5;">Événement</th>
+        <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #e5e5e5;">Impayé</th>
+        <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #e5e5e5;">Action</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <p style="color:#888;font-size:12px;margin-top:24px;line-height:1.5;">
-      Automatisch verzonden door Calypso Cloud Function <code>eventPaymentReminder</code> (dagelijks 08:30 Europe/Brussels).
+      Envoyé automatiquement par la Cloud Function Calypso <code>eventPaymentReminder</code>
+      (tous les jours à 08:30 Europe/Bruxelles).
     </p>
   </div>
 </body></html>`;
@@ -141,8 +143,8 @@ async function sendAdminNotificationEmail(db, preparedDrafts) {
       return;
     }
     const subject = preparedDrafts.length === 1
-      ? `🔔 Calypso — 1 betalingsreminder klaar voor verzending`
-      : `🔔 Calypso — ${preparedDrafts.length} betalingsreminders klaar voor verzending`;
+      ? `🔔 Calypso — 1 rappel de paiement prêt à envoyer`
+      : `🔔 Calypso — ${preparedDrafts.length} rappels de paiement prêts à envoyer`;
     const html = buildAdminNotificationHtml(preparedDrafts);
     const from = `${config.fromName} <${config.fromEmail}>`;
     await sendEmailViaResend(config.apiKey, from, ADMIN_NOTIFICATION_EMAIL, subject, html);
