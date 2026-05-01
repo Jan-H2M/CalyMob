@@ -612,7 +612,7 @@ async function sendPaymentEmailForMember(db, input) {
     qrCodeImage: 'cid:qrcode',  // CID reference for embedded image
     clubName: clubName,
     logoUrl: logoUrl,
-    appUrl: 'https://calycompta.vercel.app',
+    appUrl: 'https://caly.club',
   };
 
   // 9. Render template with Handlebars

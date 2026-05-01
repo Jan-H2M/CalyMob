@@ -24,6 +24,7 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const { sendPaymentEmailForMember } = require('./sendPaymentQrEmail');
+const { recomputePaymentReminderDraft } = require('./paymentReminderHelpers');
 
 /**
  * Resolve a human-friendly sender name for the reminder message.
@@ -86,15 +87,28 @@ const sendPaymentReminder = onCall(
       .collection('clubs').doc(clubId)
       .collection('operations').doc(operationId);
 
-    const operationSnap = await operationRef.get();
+    let operationSnap = await operationRef.get();
     if (!operationSnap.exists) {
       throw new HttpsError('not-found', `Operation ${operationId} not found`);
     }
 
+    // 4. Send-time refresh: recompute draft from CURRENT inscription state so
+    //    we never email someone who paid in the meantime, and never name a
+    //    paid member in the chat post. This is the third freshness layer
+    //    (alongside the daily run and the live trigger).
+    const refreshResult = await recomputePaymentReminderDraft(
+      db, clubId, operationRef, operationSnap.data(),
+    );
+    console.log(
+      `[sendPaymentReminder] Pre-send refresh ${clubId}/${operationId}: ${refreshResult.reason}`,
+    );
+
+    // Re-read the (possibly updated) operation.
+    operationSnap = await operationRef.get();
     const operation = operationSnap.data();
     const paymentReminder = operation.payment_reminder;
 
-    // 4. Validate state
+    // 5. Validate state
     if (!paymentReminder) {
       throw new HttpsError('failed-precondition', 'No pending reminder to send');
     }
@@ -104,10 +118,15 @@ const sendPaymentReminder = onCall(
     if (paymentReminder.status === 'cancelled') {
       throw new HttpsError('failed-precondition', 'Reminder was cancelled — wait for tomorrow\'s preparation or recompute manually');
     }
+    if (paymentReminder.status === 'cleared') {
+      throw new HttpsError('failed-precondition', 'Plus aucun paiement en attente — tous les participants ont payé.');
+    }
     if (paymentReminder.status !== 'pending') {
       throw new HttpsError('failed-precondition', `Reminder in unexpected state "${paymentReminder.status}"`);
     }
 
+    // overrideText still wins if the admin manually edited the text in the
+    // modal. Otherwise we use the freshly composed text (post-refresh).
     const messageText = (typeof overrideText === 'string' && overrideText.trim())
       ? overrideText
       : paymentReminder.text;
@@ -116,14 +135,15 @@ const sendPaymentReminder = onCall(
       throw new HttpsError('failed-precondition', 'Reminder has no message text');
     }
 
-    // 5. Send QR emails for every member in the qr_email group
+    // 6. Send QR emails for every member in the qr_email group
+    //    (group is fresh from the refresh above)
     const qrGroup = Array.isArray(paymentReminder.groups?.qr_email)
       ? paymentReminder.groups.qr_email
       : [];
 
     const operationTitle = operation.titre || operation.title || 'Événement';
-    const operationDateIso = operation.date && typeof operation.date.toDate === 'function'
-      ? operation.date.toDate().toISOString()
+    const operationDateIso = operation.date_debut && typeof operation.date_debut.toDate === 'function'
+      ? operation.date_debut.toDate().toISOString()
       : null;
     const operationNumber = operation.event_number;
 
@@ -167,6 +187,17 @@ const sendPaymentReminder = onCall(
 
         const inscription = inscriptionSnap.data();
         const member = memberSnap.data();
+
+        // Final guard: the refresh just before this send may have raced with
+        // a payment. Skip anyone who is now marked paid. The refresh + this
+        // check together close the window to ~ms.
+        if (inscription.paye === true) {
+          return {
+            membre_id: membreId,
+            inscription_id: inscriptionId,
+            status: 'skipped-paid',
+          };
+        }
 
         const amount = resolveInscriptionAmount(inscription);
         if (amount <= 0) {
@@ -222,10 +253,11 @@ const sendPaymentReminder = onCall(
 
     const qrEmailsSent = sendResults.filter((r) => r.status === 'sent').length;
     const qrEmailsFailed = sendResults.filter((r) => r.status === 'failed').length;
+    const qrEmailsSkippedPaid = sendResults.filter((r) => r.status === 'skipped-paid').length;
     const failures = sendResults.filter((r) => r.status === 'failed');
 
     console.log(
-      `📬 [sendPaymentReminder] QR emails: ${qrEmailsSent} sent, ${qrEmailsFailed} failed for ${clubId}/${operationId}`,
+      `📬 [sendPaymentReminder] QR emails: ${qrEmailsSent} sent, ${qrEmailsFailed} failed, ${qrEmailsSkippedPaid} skipped (already paid) for ${clubId}/${operationId}`,
     );
 
     // 6. Post reminder message to event chat (triggers onNewEventMessage → FCM)

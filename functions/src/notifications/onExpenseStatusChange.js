@@ -545,7 +545,7 @@ async function sendFirstApprovalEmailToDemandeur(db, clubId, expenseData, emailC
   const recipientName = `${demandeur.prenom || ''} ${demandeur.nom || ''}`.trim() || recipientEmail;
   const clubName = generalSettings.clubName || 'Calypso Diving Club';
   const logoUrl = generalSettings.logoUrl || '';
-  const appUrl = 'https://calycompta.vercel.app';
+  const appUrl = 'https://caly.club';
 
   // Generate email
   const subject = `✅ Première approbation reçue - ${description || 'Note de frais'}`;
@@ -653,7 +653,7 @@ async function sendSecondApprovalNeededToValidators(db, clubId, expenseData, ema
 
   const clubName = generalSettings.clubName || 'Calypso Diving Club';
   const logoUrl = generalSettings.logoUrl || '';
-  const appUrl = 'https://calycompta.vercel.app';
+  const appUrl = 'https://caly.club';
 
   const fromEmail = emailConfig.resend.fromEmail || 'onboarding@resend.dev';
   const fromName = emailConfig.resend.fromName || clubName;
@@ -747,7 +747,7 @@ async function sendSecondApprovalCompleteEmail(db, clubId, expenseData, emailCon
   const recipientName = `${demandeur.prenom || ''} ${demandeur.nom || ''}`.trim() || recipientEmail;
   const clubName = generalSettings.clubName || 'Calypso Diving Club';
   const logoUrl = generalSettings.logoUrl || '';
-  const appUrl = 'https://calycompta.vercel.app';
+  const appUrl = 'https://caly.club';
 
   // Generate email
   const subject = `✅ Votre note de frais a été entièrement approuvée - ${description || 'Note de frais'}`;
@@ -918,7 +918,7 @@ exports.onExpenseStatusChange = onDocumentUpdated(
 
         const clubName = generalSettings.clubName || 'Calypso Diving Club';
         const logoUrl = generalSettings.logoUrl || '';
-        const appUrl = 'https://calycompta.vercel.app';
+        const appUrl = 'https://caly.club';
 
         const subject = `Note de frais approuvée - ${afterData.description || 'Note de frais'}`;
         const htmlContent = generateApprovedEmailHtml({
@@ -1010,7 +1010,7 @@ exports.onExpenseStatusChange = onDocumentUpdated(
 
         const clubName = generalSettings.clubName || 'Calypso Diving Club';
         const logoUrl = generalSettings.logoUrl || '';
-        const appUrl = 'https://calycompta.vercel.app';
+        const appUrl = 'https://caly.club';
 
         const subject = `Note de frais remboursée - ${afterData.description || 'Note de frais'}`;
         const htmlContent = generateReimbursedEmailHtml({

@@ -91,6 +91,12 @@ exports.sessionReminder = sessionReminder;
 const { eventPaymentReminder } = require('./src/notifications/eventPaymentReminder');
 exports.eventPaymentReminder = eventPaymentReminder;
 
+// Live refresh of payment_reminder draft when an inscription changes
+// (created / paid / unpaid / deleted). Keeps the CalyCompta banner up to date
+// in real time, without waiting for the daily 08:30 run.
+const { onInscriptionPaymentChange } = require('./src/notifications/onInscriptionPaymentChange');
+exports.onInscriptionPaymentChange = onInscriptionPaymentChange;
+
 // Weekly cleanup for old chat messages and orphaned attachments
 const { cleanupOldMessages } = require('./src/maintenance/cleanupOldMessages');
 exports.cleanupOldMessages = cleanupOldMessages;
@@ -100,8 +106,16 @@ const { onNewOperation } = require('./src/notifications/onNewOperation');
 exports.onNewOperation = onNewOperation;
 
 // Push notification when a member self-declares a LIFRAS exercise from CalyMob
+// NOTE 2026-04-30: realtime push DISABLED via kill switch inside the function —
+// it spammed encadrants. Replaced by `dailyExerciseDeclarationDigest` below.
 const { onExerciceDeclared } = require('./src/notifications/onExerciceDeclared');
 exports.onExerciceDeclared = onExerciceDeclared;
+
+// Daily 19:00 Europe/Brussels digest of pending self-declared LIFRAS exercises
+const {
+  dailyExerciseDeclarationDigest,
+} = require('./src/notifications/dailyExerciseDeclarationDigest');
+exports.dailyExerciseDeclarationDigest = dailyExerciseDeclarationDigest;
 
 // Push notification when a member is assigned to a pool session task
 const { onPiscineTaskAssigned } = require('./src/notifications/onPiscineTaskAssigned');

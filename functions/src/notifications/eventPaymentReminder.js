@@ -1,244 +1,157 @@
 /**
- * Cloud Function: Prepare payment reminder drafts for paid events 3 days away
+ * Cloud Function: Daily refresh of payment reminder drafts.
  *
- * Scheduled function that runs daily at 08:30 Europe/Brussels.
- * For each club, it finds events on the target day, groups unpaid participants
- * by payment flow, and stores a reminder draft on the operation document.
+ * Scheduled run: every day at 08:30 Europe/Brussels.
  *
- * Output: writes `payment_reminder` on `clubs/{clubId}/operations/{operationId}`
- * only. It does not post chat messages, send FCM notifications, or resend QR
- * emails.
+ * For every club, scans operations whose `date_debut` falls within the next 3
+ * days (inclusive of today, exclusive of day +4) and recomputes the
+ * `payment_reminder` draft on each operation by reading the current state of
+ * its `inscriptions` subcollection. This is the daily backstop: live updates
+ * are normally handled by `onInscriptionPaymentChange` (Firestore trigger).
+ *
+ * Output:
+ *   - writes / updates / clears `payment_reminder` on each in-window operation
+ *   - sends a single summary email to ADMIN_NOTIFICATION_EMAIL listing all
+ *     operations that currently have a pending draft (so the admin doesn't
+ *     have to remember to open CalyCompta).
+ *
+ * Email failures are logged but never fail the function — drafts must remain
+ * written to Firestore.
+ *
+ * It does not post chat messages, send FCM notifications, or resend QR
+ * emails. Those side effects are triggered manually from CalyCompta via the
+ * `sendPaymentReminder` callable.
  */
 
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const admin = require('firebase-admin');
 
-const TIME_ZONE = 'Europe/Brussels';
-const DAYS_BEFORE_EVENT = 3;
-const SKIPPED_STATUSES = new Set(['Annulé', 'annule', 'ferme', 'Fermé']);
+const {
+  TIME_ZONE,
+  getReminderWindow,
+  formatDate,
+  normalizeText,
+  recomputePaymentReminderDraft,
+} = require('../payment/paymentReminderHelpers');
 
-function getTimeZoneParts(date, timeZone) {
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
+const ADMIN_NOTIFICATION_EMAIL = 'jan.andriessens@gmail.com';
+const APP_URL = 'https://caly.club';
+
+function escapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
+async function sendEmailViaResend(apiKey, from, to, subject, html) {
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from, to, subject, html }),
   });
+  if (!response.ok) {
+    let errorMessage = `Resend API failed (${response.status})`;
+    try {
+      const errorData = await response.json();
+      if (errorData && errorData.message) errorMessage = errorData.message;
+    } catch (e) { /* ignore */ }
+    throw new Error(errorMessage);
+  }
+  return response.json();
+}
 
-  const parts = formatter.formatToParts(date);
-  const values = {};
-
-  parts.forEach(({ type, value }) => {
-    if (type !== 'literal') {
-      values[type] = value;
+async function findResendConfigForAdminEmail(db) {
+  const clubsSnapshot = await db.collection('clubs').get();
+  for (const clubDoc of clubsSnapshot.docs) {
+    try {
+      const configDoc = await db.collection('clubs').doc(clubDoc.id)
+        .collection('settings').doc('email_config').get();
+      if (!configDoc.exists) continue;
+      const data = configDoc.data();
+      if (data.provider !== 'resend' || !data.resend || !data.resend.apiKey) continue;
+      const generalDoc = await db.collection('clubs').doc(clubDoc.id)
+        .collection('settings').doc('general').get();
+      const general = generalDoc.exists ? generalDoc.data() : {};
+      return {
+        apiKey: data.resend.apiKey,
+        fromEmail: data.resend.fromEmail || 'onboarding@resend.dev',
+        fromName: data.resend.fromName || general.clubName || 'Calypso',
+      };
+    } catch (e) {
+      console.warn(`[eventPaymentReminder] Failed to read email config for ${clubDoc.id}:`, e);
     }
-  });
-
-  return {
-    year: Number(values.year),
-    month: Number(values.month),
-    day: Number(values.day),
-    hour: Number(values.hour),
-    minute: Number(values.minute),
-    second: Number(values.second),
-  };
-}
-
-function getTimeZoneOffsetMs(date, timeZone) {
-  const parts = getTimeZoneParts(date, timeZone);
-  const utcTimestamp = Date.UTC(
-    parts.year,
-    parts.month - 1,
-    parts.day,
-    parts.hour,
-    parts.minute,
-    parts.second,
-  );
-
-  return utcTimestamp - date.getTime();
-}
-
-function makeDateInTimeZone(year, month, day, hour, minute, second, timeZone) {
-  const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
-  const offsetMs = getTimeZoneOffsetMs(utcGuess, timeZone);
-  const zonedDate = new Date(utcGuess.getTime() - offsetMs);
-  const correctedOffsetMs = getTimeZoneOffsetMs(zonedDate, timeZone);
-
-  if (correctedOffsetMs === offsetMs) {
-    return zonedDate;
   }
-
-  return new Date(utcGuess.getTime() - correctedOffsetMs);
+  return null;
 }
 
-function addDaysToCalendarDate(year, month, day, daysToAdd) {
-  const date = new Date(Date.UTC(year, month - 1, day + daysToAdd));
-  return {
-    year: date.getUTCFullYear(),
-    month: date.getUTCMonth() + 1,
-    day: date.getUTCDate(),
-  };
+function buildAdminNotificationHtml(preparedDrafts) {
+  const rows = preparedDrafts.map((d) => {
+    const link = `${APP_URL}/operations?selectedId=${encodeURIComponent(d.operationId)}`;
+    return `
+      <tr>
+        <td style="padding:12px;border-bottom:1px solid #eee;vertical-align:top;">
+          <strong>${escapeHtml(d.title)}</strong><br>
+          <span style="color:#666;font-size:13px;">${escapeHtml(d.date)}</span>
+        </td>
+        <td style="padding:12px;border-bottom:1px solid #eee;vertical-align:top;color:#333;">
+          ${d.qrCount} via QR-mail<br>
+          ${d.surPlaceCount} sur place
+        </td>
+        <td style="padding:12px;border-bottom:1px solid #eee;vertical-align:top;">
+          <a href="${link}" style="background:#d97706;color:#fff;padding:8px 14px;border-radius:6px;text-decoration:none;display:inline-block;font-weight:600;font-size:13px;">Openen in CalyCompta →</a>
+        </td>
+      </tr>`;
+  }).join('');
+
+  return `<!DOCTYPE html>
+<html lang="nl"><head><meta charset="utf-8"><title>Betalingsreminders klaar</title></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f5;margin:0;padding:24px;color:#111;">
+  <div style="max-width:640px;margin:0 auto;background:#fff;border-radius:8px;padding:28px;border:1px solid #e5e5e5;">
+    <h1 style="margin:0 0 8px 0;font-size:20px;color:#111;">🔔 Betalingsreminders klaar voor verzending</h1>
+    <p style="color:#555;margin:0 0 20px 0;font-size:14px;line-height:1.5;">
+      Onderstaande events vinden binnen 3 dagen plaats en hebben nog onbetaalde deelnemers.
+      Open het event in CalyCompta, ga naar het tabblad <strong>Inscriptions</strong> en klik op
+      <em>"Prévisualiser et envoyer"</em> om de reminder te versturen.
+      Banner-cijfers updaten live wanneer betalingen binnenkomen.
+    </p>
+    <table style="width:100%;border-collapse:collapse;font-size:14px;">
+      <thead><tr style="background:#fafafa;">
+        <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #e5e5e5;">Event</th>
+        <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #e5e5e5;">Onbetaald</th>
+        <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #e5e5e5;">Actie</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <p style="color:#888;font-size:12px;margin-top:24px;line-height:1.5;">
+      Automatisch verzonden door Calypso Cloud Function <code>eventPaymentReminder</code> (dagelijks 08:30 Europe/Brussels).
+    </p>
+  </div>
+</body></html>`;
 }
 
-function getTargetDayWindow(now = new Date()) {
-  const today = getTimeZoneParts(now, TIME_ZONE);
-  const targetDay = addDaysToCalendarDate(
-    today.year,
-    today.month,
-    today.day,
-    DAYS_BEFORE_EVENT,
-  );
-  const nextDay = addDaysToCalendarDate(
-    targetDay.year,
-    targetDay.month,
-    targetDay.day,
-    1,
-  );
-
-  const startOfTargetDay = makeDateInTimeZone(
-    targetDay.year,
-    targetDay.month,
-    targetDay.day,
-    0,
-    0,
-    0,
-    TIME_ZONE,
-  );
-  const endOfTargetDay = makeDateInTimeZone(
-    nextDay.year,
-    nextDay.month,
-    nextDay.day,
-    0,
-    0,
-    0,
-    TIME_ZONE,
-  );
-
-  return {
-    targetDay,
-    startOfTargetDay,
-    endOfTargetDay,
-    targetDate: startOfTargetDay,
-  };
-}
-
-function pad2(value) {
-  return String(value).padStart(2, '0');
-}
-
-function formatDate(date) {
-  // Format the operation date in Europe/Brussels so the rendered dd/MM/yyyy
-  // never drifts around midnight regardless of the server's local timezone.
-  const parts = getTimeZoneParts(date, TIME_ZONE);
-  return `${pad2(parts.day)}/${pad2(parts.month)}/${parts.year}`;
-}
-
-function normalizeText(value) {
-  return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
-}
-
-function extractEmailLocalPart(email) {
-  const normalizedEmail = normalizeText(email);
-  if (!normalizedEmail.includes('@')) return normalizedEmail;
-  return normalizedEmail.split('@')[0].trim();
-}
-
-function resolveDisplayName(memberData, memberId) {
-  const firstName = normalizeText(memberData.prenom);
-  const lastName = normalizeText(memberData.nom);
-
-  if (firstName && lastName) {
-    return `${firstName} ${lastName.toLocaleUpperCase('fr-BE')}`;
+async function sendAdminNotificationEmail(db, preparedDrafts) {
+  if (preparedDrafts.length === 0) {
+    console.log('[eventPaymentReminder] No drafts prepared — skipping admin email');
+    return;
   }
-
-  const emailLocalPart = extractEmailLocalPart(memberData.email);
-  if (emailLocalPart) {
-    return emailLocalPart;
-  }
-
-  console.warn(
-    `[eventPaymentReminder] Missing prenom/nom/email for member ${memberId}, falling back to member id`,
-  );
-  return memberId;
-}
-
-function classifyGroup(paymentStatus) {
-  if (paymentStatus === 'qr_on_site' || paymentStatus === 'sur_place') {
-    return 'sur_place';
-  }
-
-  return 'qr_email';
-}
-
-function buildBulletList(members) {
-  return members.map((member) => `   • ${member.display_name}`).join('\n');
-}
-
-function composeReminderText(operation, qrEmailMembers, surPlaceMembers) {
-  const eventTitle = normalizeText(operation.titre) || normalizeText(operation.title) || 'Événement';
-  const operationDate = operation.date && typeof operation.date.toDate === 'function'
-    ? operation.date.toDate()
-    : null;
-
-  if (!operationDate) {
-    throw new Error('Operation date is missing or invalid');
-  }
-
-  const heading = `Rappel — paiement pour ${eventTitle} du ${formatDate(operationDate)}`;
-  const qrParagraph = `Ont choisi de payer via le QR code envoyé par email — paiement pas encore reçu (nouvel email envoyé) :\n${buildBulletList(qrEmailMembers)}`;
-  const surPlaceParagraph = `Paiement sur place confirmé (ne pas oublier votre téléphone) :\n${buildBulletList(surPlaceMembers)}`;
-
-  if (qrEmailMembers.length > 0 && surPlaceMembers.length > 0) {
-    return [
-      heading,
-      'Il reste 3 jours avant l\'événement. Quelques paiements sont encore en attente :',
-      qrParagraph,
-      surPlaceParagraph,
-      'Merci d\'utiliser de préférence le QR code dans l\'app — cela facilite énormément le travail du trésorier.',
-    ].join('\n\n');
-  }
-
-  if (qrEmailMembers.length > 0) {
-    return [
-      heading,
-      'Il reste 3 jours avant l\'événement. Quelques paiements sont encore en attente :',
-      qrParagraph,
-      'Merci d\'utiliser de préférence le QR code dans l\'app — cela facilite énormément le travail du trésorier.',
-    ].join('\n\n');
-  }
-
-  return [
-    heading,
-    'Il reste 3 jours avant l\'événement.',
-    surPlaceParagraph,
-    'À bientôt !',
-  ].join('\n\n');
-}
-
-function sortMembersByDisplayName(members) {
-  members.sort((left, right) => {
-    const displayNameComparison = left.display_name.localeCompare(
-      right.display_name,
-      'fr-BE',
-      { sensitivity: 'base' },
+  try {
+    const config = await findResendConfigForAdminEmail(db);
+    if (!config) {
+      console.warn('[eventPaymentReminder] No Resend config found — admin email skipped');
+      return;
+    }
+    const subject = preparedDrafts.length === 1
+      ? `🔔 Calypso — 1 betalingsreminder klaar voor verzending`
+      : `🔔 Calypso — ${preparedDrafts.length} betalingsreminders klaar voor verzending`;
+    const html = buildAdminNotificationHtml(preparedDrafts);
+    const from = `${config.fromName} <${config.fromEmail}>`;
+    await sendEmailViaResend(config.apiKey, from, ADMIN_NOTIFICATION_EMAIL, subject, html);
+    console.log(
+      `[eventPaymentReminder] Admin notification email sent to ${ADMIN_NOTIFICATION_EMAIL} (${preparedDrafts.length} drafts)`,
     );
-
-    if (displayNameComparison !== 0) {
-      return displayNameComparison;
-    }
-
-    return left.membre_id.localeCompare(right.membre_id, 'fr-BE', {
-      sensitivity: 'base',
-    });
-  });
-}
-
-function logSkip(clubId, operationId, reason) {
-  console.log(`[eventPaymentReminder] Skipped ${clubId}/${operationId}: ${reason}`);
+  } catch (error) {
+    console.error('[eventPaymentReminder] Failed to send admin notification email:', error);
+  }
 }
 
 exports.eventPaymentReminder = onSchedule(
@@ -252,140 +165,53 @@ exports.eventPaymentReminder = onSchedule(
 
     try {
       const db = admin.firestore();
-      const { startOfTargetDay, endOfTargetDay, targetDate } = getTargetDayWindow();
+      const { startOfToday, endOfWindow } = getReminderWindow();
       const clubsSnapshot = await db.collection('clubs').get();
-      let totalPrepared = 0;
+      let totalUpdated = 0;
+      let totalCleared = 0;
+      const preparedDrafts = [];
 
       for (const clubDoc of clubsSnapshot.docs) {
         const clubId = clubDoc.id;
         console.log(`[eventPaymentReminder] Checking operations for club ${clubId}`);
 
         try {
-          const operationsSnapshot = await db
-            .collection('clubs')
-            .doc(clubId)
+          const operationsSnapshot = await db.collection('clubs').doc(clubId)
             .collection('operations')
-            .where('date', '>=', admin.firestore.Timestamp.fromDate(startOfTargetDay))
-            .where('date', '<', admin.firestore.Timestamp.fromDate(endOfTargetDay))
+            .where('date_debut', '>=', admin.firestore.Timestamp.fromDate(startOfToday))
+            .where('date_debut', '<', admin.firestore.Timestamp.fromDate(endOfWindow))
             .get();
 
           if (operationsSnapshot.empty) {
-            console.log(`[eventPaymentReminder] No candidate operations for club ${clubId}`);
+            console.log(`[eventPaymentReminder] No operations in window for club ${clubId}`);
             continue;
           }
 
           for (const operationDoc of operationsSnapshot.docs) {
             const operationId = operationDoc.id;
-
             try {
-              const operation = operationDoc.data();
-              const operationRef = operationDoc.ref;
-
-              if (SKIPPED_STATUSES.has(operation.statut)) {
-                logSkip(clubId, operationId, `status "${operation.statut}"`);
-                continue;
-              }
-
-              const inscriptionsSnapshot = await operationRef
-                .collection('inscriptions')
-                .where('paye', '==', false)
-                .get();
-
-              if (inscriptionsSnapshot.empty) {
-                logSkip(clubId, operationId, 'no unpaid inscriptions');
-                continue;
-              }
-
-              if (
-                operation.payment_reminder
-                && operation.payment_reminder.prepared_at
-                && operation.payment_reminder.status !== 'cancelled'
-              ) {
-                logSkip(clubId, operationId, 'already prepared');
-                continue;
-              }
-
-              const groups = {
-                qr_email: [],
-                sur_place: [],
-              };
-
-              for (const inscriptionDoc of inscriptionsSnapshot.docs) {
-                try {
-                  const inscription = inscriptionDoc.data();
-                  const inscriptionId = inscriptionDoc.id;
-                  const membreId = normalizeText(inscription.membre_id) || inscriptionId;
-
-                  if (!inscription.membre_id) {
-                    console.warn(
-                      `[eventPaymentReminder] Missing membre_id for ${clubId}/${operationId}/${inscriptionId}, falling back to inscription id`,
-                    );
-                  }
-
-                  const groupKey = classifyGroup(inscription.payment_status);
-                  const memberRef = db
-                    .collection('clubs')
-                    .doc(clubId)
-                    .collection('members')
-                    .doc(membreId);
-                  const memberDoc = await memberRef.get();
-
-                  let displayName;
-                  if (!memberDoc.exists) {
-                    console.warn(
-                      `[eventPaymentReminder] Member ${membreId} not found for ${clubId}/${operationId}/${inscriptionId}, falling back to member id`,
-                    );
-                    displayName = membreId;
-                  } else {
-                    displayName = resolveDisplayName(memberDoc.data(), membreId);
-                  }
-
-                  groups[groupKey].push({
-                    membre_id: membreId,
-                    display_name: displayName,
-                    inscription_id: inscriptionId,
-                  });
-                } catch (error) {
-                  console.error(
-                    `[eventPaymentReminder] Error processing inscription ${clubId}/${operationId}/${inscriptionDoc.id}:`,
-                    error,
-                  );
-                }
-              }
-
-              sortMembersByDisplayName(groups.qr_email);
-              sortMembersByDisplayName(groups.sur_place);
-
-              if (groups.qr_email.length === 0 && groups.sur_place.length === 0) {
-                logSkip(clubId, operationId, 'no valid unpaid members after processing');
-                continue;
-              }
-
-              const composedMessage = composeReminderText(
-                operation,
-                groups.qr_email,
-                groups.sur_place,
+              const result = await recomputePaymentReminderDraft(
+                db, clubId, operationDoc.ref, operationDoc.data(),
               );
-
-              await operationRef.update({
-                payment_reminder: {
-                  prepared_at: admin.firestore.FieldValue.serverTimestamp(),
-                  status: 'pending',
-                  text: composedMessage,
-                  groups,
-                  target_event_date: admin.firestore.Timestamp.fromDate(targetDate),
-                  days_before: DAYS_BEFORE_EVENT,
-                },
-              });
-
-              totalPrepared += 1;
               console.log(
-                `[eventPaymentReminder] Prepared draft for ${clubId}/${operationId}: ${groups.qr_email.length} QR, ${groups.sur_place.length} sur place`,
+                `[eventPaymentReminder] ${clubId}/${operationId}: ${result.reason}`,
               );
+              if (result.reason === 'updated') {
+                totalUpdated += 1;
+                preparedDrafts.push({
+                  clubId,
+                  operationId,
+                  title: result.title,
+                  date: result.date,
+                  qrCount: result.qrCount,
+                  surPlaceCount: result.surPlaceCount,
+                });
+              } else if (result.reason === 'cleared-no-unpaid') {
+                totalCleared += 1;
+              }
             } catch (error) {
               console.error(
-                `[eventPaymentReminder] Error processing operation ${clubId}/${operationId}:`,
-                error,
+                `[eventPaymentReminder] Error processing ${clubId}/${operationId}:`, error,
               );
             }
           }
@@ -395,8 +221,12 @@ exports.eventPaymentReminder = onSchedule(
       }
 
       console.log(
-        `[eventPaymentReminder] Completed: ${totalPrepared} drafts across ${clubsSnapshot.size} clubs`,
+        `[eventPaymentReminder] Completed: ${totalUpdated} drafts updated, ${totalCleared} cleared (across ${clubsSnapshot.size} clubs)`,
       );
+
+      // Sort drafts chronologically before sending the summary email.
+      preparedDrafts.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+      await sendAdminNotificationEmail(db, preparedDrafts);
     } catch (error) {
       console.error('[eventPaymentReminder] Unrecoverable error:', error);
       throw error;

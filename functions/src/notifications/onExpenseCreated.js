@@ -256,7 +256,7 @@ exports.onExpenseCreated = onDocumentCreated(
       const generalSettings = generalSettingsDoc.exists ? generalSettingsDoc.data() : {};
       const clubName = generalSettings.clubName || 'Calypso Diving Club';
       const logoUrl = generalSettings.logoUrl || '';
-      const appUrl = 'https://calycompta.vercel.app';
+      const appUrl = 'https://caly.club';
 
       // 4. Generate email content
       const subject = `Note de frais enregistrée - ${demande.description || 'Note de frais'}`;
