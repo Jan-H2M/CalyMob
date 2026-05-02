@@ -647,11 +647,22 @@ async function sendPaymentEmailForMember(db, input) {
 
   // 11. Log to email_history collection
   try {
+    const serverTimestamp = admin.firestore.FieldValue.serverTimestamp();
     await db.collection('clubs').doc(clubId).collection('email_history').add({
+      // Canonical fields consumed by CalyCompta > Communication > Emails Sortants.
+      recipientEmail: memberEmail,
+      recipientName: templateData.recipientName,
+      htmlContent: renderedHtml,
+      sendType: 'automated',
+      provider: 'resend',
+      emailType: 'event_payment',
+      createdAt: serverTimestamp,
+      sentAt: serverTimestamp,
+      clubId,
+      // Legacy fields kept for existing scripts and quick Firestore inspection.
       type: 'event_payment',
       to: memberEmail,
       subject: renderedSubject,
-      sentAt: admin.firestore.FieldValue.serverTimestamp(),
       operationId,
       participantId,
       amount,
