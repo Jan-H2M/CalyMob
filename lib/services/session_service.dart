@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 /// Service de gestion des sessions utilisateur avec timeout configurable
@@ -25,6 +26,20 @@ class SessionService with WidgetsBindingObserver {
     required String clubId,
   }) async {
     try {
+      // 0. Ensure Firebase Auth has a fresh ID token before hitting Firestore.
+      // At app cold-start the cached user can be presented to listeners before
+      // the SDK has finished refreshing the token, which makes the very first
+      // Firestore write fail with permission-denied even though the rules are
+      // correct. Forcing getIdToken() here avoids that race.
+      try {
+        final authUser = FirebaseAuth.instance.currentUser;
+        if (authUser != null) {
+          await authUser.getIdToken();
+        }
+      } catch (e) {
+        debugPrint('⚠️ Token refresh failed (continuing): $e');
+      }
+
       // 1. Charger le timeout depuis Firebase settings
       await _loadTimeoutSettings(clubId);
 

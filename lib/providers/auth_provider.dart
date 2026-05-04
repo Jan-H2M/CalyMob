@@ -59,9 +59,19 @@ class AuthProvider with ChangeNotifier {
           user.uid,
         );
         // Ensure Firestore session is active (refresh expired session on app restart)
-        _sessionService.createSession(
-          userId: user.uid,
-          clubId: FirebaseConfig.defaultClubId,
+        // Fire-and-forget, but catch errors so they don't bubble up as fatal
+        // (e.g. transient permission-denied during auth-token rehydration at app start).
+        // The session will be (re)created on the next heartbeat or user interaction.
+        unawaited(
+          _sessionService
+              .createSession(
+                userId: user.uid,
+                clubId: FirebaseConfig.defaultClubId,
+              )
+              .catchError((Object e) {
+            debugPrint('⚠️ Session create failed at auth-state init: $e');
+            return ''; // satisfy Future<String> return type
+          }),
         );
         // Fix #6: bij verse installatie moeten we de unread counters + badge
         // resetten, anders blijven oude notificaties uit een vorige install
