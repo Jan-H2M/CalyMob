@@ -45,12 +45,15 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
-	<!-- Camera Permission (for expense receipts) -->
+	<!-- Camera Permission (profile photo, expense receipts) -->
 	<key>NSCameraUsageDescription</key>
-	<string>CalyMob needs camera access to take photos of expense receipts.</string>
-	<!-- Photo Library Permission (for expense receipts) -->
+	<string>CalyMob a besoin d'accéder à l'appareil photo pour prendre votre photo de profil et photographier vos justificatifs de dépenses.</string>
+	<!-- Photo Library Permission (profile photo, expense receipts) -->
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>CalyMob needs photo library access to select receipt images.</string>
+	<string>CalyMob a besoin d'accéder à votre photothèque pour importer une photo de profil ou un justificatif de dépense.</string>
+	<!-- Photo Library Add Permission (saving cropped profile photo if needed) -->
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>CalyMob a besoin d'enregistrer des images dans votre photothèque (par exemple votre photo de profil recadrée).</string>
 	<!-- Push Notifications -->
 	<key>UIBackgroundModes</key>
 	<array>

@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:image_cropper/image_cropper.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:lottie/lottie.dart';
 import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
@@ -77,29 +79,62 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
 
   Future<void> _addOrChangePhoto() async {
     try {
-      // 0. Vérifier/demander la permission caméra avant de lancer l'écran
-      //    (sinon la caméra échoue silencieusement sur Android 13+ / Samsung OneUI)
-      final hasPermission =
-          await CameraPermissionService.handlePermissionWithDialog(context);
-      if (!hasPermission || !mounted) return;
+      // 1. Demander à l'utilisateur la source de la photo (caméra / galerie)
+      final source = await _pickPhotoSource();
+      if (source == null || !mounted) return;
 
-      // 1. Lancer la caméra avec détection de visage
-      final photoFile = await Navigator.push<File>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => const FaceCameraScreen(),
-          fullscreenDialog: true,
-        ),
-      );
+      // 2. Récupérer un fichier image en fonction de la source choisie
+      File? rawPhotoFile;
+      if (source == _PhotoSource.camera) {
+        // Vérifier/demander la permission caméra avant de lancer l'écran
+        // (sinon la caméra échoue silencieusement sur Android 13+ / Samsung OneUI)
+        final hasPermission =
+            await CameraPermissionService.handlePermissionWithDialog(context);
+        if (!hasPermission || !mounted) return;
 
-      if (photoFile == null || !mounted) return;
+        rawPhotoFile = await Navigator.push<File>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const FaceCameraScreen(),
+            fullscreenDialog: true,
+          ),
+        );
+      } else {
+        // Galerie : image_picker gère lui-même les permissions photothèque
+        // (sur Android 13+ il utilise le Photo Picker système, sans permission).
+        final picker = ImagePicker();
+        final XFile? picked = await picker.pickImage(
+          source: ImageSource.gallery,
+          imageQuality: 90,
+          maxWidth: 2048,
+          maxHeight: 2048,
+        );
+        if (picked != null) {
+          rawPhotoFile = File(picked.path);
+        }
+      }
 
-      // 2. Obtenir le profil actuel pour vérifier si c'est la première photo
+      if (rawPhotoFile == null || !mounted) return;
+
+      // 3. Recadrage 1:1 (cercle de prévisualisation) — utile surtout pour
+      //    les photos importées depuis la galerie, mais aussi appliqué aux
+      //    selfies pour homogénéiser le rendu.
+      final photoFile = await _cropToProfileSquare(rawPhotoFile);
+      if (photoFile == null || !mounted) {
+        // Si l'utilisateur annule le recadrage, on nettoie le fichier source
+        // (notamment celui copié par FaceCameraScreen dans le tempDir).
+        try {
+          await rawPhotoFile.delete();
+        } catch (_) {/* best effort */}
+        return;
+      }
+
+      // 4. Obtenir le profil actuel pour vérifier si c'est la première photo
       final userId = context.read<AuthProvider>().currentUser?.uid ?? '';
       final currentProfile = await _profileService.getProfile(_clubId, userId);
       final isFirstPhoto = currentProfile?.photoUrl == null;
 
-      // 3. Demander les consentements
+      // 5. Demander les consentements
       if (mounted) {
         final consentResult = await showDialog<PhotoConsentResult>(
           context: context,
@@ -112,12 +147,17 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
         );
 
         if (consentResult == null || !mounted) {
-          // Supprimer le fichier temporaire
-          await photoFile.delete();
+          // Nettoyer les fichiers temporaires (source brute + recadrée)
+          try {
+            await rawPhotoFile.delete();
+          } catch (_) {/* best effort */}
+          try {
+            await photoFile.delete();
+          } catch (_) {/* best effort */}
           return;
         }
 
-        // 4. Uploader la photo
+        // 6. Uploader la photo
         setState(() => _isLoading = true);
 
         await _profileService.updateProfilePhoto(
@@ -128,8 +168,13 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
           consentExternalPhoto: consentResult.externalConsent,
         );
 
-        // Supprimer le fichier temporaire
-        await photoFile.delete();
+        // Nettoyer les fichiers temporaires (source brute + recadrée)
+        try {
+          await rawPhotoFile.delete();
+        } catch (_) {/* best effort */}
+        try {
+          await photoFile.delete();
+        } catch (_) {/* best effort */}
 
         if (mounted) {
           setState(() => _isLoading = false);
@@ -152,6 +197,101 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
         );
       }
     }
+  }
+
+  /// Affiche un bottom sheet pour choisir la source de la photo de profil :
+  /// caméra (selfie via FaceCameraScreen) ou photothèque de l'appareil.
+  /// Renvoie `null` si l'utilisateur annule.
+  Future<_PhotoSource?> _pickPhotoSource() {
+    return showModalBottomSheet<_PhotoSource>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 4, 20, 12),
+                child: Text(
+                  'Photo de profil',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.camera_alt_outlined,
+                  color: AppColors.primary,
+                ),
+                title: const Text('Prendre une photo'),
+                subtitle: const Text(
+                  'Utiliser la caméra avec guidage du visage',
+                ),
+                onTap: () =>
+                    Navigator.pop(sheetContext, _PhotoSource.camera),
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.photo_library_outlined,
+                  color: AppColors.primary,
+                ),
+                title: const Text('Choisir depuis la galerie'),
+                subtitle: const Text(
+                  'Importer une photo existante de votre appareil',
+                ),
+                onTap: () =>
+                    Navigator.pop(sheetContext, _PhotoSource.gallery),
+              ),
+              const SizedBox(height: 4),
+              TextButton(
+                onPressed: () => Navigator.pop(sheetContext),
+                child: const Text('Annuler'),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Recadre l'image en 1:1 avec une prévisualisation circulaire,
+  /// ratio verrouillé (idéal pour une photo de profil).
+  /// Renvoie `null` si l'utilisateur annule.
+  Future<File?> _cropToProfileSquare(File source) async {
+    final cropped = await ImageCropper().cropImage(
+      sourcePath: source.path,
+      compressFormat: ImageCompressFormat.jpg,
+      compressQuality: 90,
+      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: 'Recadrer la photo',
+          toolbarColor: AppColors.primary,
+          toolbarWidgetColor: Colors.white,
+          activeControlsWidgetColor: AppColors.primary,
+          initAspectRatio: CropAspectRatioPreset.square,
+          lockAspectRatio: true,
+          hideBottomControls: false,
+          // Note: UCrop (Android) ne supporte pas un cadre circulaire ;
+          // l'aperçu reste carré mais l'avatar est rendu en cercle dans l'app.
+        ),
+        IOSUiSettings(
+          title: 'Recadrer la photo',
+          doneButtonTitle: 'Terminer',
+          cancelButtonTitle: 'Annuler',
+          aspectRatioLockEnabled: true,
+          resetAspectRatioEnabled: false,
+          rotateButtonsHidden: false,
+          cropStyle: CropStyle.circle,
+        ),
+      ],
+    );
+    if (cropped == null) return null;
+    return File(cropped.path);
   }
 
   Future<void> _editConsents(MemberProfile profile) async {
@@ -749,3 +889,6 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
     }
   }
 }
+
+/// Source choisie par l'utilisateur pour la photo de profil.
+enum _PhotoSource { camera, gallery }
