@@ -360,6 +360,31 @@ class OperationService {
     required String markedByUserName,
   }) async {
     try {
+      // Load the operation to compute the correct tariff for this member.
+      // Falling back to 0 silently leaves treasurer cleanup work — better
+      // to write the proper price upfront whenever we can.
+      double prix = 0.0;
+      try {
+        final opSnap = await _firestore
+            .collection('clubs/$clubId/operations')
+            .doc(operationId)
+            .get();
+        if (opSnap.exists) {
+          final operation = Operation.fromFirestore(opSnap);
+          prix = TariffUtils.computeRegistrationPrice(
+            operation: operation,
+            profile: member,
+          );
+          debugPrint('💰 Walk-in prix calculé: $prix€ pour ${member.fullName}');
+        } else {
+          debugPrint('⚠️ Walk-in: opération $operationId introuvable, prix=0');
+        }
+      } catch (e) {
+        // Don't block the walk-in if tariff lookup fails — better to have
+        // the inscription saved with prix=0 than to refuse the scan.
+        debugPrint('⚠️ Walk-in: échec calcul tarif ($e), prix=0');
+      }
+
       // Create inscription with present=true
       final inscriptionData = {
         'operation_id': operationId,
@@ -367,7 +392,7 @@ class OperationService {
         'membre_id': member.id,
         'membre_nom': member.nom,
         'membre_prenom': member.prenom,
-        'prix': 0.0, // Walk-in, prix à déterminer si nécessaire
+        'prix': prix,
         'paye': false,
         'date_inscription': FieldValue.serverTimestamp(),
         // Already present (scanned)
@@ -385,7 +410,7 @@ class OperationService {
           .collection('clubs/$clubId/operations/$operationId/inscriptions')
           .add(inscriptionData);
 
-      debugPrint('✅ Inscription walk-in créée: ${member.fullName} → $operationTitle');
+      debugPrint('✅ Inscription walk-in créée: ${member.fullName} → $operationTitle (${prix}€)');
     } catch (e) {
       debugPrint('❌ Erreur création inscription walk-in: $e');
       rethrow;
