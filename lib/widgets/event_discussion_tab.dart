@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../config/app_colors.dart';
@@ -697,9 +698,16 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
               if (message.isReply && message.replyToPreview != null)
                 _buildReplyPreview(message.replyToPreview!),
               if (message.message.isNotEmpty)
-                Text(
-                  message.message,
-                  style: const TextStyle(fontSize: 15, color: Colors.black87),
+                MarkdownBody(
+                  data: message.message,
+                  selectable: true,
+                  styleSheet: MarkdownStyleSheet(
+                    p: const TextStyle(fontSize: 15, color: Colors.black87),
+                    strong: const TextStyle(fontSize: 15, color: Colors.black87, fontWeight: FontWeight.w700),
+                    em: const TextStyle(fontSize: 15, color: Colors.black87, fontStyle: FontStyle.italic),
+                    listBullet: const TextStyle(fontSize: 15, color: Colors.black87),
+                    blockSpacing: 4,
+                  ),
                 ),
               if (message.hasAttachments)
                 AttachmentDisplay(

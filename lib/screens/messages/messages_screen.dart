@@ -277,7 +277,11 @@ class MessagesScreen extends StatelessWidget {
                         }
 
                         final lastMsg = msgSnapshot.data!.docs.first.data() as Map<String, dynamic>;
-                        final lastMsgText = lastMsg['message'] as String? ?? '';
+                        final rawMsgText = lastMsg['message'] as String? ?? '';
+                        // Strip light markdown for the preview line (bold/italic markers).
+                        final lastMsgText = rawMsgText
+                            .replaceAll(RegExp(r'\*\*([^*]+)\*\*'), r'$1')
+                            .replaceAll(RegExp(r'\*([^*]+)\*'), r'$1');
                         final lastMsgTime = (lastMsg['created_at'] as Timestamp?)?.toDate();
 
                         return Column(
