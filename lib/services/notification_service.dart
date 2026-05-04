@@ -630,13 +630,12 @@ class NotificationService {
 
   /// Mettre à jour le badge depuis le compteur Firestore unread_counts.
   ///
-  /// Fix #3: lees enkel `unread_counts.total`. De vorige implementatie
-  /// sommeerde ALLE int-velden in de map (dus total + alle categorieën),
-  /// wat resulteerde in een dubbele telling (badge toonde 2× het juiste
-  /// aantal). `total` wordt server-side beheerd via `FieldValue.increment`.
-  ///
-  /// Veiligheidsnet: als `total` ontbreekt of negatief is, vallen we terug
-  /// op de som van de categorie-velden.
+  /// We sommeren de per-categorie velden — het server-side beheerde `total`
+  /// veld werd in het verleden enkel ge-increment (de bijbehorende decrement
+  /// werd nooit aangeroepen vanuit een trigger), waardoor het monotoon dreef
+  /// en opgeblazen badge-getallen gaf in APNs payloads. Single source of
+  /// truth = de per-categorie velden, die door UnreadCountProvider correct
+  /// worden gereset via _syncCountsToFirestore.
   Future<void> updateBadgeFromFirestore(String clubId, String userId) async {
     try {
       final doc = await _firestore
@@ -647,23 +646,16 @@ class NotificationService {
       if (data == null) return;
 
       final unreadCounts = data['unread_counts'] as Map<String, dynamic>? ?? {};
-      int total = (unreadCounts['total'] as num?)?.toInt() ?? -1;
-
-      // Veiligheidsnet: ontbrekende of negatieve total → som categorieën
-      if (total < 0) {
-        total = 0;
-        for (final key in const [
-          'announcements',
-          'event_messages',
-          'team_messages',
-          'session_messages',
-          'medical_certificates',
-        ]) {
-          final value = unreadCounts[key];
-          if (value is num) total += value.toInt();
-        }
-        debugPrint(
-            '⚠️ unread_counts.total missing/negative — fallback sum = $total');
+      int total = 0;
+      for (final key in const [
+        'announcements',
+        'event_messages',
+        'team_messages',
+        'session_messages',
+        'medical_certificates',
+      ]) {
+        final value = unreadCounts[key];
+        if (value is num && value > 0) total += value.toInt();
       }
 
       await setBadge(total.clamp(0, 9999));

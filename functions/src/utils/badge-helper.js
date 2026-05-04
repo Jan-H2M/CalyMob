@@ -36,7 +36,10 @@ async function incrementUnreadCounts(clubId, recipientIds, category) {
 
       batch.update(memberRef, {
         [`unread_counts.${category}`]: admin.firestore.FieldValue.increment(1),
-        'unread_counts.total': admin.firestore.FieldValue.increment(1),
+        // Note: we don't write `unread_counts.total` here. getBadgeCount() now
+        // sums the per-category fields, so a separate `total` field is no
+        // longer needed (and previously drifted because decrementUnreadCounts
+        // was never invoked from any trigger).
         'unread_counts.last_updated': admin.firestore.FieldValue.serverTimestamp(),
       });
     }
@@ -52,7 +55,27 @@ async function incrementUnreadCounts(clubId, recipientIds, category) {
 }
 
 /**
- * Haal het huidige badge-getal op voor een member
+ * Categorie-velden die meetellen voor het badge-aantal.
+ * Single source of truth: deze velden worden door de client correct
+ * bijgehouden via UnreadCountProvider._syncCountsToFirestore().
+ */
+const UNREAD_CATEGORIES = [
+  'announcements',
+  'event_messages',
+  'team_messages',
+  'session_messages',
+  'medical_certificates',
+];
+
+/**
+ * Haal het huidige badge-getal op voor een member.
+ *
+ * BELANGRIJK: we lezen `unread_counts.total` NIET meer. Dat veld werd
+ * server-side enkel ge-increment en de bijbehorende decrement-functie
+ * werd nooit aangeroepen, dus `total` dreef monotoon omhoog en zorgde
+ * voor opgeblazen badge-getallen in APNs payloads. We sommeren nu de
+ * per-categorie velden — die worden door de client correct gereset
+ * via UnreadCountProvider._syncCountsToFirestore.
  *
  * @param {string} clubId - Club ID
  * @param {string} memberId - Member ID
@@ -73,7 +96,13 @@ async function getBadgeCount(clubId, memberId) {
     const unreadCounts = (data && typeof data.unread_counts === 'object' && data.unread_counts !== null)
       ? data.unread_counts
       : {};
-    return Number(unreadCounts.total) || 0;
+
+    let total = 0;
+    for (const key of UNREAD_CATEGORIES) {
+      const value = Number(unreadCounts[key]);
+      if (Number.isFinite(value) && value > 0) total += value;
+    }
+    return total;
   } catch (error) {
     console.error(`❌ Error getting badge count for ${memberId}: ${error.message}`);
     return 1; // Fallback bij fout
@@ -279,14 +308,14 @@ async function decrementUnreadCounts(clubId, memberId, category, amount) {
       ? docData.unread_counts
       : {};
     const currentValue = Number(counts[category]) || 0;
-    const currentTotal = Number(counts.total) || 0;
     const actualDecrement = Math.min(amount, currentValue);
 
     if (actualDecrement <= 0) return;
 
     await memberRef.update({
       [`unread_counts.${category}`]: admin.firestore.FieldValue.increment(-actualDecrement),
-      'unread_counts.total': admin.firestore.FieldValue.increment(-Math.min(actualDecrement, currentTotal)),
+      // Note: see getBadgeCount() — we no longer maintain a separate
+      // `unread_counts.total` field; it's derived from category fields.
       'unread_counts.last_updated': admin.firestore.FieldValue.serverTimestamp(),
     });
 
