@@ -349,26 +349,48 @@ class _ScanPageState extends State<ScanPage> {
     }
 
     try {
-      if (inscription != null) {
-        // Member is inscribed - mark the inscription as present
-        await _operationService.markAsPresent(
-          clubId: widget.clubId,
-          operationId: widget.operationId,
-          memberId: member.id,
-          markedByUserId: currentUser.uid,
-          markedByUserName: displayName,
-        );
-      } else {
-        // No inscription - create inscription with present=true (walk-in)
-        await _operationService.createWalkInInscription(
-          clubId: widget.clubId,
-          operationId: widget.operationId,
-          operationTitle: widget.operationTitle,
-          member: member,
-          markedByUserId: currentUser.uid,
-          markedByUserName: displayName,
-        );
+      if (inscription == null) {
+        // Walk-in flow disabled — registration must happen via the app first.
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.white, size: 32),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          member.fullName,
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                        const Text(
+                          'Pas inscrit·e — doit d\'abord s\'inscrire dans l\'app',
+                          style: TextStyle(fontSize: 14, color: Colors.white),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+        return;
       }
+      // Member is inscribed - mark the inscription as present
+      await _operationService.markAsPresent(
+        clubId: widget.clubId,
+        operationId: widget.operationId,
+        memberId: member.id,
+        markedByUserId: currentUser.uid,
+        markedByUserName: displayName,
+      );
 
       if (mounted) {
         // Show big success toast
@@ -446,26 +468,33 @@ class _ScanPageState extends State<ScanPage> {
     });
 
     try {
-      if (_memberInscription != null) {
-        // Member is inscribed - mark the inscription as present
-        await _operationService.markAsPresent(
-          clubId: widget.clubId,
-          operationId: widget.operationId,
-          memberId: _scannedMember!.id,
-          markedByUserId: currentUser.uid,
-          markedByUserName: displayName,
-        );
-      } else {
-        // No inscription - create inscription with present=true (walk-in)
-        await _operationService.createWalkInInscription(
-          clubId: widget.clubId,
-          operationId: widget.operationId,
-          operationTitle: widget.operationTitle,
-          member: _scannedMember!,
-          markedByUserId: currentUser.uid,
-          markedByUserName: displayName,
-        );
+      if (_memberInscription == null) {
+        // Walk-in flow disabled — registration must happen via the app first.
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '${_scannedMember!.fullName} — pas inscrit·e. Doit d\'abord s\'inscrire dans l\'app.',
+              ),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+          setState(() {
+            _isCheckingIn = false;
+          });
+          _resetScanner();
+        }
+        return;
       }
+      // Member is inscribed - mark the inscription as present
+      await _operationService.markAsPresent(
+        clubId: widget.clubId,
+        operationId: widget.operationId,
+        memberId: _scannedMember!.id,
+        markedByUserId: currentUser.uid,
+        markedByUserName: displayName,
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

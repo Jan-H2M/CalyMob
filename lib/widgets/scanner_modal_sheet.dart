@@ -224,26 +224,21 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
         userId: memberId,
       );
 
-      if (inscription != null) {
-        // Mark existing inscription as present
-        await _operationService.markAsPresent(
-          clubId: widget.clubId,
-          operationId: widget.operationId,
-          memberId: memberId,
-          markedByUserId: currentUser.uid,
-          markedByUserName: displayName,
+      if (inscription == null) {
+        // Walk-in flow disabled — registration must happen via the app first.
+        _showErrorToast(
+          '${member.fullName} — pas inscrit·e. Doit d\'abord s\'inscrire dans l\'app.',
         );
-      } else {
-        // Create walk-in inscription
-        await _operationService.createWalkInInscription(
-          clubId: widget.clubId,
-          operationId: widget.operationId,
-          operationTitle: widget.operationTitle,
-          member: member,
-          markedByUserId: currentUser.uid,
-          markedByUserName: displayName,
-        );
+        return;
       }
+      // Mark existing inscription as present
+      await _operationService.markAsPresent(
+        clubId: widget.clubId,
+        operationId: widget.operationId,
+        memberId: memberId,
+        markedByUserId: currentUser.uid,
+        markedByUserName: displayName,
+      );
     }
 
     // 5. Show success feedback
@@ -381,19 +376,27 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
             isGuest: result['isGuest'] as bool,
           );
         } else {
-          final member = await _memberService.getMemberById(
-            widget.clubId, result['memberId'] as String);
-          if (member != null) {
-            final displayName = authProvider.displayName ?? 'Inconnu';
-            await _operationService.createWalkInInscription(
-              clubId: widget.clubId,
-              operationId: widget.operationId,
-              operationTitle: widget.operationTitle,
-              member: member,
-              markedByUserId: currentUser.uid,
-              markedByUserName: displayName,
+          // Walk-in flow disabled — only mark presence on existing inscriptions.
+          final memberId = result['memberId'] as String;
+          final inscription = await _operationService.getUserInscription(
+            clubId: widget.clubId,
+            operationId: widget.operationId,
+            userId: memberId,
+          );
+          if (inscription == null) {
+            _showErrorToast(
+              '${result['memberName']} — pas inscrit·e. Doit d\'abord s\'inscrire dans l\'app.',
             );
+            return;
           }
+          final displayName = authProvider.displayName ?? 'Inconnu';
+          await _operationService.markAsPresent(
+            clubId: widget.clubId,
+            operationId: widget.operationId,
+            memberId: memberId,
+            markedByUserId: currentUser.uid,
+            markedByUserName: displayName,
+          );
         }
         _showSuccessToast(result['memberName'] as String);
       } catch (e) {
