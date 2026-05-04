@@ -1071,16 +1071,19 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                 }
               },
             ),
-          // Scanner button - always visible for all logged-in users
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: IconButton(
-              onPressed: _openScanner,
-              iconSize: 40,
-              icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
-              tooltip: 'Scanner présence',
+          // Scanner button — hidden for dive events (auto-presence on payment).
+          // For sorties, presence still needs to be marked manually so we
+          // keep the scanner there.
+          if (operation?.categorie != 'plongee')
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: IconButton(
+                onPressed: _openScanner,
+                iconSize: 40,
+                icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
+                tooltip: 'Scanner présence',
+              ),
             ),
-          ),
         ],
       ),
       body: OceanGradientBackground(
