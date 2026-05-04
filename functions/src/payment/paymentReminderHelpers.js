@@ -132,8 +132,8 @@ function sortMembersByDisplayName(members) {
 // Message composition
 // =============================================================================
 
-function buildBulletList(members) {
-  return members.map((m) => `   • ${m.display_name}`).join('\n');
+function buildNameList(members) {
+  return members.map((m) => m.display_name).join('\n');
 }
 
 function composeReminderText(operationData, qrEmailMembers, surPlaceMembers) {
@@ -145,33 +145,23 @@ function composeReminderText(operationData, qrEmailMembers, surPlaceMembers) {
     : null;
   if (!operationDate) throw new Error('Operation date_debut is missing or invalid');
 
-  const heading = `Rappel — paiement pour ${eventTitle} du ${formatDate(operationDate)}`;
-  const qrParagraph = `Ont choisi de payer via le QR code envoyé par email — paiement pas encore reçu (nouvel email envoyé) :\n${buildBulletList(qrEmailMembers)}`;
-  const surPlaceParagraph = `Paiement sur place confirmé (ne pas oublier votre téléphone) :\n${buildBulletList(surPlaceMembers)}`;
+  // Short date "DD/MM" — full date with year is overkill in the title
+  const shortDate = formatDate(operationDate).slice(0, 5);
+  const heading = `Rappel — ${eventTitle} (${shortDate})`;
 
-  if (qrEmailMembers.length > 0 && surPlaceMembers.length > 0) {
-    return [
-      heading,
-      'Il reste 3 jours avant l\'événement. Quelques paiements sont encore en attente :',
-      qrParagraph,
-      surPlaceParagraph,
-      'Merci d\'utiliser de préférence le QR code dans l\'app — cela facilite énormément le travail du trésorier.',
-    ].join('\n\n');
-  }
+  const sections = [heading];
+
   if (qrEmailMembers.length > 0) {
-    return [
-      heading,
-      'Il reste 3 jours avant l\'événement. Quelques paiements sont encore en attente :',
-      qrParagraph,
-      'Merci d\'utiliser de préférence le QR code dans l\'app — cela facilite énormément le travail du trésorier.',
-    ].join('\n\n');
+    sections.push(`**Paiement QR pas encore reçu :**\n${buildNameList(qrEmailMembers)}`);
   }
-  return [
-    heading,
-    'Il reste 3 jours avant l\'événement.',
-    surPlaceParagraph,
-    'À bientôt !',
-  ].join('\n\n');
+
+  if (surPlaceMembers.length > 0) {
+    sections.push(`**Paiement sur place :**\n${buildNameList(surPlaceMembers)}`);
+  }
+
+  sections.push("Utilisez le QR code dans l'app — c'est facile !");
+
+  return sections.join('\n\n');
 }
 
 // =============================================================================
@@ -208,11 +198,14 @@ function isOperationInReminderWindow(operationData, now = new Date()) {
  * @param {object} operationData
  * @returns {Promise<{written:boolean, reason:string, qrCount?:number, surPlaceCount?:number, title?:string, date?:string}>}
  */
-async function recomputePaymentReminderDraft(db, clubId, operationRef, operationData) {
+async function recomputePaymentReminderDraft(db, clubId, operationRef, operationData, options = {}) {
+  const { allowResend = false } = options;
   const existing = operationData.payment_reminder;
 
-  // Don't overwrite a reminder that's already been sent
-  if (existing && existing.status === 'sent') {
+  // Don't overwrite a reminder that's already been sent — UNLESS the caller
+  // explicitly wants to allow resending (e.g. send-time refresh from
+  // sendPaymentReminder, where the admin clicked "Renvoyer").
+  if (existing && existing.status === 'sent' && !allowResend) {
     return { written: false, reason: 'already-sent' };
   }
 

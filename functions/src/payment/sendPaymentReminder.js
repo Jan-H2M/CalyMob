@@ -98,6 +98,7 @@ const sendPaymentReminder = onCall(
     //    (alongside the daily run and the live trigger).
     const refreshResult = await recomputePaymentReminderDraft(
       db, clubId, operationRef, operationSnap.data(),
+      { allowResend: true },
     );
     console.log(
       `[sendPaymentReminder] Pre-send refresh ${clubId}/${operationId}: ${refreshResult.reason}`,
@@ -109,19 +110,21 @@ const sendPaymentReminder = onCall(
     const paymentReminder = operation.payment_reminder;
 
     // 5. Validate state
+    //    Allow resending: as long as there are unpaid inscriptions in the
+    //    refreshed draft, we let the admin send again. The recompute above
+    //    forces the draft back to 'pending' if there are still unpaid people,
+    //    or to 'cleared' if everyone paid.
     if (!paymentReminder) {
-      throw new HttpsError('failed-precondition', 'Aucun rappel en attente à envoyer');
-    }
-    if (paymentReminder.status === 'sent') {
-      throw new HttpsError('already-exists', 'Le rappel a déjà été envoyé');
-    }
-    if (paymentReminder.status === 'cancelled') {
-      throw new HttpsError('failed-precondition', 'Le rappel a été annulé — attendez la préparation de demain ou recalculez manuellement');
+      throw new HttpsError('failed-precondition', 'Aucun rappel à envoyer');
     }
     if (paymentReminder.status === 'cleared') {
       throw new HttpsError('failed-precondition', 'Plus aucun paiement en attente — tous les participants ont payé.');
     }
-    if (paymentReminder.status !== 'pending') {
+    if (paymentReminder.status === 'cancelled') {
+      throw new HttpsError('failed-precondition', 'Le rappel a été annulé — recalculez manuellement');
+    }
+    // Accept both 'pending' and 'sent' — sending again is allowed.
+    if (paymentReminder.status !== 'pending' && paymentReminder.status !== 'sent') {
       throw new HttpsError('failed-precondition', `Rappel dans un état inattendu : "${paymentReminder.status}"`);
     }
 

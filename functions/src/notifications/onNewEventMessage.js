@@ -11,8 +11,16 @@ const admin = require('firebase-admin');
 const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithBadge, filterByPreference } = require('../utils/badge-helper');
 const { EVENT_EXPIRY_GRACE_DAYS } = require('../utils/constants');
 
+function stripMarkdown(text) {
+  // Strip light markdown markers (**bold**, *italic*) for push notification bodies
+  // where markdown isn't rendered.
+  return String(text || '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, '$1$2');
+}
+
 function buildNotificationBody(message = {}) {
-  const text = String(message.message || '').trim();
+  const text = stripMarkdown(message.message).trim();
   if (text) {
     return text.length > 100 ? `${text.substring(0, 97)}...` : text;
   }
