@@ -20,6 +20,7 @@ import 'services/notification_service.dart';
 import 'services/deep_link_service.dart';
 import 'services/local_read_tracker.dart';
 import 'services/app_update_service.dart';
+import 'services/feature_flag_service.dart';
 
 // Providers
 import 'providers/auth_provider.dart';
@@ -33,6 +34,7 @@ import 'providers/exercice_valide_provider.dart';
 import 'providers/availability_provider.dart';
 import 'providers/activity_provider.dart';
 import 'providers/unread_count_provider.dart';
+import 'providers/cart_provider.dart';
 
 // Bug Report
 import 'widgets/bug_report_widget.dart';
@@ -46,6 +48,16 @@ import 'screens/teams/team_chat_screen.dart';
 import 'screens/piscine/session_chat_screen.dart';
 import 'screens/piscine/session_detail_screen.dart';
 import 'screens/profile/medical_certification_screen.dart';
+import 'screens/home/landing_screen.dart';
+import 'screens/boutique/boutique_screen.dart';
+import 'screens/boutique/boutique_product_detail_screen.dart';
+import 'screens/boutique/boutique_cart_screen.dart';
+import 'screens/boutique/boutique_checkout_screen.dart';
+import 'screens/boutique/mes_commandes_screen.dart';
+import 'screens/profile/mes_recus_screen.dart';
+import 'screens/profile/mes_abonnements_screen.dart';
+import 'screens/profile/ma_cotisation_screen.dart';
+import 'screens/profile/mes_prets_screen.dart';
 
 // Models (pour la navigation depuis les notifications)
 import 'models/announcement.dart';
@@ -76,7 +88,9 @@ void main() async {
       options.dsn = kDebugMode
           ? '' // Désactivé en debug — pas d'envoi vers Sentry
           : 'https://c6c7e5f63f5700bf5cb4f2b02a6ea0b5@o4510996349386752.ingest.de.sentry.io/4510996559429712';
-      options.tracesSampleRate = kReleaseMode ? 0.2 : 0.0; // 20% en prod, 0 en debug
+      options.tracesSampleRate = kReleaseMode
+          ? 0.2
+          : 0.0; // 20% en prod, 0 en debug
       options.environment = kReleaseMode
           ? const String.fromEnvironment('ENV', defaultValue: 'production')
           : 'debug';
@@ -97,7 +111,8 @@ void main() async {
 
       // Register Syncfusion license
       SyncfusionLicense.registerLicense(
-          'Ngo9BigBOggjHTQxAR8/V1JFaF1cXGFCf1FpRGpGfV5ycUVHYVZQRXxeQE0SNHVRdkdmWH1fcnVUR2FdU0J+W0pWYEg=');
+        'Ngo9BigBOggjHTQxAR8/V1JFaF1cXGFCf1FpRGpGfV5ycUVHYVZQRXxeQE0SNHVRdkdmWH1fcnVUR2FdU0J+W0pWYEg=',
+      );
 
       try {
         // Initialiser Firebase avec les options de configuration
@@ -114,8 +129,10 @@ void main() async {
         if (!kIsWeb) {
           FlutterError.onError = (FlutterErrorDetails details) {
             FirebaseCrashlytics.instance.recordFlutterFatalError(details);
-            Sentry.captureException(details.exception,
-                stackTrace: details.stack);
+            Sentry.captureException(
+              details.exception,
+              stackTrace: details.stack,
+            );
           };
           debugPrint('✅ Crashlytics initialisé');
         }
@@ -132,7 +149,8 @@ void main() async {
         // Initialiser le service de notifications (pas sur web)
         if (!kIsWeb) {
           FirebaseMessaging.onBackgroundMessage(
-              firebaseMessagingBackgroundHandler);
+            firebaseMessagingBackgroundHandler,
+          );
         }
 
         final notificationService = NotificationService();
@@ -170,6 +188,98 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   final NotificationService _notificationService = NotificationService();
   final DeepLinkService _deepLinkService = DeepLinkService();
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+
+  Route<dynamic>? _onGenerateRoute(RouteSettings settings) {
+    final routeName = settings.name;
+    if (routeName == null) return null;
+
+    final uri = Uri.tryParse(routeName);
+    if (uri == null) return null;
+
+    if (uri.path == '/home') {
+      return MaterialPageRoute(
+        builder: (_) => const LandingScreen(),
+        settings: settings,
+      );
+    }
+
+    if (uri.path == '/boutique') {
+      return MaterialPageRoute(
+        builder: (_) => const BoutiqueScreen(),
+        settings: settings,
+      );
+    }
+
+    if (uri.pathSegments.length == 3 &&
+        uri.pathSegments[0] == 'boutique' &&
+        uri.pathSegments[1] == 'product') {
+      return MaterialPageRoute(
+        builder: (_) =>
+            BoutiqueProductDetailScreen(productId: uri.pathSegments[2]),
+        settings: settings,
+      );
+    }
+
+    if (uri.path == '/boutique/cart') {
+      return MaterialPageRoute(
+        builder: (_) => const BoutiqueCartScreen(),
+        settings: settings,
+      );
+    }
+
+    if (uri.path == '/boutique/checkout') {
+      return MaterialPageRoute(
+        builder: (_) => const BoutiqueCheckoutScreen(),
+        settings: settings,
+      );
+    }
+
+    if (uri.path == '/profile/orders') {
+      return MaterialPageRoute(
+        builder: (_) => const MesCommandesScreen(),
+        settings: settings,
+      );
+    }
+
+    if (uri.pathSegments.length == 3 &&
+        uri.pathSegments[0] == 'profile' &&
+        uri.pathSegments[1] == 'orders') {
+      return MaterialPageRoute(
+        builder: (_) => MesCommandesScreen(initialOrderId: uri.pathSegments[2]),
+        settings: settings,
+      );
+    }
+
+    if (uri.path == '/profile/recus') {
+      return MaterialPageRoute(
+        builder: (_) => const MesRecusScreen(),
+        settings: settings,
+      );
+    }
+
+    if (uri.path == '/profile/abonnements') {
+      return MaterialPageRoute(
+        builder: (_) => const MesAbonnementsScreen(),
+        settings: settings,
+      );
+    }
+
+    if (uri.path == '/profile/cotisation') {
+      return MaterialPageRoute(
+        builder: (_) => const MaCotisationScreen(),
+        settings: settings,
+      );
+    }
+
+    if (uri.path == '/profile/prets') {
+      return MaterialPageRoute(
+        builder: (_) => const MesPretsScreen(),
+        settings: settings,
+      );
+    }
+
+    return null;
+  }
 
   @override
   void initState() {
@@ -252,7 +362,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
     if (type == null || _navigatorKey.currentState == null) {
       debugPrint(
-          '⚠️ Cannot handle notification tap: type=$type, navigator=${_navigatorKey.currentState != null}');
+        '⚠️ Cannot handle notification tap: type=$type, navigator=${_navigatorKey.currentState != null}',
+      );
       return;
     }
 
@@ -352,10 +463,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               );
               _navigatorKey.currentState!.push(
                 MaterialPageRoute(
-                  builder: (_) => SessionChatScreen(
-                    session: session,
-                    chatGroup: chatGroup,
-                  ),
+                  builder: (_) =>
+                      SessionChatScreen(session: session, chatGroup: chatGroup),
                 ),
               );
             }
@@ -401,7 +510,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       }
     } on TimeoutException {
       debugPrint(
-          '⚠️ Notification tap: Firestore read timed out for type=$type');
+        '⚠️ Notification tap: Firestore read timed out for type=$type',
+      );
     } catch (e) {
       debugPrint('❌ Error handling notification tap: $e');
     }
@@ -472,8 +582,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void _refreshUnreadCounts() {
     try {
       final unreadProvider = _navigatorKey.currentContext != null
-          ? Provider.of<UnreadCountProvider>(_navigatorKey.currentContext!,
-              listen: false)
+          ? Provider.of<UnreadCountProvider>(
+              _navigatorKey.currentContext!,
+              listen: false,
+            )
           : null;
       if (unreadProvider != null && unreadProvider.isListening) {
         unreadProvider.refresh();
@@ -488,8 +600,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (kIsWeb) return; // app_badge_plus not available on web (fixes CALYMOB-F)
     try {
       final unreadProvider = _navigatorKey.currentContext != null
-          ? Provider.of<UnreadCountProvider>(_navigatorKey.currentContext!,
-              listen: false)
+          ? Provider.of<UnreadCountProvider>(
+              _navigatorKey.currentContext!,
+              listen: false,
+            )
           : null;
       if (unreadProvider != null) {
         _notificationService.setBadge(unreadProvider.total);
@@ -510,6 +624,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         providers: [
           ChangeNotifierProvider(create: (_) => AuthProvider()),
           ChangeNotifierProvider(create: (_) => MemberProvider()),
+          ChangeNotifierProvider(create: (_) => FeatureFlagService()),
           ChangeNotifierProvider(create: (_) => OperationProvider()),
           ChangeNotifierProvider(create: (_) => ExpenseProvider()),
           ChangeNotifierProvider(create: (_) => AnnouncementProvider()),
@@ -519,6 +634,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           ChangeNotifierProvider(create: (_) => AvailabilityProvider()),
           ChangeNotifierProvider(create: (_) => ActivityProvider()),
           ChangeNotifierProvider(create: (_) => UnreadCountProvider()),
+          ChangeNotifierProvider(create: (_) => CartProvider()),
         ],
         child: MaterialApp(
           navigatorKey: _navigatorKey,
@@ -542,9 +658,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             GlobalCupertinoLocalizations.delegate,
             SfGlobalLocalizations.delegate,
           ],
-          supportedLocales: const [
-            Locale('fr', 'FR'),
-          ],
+          supportedLocales: const [Locale('fr', 'FR')],
           locale: const Locale('fr', 'FR'),
           theme: ThemeData(
             primarySwatch: Colors.blue,
@@ -571,8 +685,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                 elevation: 0,
                 backgroundColor: AppColors.middenblauw,
                 foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -595,6 +711,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               ),
             ),
           ),
+          onGenerateRoute: _onGenerateRoute,
           home: const LoginScreen(),
         ),
       ),
