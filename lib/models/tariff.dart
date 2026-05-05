@@ -8,6 +8,11 @@ class Tariff {
   final bool isDefault;
   final int displayOrder;
 
+  /// True when this tariff applies to guests (non-members brought by a member).
+  /// Members can pick it from CalyMob's "Add guest" dialog when the parent
+  /// event has allowGuests=true. Default false.
+  final bool isGuestTariff;
+
   Tariff({
     required this.id,
     required this.label,
@@ -15,6 +20,7 @@ class Tariff {
     required this.price,
     this.isDefault = false,
     this.displayOrder = 0,
+    this.isGuestTariff = false,
   });
 
   /// Convertir depuis Firestore
@@ -30,6 +36,7 @@ class Tariff {
       price: (data['price'] ?? 0).toDouble(),
       isDefault: data['is_default'] ?? false,
       displayOrder: data['display_order'] ?? 0,
+      isGuestTariff: data['is_guest_tariff'] ?? false,
     );
   }
 
@@ -56,11 +63,12 @@ class Tariff {
       'price': price,
       'is_default': isDefault,
       'display_order': displayOrder,
+      'is_guest_tariff': isGuestTariff,
     };
   }
 
   @override
   String toString() {
-    return 'Tariff(label: $label, category: $category, price: $price€)';
+    return 'Tariff(label: $label, category: $category, price: $price€, guest: $isGuestTariff)';
   }
 }

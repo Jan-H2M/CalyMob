@@ -235,6 +235,15 @@ async function recomputePaymentReminderDraft(db, clubId, operationRef, operation
     try {
       const ins = insDoc.data();
       const insId = insDoc.id;
+
+      // Guest inscriptions linked to a parent member ride on the parent's
+      // aggregated QR — never list them as individual reminder recipients,
+      // they have no email account anyway. Standalone admin-added guests
+      // (no parent_inscription_id) stay in the list as before.
+      if (ins.is_guest === true && ins.parent_inscription_id) {
+        continue;
+      }
+
       const membreId = normalizeText(ins.membre_id) || insId;
       const groupKey = classifyGroup(ins.payment_status);
 

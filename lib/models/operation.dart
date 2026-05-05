@@ -32,6 +32,14 @@ class Operation {
   /// organiser fills in [eventTariffs] and clears this flag in CalyCompta.
   final bool priceTbd;
 
+  /// Allow members to register external guests (family / friends) for this
+  /// event from CalyMob. When true, members see an "Ajouter un invité" button
+  /// after registering, and pay a single aggregated QR for themselves + their
+  /// guests. Guest pricing comes from [eventTariffs] entries with
+  /// isGuestTariff=true. Default false — preserves current behaviour where
+  /// only admins/encadrants can add guests via the existing flow.
+  final bool allowGuests;
+
   // Organisateur (can be reassigned after creation)
   final String? organisateurId;
   final String? organisateurNom;
@@ -73,6 +81,7 @@ class Operation {
     this.eventTariffs = const [],
     this.supplements = const [],
     this.priceTbd = false,
+    this.allowGuests = false,
     this.organisateurId,
     this.organisateurNom,
     this.creatorUserId,
@@ -105,6 +114,7 @@ class Operation {
       eventTariffs: _parseTariffs(data['event_tariffs']),
       supplements: _parseSupplements(data['supplements']),
       priceTbd: data['price_tbd'] == true,
+      allowGuests: data['allow_guests'] == true,
       organisateurId: data['organisateur_id'],
       organisateurNom: data['organisateur_nom'],
       creatorUserId: data['creator_user_id'],

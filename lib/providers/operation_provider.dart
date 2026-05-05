@@ -247,6 +247,10 @@ class OperationProvider with ChangeNotifier {
     required double prix,
     required String addedByUserId,
     required String addedByUserName,
+    /// Inviting member's own inscription ID (member-driven flow only).
+    String? parentInscriptionId,
+    /// Selected guest tariff ID (when event has multiple guest tariffs).
+    String? tariffId,
   }) async {
     try {
       _isLoading = true;
@@ -261,6 +265,8 @@ class OperationProvider with ChangeNotifier {
         prix: prix,
         addedByUserId: addedByUserId,
         addedByUserName: addedByUserName,
+        parentInscriptionId: parentInscriptionId,
+        tariffId: tariffId,
       );
 
       // Mettre à jour cache

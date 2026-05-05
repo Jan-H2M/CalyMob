@@ -583,7 +583,12 @@ class OperationService {
   }
 
   /// Créer une inscription pour un invité (non-membre)
-  /// Used by admins/encadrants to add guests to an operation
+  ///
+  /// Used by:
+  ///  - admins/encadrants from the legacy flow (no parent — guest stands alone)
+  ///  - members from the new "allow_guests" flow (parentInscriptionId set —
+  ///    guest is linked to the inviting member's own inscription so payment
+  ///    can be aggregated into a single QR)
   Future<void> createGuestInscription({
     required String clubId,
     required String operationId,
@@ -593,6 +598,12 @@ class OperationService {
     required double prix,
     required String addedByUserId,
     required String addedByUserName,
+    /// When set, links this guest to the inviting member's own inscription.
+    /// Used by the member-driven flow in CalyMob (allow_guests=true events).
+    String? parentInscriptionId,
+    /// ID of the Tariff entry from operation.event_tariffs[] used to compute
+    /// this guest's price ("Invité adulte" / "Invité enfant" / etc.).
+    String? tariffId,
   }) async {
     try {
       // Generate unique guest ID (timestamp + random suffix to avoid collisions)
@@ -612,6 +623,8 @@ class OperationService {
         'is_guest': true,
         'added_by': addedByUserId,
         'added_by_name': addedByUserName,
+        if (parentInscriptionId != null) 'parent_inscription_id': parentInscriptionId,
+        if (tariffId != null) 'tariff_id': tariffId,
         'created_at': FieldValue.serverTimestamp(),
         'updated_at': FieldValue.serverTimestamp(),
       };
@@ -620,7 +633,7 @@ class OperationService {
           .collection('clubs/$clubId/operations/$operationId/inscriptions')
           .add(inscriptionData);
 
-      debugPrint('✅ Inscription invité créée: $guestPrenom $guestNom → $operationTitle');
+      debugPrint('✅ Inscription invité créée: $guestPrenom $guestNom → $operationTitle (parent=$parentInscriptionId, tariff=$tariffId)');
     } catch (e) {
       debugPrint('❌ Erreur création inscription invité: $e');
       rethrow;

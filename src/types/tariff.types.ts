@@ -17,6 +17,7 @@ export interface Tariff {
   price: number;                 // Price in euros
   is_default: boolean;           // Pre-select in UI?
   display_order: number;         // Custom sort order
+  is_guest_tariff?: boolean;     // True when this tariff applies to guests (non-members brought by a member). Default false.
 }
 
 export interface DiveLocation {

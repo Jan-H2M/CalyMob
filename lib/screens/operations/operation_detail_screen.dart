@@ -20,6 +20,7 @@ import '../../models/operation.dart';
 import '../../models/member_profile.dart';
 import '../../models/exercice_lifras.dart';
 import '../../models/participant_operation.dart';
+import '../../models/tariff.dart';
 import '../../models/event_message.dart';
 import '../../models/supplement.dart';
 import '../../widgets/participant_payment_card.dart';
@@ -965,14 +966,53 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     return result;
   }
 
-  /// Check if current user can add guests (same permission as scan)
-  bool get _canAddGuest => _canScan;
+  /// Tariffs from the current operation that are marked as guest tariffs
+  /// (i.e. members can pick them when adding an invité).
+  List<Tariff> get _guestTariffs {
+    final operation = context.read<OperationProvider>().selectedOperation;
+    if (operation == null) return const [];
+    return operation.eventTariffs.where((t) => t.isGuestTariff).toList();
+  }
 
-  /// Show dialog to add a guest to this operation
+  /// True when the current user is allowed to add a guest to this operation.
+  ///
+  /// Two paths:
+  ///  1. Admin / encadrant / organisateur (existing behaviour, gated by
+  ///     [_canScan]). Can always add a guest, free price.
+  ///  2. Regular member who's already registered AND the event has opted-in
+  ///     via `allow_guests=true` AND the event has at least one tariff
+  ///     marked `is_guest_tariff=true`. The price is locked to the picked
+  ///     tariff and the new inscription is linked to the member's parent
+  ///     inscription so payment can be aggregated into a single QR.
+  bool get _canAddGuest {
+    if (_canScan) return true;
+    final operation = context.read<OperationProvider>().selectedOperation;
+    if (operation == null) return false;
+    if (!operation.allowGuests) return false;
+    if (_userInscription == null) return false;
+    if (_guestTariffs.isEmpty) return false;
+    // Capacity check: don't allow more guests when the event is at capacity
+    if (operation.capaciteMax != null) {
+      final currentCount =
+          context.read<OperationProvider>().selectedOperationParticipants.length;
+      if (currentCount >= operation.capaciteMax!) return false;
+    }
+    return true;
+  }
+
+  /// Show dialog to add a guest to this operation.
+  ///
+  /// When the current user is a regular member (not an admin/encadrant), the
+  /// new guest inscription is linked to their own inscription via
+  /// `parent_inscription_id` so the payment QR can be aggregated.
   Future<void> _showAddGuestDialog() async {
+    final tariffs = _guestTariffs;
+
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => const AddGuestDialog(),
+      builder: (context) => AddGuestDialog(
+        availableGuestTariffs: _canScan ? const [] : tariffs,
+      ),
     );
 
     if (result != null && mounted) {
@@ -981,6 +1021,14 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       final operation = operationProvider.selectedOperation;
 
       if (operation == null) return;
+
+      // Member-driven flow: link the new guest to the member's own inscription.
+      // Admin/encadrant flow stays unlinked (parentInscriptionId = null) to
+      // preserve the existing legacy behaviour.
+      final isMemberDrivenFlow = !_canScan && _userInscription != null;
+      final parentInscriptionId =
+          isMemberDrivenFlow ? _userInscription!.id : null;
+      final tariffId = result['tariffId'] as String?;
 
       try {
         await operationProvider.addGuestToOperation(
@@ -992,6 +1040,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           prix: result['prix'] as double,
           addedByUserId: authProvider.currentUser?.uid ?? '',
           addedByUserName: authProvider.displayName ?? 'Admin',
+          parentInscriptionId: parentInscriptionId,
+          tariffId: tariffId,
         );
 
         if (mounted) {

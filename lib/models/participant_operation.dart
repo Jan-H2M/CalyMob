@@ -29,6 +29,18 @@ class ParticipantOperation {
   final String? presentBy; // User ID who marked them present
   final String? presentByName; // Name of user who marked them present
   final bool isGuest; // True for non-member guests
+  final String? addedBy; // User ID who added the guest (for is_guest=true rows)
+  final String? addedByName; // Display name of user who added the guest
+  /// For guest inscriptions added by a member through CalyMob: ID of the
+  /// inviting member's own inscription. Lets us aggregate the QR payment
+  /// (member + their guests = single QR) and cascade actions (when the
+  /// parent member unregisters, their guests are removed too). Stays null
+  /// for guests added by admins from CalyCompta.
+  final String? parentInscriptionId;
+  /// ID of the Tariff (from operation.eventTariffs) used to compute this
+  /// inscription's price. Lets us know which guest tariff was picked
+  /// ("Invité adulte" vs "Invité enfant") and report on tariff usage later.
+  final String? tariffId;
 
   ParticipantOperation({
     required this.id,
@@ -56,6 +68,10 @@ class ParticipantOperation {
     this.presentBy,
     this.presentByName,
     this.isGuest = false,
+    this.addedBy,
+    this.addedByName,
+    this.parentInscriptionId,
+    this.tariffId,
   });
 
   /// True when the bank-side reconciliation is considered done.
@@ -160,6 +176,10 @@ class ParticipantOperation {
       presentBy: data['present_by'],
       presentByName: data['present_by_name'],
       isGuest: data['is_guest'] ?? false,
+      addedBy: data['added_by'] as String?,
+      addedByName: data['added_by_name'] as String?,
+      parentInscriptionId: data['parent_inscription_id'] as String?,
+      tariffId: data['tariff_id'] as String?,
     );
   }
 
@@ -209,6 +229,10 @@ class ParticipantOperation {
       'present_by': presentBy,
       'present_by_name': presentByName,
       'is_guest': isGuest,
+      'added_by': addedBy,
+      'added_by_name': addedByName,
+      'parent_inscription_id': parentInscriptionId,
+      'tariff_id': tariffId,
       'created_at': FieldValue.serverTimestamp(),
       'updated_at': FieldValue.serverTimestamp(),
     };
@@ -241,6 +265,10 @@ class ParticipantOperation {
     String? presentBy,
     String? presentByName,
     bool? isGuest,
+    String? addedBy,
+    String? addedByName,
+    String? parentInscriptionId,
+    String? tariffId,
   }) {
     return ParticipantOperation(
       id: id ?? this.id,
@@ -268,6 +296,10 @@ class ParticipantOperation {
       presentBy: presentBy ?? this.presentBy,
       presentByName: presentByName ?? this.presentByName,
       isGuest: isGuest ?? this.isGuest,
+      addedBy: addedBy ?? this.addedBy,
+      addedByName: addedByName ?? this.addedByName,
+      parentInscriptionId: parentInscriptionId ?? this.parentInscriptionId,
+      tariffId: tariffId ?? this.tariffId,
     );
   }
 }

@@ -357,8 +357,31 @@ function getDefaultTemplateHtml() {
     <p style="font-size: 16px; margin-bottom: 20px;">Bonjour <strong>{{recipientName}}</strong>,</p>
 
     <p style="font-size: 16px; margin-bottom: 20px;">
-      Vous êtes inscrit(e) à l'événement <strong>{{eventTitle}}</strong>{{#if eventDate}} du <strong>{{eventDate}}</strong>{{/if}}.
+      Vous êtes inscrit(e) à l'événement <strong>{{eventTitle}}</strong>{{#if eventDate}} du <strong>{{eventDate}}</strong>{{/if}}{{#if hasGuests}} avec <strong>{{guestCountLabel}}</strong>{{/if}}.
     </p>
+
+    {{#if hasGuests}}
+    <!-- Breakdown for member + guests -->
+    <div style="background: #FFF7ED; border-left: 4px solid #F97316; padding: 16px 20px; margin: 0 0 25px 0; border-radius: 4px;">
+      <p style="margin: 0 0 10px 0; font-size: 14px; font-weight: 600; color: #9A3412;">Détail du paiement groupé</p>
+      <table style="width: 100%; font-size: 14px; border-collapse: collapse;">
+        <tr>
+          <td style="padding: 4px 0; color: #7C2D12;">Votre place</td>
+          <td style="padding: 4px 0; text-align: right; font-weight: 500; color: #7C2D12;">{{parentAmountFormatted}}</td>
+        </tr>
+        {{#each guests}}
+        <tr>
+          <td style="padding: 4px 0; color: #7C2D12;">Invité — {{this.name}}</td>
+          <td style="padding: 4px 0; text-align: right; font-weight: 500; color: #7C2D12;">{{this.prixFormatted}}</td>
+        </tr>
+        {{/each}}
+        <tr>
+          <td style="padding: 8px 0 0 0; color: #7C2D12; border-top: 1px solid #FED7AA; font-weight: 600;">Total</td>
+          <td style="padding: 8px 0 0 0; text-align: right; font-weight: 700; color: #9A3412; border-top: 1px solid #FED7AA;">{{amountFormatted}}</td>
+        </tr>
+      </table>
+    </div>
+    {{/if}}
 
     <p style="font-size: 16px; margin-bottom: 25px;">
       Pour faciliter votre paiement, scannez le QR code ci-dessous avec votre application bancaire :
@@ -465,6 +488,72 @@ async function sendEmailViaResend(apiKey, from, to, subject, html, attachments =
 }
 
 /**
+ * Aggregate payment for a member's inscription including any guest
+ * inscriptions linked to it via `parent_inscription_id`.
+ *
+ * Returns `null` when the participant doc is missing or when there are
+ * no guest children (in which case the caller should fall back to the
+ * client-supplied amount). Otherwise returns:
+ *   {
+ *     parentAmount: number,                  // member's own prix + supplements
+ *     guestSubtotal: number,                 // sum of all linked guest prix
+ *     totalAmount: number,                   // parent + guests
+ *     guests: Array<{ name, prix }>,         // for email template rendering
+ *     parentInscription: <DocumentData>,     // parent doc for downstream use
+ *   }
+ *
+ * IMPORTANT: this is the single source of truth for "how much should the
+ * member pay?" — the caller is allowed to pass an `amount`, but if guests
+ * are linked the server overrides it with the aggregated total to prevent
+ * the QR from being short-paid.
+ */
+async function aggregatePaymentForInscription(db, clubId, operationId, participantId) {
+  if (!participantId) return null;
+
+  const inscriptionsRef = db
+    .collection('clubs').doc(clubId)
+    .collection('operations').doc(operationId)
+    .collection('inscriptions');
+
+  const parentSnap = await inscriptionsRef.doc(participantId).get();
+  if (!parentSnap.exists) {
+    console.log(`[aggregatePaymentForInscription] Parent inscription ${participantId} not found — falling back to client amount`);
+    return null;
+  }
+  const parent = parentSnap.data();
+
+  // Guests are inscriptions whose parent_inscription_id points back to us.
+  const childrenSnap = await inscriptionsRef
+    .where('parent_inscription_id', '==', participantId)
+    .where('is_guest', '==', true)
+    .get();
+
+  if (childrenSnap.empty) return null;
+
+  const parentAmount = (Number(parent.prix) || 0) + (Number(parent.supplement_total) || 0);
+  let guestSubtotal = 0;
+  const guests = [];
+  childrenSnap.forEach((doc) => {
+    const g = doc.data();
+    const guestPrix = Number(g.prix) || 0;
+    guestSubtotal += guestPrix;
+    const fullName = `${g.membre_prenom || ''} ${g.membre_nom || ''}`.trim() || 'Invité';
+    guests.push({ name: fullName, prix: guestPrix });
+  });
+
+  const totalAmount = parentAmount + guestSubtotal;
+  console.log(`[aggregatePaymentForInscription] parent=${parentAmount}€ + ${guests.length} guests (${guestSubtotal}€) = ${totalAmount}€`);
+
+  return {
+    parentAmount,
+    guestSubtotal,
+    totalAmount,
+    guests,
+    parentInscription: parent,
+  };
+}
+
+/**
  * Core per-member payment email send logic, shared by the
  * `sendPaymentQrEmail` callable (invoked from CalyMob) and the
  * `sendPaymentReminder` callable (invoked from CalyCompta, which
@@ -478,6 +567,11 @@ async function sendEmailViaResend(apiKey, from, to, subject, html, attachments =
  *   { clubId, operationId, participantId, memberEmail, memberFirstName,
  *     memberLastName, amount, operationTitle, operationNumber?, operationDate? }
  *
+ * If the participant has guest inscriptions linked via
+ * `parent_inscription_id`, the email aggregates those into a single QR.
+ * The server-side aggregated total wins over any client-supplied `amount`
+ * to prevent short-paid QRs.
+ *
  * Throws `HttpsError` on recoverable failures; the caller is expected
  * to translate unexpected errors to `HttpsError('internal', ...)`.
  */
@@ -489,13 +583,24 @@ async function sendPaymentEmailForMember(db, input) {
     memberEmail,
     memberFirstName,
     memberLastName,
-    amount,
+    amount: clientAmount,
     operationTitle,
     operationNumber,
     operationDate,
   } = input;
 
   console.log(`📧 [sendPaymentQrEmail] Sending payment email for operation ${operationId} to ${memberEmail}`);
+
+  // 0. Aggregate payment if guests are linked. Server-side aggregation
+  //    wins over the client-supplied amount so a tampered or stale
+  //    `amount` from CalyMob can't short-pay the QR.
+  const aggregation = await aggregatePaymentForInscription(
+    db, clubId, operationId, participantId
+  );
+  const amount = aggregation ? aggregation.totalAmount : clientAmount;
+  if (aggregation) {
+    console.log(`📧 [sendPaymentQrEmail] Aggregated amount: ${amount}€ (parent ${aggregation.parentAmount}€ + ${aggregation.guests.length} guests ${aggregation.guestSubtotal}€). Client sent ${clientAmount}€.`);
+  }
 
   // 1. Get bank settings
   const bankSettingsDoc = await db.collection('clubs').doc(clubId)
@@ -613,6 +718,21 @@ async function sendPaymentEmailForMember(db, input) {
     clubName: clubName,
     logoUrl: logoUrl,
     appUrl: 'https://caly.club',
+    // Guest aggregation context for templates that opt-in to display it.
+    // When `hasGuests` is false the template should render its normal layout.
+    hasGuests: !!aggregation,
+    guestCount: aggregation ? aggregation.guests.length : 0,
+    // Pre-formatted French label so templates don't need a custom Handlebars
+    // helper to pluralise (e.g. "1 invité" / "3 invités").
+    guestCountLabel: aggregation
+      ? `${aggregation.guests.length} invité${aggregation.guests.length > 1 ? 's' : ''}`
+      : '',
+    parentAmountFormatted: aggregation ? formatAmount(aggregation.parentAmount) : amountFormatted,
+    guestSubtotalFormatted: aggregation ? formatAmount(aggregation.guestSubtotal) : '',
+    guests: aggregation ? aggregation.guests.map(g => ({
+      name: g.name,
+      prixFormatted: formatAmount(g.prix),
+    })) : [],
   };
 
   // 9. Render template with Handlebars

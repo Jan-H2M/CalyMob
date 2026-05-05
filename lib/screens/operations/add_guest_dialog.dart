@@ -1,9 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../config/app_colors.dart';
+import '../../models/tariff.dart';
 
+/// Dialog to add a guest (non-member) to an operation.
+///
+/// Two modes depending on the [availableGuestTariffs] argument:
+///  - When the list is non-empty (member-driven flow on an event with
+///    `allow_guests=true`): the user picks a tariff (e.g. "Invité adulte"
+///    vs "Invité enfant") and the price is locked to that tariff. If the
+///    list has exactly one entry, no dropdown is shown — just the price.
+///  - When the list is empty (legacy admin flow): falls back to a free
+///    price field, preserving the original behaviour.
+///
+/// Returns a Map with keys: `prenom`, `nom`, `prix`, `tariffId` (nullable
+/// when in legacy free-price mode).
 class AddGuestDialog extends StatefulWidget {
-  const AddGuestDialog({super.key});
+  final List<Tariff> availableGuestTariffs;
+
+  const AddGuestDialog({
+    super.key,
+    this.availableGuestTariffs = const [],
+  });
 
   @override
   State<AddGuestDialog> createState() => _AddGuestDialogState();
@@ -18,6 +36,18 @@ class _AddGuestDialogState extends State<AddGuestDialog> {
   final _nomFocusNode = FocusNode();
   final _prixFocusNode = FocusNode();
 
+  Tariff? _selectedTariff;
+
+  bool get _hasGuestTariffs => widget.availableGuestTariffs.isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_hasGuestTariffs) {
+      _selectedTariff = widget.availableGuestTariffs.first;
+    }
+  }
+
   @override
   void dispose() {
     _prenomController.dispose();
@@ -30,13 +60,27 @@ class _AddGuestDialogState extends State<AddGuestDialog> {
   }
 
   void _submit() {
-    if (_formKey.currentState?.validate() ?? false) {
-      Navigator.of(context).pop({
-        'prenom': _prenomController.text.trim(),
-        'nom': _nomController.text.trim(),
-        'prix': double.tryParse(_prixController.text.replaceAll(',', '.')) ?? 0.0,
-      });
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    final double prix;
+    final String? tariffId;
+    if (_hasGuestTariffs) {
+      // Member-driven flow: price comes from the selected tariff, never typed.
+      if (_selectedTariff == null) return;
+      prix = _selectedTariff!.price;
+      tariffId = _selectedTariff!.id;
+    } else {
+      // Legacy admin flow: free-typed price, no tariff link.
+      prix = double.tryParse(_prixController.text.replaceAll(',', '.')) ?? 0.0;
+      tariffId = null;
     }
+
+    Navigator.of(context).pop({
+      'prenom': _prenomController.text.trim(),
+      'nom': _nomController.text.trim(),
+      'prix': prix,
+      'tariffId': tariffId,
+    });
   }
 
   InputDecoration _buildInputDecoration(String hintText) {
@@ -82,6 +126,70 @@ class _AddGuestDialogState extends State<AddGuestDialog> {
         vertical: 16,
       ),
       counterText: '',
+    );
+  }
+
+  /// Tariff selector — dropdown if multiple, locked card if single.
+  Widget _buildTariffSection() {
+    final tariffs = widget.availableGuestTariffs;
+    if (tariffs.length == 1) {
+      final t = tariffs.first;
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.95),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.local_offer_outlined,
+                size: 18, color: AppColors.donkerblauw),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                t.label.isNotEmpty ? t.label : 'Tarif invité',
+                style: const TextStyle(
+                  color: AppColors.donkerblauw,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            Text(
+              '${t.price.toStringAsFixed(2)} €',
+              style: const TextStyle(
+                color: AppColors.donkerblauw,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return DropdownButtonFormField<Tariff>(
+      value: _selectedTariff,
+      isExpanded: true,
+      decoration: _buildInputDecoration('Type d\'invité').copyWith(
+        prefixIcon: const Icon(Icons.local_offer_outlined,
+            color: AppColors.donkerblauw, size: 20),
+      ),
+      style: const TextStyle(
+        color: AppColors.donkerblauw,
+        fontSize: 16,
+        fontWeight: FontWeight.w500,
+      ),
+      items: tariffs
+          .map((t) => DropdownMenuItem<Tariff>(
+                value: t,
+                child: Text(
+                  '${t.label.isNotEmpty ? t.label : "Invité"} — ${t.price.toStringAsFixed(2)} €',
+                ),
+              ))
+          .toList(),
+      onChanged: (t) => setState(() => _selectedTariff = t),
+      validator: (t) => t == null ? 'Choisissez un type' : null,
     );
   }
 
@@ -185,10 +293,16 @@ class _AddGuestDialogState extends State<AddGuestDialog> {
                       ),
                       decoration: _buildInputDecoration('Nom'),
                       maxLength: 50,
-                      textInputAction: TextInputAction.next,
+                      textInputAction: _hasGuestTariffs
+                          ? TextInputAction.done
+                          : TextInputAction.next,
                       textCapitalization: TextCapitalization.words,
                       onFieldSubmitted: (_) {
-                        FocusScope.of(context).requestFocus(_prixFocusNode);
+                        if (_hasGuestTariffs) {
+                          _submit();
+                        } else {
+                          FocusScope.of(context).requestFocus(_prixFocusNode);
+                        }
                       },
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
@@ -199,40 +313,46 @@ class _AddGuestDialogState extends State<AddGuestDialog> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Prix field
-                    TextFormField(
-                      controller: _prixController,
-                      focusNode: _prixFocusNode,
-                      style: const TextStyle(
-                        color: AppColors.donkerblauw,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      decoration: _buildInputDecoration('Prix (€)').copyWith(
-                        suffixText: '€',
-                        suffixStyle: TextStyle(
-                          color: AppColors.donkerblauw.withOpacity(0.7),
+                    // Tariff selector OR free-price field
+                    if (_hasGuestTariffs)
+                      _buildTariffSection()
+                    else
+                      TextFormField(
+                        controller: _prixController,
+                        focusNode: _prixFocusNode,
+                        style: const TextStyle(
+                          color: AppColors.donkerblauw,
                           fontSize: 16,
                           fontWeight: FontWeight.w500,
                         ),
+                        decoration: _buildInputDecoration('Prix (€)').copyWith(
+                          suffixText: '€',
+                          suffixStyle: TextStyle(
+                            color: AppColors.donkerblauw.withOpacity(0.7),
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(
+                              RegExp(r'[\d.,]')),
+                        ],
+                        textInputAction: TextInputAction.done,
+                        onFieldSubmitted: (_) => _submit(),
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) {
+                            return 'Veuillez saisir le prix';
+                          }
+                          final parsed =
+                              double.tryParse(value.replaceAll(',', '.'));
+                          if (parsed == null || parsed < 0) {
+                            return 'Montant invalide';
+                          }
+                          return null;
+                        },
                       ),
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
-                      ],
-                      textInputAction: TextInputAction.done,
-                      onFieldSubmitted: (_) => _submit(),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Veuillez saisir le prix';
-                        }
-                        final parsed = double.tryParse(value.replaceAll(',', '.'));
-                        if (parsed == null || parsed < 0) {
-                          return 'Montant invalide';
-                        }
-                        return null;
-                      },
-                    ),
                     const SizedBox(height: 24),
 
                     // Action buttons
@@ -243,7 +363,8 @@ class _AddGuestDialogState extends State<AddGuestDialog> {
                             onPressed: () => Navigator.of(context).pop(),
                             style: TextButton.styleFrom(
                               foregroundColor: Colors.white70,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 side: BorderSide(
@@ -276,7 +397,8 @@ class _AddGuestDialogState extends State<AddGuestDialog> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.oranje,
                               foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),

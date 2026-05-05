@@ -19,11 +19,19 @@ class PaymentService {
   /// Parameters:
   /// - [clubId]: Club ID
   /// - [operationId]: Operation (event) ID
-  /// - [participantId]: Participant ID in inscriptions collection
+  /// - [participantId]: Participant ID in inscriptions collection. When this
+  ///   inscription has guest children linked via `parent_inscription_id`
+  ///   (allow_guests=true events), the Cloud Function aggregates them
+  ///   server-side: the resulting QR covers the member's own price + all
+  ///   their guests in a single payment, and the [amount] passed here is
+  ///   overridden by the server to prevent a short-paid QR. Callers should
+  ///   still pass the best-effort total they computed locally so the value
+  ///   used for analytics/UI in case of cache lag is sane.
   /// - [memberEmail]: Email address to send to
   /// - [memberFirstName]: Member's first name
   /// - [memberLastName]: Member's last name
-  /// - [amount]: Amount to pay in EUR
+  /// - [amount]: Amount to pay in EUR (best-effort; server may override
+  ///   when guests are linked — see [participantId]).
   /// - [operationTitle]: Event title for the email
   /// - [operationNumber]: Event number (optional)
   /// - [operationDate]: Event date (optional)

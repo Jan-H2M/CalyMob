@@ -504,6 +504,15 @@ export interface Operation {
   // Tarifs pour événements (copie depuis DiveLocation lors de la création)
   event_tariffs?: import('./tariff.types').Tariff[];  // Tarifs flexibles par fonction (membre, encadrant, etc.)
 
+  /**
+   * Allow members to register external guests (family / friends) for this
+   * event from CalyMob. When true, members see an "Ajouter un invité" button
+   * after registering, and pay a single aggregated QR for themselves + their
+   * guests. The guest's price is taken from event_tariffs entries with
+   * is_guest_tariff=true. Default false.
+   */
+  allow_guests?: boolean;
+
   // Suppléments optionnels pour événements (location combinaison, etc.)
   supplements?: import('./supplement.types').Supplement[];
 
@@ -590,6 +599,18 @@ export interface InscriptionEvenement {
   is_guest?: boolean;                // True for non-member guests
   added_by?: string;                 // User ID who added the guest
   added_by_name?: string;            // Display name of user who added the guest
+  /**
+   * For guest inscriptions added by a member through CalyMob: ID of the
+   * inviting member's own inscription. Used to aggregate payment (single QR
+   * for member + their guests) and to cascade actions.
+   */
+  parent_inscription_id?: string;
+  /**
+   * ID of the Tariff entry from operation.event_tariffs[] used to compute
+   * this inscription's price. Useful especially for guest inscriptions to
+   * record which guest tariff was picked.
+   */
+  tariff_id?: string;
 
   // Exercices souhaités (LIFRAS exercise IDs selected by the student)
   exercices?: string[];              // Array of exercice_lifras document IDs
@@ -641,6 +662,22 @@ export interface ParticipantOperation {
   // Suppléments sélectionnés (snapshot at registration time)
   selected_supplements?: import('./supplement.types').SelectedSupplement[];
   supplement_total?: number;       // Sum of selected supplement prices
+
+  // Guest (non-member) inscription
+  is_guest?: boolean;                // True for non-member guests
+  added_by?: string;                 // User ID who added the guest
+  added_by_name?: string;            // Display name of user who added the guest
+  /**
+   * For guest inscriptions added by a member through CalyMob: ID of the
+   * inviting member's own inscription. Used to aggregate payment (single QR
+   * for member + their guests) and to cascade actions.
+   */
+  parent_inscription_id?: string;
+  /**
+   * ID of the Tariff entry from operation.event_tariffs[] used to compute
+   * this inscription's price.
+   */
+  tariff_id?: string;
 
   // Legacy (deprecated)
   transaction_bancaire_id?: string; // DEPRECATED - use transaction_id
