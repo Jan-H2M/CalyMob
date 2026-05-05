@@ -15,6 +15,7 @@ import '../../services/profile_service.dart';
 import '../../services/member_service.dart';
 import '../../services/medical_certification_service.dart';
 import '../../services/camera_permission_service.dart';
+import '../../services/feature_flag_service.dart';
 import '../../models/medical_certification.dart';
 import '../../widgets/certification_status_badge.dart';
 import 'medical_certification_screen.dart';
@@ -22,7 +23,8 @@ import '../../utils/permission_helper.dart';
 import '../../widgets/photo_consent_dialog.dart';
 import '../../widgets/user_qr_card.dart';
 // Conditional import for camera screen
-import 'face_camera_screen.dart' if (dart.library.html) 'face_camera_screen_stub.dart';
+import 'face_camera_screen.dart'
+    if (dart.library.html) 'face_camera_screen_stub.dart';
 import 'settings_screen.dart';
 import 'calendar_feed_screen.dart';
 import '../auth/login_screen.dart';
@@ -37,11 +39,13 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMixin {
+class _ProfileScreenState extends State<ProfileScreen>
+    with TickerProviderStateMixin {
   final String _clubId = 'calypso';
   final ProfileService _profileService = ProfileService();
   final MemberService _memberService = MemberService();
-  final MedicalCertificationService _certService = MedicalCertificationService();
+  final MedicalCertificationService _certService =
+      MedicalCertificationService();
 
   bool _isLoading = false;
   // True als de gebruiker LIFRAS-validatie mag uitvoeren — admin OF
@@ -125,7 +129,9 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
         // (notamment celui copié par FaceCameraScreen dans le tempDir).
         try {
           await rawPhotoFile.delete();
-        } catch (_) {/* best effort */}
+        } catch (_) {
+          /* best effort */
+        }
         return;
       }
 
@@ -140,8 +146,10 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
           context: context,
           barrierDismissible: false,
           builder: (context) => PhotoConsentDialog(
-            initialInternalConsent: currentProfile?.consentInternalPhoto ?? false,
-            initialExternalConsent: currentProfile?.consentExternalPhoto ?? false,
+            initialInternalConsent:
+                currentProfile?.consentInternalPhoto ?? false,
+            initialExternalConsent:
+                currentProfile?.consentExternalPhoto ?? false,
             isFirstPhoto: isFirstPhoto,
           ),
         );
@@ -150,10 +158,14 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
           // Nettoyer les fichiers temporaires (source brute + recadrée)
           try {
             await rawPhotoFile.delete();
-          } catch (_) {/* best effort */}
+          } catch (_) {
+            /* best effort */
+          }
           try {
             await photoFile.delete();
-          } catch (_) {/* best effort */}
+          } catch (_) {
+            /* best effort */
+          }
           return;
         }
 
@@ -171,10 +183,14 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
         // Nettoyer les fichiers temporaires (source brute + recadrée)
         try {
           await rawPhotoFile.delete();
-        } catch (_) {/* best effort */}
+        } catch (_) {
+          /* best effort */
+        }
         try {
           await photoFile.delete();
-        } catch (_) {/* best effort */}
+        } catch (_) {
+          /* best effort */
+        }
 
         if (mounted) {
           setState(() => _isLoading = false);
@@ -190,10 +206,7 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
       if (mounted) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Erreur: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('❌ Erreur: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -215,10 +228,7 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
                 padding: EdgeInsets.fromLTRB(20, 4, 20, 12),
                 child: Text(
                   'Photo de profil',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ),
               ListTile(
@@ -230,8 +240,7 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
                 subtitle: const Text(
                   'Utiliser la caméra avec guidage du visage',
                 ),
-                onTap: () =>
-                    Navigator.pop(sheetContext, _PhotoSource.camera),
+                onTap: () => Navigator.pop(sheetContext, _PhotoSource.camera),
               ),
               ListTile(
                 leading: const Icon(
@@ -242,8 +251,7 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
                 subtitle: const Text(
                   'Importer une photo existante de votre appareil',
                 ),
-                onTap: () =>
-                    Navigator.pop(sheetContext, _PhotoSource.gallery),
+                onTap: () => Navigator.pop(sheetContext, _PhotoSource.gallery),
               ),
               const SizedBox(height: 4),
               TextButton(
@@ -352,7 +360,10 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Déconnecter', style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'Déconnecter',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -441,9 +452,7 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
 
     // Guard: don't render if user is not logged in (prevents Firestore empty path error)
     if (userId.isEmpty) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
@@ -461,12 +470,17 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
             stream: _profileService.watchProfile(_clubId, userId),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator(color: Colors.white));
+                return const Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                );
               }
 
               if (!snapshot.hasData || snapshot.data == null) {
                 return const Center(
-                  child: Text('Erreur de chargement du profil', style: TextStyle(color: Colors.white)),
+                  child: Text(
+                    'Erreur de chargement du profil',
+                    style: TextStyle(color: Colors.white),
+                  ),
                 );
               }
 
@@ -594,17 +608,17 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
             // Nom complet
             Text(
               profile.fullName,
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               textAlign: TextAlign.center,
             ),
 
             if (profile.plongeurNiveau != null) ...[
               const SizedBox(height: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: _getNiveauColor(profile.plongeurCode),
                   borderRadius: BorderRadius.circular(16),
@@ -625,7 +639,9 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
             TextButton.icon(
               onPressed: _addOrChangePhoto,
               icon: Icon(profile.hasPhoto ? Icons.edit : Icons.add_a_photo),
-              label: Text(profile.hasPhoto ? 'Changer la photo' : 'Ajouter une photo'),
+              label: Text(
+                profile.hasPhoto ? 'Changer la photo' : 'Ajouter une photo',
+              ),
             ),
           ],
         ),
@@ -648,10 +664,7 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
                 const SizedBox(width: 12),
                 const Text(
                   'Informations',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
@@ -661,8 +674,14 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
             // Email (lecture seule)
             ListTile(
               leading: const Icon(Icons.email, color: Colors.blue),
-              title: const Text('Email', style: TextStyle(fontSize: 12, color: Colors.grey)),
-              subtitle: Text(profile.email, style: const TextStyle(fontSize: 16)),
+              title: const Text(
+                'Email',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              subtitle: Text(
+                profile.email,
+                style: const TextStyle(fontSize: 16),
+              ),
               dense: true,
               contentPadding: EdgeInsets.zero,
             ),
@@ -672,8 +691,14 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
             // Nom (lecture seule)
             ListTile(
               leading: const Icon(Icons.person, color: Colors.green),
-              title: const Text('Nom complet', style: TextStyle(fontSize: 12, color: Colors.grey)),
-              subtitle: Text(profile.fullName, style: const TextStyle(fontSize: 16)),
+              title: const Text(
+                'Nom complet',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              subtitle: Text(
+                profile.fullName,
+                style: const TextStyle(fontSize: 16),
+              ),
               dense: true,
               contentPadding: EdgeInsets.zero,
             ),
@@ -683,12 +708,17 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
             // Téléphone (éditable)
             ListTile(
               leading: const Icon(Icons.phone, color: Colors.purple),
-              title: const Text('Téléphone', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              title: const Text(
+                'Téléphone',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
               subtitle: Text(
                 profile.phoneNumber ?? 'Non renseigné',
                 style: TextStyle(
                   fontSize: 16,
-                  fontStyle: profile.phoneNumber == null ? FontStyle.italic : FontStyle.normal,
+                  fontStyle: profile.phoneNumber == null
+                      ? FontStyle.italic
+                      : FontStyle.normal,
                   color: profile.phoneNumber == null ? Colors.grey : null,
                 ),
               ),
@@ -722,15 +752,16 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
                 const SizedBox(width: 12),
                 const Text(
                   'Consentements photo',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 const Spacer(),
                 IconButton(
                   onPressed: () => _editConsents(profile),
-                  icon: Icon(Icons.edit, size: 20, color: AppColors.middenblauw),
+                  icon: Icon(
+                    Icons.edit,
+                    size: 20,
+                    color: AppColors.middenblauw,
+                  ),
                   tooltip: 'Modifier les consentements',
                 ),
               ],
@@ -741,7 +772,9 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
             // Consentement interne
             ListTile(
               leading: Icon(
-                profile.consentInternalPhoto ? Icons.check_circle : Icons.cancel,
+                profile.consentInternalPhoto
+                    ? Icons.check_circle
+                    : Icons.cancel,
                 color: profile.consentInternalPhoto ? Colors.green : Colors.red,
               ),
               title: const Text('Usage interne'),
@@ -755,8 +788,12 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
             // Consentement externe
             ListTile(
               leading: Icon(
-                profile.consentExternalPhoto ? Icons.check_circle : Icons.cancel,
-                color: profile.consentExternalPhoto ? Colors.green : Colors.grey,
+                profile.consentExternalPhoto
+                    ? Icons.check_circle
+                    : Icons.cancel,
+                color: profile.consentExternalPhoto
+                    ? Colors.green
+                    : Colors.grey,
               ),
               title: const Text('Usage externe'),
               subtitle: const Text('Réseaux sociaux, site web public'),
@@ -771,6 +808,17 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
 
   Widget _buildActionsSection() {
     final userId = context.watch<AuthProvider>().currentUser?.uid ?? '';
+    final memberProvider = context.watch<MemberProvider>();
+    final featureFlags = context.watch<FeatureFlagService>();
+    final appRole = (memberProvider.appRole ?? '').toLowerCase();
+    final boutiqueVisible = featureFlags.boutiqueV2Visible(
+      Member(
+        isAdmin:
+            PermissionHelper.isAdmin(memberProvider.clubStatuten) ||
+            appRole == 'admin' ||
+            appRole == 'superadmin',
+      ),
+    );
 
     return Card(
       elevation: 2,
@@ -783,7 +831,10 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
             builder: (context, snapshot) {
               final cert = snapshot.data;
               return ListTile(
-                leading: const Icon(Icons.medical_services, color: AppColors.middenblauw),
+                leading: const Icon(
+                  Icons.medical_services,
+                  color: AppColors.middenblauw,
+                ),
                 title: const Text('Certificat médical'),
                 subtitle: Row(
                   children: [
@@ -851,10 +902,60 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
               MaterialPageRoute(builder: (_) => const SettingsScreen()),
             ),
           ),
+          if (boutiqueVisible) ...[
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.receipt_long, color: Colors.indigo),
+              title: const Text('Mes commandes'),
+              subtitle: const Text('Suivre mes commandes Boutique'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).pushNamed('/profile/orders'),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(
+                Icons.picture_as_pdf,
+                color: Colors.deepPurple,
+              ),
+              title: const Text('Mes reçus'),
+              subtitle: const Text('TODO reçus'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).pushNamed('/profile/recus'),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.workspace_premium, color: Colors.teal),
+              title: const Text('Mes abonnements'),
+              subtitle: const Text('TODO abonnements'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () =>
+                  Navigator.of(context).pushNamed('/profile/abonnements'),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.account_balance, color: Colors.orange),
+              title: const Text('Ma cotisation'),
+              subtitle: const Text('TODO cotisation'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () =>
+                  Navigator.of(context).pushNamed('/profile/cotisation'),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.scuba_diving, color: Colors.blueGrey),
+              title: const Text('Mes prêts'),
+              subtitle: const Text('TODO prêts'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).pushNamed('/profile/prets'),
+            ),
+          ],
           const Divider(height: 1),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text('Déconnexion', style: TextStyle(color: Colors.red)),
+            title: const Text(
+              'Déconnexion',
+              style: TextStyle(color: Colors.red),
+            ),
             trailing: const Icon(Icons.chevron_right, color: Colors.red),
             onTap: _handleLogout,
           ),

@@ -8,7 +8,9 @@ import '../../providers/member_provider.dart';
 import '../../providers/unread_count_provider.dart';
 import '../../services/app_update_service.dart';
 import '../../services/avatar_nudge_service.dart';
+import '../../services/feature_flag_service.dart';
 import '../../utils/club_role_utils.dart';
+import '../../utils/permission_helper.dart';
 import '../../widgets/ocean_background.dart';
 import '../../widgets/ocean/ocean_config.dart';
 import '../auth/login_screen.dart';
@@ -32,6 +34,7 @@ class _LandingScreenState extends State<LandingScreen> {
   List<String>? _clubStatuten;
   OceanParams? _oceanParams;
   bool _avatarNudgeChecked = false;
+  double? _outstandingBalance;
 
   @override
   void initState() {
@@ -88,8 +91,10 @@ class _LandingScreenState extends State<LandingScreen> {
       _clubStatuten = roles.isNotEmpty ? roles : null;
     });
 
-    final unreadProvider =
-        Provider.of<UnreadCountProvider>(context, listen: false);
+    final unreadProvider = Provider.of<UnreadCountProvider>(
+      context,
+      listen: false,
+    );
     if (!unreadProvider.isListening) {
       unreadProvider.listen(
         FirebaseConfig.defaultClubId,
@@ -161,9 +166,7 @@ class _LandingScreenState extends State<LandingScreen> {
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
             Container(
@@ -179,9 +182,7 @@ class _LandingScreenState extends State<LandingScreen> {
               ),
             ),
             const SizedBox(width: 12),
-            const Expanded(
-              child: Text('Montrez-vous au club'),
-            ),
+            const Expanded(child: Text('Montrez-vous au club')),
           ],
         ),
         content: const Column(
@@ -228,9 +229,9 @@ class _LandingScreenState extends State<LandingScreen> {
               await AvatarNudgeService.markShown(userId);
               if (!mounted || !dialogContext.mounted) return;
               Navigator.of(dialogContext).pop();
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const ProfileScreen()),
-              );
+              Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const ProfileScreen()));
             },
             icon: const Icon(Icons.add_a_photo_outlined, size: 18),
             label: const Text('Ajouter ma photo'),
@@ -258,8 +259,10 @@ class _LandingScreenState extends State<LandingScreen> {
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Déconnecter',
-                style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'Déconnecter',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -286,7 +289,85 @@ class _LandingScreenState extends State<LandingScreen> {
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
     final unreadProvider = context.watch<UnreadCountProvider>();
+    final memberProvider = context.watch<MemberProvider>();
+    final featureFlags = context.watch<FeatureFlagService>();
     final userName = authProvider.displayName ?? 'Utilisateur';
+    final appRole = (memberProvider.appRole ?? '').toLowerCase();
+    final showBoutique = featureFlags.boutiqueV2Visible(
+      Member(
+        isAdmin:
+            PermissionHelper.isAdmin(memberProvider.clubStatuten) ||
+            appRole == 'admin' ||
+            appRole == 'superadmin',
+      ),
+    );
+    final navigationButtons = <Widget>[
+      _GlossyButton(
+        title: 'Événements',
+        icon: Icons.event,
+        badgeCount: unreadProvider.eventMessages,
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const OperationsListScreen()),
+        ),
+      ),
+      _GlossyButton(
+        title: 'Communication',
+        icon: Icons.campaign,
+        badgeCount: unreadProvider.announcements + unreadProvider.teamMessages,
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const CommunicationHubScreen()),
+        ),
+      ),
+      if (_hasPiscineRole())
+        _GlossyButton(
+          title: 'Piscine',
+          icon: Icons.pool,
+          badgeCount: 0,
+          onTap: () {
+            final roles = _getPiscineRoles();
+            if (roles.isNotEmpty) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AvailabilityScreen(userRoles: roles),
+                ),
+              );
+            }
+          },
+        ),
+      _GlossyButton(
+        title: 'Who is Who',
+        icon: Icons.people,
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const WhoIsWhoScreen()),
+        ),
+      ),
+      _GlossyButton(
+        title: 'Finances',
+        icon: Icons.account_balance_wallet,
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const FinancialScreen()),
+        ),
+      ),
+      if (showBoutique)
+        _GlossyButton(
+          title: 'Boutique',
+          icon: Icons.storefront,
+          onTap: () => Navigator.of(context).pushNamed('/boutique'),
+        ),
+      _GlossyButton(
+        title: 'Mon Profil',
+        icon: Icons.person,
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const ProfileScreen()),
+        ),
+      ),
+    ];
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -315,13 +396,12 @@ class _LandingScreenState extends State<LandingScreen> {
 
               // Logo is now rendered as sun/moon in the ocean shader layer
               const SizedBox(height: 170), // maintain spacing where logo was
-
               // Welcome text
               Text(
                 'Bienvenue',
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: Colors.white70,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(color: Colors.white70),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 4),
@@ -332,105 +412,78 @@ class _LandingScreenState extends State<LandingScreen> {
                   color: Colors.white,
                   shadows: [
                     const Shadow(
-                        offset: Offset(0, 1),
-                        blurRadius: 4,
-                        color: Colors.black38),
+                      offset: Offset(0, 1),
+                      blurRadius: 4,
+                      color: Colors.black38,
+                    ),
                   ],
                 ),
                 textAlign: TextAlign.center,
               ),
+              if (showBoutique && _outstandingBalance != null) ...[
+                const SizedBox(height: 16),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.18),
+                      ),
+                    ),
+                    child: Text(
+                      '${_outstandingBalance!.toStringAsFixed(2)} € à régler',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                // TODO: brancher le calcul réel du solde ouvert Boutique.
+              ],
 
               const Spacer(),
 
               // Navigation buttons
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    // Row 1
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _GlossyButton(
-                          title: 'Événements',
-                          icon: Icons.event,
-                          badgeCount: unreadProvider.eventMessages,
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const OperationsListScreen()),
+                child: showBoutique
+                    ? Wrap(
+                        alignment: WrapAlignment.center,
+                        spacing: 12,
+                        runSpacing: 20,
+                        children: navigationButtons,
+                      )
+                    : Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              navigationButtons[0],
+                              navigationButtons[1],
+                              if (_hasPiscineRole()) navigationButtons[2],
+                            ],
                           ),
-                        ),
-                        _GlossyButton(
-                          title: 'Communication',
-                          icon: Icons.campaign,
-                          badgeCount: unreadProvider.announcements +
-                              unreadProvider.teamMessages,
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const CommunicationHubScreen()),
+                          const SizedBox(height: 20),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              navigationButtons[_hasPiscineRole() ? 3 : 2],
+                              navigationButtons[_hasPiscineRole() ? 4 : 3],
+                              navigationButtons[_hasPiscineRole() ? 5 : 4],
+                            ],
                           ),
-                        ),
-                        if (_hasPiscineRole())
-                          _GlossyButton(
-                            title: 'Piscine',
-                            icon: Icons.pool,
-                            badgeCount: 0,
-                            onTap: () {
-                              final roles = _getPiscineRoles();
-                              if (roles.isNotEmpty) {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        AvailabilityScreen(userRoles: roles),
-                                  ),
-                                );
-                              }
-                            },
-                          ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    // Row 2
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _GlossyButton(
-                          title: 'Who is Who',
-                          icon: Icons.people,
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const WhoIsWhoScreen()),
-                          ),
-                        ),
-                        _GlossyButton(
-                          title: 'Finances',
-                          icon: Icons.account_balance_wallet,
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const FinancialScreen()),
-                          ),
-                        ),
-                        _GlossyButton(
-                          title: 'Mon Profil',
-                          icon: Icons.person,
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const ProfileScreen()),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+                        ],
+                      ),
               ),
 
               const SizedBox(height: 40),
@@ -440,9 +493,9 @@ class _LandingScreenState extends State<LandingScreen> {
                 padding: const EdgeInsets.only(bottom: 16),
                 child: Text(
                   _versionString,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.white70,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: Colors.white70),
                 ),
               ),
             ],
@@ -457,10 +510,7 @@ class _AvatarNudgeBullet extends StatelessWidget {
   final IconData icon;
   final String text;
 
-  const _AvatarNudgeBullet({
-    required this.icon,
-    required this.text,
-  });
+  const _AvatarNudgeBullet({required this.icon, required this.text});
 
   @override
   Widget build(BuildContext context) {
@@ -469,12 +519,7 @@ class _AvatarNudgeBullet extends StatelessWidget {
       children: [
         Icon(icon, size: 18, color: AppColors.middenblauw),
         const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            text,
-            style: const TextStyle(fontSize: 14),
-          ),
-        ),
+        Expanded(child: Text(text, style: const TextStyle(fontSize: 14))),
       ],
     );
   }
@@ -538,7 +583,9 @@ class _GlossyButton extends StatelessWidget {
                     right: -2,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.red,
                         borderRadius: BorderRadius.circular(12),
@@ -551,8 +598,10 @@ class _GlossyButton extends StatelessWidget {
                           ),
                         ],
                       ),
-                      constraints:
-                          const BoxConstraints(minWidth: 22, minHeight: 22),
+                      constraints: const BoxConstraints(
+                        minWidth: 22,
+                        minHeight: 22,
+                      ),
                       child: Text(
                         badgeCount > 99 ? '99+' : badgeCount.toString(),
                         style: const TextStyle(
@@ -576,7 +625,10 @@ class _GlossyButton extends StatelessWidget {
               color: Colors.white,
               shadows: [
                 Shadow(
-                    offset: Offset(0, 1), blurRadius: 3, color: Colors.black45),
+                  offset: Offset(0, 1),
+                  blurRadius: 3,
+                  color: Colors.black45,
+                ),
               ],
             ),
             textAlign: TextAlign.center,
