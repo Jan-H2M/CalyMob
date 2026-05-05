@@ -1,0 +1,126 @@
+Je bent in /Users/jan/Dev/GitHub/Calypso/CalyMob-streamF op branch feature/boutique-v2-calymob-skeleton (al uitgechecked).
+
+Stream F: CalyMob Flutter skeleton voor Boutique v2 — koper-frontend. Skeletons met routing, basic UI, feature-flag hooks. Geen echte cart-state-management nog (Provider stub OK), geen QR-betaling integratie nog. Dat is fase 2.
+
+Lees vóór je begint:
+- /Users/jan/Dev/GitHub/Calypso/CalyCompta/docs/boutique-plan/PLAN.md (focus §1 LandingScreen swap, §7 schermen, §7.0 OceanBackground, §7.1 catégorie-strip)
+- /Users/jan/Dev/GitHub/Calypso/CalyCompta/docs/boutique-plan/PREFLIGHT_AUDIT_2026-05-05.md
+- /Users/jan/Dev/GitHub/Calypso/CalyCompta/docs/boutique-plan/STREAM_B_DELIVERABLE_2026-05-05.md (types — Flutter equivalents bouwen)
+- lib/screens/landing_screen.dart — huidige LandingScreen met 6 GlossyButtons
+- lib/screens/profile/profile_screen.dart — bestaand profiel scherm dat we uitbreiden
+- lib/widgets/ocean_background.dart — animatie-fond (use OceanGradientBackground voor sub-screens)
+- lib/providers/member_provider.dart — bestaande member data
+- lib/firebase_config.dart — clubId etc.
+
+Je werk:
+
+# 1. Feature flag service (Flutter equivalent van useFeatureFlags)
+
+lib/services/feature_flag_service.dart (NIEUW):
+- Listens op clubs/{clubId}/settings/feature_flags
+- Provider class met FlagsState met { boutiqueV2Enabled: bool, boutiqueV2AdminOnly: bool, … }
+- Helper getter `bool get boutiqueV2Visible(Member member)`: enabled && (!adminOnly || member.isAdmin)
+- Default values bij geen doc: alles false
+
+Registreer in main.dart als ChangeNotifierProvider naast bestaande providers (bekijk patroon).
+
+# 2. LandingScreen — feature-flag swap
+
+lib/screens/landing_screen.dart:
+- Voeg een 7e GlossyButton conditioneel toe: "Boutique" met icon Icons.storefront, navigates to /boutique
+- ALLEEN tonen als FeatureFlagService.boutiqueV2Visible == true
+- VERVANG NIET 'Finances' nog — laat die staan totdat de feature live gaat. Als 'Boutique' visible is, herzicht het naar 7 knoppen layout. Als niet visible, behoud bestaande 6.
+- Bij visible: bovenaan een conditionele bannière "X € à régler" als openstaande balans (laat TODO voor de balans-fetch)
+
+LET OP: PLAN §1 zegt SWAP Finances → Boutique. Maar voor MVP en feature-flag-veiligheid: voor nu beide tonen. Echte swap komt bij launch.
+
+# 3. Boutique screens (lib/screens/boutique/)
+
+Maak deze nieuwe screens — alle met OceanGradientBackground + feature-flag guard die naar /home redirect bij niet-visible:
+
+## 3a. boutique_screen.dart (hub)
+- AppBar "Boutique"
+- Catégorie-strip horizontal (PLAN §7.1) — STUB met 6 placeholder chips: Carnets / Brevets / Vêtements / Accessoires / Abonnements / Autre
+- Lijst placeholder met Card-widgets (geen echte Firestore call yet — TODO)
+- FloatingActionButton naar Cart-screen
+
+## 3b. boutique_product_detail_screen.dart
+- Foto-carrousel placeholder
+- Naam, prijs (computed), beschrijving
+- Variants picker (Dropdown)
+- Quantity selector (+/-)
+- Delivery mode chips (toggle)
+- "Ajouter au panier" knop (callback TODO)
+
+## 3c. boutique_cart_screen.dart
+- ListView van cart items (ChangeNotifier-based provider, see #4)
+- Per item: thumb, naam, qty (+/-), prijs, X button
+- Totaal onderaan
+- "Passer commande" → navigate to checkout
+
+## 3d. boutique_checkout_screen.dart
+- Adres-form (alleen tonen als delivery=post in cart)
+- Contact info bevestiging
+- "Confirmer commande" → roept TODO Cloud Function createOrder
+- Success state: toon QR + IBAN + ordernumber
+
+## 3e. mes_commandes_screen.dart
+- Toegankelijk via ProfileScreen
+- ListView van orders status≠cart, gegroepeerd per statut
+- Klik → drawer met details + timeline
+- Echte Firestore stream collectie clubs/{clubId}/orders where buyer.userId==currentUser
+
+# 4. Cart provider (lib/providers/cart_provider.dart)
+
+ChangeNotifier-based:
+- List<CartItem>
+- addItem(productId, variantId, qty, deliveryMode)
+- removeItem, updateQty
+- get total → computed sum
+- clear() → na succesvolle createOrder
+- Geen persistence in MVP (in-memory only) — TODO voor SharedPreferences later
+
+# 5. ProfileScreen uitbreiding
+
+lib/screens/profile/profile_screen.dart:
+- Voeg menu-items toe ONDER bestaande items, ALLEEN als boutiqueV2Visible:
+  - "Mes commandes" → mes_commandes_screen
+  - "Mes reçus" (TODO scherm — laat als route maar maak een placeholder mes_recus_screen.dart)
+  - "Mes abonnements" (TODO placeholder mes_abonnements_screen.dart)
+  - "Ma cotisation" (placeholder ma_cotisation_screen.dart — heel basic, "TODO" widget)
+  - "Mes prêts" (placeholder mes_prets_screen.dart — TODO)
+
+# 6. Routing (main.dart of router config)
+
+Zoek hoe routes nu geregistreerd zijn (waarschijnlijk in main.dart of een go_router config). Voeg toe:
+- /boutique → BoutiqueScreen
+- /boutique/product/:productId → BoutiqueProductDetailScreen
+- /boutique/cart → BoutiqueCartScreen
+- /boutique/checkout → BoutiqueCheckoutScreen
+- /profile/orders → MesCommandesScreen
+- /profile/orders/:orderId → (TODO drawer)
+- /profile/recus → MesRecusScreen
+- /profile/abonnements → MesAbonnementsScreen
+- /profile/cotisation → MaCotisationScreen
+- /profile/prets → MesPretsScreen
+
+Elke route met een feature-flag guard middleware/wrapper indien mogelijk. Anders: in elk screen build() check.
+
+# 7. Documentatie
+
+/Users/jan/Dev/GitHub/Calypso/CalyMob-streamF/docs/STREAM_F_DELIVERABLE_2026-05-05.md
+- Wat per file
+- Nieuwe vs gewijzigde files
+- Open punten (oa: cart persistence, real cloud function calls, OceanBackground variants)
+- `flutter analyze` output (run het zelf)
+
+# 8. CRITICAL CONSTRAINTS
+
+- ALLEEN files onder lib/screens/boutique/, lib/screens/profile/ (extending bestaande), lib/services/feature_flag_service.dart (nieuw), lib/providers/cart_provider.dart (nieuw), lib/screens/landing_screen.dart (toevoegen 7e knop conditioneel), main.dart (routes + provider register), docs/STREAM_F_DELIVERABLE_2026-05-05.md
+- NIET: functions/ (Stream E), CalyCompta/ (al klaar), pubspec.yaml dependencies wijzigen tenzij absoluut nodig
+- DRAAI `flutter analyze` — verzamel output
+- GEEN flutter pub get tenzij echt nodig
+- GEEN git commits, GEEN deploys
+- Bestaande screens (HomeScreen events flow, scanner_modal_sheet, member_profile etc.) NIET aanraken
+
+Werk pragmatisch. Skeletons met TODO's voor business logic = OK. Layout en navigation moeten wel echt werken.

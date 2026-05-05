@@ -1,0 +1,144 @@
+Je bent in /Users/jan/Dev/GitHub/Calypso/CalyMob op branch feature/boutique-v2-functions (al uitgechecked).
+
+Stream E: Cloud Functions stubs voor Boutique v2. Deployable code, getypte signatures, business logic als TODO-stubs (geen Firestore writes in deze stream behalve waar trivial).
+
+Lees vóór je begint:
+- /Users/jan/Dev/GitHub/Calypso/CalyCompta/docs/boutique-plan/PLAN.md (focus §3 Datamodel, §5 Bestelflow, §13 Cotisations, §14 Auto-routing, §15 Prêts cautions)
+- /Users/jan/Dev/GitHub/Calypso/CalyCompta/docs/boutique-plan/PREFLIGHT_AUDIT_2026-05-05.md (focus §9 CF burst risk)
+- /Users/jan/Dev/GitHub/Calypso/CalyCompta/docs/boutique-plan/STREAM_B_DELIVERABLE_2026-05-05.md (types die je moet matchen)
+- functions/index.js — bestaande exports patroon
+- functions/src/payment/sendPaymentQrEmail.js — bestaand QR/EPC e-mail patroon (HERGEBRUIKEN)
+- functions/src/payment/sendPaymentReminder.js — bestaand callable patroon
+- functions/src/notifications/onNewOperation.js — bestaand migration_source/_backfill guard patroon
+
+Je werk: 6 nieuwe Cloud Functions in functions/src/boutique/ (nieuwe folder).
+
+# 1. functions/src/boutique/createOrder.js (CALLABLE)
+
+CalyMob roept aan na cart-checkout. Ontvangt buyer + items + delivery preferences, doet:
+1. Validate input (auth required, items non-empty, products bestaan in clubs/{clubId}/products)
+2. Stock reservation in een transaction:
+   - Voor elke item: lookup product variant
+   - Als inventoryMode='tracked' EN stockCount<qty AND !allowBackorder: reject met error 'OUT_OF_STOCK'
+   - Als inventoryMode='tracked' EN stockCount>=qty: reserveer (decrement stockCount in transaction)
+   - Als inventoryMode='preorder' OF allowBackorder met stockCount=0: line.fulfillmentStatus='awaiting_restock'
+3. Generate orderNumber: 'BTQ-2026-NNNN' via atomic counter clubs/{clubId}/settings/order_counter (zelfde pattern als ogmService)
+4. Generate OGM via Cloud Functions admin SDK call naar OGM service (NIET zelf opnieuw bouwen — als de functions/ folder al een OGM utility heeft, hergebruik. Zo niet: laat een TODO en gebruik een placeholder zoals "TODO_OGM_GENERATE")
+5. Compute totals: itemsSubtotal + deliverySurcharges + total
+6. Create order doc clubs/{clubId}/orders/{orderId}:
+   - status='awaiting_payment', payment.status='pending'
+   - expiresAt = now + 72h
+   - migration_source: null, _backfill: false (bewust expliciet, zodat triggers er rekening mee houden)
+   - createdAt/updatedAt: serverTimestamp()
+7. Return { success, orderId, orderNumber, ogm, ogm_display, total }
+
+Errors te returnen:
+- 'OUT_OF_STOCK' { productId, variantId, requested, available }
+- 'PRODUCT_NOT_FOUND'
+- 'PRODUCT_ARCHIVED'
+- 'INVALID_INPUT'
+
+# 2. functions/src/boutique/markOrderPaid.js (FIRESTORE TRIGGER op bank_transactions)
+
+WAARSCHUWING: bank_transactions is bestaand. Lees eerst hoe die wordt geschreven. Als bestaand systeem al via paymentRoutingService.dispatchByContextType routeert, hangt deze function eraan. Anders: schrijf een ALTERNATIVE callable function ipv trigger.
+
+Gegeven dat Stream D's paymentRoutingService.ts in CalyCompta zit (frontend-side), is het schoonst om hier in functions/ een ANALOGE Node-versie te bouwen die direct getriggerd wordt door bank-transaction docs. STUB OK voor nu.
+
+Function `markOrderPaidFromBankTx`:
+- Trigger: onWrite clubs/{clubId}/bank_transactions/{txId} (skip als _backfill=true)
+- Lees txn, extract OGM uit communication
+- Lookup payment_references[ogm]: als context_type='BOUTIQUE_ORDER' EN status='NEW' → continue
+- Update order: status='paid', payment.status='paid', payment.paidAt=now, payment.bankRef=txId
+- Update voorraad: voor elke tracked item zonder backorder → de reservation is al gebeurd in createOrder; alleen status flip in inventoryMutations
+- Voor digital items: queue receipt PDF generation (laat TODO)
+- Trigger supplier notification batching (laat TODO)
+- Send confirmation push + email naar buyer (TODO)
+
+In MVP-skeleton: laat 90% TODO. Echte implementatie komt fase 3.
+
+# 3. functions/src/boutique/notifySupplier.js (CALLABLE + SCHEDULED)
+
+Twee modes:
+- Callable: admin klikt "Send now" → trigger immediate batch voor 1 supplier
+- Scheduled: cron 'every 1 hours' bekijkt suppliers met mode='weekly_digest' en als day_of_week+hour matched → batch
+- Threshold logic: bekijk supplier.boutique_config.notification_strategy.threshold; als pending items >= minItems → batch
+
+In MVP: skeleton met TODO comments. Geen echte mail.
+
+# 4. functions/src/boutique/generateReceipt.js (CALLABLE)
+
+Genereer PDF voor een order. Gebruik bestaande PDF library (kijk in package.json — pdfkit, puppeteer, or jsPDF?). Skeleton met:
+- Order header (logo CDC, ordernumber, date)
+- Buyer info
+- Items table (qty, name, variant, unitPrice, lineTotal)
+- Total
+- Payment info (OGM, amount paid)
+- Footer met TVA-disclaimer
+Save to clubs/{clubId}/orders/{orderId}/receipt.pdf via Storage.
+
+In MVP: skeleton dat alleen { url: 'TODO' } returnt. Echte PDF gen komt fase 3.
+
+# 5. functions/src/loans/onLoanCreated.js (FIRESTORE TRIGGER)
+
+Bestaande loan-creatie hangt aan een UI-flow in CalyCompta. Toevoegen:
+- Trigger: onCreate clubs/{clubId}/inventory_loans/{loanId}
+- Skip als migration_source set OR _backfill=true (A3-incident guard)
+- Skip als caution_payee=true OR caution_payment_status=paid (al betaald, geen QR)
+- Generate OGM met context_type='LOAN_DEPOSIT', context_id=loanId, amount_cents
+- Update loan: caution_ogm, caution_ogm_display
+- Send push + email naar lid: "Caution de €X à régler avant retrait du matériel" (gebruik bestaand sendPaymentQrEmail patroon — eventueel met aangepaste subject)
+
+In MVP: skeleton met TODO voor de echte mail. OGM generation kan al echt zijn als bestaande utility wordt hergebruikt.
+
+# 6. functions/src/cotisations/createCotisationPayment.js (CALLABLE)
+
+CalyMob roept dit aan vanuit "Renouveler ma cotisation":
+- Auth required, request.auth.uid moet bestaan in clubs/{clubId}/members
+- Bepaal categorie automatisch uit member.clubStatuten + huidige actieve saison
+- Compute period: 'jan_dec' als now < 1 sept, anders 'sept_dec'
+- Lookup tariff in clubs/{clubId}/membership_seasons (PLAN.md §13.1)
+- Generate OGM met context_type='COTISATION', context_id=cotisationPaymentId
+- Create cotisation_payment doc met status='awaiting_payment'
+- Compute validity_until based on period
+- Send QR email via bestaand sendPaymentQrEmail patroon
+- Return { success, cotisationPaymentId, ogm, amount, period }
+
+In MVP: skeleton met TODO voor de tariff-lookup en validity-computation. OGM gen + doc creation mag al echt zijn.
+
+# 7. functions/index.js — exports toevoegen
+
+```js
+// Boutique v2
+exports.createOrder = require('./src/boutique/createOrder').createOrder;
+exports.markOrderPaidFromBankTx = require('./src/boutique/markOrderPaid').markOrderPaidFromBankTx;
+exports.notifySupplier = require('./src/boutique/notifySupplier').notifySupplier;
+exports.generateBoutiqueReceipt = require('./src/boutique/generateReceipt').generateBoutiqueReceipt;
+
+// Loans
+exports.onLoanCreated = require('./src/loans/onLoanCreated').onLoanCreated;
+
+// Cotisations
+exports.createCotisationPayment = require('./src/cotisations/createCotisationPayment').createCotisationPayment;
+```
+
+# 8. Documentatie
+
+/Users/jan/Dev/GitHub/Calypso/CalyMob/docs/boutique-plan/STREAM_E_DELIVERABLE_2026-05-05.md (maak deze folder als die niet bestaat, anders schrijf in /Users/jan/Dev/GitHub/Calypso/CalyCompta/docs/boutique-plan/STREAM_E_DELIVERABLE_2026-05-05.md):
+- Wat per file
+- Welke business logic IS geïmplementeerd vs TODO
+- Welke bestaande functions/utilities zijn hergebruikt
+- Welke nieuwe Firestore writes deze functions doen (zonder echte deploy nog niet getriggerd, maar voor doc)
+- Confirmatie dat `node -c` per file slaagt (run het zelf)
+
+# 9. CRITICAL CONSTRAINTS
+
+- ALLEEN files onder functions/src/boutique/, functions/src/loans/, functions/src/cotisations/, functions/index.js, en het deliverable-doc
+- NIET: lib/ (Stream F doet Flutter), CalyCompta/ (Streams A-D al klaar), bestaande functions/src/notifications/* of functions/src/payment/* (alleen lezen/hergebruiken via require)
+- GEEN firebase deploy
+- GEEN git commits
+- GEEN package.json wijzigingen (alle dependencies bestaan al)
+- DRAAI `node -c functions/src/boutique/createOrder.js` (en idem voor andere) — alle moeten exit 0 geven
+- Gebruik onDocumentCreated/onDocumentWritten v2 SDK pattern zoals onNewOperation gebruikt
+- Bouw migration_source en _backfill guards in elke trigger function meteen — A3-incident pattern
+
+Werk grondig maar pragmatisch. Skeletons met TODO's mogen, productie-klaar hoeft niet in deze stream.
