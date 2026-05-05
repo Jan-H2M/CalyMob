@@ -150,3 +150,20 @@ exports.onNewBugReport = onNewBugReport;
 // Auto-validate LIFRAS exercise when observation result is 'acquis'
 const { onObservationAcquis } = require('./src/progression/onObservationAcquis');
 exports.onObservationAcquis = onObservationAcquis;
+
+// =============================================================================
+// BOUTIQUE V2 / LOANS / COTISATIONS (Gen2)
+// =============================================================================
+
+// Boutique v2
+exports.createOrder = require('./src/boutique/createOrder').createOrder;
+exports.markOrderPaidFromBankTx = require('./src/boutique/markOrderPaid').markOrderPaidFromBankTx;
+exports.notifySupplier = require('./src/boutique/notifySupplier').notifySupplier;
+exports.notifySupplierScheduler = require('./src/boutique/notifySupplier').notifySupplierScheduler;
+exports.generateBoutiqueReceipt = require('./src/boutique/generateReceipt').generateBoutiqueReceipt;
+
+// Loans
+exports.onLoanCreated = require('./src/loans/onLoanCreated').onLoanCreated;
+
+// Cotisations
+exports.createCotisationPayment = require('./src/cotisations/createCotisationPayment').createCotisationPayment;
