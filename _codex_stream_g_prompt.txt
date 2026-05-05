@@ -1,0 +1,119 @@
+Je bent in /Users/jan/Dev/GitHub/Calypso/CalyMob-streamG op branch boutique-v2-functions-real (al uitgechecked, vanaf feature/boutique-v2). Dit is een git worktree — alle file-paths refereren naar deze working dir. Negeer /Users/jan/Dev/GitHub/Calypso/CalyMob (andere worktree).
+
+Stream G — FASE 2 echte impl voor Cloud Functions. Geen stubs meer; volledig werkend createOrder pad + markOrderPaid amount tolerance + createCotisationPayment + onLoanCreated met echte OGM. Geen deploys.
+
+Lees vóór je begint:
+- /Users/jan/Dev/GitHub/Calypso/CalyCompta/docs/boutique-plan/PLAN.md (focus §3, §5, §13.4, §14, §15.2-15.3)
+- /Users/jan/Dev/GitHub/Calypso/CalyCompta/src/utils/ogm.ts — REFERENTIE-IMPL — port die naar functions/
+- /Users/jan/Dev/GitHub/Calypso/CalyCompta/src/services/ogmService.ts — REFERENTIE — port relevante delen
+- functions/src/boutique/createOrder.js — bestaande stub
+- functions/src/boutique/markOrderPaid.js — bestaande stub
+- functions/src/boutique/shared.js — bestaande helper (uitbreiden, niet vervangen)
+- functions/src/loans/onLoanCreated.js — bestaande stub
+- functions/src/cotisations/createCotisationPayment.js — bestaande stub
+- functions/src/payment/sendPaymentQrEmail.js — bestaand QR/EPC patroon (HERGEBRUIKEN)
+- functions/src/notifications/onNewOperation.js — bestaand A3-guard patroon
+
+Je werk:
+
+# 1. NIEUWE: functions/src/shared/ogm.js — port van CalyCompta src/utils/ogm.ts
+
+Pure utility functions in CommonJS:
+- `calculateOgmCheckDigit(base10)` — modulo 97 check (use BigInt)
+- `validateOgm(ogm12)` — validate 12-digit OGM
+- `formatOgmDisplay(ogm12)` — '+++xxx/xxxx/xxxxx+++'
+- `extractOgmFromRemittance(text)` — returnt `{ ogm: string|null, freeText: string }`
+
+Exports: module.exports = { calculateOgmCheckDigit, validateOgm, formatOgmDisplay, extractOgmFromRemittance }
+
+# 2. NIEUWE: functions/src/shared/ogmService.js — atomic counter + payment_references
+
+Port relevante delen van CalyCompta's ogmService.ts naar Admin SDK style:
+- `generateNextOgm(db, clubId)` — runTransaction op `clubs/{clubId}/settings/ogm_counter`, returnt 12-digit OGM met juiste check-digits
+- `createPaymentReference(db, clubId, { ogm, payload_text, context_type, context_id, amount_cents, created_by })` — schrijft naar `clubs/{clubId}/payment_references/{ogm}` met status='NEW'
+- `getPaymentReference(db, clubId, ogm)` — leest doc
+- `markOgmAsMatched(db, clubId, ogm, transaction_id)` — updates status='MATCHED' + matched_transaction_id + matched_at
+- Gebruik admin SDK FieldValue.serverTimestamp(), Timestamp.now() etc.
+- BELANGRIJK: gebruik de SAMS counter-key 'clubs/{clubId}/settings/ogm_counter' → CalyCompta en CalyMob delen dezelfde counter zodat OGMs niet botsen!
+
+Exports: alle 4 functions + de fields constants (collection name, counter doc-id) als constants.
+
+# 3. UPDATE: functions/src/boutique/createOrder.js — echte impl
+
+Vervang placeholder OGM door echte. Toevoegen:
+- Atomic Firestore transaction die ALLES IN ÉÉN doet:
+  1. Generate OGM via shared/ogmService.generateNextOgm
+  2. Validate products + variants in transaction (re-read for stock-check consistency)
+  3. Decrement variants[].stockCount (waar tracked + niet allowBackorder)
+  4. Generate orderNumber via clubs/{clubId}/settings/order_counter
+  5. Create order doc met OGM + ogm_display + payment.qrCodeUrl computed (zie #4)
+  6. Create payment_reference doc met context_type='BOUTIQUE_ORDER', context_id=orderId, amount_cents=total*100
+  7. Per item: create inventoryMutations doc (reason='reservation', qty=−line.qty, productId, variantId, byUserId)
+
+Return: { success: true, orderId, orderNumber, ogm, ogm_display, total, expiresAt, payment: { ogm, ogm_display, iban, beneficiary, amount, structuredCommunication } }
+
+Behoud bestaande error mapping (OUT_OF_STOCK / PRODUCT_NOT_FOUND / PRODUCT_ARCHIVED / INVALID_INPUT).
+
+# 4. UPDATE: functions/src/boutique/shared.js — EPC QR data builder
+
+Voeg helper toe:
+```js
+function buildEpcQrPayload({ iban, beneficiary, amount, ogm }) {
+  // EPC069 v002 SCT format — same as CalyCompta src/utils/epcQrCode.ts
+  // Returns the multi-line EPC string suitable for QR generation
+}
+```
+
+Lees CalyCompta src/utils/epcQrCode.ts voor het exacte format. Kopieer de logica.
+
+`createOrder.js` gebruikt deze helper om `payment.epcPayload` op te slaan in de order doc, zodat CalyMob direct een QR kan renderen.
+
+Club-IBAN: lees uit `clubs/{clubId}/settings/club_info` of gebruik `process.env.CLUB_IBAN` als fallback. Codex moet uitzoeken waar IBAN nu staat in de bestaande payment QR pijplijn (zie sendPaymentQrEmail.js).
+
+# 5. UPDATE: functions/src/boutique/markOrderPaid.js — amount tolerance + status flip
+
+Vervang skeleton door echt:
+1. Skip _backfill/migration_source (al gedaan)
+2. Extract OGM via shared/ogm.extractOgmFromRemittance
+3. Get payment_reference; skip als context_type !== 'BOUTIQUE_ORDER' OR status !== 'NEW'
+4. Amount validation: tolerance ±€0.01 (1 cent). Als buiten tolerance → log warning + create entry in `clubs/{clubId}/manual_review_queue` (collection naam: kijk PLAN.md §14.5) met reason='amount_mismatch', maar GEEN order flip.
+5. Binnen tolerance → atomic transaction:
+   - order: status='paid', payment.status='paid', payment.paidAt=now, payment.bankRef=txId
+   - payment_reference: status='MATCHED' via markOgmAsMatched
+   - inventoryMutations: voor elke item create een 'sale' doc (qty=-line.qty)
+   - LET OP: NIET de stockCount zelf wijzigen — die werd al gedecrement in createOrder via 'reservation'. De 'sale' mutation is enkel auditlog.
+
+TODO comments voor: receipt PDF queue, supplier batch, buyer push/email.
+
+# 6. UPDATE: functions/src/loans/onLoanCreated.js — echte OGM
+
+Vervang placeholder TODO_OGM_GENERATE_* door:
+- Bereken caution_amount uit canonical `montant_caution` (legacy `caution_montant` als fallback)
+- Skip als caution_amount <= 0 OR caution_payee=true
+- Generate OGM via shared/ogmService.generateNextOgm
+- Create payment_reference met context_type='LOAN_DEPOSIT', context_id=loanId, amount_cents=caution_amount*100
+- Update loan.caution_ogm + caution_ogm_display
+
+# 7. UPDATE: functions/src/cotisations/createCotisationPayment.js — tariff lookup + amount
+
+Voeg toe:
+- Lookup actieve saison: `clubs/{clubId}/membership_seasons` waar `is_active === true` (of laatste created_at als is_active niet bestaat)
+- Lookup member.cotisation_tariff_code (Stream B veld): direct gebruiken; anders fallback default 'membre_1ere'
+- Lookup tariff in season.tariffs[] of separate `clubs/{clubId}/membership_seasons/{seasonId}/tariffs` collection — Codex moet checken hoe MembershipSeasonService.ts dat doet in CalyCompta src/services/
+- Compute period (al gedaan: jan_dec vs sept_dec)
+- Compute amount: tariff[period] of tariff.price (afhangt van schema)
+- Compute validity_until: 31 januari (year+1) voor jan_dec, 31 december (year+1) voor sept_dec
+- Generate OGM via shared/ogmService
+- Create payment_reference met context_type='COTISATION', context_id=cotisationPaymentId
+- Create cotisation_payment doc met alle metadata
+
+# 8. CRITICAL CONSTRAINTS
+
+- ALLEEN files onder functions/src/shared/ogm.js (nieuw), functions/src/shared/ogmService.js (nieuw), functions/src/boutique/createOrder.js, functions/src/boutique/markOrderPaid.js, functions/src/boutique/shared.js (uitbreiden), functions/src/loans/onLoanCreated.js, functions/src/cotisations/createCotisationPayment.js, en docs/boutique-plan/STREAM_G_DELIVERABLE_2026-05-05.md
+- NIET: lib/ (Stream H), CalyCompta/ (al klaar), bestaande functions/src/notifications/* of functions/src/payment/* (alleen lezen om patterns te kopiëren)
+- DRAAI `node -c` op alle gewijzigde files — moeten exit 0
+- GEEN git commits, GEEN deploys
+- GEEN package.json wijzigingen — gebruik bestaande deps
+- migration_source/_backfill guards behouden in alle triggers
+
+Werk pragmatisch. Het MOET werkend zijn voor het kritieke pad: createOrder → krijgt OGM + EPC QR data → klaar om naar CalyMob te gaan.
