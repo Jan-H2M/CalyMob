@@ -1,16 +1,19 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const { randomUUID } = require('crypto');
+const QRCode = require('qrcode');
 const {
   REGION,
   buildDomainError,
   buildInvalidInputError,
-  buildTodoOgm,
+  buildEpcQrPayload,
   getClubRef,
   mapErrorToHttps,
   parseMoney,
   parsePositiveInteger,
 } = require('./shared');
+const { formatOgmDisplay } = require('../shared/ogm');
+const { createPaymentReference, generateNextOgm } = require('../shared/ogmService');
 
 function resolveVariantUnitPrice(product, variant) {
   if (typeof variant.salePriceOverride === 'number') {
@@ -64,6 +67,40 @@ function sanitizeBuyer(inputBuyer, authUid) {
   };
 }
 
+async function resolveClubBankSettings(clubRef) {
+  const [bankSnap, generalSnap, clubInfoSnap] = await Promise.all([
+    clubRef.collection('settings').doc('bank').get(),
+    clubRef.collection('settings').doc('general').get(),
+    clubRef.collection('settings').doc('club_info').get(),
+  ]);
+
+  const bank = bankSnap.exists ? bankSnap.data() : {};
+  const general = generalSnap.exists ? generalSnap.data() : {};
+  const clubInfo = clubInfoSnap.exists ? clubInfoSnap.data() : {};
+
+  const iban = String(
+    clubInfo.iban
+      || bank.iban
+      || process.env.CLUB_IBAN
+      || '',
+  ).replace(/\s/g, '').toUpperCase();
+  const beneficiary = String(
+    clubInfo.beneficiaryName
+      || clubInfo.beneficiary
+      || bank.beneficiaryName
+      || general.clubName
+      || 'Calypso',
+  ).trim();
+
+  if (!iban || !beneficiary) {
+    throw buildInvalidInputError('INVALID_INPUT', {
+      missing: !iban ? 'settings.bank.iban|settings.club_info.iban|env.CLUB_IBAN' : 'beneficiaryName',
+    });
+  }
+
+  return { iban, beneficiary };
+}
+
 exports.createOrder = onCall(
   {
     region: REGION,
@@ -96,15 +133,19 @@ exports.createOrder = onCall(
     const clubRef = getClubRef(db, clubId);
     const orderRef = clubRef.collection('orders').doc();
     const orderCounterRef = clubRef.collection('settings').doc('order_counter');
+    const inventoryMutationsRef = clubRef.collection('inventoryMutations');
     const now = admin.firestore.Timestamp.now();
     const expiresAt = admin.firestore.Timestamp.fromMillis(now.toMillis() + (72 * 60 * 60 * 1000));
     const currentYear = new Date(now.toMillis()).getUTCFullYear();
-    const ogmStub = buildTodoOgm('BOUTIQUE_ORDER', orderRef.id);
+    const bankSettings = await resolveClubBankSettings(clubRef);
 
     try {
       const result = await db.runTransaction(async (transaction) => {
+        const ogm = await generateNextOgm(db, clubId, transaction);
+        const ogmDisplay = formatOgmDisplay(ogm);
         const lines = [];
         const productCache = new Map();
+        const inventoryReservations = [];
         let itemsSubtotal = 0;
         let deliverySurcharges = 0;
 
@@ -220,6 +261,14 @@ exports.createOrder = onCall(
                 }
               : null,
           });
+
+          if (reservedQty > 0) {
+            inventoryReservations.push({
+              productId,
+              variantId,
+              qty,
+            });
+          }
         }
 
         for (const cachedProduct of productCache.values()) {
@@ -241,9 +290,20 @@ exports.createOrder = onCall(
         }, { merge: true });
 
         const total = itemsSubtotal + deliverySurcharges;
+        const epcPayload = buildEpcQrPayload({
+          iban: bankSettings.iban,
+          beneficiary: bankSettings.beneficiary,
+          amount: total,
+          ogm,
+        });
+
+        const qrCodeUrl = await QRCode.toDataURL(epcPayload);
+
         transaction.set(orderRef, {
           orderNumber,
-          structuredCommunication: ogmStub.ogm,
+          structuredCommunication: ogmDisplay,
+          ogm,
+          ogm_display: ogmDisplay,
           buyer,
           items: lines,
           pricing: {
@@ -254,6 +314,14 @@ exports.createOrder = onCall(
           },
           payment: {
             method: 'qr_transfer',
+            iban: bankSettings.iban,
+            beneficiary: bankSettings.beneficiary,
+            amount: total,
+            structuredCommunication: ogmDisplay,
+            ogm,
+            ogm_display: ogmDisplay,
+            epcPayload,
+            qrCodeUrl,
             status: 'pending',
           },
           status: 'awaiting_payment',
@@ -265,11 +333,39 @@ exports.createOrder = onCall(
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
 
+        await createPaymentReference(db, clubId, {
+          ogm,
+          payload_text: `Boutique ${orderNumber}`,
+          context_type: 'BOUTIQUE_ORDER',
+          context_id: orderRef.id,
+          amount_cents: Math.round(total * 100),
+          created_by: request.auth.uid,
+        }, transaction);
+
+        inventoryReservations.forEach((entry) => {
+          const mutationRef = inventoryMutationsRef.doc();
+          transaction.set(mutationRef, {
+            productId: entry.productId,
+            variantId: entry.variantId,
+            change: -entry.qty,
+            reason: 'reservation',
+            orderId: orderRef.id,
+            byUserId: request.auth.uid,
+            timestamp: now,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        });
+
         return {
           orderNumber,
+          ogm,
+          ogmDisplay,
           total,
           itemsSubtotal,
           deliverySurcharges,
+          epcPayload,
+          qrCodeUrl,
         };
       });
 
@@ -277,12 +373,18 @@ exports.createOrder = onCall(
         success: true,
         orderId: orderRef.id,
         orderNumber: result.orderNumber,
-        ogm: ogmStub.ogm,
-        ogm_display: ogmStub.ogm_display,
+        ogm: result.ogm,
+        ogm_display: result.ogmDisplay,
         total: result.total,
-        totals: {
-          itemsSubtotal: result.itemsSubtotal,
-          deliverySurcharges: result.deliverySurcharges,
+        expiresAt: expiresAt.toDate().toISOString(),
+        payment: {
+          ogm: result.ogm,
+          ogm_display: result.ogmDisplay,
+          iban: bankSettings.iban,
+          beneficiary: bankSettings.beneficiary,
+          amount: result.total,
+          structuredCommunication: result.ogmDisplay,
+          qrCodeUrl: result.qrCodeUrl,
         },
       };
     } catch (error) {

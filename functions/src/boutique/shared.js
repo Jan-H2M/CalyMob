@@ -1,4 +1,9 @@
 const admin = require('firebase-admin');
+const {
+  extractOgmFromRemittance,
+  formatOgmDisplay,
+  validateOgm,
+} = require('../shared/ogm');
 
 const REGION = 'europe-west1';
 const TODO_OGM_PLACEHOLDER = 'TODO_OGM_GENERATE';
@@ -62,52 +67,61 @@ function parseMoney(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function formatOgmDisplay(ogm) {
-  if (!/^\d{12}$/.test(ogm)) {
-    return ogm;
+function sanitizeEpcText(text) {
+  if (!text) return '';
+
+  const accentMap = {
+    à: 'a', â: 'a', ä: 'a', á: 'a', ã: 'a',
+    è: 'e', é: 'e', ê: 'e', ë: 'e',
+    ì: 'i', î: 'i', ï: 'i', í: 'i',
+    ò: 'o', ô: 'o', ö: 'o', ó: 'o', õ: 'o',
+    ù: 'u', û: 'u', ü: 'u', ú: 'u',
+    ç: 'c', ñ: 'n', ÿ: 'y',
+    À: 'A', Â: 'A', Ä: 'A', Á: 'A', Ã: 'A',
+    È: 'E', É: 'E', Ê: 'E', Ë: 'E',
+    Ì: 'I', Î: 'I', Ï: 'I', Í: 'I',
+    Ò: 'O', Ô: 'O', Ö: 'O', Ó: 'O', Õ: 'O',
+    Ù: 'U', Û: 'U', Ü: 'U', Ú: 'U',
+    Ç: 'C', Ñ: 'N', Ÿ: 'Y',
+    '€': 'EUR', '&': '+', '@': 'at',
+  };
+
+  let sanitized = String(text);
+  for (const [accent, replacement] of Object.entries(accentMap)) {
+    sanitized = sanitized.replace(new RegExp(accent, 'g'), replacement);
   }
-  return `+++${ogm.slice(0, 3)}/${ogm.slice(3, 7)}/${ogm.slice(7)}+++`;
+
+  sanitized = sanitized.replace(/[^a-zA-Z0-9 /\-?:().,'+]/g, '');
+  return sanitized.replace(/\s+/g, ' ').trim();
 }
 
-function validateOgm(ogm) {
-  if (!/^\d{12}$/.test(ogm)) {
-    return false;
+function buildEpcQrPayload({ iban, beneficiary, amount, ogm }) {
+  const cleanIban = String(iban || '').replace(/\s/g, '').toUpperCase();
+  const beneficiaryName = sanitizeEpcText(beneficiary).substring(0, 70);
+  const reference = validateOgm(ogm)
+    ? `${ogm.slice(0, 3)}/${ogm.slice(3, 7)}/${ogm.slice(7, 12)}`
+    : '';
+
+  const lines = [
+    'BCD',
+    '002',
+    '1',
+    'SCT',
+    '',
+    beneficiaryName,
+    cleanIban,
+    `EUR${Number(amount || 0).toFixed(2)}`,
+    '',
+    reference,
+    '',
+    '',
+  ];
+
+  while (lines.length > 0 && lines[lines.length - 1] === '') {
+    lines.pop();
   }
 
-  const base10 = ogm.slice(0, 10);
-  const providedCheck = ogm.slice(10);
-  const remainder = Number(BigInt(base10) % 97n);
-  const expected = String(remainder === 0 ? 97 : remainder).padStart(2, '0');
-  return providedCheck === expected;
-}
-
-function extractOgmFromRemittance(remittanceInfo) {
-  const text = String(remittanceInfo || '').trim();
-  if (!text) {
-    return { ogm: null, freeText: '' };
-  }
-
-  const structuredPattern = /[+*]{3}(\d{3})\/(\d{4})\/(\d{5})[+*]{3}/;
-  const structuredMatch = text.match(structuredPattern);
-  if (structuredMatch) {
-    const digits = `${structuredMatch[1]}${structuredMatch[2]}${structuredMatch[3]}`;
-    if (validateOgm(digits)) {
-      return {
-        ogm: digits,
-        freeText: text.replace(structuredPattern, '').trim(),
-      };
-    }
-  }
-
-  const leadingDigitsMatch = text.match(/^(\d{12})\b/);
-  if (leadingDigitsMatch && validateOgm(leadingDigitsMatch[1])) {
-    return {
-      ogm: leadingDigitsMatch[1],
-      freeText: text.slice(12).trim(),
-    };
-  }
-
-  return { ogm: null, freeText: text };
+  return lines.join('\n');
 }
 
 async function incrementCounter(db, docRef, fieldName = 'counter', initialValue = 1, extraData = {}) {
@@ -150,6 +164,7 @@ module.exports = {
   buildTodoOgm,
   extractOgmFromRemittance,
   formatOgmDisplay,
+  buildEpcQrPayload,
   getClubRef,
   incrementCounter,
   isMigrationBackfill,
