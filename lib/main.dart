@@ -53,6 +53,7 @@ import 'screens/boutique/boutique_screen.dart';
 import 'screens/boutique/boutique_product_detail_screen.dart';
 import 'screens/boutique/boutique_cart_screen.dart';
 import 'screens/boutique/boutique_checkout_screen.dart';
+import 'screens/boutique/boutique_order_confirmation_screen.dart';
 import 'screens/boutique/mes_commandes_screen.dart';
 import 'screens/profile/mes_recus_screen.dart';
 import 'screens/profile/mes_abonnements_screen.dart';
@@ -188,6 +189,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   final NotificationService _notificationService = NotificationService();
   final DeepLinkService _deepLinkService = DeepLinkService();
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  late final Future<CartProvider> _cartProviderFuture = CartProvider.load();
 
   Route<dynamic>? _onGenerateRoute(RouteSettings settings) {
     final routeName = settings.name;
@@ -230,6 +232,20 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (uri.path == '/boutique/checkout') {
       return MaterialPageRoute(
         builder: (_) => const BoutiqueCheckoutScreen(),
+        settings: settings,
+      );
+    }
+
+    if (uri.path == '/boutique/order-confirmation') {
+      final orderData = settings.arguments;
+      return MaterialPageRoute(
+        builder: (_) => BoutiqueOrderConfirmationScreen(
+          orderData: orderData is Map<String, dynamic>
+              ? orderData
+              : orderData is Map
+              ? Map<String, dynamic>.from(orderData)
+              : const <String, dynamic>{},
+        ),
         settings: settings,
       );
     }
@@ -618,25 +634,38 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     // Directionality wrapper ensures TextDirection is always available,
     // even during the warm-up frame before MaterialApp is fully built.
     // Fixes CALYMOB-A / CALYMOB-9 (AlignmentDirectional.resolve null check)
-    return Directionality(
-      textDirection: TextDirection.ltr,
-      child: MultiProvider(
-        providers: [
-          ChangeNotifierProvider(create: (_) => AuthProvider()),
-          ChangeNotifierProvider(create: (_) => MemberProvider()),
-          ChangeNotifierProvider(create: (_) => FeatureFlagService()),
-          ChangeNotifierProvider(create: (_) => OperationProvider()),
-          ChangeNotifierProvider(create: (_) => ExpenseProvider()),
-          ChangeNotifierProvider(create: (_) => AnnouncementProvider()),
-          ChangeNotifierProvider(create: (_) => EventMessageProvider()),
-          ChangeNotifierProvider(create: (_) => PaymentProvider()),
-          ChangeNotifierProvider(create: (_) => ExerciceValideProvider()),
-          ChangeNotifierProvider(create: (_) => AvailabilityProvider()),
-          ChangeNotifierProvider(create: (_) => ActivityProvider()),
-          ChangeNotifierProvider(create: (_) => UnreadCountProvider()),
-          ChangeNotifierProvider(create: (_) => CartProvider()),
-        ],
-        child: MaterialApp(
+    return FutureBuilder<CartProvider>(
+      future: _cartProviderFuture,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Directionality(
+            textDirection: TextDirection.ltr,
+            child: ColoredBox(
+              color: Colors.white,
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          );
+        }
+
+        return Directionality(
+          textDirection: TextDirection.ltr,
+          child: MultiProvider(
+            providers: [
+              ChangeNotifierProvider(create: (_) => AuthProvider()),
+              ChangeNotifierProvider(create: (_) => MemberProvider()),
+              ChangeNotifierProvider(create: (_) => FeatureFlagService()),
+              ChangeNotifierProvider(create: (_) => OperationProvider()),
+              ChangeNotifierProvider(create: (_) => ExpenseProvider()),
+              ChangeNotifierProvider(create: (_) => AnnouncementProvider()),
+              ChangeNotifierProvider(create: (_) => EventMessageProvider()),
+              ChangeNotifierProvider(create: (_) => PaymentProvider()),
+              ChangeNotifierProvider(create: (_) => ExerciceValideProvider()),
+              ChangeNotifierProvider(create: (_) => AvailabilityProvider()),
+              ChangeNotifierProvider(create: (_) => ActivityProvider()),
+              ChangeNotifierProvider(create: (_) => UnreadCountProvider()),
+              ChangeNotifierProvider<CartProvider>.value(value: snapshot.data!),
+            ],
+            child: MaterialApp(
           navigatorKey: _navigatorKey,
           // BugReportOverlay est maintenant DANS le MaterialApp via builder,
           // pour avoir accès au Navigator, MediaQuery, et Theme.
@@ -713,8 +742,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           ),
           onGenerateRoute: _onGenerateRoute,
           home: const LoginScreen(),
-        ),
-      ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
