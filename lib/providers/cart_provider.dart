@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 enum DeliveryMode { digital, poolPickup, post, inPerson }
 
@@ -17,55 +20,173 @@ extension DeliveryModeLabel on DeliveryMode {
   }
 }
 
+extension DeliveryModeCodec on DeliveryMode {
+  String get wireValue {
+    switch (this) {
+      case DeliveryMode.digital:
+        return 'digital';
+      case DeliveryMode.poolPickup:
+        return 'pool_pickup';
+      case DeliveryMode.post:
+        return 'post';
+      case DeliveryMode.inPerson:
+        return 'in_person';
+    }
+  }
+
+  static DeliveryMode? fromWireValue(String? value) {
+    switch (value) {
+      case 'digital':
+        return DeliveryMode.digital;
+      case 'pool_pickup':
+        return DeliveryMode.poolPickup;
+      case 'post':
+        return DeliveryMode.post;
+      case 'in_person':
+        return DeliveryMode.inPerson;
+      default:
+        return null;
+    }
+  }
+}
+
 @immutable
 class CartItem {
   final String productId;
   final String variantId;
   final int qty;
   final DeliveryMode deliveryMode;
-  final String name;
-  final String variantLabel;
-  final double unitPrice;
-  final String? imageUrl;
+  final Map<String, dynamic> productSnapshot;
 
   const CartItem({
     required this.productId,
     required this.variantId,
     required this.qty,
     required this.deliveryMode,
-    required this.name,
-    required this.variantLabel,
-    required this.unitPrice,
-    this.imageUrl,
+    required this.productSnapshot,
   });
+
+  String get name =>
+      productSnapshot['name']?.toString() ?? 'Produit Boutique';
+
+  String get variantLabel =>
+      productSnapshot['variantLabel']?.toString() ?? 'Standard';
+
+  double get unitPrice => _asDouble(productSnapshot['unitPrice']);
+
+  String? get imageUrl => productSnapshot['imageUrl']?.toString();
 
   double get lineTotal => unitPrice * qty;
 
   CartItem copyWith({
     int? qty,
     DeliveryMode? deliveryMode,
-    String? name,
-    String? variantLabel,
-    double? unitPrice,
-    Object? imageUrl = _sentinel,
+    Map<String, dynamic>? productSnapshot,
   }) {
     return CartItem(
       productId: productId,
       variantId: variantId,
       qty: qty ?? this.qty,
       deliveryMode: deliveryMode ?? this.deliveryMode,
-      name: name ?? this.name,
-      variantLabel: variantLabel ?? this.variantLabel,
-      unitPrice: unitPrice ?? this.unitPrice,
-      imageUrl: imageUrl == _sentinel ? this.imageUrl : imageUrl as String?,
+      productSnapshot: productSnapshot ?? this.productSnapshot,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'productId': productId,
+      'variantId': variantId,
+      'qty': qty,
+      'deliveryMode': deliveryMode.wireValue,
+      'productSnapshot': productSnapshot,
+    };
+  }
+
+  Map<String, dynamic> toCallablePayload() {
+    return {
+      'productId': productId,
+      'variantId': variantId,
+      'qty': qty,
+      'deliveryMode': deliveryMode.wireValue,
+      'productSnapshot': productSnapshot,
+    };
+  }
+
+  static CartItem? fromJson(Map<String, dynamic> json) {
+    final productId = json['productId']?.toString();
+    final variantId = json['variantId']?.toString();
+    final qty = json['qty'];
+    final deliveryMode = DeliveryModeCodec.fromWireValue(
+      json['deliveryMode']?.toString(),
+    );
+    final productSnapshot = json['productSnapshot'];
+
+    if (productId == null ||
+        variantId == null ||
+        qty is! num ||
+        deliveryMode == null ||
+        productSnapshot is! Map) {
+      return null;
+    }
+
+    return CartItem(
+      productId: productId,
+      variantId: variantId,
+      qty: qty.toInt(),
+      deliveryMode: deliveryMode,
+      productSnapshot: Map<String, dynamic>.from(productSnapshot),
     );
   }
 }
 
-const Object _sentinel = Object();
+double _asDouble(Object? value) {
+  if (value is num) return value.toDouble();
+  return double.tryParse(value?.toString() ?? '') ?? 0;
+}
 
 class CartProvider extends ChangeNotifier {
-  final List<CartItem> _items = [];
+  static const String _storageKey = 'cart_items_v1';
+
+  final SharedPreferences _prefs;
+  final List<CartItem> _items;
+
+  CartProvider._(this._prefs, this._items);
+
+  static Future<CartProvider> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_storageKey);
+    if (raw == null || raw.trim().isEmpty) {
+      return CartProvider._(prefs, <CartItem>[]);
+    }
+
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) {
+        await prefs.remove(_storageKey);
+        return CartProvider._(prefs, <CartItem>[]);
+      }
+
+      final items = <CartItem>[];
+      for (final entry in decoded) {
+        if (entry is! Map) {
+          await prefs.remove(_storageKey);
+          return CartProvider._(prefs, <CartItem>[]);
+        }
+
+        final item = CartItem.fromJson(Map<String, dynamic>.from(entry));
+        if (item == null) {
+          await prefs.remove(_storageKey);
+          return CartProvider._(prefs, <CartItem>[]);
+        }
+        items.add(item);
+      }
+
+      return CartProvider._(prefs, items);
+    } catch (_) {
+      await prefs.remove(_storageKey);
+      return CartProvider._(prefs, <CartItem>[]);
+    }
+  }
 
   List<CartItem> get items => List.unmodifiable(_items);
 
@@ -79,18 +200,16 @@ class CartProvider extends ChangeNotifier {
     return _items.any((item) => item.deliveryMode == DeliveryMode.post);
   }
 
-  void addItem(
+  Future<void> addItem(
     String productId,
     String variantId,
     int qty,
-    DeliveryMode deliveryMode, {
-    String name = 'Produit Boutique',
-    String variantLabel = 'Standard',
-    double unitPrice = 0,
-    String? imageUrl,
-  }) {
+    DeliveryMode deliveryMode,
+    Map<String, dynamic> productSnapshot,
+  ) async {
     if (qty <= 0) return;
 
+    final snapshot = Map<String, dynamic>.from(productSnapshot);
     final index = _items.indexWhere(
       (item) =>
           item.productId == productId &&
@@ -102,10 +221,7 @@ class CartProvider extends ChangeNotifier {
       final existing = _items[index];
       _items[index] = existing.copyWith(
         qty: existing.qty + qty,
-        name: name,
-        variantLabel: variantLabel,
-        unitPrice: unitPrice,
-        imageUrl: imageUrl,
+        productSnapshot: snapshot,
       );
     } else {
       _items.add(
@@ -114,37 +230,34 @@ class CartProvider extends ChangeNotifier {
           variantId: variantId,
           qty: qty,
           deliveryMode: deliveryMode,
-          name: name,
-          variantLabel: variantLabel,
-          unitPrice: unitPrice,
-          imageUrl: imageUrl,
+          productSnapshot: snapshot,
         ),
       );
     }
 
-    notifyListeners();
+    await _persistAndNotify();
   }
 
-  void removeItem(
+  Future<void> removeItem(
     String productId,
     String variantId,
     DeliveryMode deliveryMode,
-  ) {
+  ) async {
     _items.removeWhere(
       (item) =>
           item.productId == productId &&
           item.variantId == variantId &&
           item.deliveryMode == deliveryMode,
     );
-    notifyListeners();
+    await _persistAndNotify();
   }
 
-  void updateQty(
+  Future<void> updateQty(
     String productId,
     String variantId,
     DeliveryMode deliveryMode,
     int qty,
-  ) {
+  ) async {
     final index = _items.indexWhere(
       (item) =>
           item.productId == productId &&
@@ -158,11 +271,19 @@ class CartProvider extends ChangeNotifier {
     } else {
       _items[index] = _items[index].copyWith(qty: qty);
     }
-    notifyListeners();
+    await _persistAndNotify();
   }
 
-  void clear() {
+  Future<void> clear() async {
     _items.clear();
+    await _persistAndNotify();
+  }
+
+  Future<void> _persistAndNotify() async {
+    await _prefs.setString(
+      _storageKey,
+      jsonEncode(_items.map((item) => item.toJson()).toList()),
+    );
     notifyListeners();
   }
 }

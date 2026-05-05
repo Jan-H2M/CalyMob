@@ -1,0 +1,120 @@
+Je bent in /Users/jan/Dev/GitHub/Calypso/CalyMob-streamH op branch boutique-v2-calymob-real (al uitgechecked, vanaf feature/boutique-v2).
+
+Stream H — FASE 2 echte CalyMob koper-frontend. Real Firestore reads, real createOrder Cloud Function call, EPC QR display, cart persistence. Geen deploys.
+
+Lees vóór je begint:
+- /Users/jan/Dev/GitHub/Calypso/CalyCompta/docs/boutique-plan/PLAN.md (focus §5 Bestelflow, §7 Schermen)
+- /Users/jan/Dev/GitHub/Calypso/CalyCompta/src/utils/epcQrCode.ts — REFERENTIE EPC format
+- lib/screens/boutique/ — bestaande skeleton screens (uitbreiden)
+- lib/providers/cart_provider.dart — bestaande in-memory cart (toevoegen persistence)
+- lib/services/feature_flag_service.dart
+- lib/firebase_config.dart
+- pubspec.yaml — kijk welke libs al beschikbaar zijn (qr_flutter? cloud_functions?)
+
+Je werk:
+
+# 1. UPDATE: lib/screens/boutique/boutique_screen.dart — real Firestore stream
+
+Vervang placeholder cards door real data:
+- StreamBuilder op Firestore: `clubs/{clubId}/products` waar visibility='published'
+- Per categorie sub-stream of post-filter: groepeer per `category`
+- Catégorie-strip: dynamisch afgeleid uit `products.category` waarden (use Set<String>)
+- Per product card toont: thumb (eerste image), name, salePrice (override OR computed)
+- Klik → push naar BoutiqueProductDetailScreen met productId
+- Loading state (CircularProgressIndicator), empty state ("Aucun produit disponible.")
+
+# 2. UPDATE: lib/screens/boutique/boutique_product_detail_screen.dart — real product data
+
+- Fetch `clubs/{clubId}/products/{productId}` als Stream
+- Foto-carrousel: PageView met images URLs
+- Variants picker: Dropdown<Variant> uit product.variants
+- Per variant: tonen stockCount badge ("En stock" / "Plus que X" / "Précommande" obv inventoryMode + allowBackorder)
+- Quantity selector: respecteer maxQty = variant.stockCount (als tracked + niet allowBackorder)
+- Delivery mode chips uit product.deliveryModes
+- "Ajouter au panier" → CartProvider.addItem(productId, variantId, qty, deliveryMode, productSnapshot)
+
+# 3. UPDATE: lib/providers/cart_provider.dart — SharedPreferences persistence
+
+- Toevoegen async constructor `await CartProvider.load()` die uit SharedPreferences leest
+- Op elke addItem/removeItem/updateQty/clear → automatisch opslaan
+- Key: 'cart_items_v1' met JSON-encoded list
+- Migration-safe: als oudere format, gewoon clear()
+- LET OP: pubspec.yaml dependency `shared_preferences` — als die niet bestaat, voeg toe (kijk eerst!).
+
+# 4. UPDATE: lib/screens/boutique/boutique_checkout_screen.dart — real createOrder call
+
+- Form validatie zoals voorheen
+- Bij "Confirmer commande" knop:
+  ```dart
+  final functions = FirebaseFunctions.instanceFor(region: 'europe-west1');
+  final callable = functions.httpsCallable('createOrder');
+  final result = await callable.call({
+    'clubId': clubId,
+    'buyer': { 'userId': uid, 'displayName': name, 'email': email, 'phone': phone, 'memberId': memberId },
+    'items': cart.items.map((i) => i.toCallablePayload()).toList(),
+  });
+  ```
+- LET OP: pubspec.yaml dependency `cloud_functions` — als die niet bestaat, voeg toe.
+- Success state navigeert naar new screen `BoutiqueOrderConfirmationScreen` met de result data
+- Error handling per FirebaseFunctionsException code (out_of_stock, etc.) → toon SnackBar met user-friendly message
+
+# 5. NIEUWE: lib/screens/boutique/boutique_order_confirmation_screen.dart
+
+Toont na succesvolle createOrder:
+- Header: "Commande #BTQ-2026-NNNN confirmée"
+- EPC QR code (gebruik `qr_flutter` package — als die niet in pubspec.yaml, toevoegen)
+- QR data: gebruik `payment.epcPayload` uit createOrder response, OF construct lokaal via een helper (kopieer logica uit /Users/jan/Dev/GitHub/Calypso/CalyCompta/src/utils/epcQrCode.ts naar Dart)
+- Onder QR: bedrag, IBAN, beneficiary, gestructureerde mededeling (ogm_display)
+- "Copier IBAN" en "Copier mededeling" knoppen
+- "Voir mes commandes" → push naar MesCommandesScreen
+- Cart.clear() bij entry naar deze screen
+
+# 6. NIEUWE: lib/utils/epc_qr_code.dart — port van CalyCompta epcQrCode.ts naar Dart
+
+Pure utility:
+```dart
+String buildEpcQrPayload({
+  required String iban,
+  required String beneficiary,
+  required double amount,
+  required String structuredCommunication,  // OGM display +++/+++
+  String? bic,
+}) {
+  // EPC069 v002 SCT format — 11+ lines newline-separated
+  // BCD\n002\n1\nSCT\n[BIC]\n[Beneficiary]\n[IBAN]\nEUR[amount.toStringAsFixed(2)]\n[Purpose]\n[StructuredRef]\n[Remittance]\n
+}
+```
+
+Lees CalyCompta's epcQrCode.ts en kopieer 1-op-1 — dezelfde format moet uitkomen.
+
+# 7. UPDATE: lib/screens/boutique/mes_commandes_screen.dart — drawer met real timeline
+
+- Bestaande Firestore stream behouden
+- Klik op een order → endDrawer (bestaand) krijgt nu echte content:
+  - Order number, status badge
+  - Items lijst met snapshot data
+  - Payment info: ogm_display, total, paid_at (als status=paid)
+  - Timeline: createdAt → awaiting_payment → paid → preparing → ready → delivered
+  - Per status: timestamp + icon (haal uit order doc fields zoals payment.paidAt, fulfillment events)
+- Bij status=awaiting_payment: knop "Voir QR" → push naar BoutiqueOrderConfirmationScreen met dezelfde data
+
+# 8. UPDATE: lib/main.dart — add 'orderConfirmation' route
+
+- Nieuwe named route: `/boutique/order-confirmation` → BoutiqueOrderConfirmationScreen (met argument: order data)
+
+# 9. Documentatie
+
+/Users/jan/Dev/GitHub/Calypso/CalyMob-streamH/docs/STREAM_H_DELIVERABLE_2026-05-05.md
+- Wat per file
+- Welke pubspec.yaml dependencies toegevoegd (als gedaan)
+- `flutter analyze` output (run het zelf)
+
+# 10. CRITICAL CONSTRAINTS
+
+- ALLEEN files onder lib/screens/boutique/, lib/screens/profile/mes_commandes_screen.dart (al bestaand, uitbreiden), lib/utils/epc_qr_code.dart (nieuw), lib/providers/cart_provider.dart (uitbreiden), lib/main.dart (route toevoegen), pubspec.yaml (alleen dependencies toevoegen, geen versies wijzigen die er al zijn), docs/STREAM_H_DELIVERABLE_2026-05-05.md
+- NIET: lib/screens/home/landing_screen.dart (al klaar in Stream F), lib/services/feature_flag_service.dart (al klaar), functions/ (Stream G), CalyCompta/
+- DRAAI `flutter analyze` waar mogelijk
+- GEEN git commits, GEEN deploys
+- GEEN echte FlutterFire init wijzigingen — gebruik bestaande config
+
+Werk pragmatisch. Het kritieke pad is: real product → cart → checkout → createOrder call → QR scherm. Dat MOET werken end-to-end.

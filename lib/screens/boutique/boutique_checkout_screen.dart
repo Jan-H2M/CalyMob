@@ -1,13 +1,14 @@
-import 'dart:math';
-
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/cart_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'boutique_feature_guard.dart';
+import 'boutique_order_confirmation_screen.dart';
 
 class BoutiqueCheckoutScreen extends StatefulWidget {
   const BoutiqueCheckoutScreen({super.key});
@@ -23,7 +24,6 @@ class _BoutiqueCheckoutScreenState extends State<BoutiqueCheckoutScreen> {
   final _cityController = TextEditingController();
 
   bool _isSubmitting = false;
-  _CheckoutSuccess? _success;
 
   @override
   void dispose() {
@@ -35,7 +35,11 @@ class _BoutiqueCheckoutScreenState extends State<BoutiqueCheckoutScreen> {
 
   Future<void> _confirmOrder(BuildContext context) async {
     final cart = context.read<CartProvider>();
-    if (cart.isEmpty) return;
+    final auth = context.read<AuthProvider>();
+    final member = context.read<MemberProvider>();
+    final uid = auth.currentUser?.uid;
+
+    if (cart.isEmpty || uid == null) return;
 
     if (cart.requiresPostalAddress &&
         !(_formKey.currentState?.validate() ?? false)) {
@@ -43,23 +47,50 @@ class _BoutiqueCheckoutScreenState extends State<BoutiqueCheckoutScreen> {
     }
 
     setState(() => _isSubmitting = true);
-    await Future<void>.delayed(const Duration(milliseconds: 600));
 
-    final random = Random();
-    final orderNumber = 'BTQ-2026-${(1000 + random.nextInt(9000)).toString()}';
+    try {
+      final functions = FirebaseFunctions.instanceFor(region: 'europe-west1');
+      final callable = functions.httpsCallable('createOrder');
+      final result = await callable.call({
+        'clubId': FirebaseConfig.defaultClubId,
+        'buyer': {
+          'userId': uid,
+          'displayName': member.displayName,
+          'email': member.email ?? auth.currentUser?.email ?? '',
+          'phone': member.phoneNumber ?? '',
+          'memberId': member.odooIdLid ?? member.odooId ?? '',
+        },
+        'items': cart.items.map((item) => item.toCallablePayload()).toList(),
+      });
 
-    // TODO: replace with Cloud Function createOrder + real QR payload.
-    cart.clear();
+      if (!context.mounted) return;
 
-    if (!mounted) return;
-    setState(() {
-      _isSubmitting = false;
-      _success = _CheckoutSuccess(
-        orderNumber: orderNumber,
-        iban: 'BE12 3456 7890 1234',
-        qrReference: 'QR-$orderNumber',
+      final data = _asMap(result.data);
+      final orderData = _normalizeConfirmationData(data, cart.total);
+      await Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => BoutiqueOrderConfirmationScreen(orderData: orderData),
+        ),
       );
-    });
+    } on FirebaseFunctionsException catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_functionsErrorMessage(error.code))),
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Impossible de confirmer la commande pour le moment.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
   }
 
   @override
@@ -79,223 +110,200 @@ class _BoutiqueCheckoutScreenState extends State<BoutiqueCheckoutScreen> {
         body: OceanGradientBackground(
           creatures: CreatureSet.none,
           child: SafeArea(
-            child: _success != null
-                ? _SuccessView(success: _success!)
-                : ListView(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                Card(
+                  child: Padding(
                     padding: const EdgeInsets.all(16),
-                    children: [
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Récapitulatif',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              ...cart.items.map(
-                                (item) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 8),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          '${item.qty}x ${item.name} (${item.variantLabel})',
-                                        ),
-                                      ),
-                                      Text(
-                                        '${item.lineTotal.toStringAsFixed(2)} €',
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const Divider(),
-                              Row(
-                                children: [
-                                  const Text('Total'),
-                                  const Spacer(),
-                                  Text(
-                                    '${cart.total.toStringAsFixed(2)} €',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Récapitulatif',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Coordonnées de contact',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w700,
+                        const SizedBox(height: 12),
+                        ...cart.items.map(
+                          (item) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    '${item.qty}x ${item.name} (${item.variantLabel})',
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 12),
-                              Text(member.displayName),
-                              Text(
-                                member.email ??
-                                    auth.currentUser?.email ??
-                                    'TODO email',
-                              ),
-                              Text(
-                                member.phoneNumber ??
-                                    'TODO numéro de téléphone',
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      if (cart.requiresPostalAddress) ...[
-                        const SizedBox(height: 16),
-                        Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Form(
-                              key: _formKey,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Adresse postale',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  TextFormField(
-                                    controller: _streetController,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Rue et numéro',
-                                    ),
-                                    validator: (value) =>
-                                        (value == null || value.trim().isEmpty)
-                                        ? 'Champ requis'
-                                        : null,
-                                  ),
-                                  const SizedBox(height: 12),
-                                  TextFormField(
-                                    controller: _postalCodeController,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Code postal',
-                                    ),
-                                    validator: (value) =>
-                                        (value == null || value.trim().isEmpty)
-                                        ? 'Champ requis'
-                                        : null,
-                                  ),
-                                  const SizedBox(height: 12),
-                                  TextFormField(
-                                    controller: _cityController,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Ville',
-                                    ),
-                                    validator: (value) =>
-                                        (value == null || value.trim().isEmpty)
-                                        ? 'Champ requis'
-                                        : null,
-                                  ),
-                                ],
-                              ),
+                                Text('${item.lineTotal.toStringAsFixed(2)} €'),
+                              ],
                             ),
                           ),
                         ),
-                      ],
-                      const SizedBox(height: 20),
-                      ElevatedButton(
-                        onPressed: _isSubmitting || cart.isEmpty
-                            ? null
-                            : () => _confirmOrder(context),
-                        child: Text(
-                          _isSubmitting
-                              ? 'Confirmation...'
-                              : 'Confirmer commande',
+                        const Divider(),
+                        Row(
+                          children: [
+                            const Text('Total'),
+                            const Spacer(),
+                            Text(
+                              '${cart.total.toStringAsFixed(2)} €',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'TODO: appeler la Cloud Function createOrder puis remplacer cette simulation.',
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CheckoutSuccess {
-  final String orderNumber;
-  final String iban;
-  final String qrReference;
-
-  const _CheckoutSuccess({
-    required this.orderNumber,
-    required this.iban,
-    required this.qrReference,
-  });
-}
-
-class _SuccessView extends StatelessWidget {
-  final _CheckoutSuccess success;
-
-  const _SuccessView({required this.success});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.check_circle, color: Colors.green, size: 56),
-                const SizedBox(height: 12),
-                const Text(
-                  'Commande créée',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  width: 160,
-                  height: 160,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade200,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  alignment: Alignment.center,
-                  child: const Text('QR\nTODO', textAlign: TextAlign.center),
                 ),
                 const SizedBox(height: 16),
-                Text('Commande: ${success.orderNumber}'),
-                Text('IBAN: ${success.iban}'),
-                Text('Référence: ${success.qrReference}'),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Coordonnées de contact',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(member.displayName),
+                        Text(member.email ?? auth.currentUser?.email ?? 'Email absent'),
+                        Text(member.phoneNumber ?? 'Téléphone absent'),
+                      ],
+                    ),
+                  ),
+                ),
+                if (cart.requiresPostalAddress) ...[
+                  const SizedBox(height: 16),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Adresse postale',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: _streetController,
+                              decoration: const InputDecoration(
+                                labelText: 'Rue et numéro',
+                              ),
+                              validator: _requiredValidator,
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: _postalCodeController,
+                              decoration: const InputDecoration(
+                                labelText: 'Code postal',
+                              ),
+                              validator: _requiredValidator,
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: _cityController,
+                              decoration: const InputDecoration(
+                                labelText: 'Ville',
+                              ),
+                              validator: _requiredValidator,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                ElevatedButton(
+                  onPressed: _isSubmitting || cart.isEmpty
+                      ? null
+                      : () => _confirmOrder(context),
+                  child: Text(
+                    _isSubmitting
+                        ? 'Confirmation...'
+                        : 'Confirmer commande',
+                  ),
+                ),
               ],
             ),
           ),
         ),
       ),
     );
+  }
+
+  String? _requiredValidator(String? value) {
+    return value == null || value.trim().isEmpty ? 'Champ requis' : null;
+  }
+}
+
+Map<String, dynamic> _asMap(Object? value) {
+  if (value is Map<String, dynamic>) return value;
+  if (value is Map) return Map<String, dynamic>.from(value);
+  return <String, dynamic>{};
+}
+
+Map<String, dynamic> _normalizeConfirmationData(
+  Map<String, dynamic> result,
+  double fallbackTotal,
+) {
+  final order = _asMap(result['order']);
+  final payment = _asMap(result['payment']);
+  final pricing = _asMap(order['pricing']);
+
+  return {
+    ...result,
+    ...order,
+    'payment': {
+      ...payment,
+      'amount': payment['amount'] ?? pricing['total'] ?? fallbackTotal,
+      'ogm_display': payment['ogm_display'] ??
+          result['ogm_display'] ??
+          order['structuredCommunication'],
+      'beneficiary': payment['beneficiary'] ??
+          result['beneficiary'] ??
+          'Calypso',
+      'iban': payment['iban'] ?? result['iban'] ?? '',
+    },
+    'pricing': {
+      ...pricing,
+      'total': pricing['total'] ?? payment['amount'] ?? fallbackTotal,
+    },
+    'orderNumber': order['orderNumber'] ?? result['orderNumber'] ?? 'Commande',
+    'structuredCommunication': order['structuredCommunication'] ??
+        payment['ogm_display'] ??
+        result['ogm_display'],
+  };
+}
+
+String _functionsErrorMessage(String code) {
+  switch (code) {
+    case 'out_of_stock':
+      return 'Un article n’est plus disponible dans la quantité demandée.';
+    case 'failed-precondition':
+      return 'La commande ne peut pas être créée dans son état actuel.';
+    case 'permission-denied':
+      return 'Vous n’avez pas les droits nécessaires pour créer cette commande.';
+    case 'unauthenticated':
+      return 'Votre session a expiré. Reconnectez-vous puis réessayez.';
+    case 'invalid-argument':
+      return 'Les données de commande sont invalides.';
+    default:
+      return 'Une erreur est survenue lors de la création de la commande.';
   }
 }
