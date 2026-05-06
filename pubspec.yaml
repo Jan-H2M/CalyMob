@@ -1,7 +1,7 @@
 name: calymob
 description: Calypso DC Mobile Application
 publish_to: 'none'
-version: 1.5.12+138
+version: 1.5.13+139
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
