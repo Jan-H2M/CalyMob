@@ -27,6 +27,7 @@ import '../../widgets/participant_payment_card.dart';
 import '../../widgets/scanner_modal_sheet.dart';
 import '../../widgets/documents_accordion.dart';
 import 'add_guest_dialog.dart';
+import 'register_with_guests_dialog.dart';
 import 'edit_event_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
@@ -323,6 +324,26 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           )
         : operation!.prixMembre ?? 0.0;
 
+    // ───────────────────────────────────────────────────────────────────
+    // Path 0: Guests-enabled flow.
+    // Event has allow_guests=true and at least one tariff marked
+    // is_guest_tariff=true. Show the unified RegisterWithGuestsDialog
+    // that lets the member register themselves AND add multiple guests
+    // in one go, with one aggregated QR payment.
+    // Used for ALL users (admin & member) when the event opts in.
+    // ───────────────────────────────────────────────────────────────────
+    if (operation.allowGuests && _guestTariffs.isNotEmpty) {
+      await _handleRegisterWithGuestsFlow(
+        operation: operation,
+        basePrice: basePrice,
+        userId: userId,
+        userEmail: userEmail,
+        memberProvider: memberProvider,
+        operationProvider: operationProvider,
+      );
+      return;
+    }
+
     // If operation has supplements, show supplement selection dialog
     if (operation.supplements.isNotEmpty) {
       final result = await showDialog<Map<String, dynamic>>(
@@ -470,6 +491,143 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             );
           }
         }
+      }
+    }
+  }
+
+  /// Combined registration flow for events that allow guests.
+  ///
+  /// Shows [RegisterWithGuestsDialog] which lets the member register
+  /// themselves and optionally add one or more guests in a single
+  /// dialog. On submit:
+  ///   1. Register the member (parent inscription).
+  ///   2. Add each guest with parent_inscription_id linked to the
+  ///      member's inscription so the cloud function aggregates them
+  ///      into one QR.
+  ///   3. Show the payment options dialog with the grand total. The
+  ///      Cloud Function `aggregatePaymentForInscription` recomputes
+  ///      the server-side total as a safety net.
+  Future<void> _handleRegisterWithGuestsFlow({
+    required Operation operation,
+    required double basePrice,
+    required String userId,
+    required String userEmail,
+    required MemberProvider memberProvider,
+    required OperationProvider operationProvider,
+  }) async {
+    // Build display name and initials for the dialog header.
+    final prenom = memberProvider.prenom ?? '';
+    final nom = memberProvider.nom ?? '';
+    final displayName = ('$prenom $nom').trim().isNotEmpty
+        ? ('$prenom $nom').trim()
+        : userEmail;
+    String initials = '';
+    if (prenom.isNotEmpty) initials += prenom[0];
+    if (nom.isNotEmpty) initials += nom[0];
+    if (initials.isEmpty && userEmail.isNotEmpty) {
+      initials = userEmail[0].toUpperCase();
+    }
+    initials = initials.toUpperCase();
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => RegisterWithGuestsDialog(
+        operation: operation,
+        memberBasePrice: basePrice,
+        guestTariffs: _guestTariffs,
+        memberDisplayName: displayName,
+        memberInitials: initials,
+        memberRoleLabel: _userProfile?.fonctionDefaut,
+      ),
+    );
+
+    if (result == null || !mounted) return;
+
+    final totalPrice = result['totalPrice'] as double;
+    final selectedSupplements =
+        (result['supplements'] as List).cast<SelectedSupplement>();
+    final supplementTotal = result['supplementTotal'] as double;
+    final guestsList =
+        (result['guests'] as List).cast<Map<String, dynamic>>();
+
+    try {
+      // 1. Register the member themselves
+      await operationProvider.registerToOperation(
+        clubId: widget.clubId,
+        operationId: widget.operationId,
+        userId: userId,
+        userName: userEmail,
+        memberProfile: _userProfile,
+        selectedSupplements: selectedSupplements.isNotEmpty
+            ? selectedSupplements
+            : null,
+        supplementTotal:
+            selectedSupplements.isNotEmpty ? supplementTotal : null,
+      );
+      await operationProvider.reloadParticipants(
+          widget.clubId, widget.operationId);
+      if (!mounted) return;
+      await _loadUserInscription();
+      if (_userInscription == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                "Inscription faite mais impossible de récupérer la référence pour les invités"),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // 2. Add each guest, linked to the member's parent inscription.
+      final authProvider = context.read<AuthProvider>();
+      for (final g in guestsList) {
+        await operationProvider.addGuestToOperation(
+          clubId: widget.clubId,
+          operationId: widget.operationId,
+          operationTitle: operation.titre ?? 'Événement',
+          guestPrenom: g['prenom'] as String,
+          guestNom: g['nom'] as String,
+          prix: g['prix'] as double,
+          addedByUserId: authProvider.currentUser?.uid ?? userId,
+          addedByUserName: displayName,
+          parentInscriptionId: _userInscription!.id,
+          tariffId: g['tariffId'] as String?,
+        );
+      }
+
+      if (!mounted) return;
+
+      // 3. Payment options dialog with grand total.
+      // (skip when priceTbd — organiser will bill later)
+      if (totalPrice > 0 && !operation.priceTbd) {
+        await _showPaymentOptionsDialog(
+          operation: operation,
+          amount: totalPrice,
+          participantId: _userInscription!.id,
+          memberEmail: userEmail,
+          memberFirstName: prenom,
+          memberLastName: nom,
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(guestsList.isEmpty
+                ? 'Inscription réussie !'
+                : 'Inscription réussie avec ${guestsList.length} invité${guestsList.length > 1 ? "s" : ""} !'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString()),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
@@ -844,13 +1002,23 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
       final operationProvider = context.read<OperationProvider>();
 
+      // Aggregate amount: if this participant has linked guests, sum their
+      // totalPrix into the parent's QR (single grouped payment).
+      final allP = operationProvider.selectedOperationParticipants;
+      final linkedGuests = allP
+          .where((p) =>
+              p.isGuest && p.parentInscriptionId == participant.id)
+          .toList();
+      final aggregatedAmount = participant.totalPrix +
+          linkedGuests.fold<double>(0.0, (sum, g) => sum + g.totalPrix);
+
       final result = await showParticipantPaymentCard(
         context: context,
         participantFirstName: participant.membrePrenom ?? '',
         participantLastName: participant.membreNom ?? '',
         participantEmail:
             null, // Email not available on participant, QR code shown on screen
-        amount: participant.totalPrix,
+        amount: aggregatedAmount,
         eventTitle: operation.titre ?? 'Événement',
         eventNumber: operation.eventNumber,
         eventId: widget.operationId,
@@ -865,6 +1033,14 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             operationId: widget.operationId,
             participantId: participant.id,
           );
+          // Also mark linked guests as paid — they ride on this QR.
+          for (final g in linkedGuests) {
+            await _operationService.markParticipantAsPaid(
+              clubId: widget.clubId,
+              operationId: widget.operationId,
+              participantId: g.id,
+            );
+          }
           // Refresh participant list
           await operationProvider.reloadParticipants(
               widget.clubId, widget.operationId);
@@ -894,61 +1070,179 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   Future<void> _handleUnregister() async {
     final authProvider = context.read<AuthProvider>();
     final operationProvider = context.read<OperationProvider>();
-
+    final operation = operationProvider.selectedOperation;
     final userId = authProvider.currentUser?.uid ?? '';
 
-    final confirmed = await showDialog<bool>(
+    // Find guests this user brought along
+    final myInscriptionId = _userInscription?.id;
+    final allParticipants = operationProvider.selectedOperationParticipants;
+    final myGuests = (myInscriptionId != null)
+        ? allParticipants
+            .where((p) =>
+                p.isGuest && p.parentInscriptionId == myInscriptionId)
+            .toList()
+        : <ParticipantOperation>[];
+
+    // Decide flow based on whether the member has guests + an organisateur
+    String? guestAction; // null=cancel, 'delete', 'transfer'
+    if (myGuests.isNotEmpty) {
+      final hasOrganiser = operation?.organisateurId != null &&
+          operation!.organisateurId!.isNotEmpty &&
+          operation.organisateurId != userId;
+      guestAction = await _askGuestsHandlingChoice(
+        guestCount: myGuests.length,
+        hasOrganiser: hasOrganiser,
+        organiserName: operation?.organisateurNom,
+      );
+      if (guestAction == null) return; // user cancelled
+    } else {
+      // Plain confirmation when no guests
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Confirmer la désinscription'),
+          content: Text(
+              'Voulez-vous vous désinscrire de "${operation?.titre}" ?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Annuler'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text('Se désinscrire',
+                  style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+
+    if (!mounted) return;
+
+    try {
+      // 1. Handle the guests first, before deleting the parent inscription.
+      if (guestAction == 'delete' && myInscriptionId != null) {
+        await _operationService.deleteGuestsForParentInscription(
+          clubId: widget.clubId,
+          operationId: widget.operationId,
+          parentInscriptionId: myInscriptionId,
+        );
+      } else if (guestAction == 'transfer' &&
+          myInscriptionId != null &&
+          operation?.organisateurId != null) {
+        // Find organisateur's inscription. If they have one, link guests
+        // to it. Otherwise null out the parent and let guests be orphans.
+        final organisateurInscription =
+            await _operationService.findInscriptionForUser(
+          clubId: widget.clubId,
+          operationId: widget.operationId,
+          userId: operation!.organisateurId!,
+        );
+        await _operationService.transferGuestsToParent(
+          clubId: widget.clubId,
+          operationId: widget.operationId,
+          oldParentInscriptionId: myInscriptionId,
+          newParentInscriptionId: organisateurInscription?.id,
+          newParentUserId: operation.organisateurId,
+          newParentDisplayName: operation.organisateurNom,
+        );
+      }
+
+      // 2. Now delete the member's own inscription
+      await operationProvider.unregisterFromOperation(
+        clubId: widget.clubId,
+        operationId: widget.operationId,
+        userId: userId,
+      );
+
+      await operationProvider.reloadParticipants(
+          widget.clubId, widget.operationId);
+
+      if (mounted) {
+        final msg = guestAction == 'delete'
+            ? 'Désinscription réussie (vos ${myGuests.length} invité${myGuests.length > 1 ? "s ont" : " a"} été retiré${myGuests.length > 1 ? "s" : ""})'
+            : guestAction == 'transfer'
+                ? 'Désinscription réussie (vos ${myGuests.length} invité${myGuests.length > 1 ? "s sont" : " est"} maintenant sous l\'organisateur)'
+                : 'Désinscription réussie';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(msg),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString()),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Asks the user what to do with their guests when they unregister.
+  /// Returns 'delete', 'transfer' or null (cancel).
+  Future<String?> _askGuestsHandlingChoice({
+    required int guestCount,
+    required bool hasOrganiser,
+    String? organiserName,
+  }) async {
+    return showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Confirmer la désinscription'),
-        content: Text(
-            'Voulez-vous vous désinscrire de "${operationProvider.selectedOperation?.titre}" ?'),
+        title: const Text('Vous avez amené des invités'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Vous avez inscrit $guestCount invité${guestCount > 1 ? "s" : ""}. Que souhaitez-vous faire ?',
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              '• Tout annuler : vous et vos invités êtes désinscrits.',
+              style: TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 6),
+            if (hasOrganiser)
+              Text(
+                "• Garder mes invités : ils restent inscrits sous ${organiserName ?? "l'organisateur"} qui s'occupera du paiement.",
+                style: const TextStyle(fontSize: 13),
+              )
+            else
+              const Text(
+                "• Garder mes invités : pas possible — aucun organisateur défini.",
+                style: TextStyle(fontSize: 13, color: Colors.grey),
+              ),
+          ],
+        ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(context, null),
             child: const Text('Annuler'),
           ),
+          if (hasOrganiser)
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'transfer'),
+              child: const Text("Garder mes invités"),
+            ),
           ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(context, 'delete'),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Se désinscrire',
-                style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'Tout annuler',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
     );
-
-    if (confirmed == true && mounted) {
-      try {
-        await operationProvider.unregisterFromOperation(
-          clubId: widget.clubId,
-          operationId: widget.operationId,
-          userId: userId,
-        );
-
-        // Refresh participant list after unregistration
-        await operationProvider.reloadParticipants(
-            widget.clubId, widget.operationId);
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Désinscription réussie'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(e.toString()),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    }
   }
 
   /// Check if current user can scan attendance
@@ -979,17 +1273,18 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   /// Two paths:
   ///  1. Admin / encadrant / organisateur (existing behaviour, gated by
   ///     [_canScan]). Can always add a guest, free price.
-  ///  2. Regular member who's already registered AND the event has opted-in
-  ///     via `allow_guests=true` AND the event has at least one tariff
+  ///  2. Any regular member when the event has opted-in via
+  ///     `allow_guests=true` AND the event has at least one tariff
   ///     marked `is_guest_tariff=true`. The price is locked to the picked
-  ///     tariff and the new inscription is linked to the member's parent
-  ///     inscription so payment can be aggregated into a single QR.
+  ///     tariff. If the member is also registered, the new guest inscription
+  ///     is linked to the member's parent inscription so payment can be
+  ///     aggregated into a single QR; otherwise the guest is unlinked and
+  ///     pays separately.
   bool get _canAddGuest {
     if (_canScan) return true;
     final operation = context.read<OperationProvider>().selectedOperation;
     if (operation == null) return false;
     if (!operation.allowGuests) return false;
-    if (_userInscription == null) return false;
     if (_guestTariffs.isEmpty) return false;
     // Capacity check: don't allow more guests when the event is at capacity
     if (operation.capaciteMax != null) {
@@ -1002,9 +1297,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
   /// Show dialog to add a guest to this operation.
   ///
-  /// When the current user is a regular member (not an admin/encadrant), the
-  /// new guest inscription is linked to their own inscription via
-  /// `parent_inscription_id` so the payment QR can be aggregated.
+  /// When the current user is a regular member (not an admin/encadrant) AND
+  /// is themselves already registered, the new guest inscription is linked
+  /// to their own inscription via `parent_inscription_id` so the payment QR
+  /// can be aggregated. If the member isn't registered, the guest is added
+  /// unlinked and will pay separately.
   Future<void> _showAddGuestDialog() async {
     final tariffs = _guestTariffs;
 
@@ -1849,9 +2146,49 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     return 'Ouvrir la discussion complète';
   }
 
+  /// Sorts participants so each guest appears directly after the member
+  /// who invited them (linked via `parent_inscription_id`). Members
+  /// without guests keep their original position. Orphan guests
+  /// (parent not in the list) are kept where they were.
+  List<ParticipantOperation> _sortParticipantsWithGuests(
+      List<ParticipantOperation> participants) {
+    if (participants.isEmpty) return participants;
+
+    // Group guests by their parent inscription id
+    final guestsByParent = <String, List<ParticipantOperation>>{};
+    final orphanGuests = <ParticipantOperation>[];
+    final nonGuests = <ParticipantOperation>[];
+
+    final allIds = participants.map((p) => p.id).toSet();
+
+    for (final p in participants) {
+      if (p.isGuest && p.parentInscriptionId != null &&
+          allIds.contains(p.parentInscriptionId)) {
+        guestsByParent
+            .putIfAbsent(p.parentInscriptionId!, () => [])
+            .add(p);
+      } else if (p.isGuest) {
+        orphanGuests.add(p);
+      } else {
+        nonGuests.add(p);
+      }
+    }
+
+    final result = <ParticipantOperation>[];
+    for (final p in nonGuests) {
+      result.add(p);
+      final children = guestsByParent[p.id];
+      if (children != null) result.addAll(children);
+    }
+    // Orphans (guests whose parent isn't in the visible list) at the end
+    result.addAll(orphanGuests);
+    return result;
+  }
+
   /// Inscribed members accordion (closed by default)
   Widget _buildInscribedMembersAccordion(OperationProvider operationProvider) {
-    final participants = operationProvider.selectedOperationParticipants;
+    final rawParticipants = operationProvider.selectedOperationParticipants;
+    final participants = _sortParticipantsWithGuests(rawParticipants);
     final authProvider = context.read<AuthProvider>();
     final currentUserId = authProvider.currentUser?.uid ?? '';
     // For plongee events, hide present indicator (no attendance tracking)
@@ -1975,15 +2312,28 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                         final isGuest = participant.isGuest;
 
                         final isPresent = participant.present ?? false;
-                        // Organizer can tap on unpaid participants to show payment QR
+                        // Organizer can tap on unpaid participants to show payment QR.
+                        // Guests with a parent inscription do NOT get their own QR —
+                        // their payment rides on the parent's aggregated QR.
+                        final hasParent = participant.isGuest &&
+                            participant.parentInscriptionId != null &&
+                            participant.parentInscriptionId!.isNotEmpty;
                         final canShowPaymentCard = _canAddGuest &&
                             !participant.paye &&
-                            participant.totalPrix > 0;
+                            participant.totalPrix > 0 &&
+                            !hasParent;
                         // Get payment status info for subtitle
                         final paymentInfo = _getPaymentStatusInfo(
                             participant.paymentStatusCategory);
 
-                        return ListTile(
+                        return Container(
+                          color: isGuest
+                              ? AppColors.oranje.withOpacity(0.04)
+                              : Colors.transparent,
+                          padding: isGuest
+                              ? const EdgeInsets.only(left: 24)
+                              : EdgeInsets.zero,
+                          child: ListTile(
                           onTap: canShowPaymentCard
                               ? () => _showParticipantPaymentCard(
                                     participant: participant,
@@ -2230,16 +2580,37 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                                 if (participant.totalPrix > 0) ...[
                                   const SizedBox(width: 8),
                                   Expanded(
-                                    child: canShowPaymentCard
-                                        ? Icon(Icons.qr_code_2,
-                                            size: 22,
-                                            color: Colors.blueGrey.shade400)
-                                        : _buildPaymentBadge(participant),
+                                    child: hasParent
+                                        ? Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.oranje
+                                                  .withOpacity(0.15),
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              'payé via parent',
+                                              textAlign: TextAlign.center,
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                color: AppColors.oranje,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          )
+                                        : (canShowPaymentCard
+                                            ? Icon(Icons.qr_code_2,
+                                                size: 22,
+                                                color: Colors.blueGrey.shade400)
+                                            : _buildPaymentBadge(participant)),
                                   ),
                                 ],
                               ],
                             ),
                           ),
+                        ),
                         );
                       }).toList(),
                     ),

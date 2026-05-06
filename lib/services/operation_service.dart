@@ -209,6 +209,95 @@ class OperationService {
     }
   }
 
+  /// Supprime tous les invités liés à une inscription parente.
+  /// Utilisé quand un membre se désinscrit et veut emmener ses invités.
+  Future<int> deleteGuestsForParentInscription({
+    required String clubId,
+    required String operationId,
+    required String parentInscriptionId,
+  }) async {
+    try {
+      final snapshot = await _firestore
+          .collection('clubs/$clubId/operations/$operationId/inscriptions')
+          .where('parent_inscription_id', isEqualTo: parentInscriptionId)
+          .get();
+
+      final batch = _firestore.batch();
+      for (final doc in snapshot.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+      debugPrint('✅ ${snapshot.docs.length} invité(s) supprimé(s)');
+      return snapshot.docs.length;
+    } catch (e) {
+      debugPrint('❌ Erreur deleteGuestsForParentInscription: $e');
+      rethrow;
+    }
+  }
+
+  /// Transfère les invités liés à une inscription parente vers
+  /// l'organisateur de l'événement. Utilisé quand un membre se
+  /// désinscrit mais veut que ses invités restent inscrits.
+  /// Le nouveau parent reçoit la facture groupée.
+  ///
+  /// Si [organisateurInscriptionId] est null, les invités deviennent
+  /// orphelins (parent_inscription_id mis à null) — ils restent dans
+  /// la liste mais le paiement doit être géré séparément.
+  Future<int> transferGuestsToParent({
+    required String clubId,
+    required String operationId,
+    required String oldParentInscriptionId,
+    required String? newParentInscriptionId,
+    required String? newParentUserId,
+    required String? newParentDisplayName,
+  }) async {
+    try {
+      final snapshot = await _firestore
+          .collection('clubs/$clubId/operations/$operationId/inscriptions')
+          .where('parent_inscription_id', isEqualTo: oldParentInscriptionId)
+          .get();
+
+      final batch = _firestore.batch();
+      for (final doc in snapshot.docs) {
+        batch.update(doc.reference, {
+          'parent_inscription_id': newParentInscriptionId,
+          if (newParentUserId != null) 'added_by': newParentUserId,
+          if (newParentDisplayName != null)
+            'added_by_name': newParentDisplayName,
+        });
+      }
+      await batch.commit();
+      debugPrint(
+          '✅ ${snapshot.docs.length} invité(s) transféré(s) vers $newParentInscriptionId');
+      return snapshot.docs.length;
+    } catch (e) {
+      debugPrint('❌ Erreur transferGuestsToParent: $e');
+      rethrow;
+    }
+  }
+
+  /// Trouve l'inscription d'un utilisateur (membre) à un événement.
+  /// Utile pour récupérer l'inscription de l'organisateur lors d'un
+  /// transfert d'invités.
+  Future<ParticipantOperation?> findInscriptionForUser({
+    required String clubId,
+    required String operationId,
+    required String userId,
+  }) async {
+    try {
+      final snapshot = await _firestore
+          .collection('clubs/$clubId/operations/$operationId/inscriptions')
+          .where('membre_id', isEqualTo: userId)
+          .limit(1)
+          .get();
+      if (snapshot.docs.isEmpty) return null;
+      return ParticipantOperation.fromFirestore(snapshot.docs.first);
+    } catch (e) {
+      debugPrint('❌ Erreur findInscriptionForUser: $e');
+      return null;
+    }
+  }
+
   /// Obtenir les participants d'une opération (one-time read)
   /// Uses subcollection: clubs/{clubId}/operations/{operationId}/inscriptions
   Future<List<ParticipantOperation>> getParticipants(
