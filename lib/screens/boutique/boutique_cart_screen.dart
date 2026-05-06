@@ -5,6 +5,42 @@ import '../../providers/cart_provider.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'boutique_feature_guard.dart';
 
+class _CartItemThumb extends StatelessWidget {
+  final String? imageUrl;
+
+  const _CartItemThumb({required this.imageUrl});
+
+  @override
+  Widget build(BuildContext context) {
+    if (imageUrl == null || imageUrl!.isEmpty) {
+      return Container(
+        width: 56,
+        height: 56,
+        decoration: BoxDecoration(
+          color: Colors.blueGrey.shade100,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Icon(Icons.inventory_2_outlined),
+      );
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Image.network(
+        imageUrl!,
+        width: 56,
+        height: 56,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Container(
+          width: 56,
+          height: 56,
+          color: Colors.blueGrey.shade100,
+          child: const Icon(Icons.broken_image_outlined),
+        ),
+      ),
+    );
+  }
+}
+
 class BoutiqueCartScreen extends StatelessWidget {
   const BoutiqueCartScreen({super.key});
 
@@ -43,17 +79,7 @@ class BoutiqueCartScreen extends StatelessWidget {
                                 return Card(
                                   child: ListTile(
                                     contentPadding: const EdgeInsets.all(12),
-                                    leading: Container(
-                                      width: 56,
-                                      height: 56,
-                                      decoration: BoxDecoration(
-                                        color: Colors.blueGrey.shade100,
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: const Icon(
-                                        Icons.inventory_2_outlined,
-                                      ),
-                                    ),
+                                    leading: _CartItemThumb(imageUrl: item.imageUrl),
                                     title: Text(item.name),
                                     subtitle: Column(
                                       crossAxisAlignment:
