@@ -92,10 +92,23 @@ class _RegisterWithGuestsDialogState extends State<RegisterWithGuestsDialog> {
 
   double get _grandTotal => _memberPrice + _guestsTotal;
 
+  /// Fallback tariff used for guests when the event is free (no
+  /// is_guest_tariff entries configured). Price = 0 so the guest just
+  /// gets registered without payment.
+  static final Tariff _freeGuestTariff = Tariff(
+    id: 'free',
+    label: 'Invité',
+    category: 'invite',
+    price: 0,
+    isGuestTariff: true,
+  );
+
+  Tariff get _defaultGuestTariff =>
+      widget.guestTariffs.isNotEmpty ? widget.guestTariffs.first : _freeGuestTariff;
+
   void _addGuest() {
-    if (widget.guestTariffs.isEmpty) return;
     setState(() {
-      _guests.add(_GuestEntry(tariff: widget.guestTariffs.first));
+      _guests.add(_GuestEntry(tariff: _defaultGuestTariff));
     });
   }
 

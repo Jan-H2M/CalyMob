@@ -326,13 +326,14 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
     // ───────────────────────────────────────────────────────────────────
     // Path 0: Guests-enabled flow.
-    // Event has allow_guests=true and at least one tariff marked
-    // is_guest_tariff=true. Show the unified RegisterWithGuestsDialog
-    // that lets the member register themselves AND add multiple guests
-    // in one go, with one aggregated QR payment.
+    // Event has allow_guests=true. Show the unified
+    // RegisterWithGuestsDialog that lets the member register themselves
+    // AND add multiple guests in one go, with one aggregated QR payment.
+    // Works for both paid events (with is_guest_tariff entries) and free
+    // events (no tariff at all → guests are added with prix=0).
     // Used for ALL users (admin & member) when the event opts in.
     // ───────────────────────────────────────────────────────────────────
-    if (operation.allowGuests && _guestTariffs.isNotEmpty) {
+    if (operation.allowGuests) {
       await _handleRegisterWithGuestsFlow(
         operation: operation,
         basePrice: basePrice,
