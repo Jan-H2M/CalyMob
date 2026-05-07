@@ -251,6 +251,9 @@ class OperationProvider with ChangeNotifier {
     String? parentInscriptionId,
     /// Selected guest tariff ID (when event has multiple guest tariffs).
     String? tariffId,
+    /// Optional supplements selected by/for this guest.
+    List<SelectedSupplement>? selectedSupplements,
+    double? supplementTotal,
   }) async {
     try {
       _isLoading = true;
@@ -267,6 +270,8 @@ class OperationProvider with ChangeNotifier {
         addedByUserName: addedByUserName,
         parentInscriptionId: parentInscriptionId,
         tariffId: tariffId,
+        selectedSupplements: selectedSupplements,
+        supplementTotal: supplementTotal,
       );
 
       // Mettre à jour cache

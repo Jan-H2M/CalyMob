@@ -583,6 +583,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       // 2. Add each guest, linked to the member's parent inscription.
       final authProvider = context.read<AuthProvider>();
       for (final g in guestsList) {
+        final guestSupps = (g['supplements'] as List?)
+                ?.cast<SelectedSupplement>() ??
+            const <SelectedSupplement>[];
+        final guestSuppTotal = (g['supplementTotal'] as num?)?.toDouble();
         await operationProvider.addGuestToOperation(
           clubId: widget.clubId,
           operationId: widget.operationId,
@@ -594,6 +598,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           addedByUserName: displayName,
           parentInscriptionId: _userInscription!.id,
           tariffId: g['tariffId'] as String?,
+          selectedSupplements: guestSupps.isNotEmpty ? guestSupps : null,
+          supplementTotal:
+              (guestSuppTotal != null && guestSuppTotal > 0)
+                  ? guestSuppTotal
+                  : null,
         );
       }
 

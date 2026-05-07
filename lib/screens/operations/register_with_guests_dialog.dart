@@ -43,8 +43,29 @@ class _GuestEntry {
   String prenom;
   String nom;
   Tariff tariff;
+  /// Per-guest supplement selections. Same supplements list as the
+  /// inviting member sees, but each guest picks independently.
+  final Map<String, SelectedSupplement> selectedSupplements;
+  /// Whether the supplements panel is expanded for this guest.
+  bool supplementsExpanded;
 
-  _GuestEntry({this.prenom = '', this.nom = '', required this.tariff});
+  _GuestEntry({
+    this.prenom = '',
+    this.nom = '',
+    required this.tariff,
+    Map<String, SelectedSupplement>? selectedSupplements,
+    this.supplementsExpanded = false,
+  }) : selectedSupplements = selectedSupplements ?? <String, SelectedSupplement>{};
+
+  double get supplementTotal {
+    double total = 0;
+    for (final s in selectedSupplements.values) {
+      total += s.price;
+    }
+    return total;
+  }
+
+  double get fullPrice => tariff.price + supplementTotal;
 }
 
 class _RegisterWithGuestsDialogState extends State<RegisterWithGuestsDialog> {
@@ -64,7 +85,7 @@ class _RegisterWithGuestsDialogState extends State<RegisterWithGuestsDialog> {
   double get _guestsTotal {
     double total = 0;
     for (final g in _guests) {
-      total += g.tariff.price;
+      total += g.fullPrice;
     }
     return total;
   }
@@ -108,6 +129,8 @@ class _RegisterWithGuestsDialogState extends State<RegisterWithGuestsDialog> {
               'nom': g.nom.trim(),
               'prix': g.tariff.price,
               'tariffId': g.tariff.id,
+              'supplements': g.selectedSupplements.values.toList(),
+              'supplementTotal': g.supplementTotal,
             })
         .toList();
 
@@ -452,7 +475,164 @@ class _RegisterWithGuestsDialogState extends State<RegisterWithGuestsDialog> {
             _buildGuestTariffDropdown(index)
           else
             _buildSingleGuestTariffLabel(guest.tariff),
+          // ----- Per-guest supplements (collapsed by default) -----
+          if (widget.operation.supplements.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            _buildGuestSupplementsSection(index),
+          ],
         ],
+      ),
+    );
+  }
+
+  /// Collapsible supplements section per guest. Header shows count + total
+  /// when collapsed; tapping reveals the same supplement checkboxes the
+  /// member sees.
+  Widget _buildGuestSupplementsSection(int index) {
+    final guest = _guests[index];
+    final supplements = widget.operation.supplements;
+    final selectedCount = guest.selectedSupplements.length;
+    final hasSelection = selectedCount > 0;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.65),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: AppColors.oranje.withOpacity(0.25),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        children: [
+          // Header (tappable)
+          InkWell(
+            onTap: () {
+              setState(() {
+                guest.supplementsExpanded = !guest.supplementsExpanded;
+              });
+            },
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Row(
+                children: [
+                  Icon(
+                    guest.supplementsExpanded
+                        ? Icons.expand_less
+                        : Icons.expand_more,
+                    size: 18,
+                    color: AppColors.oranje,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      hasSelection
+                          ? 'Suppléments · $selectedCount sélectionné${selectedCount > 1 ? "s" : ""}'
+                          : 'Ajouter des suppléments (optionnel)',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: hasSelection
+                            ? FontWeight.w600
+                            : FontWeight.w500,
+                        color: AppColors.donkerblauw.withOpacity(0.85),
+                      ),
+                    ),
+                  ),
+                  if (hasSelection)
+                    Text(
+                      '+${guest.supplementTotal.toStringAsFixed(2)} €',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.donkerblauw,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          // Body (visible when expanded)
+          if (guest.supplementsExpanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+              child: Column(
+                children: supplements
+                    .map((s) => _buildGuestSupplementRow(index, s))
+                    .toList(),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGuestSupplementRow(int guestIndex, Supplement supplement) {
+    final guest = _guests[guestIndex];
+    final selected = guest.selectedSupplements.containsKey(supplement.id);
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            if (selected) {
+              guest.selectedSupplements.remove(supplement.id);
+            } else {
+              guest.selectedSupplements[supplement.id] = SelectedSupplement(
+                id: supplement.id,
+                name: supplement.name,
+                price: supplement.price,
+              );
+            }
+          });
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: selected
+                  ? AppColors.oranje
+                  : Colors.grey.withOpacity(0.25),
+              width: selected ? 1.2 : 1,
+            ),
+            borderRadius: BorderRadius.circular(8),
+            color: selected
+                ? AppColors.oranje.withOpacity(0.06)
+                : Colors.white,
+          ),
+          child: Row(
+            children: [
+              Icon(
+                selected
+                    ? Icons.check_box
+                    : Icons.check_box_outline_blank,
+                color: selected ? AppColors.oranje : Colors.grey,
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  supplement.name,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.donkerblauw,
+                  ),
+                ),
+              ),
+              Text(
+                '+${supplement.price.toStringAsFixed(2)} €',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.donkerblauw.withOpacity(0.8),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

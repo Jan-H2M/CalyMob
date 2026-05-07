@@ -693,6 +693,12 @@ class OperationService {
     /// ID of the Tariff entry from operation.event_tariffs[] used to compute
     /// this guest's price ("Invité adulte" / "Invité enfant" / etc.).
     String? tariffId,
+    /// Optional supplements selected for this guest (same supplements list
+    /// the inviting member sees). Stored exactly like a member's supplements
+    /// so totalPrix = prix + supplement_total works automatically and the
+    /// parent's aggregated QR includes them.
+    List<SelectedSupplement>? selectedSupplements,
+    double? supplementTotal,
   }) async {
     try {
       // Generate unique guest ID (timestamp + random suffix to avoid collisions)
@@ -714,6 +720,17 @@ class OperationService {
         'added_by_name': addedByUserName,
         if (parentInscriptionId != null) 'parent_inscription_id': parentInscriptionId,
         if (tariffId != null) 'tariff_id': tariffId,
+        // Guest-level supplements (optional). Mirrors member's schema.
+        if (selectedSupplements != null && selectedSupplements.isNotEmpty)
+          'supplements': selectedSupplements
+              .map((s) => {
+                    'id': s.id,
+                    'name': s.name,
+                    'price': s.price,
+                  })
+              .toList(),
+        if (supplementTotal != null && supplementTotal > 0)
+          'supplement_total': supplementTotal,
         'created_at': FieldValue.serverTimestamp(),
         'updated_at': FieldValue.serverTimestamp(),
       };
@@ -722,7 +739,7 @@ class OperationService {
           .collection('clubs/$clubId/operations/$operationId/inscriptions')
           .add(inscriptionData);
 
-      debugPrint('✅ Inscription invité créée: $guestPrenom $guestNom → $operationTitle (parent=$parentInscriptionId, tariff=$tariffId)');
+      debugPrint('✅ Inscription invité créée: $guestPrenom $guestNom → $operationTitle (parent=$parentInscriptionId, tariff=$tariffId, supps=${selectedSupplements?.length ?? 0})');
     } catch (e) {
       debugPrint('❌ Erreur création inscription invité: $e');
       rethrow;
