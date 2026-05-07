@@ -1,0 +1,1 @@
+Vos invités peuvent maintenant choisir leurs propres suppléments (repas, boissons, etc.) lors de l'inscription. Chaque invité a sa propre sélection ; le paiement reste groupé en un seul QR code que vous payez en tant qu'inviteur.
