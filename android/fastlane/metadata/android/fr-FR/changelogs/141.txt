@@ -1,0 +1,1 @@
+Vos invités peuvent maintenant choisir leurs propres suppléments lors de l'inscription. Chaque invité a sa sélection ; le paiement reste groupé en un seul QR code. La fonction marche aussi pour les événements gratuits.
