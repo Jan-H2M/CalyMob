@@ -43,6 +43,11 @@ class RefundService {
   ///   Function — without it the call is rejected with `invalid-argument`.
   /// - [eventTitre]: Title of the event used for the demande titre
   ///   (`Modification inscription — <eventTitre>`). REQUIRED by the CF.
+  /// - [unverifiedPayment]: when true, the member claims they have
+  ///   already paid via a transaction that hasn't been imported yet.
+  ///   The CF will set the demande status to `a_verifier_paiement`
+  ///   instead of `soumis` so the admin validates against the bank
+  ///   statement before refunding. Defaults to false (legacy behaviour).
   ///
   /// Returns the `demandeId` of the newly created refund request.
   ///
@@ -56,10 +61,11 @@ class RefundService {
     required String editSessionId,
     required String description,
     required String eventTitre,
+    bool unverifiedPayment = false,
   }) async {
     try {
       debugPrint('🔄 Requesting refund: inscription=$inscriptionId, '
-          'old=$oldAmount, new=$newAmount');
+          'old=$oldAmount, new=$newAmount, unverified=$unverifiedPayment');
 
       final result = await _functions
           .httpsCallable('createInscriptionRefund')
@@ -72,6 +78,7 @@ class RefundService {
             'editSessionId': editSessionId,
             'description': description,
             'eventTitre': eventTitre,
+            'unverifiedPayment': unverifiedPayment,
           });
 
       final demandeId = result.data['demandeId'] as String;

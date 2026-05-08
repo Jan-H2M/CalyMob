@@ -1122,6 +1122,14 @@ class OperationService {
   ///
   /// Returns the delta (oldTotal - newTotal). Positive means price decreased
   /// (refund may be needed), negative means price increased.
+  /// [forceRefundClaim]: when true, a refund demande is created even if
+  /// the parent inscription is not yet marked as paid (`paye=false`).
+  /// Used for the "déjà payé, paiement pas encore importé" scenario
+  /// where the member has actually paid via bank transfer but the
+  /// transaction hasn't been imported/matched yet. The resulting demande
+  /// is created with status `a_verifier_paiement` so the admin validates
+  /// it against the bank statement. When false (default), the legacy
+  /// behaviour applies: refund only when paye=true.
   Future<double> updateMyInscription({
     required String clubId,
     required String operationId,
@@ -1131,6 +1139,7 @@ class OperationService {
     List<GuestUpdate>? guests,
     List<String>? guestIdsToRemove,
     String? deliveryAddress,
+    bool forceRefundClaim = false,
   }) async {
     // Read operation to check deadline
     final operationRef = _firestore
@@ -1272,9 +1281,14 @@ class OperationService {
       // Commit batch
       await batch.commit();
 
-      // 6. Handle refund if price decreased and already paid
+      // 6. Handle refund if price decreased.
+      //    Trigger condition: delta > 0 AND (parent already paid OR the
+      //    user explicitly claimed an already-paid-but-not-yet-imported
+      //    payment via [forceRefundClaim]). In the latter case the CF
+      //    sets statut='a_verifier_paiement' so the admin can validate.
       final delta = oldTotal - newTotal;
-      if (delta > 0 && isPaid) {
+      final unverifiedPayment = !isPaid && forceRefundClaim;
+      if (delta > 0 && (isPaid || forceRefundClaim)) {
         // Fire-and-forget: log but don't block the UI on refund creation
         try {
           final refundService = RefundService();
@@ -1282,6 +1296,9 @@ class OperationService {
           // The Cloud Function REQUIRES description + eventTitre — without
           // them the call is rejected with `invalid-argument` and the
           // refund demande is silently dropped.
+          final descriptionPrefix = unverifiedPayment
+              ? 'Modification inscription (paiement déclaré, en attente de validation) — '
+              : 'Modification inscription — ';
           await refundService.createInscriptionRefund(
             clubId: clubId,
             operationId: operationId,
@@ -1291,13 +1308,14 @@ class OperationService {
             editSessionId: editSessionId,
             eventTitre: operation.titre,
             description:
-                'Modification inscription — diminution de '
+                '${descriptionPrefix}diminution de '
                 '${delta.toStringAsFixed(2)} € '
                 '(de ${oldTotal.toStringAsFixed(2)} € à '
                 '${newTotal.toStringAsFixed(2)} €).',
+            unverifiedPayment: unverifiedPayment,
           );
           debugPrint('✅ Refund requested for inscription $inscriptionId '
-              '(delta=$delta)');
+              '(delta=$delta, unverified=$unverifiedPayment)');
         } catch (refundError) {
           // Log refund failure — the inscription update already succeeded
           debugPrint('⚠️ Refund creation failed (non-blocking): $refundError');

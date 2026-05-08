@@ -49,6 +49,12 @@ function validateInput(data) {
   if (typeof data.eventTitre !== 'string' || !data.eventTitre.trim()) {
     errors.push('eventTitre requis');
   }
+  // unverifiedPayment is optional (defaults to false). When true the
+  // demande is created with statut='a_verifier_paiement' so the admin
+  // validates against the bank statement before refunding.
+  if (data.unverifiedPayment !== undefined && typeof data.unverifiedPayment !== 'boolean') {
+    errors.push('unverifiedPayment doit être un booléen');
+  }
 
   if (errors.length > 0) {
     throw new HttpsError('invalid-argument', errors.join('; '));
@@ -62,8 +68,9 @@ function validateInput(data) {
   const editSessionId = data.editSessionId.trim();
   const description = data.description.trim();
   const eventTitre = data.eventTitre.trim();
+  const unverifiedPayment = Boolean(data.unverifiedPayment);
 
-  return { clubId, inscriptionId, operationId, newAmount, oldAmount, editSessionId, description, eventTitre };
+  return { clubId, inscriptionId, operationId, newAmount, oldAmount, editSessionId, description, eventTitre, unverifiedPayment };
 }
 
 /**
@@ -100,7 +107,7 @@ exports.createInscriptionRefund = onCall(
     const userId = validateAuth(request);
     const input = validateInput(request.data);
 
-    const { clubId, inscriptionId, operationId, newAmount, oldAmount, editSessionId, description, eventTitre } = input;
+    const { clubId, inscriptionId, operationId, newAmount, oldAmount, editSessionId, description, eventTitre, unverifiedPayment } = input;
 
     const db = admin.firestore();
     const clubRef = db.collection('clubs').doc(clubId);
@@ -180,6 +187,12 @@ exports.createInscriptionRefund = onCall(
     const demandeRef = clubRef.collection('demandes_remboursement').doc();
     const now = admin.firestore.Timestamp.now();
 
+    // Status depends on whether the parent inscription was already paid
+    // when the edit happened. For unverified payments (member declared
+    // they paid by bank transfer that hasn't been imported yet), the
+    // admin must validate against the bank statement before refunding.
+    const statut = unverifiedPayment ? 'a_verifier_paiement' : 'soumis';
+
     const demandeData = {
       // Identity
       operation_id: operationId,
@@ -198,7 +211,10 @@ exports.createInscriptionRefund = onCall(
       // Account & status
       categorie: 'remboursement_inscription',
       code_comptable: '7090',
-      statut: 'soumis',
+      statut: statut,
+      // Flag the demande as needing payment verification so admin tooling
+      // can filter / sort accordingly (e.g. show a separate queue).
+      unverified_payment: unverifiedPayment,
 
       // Metadata
       created_by: userId,
@@ -228,7 +244,8 @@ exports.createInscriptionRefund = onCall(
     return {
       demandeId: demandeRef.id,
       montant: delta,
-      statut: 'soumis',
+      statut: statut,
+      unverifiedPayment: unverifiedPayment,
     };
   },
 );

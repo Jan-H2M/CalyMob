@@ -269,28 +269,78 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
       }
     }
 
-    // Confirmation dialog for refunds
-    if (_delta < 0 && widget.currentInscription.paye) {
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Confirmation'),
-          content: Text(
-            'Une demande de remboursement de ${_delta.abs().toStringAsFixed(2)} € sera creee. Continuer?',
+    // === Refund confirmation flow ===
+    //
+    // If the user is reducing the price (delta < 0), we have three branches:
+    //   1. paye=true: a refund demande WILL be created automatically by
+    //      the backend. Just confirm.
+    //   2. paye=false: backend won't create anything by default — the
+    //      member can either say "pas encore payé" (just save, less to
+    //      pay) or "déjà payé" (claim a payment that hasn't been imported
+    //      yet, force-create a demande with status 'a_verifier_paiement'
+    //      so the admin can validate against the bank statement).
+    //   3. paye=true & user paid: handled by branch 1.
+    //
+    // The flag below is forwarded to OperationService.updateMyInscription
+    // and ultimately to the createInscriptionRefund Cloud Function.
+    bool forceRefundClaim = false;
+
+    if (_delta < 0) {
+      if (widget.currentInscription.paye) {
+        // Branch 1 — already paid, normal refund.
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Confirmation'),
+            content: Text(
+              'Une demande de remboursement de ${_delta.abs().toStringAsFixed(2)} € sera créée. Continuer ?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Annuler'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Continuer'),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Annuler'),
+        );
+        if (confirmed != true) return;
+      } else {
+        // Branch 2 — payment status is "not paid" but the user might
+        // have paid via bank transfer that hasn't been imported yet.
+        // Ask explicitly.
+        final answer = await showDialog<String>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Avez-vous déjà payé ?'),
+            content: Text(
+              'Cette inscription n\'est pas encore marquée comme payée dans nos comptes.\n\n'
+              'Avez-vous déjà payé les ${_delta.abs().toStringAsFixed(2)} € en trop '
+              '(par virement, par exemple, mais le paiement n\'a pas encore été '
+              'importé dans la comptabilité) ?',
             ),
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Continuer'),
-            ),
-          ],
-        ),
-      );
-      if (confirmed != true) return;
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop('cancel'),
+                child: const Text('Annuler'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop('not_paid'),
+                child: const Text('Pas encore payé'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop('paid'),
+                child: const Text('Déjà payé'),
+              ),
+            ],
+          ),
+        );
+        if (answer == 'cancel' || answer == null) return;
+        forceRefundClaim = answer == 'paid';
+      }
     }
 
     setState(() => _saving = true);
@@ -365,6 +415,7 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
         guests: guestUpdates.isNotEmpty ? guestUpdates : null,
         guestIdsToRemove:
             guestIdsToRemove.isNotEmpty ? guestIdsToRemove : null,
+        forceRefundClaim: forceRefundClaim,
       );
 
       if (mounted) {
@@ -378,10 +429,19 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
             ))
             .toList();
 
+        // refundCreated == true iff the backend will/did create a demande:
+        //   - inscription was already marked paid (normal refund), OR
+        //   - the user explicitly claimed they had already paid
+        //     (`forceRefundClaim`), creating a demande with status
+        //     'a_verifier_paiement'.
+        final refundCreated =
+            _delta < 0 && (widget.currentInscription.paye || forceRefundClaim);
         Navigator.of(context).pop({
           'supplements': supplements,
           'supplementTotal': _newSupplementTotal,
           'delta': _delta,
+          'refundCreated': refundCreated,
+          'requiresPaymentVerification': forceRefundClaim,
         });
       }
     } catch (e) {

@@ -1224,6 +1224,15 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     if (!mounted) return;
 
     final delta = result['delta'] as double;
+    // refundCreated is true iff the backend will/did create a demande de
+    // remboursement: either the parent was already paid, or the user
+    // explicitly claimed they had paid (forceRefundClaim).
+    final refundCreated = (result['refundCreated'] as bool?) ?? false;
+    // requiresPaymentVerification is true when the user claimed
+    // "déjà payé" but the inscription wasn't yet marked paid — admin
+    // must validate against the bank statement before refunding.
+    final requiresVerification =
+        (result['requiresPaymentVerification'] as bool?) ?? false;
 
     if (delta > 0) {
       final authProvider = context.read<AuthProvider>();
@@ -1237,29 +1246,55 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         memberLastName: memberProvider.nom ?? '',
       );
     } else if (delta < 0) {
-      await showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Row(
-            children: [
-              Icon(Icons.account_balance,
-                  color: Colors.orange.shade700, size: 28),
-              const SizedBox(width: 12),
-              const Expanded(child: Text('Demande de remboursement')),
+      // Three cases, driven by the flags from the dialog:
+      //   1. refundCreated && !requiresVerification: parent was paid →
+      //      normal refund flow, demande in 'soumis' status.
+      //   2. refundCreated && requiresVerification: user claimed they
+      //      paid by transfer that's not yet imported → demande in
+      //      'a_verifier_paiement' status; we tell them honestly the
+      //      admin must validate first.
+      //   3. !refundCreated: user said "pas encore payé" or never paid →
+      //      no demande created; the new total is simply lower.
+      if (refundCreated) {
+        await showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.account_balance,
+                    color: Colors.orange.shade700, size: 28),
+                const SizedBox(width: 12),
+                const Expanded(child: Text('Demande de remboursement')),
+              ],
+            ),
+            content: Text(
+              requiresVerification
+                  ? 'Une demande de remboursement de ${(-delta).toStringAsFixed(2)} € a été créée, '
+                      'en attente de validation du paiement.\n\n'
+                      'L\'organisateur vérifiera votre paiement sur le relevé bancaire avant de procéder au remboursement.'
+                  : 'Une demande de remboursement de ${(-delta).toStringAsFixed(2)} € a été créée.\n\n'
+                      'L\'organisateur traitera votre remboursement manuellement.',
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Compris'),
+              ),
             ],
           ),
-          content: Text(
-            'Une demande de remboursement de ${(-delta).toStringAsFixed(2)} € a été créée.\n\n'
-            'L\'organisateur traitera votre remboursement manuellement.',
-          ),
-          actions: [
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Compris'),
+        );
+      } else {
+        // Not yet paid → nothing to refund. Confirm save and explain.
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Modifications enregistrées — montant à payer réduit de '
+              '${(-delta).toStringAsFixed(2)} €.',
             ),
-          ],
-        ),
-      );
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
