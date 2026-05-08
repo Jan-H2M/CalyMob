@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../models/operation.dart';
+import '../../models/supplement.dart';
 import '../../models/tariff.dart';
 import '../../providers/activity_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -41,8 +42,12 @@ class _EditEventScreenState extends State<EditEventScreen> {
   // State
   late DateTime _dateDebut;
   DateTime? _dateFin;
+  DateTime? _registrationDeadline;
   late String _statut;
   late List<_EditableTariff> _tariffs;
+  late List<_EditableSupplement> _supplements;
+  late bool _priceTbd;
+  late bool _allowGuests;
   bool _saving = false;
   bool _hasChanges = false;
 
@@ -71,12 +76,18 @@ class _EditEventScreenState extends State<EditEventScreen> {
 
     _dateDebut = op.dateDebut ?? DateTime.now();
     _dateFin = op.dateFin;
+    _registrationDeadline = op.registrationDeadline;
     _statut = op.statut;
     _organisateurId = op.organisateurId;
     _organisateurNom = op.organisateurNom;
+    _priceTbd = op.priceTbd;
+    _allowGuests = op.allowGuests;
 
     // Copier les tarifs existants en version éditable
     _tariffs = op.eventTariffs.map((t) => _EditableTariff.fromTariff(t)).toList();
+    // Copier les suppléments existants en version éditable
+    _supplements =
+        op.supplements.map((s) => _EditableSupplement.fromSupplement(s)).toList();
 
     // Listeners pour détecter les changements
     _titreController.addListener(_markChanged);
@@ -355,7 +366,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
     setState(() => _saving = true);
 
     try {
-      // Construire les tarifs pour Firestore
+      // Construire les tarifs pour Firestore — bewaar de is_guest_tariff
+      // flag zodat de "Invité" markering correct in Firestore terechtkomt.
       final tariffsData = _tariffs
           .where((t) => t.label.trim().isNotEmpty)
           .map((t) => {
@@ -364,14 +376,27 @@ class _EditEventScreenState extends State<EditEventScreen> {
                 'category': t.category,
                 'price': t.price,
                 'is_default': t.isDefault,
+                'is_guest_tariff': t.isGuestTariff,
                 'display_order': t.displayOrder,
               })
           .toList();
 
-      // Calculer budget prévisionnel
+      // Construire les suppléments pour Firestore
+      final supplementsData = _supplements
+          .where((s) => s.name.trim().isNotEmpty)
+          .map((s) => {
+                'id': s.id,
+                'name': s.name.trim(),
+                'price': s.price,
+                'display_order': s.displayOrder,
+              })
+          .toList();
+
+      // Calculer budget prévisionnel — alleen op niet-gast-tarieven, want
+      // gasten zijn pas bevestigd zodra een lid hen toevoegt.
       final capacity = int.tryParse(_capaciteController.text);
       final tariffObjects = _tariffs
-          .where((t) => t.label.trim().isNotEmpty)
+          .where((t) => t.label.trim().isNotEmpty && !t.isGuestTariff)
           .map((t) => Tariff(
                 id: t.id,
                 label: t.label,
@@ -391,11 +416,24 @@ class _EditEventScreenState extends State<EditEventScreen> {
         'date_debut': Timestamp.fromDate(_dateDebut),
         'statut': _statut,
         'event_tariffs': tariffsData,
+        'supplements': supplementsData,
+        'price_tbd': _priceTbd,
+        'allow_guests': _allowGuests,
         'montant_prevu': budget,
         'communication': _communicationController.text.trim().isNotEmpty
             ? _communicationController.text.trim()
             : null,
       };
+
+      // Date butoir d'inscription — null = geen deadline gezet (Firestore
+      // rule valt dan terug op date_debut - 24u). Schrijf delete weg
+      // wanneer leeg zodat het veld effectief verdwijnt uit het doc.
+      if (_registrationDeadline != null) {
+        data['registration_deadline'] =
+            Timestamp.fromDate(_registrationDeadline!);
+      } else {
+        data['registration_deadline'] = FieldValue.delete();
+      }
 
       // Persist organisateur change only if we have a valid id — and always
       // rewrite id + nom together so the phone-number lookup (keyed on id)
@@ -610,6 +648,10 @@ class _EditEventScreenState extends State<EditEventScreen> {
                 ]),
                 const SizedBox(height: 16),
 
+                // ========== DATE BUTOIR D'INSCRIPTION ==========
+                _buildDeadlineSection(),
+                const SizedBox(height: 16),
+
                 // Communication (message organisateur)
                 _buildSectionCard(children: [
                   _buildLabel('Message aux participants', icon: Icons.campaign),
@@ -622,8 +664,20 @@ class _EditEventScreenState extends State<EditEventScreen> {
                 ]),
                 const SizedBox(height: 16),
 
+                // ========== PRIX À CONFIRMER ==========
+                _buildPriceTbdSection(),
+                const SizedBox(height: 16),
+
+                // ========== AUTORISER LES INVITÉS EXTERNES ==========
+                _buildAllowGuestsSection(),
+                const SizedBox(height: 16),
+
                 // ========== TARIFS ==========
                 _buildTariffsSection(),
+                const SizedBox(height: 16),
+
+                // ========== SUPPLÉMENTS OPTIONNELS ==========
+                _buildSupplementsSection(),
                 const SizedBox(height: 16),
 
                 // Statut
@@ -842,6 +896,32 @@ class _EditEventScreenState extends State<EditEventScreen> {
           ),
           const SizedBox(width: 4),
 
+          // Invité checkbox — alleen relevant wanneer "Autoriser les
+          // invités externes" aanstaat (zelfde principe als CalyCompta).
+          // Markeert deze tarief als gast-tarief (bv. "Invité adulte").
+          if (_allowGuests)
+            Tooltip(
+              message:
+                  'Marquer ce tarif comme tarif invité (sera utilisé quand un membre ajoute un invité externe)',
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Checkbox(
+                    value: tariff.isGuestTariff,
+                    onChanged: (v) {
+                      setState(() {
+                        tariff.isGuestTariff = v ?? false;
+                        _hasChanges = true;
+                      });
+                    },
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  const Text('Invité', style: TextStyle(fontSize: 12)),
+                ],
+              ),
+            ),
+
           // Delete button
           IconButton(
             icon: Icon(Icons.close, size: 20, color: Colors.red[400]),
@@ -852,6 +932,422 @@ class _EditEventScreenState extends State<EditEventScreen> {
         ],
       ),
     );
+  }
+
+  // ============================================================
+  // SUPPLEMENT MANAGEMENT
+  // ============================================================
+
+  void _addSupplement() {
+    setState(() {
+      _supplements.add(_EditableSupplement(
+        id: 'supp_${DateTime.now().millisecondsSinceEpoch}_${_supplements.length}',
+        name: '',
+        price: 0,
+        displayOrder: _supplements.length,
+      ));
+      _hasChanges = true;
+    });
+  }
+
+  void _removeSupplement(int index) {
+    setState(() {
+      _supplements.removeAt(index);
+      _hasChanges = true;
+    });
+  }
+
+  void _updateSupplementName(int index, String name) {
+    _supplements[index].name = name;
+    _markChanged();
+  }
+
+  void _updateSupplementPrice(int index, String priceStr) {
+    _supplements[index].price = double.tryParse(priceStr.replaceAll(',', '.')) ?? 0;
+    _markChanged();
+  }
+
+  Widget _buildSupplementsSection() {
+    return _buildSectionCard(children: [
+      Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          _buildLabel('Suppléments optionnels', icon: Icons.add_box_outlined),
+          TextButton.icon(
+            onPressed: _addSupplement,
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Ajouter'),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.middenblauw,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            ),
+          ),
+        ],
+      ),
+      Padding(
+        padding: const EdgeInsets.only(top: 2, bottom: 6),
+        child: Text(
+          'Options additionnelles que les membres peuvent sélectionner lors de l\'inscription (ex: Réservation Hamburger, location de matériel).',
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[600],
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+      ),
+      const SizedBox(height: 4),
+
+      if (_supplements.isEmpty)
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.grey[200]!),
+          ),
+          child: Center(
+            child: Text(
+              'Aucun supplément défini.\nAppuyez sur "Ajouter" pour en créer un.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey[500],
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
+        ),
+
+      ...List.generate(_supplements.length, (index) {
+        final s = _supplements[index];
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.blue.shade50.withOpacity(0.4),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.blue.shade100),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: TextFormField(
+                  initialValue: s.name,
+                  decoration: InputDecoration(
+                    hintText: 'Nom (ex: Réservation Hamburger viande)',
+                    hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
+                    filled: true,
+                    fillColor: Colors.white,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 10),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                  ),
+                  style: const TextStyle(fontSize: 14),
+                  onChanged: (v) => _updateSupplementName(index, v),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: TextFormField(
+                  initialValue:
+                      s.price > 0 ? s.price.toStringAsFixed(2) : '',
+                  decoration: InputDecoration(
+                    hintText: '0.00',
+                    hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
+                    suffixText: '€',
+                    suffixStyle: TextStyle(
+                      color: AppColors.middenblauw,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 10),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                  ),
+                  style: const TextStyle(fontSize: 14),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  onChanged: (v) => _updateSupplementPrice(index, v),
+                ),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                icon: Icon(Icons.close, size: 20, color: Colors.red[400]),
+                onPressed: () => _removeSupplement(index),
+                padding: EdgeInsets.zero,
+                constraints:
+                    const BoxConstraints(minWidth: 32, minHeight: 32),
+              ),
+            ],
+          ),
+        );
+      }),
+    ]);
+  }
+
+  // ============================================================
+  // DEADLINE / FLAGS
+  // ============================================================
+
+  /// Veld voor de date butoir d'inscription. Datum + uur inputs zoals
+  /// de date_debut/date_fin velden, plus een 'Effacer' knop om terug te
+  /// vallen op de Firestore-default (date_debut - 24u).
+  Widget _buildDeadlineSection() {
+    return _buildSectionCard(children: [
+      _buildLabel('Date butoir d\'inscription', icon: Icons.lock_clock),
+      Padding(
+        padding: const EdgeInsets.only(top: 2, bottom: 8),
+        child: Text(
+          'Optionnel — par défaut, 24h avant le début. Après cette date, '
+          'les membres ne peuvent plus s\'inscrire, modifier ou se désinscrire '
+          'depuis l\'app.',
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[600],
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+      ),
+      Row(
+        children: [
+          Expanded(
+            child: InkWell(
+              onTap: _pickDeadlineDate,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[300]!),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.calendar_today,
+                        size: 18, color: AppColors.middenblauw),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _registrationDeadline != null
+                            ? DateFormat('dd/MM/yyyy')
+                                .format(_registrationDeadline!)
+                            : 'Sélectionner',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: _registrationDeadline != null
+                              ? Colors.black87
+                              : Colors.grey[500],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: InkWell(
+              onTap: _registrationDeadline != null ? _pickDeadlineTime : null,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: _registrationDeadline != null
+                      ? Colors.grey[50]
+                      : Colors.grey[100],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[300]!),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.schedule,
+                        size: 18,
+                        color: _registrationDeadline != null
+                            ? AppColors.middenblauw
+                            : Colors.grey[400]),
+                    const SizedBox(width: 8),
+                    Text(
+                      _registrationDeadline != null
+                          ? DateFormat('HH:mm')
+                              .format(_registrationDeadline!)
+                          : '--:--',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: _registrationDeadline != null
+                            ? Colors.black87
+                            : Colors.grey[500],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          IconButton(
+            icon: Icon(Icons.close, size: 20, color: Colors.red[400]),
+            onPressed: _registrationDeadline == null
+                ? null
+                : () {
+                    setState(() {
+                      _registrationDeadline = null;
+                      _hasChanges = true;
+                    });
+                  },
+            tooltip:
+                'Effacer la date butoir (revient à la valeur par défaut)',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
+        ],
+      ),
+    ]);
+  }
+
+  Future<void> _pickDeadlineDate() async {
+    final initial = _registrationDeadline ??
+        _dateDebut.subtract(const Duration(hours: 24));
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime.now().subtract(const Duration(days: 30)),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
+    );
+    if (picked != null) {
+      final base = _registrationDeadline ?? initial;
+      setState(() {
+        _registrationDeadline = DateTime(
+          picked.year,
+          picked.month,
+          picked.day,
+          base.hour,
+          base.minute,
+        );
+        _hasChanges = true;
+      });
+    }
+  }
+
+  Future<void> _pickDeadlineTime() async {
+    if (_registrationDeadline == null) return;
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_registrationDeadline!),
+    );
+    if (picked != null) {
+      setState(() {
+        _registrationDeadline = DateTime(
+          _registrationDeadline!.year,
+          _registrationDeadline!.month,
+          _registrationDeadline!.day,
+          picked.hour,
+          picked.minute,
+        );
+        _hasChanges = true;
+      });
+    }
+  }
+
+  /// Toggle "Prix à confirmer" — wanneer aan, blijft het tarief verborgen
+  /// voor leden tot de organisator een definitief bedrag communiceert.
+  Widget _buildPriceTbdSection() {
+    return _buildSectionCard(children: [
+      Row(
+        children: [
+          const Text('💰', style: TextStyle(fontSize: 18)),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              'Prix à confirmer',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+          ),
+          Switch(
+            value: _priceTbd,
+            onChanged: (v) {
+              setState(() {
+                _priceTbd = v;
+                _hasChanges = true;
+              });
+            },
+            activeColor: AppColors.middenblauw,
+          ),
+        ],
+      ),
+      Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(
+          'Les inscriptions restent ouvertes. Le prix sera communiqué ultérieurement aux inscrits.',
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[600],
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+      ),
+    ]);
+  }
+
+  /// Toggle "Autoriser les invités externes" — laat leden via CalyMob
+  /// gasten (familie / vrienden) toevoegen die in 1 QR code mee betaald
+  /// worden. Werkt enkel wanneer minstens 1 tarief is gemarkeerd als
+  /// 'Invité' (zie checkbox op de tarief-rijen).
+  Widget _buildAllowGuestsSection() {
+    return _buildSectionCard(children: [
+      Row(
+        children: [
+          const Text('👥', style: TextStyle(fontSize: 18)),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              'Autoriser les invités externes',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+          ),
+          Switch(
+            value: _allowGuests,
+            onChanged: (v) {
+              setState(() {
+                _allowGuests = v;
+                _hasChanges = true;
+              });
+            },
+            activeColor: AppColors.middenblauw,
+          ),
+        ],
+      ),
+      Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(
+          'Les membres pourront ajouter famille / amis depuis CalyMob et tout payer en un seul QR. Cochez « Invité » sur les tarifs ci-dessous qui s\'appliquent à eux.',
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[600],
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+      ),
+    ]);
   }
 
   // ============================================================
@@ -1092,6 +1588,7 @@ class _EditableTariff {
   String category;
   double price;
   bool isDefault;
+  bool isGuestTariff;
   int displayOrder;
 
   _EditableTariff({
@@ -1100,6 +1597,7 @@ class _EditableTariff {
     required this.category,
     required this.price,
     this.isDefault = false,
+    this.isGuestTariff = false,
     this.displayOrder = 0,
   });
 
@@ -1110,7 +1608,34 @@ class _EditableTariff {
       category: t.category,
       price: t.price,
       isDefault: t.isDefault,
+      isGuestTariff: t.isGuestTariff,
       displayOrder: t.displayOrder,
+    );
+  }
+}
+
+/// Classe helper pour les suppléments éditables (mutable). Spiegelt
+/// _EditableTariff zodat de UI-flow (add / remove / edit / autosave)
+/// uniform werkt voor beide collecties.
+class _EditableSupplement {
+  String id;
+  String name;
+  double price;
+  int displayOrder;
+
+  _EditableSupplement({
+    required this.id,
+    required this.name,
+    required this.price,
+    this.displayOrder = 0,
+  });
+
+  factory _EditableSupplement.fromSupplement(Supplement s) {
+    return _EditableSupplement(
+      id: s.id,
+      name: s.name,
+      price: s.price,
+      displayOrder: s.displayOrder,
     );
   }
 }

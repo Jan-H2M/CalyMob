@@ -6,6 +6,12 @@ class DateFormatter {
   static final DateFormat _shortFormat = DateFormat('dd/MM/yyyy', 'fr_FR');
   static final DateFormat _mediumFormat = DateFormat('d MMM yyyy', 'fr_FR');
   static final DateFormat _longFormat = DateFormat('EEEE d MMMM yyyy', 'fr_FR');
+  /// Avec jour de la semaine, sans année — pour les en-têtes compacts
+  /// (ex: 'dimanche 10 mai').
+  static final DateFormat _dayMonthFormat = DateFormat('EEEE d MMMM', 'fr_FR');
+  /// Encore plus compact, sans année et avec jour/mois abrégés
+  /// (ex: 'dim. 10 mai'). Idéal pour les badges où la place est rare.
+  static final DateFormat _dayMonthShortFormat = DateFormat('EEE d MMM', 'fr_FR');
   static final DateFormat _timeFormat = DateFormat('HH:mm', 'fr_FR');
   static final DateFormat _dateTimeFormat = DateFormat('d MMM yyyy à HH:mm', 'fr_FR');
 
@@ -22,6 +28,19 @@ class DateFormatter {
   /// Format long: samedi 15 mars 2025
   static String formatLong(DateTime date) {
     return _longFormat.format(date);
+  }
+
+  /// Format compact avec jour de la semaine, sans année: 'dimanche 10 mai'.
+  /// Utile pour les en-têtes où l'année prend trop de place mais où on
+  /// veut quand même rappeler le jour de la semaine.
+  static String formatDayMonth(DateTime date) {
+    return _dayMonthFormat.format(date);
+  }
+
+  /// Idem mais avec abréviations (jour + mois) pour les badges où la
+  /// place est encore plus restreinte: 'dim. 10 mai'.
+  static String formatDayMonthShort(DateTime date) {
+    return _dayMonthShortFormat.format(date);
   }
 
   /// Format heure: 14:30

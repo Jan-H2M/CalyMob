@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -69,6 +71,15 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   List<String> _selectedExercices = [];
   bool _isLoadingExercices = false;
   ParticipantOperation? _userInscription;
+
+  /// Cache van basis-info (avatar URL + niveau-code) per Membre-id voor
+  /// alle deelnemers van het huidige event. Wordt in 1 batch opgehaald
+  /// (whereIn op chunks van 30) zodra de participants-lijst geladen is,
+  /// zodat we per tile geen extra Firestore-reads doen. `null` als waarde
+  /// betekent: opgevraagd maar geen Membre-doc gevonden (bv. legacy id).
+  final Map<String, _MemberInfo?> _memberInfoCache = {};
+  bool _memberInfoLoading = false;
+  String? _memberInfoLoadedForOperation;
 
   /// Check if the current user is the creator (organisateur) of the event.
   /// Uses the new `creator_user_id` field when present; falls back to
@@ -1759,15 +1770,21 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
   /// Compact header: Date + Lieu on same line
   Widget _buildCompactHeader(operation) {
+    final deadline = operation.effectiveDeadline as DateTime?;
+    final deadlinePassed =
+        deadline != null && DateTime.now().isAfter(deadline);
     return Row(
       children: [
-        // Date
+        // Date + uur — gebruikt formatDayMonth (zonder jaar) zodat de
+        // header op smalle schermen niet wraps. Het jaar staat sowieso
+        // ergens anders in de detail-content.
         if (operation.dateDebut != null) ...[
           const Icon(Icons.calendar_today, size: 18, color: Colors.white70),
           const SizedBox(width: 6),
           Flexible(
             child: Text(
-              DateFormatter.formatLong(operation.dateDebut!),
+              '${DateFormatter.formatDayMonth(operation.dateDebut!)} '
+              '${DateFormatter.formatTime(operation.dateDebut!)}',
               style: const TextStyle(fontSize: 14, color: Colors.white),
               overflow: TextOverflow.ellipsis,
             ),
@@ -1775,20 +1792,40 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         ],
 
         // Separator
-        if (operation.dateDebut != null && operation.lieu != null) ...[
+        if (operation.dateDebut != null && deadline != null) ...[
           const SizedBox(width: 16),
           const Text('|', style: TextStyle(color: Colors.white54)),
           const SizedBox(width: 16),
         ],
 
-        // Lieu
-        if (operation.lieu != null) ...[
-          const Icon(Icons.location_on, size: 18, color: Colors.white70),
+        // Date butoir d'inscription — toont aan het lid tot wanneer hij
+        // nog kan inschrijven / wijzigen / uitschrijven via CalyMob.
+        // Wordt rood/oranje getekend wanneer de deadline gepasseerd is.
+        if (deadline != null) ...[
+          Icon(
+            Icons.lock_clock,
+            size: 18,
+            color: deadlinePassed
+                ? Colors.orangeAccent
+                : Colors.white70,
+          ),
           const SizedBox(width: 6),
           Flexible(
             child: Text(
-              operation.lieu!,
-              style: const TextStyle(fontSize: 14, color: Colors.white),
+              deadlinePassed
+                  ? 'Clôturé'
+                  : 'Inscr. avant '
+                      '${DateFormatter.formatDayMonthShort(deadline)} '
+                      '${DateFormatter.formatTime(deadline)}',
+              style: TextStyle(
+                fontSize: 13,
+                color: deadlinePassed
+                    ? Colors.orangeAccent
+                    : Colors.white,
+                fontWeight: deadlinePassed
+                    ? FontWeight.w600
+                    : FontWeight.normal,
+              ),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -1797,11 +1834,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     );
   }
 
-  /// Price + User's function and level (level only for plongee events)
+  /// Price + user's function. The 'Niveau' marker was removed from the
+  /// header — it was visually unreadable on the light gradient and
+  /// duplicated info available elsewhere.
   Widget _buildPriceAndLevel(operation) {
-    final userLevel = _userProfile?.plongeurCode;
-    final isPlongee = operation.categorie == 'plongee';
-
     // Calculate the user's price based on their function
     double? userPrice;
     String? userFunction;
@@ -1880,29 +1916,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           ),
         ],
 
-        // Separator (only show if both price/gratuit and level are visible)
-        if (userLevel != null && isPlongee) ...[
-          const SizedBox(width: 16),
-          const Text('|', style: TextStyle(color: Colors.white54)),
-          const SizedBox(width: 16),
-        ],
-
-        // User level (only for plongee events)
-        if (userLevel != null && isPlongee) ...[
-          Icon(Icons.pool, size: 18, color: AppColors.lichtblauw),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Text(
-              'Niveau: $userLevel',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: AppColors.lichtblauw,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
+        // (Niveau-blok verwijderd — overbodig in de header en de styling
+        // op een lichte achtergrond was slecht leesbaar. Niveau wordt
+        // elders getoond waar het functioneel relevant is.)
       ],
     );
   }
@@ -2314,6 +2330,18 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     final isPlongeeEvent =
         operationProvider.selectedOperation?.categorie == 'plongee';
 
+    // Trigger batch lookup van avatar + niveau-code zodra we participants
+    // hebben. addPostFrameCallback voorkomt setState-tijdens-build.
+    if (participants.isNotEmpty &&
+        _memberInfoLoadedForOperation != widget.operationId &&
+        !_memberInfoLoading) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _loadMemberInfoForParticipants(participants);
+        }
+      });
+    }
+
     return Container(
       decoration: BoxDecoration(
         border: Border.all(color: AppColors.lichtblauw.withOpacity(0.5)),
@@ -2400,10 +2428,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             ],
           ),
           children: [
-            // Supplement breakdown — aggregate van wie wat gekozen heeft
-            // (members + invités samen). Helpt de organisator om te weten
-            // hoeveel hamburgers viande/végétarien etc. te bestellen.
-            _buildSupplementSummaryStrip(participants),
+            // Supplement breakdown wordt onderaan getoond — zie de
+            // _buildSupplementSummaryStrip-call na de lijst hieronder.
             Container(
               color: Colors.white,
               child: participants.isEmpty
@@ -2464,30 +2490,12 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                                         operationProvider.selectedOperation!,
                                   )
                               : null,
-                          leading: CircleAvatar(
-                            backgroundColor: isGuest
-                                ? AppColors.oranje.withOpacity(0.3)
-                                : (isCurrentUser
-                                    ? AppColors.lichtblauw.withOpacity(0.5)
-                                    : AppColors.lichtblauw.withOpacity(0.3)),
-                            radius: 20,
-                            child: isGuest
-                                ? Icon(Icons.person_outline,
-                                    size: 20, color: AppColors.oranje)
-                                : Text(
-                                    prenom.isNotEmpty
-                                        ? prenom[0].toUpperCase()
-                                        : (displayNom.isNotEmpty
-                                            ? displayNom[0].toUpperCase()
-                                            : '?'),
-                                    style: TextStyle(
-                                      color: isCurrentUser
-                                          ? AppColors.donkerblauw
-                                          : AppColors.middenblauw,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                    ),
-                                  ),
+                          leading: _buildParticipantAvatar(
+                            participant: participant,
+                            prenom: prenom,
+                            displayNom: displayNom,
+                            isGuest: isGuest,
+                            isCurrentUser: isCurrentUser,
                           ),
                           title: Row(
                             children: [
@@ -2738,8 +2746,148 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                       }).toList(),
                     ),
             ),
+            // Supplement breakdown — onderaan zodat de lijst van leden
+            // niet eerst weggeduwd wordt door de aggregate. Helpt de
+            // organisator wanneer hij doorscrolt: 'OK ik heb iedereen
+            // gezien, dit zijn de totalen om te bestellen'.
+            _buildSupplementSummaryStrip(participants),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Haalt voor alle non-guest deelnemers de avatar-URL + niveau-code op
+  /// uit Firestore in 1 batch (whereIn, chunks van 30). Idempotent: roept
+  /// niets opnieuw op als de data voor deze operation al gecached is.
+  Future<void> _loadMemberInfoForParticipants(
+    List<ParticipantOperation> participants,
+  ) async {
+    if (_memberInfoLoading) return;
+    if (_memberInfoLoadedForOperation == widget.operationId) return;
+
+    final ids = participants
+        .where((p) => !p.isGuest && p.membreId.isNotEmpty)
+        .map((p) => p.membreId)
+        .where((id) => !_memberInfoCache.containsKey(id))
+        .toSet()
+        .toList();
+    if (ids.isEmpty) {
+      _memberInfoLoadedForOperation = widget.operationId;
+      return;
+    }
+
+    _memberInfoLoading = true;
+    try {
+      final fs = FirebaseFirestore.instance;
+      // Firestore whereIn limit = 30. Chunken indien nodig.
+      for (int i = 0; i < ids.length; i += 30) {
+        final chunk = ids.sublist(i, math.min(i + 30, ids.length));
+        final snap = await fs
+            .collection('clubs/${widget.clubId}/members')
+            .where(FieldPath.documentId, whereIn: chunk)
+            .get();
+        for (final doc in snap.docs) {
+          final data = doc.data();
+          _memberInfoCache[doc.id] = _MemberInfo(
+            photoUrl: (data['photo_url'] as String?)?.trim(),
+            plongeurCode: (data['plongeur_code'] as String?)?.trim(),
+          );
+        }
+        // Markeer ontbrekende ids zodat we niet blijven proberen
+        final returned = snap.docs.map((d) => d.id).toSet();
+        for (final id in chunk) {
+          if (!returned.contains(id)) {
+            _memberInfoCache[id] = null;
+          }
+        }
+      }
+      _memberInfoLoadedForOperation = widget.operationId;
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint('⚠️ Erreur batch lookup member info: $e');
+    } finally {
+      _memberInfoLoading = false;
+    }
+  }
+
+  /// Avatar voor een participant — toont de profielfoto wanneer
+  /// beschikbaar, anders de eerste letter van de voornaam (oude gedrag).
+  /// Een klein blauw badge onderaan rechts toont de niveau-code (P1, P2,
+  /// AM, MC, ...) wanneer die op de Membre-doc staat.
+  Widget _buildParticipantAvatar({
+    required ParticipantOperation participant,
+    required String prenom,
+    required String displayNom,
+    required bool isGuest,
+    required bool isCurrentUser,
+  }) {
+    final info = _memberInfoCache[participant.membreId];
+    final hasPhoto = !isGuest &&
+        info?.photoUrl != null &&
+        info!.photoUrl!.isNotEmpty;
+    final niveau = isGuest ? null : info?.plongeurCode;
+
+    final letter = prenom.isNotEmpty
+        ? prenom[0].toUpperCase()
+        : (displayNom.isNotEmpty ? displayNom[0].toUpperCase() : '?');
+
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: isGuest
+                ? AppColors.oranje.withOpacity(0.3)
+                : (isCurrentUser
+                    ? AppColors.lichtblauw.withOpacity(0.5)
+                    : AppColors.lichtblauw.withOpacity(0.3)),
+            backgroundImage: hasPhoto ? NetworkImage(info.photoUrl!) : null,
+            onBackgroundImageError:
+                hasPhoto ? (_, __) {} : null,
+            child: hasPhoto
+                ? null
+                : (isGuest
+                    ? Icon(Icons.person_outline,
+                        size: 20, color: AppColors.oranje)
+                    : Text(
+                        letter,
+                        style: TextStyle(
+                          color: isCurrentUser
+                              ? AppColors.donkerblauw
+                              : AppColors.middenblauw,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      )),
+          ),
+          if (niveau != null && niveau.isNotEmpty)
+            Positioned(
+              bottom: -2,
+              right: -4,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  color: AppColors.middenblauw,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white, width: 1.5),
+                ),
+                child: Text(
+                  niveau,
+                  style: const TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    height: 1.0,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -4142,4 +4290,14 @@ class _SupplementSelectionDialogState
       ],
     );
   }
+}
+
+/// Snapshot van de info die we per Membre cache-en voor de tile-leading
+/// in `_buildInscribedMembersAccordion`. Houden we deliberately klein
+/// (geen volledige Membre-doc) zodat de cache lichtgewicht blijft.
+class _MemberInfo {
+  final String? photoUrl;
+  final String? plongeurCode;
+
+  const _MemberInfo({this.photoUrl, this.plongeurCode});
 }
