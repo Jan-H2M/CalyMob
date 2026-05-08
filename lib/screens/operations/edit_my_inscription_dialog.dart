@@ -103,16 +103,21 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
   double get _delta => (_newSupplementTotal + _newGuestTotal) -
       (_oldSupplementTotal + _oldGuestTotal);
 
-  /// Old guest total uses the prix that was on the doc + the supplement
-  /// total computed from the **initial** snapshot of supplements (before
-  /// any toggles). New guests don't contribute to the old total.
+  /// Old guest total uses the prix + the supplement_total **exactly as
+  /// stored on the doc** at dialog-open time. We deliberately do NOT
+  /// recompute from the current operation catalog: if an admin changed a
+  /// supplement price between registration and edit, the stored value is
+  /// what the user actually paid for, and that's what the backend uses
+  /// for its delta. Recomputing here would put the UI delta and the
+  /// backend delta out of sync (and the refund prompt amount would lie).
+  /// New guests don't contribute to the old total.
   double get _oldGuestTotal {
     double total = 0;
     for (final guest in _guests) {
       final prix = (guest['prix'] as num).toDouble();
-      final initialIds =
-          _initialGuestSupplementIds[guest['id'] as String] ?? const <String>{};
-      total += prix + _supplementTotalForIds(initialIds);
+      final storedSupp =
+          (guest['storedSupplementTotal'] as num?)?.toDouble() ?? 0;
+      total += prix + storedSupp;
     }
     return total;
   }
@@ -185,6 +190,11 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
         // Snapshot the initial selection (independent copy) so toggles don't
         // mutate the diff baseline.
         _initialGuestSupplementIds[doc.id] = Set<String>.from(ids);
+        // Capture the supplement_total exactly as stored on the doc — this
+        // is what the user previously paid for. Reusing the current
+        // operation catalog for the "old" total would mismatch the backend
+        // (which reads stored values) whenever an admin re-prices a
+        // supplement between registration and edit.
         return <String, dynamic>{
           'id': doc.id,
           'prenom': data['membre_prenom'] as String? ?? '',
@@ -192,6 +202,8 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
           'prix': (data['prix'] as num?)?.toDouble() ?? 0,
           'membreId': data['membre_id'] as String? ?? '',
           'selectedSupplementIds': ids,
+          'storedSupplementTotal':
+              (data['supplement_total'] as num?)?.toDouble() ?? 0,
         };
       }).toList();
 

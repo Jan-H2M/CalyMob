@@ -1279,6 +1279,9 @@ class OperationService {
         try {
           final refundService = RefundService();
           final editSessionId = 'edit_${inscriptionId}_$newTotal';
+          // The Cloud Function REQUIRES description + eventTitre — without
+          // them the call is rejected with `invalid-argument` and the
+          // refund demande is silently dropped.
           await refundService.createInscriptionRefund(
             clubId: clubId,
             operationId: operationId,
@@ -1286,6 +1289,12 @@ class OperationService {
             oldAmount: oldTotal,
             newAmount: newTotal,
             editSessionId: editSessionId,
+            eventTitre: operation.titre,
+            description:
+                'Modification inscription — diminution de '
+                '${delta.toStringAsFixed(2)} € '
+                '(de ${oldTotal.toStringAsFixed(2)} € à '
+                '${newTotal.toStringAsFixed(2)} €).',
           );
           debugPrint('✅ Refund requested for inscription $inscriptionId '
               '(delta=$delta)');

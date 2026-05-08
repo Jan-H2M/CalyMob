@@ -38,6 +38,11 @@ class RefundService {
   /// - [oldAmount]: Previous (higher) amount paid
   /// - [newAmount]: New (lower) amount after edit
   /// - [editSessionId]: Idempotency key to prevent duplicate refund requests
+  /// - [description]: Human-readable description shown in the refund queue
+  ///   (also stored on the demande document). REQUIRED by the Cloud
+  ///   Function — without it the call is rejected with `invalid-argument`.
+  /// - [eventTitre]: Title of the event used for the demande titre
+  ///   (`Modification inscription — <eventTitre>`). REQUIRED by the CF.
   ///
   /// Returns the `demandeId` of the newly created refund request.
   ///
@@ -49,6 +54,8 @@ class RefundService {
     required double oldAmount,
     required double newAmount,
     required String editSessionId,
+    required String description,
+    required String eventTitre,
   }) async {
     try {
       debugPrint('🔄 Requesting refund: inscription=$inscriptionId, '
@@ -63,6 +70,8 @@ class RefundService {
             'oldAmount': oldAmount,
             'newAmount': newAmount,
             'editSessionId': editSessionId,
+            'description': description,
+            'eventTitre': eventTitre,
           });
 
       final demandeId = result.data['demandeId'] as String;
