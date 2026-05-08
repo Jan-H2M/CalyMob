@@ -2400,6 +2400,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             ],
           ),
           children: [
+            // Supplement breakdown — aggregate van wie wat gekozen heeft
+            // (members + invités samen). Helpt de organisator om te weten
+            // hoeveel hamburgers viande/végétarien etc. te bestellen.
+            _buildSupplementSummaryStrip(participants),
             Container(
               color: Colors.white,
               child: participants.isEmpty
@@ -2736,6 +2740,97 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Aggregate van gekozen supplements over alle deelnemers (members +
+  /// invités) — toont bv. "21× Hamburger viande · 3× Hamburger végétarien"
+  /// zodat de organisator weet hoeveel van elk te bestellen. Toont niets
+  /// wanneer er geen supplementen geselecteerd zijn (geen lege strip).
+  Widget _buildSupplementSummaryStrip(List<ParticipantOperation> participants) {
+    // Tel per supplement-id (fallback op naam) op hoeveel inschrijvingen
+    // hem hebben gekozen. Gebruik de eerst-geziene naam zodat een
+    // hernoeming in de catalogus niet voor dubbele rijen zorgt.
+    final Map<String, ({String name, int count})> counts = {};
+    for (final p in participants) {
+      for (final s in p.selectedSupplements) {
+        final key = s.id.isNotEmpty ? s.id : s.name;
+        final existing = counts[key];
+        if (existing != null) {
+          counts[key] = (name: existing.name, count: existing.count + 1);
+        } else {
+          counts[key] = (name: s.name, count: 1);
+        }
+      }
+    }
+    if (counts.isEmpty) return const SizedBox.shrink();
+
+    final items = counts.values.toList()
+      ..sort((a, b) {
+        final byCount = b.count.compareTo(a.count);
+        if (byCount != 0) return byCount;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          bottom: BorderSide(color: Colors.grey.shade200),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'SUPPLÉMENTS',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade600,
+              letterSpacing: 1.2,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: items.map((item) {
+              return Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${item.count}×',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      item.name,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }
