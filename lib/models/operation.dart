@@ -59,6 +59,17 @@ class Operation {
   // Info document (single document displayed with description in CalyMob)
   final DocumentJustificatif? infoDocument;
 
+  // Deadline d'inscription (optionnel, sinon dateDebut - 24h)
+  final DateTime? registrationDeadline;
+
+  /// Effective deadline for registration modifications.
+  /// Falls back to dateDebut - 24h when no explicit deadline is set.
+  DateTime? get effectiveDeadline {
+    if (registrationDeadline != null) return registrationDeadline;
+    if (dateDebut != null) return dateDebut!.subtract(const Duration(hours: 24));
+    return null;
+  }
+
   // Métadonnées
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -88,6 +99,7 @@ class Operation {
     this.communication,
     this.documentsJustificatifs = const [],
     this.infoDocument,
+    this.registrationDeadline,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -123,6 +135,7 @@ class Operation {
       infoDocument: data['info_document'] != null
           ? DocumentJustificatif.fromMap(data['info_document'] as Map<String, dynamic>)
           : null,
+      registrationDeadline: (data['registration_deadline'] as Timestamp?)?.toDate(),
       createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (data['updated_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );

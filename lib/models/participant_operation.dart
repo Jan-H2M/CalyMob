@@ -2,6 +2,75 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'supplement.dart';
 
+/// A single field change in an edit history entry
+class ChangeEntry {
+  final String field;
+  final dynamic from;
+  final dynamic to;
+
+  ChangeEntry({
+    required this.field,
+    this.from,
+    this.to,
+  });
+
+  factory ChangeEntry.fromMap(Map<String, dynamic> map) {
+    return ChangeEntry(
+      field: map['field'] as String,
+      from: map['from'],
+      to: map['to'],
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'field': field,
+      'from': from,
+      'to': to,
+    };
+  }
+}
+
+/// A single edit in the edit history of a participant operation
+class EditHistoryEntry {
+  final DateTime timestamp;
+  final List<ChangeEntry> changes;
+  final double deltaAmount;
+  final String? refundDemandeId;
+  final String editedBy;
+
+  EditHistoryEntry({
+    required this.timestamp,
+    this.changes = const [],
+    this.deltaAmount = 0,
+    this.refundDemandeId,
+    required this.editedBy,
+  });
+
+  factory EditHistoryEntry.fromMap(Map<String, dynamic> map) {
+    return EditHistoryEntry(
+      timestamp: (map['timestamp'] as Timestamp).toDate(),
+      changes: (map['changes'] as List<dynamic>?)
+              ?.map((c) => ChangeEntry.fromMap(c as Map<String, dynamic>))
+              .toList() ??
+          [],
+      deltaAmount: (map['delta_amount'] as num?)?.toDouble() ?? 0,
+      refundDemandeId: map['refund_demande_id'] as String?,
+      editedBy: map['edited_by'] as String,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'timestamp': Timestamp.fromDate(timestamp),
+      'changes': changes.map((c) => c.toMap()).toList(),
+      'delta_amount': deltaAmount,
+      'refund_demande_id': refundDemandeId,
+      'edited_by': editedBy,
+    };
+  }
+}
+
 /// Model ParticipantOperation - Inscription à une opération
 class ParticipantOperation {
   final String id;
@@ -42,6 +111,15 @@ class ParticipantOperation {
   /// ("Invité adulte" vs "Invité enfant") and report on tariff usage later.
   final String? tariffId;
 
+  /// Snapshot of the paid amount at the moment paye was set to true.
+  /// Used for refund calculations and audit — freezes the amount so it
+  /// doesn't change if the inscription price is later edited.
+  final double? amountPaid;
+
+  /// Ordered list of edits applied to this inscription. Each entry records
+  /// what changed, by whom, and any financial delta.
+  final List<EditHistoryEntry>? editHistory;
+
   ParticipantOperation({
     required this.id,
     required this.operationId,
@@ -72,6 +150,8 @@ class ParticipantOperation {
     this.addedByName,
     this.parentInscriptionId,
     this.tariffId,
+    this.amountPaid,
+    this.editHistory,
   });
 
   /// True when the bank-side reconciliation is considered done.
@@ -180,7 +260,29 @@ class ParticipantOperation {
       addedByName: data['added_by_name'] as String?,
       parentInscriptionId: data['parent_inscription_id'] as String?,
       tariffId: data['tariff_id'] as String?,
+      amountPaid: (data['amount_paid'] as num?)?.toDouble(),
+      editHistory: _parseEditHistory(data['edit_history']),
     );
+  }
+
+  /// Parse edit history from Firestore data
+  /// Handles null and malformed data gracefully
+  static List<EditHistoryEntry>? _parseEditHistory(dynamic data) {
+    if (data == null) return null;
+    if (data is! List) return null;
+
+    try {
+      return data
+          .map((e) {
+            if (e is! Map<String, dynamic>) return null;
+            return EditHistoryEntry.fromMap(e);
+          })
+          .whereType<EditHistoryEntry>()
+          .toList();
+    } catch (e) {
+      debugPrint('⚠️ Erreur parsing edit_history: $e');
+      return null;
+    }
   }
 
   /// Parse selected supplements from Firestore data
@@ -233,6 +335,8 @@ class ParticipantOperation {
       'added_by_name': addedByName,
       'parent_inscription_id': parentInscriptionId,
       'tariff_id': tariffId,
+      'amount_paid': amountPaid,
+      'edit_history': editHistory?.map((e) => e.toMap()).toList(),
       'created_at': FieldValue.serverTimestamp(),
       'updated_at': FieldValue.serverTimestamp(),
     };
@@ -269,6 +373,8 @@ class ParticipantOperation {
     String? addedByName,
     String? parentInscriptionId,
     String? tariffId,
+    double? amountPaid,
+    List<EditHistoryEntry>? editHistory,
   }) {
     return ParticipantOperation(
       id: id ?? this.id,
@@ -300,6 +406,8 @@ class ParticipantOperation {
       addedByName: addedByName ?? this.addedByName,
       parentInscriptionId: parentInscriptionId ?? this.parentInscriptionId,
       tariffId: tariffId ?? this.tariffId,
+      amountPaid: amountPaid ?? this.amountPaid,
+      editHistory: editHistory ?? this.editHistory,
     );
   }
 }

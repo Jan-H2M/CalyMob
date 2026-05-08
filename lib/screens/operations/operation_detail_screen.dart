@@ -27,6 +27,7 @@ import '../../widgets/participant_payment_card.dart';
 import '../../widgets/scanner_modal_sheet.dart';
 import '../../widgets/documents_accordion.dart';
 import 'add_guest_dialog.dart';
+import 'edit_my_inscription_dialog.dart';
 import 'register_with_guests_dialog.dart';
 import 'edit_event_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -1193,6 +1194,79 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           ),
         );
       }
+    }
+  }
+
+  /// Handle editing the current user's inscription (supplements, guests).
+  ///
+  /// The [EditMyInscriptionDialog] handles ALL writes internally via
+  /// [OperationService.updateMyInscription]. This method only processes
+  /// the dialog result for post-save UI (refund confirmation, QR payment).
+  Future<void> _handleEditInscription() async {
+    if (_userInscription == null) return;
+    final operationProvider = context.read<OperationProvider>();
+    final operation = operationProvider.selectedOperation;
+    if (operation == null) return;
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => EditMyInscriptionDialog(
+        operation: operation,
+        currentInscription: _userInscription!,
+        userProfile: _userProfile!,
+      ),
+    );
+
+    if (result == null || !mounted) return;
+
+    // Dialog already saved — just refresh local state
+    await _loadUserInscription();
+    if (!mounted) return;
+
+    final delta = result['delta'] as double;
+
+    if (delta > 0) {
+      final authProvider = context.read<AuthProvider>();
+      final memberProvider = context.read<MemberProvider>();
+      await _showPaymentOptionsDialog(
+        operation: operation,
+        amount: delta,
+        participantId: _userInscription!.id,
+        memberEmail: authProvider.currentUser?.email ?? '',
+        memberFirstName: memberProvider.prenom ?? '',
+        memberLastName: memberProvider.nom ?? '',
+      );
+    } else if (delta < 0) {
+      await showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.account_balance,
+                  color: Colors.orange.shade700, size: 28),
+              const SizedBox(width: 12),
+              const Expanded(child: Text('Demande de remboursement')),
+            ],
+          ),
+          content: Text(
+            'Une demande de remboursement de ${(-delta).toStringAsFixed(2)} € a été créée.\n\n'
+            'L\'organisateur traitera votre remboursement manuellement.',
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Compris'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Modifications enregistrées'),
+          backgroundColor: Colors.green,
+        ),
+      );
     }
   }
 
@@ -2681,6 +2755,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               canRegister: canRegister,
               isOpen: isOpen,
               isFull: isFull,
+              operation: operation is Operation ? operation : null,
+              userInscription: userInscription,
             ),
           ],
         ),
@@ -3007,29 +3083,108 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     );
   }
 
+  Widget _buildDeadlineBanner(DateTime deadline) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.shade200),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.timer, color: Colors.orange.shade700, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Modifications fermées depuis ${DateFormatter.formatShort(deadline)}. Contactez l\'organisateur.',
+              style: TextStyle(
+                color: Colors.orange.shade900,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildActionButton({
     required bool isRegistered,
     required bool canRegister,
     required bool isOpen,
     required bool isFull,
+    Operation? operation,
+    ParticipantOperation? userInscription,
   }) {
     if (isRegistered) {
-      return SizedBox(
-        width: double.infinity,
-        height: 50,
-        child: ElevatedButton.icon(
-          onPressed: _handleUnregister,
-          icon: const Icon(Icons.cancel, color: Colors.white),
-          label: const Text('Se désinscrire',
-              style: TextStyle(fontSize: 16, color: Colors.white)),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.red,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            elevation: 8,
-            shadowColor: Colors.red.withOpacity(0.5),
+      final deadlinePassed = operation != null &&
+          operation.effectiveDeadline != null &&
+          DateTime.now().isAfter(operation.effectiveDeadline!);
+      final hasSupplements =
+          operation != null && operation.supplements.isNotEmpty;
+      final showModifyButton =
+          !deadlinePassed && hasSupplements && userInscription != null;
+
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Deadline banner
+          if (deadlinePassed && hasSupplements) ...[
+            _buildDeadlineBanner(operation!.effectiveDeadline!),
+            const SizedBox(height: 12),
+          ],
+
+          // Buttons row
+          Row(
+            children: [
+              // "Modifier" button — only when deadline not passed and supplements exist
+              if (showModifyButton) ...[
+                Expanded(
+                  child: SizedBox(
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      onPressed: _handleEditInscription,
+                      icon: const Icon(Icons.edit, color: Colors.white),
+                      label: const Text('Modifier',
+                          style: TextStyle(fontSize: 16, color: Colors.white)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.lichtblauw,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        elevation: 8,
+                        shadowColor: AppColors.lichtblauw.withOpacity(0.5),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
+
+              // "Se désinscrire" button
+              Expanded(
+                child: SizedBox(
+                  height: 50,
+                  child: ElevatedButton.icon(
+                    onPressed: _handleUnregister,
+                    icon: const Icon(Icons.cancel, color: Colors.white),
+                    label: const Text('Se désinscrire',
+                        style: TextStyle(fontSize: 16, color: Colors.white)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      elevation: 8,
+                      shadowColor: Colors.red.withOpacity(0.5),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ),
+        ],
       );
     }
 

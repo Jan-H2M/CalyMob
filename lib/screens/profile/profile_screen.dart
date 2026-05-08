@@ -25,6 +25,11 @@ import '../../widgets/user_qr_card.dart';
 import 'face_camera_screen.dart' if (dart.library.html) 'face_camera_screen_stub.dart';
 import 'settings_screen.dart';
 import 'calendar_feed_screen.dart';
+import 'my_refunds_screen.dart';
+import 'ma_cotisation_screen.dart';
+import 'mes_recus_screen.dart';
+import 'mes_abonnements_screen.dart';
+import 'mes_prets_screen.dart';
 import '../auth/login_screen.dart';
 import '../exercises/member_exercises_screen.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
@@ -828,6 +833,67 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
                 );
               }
             },
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.receipt, color: Colors.indigo),
+            title: const Text('Mes remboursements'),
+            subtitle: const Text('Suivi de vos demandes de remboursement'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const MyRefundsScreen(),
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          // Ma cotisation
+          ListTile(
+            leading: const Icon(Icons.card_membership, color: AppColors.middenblauw),
+            title: const Text('Ma cotisation'),
+            subtitle: const Text('Statut de votre cotisation annuelle'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MaCotisationScreen()),
+            ),
+          ),
+          const Divider(height: 1),
+          // Mes reçus
+          ListTile(
+            leading: Icon(Icons.receipt_long, color: Colors.amber.shade700),
+            title: const Text('Mes reçus'),
+            subtitle: const Text('Historique de vos paiements'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MesRecusScreen()),
+            ),
+          ),
+          const Divider(height: 1),
+          // Mes abonnements
+          ListTile(
+            leading: const Icon(Icons.subscriptions, color: Colors.deepPurple),
+            title: const Text('Mes abonnements'),
+            subtitle: const Text('Prochainement'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MesAbonnementsScreen()),
+            ),
+          ),
+          const Divider(height: 1),
+          // Mes prêts
+          ListTile(
+            leading: const Icon(Icons.inventory_2, color: Colors.brown),
+            title: const Text('Mes prêts'),
+            subtitle: const Text('Matériel emprunté'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MesPretsScreen()),
+            ),
           ),
           const Divider(height: 1),
           ListTile(

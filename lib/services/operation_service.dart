@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../models/operation.dart';
@@ -7,10 +9,14 @@ import '../models/supplement.dart';
 import '../models/tariff.dart';
 import '../models/user_event_registration.dart';
 import '../utils/tariff_utils.dart';
+import 'refund_service.dart';
 
 /// Service de gestion des opérations (événements)
 class OperationService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFirestore _firestore;
+
+  OperationService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
 
   /// Remove diacritics for locale-aware sorting (é→e, è→e, ü→u, etc.)
   static String _removeDiacritics(String str) {
@@ -296,6 +302,25 @@ class OperationService {
       debugPrint('❌ Erreur findInscriptionForUser: $e');
       return null;
     }
+  }
+
+  /// Update supplements on an existing inscription (F3.6 edit inscription)
+  Future<void> updateInscriptionSupplements({
+    required String clubId,
+    required String operationId,
+    required String inscriptionDocId,
+    required List<SelectedSupplement> selectedSupplements,
+    required double supplementTotal,
+  }) async {
+    await _firestore
+        .collection('clubs/$clubId/operations/$operationId/inscriptions')
+        .doc(inscriptionDocId)
+        .update({
+      'selected_supplements':
+          selectedSupplements.map((s) => s.toMap()).toList(),
+      'supplement_total': supplementTotal,
+      'updated_at': FieldValue.serverTimestamp(),
+    });
   }
 
   /// Obtenir les participants d'une opération (one-time read)
@@ -721,8 +746,13 @@ class OperationService {
         if (parentInscriptionId != null) 'parent_inscription_id': parentInscriptionId,
         if (tariffId != null) 'tariff_id': tariffId,
         // Guest-level supplements (optional). Mirrors member's schema.
+        // IMPORTANT: must be `selected_supplements` (with underscore prefix) —
+        // that's the canonical field name read by ParticipantOperation,
+        // CalyCompta's OperationDetailView, and the edit/update paths in
+        // updateMyInscription / updateGuestInscription. Writing plain
+        // `supplements` here would make the choice invisible everywhere.
         if (selectedSupplements != null && selectedSupplements.isNotEmpty)
-          'supplements': selectedSupplements
+          'selected_supplements': selectedSupplements
               .map((s) => {
                     'id': s.id,
                     'name': s.name,
@@ -1072,6 +1102,303 @@ class OperationService {
       return [];
     }
   }
+
+  // ============================================================
+  // INSCRIPTION EDITING — updateMyInscription, updateGuestInscription, removeOneGuest
+  // ============================================================
+
+  /// Update the user's own inscription (supplements, guests, delivery address).
+  ///
+  /// Uses a Firestore batch for atomic writes:
+  /// 1. Update parent inscription doc (supplements, total, delivery address)
+  /// 2. Upsert new guest inscriptions (GuestUpdate without inscriptionId)
+  /// 3. Update existing guest inscriptions (GuestUpdate with inscriptionId)
+  /// 4. Delete guest inscriptions (guestIdsToRemove)
+  /// 5. Write edit_history entries
+  ///
+  /// If the price decreases AND the inscription was paid, calls
+  /// [RefundService.createInscriptionRefund] after batch commit with an
+  /// idempotency key to prevent duplicate refund requests.
+  ///
+  /// Returns the delta (oldTotal - newTotal). Positive means price decreased
+  /// (refund may be needed), negative means price increased.
+  Future<double> updateMyInscription({
+    required String clubId,
+    required String operationId,
+    required String inscriptionId,
+    required List<SelectedSupplement> selectedSupplements,
+    required double supplementTotal,
+    List<GuestUpdate>? guests,
+    List<String>? guestIdsToRemove,
+    String? deliveryAddress,
+  }) async {
+    // Read operation to check deadline
+    final operationRef = _firestore
+        .collection('clubs/$clubId/operations')
+        .doc(operationId);
+    final operationSnap = await operationRef.get();
+    if (!operationSnap.exists) {
+      throw Exception('Opération introuvable');
+    }
+    final operation = Operation.fromFirestore(operationSnap);
+    if (operation.effectiveDeadline != null && DateTime.now().isAfter(operation.effectiveDeadline!)) {
+      throw Exception('Le délai de modification est dépassé');
+    }
+
+    // Read existing guests BEFORE batch writes
+    final existingGuestsSnap = await _firestore
+        .collection('clubs/$clubId/operations/$operationId/inscriptions')
+        .where('parent_inscription_id', isEqualTo: inscriptionId)
+        .get();
+    double oldGuestsTotal = 0;
+    for (final guestDoc in existingGuestsSnap.docs) {
+      final g = guestDoc.data();
+      oldGuestsTotal += (g['prix'] ?? 0).toDouble() + (g['supplement_total'] ?? 0).toDouble();
+    }
+
+    double newGuestsTotal = 0;
+    if (guests != null) {
+      for (final guest in guests) {
+        newGuestsTotal += guest.prix + guest.supplementTotal;
+      }
+    }
+
+    final batch = _firestore.batch();
+
+    try {
+      // 1. Read existing inscription
+      final inscriptionRef = _firestore
+          .collection('clubs/$clubId/operations/$operationId/inscriptions')
+          .doc(inscriptionId);
+      final inscriptionSnap = await inscriptionRef.get();
+
+      if (!inscriptionSnap.exists) {
+        throw Exception('Inscription non trouvée');
+      }
+
+      final existingData = inscriptionSnap.data()!;
+      final existingSupplements = existingData['selected_supplements'] ?? [];
+      final existingSupplementTotal =
+          (existingData['supplement_total'] ?? 0.0).toDouble();
+      final oldTotal =
+          (existingData['prix'] ?? 0.0).toDouble() + existingSupplementTotal + oldGuestsTotal;
+      final newTotal =
+          (existingData['prix'] ?? 0.0).toDouble() + supplementTotal + newGuestsTotal;
+      final isPaid = existingData['paye'] ?? false;
+
+      // 2. Update parent inscription
+      final updateData = <String, dynamic>{
+        'selected_supplements': selectedSupplements.map((s) => s.toMap()).toList(),
+        'supplement_total': supplementTotal,
+        'updated_at': FieldValue.serverTimestamp(),
+      };
+      if (deliveryAddress != null) {
+        updateData['delivery_address'] = deliveryAddress;
+      }
+      batch.update(inscriptionRef, updateData);
+
+      // 3. Handle guest updates (upsert new + update existing)
+      final addedGuestIds = <String>[];
+      if (guests != null && guests.isNotEmpty) {
+        final inscriptionsRef = _firestore
+            .collection('clubs/$clubId/operations/$operationId/inscriptions');
+
+        for (final guest in guests) {
+          final now = DateTime.now();
+          final guestId = guest.inscriptionId ??
+              'guest_${now.millisecondsSinceEpoch}_${Random().nextInt(99999).toString().padLeft(5, '0')}';
+
+          if (guest.inscriptionId == null) {
+            // New guest — create document
+            final guestData = {
+              'operation_id': operationId,
+              'membre_id': guestId,
+              'membre_nom': guest.nom,
+              'membre_prenom': guest.prenom,
+              'prix': guest.prix,
+              'paye': false,
+              'date_inscription': FieldValue.serverTimestamp(),
+              'is_guest': true,
+              'selected_supplements': guest.selectedSupplements.map((s) => s.toMap()).toList(),
+              'supplement_total': guest.supplementTotal,
+              'parent_inscription_id': inscriptionId,
+              'added_by': existingData['membre_id'],
+              'added_by_name': '${existingData['membre_prenom'] ?? ''} ${existingData['membre_nom'] ?? ''}'.trim(),
+              if (guest.tariffId != null) 'tariff_id': guest.tariffId,
+              'created_at': FieldValue.serverTimestamp(),
+              'updated_at': FieldValue.serverTimestamp(),
+            };
+            final newGuestRef = inscriptionsRef.doc(guestId);
+            batch.set(newGuestRef, guestData);
+            addedGuestIds.add(guestId);
+          } else {
+            // Existing guest — update
+            batch.update(inscriptionsRef.doc(guest.inscriptionId!), {
+              'membre_nom': guest.nom,
+              'membre_prenom': guest.prenom,
+              'prix': guest.prix,
+              'selected_supplements': guest.selectedSupplements.map((s) => s.toMap()).toList(),
+              'supplement_total': guest.supplementTotal,
+              if (guest.tariffId != null) 'tariff_id': guest.tariffId,
+              'updated_at': FieldValue.serverTimestamp(),
+            });
+          }
+        }
+      }
+
+      // 4. Handle guest removals
+      if (guestIdsToRemove != null && guestIdsToRemove.isNotEmpty) {
+        final inscriptionsRef = _firestore
+            .collection('clubs/$clubId/operations/$operationId/inscriptions');
+        for (final guestId in guestIdsToRemove) {
+          batch.delete(inscriptionsRef.doc(guestId));
+        }
+      }
+
+      // 5. Write edit_history entry
+      final editHistoryRef = inscriptionRef.collection('edit_history').doc();
+      batch.set(editHistoryRef, {
+        'action': 'inscription_updated',
+        'inscription_id': inscriptionId,
+        'timestamp': FieldValue.serverTimestamp(),
+        'previous_supplements': existingSupplements,
+        'new_supplements': selectedSupplements.map((s) => s.toMap()).toList(),
+        'previous_total': existingSupplementTotal,
+        'new_total': supplementTotal,
+        'guests_added': addedGuestIds,
+        'guests_removed': guestIdsToRemove ?? [],
+      });
+
+      // Commit batch
+      await batch.commit();
+
+      // 6. Handle refund if price decreased and already paid
+      final delta = oldTotal - newTotal;
+      if (delta > 0 && isPaid) {
+        // Fire-and-forget: log but don't block the UI on refund creation
+        try {
+          final refundService = RefundService();
+          final editSessionId = 'edit_${inscriptionId}_$newTotal';
+          await refundService.createInscriptionRefund(
+            clubId: clubId,
+            operationId: operationId,
+            inscriptionId: inscriptionId,
+            oldAmount: oldTotal,
+            newAmount: newTotal,
+            editSessionId: editSessionId,
+          );
+          debugPrint('✅ Refund requested for inscription $inscriptionId '
+              '(delta=$delta)');
+        } catch (refundError) {
+          // Log refund failure — the inscription update already succeeded
+          debugPrint('⚠️ Refund creation failed (non-blocking): $refundError');
+        }
+      }
+
+      debugPrint('✅ Inscription $inscriptionId updated (delta=$delta)');
+      return delta;
+    } catch (e) {
+      debugPrint('❌ Erreur updateMyInscription: $e');
+      rethrow;
+    }
+  }
+
+  /// Update supplement selection for a guest inscription.
+  Future<void> updateGuestInscription({
+    required String clubId,
+    required String operationId,
+    required String guestInscriptionId,
+    required List<SelectedSupplement> selectedSupplements,
+    required double supplementTotal,
+  }) async {
+    try {
+      final batch = _firestore.batch();
+      final inscriptionRef = _firestore
+          .collection('clubs/$clubId/operations/$operationId/inscriptions')
+          .doc(guestInscriptionId);
+
+      batch.update(inscriptionRef, {
+        'selected_supplements': selectedSupplements.map((s) => s.toMap()).toList(),
+        'supplement_total': supplementTotal,
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      // Write edit_history entry
+      final editHistoryRef = inscriptionRef.collection('edit_history').doc();
+      batch.set(editHistoryRef, {
+        'action': 'guest_inscription_updated',
+        'inscription_id': guestInscriptionId,
+        'timestamp': FieldValue.serverTimestamp(),
+        'new_supplements': selectedSupplements.map((s) => s.toMap()).toList(),
+        'new_total': supplementTotal,
+      });
+
+      await batch.commit();
+      debugPrint('✅ Guest inscription $guestInscriptionId updated');
+    } catch (e) {
+      debugPrint('❌ Erreur updateGuestInscription: $e');
+      rethrow;
+    }
+  }
+
+  /// Remove exactly 1 guest inscription — NO cascade.
+  ///
+  /// Deletes the specified guest inscription document without affecting
+  /// other guests or the parent member's inscription.
+  Future<void> removeOneGuest({
+    required String clubId,
+    required String operationId,
+    required String guestInscriptionId,
+  }) async {
+    try {
+      final batch = _firestore.batch();
+      final inscriptionRef = _firestore
+          .collection('clubs/$clubId/operations/$operationId/inscriptions')
+          .doc(guestInscriptionId);
+
+      batch.delete(inscriptionRef);
+
+      // Write edit_history entry on the guest doc before deletion
+      final editHistoryRef = inscriptionRef.collection('edit_history').doc();
+      batch.set(editHistoryRef, {
+        'action': 'guest_removed',
+        'inscription_id': guestInscriptionId,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      await batch.commit();
+      debugPrint('✅ Guest inscription $guestInscriptionId removed');
+    } catch (e) {
+      debugPrint('❌ Erreur removeOneGuest: $e');
+      rethrow;
+    }
+  }
+}
+
+/// Parameters for adding or updating a guest inscription during
+/// [OperationService.updateMyInscription].
+///
+/// - When [inscriptionId] is null, a new guest inscription is created.
+/// - When [inscriptionId] is non-null, the existing guest inscription is updated.
+class GuestUpdate {
+  /// Null for new guests, non-null for existing guests.
+  final String? inscriptionId;
+  final String prenom;
+  final String nom;
+  final double prix;
+  final String? tariffId;
+  final List<SelectedSupplement> selectedSupplements;
+  final double supplementTotal;
+
+  GuestUpdate({
+    this.inscriptionId,
+    required this.prenom,
+    required this.nom,
+    required this.prix,
+    this.tariffId,
+    this.selectedSupplements = const [],
+    this.supplementTotal = 0,
+  });
 }
 
 /// Résultat d'un [OperationService.unmarkAsPresent] utilisé pour l'undo.

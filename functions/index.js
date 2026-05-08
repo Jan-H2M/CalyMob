@@ -150,3 +150,36 @@ exports.onNewBugReport = onNewBugReport;
 // Auto-validate LIFRAS exercise when observation result is 'acquis'
 const { onObservationAcquis } = require('./src/progression/onObservationAcquis');
 exports.onObservationAcquis = onObservationAcquis;
+
+// =============================================================================
+// INSCRIPTION REFUND (Gen2)
+// =============================================================================
+
+// Creates a demande de remboursement when a member reduces their inscription
+exports.createInscriptionRefund = require('./src/inscription/createRefundClaim').createInscriptionRefund;
+
+// =============================================================================
+// BOUTIQUE V2 (Gen2)
+// =============================================================================
+
+// Create a boutique order (EPC QR payment)
+exports.createOrder = require('./src/boutique/createOrder').createOrder;
+
+// Notify supplier(s) of pending orders — callable (manual) + scheduled (weekly/threshold)
+exports.notifySupplier = require('./src/boutique/notifySupplier').notifySupplier;
+exports.notifySupplierScheduler = require('./src/boutique/notifySupplier').notifySupplierScheduler;
+
+// Firestore trigger: immediate supplier notification when an order is created
+exports.onOrderCreatedNotifySupplier = require('./src/boutique/notifySupplier').onOrderCreatedNotifySupplier;
+
+// Auto-cancel unpaid boutique orders after 72h (scheduled every hour)
+exports.autoCancelExpiredOrders = require('./src/boutique/autoCancelExpiredOrders').autoCancelExpiredOrders;
+
+// FIFO backorder fulfillment — daily at 03:00
+exports.fulfillBackorders = require('./src/boutique/fulfillBackorders').fulfillBackorders;
+
+// Stock level alerts — daily scan at 07:00 + on-demand check
+// Not yet uncommented — the daily scan runs via cron job.
+// Uncomment when ready to deploy:
+// exports.stockAlertScheduled = require('./src/boutique/stockAlertFunction').stockAlertScheduled;
+// exports.checkStockAlerts = require('./src/boutique/stockAlertFunction').checkStockAlerts;
