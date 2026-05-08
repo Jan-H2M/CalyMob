@@ -38,11 +38,19 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
   late Set<String> _selectedSupplementIds;
 
   /// Fetched guests linked to this participant (parent_inscription_id == participant.id).
-  /// Each entry: {id (doc id of guest inscription), prenom, nom, prix, membreId}
+  /// Each entry: {id (doc id of guest inscription), prenom, nom, prix,
+  /// membreId, selectedSupplementIds (Set<String> — mutable, current
+  /// supplement selection for this guest)}.
   List<Map<String, dynamic>> _guests = [];
 
+  /// Snapshot of the supplement selection per existing guest at load time.
+  /// Used for diff detection in [_hasChanges] and to compute the old total
+  /// when generating refunds.
+  final Map<String, Set<String>> _initialGuestSupplementIds = {};
+
   /// Newly added guests during this edit session (not yet saved).
-  /// Each entry: {prenom, nom, prix, tariffId}
+  /// Each entry: {prenom, nom, prix, tariffId, selectedSupplementIds
+  /// (Set<String> — mutable)}.
   final List<Map<String, dynamic>> _newGuests = [];
 
   /// Guest doc IDs to remove (from _guests, keyed by 'id' field).
@@ -50,6 +58,18 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
 
   bool _guestsLoaded = false;
   bool _saving = false;
+
+  /// Compute the total price of a set of supplement ids using the operation's
+  /// current supplement catalog as source of truth. Supplements that are no
+  /// longer in the catalog (deleted by admin) are silently ignored.
+  double _supplementTotalForIds(Set<String> ids) {
+    if (ids.isEmpty) return 0;
+    double total = 0;
+    for (final supp in widget.operation.supplements) {
+      if (ids.contains(supp.id)) total += supp.price;
+    }
+    return total;
+  }
 
   double get _oldSupplementTotal => widget.currentInscription.supplementTotal;
 
@@ -67,11 +87,15 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
     double total = 0;
     for (final guest in _guests) {
       if (!_deletedGuestIds.contains(guest['id'] as String)) {
-        total += (guest['prix'] as num).toDouble();
+        final prix = (guest['prix'] as num).toDouble();
+        final suppIds = guest['selectedSupplementIds'] as Set<String>;
+        total += prix + _supplementTotalForIds(suppIds);
       }
     }
     for (final guest in _newGuests) {
-      total += (guest['prix'] as num).toDouble();
+      final prix = (guest['prix'] as num).toDouble();
+      final suppIds = guest['selectedSupplementIds'] as Set<String>;
+      total += prix + _supplementTotalForIds(suppIds);
     }
     return total;
   }
@@ -79,12 +103,37 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
   double get _delta => (_newSupplementTotal + _newGuestTotal) -
       (_oldSupplementTotal + _oldGuestTotal);
 
+  /// Old guest total uses the prix that was on the doc + the supplement
+  /// total computed from the **initial** snapshot of supplements (before
+  /// any toggles). New guests don't contribute to the old total.
   double get _oldGuestTotal {
     double total = 0;
     for (final guest in _guests) {
-      total += (guest['prix'] as num).toDouble();
+      final prix = (guest['prix'] as num).toDouble();
+      final initialIds =
+          _initialGuestSupplementIds[guest['id'] as String] ?? const <String>{};
+      total += prix + _supplementTotalForIds(initialIds);
     }
     return total;
+  }
+
+  /// True iff a guest's current supplement selection differs from the
+  /// snapshot taken at load time. Used by [_hasChanges] to enable the
+  /// "Enregistrer" button when only supplement toggles changed.
+  bool _guestSupplementsModified() {
+    for (final guest in _guests) {
+      final id = guest['id'] as String;
+      // Deleted guests don't count — they're handled by _deletedGuestIds.
+      if (_deletedGuestIds.contains(id)) continue;
+      final current = guest['selectedSupplementIds'] as Set<String>;
+      final initial =
+          _initialGuestSupplementIds[id] ?? const <String>{};
+      if (current.length != initial.length ||
+          !current.containsAll(initial)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   bool get _hasChanges {
@@ -94,6 +143,7 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
     }
     if (_deletedGuestIds.isNotEmpty) return true;
     if (_newGuests.isNotEmpty) return true;
+    if (_guestSupplementsModified()) return true;
     return false;
   }
 
@@ -119,14 +169,29 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
           .where('parent_inscription_id', isEqualTo: widget.currentInscription.id)
           .get();
 
+      _initialGuestSupplementIds.clear();
       final guests = snapshot.docs.map((doc) {
         final data = doc.data();
+        // Parse selected_supplements (list of {id,name,price}) into a Set of ids.
+        final raw = data['selected_supplements'];
+        final ids = <String>{};
+        if (raw is List) {
+          for (final item in raw) {
+            if (item is Map && item['id'] is String) {
+              ids.add(item['id'] as String);
+            }
+          }
+        }
+        // Snapshot the initial selection (independent copy) so toggles don't
+        // mutate the diff baseline.
+        _initialGuestSupplementIds[doc.id] = Set<String>.from(ids);
         return <String, dynamic>{
           'id': doc.id,
           'prenom': data['membre_prenom'] as String? ?? '',
           'nom': data['membre_nom'] as String? ?? '',
           'prix': (data['prix'] as num?)?.toDouble() ?? 0,
           'membreId': data['membre_id'] as String? ?? '',
+          'selectedSupplementIds': ids,
         };
       }).toList();
 
@@ -149,16 +214,25 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
       context: context,
       builder: (_) => AddGuestDialog(
         availableGuestTariffs: _guestTariffs,
+        availableSupplements: widget.operation.supplements,
       ),
     );
 
     if (result != null && mounted) {
+      // AddGuestDialog returns selectedSupplements as List<SelectedSupplement>;
+      // convert to a mutable Set<String> so the user can still toggle them
+      // afterwards in the edit-dialog's per-guest checkboxes.
+      final initialSupplements =
+          (result['selectedSupplements'] as List<SelectedSupplement>?) ??
+              const <SelectedSupplement>[];
       setState(() {
         _newGuests.add({
           'prenom': result['prenom'] as String,
           'nom': result['nom'] as String,
           'prix': result['prix'] as double,
           'tariffId': result['tariffId'] as String?,
+          'selectedSupplementIds':
+              initialSupplements.map((s) => s.id).toSet(),
         });
       });
     }
@@ -213,27 +287,51 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
       // Build guests list: existing (not deleted) + new guests
       final List<GuestUpdate> guestUpdates = [];
 
-      // Existing guests that were NOT deleted: keep as-is (pass prenom/nom/prix)
+      // Existing guests that were NOT deleted: pass through with their
+      // (possibly toggled) supplement selection so the service writes the
+      // updated `selected_supplements` + `supplement_total` to the doc.
       for (final guest in _guests) {
         if (!_deletedGuestIds.contains(guest['id'] as String)) {
-          // Keep existing guest — no changes to them, just pass through
+          final suppIds = guest['selectedSupplementIds'] as Set<String>;
+          final selected = widget.operation.supplements
+              .where((s) => suppIds.contains(s.id))
+              .map((s) => SelectedSupplement(
+                    id: s.id,
+                    name: s.name,
+                    price: s.price,
+                  ))
+              .toList();
           guestUpdates.add(GuestUpdate(
             inscriptionId: guest['id'] as String,
             prenom: guest['prenom'] as String,
             nom: guest['nom'] as String,
             prix: (guest['prix'] as num).toDouble(),
+            selectedSupplements: selected,
+            supplementTotal: _supplementTotalForIds(suppIds),
           ));
         }
       }
 
-      // New guests
+      // New guests — supplement selection comes from AddGuestDialog +
+      // any subsequent toggles in the per-guest checkboxes below.
       for (final guest in _newGuests) {
+        final suppIds = guest['selectedSupplementIds'] as Set<String>;
+        final selected = widget.operation.supplements
+            .where((s) => suppIds.contains(s.id))
+            .map((s) => SelectedSupplement(
+                  id: s.id,
+                  name: s.name,
+                  price: s.price,
+                ))
+            .toList();
         guestUpdates.add(GuestUpdate(
           inscriptionId: null, // null = create new
           prenom: guest['prenom'] as String,
           nom: guest['nom'] as String,
           prix: (guest['prix'] as num).toDouble(),
           tariffId: guest['tariffId'] as String?,
+          selectedSupplements: selected,
+          supplementTotal: _supplementTotalForIds(suppIds),
         ));
       }
 
@@ -325,11 +423,11 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
                 children: [
                   _buildHeader(),
                   const SizedBox(height: 24),
+                  // MON INSCRIPTION already includes the supplement
+                  // checkboxes inline (compact, same layout as the
+                  // invité cards) so a separate SUPPLEMENTS section is
+                  // no longer needed.
                   _buildMyInscriptionSection(),
-                  if (widget.operation.supplements.isNotEmpty) ...[
-                    const SizedBox(height: 20),
-                    _buildSupplementsSection(),
-                  ],
                   if (widget.operation.allowGuests) ...[
                     const SizedBox(height: 20),
                     _buildGuestsSection(),
@@ -392,128 +490,90 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
     );
   }
 
+  /// MON INSCRIPTION card — same compact layout as the invité cards
+  /// below: a row with name + live total, then an inline list of
+  /// supplement checkboxes when the operation has any. Mutates
+  /// [_selectedSupplementIds] in place via [_buildGuestSupplementTile].
   Widget _buildMyInscriptionSection() {
     final displayName = widget.currentInscription.membrePrenom != null
         ? '${widget.currentInscription.membrePrenom} ${widget.currentInscription.membreNom}'
         : widget.userProfile.fullName;
+
+    final supplements = widget.operation.supplements;
+    final hasSupplements = supplements.isNotEmpty;
+    // Use the live supplement total (recomputes on every checkbox toggle)
+    // rather than the one frozen on the inscription doc.
+    final basePrix = widget.currentInscription.prix;
+    final totalPrix = basePrix + _newSupplementTotal;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildSectionLabel('MON INSCRIPTION'),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.95),
             borderRadius: BorderRadius.circular(14),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Icon(Icons.person, size: 20, color: AppColors.donkerblauw),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  displayName,
-                  style: const TextStyle(
-                    color: AppColors.donkerblauw,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-              Text(
-                '${widget.currentInscription.totalPrix.toStringAsFixed(2)} €',
-                style: const TextStyle(
-                  color: AppColors.donkerblauw,
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSupplementsSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionLabel('SUPPLEMENTS OPTIONNELS'),
-        ...widget.operation.supplements
-            .map((supp) => _buildSupplementTile(supp)),
-      ],
-    );
-  }
-
-  Widget _buildSupplementTile(Supplement supp) {
-    final isSelected = _selectedSupplementIds.contains(supp.id);
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          if (isSelected) {
-            _selectedSupplementIds.remove(supp.id);
-          } else {
-            _selectedSupplementIds.add(supp.id);
-          }
-        });
-      },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.92),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 24,
-              height: 24,
-              child: Checkbox(
-                value: isSelected,
-                onChanged: (val) {
-                  setState(() {
-                    if (val == true) {
-                      _selectedSupplementIds.add(supp.id);
-                    } else {
-                      _selectedSupplementIds.remove(supp.id);
-                    }
-                  });
-                },
-                activeColor: AppColors.oranje,
-                checkColor: Colors.white,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              Row(
                 children: [
-                  Text(
-                    supp.name,
-                    style: const TextStyle(
-                      color: AppColors.donkerblauw,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  Text(
-                    '${supp.price.toStringAsFixed(2)} €',
-                    style: TextStyle(
-                      color: AppColors.donkerblauw.withValues(alpha: 0.6),
-                      fontSize: 12,
+                  const Icon(Icons.person,
+                      size: 18, color: AppColors.donkerblauw),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          displayName,
+                          style: const TextStyle(
+                            color: AppColors.donkerblauw,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        Text(
+                          '${totalPrix.toStringAsFixed(2)} €',
+                          style: TextStyle(
+                            color: AppColors.donkerblauw
+                                .withValues(alpha: 0.6),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
-            ),
-          ],
+              if (hasSupplements) ...[
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.only(left: 28, bottom: 4),
+                  child: Text(
+                    'Suppléments',
+                    style: TextStyle(
+                      color:
+                          AppColors.donkerblauw.withValues(alpha: 0.7),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 1.0,
+                    ),
+                  ),
+                ),
+                ...supplements.map((supp) => _buildGuestSupplementTile(
+                      supp: supp,
+                      selectedSupplementIds: _selectedSupplementIds,
+                      isNew: false,
+                    )),
+              ],
+            ],
+          ),
         ),
-      ),
+      ],
     );
   }
 
@@ -550,11 +610,14 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
               ),
             ),
           ),
-        // Existing guests
+        // Existing guests — pass the mutable Set so checkbox toggles
+        // mutate the data backing the UI in place.
         ...visibleGuests.map((g) => _buildGuestCard(
               prenom: g['prenom'] as String? ?? '',
               nom: g['nom'] as String? ?? '',
               prix: (g['prix'] as num).toDouble(),
+              selectedSupplementIds:
+                  g['selectedSupplementIds'] as Set<String>,
               isNew: false,
               onDelete: () {
                 setState(() {
@@ -567,6 +630,8 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
               prenom: g['prenom'] as String? ?? '',
               nom: g['nom'] as String? ?? '',
               prix: (g['prix'] as num).toDouble(),
+              selectedSupplementIds:
+                  g['selectedSupplementIds'] as Set<String>,
               isNew: true,
               onDelete: () {
                 setState(() {
@@ -609,9 +674,15 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
     required String prenom,
     required String nom,
     required double prix,
+    required Set<String> selectedSupplementIds,
     required bool isNew,
     required VoidCallback onDelete,
   }) {
+    final supplements = widget.operation.supplements;
+    final hasSupplements = supplements.isNotEmpty;
+    final supplementTotal = _supplementTotalForIds(selectedSupplementIds);
+    final totalPrix = prix + supplementTotal;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -621,54 +692,155 @@ class _EditMyInscriptionDialogState extends State<EditMyInscriptionDialog> {
             : Colors.white.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(12),
         border: isNew
-            ? Border.all(color: Colors.greenAccent.withValues(alpha: 0.4), width: 1)
+            ? Border.all(
+                color: Colors.greenAccent.withValues(alpha: 0.4), width: 1)
             : null,
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Icon(
-            isNew ? Icons.person_add : Icons.person,
-            size: 18,
-            color: isNew ? Colors.greenAccent : AppColors.donkerblauw,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '$prenom $nom',
-                  style: TextStyle(
-                    color:
-                        isNew ? Colors.greenAccent.shade200 : AppColors.donkerblauw,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
+          Row(
+            children: [
+              Icon(
+                isNew ? Icons.person_add : Icons.person,
+                size: 18,
+                color: isNew ? Colors.greenAccent : AppColors.donkerblauw,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$prenom $nom',
+                      style: TextStyle(
+                        color: isNew
+                            ? Colors.greenAccent.shade200
+                            : AppColors.donkerblauw,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Text(
+                      '${totalPrix.toStringAsFixed(2)} €${isNew ? ' (nouveau)' : ''}',
+                      style: TextStyle(
+                        color: isNew
+                            ? Colors.greenAccent.shade100
+                            : AppColors.donkerblauw.withValues(alpha: 0.6),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
                 ),
-                Text(
-                  '${prix.toStringAsFixed(2)} €${isNew ? ' (nouveau)' : ''}',
-                  style: TextStyle(
-                    color: isNew
-                        ? Colors.greenAccent.shade100
-                        : AppColors.donkerblauw.withValues(alpha: 0.6),
-                    fontSize: 12,
-                  ),
+              ),
+              IconButton(
+                icon: Icon(
+                  Icons.delete_outline,
+                  size: 20,
+                  color: Colors.red.shade300,
                 ),
-              ],
-            ),
+                onPressed: onDelete,
+                padding: EdgeInsets.zero,
+                constraints:
+                    const BoxConstraints(minWidth: 32, minHeight: 32),
+                splashRadius: 16,
+              ),
+            ],
           ),
-          IconButton(
-            icon: Icon(
-              Icons.delete_outline,
-              size: 20,
-              color: Colors.red.shade300,
+          if (hasSupplements) ...[
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.only(left: 28, bottom: 4),
+              child: Text(
+                'Suppléments',
+                style: TextStyle(
+                  color: (isNew
+                          ? Colors.greenAccent.shade200
+                          : AppColors.donkerblauw)
+                      .withValues(alpha: 0.7),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 1.0,
+                ),
+              ),
             ),
-            onPressed: onDelete,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            splashRadius: 16,
-          ),
+            ...supplements.map((supp) => _buildGuestSupplementTile(
+                  supp: supp,
+                  selectedSupplementIds: selectedSupplementIds,
+                  isNew: isNew,
+                )),
+          ],
         ],
+      ),
+    );
+  }
+
+  /// Compact supplement checkbox tile for use inside a guest card.
+  /// Mutates the passed-in [selectedSupplementIds] set in place.
+  Widget _buildGuestSupplementTile({
+    required Supplement supp,
+    required Set<String> selectedSupplementIds,
+    required bool isNew,
+  }) {
+    final isSelected = selectedSupplementIds.contains(supp.id);
+    final accent =
+        isNew ? Colors.greenAccent.shade200 : AppColors.donkerblauw;
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () {
+        setState(() {
+          if (isSelected) {
+            selectedSupplementIds.remove(supp.id);
+          } else {
+            selectedSupplementIds.add(supp.id);
+          }
+        });
+      },
+      child: Padding(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 22,
+              height: 22,
+              child: Checkbox(
+                value: isSelected,
+                onChanged: (val) {
+                  setState(() {
+                    if (val == true) {
+                      selectedSupplementIds.add(supp.id);
+                    } else {
+                      selectedSupplementIds.remove(supp.id);
+                    }
+                  });
+                },
+                activeColor: AppColors.oranje,
+                checkColor: Colors.white,
+                side: BorderSide(color: accent.withValues(alpha: 0.6)),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                supp.name,
+                style: TextStyle(
+                  color: accent,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            Text(
+              '${supp.price.toStringAsFixed(2)} €',
+              style: TextStyle(
+                color: accent.withValues(alpha: 0.7),
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

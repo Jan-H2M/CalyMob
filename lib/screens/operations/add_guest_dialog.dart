@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../config/app_colors.dart';
+import '../../models/supplement.dart';
 import '../../models/tariff.dart';
 
 /// Dialog to add a guest (non-member) to an operation.
@@ -13,14 +14,22 @@ import '../../models/tariff.dart';
 ///  - When the list is empty (legacy admin flow): falls back to a free
 ///    price field, preserving the original behaviour.
 ///
+/// If [availableSupplements] is non-empty, supplement checkboxes are shown
+/// after the tariff so the guest can directly opt into hamburger menus,
+/// "je viens mais je ne mange pas", etc. — same UX as the member's own
+/// supplement selection on the inscription dialog.
+///
 /// Returns a Map with keys: `prenom`, `nom`, `prix`, `tariffId` (nullable
-/// when in legacy free-price mode).
+/// when in legacy free-price mode), `selectedSupplements`
+/// (List<SelectedSupplement>) and `supplementTotal` (double).
 class AddGuestDialog extends StatefulWidget {
   final List<Tariff> availableGuestTariffs;
+  final List<Supplement> availableSupplements;
 
   const AddGuestDialog({
     super.key,
     this.availableGuestTariffs = const [],
+    this.availableSupplements = const [],
   });
 
   @override
@@ -38,7 +47,22 @@ class _AddGuestDialogState extends State<AddGuestDialog> {
 
   Tariff? _selectedTariff;
 
+  /// IDs des suppléments sélectionnés pour cet invité.
+  final Set<String> _selectedSupplementIds = {};
+
   bool get _hasGuestTariffs => widget.availableGuestTariffs.isNotEmpty;
+
+  bool get _hasSupplements => widget.availableSupplements.isNotEmpty;
+
+  double get _supplementTotal {
+    double total = 0;
+    for (final supp in widget.availableSupplements) {
+      if (_selectedSupplementIds.contains(supp.id)) {
+        total += supp.price;
+      }
+    }
+    return total;
+  }
 
   @override
   void initState() {
@@ -75,11 +99,18 @@ class _AddGuestDialogState extends State<AddGuestDialog> {
       tariffId = null;
     }
 
+    final selectedSupplements = widget.availableSupplements
+        .where((s) => _selectedSupplementIds.contains(s.id))
+        .map((s) => SelectedSupplement(id: s.id, name: s.name, price: s.price))
+        .toList();
+
     Navigator.of(context).pop({
       'prenom': _prenomController.text.trim(),
       'nom': _nomController.text.trim(),
       'prix': prix,
       'tariffId': tariffId,
+      'selectedSupplements': selectedSupplements,
+      'supplementTotal': _supplementTotal,
     });
   }
 
@@ -190,6 +221,97 @@ class _AddGuestDialogState extends State<AddGuestDialog> {
           .toList(),
       onChanged: (t) => setState(() => _selectedTariff = t),
       validator: (t) => t == null ? 'Choisissez un type' : null,
+    );
+  }
+
+  /// Supplément checkboxes — same look as the member's own supplements
+  /// section on the inscription/edit dialogs.
+  Widget _buildSupplementsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            'SUPPLÉMENTS OPTIONNELS',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.white.withOpacity(0.8),
+              letterSpacing: 1.2,
+            ),
+          ),
+        ),
+        ...widget.availableSupplements.map((supp) {
+          final isSelected = _selectedSupplementIds.contains(supp.id);
+          return GestureDetector(
+            onTap: () {
+              setState(() {
+                if (isSelected) {
+                  _selectedSupplementIds.remove(supp.id);
+                } else {
+                  _selectedSupplementIds.add(supp.id);
+                }
+              });
+            },
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.92),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: Checkbox(
+                      value: isSelected,
+                      onChanged: (val) {
+                        setState(() {
+                          if (val == true) {
+                            _selectedSupplementIds.add(supp.id);
+                          } else {
+                            _selectedSupplementIds.remove(supp.id);
+                          }
+                        });
+                      },
+                      activeColor: AppColors.oranje,
+                      checkColor: Colors.white,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          supp.name,
+                          style: const TextStyle(
+                            color: AppColors.donkerblauw,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        Text(
+                          '${supp.price.toStringAsFixed(2)} €',
+                          style: TextStyle(
+                            color: AppColors.donkerblauw.withOpacity(0.6),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }),
+      ],
     );
   }
 
@@ -353,6 +475,10 @@ class _AddGuestDialogState extends State<AddGuestDialog> {
                           return null;
                         },
                       ),
+                    if (_hasSupplements) ...[
+                      const SizedBox(height: 20),
+                      _buildSupplementsSection(),
+                    ],
                     const SizedBox(height: 24),
 
                     // Action buttons
