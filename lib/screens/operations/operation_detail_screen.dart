@@ -3125,14 +3125,22 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           DateTime.now().isAfter(operation.effectiveDeadline!);
       final hasSupplements =
           operation != null && operation.supplements.isNotEmpty;
-      final showModifyButton =
-          !deadlinePassed && hasSupplements && userInscription != null;
+      final allowsGuests = operation != null && operation.allowGuests;
+      // Show "Modifier" whenever there's something useful to edit:
+      // either supplement toggles OR guest management. Without this OR,
+      // events that allow guests but have no supplements (Sortie Laser
+      // Game-style) would hide the button and you couldn't add/remove
+      // invités via the mobile app.
+      final showModifyButton = !deadlinePassed &&
+          (hasSupplements || allowsGuests) &&
+          userInscription != null;
 
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Deadline banner
-          if (deadlinePassed && hasSupplements) ...[
+          // Deadline banner — also shown when only guest management is on,
+          // so the user understands why the Modifier button has gone.
+          if (deadlinePassed && (hasSupplements || allowsGuests)) ...[
             _buildDeadlineBanner(operation!.effectiveDeadline!),
             const SizedBox(height: 12),
           ],
