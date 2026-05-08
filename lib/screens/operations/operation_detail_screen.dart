@@ -3173,9 +3173,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Deadline banner — also shown when only guest management is on,
-          // so the user understands why the Modifier button has gone.
-          if (deadlinePassed && (hasSupplements || allowsGuests)) ...[
+          // Deadline banner — shown whenever the deadline has passed,
+          // since both "Modifier" and "Se désinscrire" become unavailable
+          // and the member needs to know to contact the organiser.
+          if (deadlinePassed) ...[
             _buildDeadlineBanner(operation!.effectiveDeadline!),
             const SizedBox(height: 12),
           ],
@@ -3206,17 +3207,21 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                 const SizedBox(width: 12),
               ],
 
-              // "Se désinscrire" button
+              // "Se désinscrire" button — disabled after deadline. The
+              // Firestore rule blocks the delete anyway; greying out the
+              // button mirrors that and avoids a confusing error toast.
               Expanded(
                 child: SizedBox(
                   height: 50,
                   child: ElevatedButton.icon(
-                    onPressed: _handleUnregister,
+                    onPressed: deadlinePassed ? null : _handleUnregister,
                     icon: const Icon(Icons.cancel, color: Colors.white),
                     label: const Text('Se désinscrire',
                         style: TextStyle(fontSize: 16, color: Colors.white)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.red,
+                      disabledBackgroundColor: Colors.grey.shade400,
+                      disabledForegroundColor: Colors.white70,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
                       elevation: 8,
@@ -3243,6 +3248,39 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           ),
           child: const Text('Événement fermé', style: TextStyle(fontSize: 16)),
         ),
+      );
+    }
+
+    // Deadline passed — registration is closed for members. The
+    // Firestore CREATE rule rejects late inscriptions anyway; this UI
+    // makes the reason explicit instead of letting the user tap and
+    // get a permission-denied toast. Admins (with a valid web session)
+    // bypass the rule but they don't go through this mobile screen.
+    final deadlinePassed = operation != null &&
+        operation.effectiveDeadline != null &&
+        DateTime.now().isAfter(operation.effectiveDeadline!);
+    if (deadlinePassed) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildDeadlineBanner(operation.effectiveDeadline!),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              onPressed: null,
+              style: ElevatedButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                disabledBackgroundColor: Colors.grey.shade400,
+                disabledForegroundColor: Colors.white70,
+              ),
+              child: const Text('Inscriptions clôturées',
+                  style: TextStyle(fontSize: 16)),
+            ),
+          ),
+        ],
       );
     }
 
