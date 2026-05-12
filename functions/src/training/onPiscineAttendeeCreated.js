@@ -1,0 +1,367 @@
+/**
+ * Cloud Function — Carnet de Formation phase 1
+ *
+ * Trigger : `clubs/{clubId}/piscine_sessions/{sessionId}/attendees/{attendeeId}` onCreate
+ *
+ * Logic
+ *   1. Filter on `member.formation_active`. If false → silent return.
+ *      Free swimmers do not enter the Carnet de Formation system.
+ *
+ *   2. Auto-assign the target Formation group from the member's
+ *      LIFRAS code (`plongeur_code`). A 1-star diver works toward 2-star,
+ *      so they join "Formation 2★" — see computeTargetLevel().
+ *
+ *   3. Look up the level_course planning for this session and the target
+ *      level. Read the `encadrants[]` list → these are the candidate
+ *      validators the student will pick from during check-in.
+ *
+ *   4. Create a `formation_tasks/{taskId}` document. Cloud Functions
+ *      run via Admin SDK and bypass security rules.
+ *
+ *   5. Idempotency : skip if a pool_checkin task with the same
+ *      attendee_id already exists.
+ *
+ * Volumetric estimate
+ *   Per Tuesday pool session at Watermael-Boitsfort :
+ *     ~26 attendee writes → ~11 with formation_active=true
+ *     → ~11 formation_tasks created
+ *   The push dispatcher (processFormationTaskReminders) caps at
+ *   1 push per member per day, so peak load is bounded.
+ *
+ * Spec : `CARNET_DE_FORMATION_TECH.md` §8.1
+ */
+
+const { onDocumentCreated } = require('firebase-functions/v2/firestore');
+const admin = require('firebase-admin');
+
+const FUNCTION_NAME = 'onPiscineAttendeeCreated';
+const FUNCTION_REGION = 'europe-west1';
+
+// Compute the target Formation group for a member.
+//
+// Priority order :
+//   1. Explicit override `member.target_formation_level` (e.g. '2*').
+//      Useful for : moniteurs in a personal-refresh program, members on a
+//      non-standard pathway, or pilot-mode testing where a moniteur wants
+//      to validate the flow end-to-end against their own account.
+//   2. LIFRAS plongeur_code-derived default :
+//        NB (no brevet) → Formation 1★ (working toward 1-star)
+//        P1 → Formation 2★, P2 → Formation 3★, P3 → Formation 4★
+//        P4 → Formation 4★ (perfectionnement)
+//        AM / MC / MF / MN → null (instructors don't get tasks for themselves)
+//
+// Two call signatures (back-compat) :
+//   computeTargetLevel(plongeurCode: string)    — legacy, still works
+//   computeTargetLevel(memberObject: object)    — preferred, respects override
+function computeTargetLevel(memberOrCode) {
+  // Member-object signature with override support
+  if (memberOrCode && typeof memberOrCode === 'object') {
+    const override = memberOrCode.target_formation_level;
+    if (typeof override === 'string' && override.length > 0) return override;
+    return _levelFromPlongeurCode(memberOrCode.plongeur_code);
+  }
+  // Legacy string signature
+  return _levelFromPlongeurCode(memberOrCode);
+}
+
+function _levelFromPlongeurCode(plongeurCode) {
+  if (!plongeurCode) return '1*';
+  // Calypso stores plongeur_code in three notations interchangeably :
+  //   'NB' / 'P1' / 'P2' / ...  (LIFRAS canonical)
+  //   '1' / '2' / '3' / '4'     (legacy short form, see ProgressionDashboard)
+  //   '1*' / '2*' / '3*' / '4*' (display form with star suffix)
+  // Normalise first.
+  const code = String(plongeurCode).trim().toUpperCase();
+  switch (code) {
+    case 'NB': return '1*';
+    case 'P1':
+    case '1':
+    case '1*':
+      return '2*';
+    case 'P2':
+    case '2':
+    case '2*':
+      return '3*';
+    case 'P3':
+    case '3':
+    case '3*':
+      return '4*';
+    case 'P4':
+    case '4':
+    case '4*':
+      return '4*'; // perfectionnement track
+    case 'AM':
+    case 'MC':
+    case 'MF':
+    case 'MN':
+      return null; // instructors — no formation task for themselves
+    default:
+      return null;
+  }
+}
+
+/**
+ * Find the LevelCourse and its encadrants[] for a given level inside
+ * a piscine_session document. Handles both new (coursesByHour) and
+ * legacy (flat encadrants) shapes — see CalyMob/lib/models/piscine_session.dart.
+ *
+ * Returns { courseId, encadrants } or null if no course is planned
+ * for that level tonight.
+ */
+function findLevelCourse(sessionData, targetLevel) {
+  const niveaux = sessionData.niveaux || {};
+  const levelAssignment = niveaux[targetLevel];
+  if (!levelAssignment) return null;
+
+  // Prefer the new coursesByHour structure when present.
+  const coursesByHour = levelAssignment.courses_by_hour || levelAssignment.coursesByHour;
+  if (coursesByHour && typeof coursesByHour === 'object') {
+    // Flatten across all hours (1ere_heure, 2eme_heure). First course wins —
+    // most pool sessions have one course per level, occasionally two parallel.
+    for (const hourKey of Object.keys(coursesByHour)) {
+      const courses = coursesByHour[hourKey];
+      if (Array.isArray(courses) && courses.length > 0) {
+        const course = courses[0];
+        const encadrants = Array.isArray(course.encadrants) ? course.encadrants : [];
+        if (encadrants.length > 0) {
+          return {
+            courseId: course.id || `${targetLevel}_${hourKey}_0`,
+            encadrants,
+          };
+        }
+      }
+    }
+  }
+
+  // Legacy fallback : encadrants directly on the level assignment.
+  const legacyEncadrants = Array.isArray(levelAssignment.encadrants)
+    ? levelAssignment.encadrants
+    : [];
+  if (legacyEncadrants.length > 0) {
+    return {
+      courseId: `${targetLevel}_legacy`,
+      encadrants: legacyEncadrants,
+    };
+  }
+
+  return null;
+}
+
+const onPiscineAttendeeCreated = onDocumentCreated(
+  {
+    region: FUNCTION_REGION,
+    document: 'clubs/{clubId}/piscine_sessions/{sessionId}/attendees/{attendeeId}',
+  },
+  async (event) => {
+    const { clubId, sessionId, attendeeId } = event.params;
+    const db = admin.firestore();
+
+    const attendeeSnap = event.data;
+    if (!attendeeSnap) {
+      console.log(`[${FUNCTION_NAME}] no snapshot, skipping`);
+      return;
+    }
+    const attendee = attendeeSnap.data();
+
+    const memberId = attendee.membre_id || attendee.memberId;
+    if (!memberId) {
+      console.log(`[${FUNCTION_NAME}] attendee ${attendeeId} has no membre_id, skipping`);
+      return;
+    }
+
+    // ---- 1. Filter on formation_active ----
+    const memberSnap = await db
+      .collection('clubs')
+      .doc(clubId)
+      .collection('members')
+      .doc(memberId)
+      .get();
+
+    if (!memberSnap.exists) {
+      console.log(`[${FUNCTION_NAME}] member ${memberId} not found, skipping`);
+      return;
+    }
+    const member = memberSnap.data();
+
+    if (!member.formation_active) {
+      // Free swimmer — no task, no push, no admin work.
+      console.log(`[${FUNCTION_NAME}] skipped — formation_active=false for member ${memberId}`);
+      return;
+    }
+
+    // ---- 2. Idempotency check ----
+    const existingTasks = await db
+      .collection('clubs')
+      .doc(clubId)
+      .collection('formation_tasks')
+      .where('type', '==', 'pool_checkin')
+      .where('member_id', '==', memberId)
+      .where('context.attendee_id', '==', attendeeId)
+      .limit(1)
+      .get();
+
+    if (!existingTasks.empty) {
+      console.log(`[${FUNCTION_NAME}] task already exists for attendee ${attendeeId}, skipping`);
+      return;
+    }
+
+    // ---- 3. Determine target Formation group ----
+    // Pass the full member object so the override `target_formation_level`
+    // is respected (useful for moniteurs in pilot/refresh mode).
+    const targetLevel = computeTargetLevel(member);
+
+    if (targetLevel === null) {
+      console.log(
+        `[${FUNCTION_NAME}] skipped — plongeur_code=${member.plongeur_code} maps to no target level (instructor without override)`
+      );
+      return;
+    }
+
+    // ---- 4. Look up the level_course planning ----
+    const sessionSnap = await db
+      .collection('clubs')
+      .doc(clubId)
+      .collection('piscine_sessions')
+      .doc(sessionId)
+      .get();
+
+    if (!sessionSnap.exists) {
+      console.log(`[${FUNCTION_NAME}] session ${sessionId} not found, creating blocked task`);
+      await createBlockedTask(db, clubId, attendeeId, member, memberId, sessionId, targetLevel);
+      return;
+    }
+    const session = sessionSnap.data();
+
+    const levelCourse = findLevelCourse(session, targetLevel);
+
+    if (!levelCourse) {
+      // No course planned for this level tonight → blocked task for chef d'école.
+      console.log(
+        `[${FUNCTION_NAME}] no level_course for ${targetLevel} in session ${sessionId}, creating blocked task`
+      );
+      await createBlockedTask(db, clubId, attendeeId, member, memberId, sessionId, targetLevel);
+      return;
+    }
+
+    const candidateValidatorIds = levelCourse.encadrants
+      .map((e) => e.membre_id || e.membreId)
+      .filter(Boolean);
+
+    // ---- 5. Create the formation_task ----
+    const memberName = composeMemberName(member);
+    const formationGroupDisplay = `Formation ${targetLevel}`;
+
+    const taskRef = db
+      .collection('clubs')
+      .doc(clubId)
+      .collection('formation_tasks')
+      .doc();
+
+    await taskRef.set({
+      type: 'pool_checkin',
+      title: `Piscine à compléter — ${formationGroupDisplay}`,
+      status: 'open',
+      priority: 'normal',
+      member_id: memberId,
+      member_name: memberName,
+      current_assignee_id: memberId,
+      current_assignee_type: 'student',
+      context: {
+        pool_session_id: sessionId,
+        attendee_id: attendeeId,
+        level_course_id: levelCourse.courseId,
+        target_group_level: formationGroupDisplay,
+        candidate_validator_ids: candidateValidatorIds,
+        location_id: session.lieu_id || session.location_id || null,
+      },
+      available_actions: [
+        { key: 'complete_now', label: 'Faire maintenant', target_screen: 'pool_checkin' },
+        { key: 'snooze', label: 'Plus tard' },
+        { key: 'dismiss', label: 'Pas concerné' },
+      ],
+      notification_state: { reminder_count: 0 },
+      created_by: 'system',
+      created_by_name: FUNCTION_NAME,
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      updated_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    console.log(
+      `[${FUNCTION_NAME}] created task ${taskRef.id} for member ${memberId} → ${formationGroupDisplay}`
+    );
+  }
+);
+
+async function createBlockedTask(db, clubId, attendeeId, member, memberId, sessionId, targetLevel) {
+  // Find a school responsible to route the blocked task to. For now, route to
+  // the first admin in the club. Phase 2 may introduce a dedicated
+  // school_responsible role.
+  const memberName = composeMemberName(member);
+  const taskRef = db
+    .collection('clubs')
+    .doc(clubId)
+    .collection('formation_tasks')
+    .doc();
+
+  // Try to find an admin to assign the blocked task to.
+  let assigneeId = memberId; // fallback : assign to member themselves, status=blocked
+  let assigneeType = 'student';
+  try {
+    const adminQuery = await db
+      .collection('clubs')
+      .doc(clubId)
+      .collection('members')
+      .where('app_role', 'in', ['admin', 'superadmin'])
+      .limit(1)
+      .get();
+    if (!adminQuery.empty) {
+      assigneeId = adminQuery.docs[0].id;
+      assigneeType = 'school_responsible';
+    }
+  } catch (err) {
+    console.warn(`[${FUNCTION_NAME}] could not look up admin for blocked task:`, err.message);
+  }
+
+  await taskRef.set({
+    type: 'pool_checkin',
+    title: `Piscine à compléter — pas de groupe Formation ${targetLevel} planifié`,
+    description:
+      `${memberName} a scanné au scanner d'entrée mais aucun cours niveau ${targetLevel} ` +
+      `n'est planifié pour cette séance. Un responsable doit assigner manuellement.`,
+    status: 'blocked',
+    priority: 'normal',
+    member_id: memberId,
+    member_name: memberName,
+    current_assignee_id: assigneeId,
+    current_assignee_type: assigneeType,
+    context: {
+      pool_session_id: sessionId,
+      attendee_id: attendeeId,
+      target_group_level: `Formation ${targetLevel}`,
+    },
+    available_actions: [
+      { key: 'assign_responsible', label: 'Assigner' },
+      { key: 'dismiss', label: 'Pas concerné' },
+    ],
+    notification_state: { reminder_count: 0 },
+    created_by: 'system',
+    created_by_name: FUNCTION_NAME,
+    created_at: admin.firestore.FieldValue.serverTimestamp(),
+    updated_at: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  console.log(`[${FUNCTION_NAME}] created BLOCKED task ${taskRef.id} for member ${memberId}`);
+}
+
+function composeMemberName(member) {
+  const prenom = member.prenom || member.first_name || '';
+  const nom = member.nom || member.last_name || '';
+  return `${prenom} ${nom}`.trim() || member.email || 'Membre';
+}
+
+module.exports = {
+  onPiscineAttendeeCreated,
+  // Exported for unit tests
+  computeTargetLevel,
+  findLevelCourse,
+};

@@ -2,15 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
+import '../../models/formation_task.dart';
 import '../../models/team_channel.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../providers/unread_count_provider.dart';
+import '../../services/formation_task_service.dart';
 import '../../services/team_channel_service.dart';
 import '../../services/unread_count_service.dart';
 import '../../utils/club_role_utils.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../announcements/announcements_screen.dart';
 import '../teams/team_chat_screen.dart';
+import '../training/pool_checkin_screen.dart';
+import '../training/monitor_validation_screen.dart';
+import '../training/logbook_entry_screen.dart';
 
 class CommunicationHubScreen extends StatelessWidget {
   const CommunicationHubScreen({super.key});
@@ -57,6 +63,10 @@ class CommunicationHubScreen extends StatelessWidget {
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
                   children: [
+                    // Carnet de Formation — persistent inbox. Always rendered;
+                    // empty state shows nothing visible to non-formation members.
+                    const _ActionsCalypsoSection(),
+                    const SizedBox(height: 18),
                     _AnnouncementsCard(
                       unreadCount: unreadProvider.announcements,
                     ),
@@ -93,6 +103,260 @@ class CommunicationHubScreen extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Carnet de Formation — Actions Calypso inbox section.
+///
+/// Sits at the top of the Communication screen, BEFORE announcements and
+/// team channels. Surfaces all open formation_tasks where the user is
+/// `current_assignee_id`. Tapping a card opens the relevant flow
+/// (pool_checkin_screen for now; more in subsequent phases).
+///
+/// Tech doc reference : §11.1.
+class _ActionsCalypsoSection extends StatefulWidget {
+  const _ActionsCalypsoSection();
+
+  @override
+  State<_ActionsCalypsoSection> createState() => _ActionsCalypsoSectionState();
+}
+
+class _ActionsCalypsoSectionState extends State<_ActionsCalypsoSection> {
+  final FormationTaskService _service = FormationTaskService();
+
+  @override
+  Widget build(BuildContext context) {
+    final authProvider = context.watch<AuthProvider>();
+    final userId = authProvider.currentUser?.uid;
+    if (userId == null) return const SizedBox.shrink();
+
+    const clubId = FirebaseConfig.defaultClubId;
+
+    return StreamBuilder<List<FormationTask>>(
+      stream: _service.streamUserInbox(clubId, userId),
+      builder: (context, snapshot) {
+        final tasks = snapshot.data ?? const <FormationTask>[];
+
+        // Hide the section entirely when the user has no tasks at all.
+        // Keeps the screen clean for members who aren't en formation.
+        if (tasks.isEmpty) return const SizedBox.shrink();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10, left: 2),
+              child: Row(
+                children: [
+                  Icon(Icons.flag, color: Colors.white.withValues(alpha: 0.9), size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Actions Calypso',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.95),
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _CountBadge(tasks.length),
+                ],
+              ),
+            ),
+            ...tasks.map((task) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _ActionCalypsoCard(task: task),
+                )),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ActionCalypsoCard extends StatelessWidget {
+  final FormationTask task;
+
+  const _ActionCalypsoCard({required this.task});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => _open(context, task),
+      borderRadius: BorderRadius.circular(16),
+      child: Ink(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.white.withValues(alpha: 0.96),
+              Colors.white.withValues(alpha: 0.9),
+            ],
+          ),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.72)),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.donkerblauw.withValues(alpha: 0.10),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            _StatusGlyph(task: task),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    task.title,
+                    style: const TextStyle(
+                      color: AppColors.donkerblauw,
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if (_subtitleFor(task).isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3),
+                      child: Text(
+                        _subtitleFor(task),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: AppColors.donkerblauw.withValues(alpha: 0.68),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: Colors.grey.shade500),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _subtitleFor(FormationTask task) {
+    final parts = <String>[];
+    if (task.context.targetGroupLevel != null) parts.add(task.context.targetGroupLevel!);
+    if (task.context.operationTitle != null) parts.add(task.context.operationTitle!);
+    if (task.status == FormationTaskStatus.blocked) parts.add('bloquée');
+    if (task.status == FormationTaskStatus.snoozed) parts.add('reportée');
+    return parts.join(' · ');
+  }
+
+  static void _open(BuildContext context, FormationTask task) {
+    switch (task.type) {
+      case FormationTaskType.poolCheckin:
+        Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => PoolCheckinScreen(task: task),
+        ));
+        break;
+      case FormationTaskType.monitorValidation:
+        Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => MonitorValidationScreen(task: task),
+        ));
+        break;
+      case FormationTaskType.logbookCompletion:
+        Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => LogbookEntryScreen.auto(task: task),
+        ));
+        break;
+      // Other task types are wired in later phases:
+      //   FormationTaskType.exerciseClaim → standalone ExerciseClaimScreen
+      //   FormationTaskType.externalProofReview → ExternalProofCaptureScreen (phase 5)
+      default:
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Action « ${task.typeLabel} » — bientôt disponible'),
+          ),
+        );
+    }
+  }
+}
+
+class _StatusGlyph extends StatelessWidget {
+  final FormationTask task;
+  const _StatusGlyph({required this.task});
+
+  @override
+  Widget build(BuildContext context) {
+    // Color by task type, intensity by status.
+    final colors = _gradientFor(task);
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: colors,
+        ),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        task.glyph,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 17,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
+  static List<Color> _gradientFor(FormationTask task) {
+    if (task.status == FormationTaskStatus.blocked) {
+      return [const Color(0xFFFAB7B9), const Color(0xFFE5484D)];
+    }
+    if (task.status == FormationTaskStatus.snoozed) {
+      return [const Color(0xFFCBD5E1), const Color(0xFF94A3B8)];
+    }
+    switch (task.type) {
+      case FormationTaskType.poolCheckin:
+      case FormationTaskType.logbookCompletion:
+        return [const Color(0xFF6BCBE8), const Color(0xFF006DB6)];
+      case FormationTaskType.exerciseClaim:
+      case FormationTaskType.monitorValidation:
+        return [const Color(0xFFB8E2BC), const Color(0xFF4CAF50)];
+      case FormationTaskType.externalProofReview:
+        return [const Color(0xFFFCD9A6), const Color(0xFFF6921E)];
+      default:
+        return [const Color(0xFF94A3B8), const Color(0xFF475569)];
+    }
+  }
+}
+
+class _CountBadge extends StatelessWidget {
+  final int count;
+  const _CountBadge(this.count);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.oranje,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        '$count',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
         ),
       ),
     );

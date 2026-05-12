@@ -183,3 +183,37 @@ exports.fulfillBackorders = require('./src/boutique/fulfillBackorders').fulfillB
 // Uncomment when ready to deploy:
 // exports.stockAlertScheduled = require('./src/boutique/stockAlertFunction').stockAlertScheduled;
 // exports.checkStockAlerts = require('./src/boutique/stockAlertFunction').checkStockAlerts;
+
+// =============================================================================
+// CARNET DE FORMATION — Phase 1 (Gen2)
+// =============================================================================
+// Spec : `CARNET_DE_FORMATION_TECH.md` v2.1
+//
+// Three Cloud Functions handle the inbox lifecycle for the Carnet de Formation :
+//   - onPiscineAttendeeCreated  : creates a pool_checkin task when an entry
+//                                 scan writes to piscine_sessions/{}/attendees
+//   - onOperationFinished       : creates logbook_completion tasks when a
+//                                 dive operation status moves to "terminée"
+//   - processFormationTaskReminders : scheduled every 4h, sends at most ONE
+//                                 push per member per day across all open tasks
+//
+// All three respect the formation_active filter on member documents — free
+// swimmers receive no tasks and no pushes.
+// =============================================================================
+
+const { onPiscineAttendeeCreated } = require('./src/training/onPiscineAttendeeCreated');
+exports.onPiscineAttendeeCreated = onPiscineAttendeeCreated;
+
+const { onOperationFinished } = require('./src/training/onOperationFinished');
+exports.onOperationFinished = onOperationFinished;
+
+const { processFormationTaskReminders } = require('./src/training/processFormationTaskReminders');
+exports.processFormationTaskReminders = processFormationTaskReminders;
+
+// Phase 2 — Claim → official observation promotion
+const { onClaimAccepted } = require('./src/training/onClaimAccepted');
+exports.onClaimAccepted = onClaimAccepted;
+
+// Phase 4 — Palanquée planning → draft exercise_claims pre-fill
+const { onPalanqueeSaved } = require('./src/training/onPalanqueeSaved');
+exports.onPalanqueeSaved = onPalanqueeSaved;
