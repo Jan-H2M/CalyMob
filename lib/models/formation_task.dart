@@ -19,6 +19,9 @@ enum FormationTaskType {
   buddyConfirmation,
   eventPreparation,
   manualReminder,
+  /// v2.2 — holistic evaluation by the group validator after a pool
+  /// session is closed. Created by Cloud Function `onPoolSessionClosed`.
+  monitorObservation,
 }
 
 enum FormationTaskStatus { open, snoozed, waitingForOther, done, dismissed, blocked, expired }
@@ -205,6 +208,7 @@ class FormationTask {
       case 'external_proof_review': return FormationTaskType.externalProofReview;
       case 'buddy_confirmation': return FormationTaskType.buddyConfirmation;
       case 'event_preparation': return FormationTaskType.eventPreparation;
+      case 'monitor_observation': return FormationTaskType.monitorObservation;
       default: return FormationTaskType.manualReminder;
     }
   }
@@ -242,6 +246,7 @@ class FormationTask {
       case FormationTaskType.buddyConfirmation: return 'Confirmation buddy';
       case FormationTaskType.eventPreparation: return 'Préparation';
       case FormationTaskType.manualReminder: return 'Rappel';
+      case FormationTaskType.monitorObservation: return 'Évaluation';
     }
   }
 
@@ -256,6 +261,7 @@ class FormationTask {
       case FormationTaskType.buddyConfirmation: return 'B';
       case FormationTaskType.eventPreparation: return 'P';
       case FormationTaskType.manualReminder: return '·';
+      case FormationTaskType.monitorObservation: return 'O';
     }
   }
 }
