@@ -17,12 +17,17 @@ class StudentLogbookService {
   Future<String> create({
     required String clubId,
     required StudentLogbookEntry entry,
+    Map<String, dynamic>? extras,
   }) async {
-    final docRef = await _collection(clubId).add({
+    final payload = <String, dynamic>{
       ...entry.toMap(),
       'created_at': FieldValue.serverTimestamp(),
       'updated_at': FieldValue.serverTimestamp(),
-    });
+    };
+    if (extras != null) {
+      payload.addAll(extras);
+    }
+    final docRef = await _collection(clubId).add(payload);
     return docRef.id;
   }
 
@@ -30,11 +35,23 @@ class StudentLogbookService {
     required String clubId,
     required String entryId,
     required StudentLogbookEntry entry,
+    Map<String, dynamic>? extras,
   }) async {
-    await _collection(clubId).doc(entryId).update({
+    final payload = <String, dynamic>{
       ...entry.toMap(),
       'updated_at': FieldValue.serverTimestamp(),
-    });
+    };
+    if (extras != null) {
+      payload.addAll(extras);
+    }
+    await _collection(clubId).doc(entryId).update(payload);
+  }
+
+  Future<void> delete({
+    required String clubId,
+    required String entryId,
+  }) async {
+    await _collection(clubId).doc(entryId).delete();
   }
 
   Stream<List<Map<String, dynamic>>> streamUserEntries(String clubId, String userId, {int? year}) {
