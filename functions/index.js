@@ -191,3 +191,17 @@ exports.onClaimAccepted = onClaimAccepted;
 // Phase 4 — Palanquée planning → draft exercise_claims pre-fill
 const { onPalanqueeSaved } = require('./src/training/onPalanqueeSaved');
 exports.onPalanqueeSaved = onPalanqueeSaved;
+
+// Phase A (v2.2) — Pool check-in completion propagation:
+// when a student submits the pool check-in task, mirror the chosen
+// group / outcome onto the attendee document so SessionParticipantsTab
+// can render the review view.
+const { onPoolCheckinCompleted } = require('./src/training/onPoolCheckinCompleted');
+exports.onPoolCheckinCompleted = onPoolCheckinCompleted;
+
+// Phase A (v2.2) — Pool session close fan-out:
+// when the chef d'école closes a session, batch-create logbook entries
+// + monitor_observation tasks for each training attendee. Honour the
+// DRY_RUN_POOL_CLOSE env flag during initial rollout.
+const { onPoolSessionClosed } = require('./src/training/onPoolSessionClosed');
+exports.onPoolSessionClosed = onPoolSessionClosed;
