@@ -1,43 +1,30 @@
-/// Carnet de Formation — Post-pool check-in screen.
+/// Phase C (v2.2, 2026-05-13) — Post-pool check-in screen, rewritten.
 ///
-/// Opened from the Communication inbox when the user taps a `pool_checkin`
-/// task. Walks the student through three confirmations in a single scroll :
+/// Per `_carnet_plan.md` §3.1.3 + §13 C.9 the v2.2 flow is:
 ///
-///   1. Group   — confirm the auto-suggested Formation group (e.g. "Formation 2★")
-///                or correct it manually.
-///   2. Monitor — pick one or more validators from the candidate_validator_ids[]
-///                that the Cloud Function populated.
-///   3. Exercises — chip-select which LIFRAS exercises were practised tonight.
-///                  These spawn one exercise_claim per chip on submit.
+///   1. Outcome chooser : Training / Service / Nage libre.
+///      Only `training` triggers downstream side-effects (logbook entry +
+///      monitor_observation task at session close).
+///   2. If training, pick the formation level (suggested from
+///      task.context.target_group_level) and group number.
+///   3. Optional personal notes.
 ///
-/// On submit :
-///   - Update the task : `status='done'`, completed_at/by stamps.
-///   - For each picked exercise, create an exercise_claim with
-///     status='submitted', validation_mode='calypso_monitor', monitor_id
-///     pointing to the chosen validator(s).
+/// NO more LIFRAS chip picker, NO more monitor multi-select — validators
+/// are derived from the group at session close (`onPoolCheckinCompleted`
+/// + `onPoolSessionClosed`).
 ///
-/// Spec : `CARNET_DE_FORMATION_TECH.md` v2.1 §11.1 (mockup 02 flow).
+/// Submit writes `completion_data` on the task so the
+/// `onPoolCheckinCompleted` Cloud Function can propagate the chosen group
+/// onto the attendee doc.
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../models/formation_task.dart';
 import '../../providers/auth_provider.dart';
-import '../../providers/member_provider.dart';
 import '../../services/formation_task_service.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
-
-// LIFRAS exercise catalog hint — sourced from clubs/{clubId}/exercices_lifras
-// in a real fetch. For phase 1 we offer a small static set of frequent codes
-// the student can pick from. A future enhancement reads the full catalog
-// filtered by the target_group_level.
-const _commonExerciseCodes = <String>[
-  'P2.DP', 'P2.RA', 'P2.ST', 'P2.PB',
-  'P1.PB', 'P1.VM', 'P1.CA',
-  'P3.OR', 'P3.NX',
-];
 
 class PoolCheckinScreen extends StatefulWidget {
   final FormationTask task;
@@ -47,24 +34,115 @@ class PoolCheckinScreen extends StatefulWidget {
   State<PoolCheckinScreen> createState() => _PoolCheckinScreenState();
 }
 
+enum _Outcome { training, serviceOnly, nageLibre }
+
 class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
   final FormationTaskService _taskService = FormationTaskService();
 
-  String? _selectedGroup; // 'Formation 1★' / '2★' / '3★' / '4★' / 'libre'
-  final Set<String> _selectedMonitorIds = <String>{};
-  final Set<String> _selectedExercises = <String>{};
+  _Outcome? _outcome;
+  String? _level;        // 1*/2*/3*/4*/AM
+  int _groupNumber = 1;  // 1 or 2
+  final TextEditingController _notes = TextEditingController();
   bool _submitting = false;
 
   @override
   void initState() {
     super.initState();
-    _selectedGroup = widget.task.context.targetGroupLevel; // pre-confirm
+    _level = _parseLevelFromTarget(widget.task.context.targetGroupLevel);
+  }
+
+  String? _parseLevelFromTarget(String? raw) {
+    if (raw == null) return null;
+    // raw might be "Formation 2*" — extract "2*"
+    final m = RegExp(r'(\d\*|AM)').firstMatch(raw);
+    return m?.group(1);
+  }
+
+  @override
+  void dispose() {
+    _notes.dispose();
+    super.dispose();
+  }
+
+  String get _groupKey {
+    final level = _level ?? '';
+    return '${level.replaceAll('*', 'star')}_groupe$_groupNumber';
+  }
+
+  bool get _canSubmit {
+    if (_submitting) return false;
+    if (_outcome == null) return false;
+    if (_outcome == _Outcome.training && (_level == null || _level!.isEmpty)) {
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _submit() async {
+    if (!_canSubmit) return;
+    final userId = context.read<AuthProvider>().currentUser?.uid;
+    if (userId == null) return;
+    setState(() => _submitting = true);
+
+    final outcome = switch (_outcome!) {
+      _Outcome.training => 'training',
+      _Outcome.serviceOnly => 'service_only',
+      _Outcome.nageLibre => 'nage_libre',
+    };
+
+    final completionData = <String, dynamic>{
+      'outcome': outcome,
+      if (outcome == 'training') ...{
+        'level': _level,
+        'groupNumber': _groupNumber,
+        'groupKey': _groupKey,
+      },
+      if (_notes.text.trim().isNotEmpty) 'personalNotes': _notes.text.trim(),
+    };
+
+    try {
+      await _taskService.markDone(
+        FirebaseConfig.defaultClubId,
+        widget.task.id,
+        userId,
+        completionData: completionData,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Piscine confirmée — merci !')),
+      );
+      Navigator.pop(context);
+    } catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("L'enregistrement a échoué : $err")),
+      );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  Future<void> _dismiss() async {
+    final userId = context.read<AuthProvider>().currentUser?.uid;
+    if (userId == null) return;
+    setState(() => _submitting = true);
+    try {
+      await _taskService.dismiss(
+        FirebaseConfig.defaultClubId,
+        widget.task.id,
+        userId,
+      );
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (_) {
+      // toast handled in service or above
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final memberProvider = context.watch<MemberProvider>();
-
     return Scaffold(
       body: OceanGradientBackground(
         creatures: CreatureSet.jellyfishAndBubbles,
@@ -74,40 +152,28 @@ class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
               _Header(task: widget.task),
               Expanded(
                 child: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 110),
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
                   children: [
                     _ContextCard(task: widget.task),
                     const SizedBox(height: 18),
-                    _GroupSection(
-                      suggested: widget.task.context.targetGroupLevel,
-                      selected: _selectedGroup,
-                      onSelect: (g) => setState(() => _selectedGroup = g),
+                    _OutcomeSection(
+                      selected: _outcome,
+                      onSelect: (o) => setState(() => _outcome = o),
                     ),
-                    const SizedBox(height: 18),
-                    if (_selectedGroup != null && _selectedGroup != 'libre')
-                      _MonitorSection(
-                        candidateIds: widget.task.context.candidateValidatorIds,
-                        selected: _selectedMonitorIds,
-                        onToggle: (id) => setState(() {
-                          if (_selectedMonitorIds.contains(id)) {
-                            _selectedMonitorIds.remove(id);
-                          } else {
-                            _selectedMonitorIds.add(id);
-                          }
-                        }),
-                      ),
-                    if (_selectedGroup != null && _selectedGroup != 'libre') ...[
+                    if (_outcome == _Outcome.training) ...[
                       const SizedBox(height: 18),
-                      _ExerciseSection(
-                        selected: _selectedExercises,
-                        onToggle: (code) => setState(() {
-                          if (_selectedExercises.contains(code)) {
-                            _selectedExercises.remove(code);
-                          } else {
-                            _selectedExercises.add(code);
-                          }
-                        }),
+                      _GroupSection(
+                        selectedLevel: _level,
+                        selectedGroupNumber: _groupNumber,
+                        suggested: widget.task.context.targetGroupLevel,
+                        onLevelChange: (l) => setState(() => _level = l),
+                        onGroupNumberChange:
+                            (n) => setState(() => _groupNumber = n),
                       ),
+                    ],
+                    if (_outcome != null) ...[
+                      const SizedBox(height: 18),
+                      _NotesSection(controller: _notes),
                     ],
                   ],
                 ),
@@ -118,55 +184,37 @@ class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
       ),
       bottomNavigationBar: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: Row(
             children: [
-              ElevatedButton(
-                onPressed: _submitting ? null : () => _submit(memberProvider),
+              TextButton(
+                onPressed: _submitting ? null : _dismiss,
+                child: const Text(
+                  'Pas concerné',
+                  style: TextStyle(color: Colors.white70),
+                ),
+              ),
+              const Spacer(),
+              ElevatedButton.icon(
+                onPressed: _canSubmit ? _submit : null,
+                icon: _submitting
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.send),
+                label: Text(_submitting ? 'Envoi…' : 'Confirmer ma piscine'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.middenblauw,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 12,
                   ),
-                  textStyle: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  minimumSize: const Size.fromHeight(48),
-                ),
-                child: _submitting
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2.4,
-                        ),
-                      )
-                    : Text(
-                        _selectedGroup == 'libre'
-                            ? 'Marquer comme libre'
-                            : 'Confirmer',
-                      ),
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton(
-                onPressed: _submitting ? null : _dismiss,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  side: const BorderSide(color: Colors.white),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  minimumSize: const Size.fromHeight(48),
-                ),
-                child: const Text(
-                  'Pas concerné',
-                  style: TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
             ],
@@ -175,108 +223,10 @@ class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
       ),
     );
   }
-
-  Future<void> _submit(MemberProvider memberProvider) async {
-    setState(() => _submitting = true);
-
-    final auth = context.read<AuthProvider>();
-    final userId = auth.currentUser?.uid;
-    if (userId == null) {
-      _err('Session non identifiée');
-      return;
-    }
-
-    try {
-      const clubId = FirebaseConfig.defaultClubId;
-
-      // 1. If exercises were declared, create one exercise_claim per code.
-      //    Use the first selected monitor (or null if none chosen).
-      final monitorId = _selectedMonitorIds.isNotEmpty
-          ? _selectedMonitorIds.first
-          : null;
-
-      if (_selectedGroup != 'libre' && _selectedExercises.isNotEmpty) {
-        await _createExerciseClaims(
-          clubId: clubId,
-          userId: userId,
-          monitorId: monitorId,
-        );
-      }
-
-      // 2. Mark the task as done.
-      await _taskService.markCompleted(clubId, widget.task.id, userId);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Piscine confirmée — merci !')),
-        );
-        Navigator.of(context).pop();
-      }
-    } catch (e) {
-      _err('Erreur : $e');
-    } finally {
-      if (mounted) setState(() => _submitting = false);
-    }
-  }
-
-  Future<void> _dismiss() async {
-    setState(() => _submitting = true);
-    try {
-      final userId = context.read<AuthProvider>().currentUser?.uid;
-      if (userId == null) throw 'Session non identifiée';
-      const clubId = FirebaseConfig.defaultClubId;
-      await _taskService.dismiss(clubId, widget.task.id, userId);
-      if (mounted) Navigator.of(context).pop();
-    } catch (e) {
-      _err('Erreur : $e');
-    } finally {
-      if (mounted) setState(() => _submitting = false);
-    }
-  }
-
-  Future<void> _createExerciseClaims({
-    required String clubId,
-    required String userId,
-    String? monitorId,
-  }) async {
-    final db = FirebaseFirestore.instance;
-    final claimsCol = db.collection('clubs').doc(clubId).collection('exercise_claims');
-
-    final member = context.read<MemberProvider>();
-    final memberName =
-        '${member.prenom ?? ''} ${member.nom ?? ''}'.trim();
-
-    for (final code in _selectedExercises) {
-      await claimsCol.add({
-        'member_id': userId,
-        'member_name': memberName,
-        'exercise_id': code,
-        'exercise_code': code,
-        'context_type': 'pool',
-        'pool_session_id': widget.task.context.poolSessionId,
-        'declared_by': userId,
-        'declared_at': FieldValue.serverTimestamp(),
-        'validation_mode': 'calypso_monitor',
-        'monitor_id': monitorId,
-        'evidence': <Map<String, dynamic>>[],
-        'status': 'submitted',
-        'created_at': FieldValue.serverTimestamp(),
-        'updated_at': FieldValue.serverTimestamp(),
-      });
-    }
-  }
-
-  void _err(String msg) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg)),
-      );
-    }
-  }
 }
 
 // ---------------------------------------------------------------------------
-// Header + sections
+// Header
 // ---------------------------------------------------------------------------
 
 class _Header extends StatelessWidget {
@@ -286,29 +236,27 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 12, 8, 12),
+      padding: const EdgeInsets.fromLTRB(8, 4, 16, 6),
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.white, size: 26),
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
             onPressed: () => Navigator.pop(context),
           ),
-          Expanded(
+          const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
+              children: [
                 Text(
-                  'Check-in post-piscine',
+                  'Piscine à compléter',
                   style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
+                    color: Colors.white70,
+                    fontSize: 11.5,
+                    letterSpacing: 1.4,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                Text(
-                  'Confirme ou corrige en 30 secondes',
-                  style: TextStyle(color: Colors.white70, fontSize: 12),
-                ),
+                SizedBox(height: 2),
               ],
             ),
           ),
@@ -324,46 +272,34 @@ class _ContextCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Colors.white.withValues(alpha: 0.96),
-            Colors.white.withValues(alpha: 0.88),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return _Card(
+      child: Row(
         children: [
-          Text(
-            'DÉTECTÉ AUTOMATIQUEMENT',
-            style: TextStyle(
-              color: AppColors.middenblauw,
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.1,
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Piscine de Watermael-Boitsfort',
-            style: TextStyle(
-              color: AppColors.donkerblauw,
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            task.context.targetGroupLevel != null
-                ? task.context.targetGroupLevel!
-                : 'Niveau à déterminer',
-            style: TextStyle(
-              color: AppColors.donkerblauw.withValues(alpha: 0.7),
-              fontSize: 12,
+          const Icon(Icons.pool, color: Colors.white, size: 36),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  task.title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                if (task.context.targetGroupLevel != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Groupe suggéré : ${task.context.targetGroupLevel}',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ],
@@ -372,300 +308,354 @@ class _ContextCard extends StatelessWidget {
   }
 }
 
-class _GroupSection extends StatelessWidget {
-  final String? suggested;
-  final String? selected;
-  final ValueChanged<String> onSelect;
+// ---------------------------------------------------------------------------
+// Outcome chooser
+// ---------------------------------------------------------------------------
 
-  const _GroupSection({
-    required this.suggested,
-    required this.selected,
-    required this.onSelect,
-  });
-
-  static const _options = ['Formation 1★', 'Formation 2★', 'Formation 3★', 'Formation 4★'];
+class _OutcomeSection extends StatelessWidget {
+  final _Outcome? selected;
+  final ValueChanged<_Outcome> onSelect;
+  const _OutcomeSection({required this.selected, required this.onSelect});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'TU AS FAIT QUEL GROUPE ?',
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.85),
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1.2,
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SectionTitle('1. Comment as-tu passé ta soirée piscine ?'),
+          const SizedBox(height: 12),
+          _OutcomeTile(
+            icon: Icons.school,
+            title: 'Formation',
+            subtitle: 'J\'ai plongé dans un groupe de formation',
+            active: selected == _Outcome.training,
+            onTap: () => onSelect(_Outcome.training),
           ),
-        ),
-        const SizedBox(height: 8),
-        ..._options.map((label) {
-          final isSuggested = label == suggested;
-          final isSelected = label == selected;
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: _OptionTile(
-              label: label,
-              subtitle: isSuggested ? 'suggéré' : null,
-              selected: isSelected,
-              onTap: () => onSelect(label),
+          const SizedBox(height: 8),
+          _OutcomeTile(
+            icon: Icons.handshake_outlined,
+            title: 'Service',
+            subtitle:
+                'Accueil, baptêmes ou gonflage — pas de formation ce soir',
+            active: selected == _Outcome.serviceOnly,
+            onTap: () => onSelect(_Outcome.serviceOnly),
+          ),
+          const SizedBox(height: 8),
+          _OutcomeTile(
+            icon: Icons.waves,
+            title: 'Nage libre',
+            subtitle: 'Couloir libre, pas de cours',
+            active: selected == _Outcome.nageLibre,
+            onTap: () => onSelect(_Outcome.nageLibre),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OutcomeTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool active;
+  final VoidCallback onTap;
+
+  const _OutcomeTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.active,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: active
+                ? AppColors.middenblauw.withValues(alpha: 0.55)
+                : Colors.white.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: active
+                  ? Colors.white
+                  : Colors.white.withValues(alpha: 0.20),
+              width: active ? 1.5 : 1,
             ),
-          );
-        }),
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: _OptionTile(
-            label: 'Plongée libre (pas en formation)',
-            subtitle: null,
-            selected: selected == 'libre',
-            onTap: () => onSelect('libre'),
           ),
-        ),
-      ],
-    );
-  }
-}
-
-class _MonitorSection extends StatelessWidget {
-  final List<String> candidateIds;
-  final Set<String> selected;
-  final ValueChanged<String> onToggle;
-
-  const _MonitorSection({
-    required this.candidateIds,
-    required this.selected,
-    required this.onToggle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (candidateIds.isEmpty) {
-      return _InfoCard(
-        message:
-            'Aucun moniteur planifié pour ce groupe ce soir. Le responsable formation s\'en occupe.',
-      );
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'QUI T\'A ENCADRÉ CE SOIR ?',
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.85),
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1.2,
-          ),
-        ),
-        const SizedBox(height: 8),
-        // Live-fetch each candidate's display name from the members collection.
-        ...candidateIds.map((id) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _MonitorTile(
-                memberId: id,
-                selected: selected.contains(id),
-                onTap: () => onToggle(id),
-              ),
-            )),
-      ],
-    );
-  }
-}
-
-class _MonitorTile extends StatelessWidget {
-  final String memberId;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _MonitorTile({
-    required this.memberId,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    const clubId = FirebaseConfig.defaultClubId;
-    return FutureBuilder<DocumentSnapshot>(
-      future: FirebaseFirestore.instance
-          .collection('clubs')
-          .doc(clubId)
-          .collection('members')
-          .doc(memberId)
-          .get(),
-      builder: (context, snapshot) {
-        String displayName = memberId;
-        String level = '';
-        if (snapshot.hasData && snapshot.data!.exists) {
-          final data = snapshot.data!.data() as Map<String, dynamic>;
-          final prenom = data['prenom'] ?? '';
-          final nom = data['nom'] ?? '';
-          displayName = '$prenom $nom'.trim();
-          if (displayName.isEmpty) displayName = data['email'] ?? memberId;
-          level = data['plongeur_code'] ?? data['plongeur_niveau'] ?? '';
-        }
-        return _OptionTile(
-          label: displayName,
-          subtitle: level.isEmpty ? null : level,
-          selected: selected,
-          onTap: onTap,
-        );
-      },
-    );
-  }
-}
-
-class _ExerciseSection extends StatelessWidget {
-  final Set<String> selected;
-  final ValueChanged<String> onToggle;
-
-  const _ExerciseSection({required this.selected, required this.onToggle});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'TU AS TRAVAILLÉ QUOI ?',
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.85),
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1.2,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: _commonExerciseCodes.map((code) {
-            final on = selected.contains(code);
-            return ChoiceChip(
-              label: Text(code),
-              selected: on,
-              onSelected: (_) => onToggle(code),
-              labelStyle: TextStyle(
-                color: on ? Colors.white : AppColors.donkerblauw,
-                fontWeight: FontWeight.w700,
-                fontSize: 12,
-              ),
-              selectedColor: AppColors.middenblauw,
-              backgroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-                side: BorderSide(
-                  color: on ? AppColors.middenblauw : Colors.white,
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          'Le moniteur validera officiellement après.',
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.75),
-            fontSize: 11,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _OptionTile extends StatelessWidget {
-  final String label;
-  final String? subtitle;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _OptionTile({
-    required this.label,
-    this.subtitle,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Ink(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: selected ? 0.98 : 0.88),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: selected ? AppColors.middenblauw : Colors.transparent,
-            width: 2,
-          ),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      color: AppColors.donkerblauw,
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  if (subtitle != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        subtitle!,
-                        style: TextStyle(
-                          color: AppColors.donkerblauw.withValues(alpha: 0.65),
-                          fontSize: 11.5,
-                        ),
+          child: Row(
+            children: [
+              Icon(icon, color: Colors.white, size: 28),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                ],
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontSize: 12.5,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            Icon(
-              selected
-                  ? Icons.check_circle
-                  : Icons.radio_button_unchecked,
-              color: selected
-                  ? AppColors.middenblauw
-                  : AppColors.donkerblauw.withValues(alpha: 0.3),
-              size: 22,
-            ),
-          ],
+              if (active)
+                const Icon(Icons.check_circle, color: Colors.white, size: 22),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _InfoCard extends StatelessWidget {
-  final String message;
-  const _InfoCard({required this.message});
+// ---------------------------------------------------------------------------
+// Group section (only when outcome == training)
+// ---------------------------------------------------------------------------
+
+class _GroupSection extends StatelessWidget {
+  final String? selectedLevel;
+  final int selectedGroupNumber;
+  final String? suggested;
+  final ValueChanged<String> onLevelChange;
+  final ValueChanged<int> onGroupNumberChange;
+
+  const _GroupSection({
+    required this.selectedLevel,
+    required this.selectedGroupNumber,
+    required this.suggested,
+    required this.onLevelChange,
+    required this.onGroupNumberChange,
+  });
+
+  static const _levels = ['1*', '2*', '3*', '4*', 'AM'];
+
+  @override
+  Widget build(BuildContext context) {
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SectionTitle('2. Dans quel groupe étais-tu ?'),
+          if (suggested != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Suggestion : $suggested',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.75),
+                fontSize: 12.5,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final l in _levels)
+                _ChipChoice(
+                  label: l,
+                  active: selectedLevel == l,
+                  onTap: () => onLevelChange(l),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Groupe n°',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.85),
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              for (final n in [1, 2])
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: _ChipChoice(
+                    label: 'Groupe $n',
+                    active: selectedGroupNumber == n,
+                    onTap: () => onGroupNumberChange(n),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChipChoice extends StatelessWidget {
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  const _ChipChoice({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: active
+                ? Colors.white
+                : Colors.white.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: active ? 1 : 0.30),
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: active ? AppColors.donkerblauw : Colors.white,
+              fontSize: 13.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Notes section
+// ---------------------------------------------------------------------------
+
+class _NotesSection extends StatelessWidget {
+  final TextEditingController controller;
+  const _NotesSection({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SectionTitle('3. Notes perso (facultatif)'),
+          const SizedBox(height: 8),
+          Text(
+            'Ressenti, exercices que tu veux signaler à ton encadrant, etc.',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.8),
+              fontSize: 12.5,
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: controller,
+            minLines: 2,
+            maxLines: 5,
+            style: const TextStyle(color: Colors.white),
+            cursorColor: Colors.white,
+            decoration: InputDecoration(
+              hintText: 'Ce que tu veux retenir de ce soir…',
+              hintStyle: TextStyle(
+                color: Colors.white.withValues(alpha: 0.55),
+                fontSize: 13,
+              ),
+              filled: true,
+              fillColor: Colors.white.withValues(alpha: 0.10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.25),
+                ),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.25),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Colors.white, width: 1.5),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared atoms
+// ---------------------------------------------------------------------------
+
+class _Card extends StatelessWidget {
+  final Widget child;
+  const _Card({required this.child});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF8EE),
+        color: Colors.white.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFFFD8A0)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.donkerblauw.withValues(alpha: 0.18),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-      child: Text(
-        message,
-        style: const TextStyle(
-          color: Color(0xFFC2620E),
-          fontSize: 12.5,
-        ),
+      child: child,
+    );
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  final String text;
+  const _SectionTitle(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 15,
+        fontWeight: FontWeight.bold,
       ),
     );
   }

@@ -45,12 +45,33 @@ class FormationTaskService {
   // -----------------------------------------------------------------------
 
   Future<void> markCompleted(String clubId, String taskId, String userId) async {
-    await _collection(clubId).doc(taskId).update({
+    await markDone(clubId, taskId, userId);
+  }
+
+  /// Mark a task as done.
+  ///
+  /// Optional [completionData] is written to the task and is read by
+  /// downstream Cloud Functions — e.g. `onPoolCheckinCompleted` reads it to
+  /// propagate the chosen group / outcome onto the attendee doc.
+  ///
+  /// Mirrors the TypeScript helper in CalyCompta
+  /// `formationTaskService.markTaskCompleted`.
+  Future<void> markDone(
+    String clubId,
+    String taskId,
+    String userId, {
+    Map<String, dynamic>? completionData,
+  }) async {
+    final payload = <String, dynamic>{
       'status': 'done',
       'completed_at': FieldValue.serverTimestamp(),
       'completed_by': userId,
       'updated_at': FieldValue.serverTimestamp(),
-    });
+    };
+    if (completionData != null && completionData.isNotEmpty) {
+      payload['completion_data'] = completionData;
+    }
+    await _collection(clubId).doc(taskId).update(payload);
   }
 
   Future<void> snooze(String clubId, String taskId, DateTime snoozedUntil) async {
