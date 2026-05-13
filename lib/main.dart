@@ -33,7 +33,6 @@ import 'providers/exercice_valide_provider.dart';
 import 'providers/availability_provider.dart';
 import 'providers/activity_provider.dart';
 import 'providers/unread_count_provider.dart';
-import 'providers/catalog_provider.dart';
 
 // Bug Report
 import 'widgets/bug_report_widget.dart';
@@ -520,7 +519,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           ChangeNotifierProvider(create: (_) => AvailabilityProvider()),
           ChangeNotifierProvider(create: (_) => ActivityProvider()),
           ChangeNotifierProvider(create: (_) => UnreadCountProvider()),
-          ChangeNotifierProvider(create: (_) => CatalogProvider()),
         ],
         child: MaterialApp(
           navigatorKey: _navigatorKey,

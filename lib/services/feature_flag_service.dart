@@ -74,23 +74,4 @@ class FeatureFlagService extends ChangeNotifier {
     if (!doc.exists) return false;
     return doc.data()?['carnetFormationEnabled'] == true;
   }
-
-  /// Returns true when the Boutique V2 feature is visible for the given member.
-  bool isBoutiqueVisibleForMemberProvider(dynamic memberProvider) {
-    if (_flags == null) return false;
-    final enabled = _flags!['boutiqueV2Enabled'] == true;
-    if (!enabled) return false;
-    final adminOnly = _flags!['boutiqueV2AdminOnly'] == true;
-    if (!adminOnly) return true;
-    // Admin-only mode: check app_role
-    if (memberProvider is dynamic) {
-      try {
-        final role = memberProvider.appRole?.toString().toLowerCase();
-        return role == 'admin' || role == 'superadmin';
-      } catch (_) {
-        return false;
-      }
-    }
-    return false;
-  }
 }

@@ -5,33 +5,23 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:lottie/lottie.dart';
-import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../models/member_profile.dart';
 import '../../services/profile_service.dart';
-import '../../services/member_service.dart';
 import '../../services/medical_certification_service.dart';
 import '../../services/camera_permission_service.dart';
 import '../../models/medical_certification.dart';
 import '../../widgets/certification_status_badge.dart';
 import 'medical_certification_screen.dart';
-import '../../utils/permission_helper.dart';
 import '../../widgets/photo_consent_dialog.dart';
 import '../../widgets/user_qr_card.dart';
 // Conditional import for camera screen
 import 'face_camera_screen.dart' if (dart.library.html) 'face_camera_screen_stub.dart';
 import 'settings_screen.dart';
 import 'calendar_feed_screen.dart';
-import 'my_refunds_screen.dart';
-import 'ma_cotisation_screen.dart';
-import 'mes_recus_screen.dart';
-import 'mes_abonnements_screen.dart';
-import 'mes_prets_screen.dart';
 import '../auth/login_screen.dart';
-import '../exercises/member_exercises_screen.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 
 /// Écran du profil utilisateur
@@ -45,41 +35,18 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMixin {
   final String _clubId = 'calypso';
   final ProfileService _profileService = ProfileService();
-  final MemberService _memberService = MemberService();
   final MedicalCertificationService _certService = MedicalCertificationService();
 
   bool _isLoading = false;
-  // True als de gebruiker LIFRAS-validatie mag uitvoeren — admin OF
-  // (Encadrant-functie + Moniteur-niveau MC/MF/MN). Mirrors
-  // canValidateLifras() in firestore.rules + fieldMapper.ts.
-  bool _canManageExercises = false;
 
   @override
   void initState() {
     super.initState();
-    _checkPermissions();
   }
 
   @override
   void dispose() {
     super.dispose();
-  }
-
-  Future<void> _checkPermissions() async {
-    final userId = context.read<AuthProvider>().currentUser?.uid ?? '';
-    if (userId.isEmpty) return;
-
-    final profile = await _profileService.getProfile(_clubId, userId);
-    if (profile == null) return;
-
-    final canValidate = PermissionHelper.canValidateLifras(
-      clubStatuten: profile.clubStatuten,
-      plongeurCode: profile.plongeurCode,
-    );
-
-    if (mounted) {
-      setState(() => _canManageExercises = canValidate);
-    }
   }
 
   Future<void> _addOrChangePhoto() async {
@@ -809,91 +776,6 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
                 ),
               );
             },
-          ),
-          const Divider(height: 1),
-          // Mes exercices validés
-          ListTile(
-            leading: const Icon(Icons.assignment_turned_in, color: Colors.teal),
-            title: const Text('Mes exercices validés'),
-            subtitle: const Text('Formation LIFRAS'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () async {
-              final profile = await _profileService.getProfile(_clubId, userId);
-              if (mounted && profile != null) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => MemberExercisesScreen(
-                      memberId: userId,
-                      memberName: profile.fullName,
-                      isMonitor: _canManageExercises,
-                      isOwnProfile: true,
-                    ),
-                  ),
-                );
-              }
-            },
-          ),
-          const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.receipt, color: Colors.indigo),
-            title: const Text('Mes remboursements'),
-            subtitle: const Text('Suivi de vos demandes de remboursement'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const MyRefundsScreen(),
-              ),
-            ),
-          ),
-          const Divider(height: 1),
-          // Ma cotisation
-          ListTile(
-            leading: const Icon(Icons.card_membership, color: AppColors.middenblauw),
-            title: const Text('Ma cotisation'),
-            subtitle: const Text('Statut de votre cotisation annuelle'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const MaCotisationScreen()),
-            ),
-          ),
-          const Divider(height: 1),
-          // Mes reçus
-          ListTile(
-            leading: Icon(Icons.receipt_long, color: Colors.amber.shade700),
-            title: const Text('Mes reçus'),
-            subtitle: const Text('Historique de vos paiements'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const MesRecusScreen()),
-            ),
-          ),
-          const Divider(height: 1),
-          // Mes abonnements
-          ListTile(
-            leading: const Icon(Icons.subscriptions, color: Colors.deepPurple),
-            title: const Text('Mes abonnements'),
-            subtitle: const Text('Prochainement'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const MesAbonnementsScreen()),
-            ),
-          ),
-          const Divider(height: 1),
-          // Mes prêts
-          ListTile(
-            leading: const Icon(Icons.inventory_2, color: Colors.brown),
-            title: const Text('Mes prêts'),
-            subtitle: const Text('Matériel emprunté'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const MesPretsScreen()),
-            ),
           ),
           const Divider(height: 1),
           ListTile(
