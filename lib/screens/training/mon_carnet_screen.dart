@@ -1,0 +1,575 @@
+/// Phase C (2026-05-13) — Mon Carnet : the diver's personal logbook list.
+///
+/// Triggered from the LandingScreen "Mon carnet" tile (3+2 layout, row 1).
+/// Lists `student_logbook_entries` for the signed-in member, filterable by
+/// year, with cards that summarise date / lieu / profondeur / durée / counters
+/// and indicate the entry's source (piscine / sortie Calypso / manuel).
+///
+/// Visual language mirrors `stats_screen.dart` exactly so the carnet,
+/// stats and other training surfaces feel like one consistent product:
+/// OceanGradientBackground with jellyfish + bubbles, white text on dark
+/// backdrop, glass-style cards over the gradient.
+///
+/// Spec : `_carnet_plan.md` §3.1.7 + §13 C.8.
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../config/app_colors.dart';
+import '../../config/firebase_config.dart';
+import '../../providers/auth_provider.dart';
+import '../../widgets/ocean/ocean_gradient_background.dart';
+import 'logbook_entry_screen.dart';
+import 'stats_screen.dart';
+
+class MonCarnetScreen extends StatefulWidget {
+  const MonCarnetScreen({super.key});
+
+  @override
+  State<MonCarnetScreen> createState() => _MonCarnetScreenState();
+}
+
+class _MonCarnetScreenState extends State<MonCarnetScreen> {
+  int? _year;
+
+  @override
+  void initState() {
+    super.initState();
+    _year = DateTime.now().year;
+  }
+
+  Stream<List<_LogbookEntryRow>> _stream(String clubId, String userId) {
+    Query<Map<String, dynamic>> q = FirebaseFirestore.instance
+        .collection('clubs')
+        .doc(clubId)
+        .collection('student_logbook_entries')
+        .where('member_id', isEqualTo: userId)
+        .orderBy('date', descending: true);
+    if (_year != null) {
+      q = q
+          .where('date',
+              isGreaterThanOrEqualTo: Timestamp.fromDate(DateTime(_year!, 1, 1)))
+          .where('date',
+              isLessThan: Timestamp.fromDate(DateTime(_year! + 1, 1, 1)));
+    }
+    return q.snapshots().map((snap) => snap.docs
+        .map((d) => _LogbookEntryRow.fromMap(d.id, d.data()))
+        .toList());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final userId = context.watch<AuthProvider>().currentUser?.uid;
+    const clubId = FirebaseConfig.defaultClubId;
+
+    return Scaffold(
+      body: OceanGradientBackground(
+        creatures: CreatureSet.jellyfishAndBubbles,
+        child: SafeArea(
+          child: Column(
+            children: [
+              _header(context),
+              _yearPills(),
+              const SizedBox(height: 12),
+              Expanded(
+                child: userId == null
+                    ? const _CenterMessage(text: 'Session expirée — reconnecte-toi.')
+                    : StreamBuilder<List<_LogbookEntryRow>>(
+                        stream: _stream(clubId, userId),
+                        builder: (context, snap) {
+                          if (snap.connectionState == ConnectionState.waiting) {
+                            return const Center(
+                              child: CircularProgressIndicator(color: Colors.white),
+                            );
+                          }
+                          if (snap.hasError) {
+                            return _CenterMessage(
+                              text:
+                                  'Impossible de charger le carnet.\n${snap.error}',
+                            );
+                          }
+                          final rows = snap.data ?? const [];
+                          if (rows.isEmpty) return _emptyState();
+                          return ListView.separated(
+                            padding:
+                                const EdgeInsets.fromLTRB(16, 0, 16, 100),
+                            itemCount: rows.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 10),
+                            itemBuilder: (_, i) => _EntryCard(entry: rows[i]),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      floatingActionButton: _Fab(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const LogbookEntryScreen.manual(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _header(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 4, 16, 6),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            onPressed: () => Navigator.pop(context),
+          ),
+          const Expanded(
+            child: Text(
+              'Mon carnet',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                shadows: [
+                  Shadow(
+                    offset: Offset(0, 1),
+                    blurRadius: 4,
+                    color: Colors.black38,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.bar_chart, color: Colors.white),
+            tooltip: 'Stats & cartes',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const StatsScreen()),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _yearPills() {
+    final now = DateTime.now().year;
+    final years = [now, now - 1, now - 2, now - 3];
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: SizedBox(
+        height: 36,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          children: [
+            for (final y in years) _yearPill(y.toString(), y),
+            _yearPill('Tout', null),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _yearPill(String label, int? value) {
+    final isActive = _year == value;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: isActive,
+        onSelected: (_) => setState(() => _year = value),
+        labelStyle: TextStyle(
+          color: isActive ? AppColors.donkerblauw : Colors.white,
+          fontWeight: FontWeight.w600,
+        ),
+        selectedColor: Colors.white,
+        backgroundColor: Colors.white.withValues(alpha: 0.18),
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.35)),
+      ),
+    );
+  }
+
+  Widget _emptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.menu_book_outlined,
+              size: 64,
+              color: Colors.white.withValues(alpha: 0.7),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'Pas encore de plongées',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Tes plongées Calypso apparaîtront automatiquement ici '
+              'dès que tu auras complété un carnet après une sortie. '
+              'Tu peux aussi ajouter une plongée hors club en bas à droite.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.85),
+                fontSize: 14,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LogbookEntryRow {
+  final String id;
+  final DateTime? date;
+  final String locationName;
+  final String? country;
+  final double? depthMeters;
+  final int? durationMinutes;
+  final String source;
+  final List<String> counters;
+  final String? notes;
+  final List<String> buddyNames;
+
+  const _LogbookEntryRow({
+    required this.id,
+    required this.date,
+    required this.locationName,
+    this.country,
+    this.depthMeters,
+    this.durationMinutes,
+    required this.source,
+    required this.counters,
+    this.notes,
+    this.buddyNames = const [],
+  });
+
+  factory _LogbookEntryRow.fromMap(String id, Map<String, dynamic> map) {
+    final date = (map['date'] as Timestamp?)?.toDate();
+    final counters = <String>[];
+    final c = map['counters'] as Map<String, dynamic>? ?? const {};
+    if (c['exo'] == true) counters.add('Exo');
+    if (c['nitrox'] == true) counters.add('Nitrox');
+    if (c['deco'] == true) counters.add('Déco');
+    if (c['dp'] == true) counters.add('DP');
+    if (c['sf'] == true) counters.add('SF');
+    if (c['nuit'] == true) counters.add('Nuit');
+    if (c['mer'] == true) counters.add('Mer');
+
+    final buddies = <String>[];
+    final binomes = map['binomes'] as List?;
+    if (binomes != null) {
+      for (final b in binomes) {
+        if (b is Map) {
+          final name = b['displayName'] ?? b['name'];
+          if (name is String && name.isNotEmpty) buddies.add(name);
+        }
+      }
+    } else {
+      final list = map['buddies'] as List? ?? const [];
+      for (final b in list) {
+        if (b is Map) {
+          final name = b['name'];
+          if (name is String && name.isNotEmpty) buddies.add(name);
+        } else if (b is String && b.isNotEmpty) {
+          buddies.add(b);
+        }
+      }
+    }
+
+    return _LogbookEntryRow(
+      id: id,
+      date: date,
+      locationName:
+          (map['location_name'] as String?) ?? (map['lieu'] as String?) ?? '—',
+      country: map['country'] as String?,
+      depthMeters: (map['depth_max_meters'] as num?)?.toDouble(),
+      durationMinutes: (map['duration_minutes'] as num?)?.toInt(),
+      source: (map['source'] as String?) ?? 'manual',
+      counters: counters,
+      notes: map['notes'] as String?,
+      buddyNames: buddies,
+    );
+  }
+}
+
+class _EntryCard extends StatelessWidget {
+  final _LogbookEntryRow entry;
+  const _EntryCard({required this.entry});
+
+  @override
+  Widget build(BuildContext context) {
+    final dateLabel = entry.date != null
+        ? '${entry.date!.day.toString().padLeft(2, '0')}/'
+            '${entry.date!.month.toString().padLeft(2, '0')}/'
+            '${entry.date!.year}'
+        : '—';
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        color: Colors.white.withValues(alpha: 0.10),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.donkerblauw.withValues(alpha: 0.18),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () {
+            // Detail view will be wired up by Phase C.8 follow-up.
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Détail à venir.'),
+                duration: Duration(milliseconds: 1200),
+              ),
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    _SourceBadge(source: entry.source),
+                    const SizedBox(width: 8),
+                    Text(
+                      dateLabel,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const Spacer(),
+                    if (entry.depthMeters != null)
+                      _Stat(
+                        icon: Icons.straighten,
+                        text: '${entry.depthMeters!.toStringAsFixed(0)} m',
+                      ),
+                    if (entry.durationMinutes != null) ...[
+                      const SizedBox(width: 8),
+                      _Stat(
+                        icon: Icons.timer_outlined,
+                        text: '${entry.durationMinutes} min',
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  entry.locationName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                if (entry.buddyNames.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'avec ${entry.buddyNames.join(', ')}',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.78),
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ],
+                if (entry.counters.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final c in entry.counters)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.25),
+                            ),
+                          ),
+                          child: Text(
+                            c,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+                if (entry.notes != null && entry.notes!.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    entry.notes!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.85),
+                      fontSize: 12.5,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Stat extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  const _Stat({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 13, color: Colors.white),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SourceBadge extends StatelessWidget {
+  final String source;
+  const _SourceBadge({required this.source});
+
+  @override
+  Widget build(BuildContext context) {
+    String label;
+    Color bg;
+    IconData icon;
+    switch (source) {
+      case 'calypso_operation':
+        label = 'Sortie';
+        bg = const Color(0xFF0EA5E9); // sky-500
+        icon = Icons.anchor;
+        break;
+      case 'piscine':
+        label = 'Piscine';
+        bg = const Color(0xFF06B6D4); // cyan-500
+        icon = Icons.pool;
+        break;
+      case 'imported':
+        label = 'Importée';
+        bg = const Color(0xFF8B5CF6); // violet-500
+        icon = Icons.cloud_download;
+        break;
+      case 'manual':
+      default:
+        label = 'Manuelle';
+        bg = const Color(0xFF64748B); // slate-500
+        icon = Icons.edit_note;
+        break;
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: Colors.white),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Fab extends StatelessWidget {
+  final VoidCallback onTap;
+  const _Fab({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return FloatingActionButton.extended(
+      onPressed: onTap,
+      backgroundColor: AppColors.middenblauw,
+      icon: const Icon(Icons.add, color: Colors.white),
+      label: const Text(
+        'Ajouter une plongée',
+        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+}
+
+class _CenterMessage extends StatelessWidget {
+  final String text;
+  const _CenterMessage({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Center(
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: Colors.white, fontSize: 14),
+        ),
+      ),
+    );
+  }
+}

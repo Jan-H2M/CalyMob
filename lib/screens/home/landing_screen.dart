@@ -11,13 +11,13 @@ import '../../services/avatar_nudge_service.dart';
 import '../../utils/club_role_utils.dart';
 import '../../widgets/ocean_background.dart';
 import '../../widgets/ocean/ocean_config.dart';
+import '../../widgets/profile_tile.dart';
 import '../auth/login_screen.dart';
 import '../operations/operations_list_screen.dart';
 import '../communication/communication_hub_screen.dart';
-import '../expenses/financial_screen.dart';
 import '../profile/profile_screen.dart';
 import '../profile/who_is_who_screen.dart';
-import '../piscine/availability_screen.dart';
+import '../training/mon_carnet_screen.dart';
 
 /// Landing page avec thème maritime animé et boutons ronds
 class LandingScreen extends StatefulWidget {
@@ -29,7 +29,6 @@ class LandingScreen extends StatefulWidget {
 
 class _LandingScreenState extends State<LandingScreen> {
   String _versionString = '';
-  List<String>? _clubStatuten;
   OceanParams? _oceanParams;
   bool _avatarNudgeChecked = false;
 
@@ -84,9 +83,6 @@ class _LandingScreenState extends State<LandingScreen> {
       roles,
       appRole: memberProvider.appRole,
     );
-    setState(() {
-      _clubStatuten = roles.isNotEmpty ? roles : null;
-    });
 
     final unreadProvider =
         Provider.of<UnreadCountProvider>(context, listen: false);
@@ -100,28 +96,11 @@ class _LandingScreenState extends State<LandingScreen> {
     }
   }
 
-  bool _hasPiscineRole() {
-    if (_clubStatuten == null) return false;
-    final roles = ClubRoleUtils.normalizeRoles(_clubStatuten!);
-    return roles.contains('accueil') ||
-        roles.contains('encadrant') ||
-        roles.contains('gonflage');
-  }
-
-  List<String> _getPiscineRoles() {
-    if (_clubStatuten == null) return [];
-    final roles = ClubRoleUtils.normalizeRoles(_clubStatuten!);
-    final piscineRoles = <String>[];
-    if (roles.contains('encadrant')) {
-      piscineRoles.add('encadrant');
-    }
-    if (roles.contains('accueil')) piscineRoles.add('accueil');
-    if (roles.contains('gonflage')) piscineRoles.add('gonflage');
-    if (roles.contains('encadrant')) {
-      piscineRoles.add('theorie');
-    }
-    return piscineRoles;
-  }
+  // v2.2 (Phase C 2026-05-13): the Piscine + Finances tiles have moved out
+  // of the landing grid into the role-gated "Mes accès" section of Mon Profil.
+  // The landing now shows 5 universal tiles in a 3+2 layout. The _clubStatuten
+  // state is kept around because the avatar nudge + future onboarding banners
+  // still need it.
 
   Future<void> _checkForAppUpdate() async {
     if (!mounted) return;
@@ -342,17 +321,18 @@ class _LandingScreenState extends State<LandingScreen> {
 
               const Spacer(),
 
-              // Navigation buttons
+              // Navigation buttons — 5 tiles, 3+2 layout
+              // (v2.2 2026-05-13: Piscine + Finances moved to Mon Profil → Mes accès)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    // Row 1
+                    // Row 1 — Événements / Communication / Mon Carnet
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        _GlossyButton(
+                        ProfileTile.large(
                           title: 'Événements',
                           icon: Icons.event,
                           badgeCount: unreadProvider.eventMessages,
@@ -362,7 +342,7 @@ class _LandingScreenState extends State<LandingScreen> {
                                 builder: (_) => const OperationsListScreen()),
                           ),
                         ),
-                        _GlossyButton(
+                        ProfileTile.large(
                           title: 'Communication',
                           icon: Icons.campaign,
                           badgeCount: unreadProvider.announcements +
@@ -373,34 +353,25 @@ class _LandingScreenState extends State<LandingScreen> {
                                 builder: (_) => const CommunicationHubScreen()),
                           ),
                         ),
-                        if (_hasPiscineRole())
-                          _GlossyButton(
-                            title: 'Piscine',
-                            icon: Icons.pool,
-                            badgeCount: 0,
-                            onTap: () {
-                              final roles = _getPiscineRoles();
-                              if (roles.isNotEmpty) {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        AvailabilityScreen(userRoles: roles),
-                                  ),
-                                );
-                              }
-                            },
+                        ProfileTile.large(
+                          title: 'Mon carnet',
+                          icon: Icons.menu_book,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const MonCarnetScreen()),
                           ),
+                        ),
                       ],
                     ),
 
                     const SizedBox(height: 20),
 
-                    // Row 2
+                    // Row 2 — Who is Who / Mon Profil
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        _GlossyButton(
+                        ProfileTile.large(
                           title: 'Who is Who',
                           icon: Icons.people,
                           onTap: () => Navigator.push(
@@ -409,16 +380,7 @@ class _LandingScreenState extends State<LandingScreen> {
                                 builder: (_) => const WhoIsWhoScreen()),
                           ),
                         ),
-                        _GlossyButton(
-                          title: 'Finances',
-                          icon: Icons.account_balance_wallet,
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const FinancialScreen()),
-                          ),
-                        ),
-                        _GlossyButton(
+                        ProfileTile.large(
                           title: 'Mon Profil',
                           icon: Icons.person,
                           onTap: () => Navigator.push(
@@ -480,109 +442,5 @@ class _AvatarNudgeBullet extends StatelessWidget {
   }
 }
 
-/// Glossy button — now with frosted glass effect instead of PNG
-class _GlossyButton extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  final VoidCallback onTap;
-  final int badgeCount;
-
-  const _GlossyButton({
-    required this.title,
-    required this.icon,
-    required this.onTap,
-    this.badgeCount = 0,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 90,
-            height: 90,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: RadialGradient(
-                center: const Alignment(-0.3, -0.4),
-                colors: [
-                  Colors.white.withValues(alpha: 0.25),
-                  AppColors.middenblauw.withValues(alpha: 0.6),
-                  AppColors.donkerblauw.withValues(alpha: 0.8),
-                ],
-                stops: const [0.0, 0.5, 1.0],
-              ),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.2),
-                width: 1,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.donkerblauw.withValues(alpha: 0.4),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Stack(
-              clipBehavior: Clip.none,
-              alignment: Alignment.center,
-              children: [
-                Icon(icon, size: 40, color: Colors.white),
-                if (badgeCount > 0)
-                  Positioned(
-                    top: -2,
-                    right: -2,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.red,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.white, width: 2),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.3),
-                            blurRadius: 4,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      constraints:
-                          const BoxConstraints(minWidth: 22, minHeight: 22),
-                      child: Text(
-                        badgeCount > 99 ? '99+' : badgeCount.toString(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: Colors.white,
-              shadows: [
-                Shadow(
-                    offset: Offset(0, 1), blurRadius: 3, color: Colors.black45),
-              ],
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-}
+// _GlossyButton has been promoted to lib/widgets/profile_tile.dart as
+// ProfileTile.large — see Phase C (2026-05-13) refactor.
