@@ -81,6 +81,9 @@ dependencies:
   # QR Code Generation
   qr_flutter: ^4.1.0
 
+  # Screen brightness boost for fullscreen QR display (Phase C.7)
+  screen_brightness: ^2.1.2
+
   # QR/Barcode Scanner
   mobile_scanner: ^6.0.2
 

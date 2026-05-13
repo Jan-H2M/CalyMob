@@ -3,7 +3,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:intl/intl.dart';
 import '../models/member_profile.dart';
 import '../config/app_colors.dart';
-import 'full_screen_qr_dialog.dart';
+import '../screens/profile/fullscreen_qr_screen.dart';
 
 /// Widget qui affiche le QR code de l'utilisateur avec les statuts de validation
 class UserQRCard extends StatelessWidget {
@@ -79,19 +79,21 @@ class UserQRCard extends StatelessWidget {
 
             const SizedBox(height: 16),
 
-            // Bouton plein écran
+            // Bouton plein écran — opens dedicated screen with auto-brightness
             OutlinedButton.icon(
               onPressed: () {
-                showDialog(
-                  context: context,
-                  builder: (context) => FullScreenQRDialog(profile: profile),
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    fullscreenDialog: true,
+                    builder: (_) => FullscreenQrScreen(profile: profile),
+                  ),
                 );
               },
               icon: const Icon(Icons.fullscreen),
               label: const Text('Plein écran'),
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.middenblauw,
-                side: BorderSide(color: AppColors.middenblauw),
+                side: const BorderSide(color: AppColors.middenblauw),
               ),
             ),
           ],
