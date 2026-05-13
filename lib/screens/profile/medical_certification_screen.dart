@@ -116,43 +116,133 @@ class _MedicalCertificationScreenState extends State<MedicalCertificationScreen>
   }
 
   Widget _buildStatusCard() {
-    return Card(
-      color: Colors.white.withOpacity(0.95),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      elevation: 4,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            Icon(
-              Icons.medical_services_outlined,
-              size: 48,
-              color: AppColors.middenblauw,
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Statut du certificat',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: AppColors.donkerblauw,
-              ),
-            ),
-            const SizedBox(height: 16),
-            CertificationStatusBadge(certification: _certification),
-            if (_certification != null && _certification!.uploadedAt != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                'Téléchargé le ${_formatDate(_certification!.uploadedAt)}',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.grey[600],
-                ),
-              ),
-            ],
-          ],
-        ),
+    // C.5 polish — state-aware banner per _carnet_plan §3.1.10.
+    final cert = _certification;
+    final _BannerStyle style = _resolveBannerStyle(cert);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: style.bg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: style.borderColor, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: style.borderColor.withValues(alpha: 0.30),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        children: [
+          Icon(style.icon, size: 44, color: style.fg),
+          const SizedBox(height: 10),
+          Text(
+            style.heading,
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: style.fg,
+              letterSpacing: 0.4,
+            ),
+          ),
+          if (style.subheading != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              style.subheading!,
+              style: TextStyle(
+                fontSize: 14,
+                color: style.fg.withValues(alpha: 0.85),
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+          const SizedBox(height: 12),
+          CertificationStatusBadge(certification: cert),
+          if (cert != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Téléchargé le ${_formatDate(cert.uploadedAt)}',
+              style: TextStyle(
+                fontSize: 12.5,
+                color: style.fg.withValues(alpha: 0.75),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  _BannerStyle _resolveBannerStyle(MedicalCertification? cert) {
+    if (cert == null) {
+      return _BannerStyle(
+        heading: 'AUCUN CERTIFICAT',
+        subheading:
+            'Télécharge ton certificat pour pouvoir t\'inscrire aux sorties.',
+        icon: Icons.error_outline,
+        fg: const Color(0xFFB91C1C), // red-700
+        bg: const Color(0xFFFEE2E2), // red-100
+        borderColor: const Color(0xFFFCA5A5),
+      );
+    }
+    if (cert.status == CertificateStatus.pending) {
+      return _BannerStyle(
+        heading: 'EN ATTENTE',
+        subheading:
+            'Ton certificat est en cours d\'examen par l\'administration.',
+        icon: Icons.hourglass_top,
+        fg: const Color(0xFFB45309), // amber-700
+        bg: const Color(0xFFFEF3C7), // amber-100
+        borderColor: const Color(0xFFFCD34D),
+      );
+    }
+    if (cert.status == CertificateStatus.rejected) {
+      return _BannerStyle(
+        heading: 'REFUSÉ',
+        subheading: cert.rejectionReason != null && cert.rejectionReason!.isNotEmpty
+            ? 'Motif : ${cert.rejectionReason!}'
+            : 'Merci de téléverser un nouveau certificat.',
+        icon: Icons.cancel_outlined,
+        fg: const Color(0xFFB91C1C),
+        bg: const Color(0xFFFEE2E2),
+        borderColor: const Color(0xFFFCA5A5),
+      );
+    }
+    if (cert.isExpired) {
+      return _BannerStyle(
+        heading: 'EXPIRÉ',
+        subheading:
+            'Ton certificat n\'est plus valable — téléverse-en un nouveau pour réinscrire.',
+        icon: Icons.warning_amber_outlined,
+        fg: const Color(0xFFB91C1C),
+        bg: const Color(0xFFFEE2E2),
+        borderColor: const Color(0xFFFCA5A5),
+      );
+    }
+    if (cert.isExpiringSoon) {
+      final days = cert.daysUntilExpiry ?? 0;
+      return _BannerStyle(
+        heading: 'BIENTÔT EXPIRÉ',
+        subheading: days <= 1
+            ? 'Plus que quelques heures avant l\'expiration.'
+            : 'Encore $days jour${days > 1 ? 's' : ''} — pense à renouveler.',
+        icon: Icons.timelapse,
+        fg: const Color(0xFFC2410C), // orange-700
+        bg: const Color(0xFFFFEDD5), // orange-100
+        borderColor: const Color(0xFFFDBA74),
+      );
+    }
+    // Valide
+    final days = cert.daysUntilExpiry ?? 0;
+    return _BannerStyle(
+      heading: 'VALIDE',
+      subheading: days > 0 ? 'Encore $days jours.' : null,
+      icon: Icons.verified_outlined,
+      fg: const Color(0xFF15803D), // green-700
+      bg: const Color(0xFFDCFCE7), // green-100
+      borderColor: const Color(0xFF86EFAC),
     );
   }
 
@@ -497,4 +587,24 @@ class _MedicalCertificationScreenState extends State<MedicalCertificationScreen>
   String _formatDate(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
+}
+
+/// Visual style for the C.5 banner header — one struct per status
+/// (valide / bientôt expiré / expiré / en attente / refusé / aucun).
+class _BannerStyle {
+  final String heading;
+  final String? subheading;
+  final IconData icon;
+  final Color fg;
+  final Color bg;
+  final Color borderColor;
+
+  const _BannerStyle({
+    required this.heading,
+    required this.icon,
+    required this.fg,
+    required this.bg,
+    required this.borderColor,
+    this.subheading,
+  });
 }
