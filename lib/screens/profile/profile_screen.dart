@@ -1,30 +1,38 @@
-import 'dart:async';
-import 'dart:io';
+/// Phase C polish (2026-05-13) — Mon Profil hub.
+///
+/// Compact hub per `_carnet_plan.md` §3.1.10:
+///   - Compact header with avatar + name + niveau pill.
+///   - QR card on top (tap → fullscreen scan mode via existing dialog).
+///   - "Mes accès" section (role-gated): Piscine + Finances tiles.
+///   - "Mon compte" section: Identité / Certificat médical / Paramètres
+///     / Déconnexion tiles.
+///
+/// All the editable bits (photo / phone / consents) now live inside
+/// `identite_screen.dart` so this hub stays small (~250 lines vs the
+/// previous ~870-line monolith).
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:image_cropper/image_cropper.dart';
-import 'package:image_picker/image_picker.dart';
 import '../../config/app_colors.dart';
+import '../../models/medical_certification.dart';
+import '../../models/member_profile.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
-import '../../models/member_profile.dart';
-import '../../services/profile_service.dart';
+import '../../providers/unread_count_provider.dart';
 import '../../services/medical_certification_service.dart';
-import '../../services/camera_permission_service.dart';
-import '../../models/medical_certification.dart';
+import '../../services/profile_service.dart';
+import '../../utils/club_role_utils.dart';
 import '../../widgets/certification_status_badge.dart';
-import 'medical_certification_screen.dart';
-import '../../widgets/photo_consent_dialog.dart';
-import '../../widgets/user_qr_card.dart';
-// Conditional import for camera screen
-import 'face_camera_screen.dart' if (dart.library.html) 'face_camera_screen_stub.dart';
-import 'settings_screen.dart';
-import 'calendar_feed_screen.dart';
-import '../auth/login_screen.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import '../../widgets/user_qr_card.dart';
+import '../auth/login_screen.dart';
+import '../expenses/financial_screen.dart';
+import '../piscine/availability_screen.dart';
+import 'identite_screen.dart';
+import 'medical_certification_screen.dart';
+import 'settings_screen.dart';
 
-/// Écran du profil utilisateur
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
@@ -32,396 +40,82 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMixin {
-  final String _clubId = 'calypso';
+class _ProfileScreenState extends State<ProfileScreen> {
+  static const String _clubId = 'calypso';
   final ProfileService _profileService = ProfileService();
-  final MedicalCertificationService _certService = MedicalCertificationService();
+  final MedicalCertificationService _certService =
+      MedicalCertificationService();
 
-  bool _isLoading = false;
+  // ---------------- Role helpers (Mes accès gating) ----------------
 
-  @override
-  void initState() {
-    super.initState();
+  List<String> _piscineRoles(MemberProvider memberProvider) {
+    final roles = ClubRoleUtils.normalizeRoles(memberProvider.clubStatuten);
+    final out = <String>[];
+    if (roles.contains('encadrant')) out.add('encadrant');
+    if (roles.contains('accueil')) out.add('accueil');
+    if (roles.contains('gonflage')) out.add('gonflage');
+    if (roles.contains('encadrant')) out.add('theorie');
+    return out;
   }
 
-  @override
-  void dispose() {
-    super.dispose();
+  bool _hasPiscineRole(MemberProvider memberProvider) {
+    final roles = ClubRoleUtils.normalizeRoles(memberProvider.clubStatuten);
+    return roles.contains('encadrant') ||
+        roles.contains('accueil') ||
+        roles.contains('gonflage');
   }
 
-  Future<void> _addOrChangePhoto() async {
-    try {
-      // 1. Demander à l'utilisateur la source de la photo (caméra / galerie)
-      final source = await _pickPhotoSource();
-      if (source == null || !mounted) return;
-
-      // 2. Récupérer un fichier image en fonction de la source choisie
-      File? rawPhotoFile;
-      if (source == _PhotoSource.camera) {
-        // Vérifier/demander la permission caméra avant de lancer l'écran
-        // (sinon la caméra échoue silencieusement sur Android 13+ / Samsung OneUI)
-        final hasPermission =
-            await CameraPermissionService.handlePermissionWithDialog(context);
-        if (!hasPermission || !mounted) return;
-
-        rawPhotoFile = await Navigator.push<File>(
-          context,
-          MaterialPageRoute(
-            builder: (_) => const FaceCameraScreen(),
-            fullscreenDialog: true,
-          ),
-        );
-      } else {
-        // Galerie : image_picker gère lui-même les permissions photothèque
-        // (sur Android 13+ il utilise le Photo Picker système, sans permission).
-        final picker = ImagePicker();
-        final XFile? picked = await picker.pickImage(
-          source: ImageSource.gallery,
-          imageQuality: 90,
-          maxWidth: 2048,
-          maxHeight: 2048,
-        );
-        if (picked != null) {
-          rawPhotoFile = File(picked.path);
-        }
-      }
-
-      if (rawPhotoFile == null || !mounted) return;
-
-      // 3. Recadrage 1:1 (cercle de prévisualisation) — utile surtout pour
-      //    les photos importées depuis la galerie, mais aussi appliqué aux
-      //    selfies pour homogénéiser le rendu.
-      final photoFile = await _cropToProfileSquare(rawPhotoFile);
-      if (photoFile == null || !mounted) {
-        // Si l'utilisateur annule le recadrage, on nettoie le fichier source
-        // (notamment celui copié par FaceCameraScreen dans le tempDir).
-        try {
-          await rawPhotoFile.delete();
-        } catch (_) {/* best effort */}
-        return;
-      }
-
-      // 4. Obtenir le profil actuel pour vérifier si c'est la première photo
-      final userId = context.read<AuthProvider>().currentUser?.uid ?? '';
-      final currentProfile = await _profileService.getProfile(_clubId, userId);
-      final isFirstPhoto = currentProfile?.photoUrl == null;
-
-      // 5. Demander les consentements
-      if (mounted) {
-        final consentResult = await showDialog<PhotoConsentResult>(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => PhotoConsentDialog(
-            initialInternalConsent: currentProfile?.consentInternalPhoto ?? false,
-            initialExternalConsent: currentProfile?.consentExternalPhoto ?? false,
-            isFirstPhoto: isFirstPhoto,
-          ),
-        );
-
-        if (consentResult == null || !mounted) {
-          // Nettoyer les fichiers temporaires (source brute + recadrée)
-          try {
-            await rawPhotoFile.delete();
-          } catch (_) {/* best effort */}
-          try {
-            await photoFile.delete();
-          } catch (_) {/* best effort */}
-          return;
-        }
-
-        // 6. Uploader la photo
-        setState(() => _isLoading = true);
-
-        await _profileService.updateProfilePhoto(
-          _clubId,
-          userId,
-          photoFile,
-          consentInternalPhoto: consentResult.internalConsent,
-          consentExternalPhoto: consentResult.externalConsent,
-        );
-
-        // Nettoyer les fichiers temporaires (source brute + recadrée)
-        try {
-          await rawPhotoFile.delete();
-        } catch (_) {/* best effort */}
-        try {
-          await photoFile.delete();
-        } catch (_) {/* best effort */}
-
-        if (mounted) {
-          setState(() => _isLoading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ Photo de profil mise à jour'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Erreur: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  /// Affiche un bottom sheet pour choisir la source de la photo de profil :
-  /// caméra (selfie via FaceCameraScreen) ou photothèque de l'appareil.
-  /// Renvoie `null` si l'utilisateur annule.
-  Future<_PhotoSource?> _pickPhotoSource() {
-    return showModalBottomSheet<_PhotoSource>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 4, 20, 12),
-                child: Text(
-                  'Photo de profil',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              ListTile(
-                leading: const Icon(
-                  Icons.camera_alt_outlined,
-                  color: AppColors.primary,
-                ),
-                title: const Text('Prendre une photo'),
-                subtitle: const Text(
-                  'Utiliser la caméra avec guidage du visage',
-                ),
-                onTap: () =>
-                    Navigator.pop(sheetContext, _PhotoSource.camera),
-              ),
-              ListTile(
-                leading: const Icon(
-                  Icons.photo_library_outlined,
-                  color: AppColors.primary,
-                ),
-                title: const Text('Choisir depuis la galerie'),
-                subtitle: const Text(
-                  'Importer une photo existante de votre appareil',
-                ),
-                onTap: () =>
-                    Navigator.pop(sheetContext, _PhotoSource.gallery),
-              ),
-              const SizedBox(height: 4),
-              TextButton(
-                onPressed: () => Navigator.pop(sheetContext),
-                child: const Text('Annuler'),
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  /// Recadre l'image en 1:1 avec une prévisualisation circulaire,
-  /// ratio verrouillé (idéal pour une photo de profil).
-  /// Renvoie `null` si l'utilisateur annule.
-  Future<File?> _cropToProfileSquare(File source) async {
-    final cropped = await ImageCropper().cropImage(
-      sourcePath: source.path,
-      compressFormat: ImageCompressFormat.jpg,
-      compressQuality: 90,
-      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-      uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: 'Recadrer la photo',
-          toolbarColor: AppColors.primary,
-          toolbarWidgetColor: Colors.white,
-          activeControlsWidgetColor: AppColors.primary,
-          initAspectRatio: CropAspectRatioPreset.square,
-          lockAspectRatio: true,
-          hideBottomControls: false,
-          // Note: UCrop (Android) ne supporte pas un cadre circulaire ;
-          // l'aperçu reste carré mais l'avatar est rendu en cercle dans l'app.
-        ),
-        IOSUiSettings(
-          title: 'Recadrer la photo',
-          doneButtonTitle: 'Terminer',
-          cancelButtonTitle: 'Annuler',
-          aspectRatioLockEnabled: true,
-          resetAspectRatioEnabled: false,
-          rotateButtonsHidden: false,
-          cropStyle: CropStyle.circle,
-        ),
-      ],
-    );
-    if (cropped == null) return null;
-    return File(cropped.path);
-  }
-
-  Future<void> _editConsents(MemberProfile profile) async {
-    final result = await showDialog<PhotoConsentResult>(
-      context: context,
-      builder: (context) => EditConsentDialog(
-        currentInternalConsent: profile.consentInternalPhoto,
-        currentExternalConsent: profile.consentExternalPhoto,
-      ),
-    );
-
-    if (result != null && mounted) {
-      try {
-        setState(() => _isLoading = true);
-
-        final userId = context.read<AuthProvider>().currentUser?.uid ?? '';
-        await _profileService.updatePhotoConsents(
-          _clubId,
-          userId,
-          consentInternal: result.internalConsent,
-          consentExternal: result.externalConsent,
-        );
-
-        if (mounted) {
-          setState(() => _isLoading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ Consentements mis à jour'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          setState(() => _isLoading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('❌ Erreur: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    }
-  }
+  // ---------------- Logout ----------------
 
   Future<void> _handleLogout() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: const Text('Déconnexion'),
         content: const Text('Voulez-vous vous déconnecter ?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Annuler'),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Déconnecter', style: TextStyle(color: Colors.white)),
+            child: const Text('Déconnecter',
+                style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
-
-    if (confirmed == true && mounted) {
-      await context.read<AuthProvider>().logout();
-      context.read<MemberProvider>().clear();
-
-      if (mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
-          (route) => false,
-        );
-      }
+    if (confirmed != true || !mounted) return;
+    await context.read<AuthProvider>().logout();
+    if (!mounted) return;
+    context.read<MemberProvider>().clear();
+    context.read<UnreadCountProvider>().clear();
+    if (mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
     }
   }
 
-  Future<void> _editPhoneNumber(MemberProfile profile) async {
-    final controller = TextEditingController(text: profile.phoneNumber ?? '');
-
-    final result = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Numéro de téléphone'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            hintText: '+32 XXX XX XX XX',
-            prefixIcon: Icon(Icons.phone),
-            border: OutlineInputBorder(),
-          ),
-          keyboardType: TextInputType.phone,
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Annuler'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Enregistrer'),
-          ),
-        ],
-      ),
-    );
-
-    if (result != null && mounted) {
-      try {
-        setState(() => _isLoading = true);
-
-        final userId = context.read<AuthProvider>().currentUser?.uid ?? '';
-        await _profileService.updatePhoneNumber(
-          _clubId,
-          userId,
-          result.isEmpty ? null : result,
-        );
-
-        if (mounted) {
-          setState(() => _isLoading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ Numéro de téléphone mis à jour'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          setState(() => _isLoading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('❌ Erreur: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    }
-  }
+  // ---------------- Build ----------------
 
   @override
   Widget build(BuildContext context) {
     final userId = context.watch<AuthProvider>().currentUser?.uid ?? '';
+    final memberProvider = context.watch<MemberProvider>();
 
-    // Guard: don't render if user is not logged in (prevents Firestore empty path error)
     if (userId.isEmpty) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Mon Profil', style: TextStyle(color: Colors.white)),
+        title:
+            const Text('Mon Profil', style: TextStyle(color: Colors.white)),
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
@@ -433,387 +127,198 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
             stream: _profileService.watchProfile(_clubId, userId),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator(color: Colors.white));
-              }
-
-              if (!snapshot.hasData || snapshot.data == null) {
                 return const Center(
-                  child: Text('Erreur de chargement du profil', style: TextStyle(color: Colors.white)),
+                  child: CircularProgressIndicator(color: Colors.white),
                 );
               }
-
+              if (!snapshot.hasData || snapshot.data == null) {
+                return const Center(
+                  child: Text(
+                    'Erreur de chargement du profil',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                );
+              }
               final profile = snapshot.data!;
+              final showPiscine = _hasPiscineRole(memberProvider);
+              // Finances stays universally available — matches the old
+              // landing behaviour. If a stricter gate becomes needed we'll
+              // add it here.
+              final showFinances = true;
+              final showMesAcces = showPiscine || showFinances;
 
-              return Stack(
-                children: [
-                  SingleChildScrollView(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Photo de profil
-                        _buildPhotoSection(profile),
-
-                        const SizedBox(height: 24),
-
-                        // QR Code
-                        UserQRCard(profile: profile),
-
-                        const SizedBox(height: 24),
-
-                        // Informations personnelles
-                        _buildInfoSection(profile),
-
-                        const SizedBox(height: 24),
-
-                        // Consentements photo
-                        if (profile.hasPhoto) ...[
-                          _buildConsentSection(profile),
-                          const SizedBox(height: 24),
-                        ],
-
-                        // Actions
-                        _buildActionsSection(),
-                      ],
-                    ),
-                  ),
-
-                  // Loading overlay
-                  if (_isLoading)
-                    Container(
-                      color: Colors.black54,
-                      child: const Center(
-                        child: CircularProgressIndicator(color: Colors.white),
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPhotoSection(MemberProfile profile) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            // Photo
-            GestureDetector(
-              onTap: _addOrChangePhoto,
-              child: Stack(
-                children: [
-                  Container(
-                    width: 120,
-                    height: 120,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.grey.shade200,
-                      border: Border.all(
-                        color: AppColors.middenblauw,
-                        width: 3,
-                      ),
-                    ),
-                    child: ClipOval(
-                      child: profile.hasPhoto
-                          ? CachedNetworkImage(
-                              imageUrl: profile.photoUrl!,
-                              fit: BoxFit.cover,
-                              placeholder: (context, url) => const Center(
-                                child: CircularProgressIndicator(),
-                              ),
-                              errorWidget: (context, url, error) => Icon(
-                                Icons.person,
-                                size: 60,
-                                color: Colors.grey.shade400,
-                              ),
-                            )
-                          : Icon(
-                              Icons.person,
-                              size: 60,
-                              color: Colors.grey.shade400,
-                            ),
-                    ),
-                  ),
-                  // Badge caméra
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: const BoxDecoration(
-                        color: AppColors.middenblauw,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.camera_alt,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // Nom complet
-            Text(
-              profile.fullName,
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-              textAlign: TextAlign.center,
-            ),
-
-            if (profile.plongeurNiveau != null) ...[
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: _getNiveauColor(profile.plongeurCode),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Text(
-                  profile.plongeurNiveau!,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-
-            const SizedBox(height: 12),
-
-            // Bouton changer photo
-            TextButton.icon(
-              onPressed: _addOrChangePhoto,
-              icon: Icon(profile.hasPhoto ? Icons.edit : Icons.add_a_photo),
-              label: Text(profile.hasPhoto ? 'Changer la photo' : 'Ajouter une photo'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInfoSection(MemberProfile profile) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.info, color: Colors.grey.shade700),
-                const SizedBox(width: 12),
-                const Text(
-                  'Informations',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-
-            const Divider(height: 24),
-
-            // Email (lecture seule)
-            ListTile(
-              leading: const Icon(Icons.email, color: Colors.blue),
-              title: const Text('Email', style: TextStyle(fontSize: 12, color: Colors.grey)),
-              subtitle: Text(profile.email, style: const TextStyle(fontSize: 16)),
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-            ),
-
-            const SizedBox(height: 8),
-
-            // Nom (lecture seule)
-            ListTile(
-              leading: const Icon(Icons.person, color: Colors.green),
-              title: const Text('Nom complet', style: TextStyle(fontSize: 12, color: Colors.grey)),
-              subtitle: Text(profile.fullName, style: const TextStyle(fontSize: 16)),
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-            ),
-
-            const SizedBox(height: 8),
-
-            // Téléphone (éditable)
-            ListTile(
-              leading: const Icon(Icons.phone, color: Colors.purple),
-              title: const Text('Téléphone', style: TextStyle(fontSize: 12, color: Colors.grey)),
-              subtitle: Text(
-                profile.phoneNumber ?? 'Non renseigné',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontStyle: profile.phoneNumber == null ? FontStyle.italic : FontStyle.normal,
-                  color: profile.phoneNumber == null ? Colors.grey : null,
-                ),
-              ),
-              trailing: IconButton(
-                icon: const Icon(Icons.edit, size: 20),
-                onPressed: () => _editPhoneNumber(profile),
-                tooltip: 'Modifier le téléphone',
-              ),
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              onTap: () => _editPhoneNumber(profile),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildConsentSection(MemberProfile profile) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.privacy_tip, color: Colors.grey.shade700),
-                const SizedBox(width: 12),
-                const Text(
-                  'Consentements photo',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  onPressed: () => _editConsents(profile),
-                  icon: Icon(Icons.edit, size: 20, color: AppColors.middenblauw),
-                  tooltip: 'Modifier les consentements',
-                ),
-              ],
-            ),
-
-            const Divider(height: 24),
-
-            // Consentement interne
-            ListTile(
-              leading: Icon(
-                profile.consentInternalPhoto ? Icons.check_circle : Icons.cancel,
-                color: profile.consentInternalPhoto ? Colors.green : Colors.red,
-              ),
-              title: const Text('Usage interne'),
-              subtitle: const Text('Visible par les membres du club'),
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-            ),
-
-            const SizedBox(height: 8),
-
-            // Consentement externe
-            ListTile(
-              leading: Icon(
-                profile.consentExternalPhoto ? Icons.check_circle : Icons.cancel,
-                color: profile.consentExternalPhoto ? Colors.green : Colors.grey,
-              ),
-              title: const Text('Usage externe'),
-              subtitle: const Text('Réseaux sociaux, site web public'),
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActionsSection() {
-    final userId = context.watch<AuthProvider>().currentUser?.uid ?? '';
-
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Column(
-        children: [
-          // Certificat médical
-          StreamBuilder<MedicalCertification?>(
-            stream: _certService.watchCurrentCertification(_clubId, userId),
-            builder: (context, snapshot) {
-              final cert = snapshot.data;
-              return ListTile(
-                leading: const Icon(Icons.medical_services, color: AppColors.middenblauw),
-                title: const Text('Certificat médical'),
-                subtitle: Row(
+              return SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Flexible(
-                      child: CertificationStatusBadge(
-                        certification: cert,
-                        compact: true,
+                    _IdentityHeader(profile: profile),
+                    const SizedBox(height: 16),
+                    UserQRCard(profile: profile),
+                    if (showMesAcces) ...[
+                      const SizedBox(height: 24),
+                      _SectionHeader(label: 'Mes accès'),
+                      const SizedBox(height: 8),
+                      _whiteCard(
+                        child: Column(
+                          children: [
+                            if (showPiscine)
+                              _TileRow(
+                                icon: Icons.pool,
+                                title: 'Piscine',
+                                subtitle: 'Disponibilités & planning',
+                                onTap: () {
+                                  final roles = _piscineRoles(memberProvider);
+                                  if (roles.isEmpty) return;
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => AvailabilityScreen(
+                                        userRoles: roles,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            if (showPiscine && showFinances)
+                              _divider(),
+                            if (showFinances)
+                              _TileRow(
+                                icon: Icons.account_balance_wallet_outlined,
+                                title: 'Finances',
+                                subtitle: 'Note de frais & remboursements',
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const FinancialScreen(),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                    _SectionHeader(label: 'Mon compte'),
+                    const SizedBox(height: 8),
+                    _whiteCard(
+                      child: Column(
+                        children: [
+                          _TileRow(
+                            icon: Icons.person_outline,
+                            iconBg: Colors.green.shade50,
+                            iconColor: Colors.green.shade700,
+                            title: 'Identité',
+                            subtitle: 'Photo, téléphone, niveau LIFRAS',
+                            trailingPreview: _identityPreview(profile),
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const IdentiteScreen(),
+                              ),
+                            ),
+                          ),
+                          _divider(),
+                          StreamBuilder<MedicalCertification?>(
+                            stream: _certService
+                                .watchCurrentCertification(_clubId, userId),
+                            builder: (context, certSnap) {
+                              final cert = certSnap.data;
+                              return _TileRow(
+                                icon: Icons.medical_services_outlined,
+                                iconBg: Colors.red.shade50,
+                                iconColor: Colors.red.shade700,
+                                title: 'Certificat médical',
+                                subtitleWidget: CertificationStatusBadge(
+                                  certification: cert,
+                                  compact: true,
+                                ),
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => MedicalCertificationScreen(
+                                      userId: userId,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          _divider(),
+                          _TileRow(
+                            icon: Icons.settings_outlined,
+                            iconBg: Colors.blue.shade50,
+                            iconColor: AppColors.middenblauw,
+                            title: 'Paramètres',
+                            subtitle:
+                                'Notifications, agenda, vie privée',
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const SettingsScreen(),
+                              ),
+                            ),
+                          ),
+                          _divider(),
+                          _TileRow(
+                            icon: Icons.logout,
+                            iconBg: Colors.red.shade50,
+                            iconColor: Colors.red,
+                            title: 'Déconnexion',
+                            titleColor: Colors.red,
+                            onTap: _handleLogout,
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => MedicalCertificationScreen(userId: userId),
-                  ),
-                ),
               );
             },
           ),
-          const Divider(height: 1),
-          ListTile(
-            leading: Icon(Icons.calendar_month, color: Colors.teal.shade700),
-            title: const Text('Synchronisation calendrier'),
-            subtitle: const Text('Ajouter les événements à votre agenda'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const CalendarFeedScreen()),
-            ),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            leading: Icon(Icons.settings, color: AppColors.middenblauw),
-            title: const Text('Paramètres'),
-            subtitle: const Text('Notifications et vie privée'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-            ),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text('Déconnexion', style: TextStyle(color: Colors.red)),
-            trailing: const Icon(Icons.chevron_right, color: Colors.red),
-            onTap: _handleLogout,
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  Color _getNiveauColor(String? code) {
-    if (code == null) return Colors.grey;
+  Widget _whiteCard({required Widget child}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.donkerblauw.withValues(alpha: 0.18),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
 
+  Widget _divider() =>
+      Divider(height: 1, color: Colors.grey.shade200, indent: 60);
+
+  String? _identityPreview(MemberProfile profile) {
+    if (profile.phoneNumber != null && profile.phoneNumber!.isNotEmpty) {
+      return profile.phoneNumber;
+    }
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Compact identity header (avatar + name + niveau pill)
+// ---------------------------------------------------------------------------
+
+class _IdentityHeader extends StatelessWidget {
+  final MemberProfile profile;
+  const _IdentityHeader({required this.profile});
+
+  Color _niveauColor(String? code) {
+    if (code == null) return Colors.grey;
     switch (code.toUpperCase()) {
       case '1':
       case 'NB':
@@ -836,7 +341,217 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
         return Colors.grey;
     }
   }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white.withValues(alpha: 0.2),
+              border: Border.all(color: Colors.white, width: 2),
+            ),
+            child: ClipOval(
+              child: profile.hasPhoto
+                  ? CachedNetworkImage(
+                      imageUrl: profile.photoUrl!,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => const Center(
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      errorWidget: (_, __, ___) =>
+                          const Icon(Icons.person, color: Colors.white),
+                    )
+                  : const Icon(Icons.person, color: Colors.white, size: 32),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  profile.fullName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                if (profile.plongeurNiveau != null) ...[
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _niveauColor(profile.plongeurCode),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Text(
+                      profile.plongeurNiveau!,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-/// Source choisie par l'utilisateur pour la photo de profil.
-enum _PhotoSource { camera, gallery }
+// ---------------------------------------------------------------------------
+// Small atoms
+// ---------------------------------------------------------------------------
+
+class _SectionHeader extends StatelessWidget {
+  final String label;
+  const _SectionHeader({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Text(
+        label.toUpperCase(),
+        style: TextStyle(
+          color: Colors.white.withValues(alpha: 0.9),
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.4,
+          shadows: const [
+            Shadow(
+              color: Colors.black26,
+              offset: Offset(0, 1),
+              blurRadius: 2,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TileRow extends StatelessWidget {
+  final IconData icon;
+  final Color? iconBg;
+  final Color? iconColor;
+  final String title;
+  final Color? titleColor;
+  final String? subtitle;
+  final Widget? subtitleWidget;
+  final String? trailingPreview;
+  final VoidCallback onTap;
+
+  const _TileRow({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+    this.iconBg,
+    this.iconColor,
+    this.titleColor,
+    this.subtitle,
+    this.subtitleWidget,
+    this.trailingPreview,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: iconBg ?? AppColors.middenblauw.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  icon,
+                  color: iconColor ?? AppColors.middenblauw,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: titleColor ?? Colors.black87,
+                      ),
+                    ),
+                    if (subtitleWidget != null) ...[
+                      const SizedBox(height: 2),
+                      subtitleWidget!,
+                    ] else if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle!,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (trailingPreview != null) ...[
+                const SizedBox(width: 8),
+                Text(
+                  trailingPreview!,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+              ],
+              const SizedBox(width: 6),
+              Icon(
+                Icons.chevron_right,
+                color: Colors.grey.shade400,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
