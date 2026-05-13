@@ -19,6 +19,7 @@ import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import 'logbook_entry_detail_screen.dart';
 import 'logbook_entry_screen.dart';
 import 'stats_screen.dart';
 
@@ -243,6 +244,8 @@ class _LogbookEntryRow {
   final List<String> counters;
   final String? notes;
   final List<String> buddyNames;
+  /// Full raw map for the detail screen — keeps us from having to refetch.
+  final Map<String, dynamic> raw;
 
   const _LogbookEntryRow({
     required this.id,
@@ -255,6 +258,7 @@ class _LogbookEntryRow {
     required this.counters,
     this.notes,
     this.buddyNames = const [],
+    this.raw = const {},
   });
 
   factory _LogbookEntryRow.fromMap(String id, Map<String, dynamic> map) {
@@ -302,6 +306,7 @@ class _LogbookEntryRow {
       counters: counters,
       notes: map['notes'] as String?,
       buddyNames: buddies,
+      raw: map,
     );
   }
 }
@@ -335,15 +340,15 @@ class _EntryCard extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
-          onTap: () {
-            // Detail view will be wired up by Phase C.8 follow-up.
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Détail à venir.'),
-                duration: Duration(milliseconds: 1200),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => LogbookEntryDetailScreen(
+                entryId: entry.id,
+                data: entry.raw,
               ),
-            );
-          },
+            ),
+          ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
             child: Column(
