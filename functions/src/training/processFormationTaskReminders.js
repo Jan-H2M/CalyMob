@@ -32,6 +32,15 @@ const MIN_PUSH_PER_MEMBER_MS = HOURS(24); // per-member daily cap
 const ESCALATION_AGE_MS = DAYS(7);
 const ESCALATION_MIN_REMINDERS = 3;
 
+// Per v2.2 §8.4 : a pool_checkin task gets at most ONE reminder per pool
+// evening, irrespective of the global 24h per-task interval. This constant
+// is the single source of truth; the per-task dispatch logic below already
+// caps reminders via `reminder_count` and `MIN_REMINDER_INTERVAL_MS`. When
+// the dispatcher cleanup wave introduces per-type caps, key it off this
+// constant rather than hard-coding `1`.
+// eslint-disable-next-line no-unused-vars
+const POOL_CHECKIN_REMINDER_CAP_PER_SESSION = 1;
+
 const processFormationTaskReminders = onSchedule(
   {
     region: FUNCTION_REGION,

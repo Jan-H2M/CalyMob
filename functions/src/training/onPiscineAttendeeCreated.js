@@ -1,34 +1,43 @@
 /**
- * Cloud Function — Carnet de Formation phase 1
+ * Cloud Function — Carnet de Formation phase A (v2.2 amended)
  *
  * Trigger : `clubs/{clubId}/piscine_sessions/{sessionId}/attendees/{attendeeId}` onCreate
  *
  * Logic
- *   1. Filter on `member.formation_active`. If false → silent return.
- *      Free swimmers do not enter the Carnet de Formation system.
- *
- *   2. Auto-assign the target Formation group from the member's
+ *   1. Auto-assign the suggested target Formation group from the member's
  *      LIFRAS code (`plongeur_code`). A 1-star diver works toward 2-star,
- *      so they join "Formation 2★" — see computeTargetLevel().
+ *      so they join "Formation 2★" — see computeTargetLevel(). The student
+ *      can still pick a different group in the pool_checkin UI; this is
+ *      only a default.
  *
- *   3. Look up the level_course planning for this session and the target
- *      level. Read the `encadrants[]` list → these are the candidate
- *      validators the student will pick from during check-in.
+ *   2. Look up the level_course planning for this session and the target
+ *      level (informational — used only for the blocked-task fallback).
  *
- *   4. Create a `formation_tasks/{taskId}` document. Cloud Functions
- *      run via Admin SDK and bypass security rules.
+ *   3. Create a `formation_tasks/{taskId}` document of type `pool_checkin`.
+ *      Cloud Functions run via Admin SDK and bypass security rules.
  *
- *   5. Idempotency : skip if a pool_checkin task with the same
+ *   4. Idempotency : skip if a pool_checkin task with the same
  *      attendee_id already exists.
  *
- * Volumetric estimate
- *   Per Tuesday pool session at Watermael-Boitsfort :
- *     ~26 attendee writes → ~11 with formation_active=true
- *     → ~11 formation_tasks created
- *   The push dispatcher (processFormationTaskReminders) caps at
- *   1 push per member per day, so peak load is bounded.
+ * v2.2 changes (2026-05-13)
+ *   - The `member.formation_active` filter has been REMOVED. Every attendee
+ *     scan creates a pool_checkin task. The student picks one of three
+ *     outcomes in the check-in UI: training / service_only / nage_libre.
+ *     Only `training` triggers downstream logbook/observation creation
+ *     (see `onPoolSessionClosed`). This eliminates the silent drop for
+ *     "free swimmers" — they now see one inbox card per pool evening.
+ *   - `candidate_validator_ids` has been REMOVED from the task context.
+ *     Validators are derived from the chosen group at session-close time
+ *     (see `onPoolCheckinCompleted` and `onPoolSessionClosed`).
  *
- * Spec : `CARNET_DE_FORMATION_TECH.md` §8.1
+ * Volumetric estimate (post v2.2)
+ *   Per Tuesday pool session at Watermael-Boitsfort :
+ *     ~26 attendee writes → ~26 formation_tasks created
+ *   The push dispatcher (processFormationTaskReminders) caps at
+ *   1 push per member per day AND
+ *   POOL_CHECKIN_REMINDER_CAP_PER_SESSION = 1, so peak load is bounded.
+ *
+ * Spec : `CARNET_DE_FORMATION_TECH.md` §8.1 (v2.2 amended)
  */
 
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
@@ -183,11 +192,10 @@ const onPiscineAttendeeCreated = onDocumentCreated(
     }
     const member = memberSnap.data();
 
-    if (!member.formation_active) {
-      // Free swimmer — no task, no push, no admin work.
-      console.log(`[${FUNCTION_NAME}] skipped — formation_active=false for member ${memberId}`);
-      return;
-    }
+    // v2.2 (2026-05-13): the legacy `member.formation_active` filter was
+    // removed here. Every attendee scan now produces a pool_checkin task.
+    // The student picks the outcome (training / service_only / nage_libre)
+    // in the check-in UI; downstream side-effects only fire for `training`.
 
     // ---- 2. Idempotency check ----
     const existingTasks = await db
@@ -243,9 +251,10 @@ const onPiscineAttendeeCreated = onDocumentCreated(
       return;
     }
 
-    const candidateValidatorIds = levelCourse.encadrants
-      .map((e) => e.membre_id || e.membreId)
-      .filter(Boolean);
+    // v2.2: `candidate_validator_ids` is no longer stored on the task —
+    // the student doesn't pick a monitor at check-in time. Validators are
+    // derived from the chosen group at session-close (see onPoolCheckinCompleted
+    // and onPoolSessionClosed).
 
     // ---- 5. Create the formation_task ----
     const memberName = composeMemberName(member);
@@ -271,7 +280,6 @@ const onPiscineAttendeeCreated = onDocumentCreated(
         attendee_id: attendeeId,
         level_course_id: levelCourse.courseId,
         target_group_level: formationGroupDisplay,
-        candidate_validator_ids: candidateValidatorIds,
         location_id: session.lieu_id || session.location_id || null,
       },
       available_actions: [
