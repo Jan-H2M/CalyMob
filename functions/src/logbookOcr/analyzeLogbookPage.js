@@ -131,8 +131,38 @@ function logbookSchema() {
   };
 }
 
-function buildPrompt({ defaultYear, localeHints }) {
-  return [
+/**
+ * French marine fauna / event vocabulary that Calypso members commonly write
+ * in their `notes` field. When the OCR is unsure about a smudged word, the
+ * model should prefer one of these over a literal garbled read. List kept
+ * conservative — only well-attested Mediterranean / North-Sea names.
+ */
+const MARINE_FAUNA_HINTS = [
+  // Cephalopods / molluscs
+  'poulpe', 'pieuvre', 'seiche', 'calamar', 'nudibranche', 'doris',
+  'flabelline', 'aplysie',
+  // Fish
+  'rascasse', 'mérou', 'dorade', 'sar', 'sargue', 'serran', 'girelle',
+  'labre', 'congre', 'murène', 'barracuda', 'bonite', 'thon', 'maquereau',
+  'cabillaud', 'morue', 'lieu', 'turbot', 'bar', 'loup', 'sole', 'plie',
+  'baudroie', 'lotte', 'vive', 'rouget',
+  // Sharks / rays
+  'raie', 'roussette', 'requin', 'pèlerin', 'aiguillat',
+  // Crustaceans
+  'homard', 'langouste', 'tourteau', 'araignée', 'crabe', 'galathée',
+  'crevette', 'bernard-l’ermite', 'bernard l’ermite',
+  // Echinoderms / other
+  'étoile de mer', 'oursin', 'anémone', 'gorgone', 'corail', 'éponge',
+  'ascidie', 'salpe', 'méduse',
+  // Mammals
+  'dauphin', 'phoque',
+  // Events / observations (not fauna but often misread)
+  'épave', 'wreck', 'tombant', 'sec', 'cavité', 'grotte', 'tunnel',
+  'nuit', 'nocturne', 'baptême', 'examen',
+];
+
+function buildPrompt({ defaultYear, localeHints, locationNames }) {
+  const lines = [
     'Tu analyses une photo d’un carnet papier de plongée manuscrit.',
     'Extrais chaque ligne de plongée visible et retourne uniquement du JSON.',
     'Mappe tous les formats vers le modèle CalyMob standard.',
@@ -145,7 +175,22 @@ function buildPrompt({ defaultYear, localeHints }) {
     'Les dates normalisées doivent être yyyy-mm-dd quand possible; dateRaw conserve l’écriture originale.',
     'Les heures doivent être HH:mm quand possible.',
     'Pays: utilise un code ISO court si très probable (BE, FR, NL, HR, EG, ES, PT, MT).',
-  ].join('\n');
+    '',
+    'INDICES DE VOCABULAIRE (à privilégier si une lecture est ambiguë) :',
+    `- Faune / événements fréquents en notes : ${MARINE_FAUNA_HINTS.join(', ')}.`,
+  ];
+  if (Array.isArray(locationNames) && locationNames.length > 0) {
+    // Cap to a reasonable size to keep the prompt cheap; the dive_locations
+    // collection rarely exceeds ~50 entries per club anyway.
+    const sample = locationNames.slice(0, 80);
+    lines.push(
+      `- Lieux de plongée connus du club : ${sample.join(', ')}.`
+    );
+  }
+  lines.push(
+    'Si un mot écrit ressemble fortement à un terme de la liste ci-dessus, choisis ce terme pour la sortie. Sinon, conserve la lecture brute et marque needsReview=true.'
+  );
+  return lines.join('\n');
 }
 
 function extractOutputText(responseJson) {
@@ -187,6 +232,31 @@ async function getOpenAiKey(clubId) {
   return process.env.OPENAI_API_KEY || process.env.LOGBOOK_OCR_OPENAI_API_KEY || null;
 }
 
+/**
+ * Loads dive_location names for the club so they can be injected as
+ * vocabulary hints into the prompt. Bounded list (typically 30-50 entries)
+ * — keeps the prompt cheap while letting the model prefer canonical names
+ * over garbled handwritten reads.
+ */
+async function getClubLocationNames(clubId) {
+  try {
+    const snap = await admin
+      .firestore()
+      .collection('clubs').doc(clubId)
+      .collection('dive_locations').limit(200).get();
+    const names = [];
+    for (const d of snap.docs) {
+      const v = d.data() || {};
+      const n = (v.name || v.nom || '').trim();
+      if (n) names.push(n);
+    }
+    return names;
+  } catch (err) {
+    console.warn('[analyzeLogbookPage] dive_locations lookup failed:', err.message);
+    return [];
+  }
+}
+
 async function callOpenAiVision({ clubId, imageBuffer, mimeType, defaultYear, localeHints }) {
   const apiKey = await getOpenAiKey(clubId);
   if (!apiKey) {
@@ -196,6 +266,8 @@ async function callOpenAiVision({ clubId, imageBuffer, mimeType, defaultYear, lo
     );
   }
 
+  const locationNames = await getClubLocationNames(clubId);
+
   const dataUrl = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
   const body = {
     model: DEFAULT_MODEL,
@@ -203,7 +275,7 @@ async function callOpenAiVision({ clubId, imageBuffer, mimeType, defaultYear, lo
       {
         role: 'user',
         content: [
-          { type: 'input_text', text: buildPrompt({ defaultYear, localeHints }) },
+          { type: 'input_text', text: buildPrompt({ defaultYear, localeHints, locationNames }) },
           { type: 'input_image', image_url: dataUrl, detail: 'high' },
         ],
       },

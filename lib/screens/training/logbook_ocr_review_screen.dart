@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -30,10 +31,52 @@ class _LogbookOcrReviewScreenState extends State<LogbookOcrReviewScreen> {
   late List<LogbookOcrSuggestedRow> _rows;
   bool _importing = false;
 
+  /// Suggestion catalogs loaded once on screen-init so the review cards
+  /// don't have to re-query Firestore per row. Both fall back to empty
+  /// lists if the user is offline or the collections are empty.
+  List<String> _locationSuggestions = const [];
+  List<String> _buddySuggestions = const [];
+
   @override
   void initState() {
     super.initState();
     _rows = [...widget.draft.rows];
+    _loadSuggestions();
+  }
+
+  Future<void> _loadSuggestions() async {
+    final db = FirebaseFirestore.instance;
+    final clubId = FirebaseConfig.defaultClubId;
+    try {
+      final locSnap = await db
+          .collection('clubs').doc(clubId)
+          .collection('dive_locations').limit(300).get();
+      final locs = <String>{};
+      for (final d in locSnap.docs) {
+        final v = d.data();
+        final n = (v['name'] ?? v['nom'] ?? '').toString().trim();
+        if (n.isNotEmpty) locs.add(n);
+      }
+      final memSnap = await db
+          .collection('clubs').doc(clubId)
+          .collection('members').limit(500).get();
+      final members = <String>{};
+      for (final d in memSnap.docs) {
+        final v = d.data();
+        final p = (v['prenom'] ?? '').toString().trim();
+        final n = (v['nom'] ?? '').toString().trim();
+        final display = '$p $n'.trim();
+        if (display.isNotEmpty) members.add(display);
+      }
+      if (!mounted) return;
+      setState(() {
+        _locationSuggestions = (locs.toList()..sort());
+        _buddySuggestions = (members.toList()..sort());
+      });
+    } catch (e) {
+      // Best-effort — typeahead just won't suggest anything.
+      debugPrint('[OcrReview] suggestion lookup failed: $e');
+    }
   }
 
   Future<void> _importSelected() async {
@@ -103,6 +146,8 @@ class _LogbookOcrReviewScreenState extends State<LogbookOcrReviewScreen> {
                   itemBuilder: (_, i) => _ReviewCard(
                     row: _rows[i],
                     onChanged: (next) => _replaceRow(i, next),
+                    locationSuggestions: _locationSuggestions,
+                    buddySuggestions: _buddySuggestions,
                   ),
                 ),
               ),
@@ -268,10 +313,14 @@ class _LogbookOcrReviewScreenState extends State<LogbookOcrReviewScreen> {
 class _ReviewCard extends StatefulWidget {
   final LogbookOcrSuggestedRow row;
   final ValueChanged<LogbookOcrSuggestedRow> onChanged;
+  final List<String> locationSuggestions;
+  final List<String> buddySuggestions;
 
   const _ReviewCard({
     required this.row,
     required this.onChanged,
+    this.locationSuggestions = const [],
+    this.buddySuggestions = const [],
   });
 
   @override
@@ -439,7 +488,13 @@ class _ReviewCardState extends State<_ReviewCard> {
         children: [
           if (row.warnings.isNotEmpty) _warning(row.warnings.join(' · ')),
           _field('Date', _date, hint: 'JJ/MM/AAAA'),
-          _field('Lieu', _location, warning: row.locationName.needsReview),
+          _autocompleteField(
+            label: 'Lieu',
+            controller: _location,
+            suggestions: widget.locationSuggestions,
+            warning: row.locationName.needsReview,
+            hint: 'Tape pour rechercher dans le catalogue',
+          ),
           Row(
             children: [
               Expanded(
@@ -451,7 +506,7 @@ class _ReviewCardState extends State<_ReviewCard> {
               ),
             ],
           ),
-          _field('Binômes', _buddies, hint: 'Nom; Nom'),
+          _buddyAutocompleteField(),
           _field('Notes', _notes, maxLines: 2),
           const SizedBox(height: 4),
           Align(
@@ -493,6 +548,174 @@ class _ReviewCardState extends State<_ReviewCard> {
           ),
           isDense: true,
         ),
+      ),
+    );
+  }
+
+  /// Single-value autocomplete (used for "Lieu"). Filters case-insensitive
+  /// substring match against the suggestion list. Falls back to plain text
+  /// entry when the catalog is empty / user types something off-list.
+  Widget _autocompleteField({
+    required String label,
+    required TextEditingController controller,
+    required List<String> suggestions,
+    String? hint,
+    bool warning = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: RawAutocomplete<String>(
+        textEditingController: controller,
+        focusNode: FocusNode(),
+        optionsBuilder: (textEditingValue) {
+          final q = textEditingValue.text.trim().toLowerCase();
+          if (q.isEmpty) return const Iterable<String>.empty();
+          return suggestions
+              .where((s) => s.toLowerCase().contains(q))
+              .take(8);
+        },
+        fieldViewBuilder: (context, ctrl, focus, onSubmit) {
+          return TextField(
+            controller: ctrl,
+            focusNode: focus,
+            onChanged: (_) => _emit(),
+            onSubmitted: (_) {
+              onSubmit();
+              _emit();
+            },
+            decoration: InputDecoration(
+              labelText: label,
+              hintText: hint,
+              filled: true,
+              fillColor: warning ? Colors.orange.shade50 : Colors.grey.shade50,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              isDense: true,
+              suffixIcon: suggestions.isEmpty
+                  ? null
+                  : Icon(Icons.search,
+                      size: 18, color: Colors.grey.shade500),
+            ),
+          );
+        },
+        optionsViewBuilder: (context, onSelected, options) {
+          return Align(
+            alignment: Alignment.topLeft,
+            child: Material(
+              elevation: 4,
+              borderRadius: BorderRadius.circular(10),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 240, maxWidth: 360),
+                child: ListView.builder(
+                  padding: EdgeInsets.zero,
+                  shrinkWrap: true,
+                  itemCount: options.length,
+                  itemBuilder: (_, i) {
+                    final opt = options.elementAt(i);
+                    return ListTile(
+                      dense: true,
+                      title: Text(opt, style: const TextStyle(fontSize: 13.5)),
+                      onTap: () {
+                        onSelected(opt);
+                        _emit();
+                      },
+                    );
+                  },
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// Multi-value autocomplete for the "Binômes" field. Values are separated
+  /// by `;` — typing suggests against the LAST segment and tapping a
+  /// suggestion replaces just that segment + appends a `; ` so the user
+  /// can chain.
+  Widget _buddyAutocompleteField() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: RawAutocomplete<String>(
+        textEditingController: _buddies,
+        focusNode: FocusNode(),
+        optionsBuilder: (textEditingValue) {
+          final text = textEditingValue.text;
+          final lastSep = text.lastIndexOf(RegExp(r'[;,]'));
+          final fragment = (lastSep == -1
+                  ? text
+                  : text.substring(lastSep + 1))
+              .trim()
+              .toLowerCase();
+          if (fragment.isEmpty) return const Iterable<String>.empty();
+          return widget.buddySuggestions
+              .where((s) => s.toLowerCase().contains(fragment))
+              .take(8);
+        },
+        onSelected: (selection) {
+          final text = _buddies.text;
+          final lastSep = text.lastIndexOf(RegExp(r'[;,]'));
+          final prefix = lastSep == -1 ? '' : '${text.substring(0, lastSep + 1)} ';
+          final next = '$prefix$selection; ';
+          _buddies.value = TextEditingValue(
+            text: next,
+            selection: TextSelection.collapsed(offset: next.length),
+          );
+          _emit();
+        },
+        fieldViewBuilder: (context, ctrl, focus, onSubmit) {
+          return TextField(
+            controller: ctrl,
+            focusNode: focus,
+            onChanged: (_) => _emit(),
+            onSubmitted: (_) {
+              onSubmit();
+              _emit();
+            },
+            decoration: InputDecoration(
+              labelText: 'Binômes',
+              hintText: 'Tape un nom; un autre…',
+              filled: true,
+              fillColor: Colors.grey.shade50,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              isDense: true,
+              suffixIcon: widget.buddySuggestions.isEmpty
+                  ? null
+                  : Icon(Icons.group_outlined,
+                      size: 18, color: Colors.grey.shade500),
+            ),
+          );
+        },
+        optionsViewBuilder: (context, onSelected, options) {
+          return Align(
+            alignment: Alignment.topLeft,
+            child: Material(
+              elevation: 4,
+              borderRadius: BorderRadius.circular(10),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 240, maxWidth: 360),
+                child: ListView.builder(
+                  padding: EdgeInsets.zero,
+                  shrinkWrap: true,
+                  itemCount: options.length,
+                  itemBuilder: (_, i) {
+                    final opt = options.elementAt(i);
+                    return ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.person_outline, size: 16),
+                      title: Text(opt, style: const TextStyle(fontSize: 13.5)),
+                      onTap: () => onSelected(opt),
+                    );
+                  },
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
