@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../models/formation_task.dart';
@@ -273,15 +274,64 @@ class _ActionCalypsoCard extends StatelessWidget {
           builder: (_) => LogbookEntryScreen.auto(task: task),
         ));
         break;
-      // Other task types are wired in later phases:
-      //   FormationTaskType.exerciseClaim → standalone ExerciseClaimScreen
-      //   FormationTaskType.externalProofReview → ExternalProofCaptureScreen (phase 5)
+      // Types that don't have a dedicated mobile screen yet — open the
+      // already-shipped web equivalent on caly.club. The student is already
+      // signed in via the same Firebase Auth account, so the deep link lands
+      // them directly on the form. Better UX than "bientôt disponible".
+      case FormationTaskType.monitorObservation:
+        _openOnWeb(context, task, 'observation');
+        break;
+      case FormationTaskType.externalProofReview:
+        _openOnWeb(context, task, 'external-proof-review');
+        break;
+      case FormationTaskType.exerciseClaim:
+        _openOnWeb(context, task, 'claim');
+        break;
+      case FormationTaskType.buddyConfirmation:
+        _openOnWeb(context, task, 'buddy-confirm');
+        break;
+      case FormationTaskType.eventPreparation:
+        _openOnWeb(context, task, 'event-prep');
+        break;
+      case FormationTaskType.manualReminder:
+        _openOnWeb(context, task, 'reminder');
+        break;
+      // Truly unknown future types stay friendly.
+      // ignore: unreachable_switch_default
       default:
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Action « ${task.typeLabel} » — bientôt disponible'),
           ),
         );
+    }
+  }
+
+  /// Open the web equivalent of a formation task on caly.club. Used for
+  /// task types that don't have a dedicated mobile screen yet. The path
+  /// segment matches the route slug declared in `CalyCompta/src/me/index.tsx`.
+  static Future<void> _openOnWeb(
+    BuildContext context,
+    FormationTask task,
+    String slug,
+  ) async {
+    final uri = Uri.parse('https://caly.club/me/inbox/${task.id}/$slug');
+    try {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Ouvre cette action sur caly.club — l\'écran mobile arrive bientôt.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Impossible d\'ouvrir caly.club ($e).')),
+      );
     }
   }
 }
