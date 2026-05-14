@@ -42,33 +42,60 @@ class _StatsScreenState extends State<StatsScreen> {
     try {
       const clubId = FirebaseConfig.defaultClubId;
       final userId = context.read<AuthProvider>().currentUser?.uid;
-      if (userId == null) return;
+      if (userId == null) {
+        setState(() {
+          _entries = [];
+          _loading = false;
+        });
+        return;
+      }
 
-      Query<Map<String, dynamic>> q = FirebaseFirestore.instance
+      // Always fetch the full member-scoped collection — year filtering is
+      // applied client-side in `_computeStats`. The combo (member_id ==,
+      // date range) used to be applied here directly, but it silently
+      // returned zero entries when the underlying composite index wasn't
+      // a perfect match for the implicit `orderBy date ASC` that Firestore
+      // injects for range filters. Symptom Jan reported 2026-05-14: "totaal
+      // aantal duiken totaal en per jaar is hetzelfde". Solution: a single
+      // index-friendly query per member (typical member <1000 entries), and
+      // year filtering in memory.
+      final q = FirebaseFirestore.instance
           .collection('clubs')
           .doc(clubId)
           .collection('student_logbook_entries')
           .where('member_id', isEqualTo: userId);
 
-      if (_year != null) {
-        q = q
-            .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(DateTime(_year!, 1, 1)))
-            .where('date', isLessThan: Timestamp.fromDate(DateTime(_year! + 1, 1, 1)));
-      }
-
       final snap = await q.get();
+      if (!mounted) return;
       setState(() {
         _entries = snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
         _loading = false;
       });
-    } catch (_) {
-      setState(() => _loading = false);
+    } catch (err, st) {
+      // Never silently swallow — Jan needs to see this if Firestore rules or
+      // an index ever break the query.
+      debugPrint('[stats_screen] load failed: $err\n$st');
+      if (!mounted) return;
+      setState(() {
+        _entries = [];
+        _loading = false;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final stats = _computeStats(_entries);
+    // Client-side year filter — kept in build() so year-pill toggles are
+    // instantaneous (no second Firestore round trip).
+    final filtered = _year == null
+        ? _entries
+        : _entries.where((e) {
+            final ts = e['date'];
+            if (ts is! Timestamp) return false;
+            final y = ts.toDate().year;
+            return y == _year;
+          }).toList();
+    final stats = _computeStats(filtered);
 
     return Scaffold(
       body: OceanGradientBackground(
@@ -130,8 +157,26 @@ class _StatsScreenState extends State<StatsScreen> {
     );
   }
 
+  /// Years present in `_entries`, sorted newest-first, plus a final `null`
+  /// representing "Tout". When the carnet is empty (or still loading) we
+  /// surface the current year as a stable default.
+  List<int?> _availableYears() {
+    final years = <int>{};
+    for (final e in _entries) {
+      final ts = e['date'];
+      if (ts is Timestamp) years.add(ts.toDate().year);
+    }
+    final sorted = years.toList()..sort((a, b) => b.compareTo(a));
+    if (sorted.isEmpty) sorted.add(DateTime.now().year);
+    return <int?>[...sorted, null];
+  }
+
   Widget _yearPills() {
-    final years = <int?>[DateTime.now().year, DateTime.now().year - 1, DateTime.now().year - 2, null];
+    // Derive the visible year set from the actual data — historical divers
+    // typically span 10+ years and the hard-coded "last 3" list was hiding
+    // most of their carnet. Fall back to the current year when empty so the
+    // pills never collapse to a single "Tout".
+    final years = _availableYears();
     return Wrap(
       spacing: 6,
       children: years.map((y) {
@@ -140,8 +185,8 @@ class _StatsScreenState extends State<StatsScreen> {
           label: Text(y == null ? 'Tout' : '$y'),
           selected: isOn,
           onSelected: (_) {
+            // Year filter applied client-side now — no need to re-query.
             setState(() => _year = y);
-            _load();
           },
           labelStyle: TextStyle(
             color: isOn ? Colors.white : AppColors.donkerblauw,
@@ -633,12 +678,26 @@ _Stats _computeStats(List<Map<String, dynamic>> entries) {
     if (c['sf'] == true) sf += 1;
     if (c['exo'] == true) exo += 1;
 
+    // Bucket Top Lieux by location_id when present, otherwise by a normalised
+    // location_name. This is critical for Excel-imported and OCR-imported
+    // entries, which rarely carry a `location_id` (no picker involved). Without
+    // this fallback, hundreds of historical entries silently disappear from
+    // the Top Lieux ranking.
     final locId = e['location_id'] as String?;
-    final locName = e['location_name'] as String? ?? locId ?? '—';
-    if (locId != null) {
-      final existing = locationCounts[locId];
+    final rawName = (e['location_name'] as String?)?.trim();
+    if ((locId != null && locId.isNotEmpty) ||
+        (rawName != null && rawName.isNotEmpty)) {
+      final key = (locId != null && locId.isNotEmpty)
+          ? 'id:$locId'
+          : 'name:${rawName!.toLowerCase()}';
+      final displayName = rawName ?? locId ?? '—';
+      final existing = locationCounts[key];
       if (existing == null) {
-        locationCounts[locId] = {'id': locId, 'name': locName, 'count': 1};
+        locationCounts[key] = {
+          'id': locId ?? '',
+          'name': displayName,
+          'count': 1,
+        };
       } else {
         existing['count'] = (existing['count'] as int) + 1;
       }

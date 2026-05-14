@@ -225,7 +225,9 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
                 Text(
                   _isPool
                       ? 'Piscine du $dateLabel'
-                      : 'Plongée du $dateLabel',
+                      : (data['dive_number'] is num
+                          ? 'Plongée N°${(data['dive_number'] as num).toInt()} du $dateLabel'
+                          : 'Plongée du $dateLabel'),
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 20,

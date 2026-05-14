@@ -94,8 +94,31 @@ class LogbookOcrImportService {
       deco: _boolField(fields['deco']),
       night: _boolField(fields['night']),
       sea: _boolField(fields['sea']),
+      exo: _boolField(fields['exo']),
+      nitrox: _boolField(fields['nitrox']),
+      dp: _boolField(fields['dp']),
+      sf: _boolField(fields['sf']),
       buddies: _stringListField(fields['buddies']),
       notes: _stringField(fields['notes']),
+      combi: _mapField(fields['combi']),
+      tank: _mapField(fields['tank']),
+      lestageKg: _doubleField(fields['lestageKg']),
+    );
+  }
+
+  LogbookOcrField<Map<String, dynamic>> _mapField(dynamic raw) {
+    final map = Map<String, dynamic>.from((raw as Map?) ?? {});
+    final value = map['value'];
+    Map<String, dynamic>? parsed;
+    if (value is Map) {
+      parsed = Map<String, dynamic>.from(value);
+      if (parsed.isEmpty) parsed = null;
+    }
+    return LogbookOcrField<Map<String, dynamic>>(
+      value: parsed,
+      confidence: _double(map['confidence']) ?? 0,
+      raw: map['raw'] as String?,
+      needsReview: map['needsReview'] == true,
     );
   }
 
@@ -326,7 +349,11 @@ class LogbookOcrImportService {
         depthMaxMeters: row.depthMaxMeters.value,
         durationMinutes: row.durationMinutes.value,
         counters: LogbookCounters(
+          exo: row.exo.value == true ? true : null,
+          nitrox: row.nitrox.value == true ? true : null,
           deco: row.deco.value == true ? true : null,
+          dp: row.dp.value == true ? true : null,
+          sf: row.sf.value == true ? true : null,
           nuit: row.night.value == true ? true : null,
           mer: row.sea.value == true ? true : null,
         ),
@@ -336,6 +363,18 @@ class LogbookOcrImportService {
             .toList(),
         notes: _notesFor(row),
       );
+
+      // Equipment & buddies — written into the doc's `extras` so they match
+      // the schema the manual entry form uses (combi map, tank map, lestage_kg
+      // number, binomes[] with type tags). Keeps the OCR rows interoperable
+      // with the rest of the carnet (detail view + edit form expect this shape).
+      final combiMap = row.combi.value;
+      final tankMap = row.tank.value;
+      final lestage = row.lestageKg.value;
+      final binomesSnapshot = (row.buddies.value ?? const [])
+          .where((name) => name.trim().isNotEmpty)
+          .map((name) => {'type': 'external', 'displayName': name.trim()})
+          .toList();
 
       final id = await _logbookService.create(
         clubId: clubId,
@@ -349,6 +388,18 @@ class LogbookOcrImportService {
           if (row.exitTime.value != null) 'exit_time_str': row.exitTime.value,
           if (row.entryTime.value != null)
             'entry_time_str': row.entryTime.value,
+          // Preserve the dive number the diver wrote on the paper page.
+          // `assignDiveNumber` CF respects an existing value, so we keep the
+          // historical numbering intact instead of overwriting with the next
+          // counter value.
+          if (row.diveNumber.value != null) 'dive_number': row.diveNumber.value,
+          if (combiMap != null && combiMap.isNotEmpty) ...{
+            'combi': combiMap,
+            if (combiMap['type'] is String) 'combi_type': combiMap['type'],
+          },
+          if (tankMap != null && tankMap.isNotEmpty) 'tank': tankMap,
+          if (lestage != null && lestage > 0) 'lestage_kg': lestage,
+          if (binomesSnapshot.isNotEmpty) 'binomes': binomesSnapshot,
         },
       );
       ids.add(id);
@@ -365,4 +416,69 @@ class LogbookOcrImportService {
     }
     return parts.isEmpty ? null : parts.join('\n');
   }
+
+  /// For every suggested row, look up an existing logbook entry with the same
+  /// member + date (calendar day) + a location name close enough to be a
+  /// duplicate. Returns a map rowId → existing entry summary. Used by the
+  /// review screen to mark rows that the user has likely already imported,
+  /// either via Excel or a previous OCR pass.
+  Future<Map<String, ExistingLogbookMatch>> detectDuplicates({
+    required String clubId,
+    required String memberId,
+    required List<LogbookOcrSuggestedRow> rows,
+  }) async {
+    final dates = <DateTime>{
+      for (final r in rows)
+        if (r.date.value != null)
+          DateTime(r.date.value!.year, r.date.value!.month, r.date.value!.day),
+    };
+    if (dates.isEmpty) return const {};
+    // Pull all entries for this member once; we'll filter client-side.
+    // Member carnets typically stay under ~500 entries — totally fine.
+    final snap = await FirebaseFirestore.instance
+        .collection('clubs').doc(clubId)
+        .collection('student_logbook_entries')
+        .where('member_id', isEqualTo: memberId)
+        .get();
+    final existing = <String, ExistingLogbookMatch>{};
+    for (final r in rows) {
+      final d = r.date.value;
+      final loc = r.locationName.value?.trim().toLowerCase();
+      if (d == null) continue;
+      final day = DateTime(d.year, d.month, d.day);
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final ts = data['date'];
+        if (ts is! Timestamp) continue;
+        final dd = ts.toDate();
+        final docDay = DateTime(dd.year, dd.month, dd.day);
+        if (docDay != day) continue;
+        // Location must match loosely (substring either way) to flag as dup.
+        final docLoc =
+            (data['location_name'] as String? ?? '').trim().toLowerCase();
+        final locMatches = loc == null || loc.isEmpty || docLoc.isEmpty
+            ? true
+            : (docLoc.contains(loc) || loc.contains(docLoc));
+        if (!locMatches) continue;
+        final n = data['dive_number'] ?? data['diveNumber'];
+        final label = n is num
+            ? 'Plongée #$n du ${_fmtDate(dd)}'
+            : 'Plongée du ${_fmtDate(dd)}';
+        existing[r.rowId] =
+            ExistingLogbookMatch(entryId: doc.id, label: label);
+        break;
+      }
+    }
+    return existing;
+  }
+
+  String _fmtDate(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/'
+      '${d.month.toString().padLeft(2, '0')}/${d.year}';
+}
+
+class ExistingLogbookMatch {
+  final String entryId;
+  final String label;
+  const ExistingLogbookMatch({required this.entryId, required this.label});
 }

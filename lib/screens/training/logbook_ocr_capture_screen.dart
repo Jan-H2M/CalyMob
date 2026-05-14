@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -145,6 +146,10 @@ class _LogbookOcrCaptureScreenState extends State<LogbookOcrCaptureScreen> {
                         style: TextStyle(height: 1.35),
                       ),
                     ),
+                    if (_analyzing) ...[
+                      const SizedBox(height: 12),
+                      _analyzingBanner(),
+                    ],
                   ],
                 ),
               ),
@@ -339,4 +344,104 @@ class _LogbookOcrCaptureScreenState extends State<LogbookOcrCaptureScreen> {
       child: child,
     );
   }
+
+  /// Animated banner shown while the Cloud Function does its work. Cycles
+  /// reassuring status messages every ~2.5 seconds so the user knows the app
+  /// is still working — the AI call typically takes 8-15 seconds end-to-end.
+  Widget _analyzingBanner() {
+    return _AnalyzingBanner();
+  }
+}
+
+class _AnalyzingBanner extends StatefulWidget {
+  @override
+  State<_AnalyzingBanner> createState() => _AnalyzingBannerState();
+}
+
+class _AnalyzingBannerState extends State<_AnalyzingBanner> {
+  static const _steps = <_AnalysisStep>[
+    _AnalysisStep(Icons.cloud_upload_outlined, 'Envoi de la photo…'),
+    _AnalysisStep(Icons.psychology_outlined, "L'IA lit ton carnet…"),
+    _AnalysisStep(Icons.search,
+        'Recherche des dates, lieux, profondeurs…'),
+    _AnalysisStep(Icons.set_meal_outlined,
+        'Identification de la faune dans tes notes…'),
+    _AnalysisStep(Icons.fact_check_outlined,
+        "Mise en forme du brouillon…"),
+    _AnalysisStep(Icons.hourglass_top_outlined,
+        "Encore un instant — ça finalise…"),
+  ];
+
+  int _i = 0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(milliseconds: 2500), (_) {
+      if (!mounted) return;
+      setState(() => _i = (_i + 1) % _steps.length);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final step = _steps[_i];
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.middenblauw.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.5,
+              valueColor: AlwaysStoppedAnimation<Color>(AppColors.middenblauw),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 350),
+              child: Row(
+                key: ValueKey(_i),
+                children: [
+                  Icon(step.icon,
+                      size: 18, color: AppColors.donkerblauw),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      step.label,
+                      style: TextStyle(
+                        color: AppColors.donkerblauw,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13.5,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AnalysisStep {
+  final IconData icon;
+  final String label;
+  const _AnalysisStep(this.icon, this.label);
 }

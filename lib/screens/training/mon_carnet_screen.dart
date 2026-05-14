@@ -13,6 +13,7 @@
 /// Spec : `_carnet_plan.md` §3.1.7 + §13 C.8.
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
@@ -42,10 +43,42 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
   int? _year;
   _CarnetMode _mode = _CarnetMode.dives;
 
+  /// Set once per app run — avoids re-firing the lazy backfill every time the
+  /// user re-opens Mon Carnet. The Cloud Function is idempotent and cheap
+  /// (it short-circuits when no legacy entries remain), but a single trigger
+  /// per session is the right cost/UX balance.
+  static bool _backfillTriggered = false;
+
   @override
   void initState() {
     super.initState();
     _year = DateTime.now().year;
+    _maybeTriggerDiveNumberBackfill();
+  }
+
+  /// Fire-and-forget call into `backfillMyDiveNumbers` — assigns dive_number
+  /// chronologically to any of this member's pre-Optie-C entries that don't
+  /// yet have one. Runs server-side in batches; the UI doesn't wait for
+  /// completion. New numbers materialise via the live snapshot stream.
+  void _maybeTriggerDiveNumberBackfill() {
+    if (_backfillTriggered) return;
+    _backfillTriggered = true;
+    try {
+      FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('backfillMyDiveNumbers')
+          .call(<String, dynamic>{'clubId': FirebaseConfig.defaultClubId})
+          .then((res) {
+            debugPrint('[mon_carnet][backfill] ok: ${res.data}');
+          })
+          .catchError((Object err) {
+            debugPrint('[mon_carnet][backfill] failed: $err');
+            // Allow retry next session if it failed
+            _backfillTriggered = false;
+          });
+    } catch (e) {
+      debugPrint('[mon_carnet][backfill] threw: $e');
+      _backfillTriggered = false;
+    }
   }
 
   Stream<List<_LogbookEntryRow>> _stream(String clubId, String userId) {
@@ -411,6 +444,7 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
 
 class _LogbookEntryRow {
   final String id;
+  final int? diveNumber;
   final DateTime? date;
   final String locationName;
   final String? country;
@@ -431,6 +465,7 @@ class _LogbookEntryRow {
 
   const _LogbookEntryRow({
     required this.id,
+    this.diveNumber,
     required this.date,
     required this.locationName,
     this.country,
@@ -480,8 +515,10 @@ class _LogbookEntryRow {
     }
 
     final groupNumberRaw = map['group_number'];
+    final diveN = map['dive_number'];
     return _LogbookEntryRow(
       id: id,
+      diveNumber: diveN is num ? diveN.toInt() : null,
       date: date,
       themeSnapshot: map['theme_snapshot'] as String?,
       groupLevel: map['group_level'] as String?,
@@ -554,6 +591,29 @@ class _EntryCard extends StatelessWidget {
       children: [
         Row(
           children: [
+            if (entry.diveNumber != null)
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.22),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: Text(
+                    'N°${entry.diveNumber}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
             _SourceBadge(source: entry.source),
             const SizedBox(width: 8),
             Text(

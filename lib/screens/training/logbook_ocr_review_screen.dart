@@ -42,6 +42,36 @@ class _LogbookOcrReviewScreenState extends State<LogbookOcrReviewScreen> {
     super.initState();
     _rows = [...widget.draft.rows];
     _loadSuggestions();
+    _detectDuplicates();
+  }
+
+  Future<void> _detectDuplicates() async {
+    final auth = context.read<AuthProvider>();
+    final userId = auth.currentUser?.uid;
+    if (userId == null) return;
+    try {
+      final dups = await _service.detectDuplicates(
+        clubId: FirebaseConfig.defaultClubId,
+        memberId: userId,
+        rows: _rows,
+      );
+      if (!mounted || dups.isEmpty) return;
+      setState(() {
+        _rows = [
+          for (final r in _rows)
+            if (dups.containsKey(r.rowId))
+              r.copyWith(
+                selected: false,
+                existingEntryId: dups[r.rowId]!.entryId,
+                existingEntryLabel: dups[r.rowId]!.label,
+              )
+            else
+              r,
+        ];
+      });
+    } catch (e) {
+      debugPrint('[OcrReview] duplicate detection failed: $e');
+    }
   }
 
   Future<void> _loadSuggestions() async {
@@ -214,14 +244,29 @@ class _LogbookOcrReviewScreenState extends State<LogbookOcrReviewScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 120),
                   itemCount: _rows.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (_, i) => _ReviewCard(
-                    row: _rows[i],
-                    onChanged: (next) => _replaceRow(i, next),
-                    locationSuggestions: _locationSuggestions,
-                    buddySuggestions: _buddySuggestions,
-                    personalLocations: _personalLocations,
-                    personalBuddies: _personalBuddies,
-                  ),
+                  itemBuilder: (_, i) {
+                    // Locations from the other rows in this OCR batch.
+                    // Vacation-trip detection — same scan usually means same
+                    // region, so we offer the neighbours' picks as preferred
+                    // suggestions before falling back to the full catalog.
+                    final batch = <String>[];
+                    final seen = <String>{};
+                    for (var j = 0; j < _rows.length; j++) {
+                      if (j == i) continue;
+                      final loc = _rows[j].locationName.value?.trim();
+                      if (loc == null || loc.isEmpty) continue;
+                      if (seen.add(loc.toLowerCase())) batch.add(loc);
+                    }
+                    return _ReviewCard(
+                      row: _rows[i],
+                      onChanged: (next) => _replaceRow(i, next),
+                      locationSuggestions: _locationSuggestions,
+                      buddySuggestions: _buddySuggestions,
+                      personalLocations: _personalLocations,
+                      personalBuddies: _personalBuddies,
+                      batchLocations: batch,
+                    );
+                  },
                 ),
               ),
               _bottomBar(
@@ -390,6 +435,10 @@ class _ReviewCard extends StatefulWidget {
   final List<String> buddySuggestions;
   final Set<String> personalLocations;
   final Set<String> personalBuddies;
+  /// Locations from other rows in this same OCR batch — likely the same
+  /// trip / region. Surfaced at the top of the typeahead with a 🏖️ icon
+  /// even when the query is still empty, so a Krk dive feels at home.
+  final List<String> batchLocations;
 
   const _ReviewCard({
     required this.row,
@@ -398,6 +447,7 @@ class _ReviewCard extends StatefulWidget {
     this.buddySuggestions = const [],
     this.personalLocations = const {},
     this.personalBuddies = const {},
+    this.batchLocations = const [],
   });
 
   @override
@@ -411,6 +461,13 @@ class _ReviewCardState extends State<_ReviewCard> {
   late final TextEditingController _duration;
   late final TextEditingController _buddies;
   late final TextEditingController _notes;
+  late final TextEditingController _lestage;
+
+  // Persistent focus nodes so each rebuild (triggered by setState in the
+  // parent after every keystroke via _emit) doesn't reset focus and bump
+  // the cursor away to the next field.
+  final FocusNode _locationFocus = FocusNode();
+  final FocusNode _buddiesFocus = FocusNode();
 
   @override
   void initState() {
@@ -428,6 +485,11 @@ class _ReviewCardState extends State<_ReviewCard> {
       text: (widget.row.buddies.value ?? const []).join('; '),
     );
     _notes = TextEditingController(text: widget.row.notes.value ?? '');
+    _lestage = TextEditingController(
+      text: widget.row.lestageKg.value != null
+          ? widget.row.lestageKg.value!.toStringAsFixed(0)
+          : '',
+    );
   }
 
   @override
@@ -438,7 +500,67 @@ class _ReviewCardState extends State<_ReviewCard> {
     _duration.dispose();
     _buddies.dispose();
     _notes.dispose();
+    _lestage.dispose();
+    _locationFocus.dispose();
+    _buddiesFocus.dispose();
     super.dispose();
+  }
+
+  void _toggleCounter(String key) {
+    final r = widget.row;
+    LogbookOcrField<bool> flip(LogbookOcrField<bool> f) => f.copyWith(
+          value: !(f.value ?? false),
+          needsReview: false,
+        );
+    LogbookOcrSuggestedRow next;
+    switch (key) {
+      case 'exo':
+        next = r.copyWith(exo: flip(r.exo));
+        break;
+      case 'nitrox':
+        next = r.copyWith(nitrox: flip(r.nitrox));
+        break;
+      case 'deco':
+        next = r.copyWith(deco: flip(r.deco));
+        break;
+      case 'dp':
+        next = r.copyWith(dp: flip(r.dp));
+        break;
+      case 'sf':
+        next = r.copyWith(sf: flip(r.sf));
+        break;
+      case 'nuit':
+        next = r.copyWith(night: flip(r.night));
+        break;
+      case 'mer':
+        next = r.copyWith(sea: flip(r.sea));
+        break;
+      default:
+        return;
+    }
+    widget.onChanged(next);
+  }
+
+  void _setCombi(Map<String, dynamic>? combi) {
+    widget.onChanged(widget.row.copyWith(
+      combi: LogbookOcrField<Map<String, dynamic>>(
+        value: combi,
+        confidence: widget.row.combi.confidence,
+        raw: widget.row.combi.raw,
+        needsReview: false,
+      ),
+    ));
+  }
+
+  void _setTank(Map<String, dynamic>? tank) {
+    widget.onChanged(widget.row.copyWith(
+      tank: LogbookOcrField<Map<String, dynamic>>(
+        value: tank,
+        confidence: widget.row.tank.confidence,
+        raw: widget.row.tank.raw,
+        needsReview: false,
+      ),
+    ));
   }
 
   void _emit() {
@@ -485,6 +607,12 @@ class _ReviewCardState extends State<_ReviewCard> {
           value: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
           confidence: widget.row.notes.confidence,
           raw: widget.row.notes.raw,
+          needsReview: false,
+        ),
+        lestageKg: LogbookOcrField<double>(
+          value: double.tryParse(_lestage.text.replaceAll(',', '.')),
+          confidence: widget.row.lestageKg.confidence,
+          raw: widget.row.lestageKg.raw,
           needsReview: false,
         ),
       ),
@@ -584,6 +712,10 @@ class _ReviewCardState extends State<_ReviewCard> {
             ],
           ),
           _buddyAutocompleteField(),
+          const SizedBox(height: 12),
+          _countersRow(),
+          const SizedBox(height: 12),
+          _equipmentRow(),
           _field('Notes', _notes, maxLines: 2),
           const SizedBox(height: 4),
           Align(
@@ -597,6 +729,276 @@ class _ReviewCardState extends State<_ReviewCard> {
         ],
       ),
     );
+  }
+
+  Widget _countersRow() {
+    final r = widget.row;
+    final state = <String, bool>{
+      'exo': r.exo.value == true,
+      'nitrox': r.nitrox.value == true,
+      'deco': r.deco.value == true,
+      'dp': r.dp.value == true,
+      'sf': r.sf.value == true,
+      'nuit': r.night.value == true,
+      'mer': r.sea.value == true,
+    };
+    // Same labels + tooltips as the manual entry form for consistency.
+    const labels = <String, String>{
+      'exo': 'Form.',
+      'nitrox': 'Nitrox',
+      'deco': 'Déco',
+      'dp': 'DP',
+      'sf': 'SF',
+      'nuit': 'Nuit',
+      'mer': 'Mer',
+    };
+    const tips = <String, String>{
+      'exo':
+          "Plongée d'exercice / formation (oefening LIFRAS, examen, opleiding).",
+      'nitrox': 'Mélange nitrox (≥ 22 % O₂) au lieu d\'air.',
+      'deco': 'Plongée avec paliers de décompression obligatoires.',
+      'dp': 'Tu étais directeur de palanquée.',
+      'sf': 'Tu étais serre-file de la palanquée.',
+      'nuit': 'Plongée de nuit (immersion après le coucher du soleil).',
+      'mer': 'Plongée en mer / eau salée.',
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'COMPTEURS',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            color: Colors.grey.shade600,
+            letterSpacing: 0.6,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final key in state.keys)
+              Tooltip(
+                message: tips[key]!,
+                waitDuration: const Duration(milliseconds: 250),
+                child: ChoiceChip(
+                  label: Text(labels[key]!),
+                  selected: state[key]!,
+                  onSelected: (_) => _toggleCounter(key),
+                  visualDensity: VisualDensity.compact,
+                  selectedColor: AppColors.middenblauw,
+                  labelStyle: TextStyle(
+                    color: state[key]! ? Colors.white : Colors.grey.shade800,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12.5,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _equipmentRow() {
+    final r = widget.row;
+    final combi = r.combi.value;
+    final tank = r.tank.value;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'ÉQUIPEMENT',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            color: Colors.grey.shade600,
+            letterSpacing: 0.6,
+          ),
+        ),
+        const SizedBox(height: 6),
+        // Compact 1-line summaries that open a bottom-sheet on tap. Keeps the
+        // review card readable while still letting the user pick from their
+        // personal `Mes combinaisons` / `Mes bouteilles` catalogues.
+        InkWell(
+          onTap: () => _openCombiSheet(),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.checkroom_outlined,
+                    size: 18, color: Colors.grey.shade600),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    combi == null || combi.isEmpty
+                        ? 'Combinaison — toucher pour choisir'
+                        : _combiLabel(combi),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: combi == null || combi.isEmpty
+                          ? Colors.grey.shade500
+                          : Colors.grey.shade900,
+                      fontStyle: combi == null || combi.isEmpty
+                          ? FontStyle.italic
+                          : FontStyle.normal,
+                    ),
+                  ),
+                ),
+                if (combi != null && combi.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 16),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _setCombi(null),
+                  ),
+                const Icon(Icons.expand_more, size: 18),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        InkWell(
+          onTap: () => _openTankSheet(),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.propane_tank_outlined,
+                    size: 18, color: Colors.grey.shade600),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    tank == null || tank.isEmpty
+                        ? 'Bouteille — toucher pour choisir'
+                        : _tankLabel(tank),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: tank == null || tank.isEmpty
+                          ? Colors.grey.shade500
+                          : Colors.grey.shade900,
+                      fontStyle: tank == null || tank.isEmpty
+                          ? FontStyle.italic
+                          : FontStyle.normal,
+                    ),
+                  ),
+                ),
+                if (tank != null && tank.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 16),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _setTank(null),
+                  ),
+                const Icon(Icons.expand_more, size: 18),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        TextField(
+          controller: _lestage,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          onChanged: (_) => _emit(),
+          onSubmitted: (_) => _emit(),
+          decoration: InputDecoration(
+            labelText: 'Lestage',
+            hintText: 'ex. 6',
+            suffixText: 'kg',
+            filled: true,
+            fillColor: Colors.grey.shade50,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            isDense: true,
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _combiLabel(Map<String, dynamic> m) {
+    final label = (m['label'] as String?)?.trim();
+    if (label != null && label.isNotEmpty) return label;
+    final parts = <String>[
+      m['type'] == 'etanche' ? 'Étanche' : 'Humide',
+    ];
+    final th = m['thickness_mm'];
+    if (m['type'] == 'humide' && th is num) parts.add('${th.toInt()} mm');
+    final brand = (m['brand'] as String?)?.trim();
+    if (brand != null && brand.isNotEmpty) parts.add(brand);
+    return parts.join(' · ');
+  }
+
+  String _tankLabel(Map<String, dynamic> m) {
+    final label = (m['label'] as String?)?.trim();
+    final v = m['volume_l'];
+    final p = m['pressure_bar'];
+    final base = (v is num && p is num) ? '${v.toInt()} L · ${p.toInt()} bar' : '';
+    if (label != null && label.isNotEmpty) {
+      return base.isEmpty ? label : '$label · $base';
+    }
+    return base.isEmpty ? 'Bouteille' : base;
+  }
+
+  Future<List<Map<String, dynamic>>> _loadMemberCatalog(String field) async {
+    final auth = context.read<AuthProvider>();
+    final userId = auth.currentUser?.uid;
+    if (userId == null) return const [];
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('clubs').doc(FirebaseConfig.defaultClubId)
+          .collection('members').doc(userId).get();
+      final data = snap.data() ?? {};
+      final raw = data[field] as List? ?? const [];
+      return raw
+          .whereType<Map>()
+          .map((m) => Map<String, dynamic>.from(m))
+          .toList();
+    } catch (e) {
+      debugPrint('[OcrReview] $field lookup failed: $e');
+      return const [];
+    }
+  }
+
+  Future<void> _openCombiSheet() async {
+    final items = await _loadMemberCatalog('dive_combis');
+    if (!mounted) return;
+    final picked = await showModalBottomSheet<Map<String, dynamic>?>(
+      context: context,
+      builder: (ctx) => _PickerSheet(
+        title: 'Choisir une combinaison',
+        items: items,
+        labelBuilder: _combiLabel,
+        emptyText: 'Ajoute des combinaisons dans Mon Profil → Mes combinaisons.',
+      ),
+    );
+    if (picked != null) _setCombi(picked);
+  }
+
+  Future<void> _openTankSheet() async {
+    final items = await _loadMemberCatalog('dive_tanks');
+    if (!mounted) return;
+    final picked = await showModalBottomSheet<Map<String, dynamic>?>(
+      context: context,
+      builder: (ctx) => _PickerSheet(
+        title: 'Choisir une bouteille',
+        items: items,
+        labelBuilder: _tankLabel,
+        emptyText: 'Ajoute des bouteilles dans Mon Profil → Mes bouteilles.',
+      ),
+    );
+    if (picked != null) _setTank(picked);
   }
 
   Widget _field(
@@ -643,13 +1045,25 @@ class _ReviewCardState extends State<_ReviewCard> {
       padding: const EdgeInsets.only(top: 10),
       child: RawAutocomplete<String>(
         textEditingController: controller,
-        focusNode: FocusNode(),
+        focusNode: _locationFocus,
         optionsBuilder: (textEditingValue) {
           final q = textEditingValue.text.trim().toLowerCase();
-          if (q.isEmpty) return const Iterable<String>.empty();
-          return suggestions
-              .where((s) => s.toLowerCase().contains(q))
-              .take(8);
+          final batch = widget.batchLocations;
+          // Empty query: surface neighbour-row picks first (vacation trip
+          // bias) so the user can tap-fill without typing.
+          if (q.isEmpty) {
+            if (batch.isEmpty) return const Iterable<String>.empty();
+            return batch.take(8);
+          }
+          // With a query: prepend matching batch picks, then full catalog
+          // matches that aren't already in batch.
+          final lcBatch = batch.map((s) => s.toLowerCase()).toSet();
+          final batchMatches =
+              batch.where((s) => s.toLowerCase().contains(q));
+          final catalogMatches = suggestions.where((s) =>
+              s.toLowerCase().contains(q) &&
+              !lcBatch.contains(s.toLowerCase()));
+          return <String>[...batchMatches, ...catalogMatches].take(8);
         },
         fieldViewBuilder: (context, ctrl, focus, onSubmit) {
           return TextField(
@@ -691,14 +1105,29 @@ class _ReviewCardState extends State<_ReviewCard> {
                   itemBuilder: (_, i) {
                     final opt = options.elementAt(i);
                     final isPersonal = widget.personalLocations.contains(opt);
+                    final isBatch =
+                        widget.batchLocations.any((b) => b == opt);
                     return ListTile(
                       dense: true,
-                      leading: isPersonal
-                          ? Icon(Icons.star,
-                              size: 14, color: Colors.amber.shade700)
-                          : null,
-                      horizontalTitleGap: isPersonal ? 4 : null,
+                      leading: isBatch
+                          ? const Text('🏖️',
+                              style: TextStyle(fontSize: 14))
+                          : isPersonal
+                              ? Icon(Icons.star,
+                                  size: 14, color: Colors.amber.shade700)
+                              : null,
+                      horizontalTitleGap:
+                          isBatch || isPersonal ? 4 : null,
                       title: Text(opt, style: const TextStyle(fontSize: 13.5)),
+                      subtitle: isBatch
+                          ? Text(
+                              'autre plongée du même séjour',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.cyan.shade700,
+                              ),
+                            )
+                          : null,
                       onTap: () {
                         onSelected(opt);
                         _emit();
@@ -723,7 +1152,7 @@ class _ReviewCardState extends State<_ReviewCard> {
       padding: const EdgeInsets.only(top: 10),
       child: RawAutocomplete<String>(
         textEditingController: _buddies,
-        focusNode: FocusNode(),
+        focusNode: _buddiesFocus,
         optionsBuilder: (textEditingValue) {
           final text = textEditingValue.text;
           final lastSep = text.lastIndexOf(RegExp(r'[;,]'));
@@ -824,6 +1253,93 @@ class _ReviewCardState extends State<_ReviewCard> {
           color: Colors.orange.shade900,
           fontSize: 12.5,
           fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+/// Bottom-sheet picker for the member's personal combinaisons / bouteilles
+/// catalogue. Returns the chosen map (or null on cancel).
+class _PickerSheet extends StatelessWidget {
+  final String title;
+  final List<Map<String, dynamic>> items;
+  final String Function(Map<String, dynamic>) labelBuilder;
+  final String emptyText;
+
+  const _PickerSheet({
+    required this.title,
+    required this.items,
+    required this.labelBuilder,
+    required this.emptyText,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              height: 4,
+              width: 36,
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (items.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 18),
+                child: Text(
+                  emptyText,
+                  style: TextStyle(
+                    color: Colors.grey.shade600,
+                    fontSize: 13,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              )
+            else
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: items.length,
+                  separatorBuilder: (_, __) =>
+                      Divider(height: 1, color: Colors.grey.shade200),
+                  itemBuilder: (_, i) {
+                    final item = items[i];
+                    return ListTile(
+                      title: Text(
+                        labelBuilder(item),
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                      onTap: () => Navigator.of(context).pop(item),
+                    );
+                  },
+                ),
+              ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Annuler'),
+              ),
+            ),
+          ],
         ),
       ),
     );

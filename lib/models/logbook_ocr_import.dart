@@ -46,11 +46,28 @@ class LogbookOcrSuggestedRow {
   final LogbookOcrField<String> country;
   final LogbookOcrField<double> depthMaxMeters;
   final LogbookOcrField<int> durationMinutes;
+  // Counters — booleans the user can toggle on review even if AI missed them.
   final LogbookOcrField<bool> deco;
   final LogbookOcrField<bool> night;
   final LogbookOcrField<bool> sea;
+  final LogbookOcrField<bool> exo;
+  final LogbookOcrField<bool> nitrox;
+  final LogbookOcrField<bool> dp;
+  final LogbookOcrField<bool> sf;
   final LogbookOcrField<List<String>> buddies;
   final LogbookOcrField<String> notes;
+  // Equipment — populated either by the AI when written on the page, or by
+  // the user during review (picker over the member's own `dive_combis` /
+  // `dive_tanks` catalogue).
+  final LogbookOcrField<Map<String, dynamic>> combi;
+  final LogbookOcrField<Map<String, dynamic>> tank;
+  final LogbookOcrField<double> lestageKg;
+  // Duplicate-detection result, attached after the AI response by the
+  // review screen. When `existingEntryId` is non-null, the row is dimmed
+  // and unchecked by default — the user can still flip the checkbox to
+  // import a deliberate second copy.
+  final String? existingEntryId;
+  final String? existingEntryLabel;
 
   const LogbookOcrSuggestedRow({
     required this.rowId,
@@ -69,8 +86,17 @@ class LogbookOcrSuggestedRow {
     this.deco = const LogbookOcrField<bool>(confidence: 0),
     this.night = const LogbookOcrField<bool>(confidence: 0),
     this.sea = const LogbookOcrField<bool>(confidence: 0),
+    this.exo = const LogbookOcrField<bool>(confidence: 0),
+    this.nitrox = const LogbookOcrField<bool>(confidence: 0),
+    this.dp = const LogbookOcrField<bool>(confidence: 0),
+    this.sf = const LogbookOcrField<bool>(confidence: 0),
     this.buddies = const LogbookOcrField<List<String>>(confidence: 0),
     this.notes = const LogbookOcrField<String>(confidence: 0),
+    this.combi = const LogbookOcrField<Map<String, dynamic>>(confidence: 0),
+    this.tank = const LogbookOcrField<Map<String, dynamic>>(confidence: 0),
+    this.lestageKg = const LogbookOcrField<double>(confidence: 0),
+    this.existingEntryId,
+    this.existingEntryLabel,
   });
 
   bool get hasBlockingIssues =>
@@ -104,8 +130,18 @@ class LogbookOcrSuggestedRow {
     LogbookOcrField<bool>? deco,
     LogbookOcrField<bool>? night,
     LogbookOcrField<bool>? sea,
+    LogbookOcrField<bool>? exo,
+    LogbookOcrField<bool>? nitrox,
+    LogbookOcrField<bool>? dp,
+    LogbookOcrField<bool>? sf,
     LogbookOcrField<List<String>>? buddies,
     LogbookOcrField<String>? notes,
+    LogbookOcrField<Map<String, dynamic>>? combi,
+    LogbookOcrField<Map<String, dynamic>>? tank,
+    LogbookOcrField<double>? lestageKg,
+    String? existingEntryId,
+    String? existingEntryLabel,
+    bool clearExistingEntry = false,
   }) {
     return LogbookOcrSuggestedRow(
       rowId: rowId,
@@ -124,8 +160,20 @@ class LogbookOcrSuggestedRow {
       deco: deco ?? this.deco,
       night: night ?? this.night,
       sea: sea ?? this.sea,
+      exo: exo ?? this.exo,
+      nitrox: nitrox ?? this.nitrox,
+      dp: dp ?? this.dp,
+      sf: sf ?? this.sf,
       buddies: buddies ?? this.buddies,
       notes: notes ?? this.notes,
+      combi: combi ?? this.combi,
+      tank: tank ?? this.tank,
+      lestageKg: lestageKg ?? this.lestageKg,
+      existingEntryId:
+          clearExistingEntry ? null : (existingEntryId ?? this.existingEntryId),
+      existingEntryLabel: clearExistingEntry
+          ? null
+          : (existingEntryLabel ?? this.existingEntryLabel),
     );
   }
 }

@@ -1016,21 +1016,52 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
   }
 
   Widget _counterChips() {
+    // Tooltip text shows on hover (web) and on long-press (mobile).
+    // Keeps the chip label short while making the jargon discoverable.
     const items = <Map<String, String>>[
-      {'key': 'exo', 'label': 'Exo'},
-      {'key': 'nitrox', 'label': 'Nitrox'},
-      {'key': 'deco', 'label': 'Déco'},
-      {'key': 'dp', 'label': 'DP'},
-      {'key': 'sf', 'label': 'SF'},
-      {'key': 'nuit', 'label': 'Nuit'},
-      {'key': 'mer', 'label': 'Mer'},
+      {
+        'key': 'exo',
+        'label': 'Form.',
+        'tip':
+            "Plongée d'exercice / formation (oefening LIFRAS, examen, opleiding).",
+      },
+      {
+        'key': 'nitrox',
+        'label': 'Nitrox',
+        'tip': 'Mélange nitrox (≥ 22 % O₂) au lieu d\'air.',
+      },
+      {
+        'key': 'deco',
+        'label': 'Déco',
+        'tip': 'Plongée avec paliers de décompression obligatoires.',
+      },
+      {
+        'key': 'dp',
+        'label': 'DP',
+        'tip': 'Tu étais directeur de palanquée.',
+      },
+      {
+        'key': 'sf',
+        'label': 'SF',
+        'tip': 'Tu étais serre-file de la palanquée.',
+      },
+      {
+        'key': 'nuit',
+        'label': 'Nuit',
+        'tip': 'Plongée de nuit (immersion après le coucher du soleil).',
+      },
+      {
+        'key': 'mer',
+        'label': 'Mer',
+        'tip': 'Plongée en mer / eau salée.',
+      },
     ];
     return Wrap(
       spacing: 8,
       runSpacing: 8,
       children: items.map((item) {
         final on = _counters.isOn(item['key']!);
-        return ChoiceChip(
+        final chip = ChoiceChip(
           label: Text(item['label']!),
           selected: on,
           onSelected: (_) {
@@ -1049,6 +1080,11 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
               color: on ? AppColors.middenblauw : const Color(0xFFE2E8F0),
             ),
           ),
+        );
+        return Tooltip(
+          message: item['tip']!,
+          waitDuration: const Duration(milliseconds: 250),
+          child: chip,
         );
       }).toList(),
     );
