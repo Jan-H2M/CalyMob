@@ -156,6 +156,8 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
     final validatorId = data['validator_id'] as String?;
     final moniteurIds = (data['moniteur_ids'] as List?)?.cast<String>() ?? [];
     final groupMembers = _parsePoolGroupMembers(data);
+    final validatorName = data['validator_name'] as String?;
+    final moniteurNames = (data['moniteur_names'] as List?)?.cast<String>() ?? const [];
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
@@ -168,6 +170,8 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
           theme: themeSnapshot,
           validatorId: validatorId,
           moniteurIds: moniteurIds,
+          validatorName: validatorName,
+          moniteurNames: moniteurNames,
         ),
         if (groupMembers.isNotEmpty) ...[
           const SizedBox(height: 12),
@@ -374,6 +378,8 @@ class _PoolGroupCard extends StatelessWidget {
   final String? theme;
   final String? validatorId;
   final List<String> moniteurIds;
+  final String? validatorName;
+  final List<String> moniteurNames;
 
   const _PoolGroupCard({
     required this.level,
@@ -381,6 +387,8 @@ class _PoolGroupCard extends StatelessWidget {
     required this.theme,
     required this.validatorId,
     required this.moniteurIds,
+    this.validatorName,
+    this.moniteurNames = const [],
   });
 
   @override
@@ -461,6 +469,8 @@ class _PoolGroupCard extends StatelessWidget {
             _MonitorLine(
               validatorId: validatorId,
               moniteurIds: moniteurIds,
+              validatorName: validatorName,
+              moniteurNames: moniteurNames,
             ),
           ],
         ],
@@ -472,15 +482,38 @@ class _PoolGroupCard extends StatelessWidget {
 class _MonitorLine extends StatelessWidget {
   final String? validatorId;
   final List<String> moniteurIds;
-  const _MonitorLine({required this.validatorId, required this.moniteurIds});
+  final String? validatorName;
+  final List<String> moniteurNames;
+  const _MonitorLine({
+    required this.validatorId,
+    required this.moniteurIds,
+    this.validatorName,
+    this.moniteurNames = const [],
+  });
 
   @override
   Widget build(BuildContext context) {
-    // We have raw member IDs here, not display names. Resolve them via a
-    // single roundtrip per member. To keep the card snappy we don't block
-    // the UI — show the IDs as a fallback while we wait. For the pilot
-    // this gracefully degrades to the ID; once pool_group_members carries
-    // resolved names we'll route through it instead.
+    // Prefer snapshotted names (written by onPoolSessionClosed since
+    // 2026-05-14). Fall back to a live member lookup for legacy entries.
+    final snapshotLabels = <String>{
+      if (validatorName != null && validatorName!.isNotEmpty) validatorName!,
+      ...moniteurNames.where((n) => n.isNotEmpty),
+    }.toList();
+    if (snapshotLabels.isNotEmpty) {
+      return Row(
+        children: [
+          const Icon(Icons.person_outline, color: Colors.white70, size: 16),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'avec ${snapshotLabels.join(', ')}',
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+            ),
+          ),
+        ],
+      );
+    }
+
     final ids = <String>{
       if (validatorId != null && validatorId!.isNotEmpty) validatorId!,
       ...moniteurIds,

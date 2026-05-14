@@ -101,6 +101,39 @@ const onPoolSessionClosed = onDocumentUpdated(
       });
     }
 
+    // Pre-resolve display names for every validator + moniteur referenced
+    // across the session. Snapshotting names on the logbook entry means the
+    // student can still see who taught them years later even if the moniteur
+    // has since left the club. Names are resolved once per CF run rather
+    // than per-attendee to avoid quadratic Firestore reads on busy sessions.
+    const monitorIdSet = new Set();
+    for (const attDoc of attendeesSnap.docs) {
+      const ga = attDoc.data().groupAssignment || null;
+      if (!ga) continue;
+      if (ga.validatorId) monitorIdSet.add(ga.validatorId);
+      if (Array.isArray(ga.moniteurIds)) {
+        for (const id of ga.moniteurIds) {
+          if (id) monitorIdSet.add(id);
+        }
+      }
+    }
+    const monitorNames = new Map();
+    for (const id of monitorIdSet) {
+      try {
+        const m = await db.collection('clubs').doc(clubId)
+          .collection('members').doc(id).get();
+        if (m.exists) {
+          const v = m.data() || {};
+          const display = `${v.prenom || ''} ${v.nom || ''}`.trim();
+          if (display) monitorNames.set(id, display);
+        }
+      } catch (err) {
+        console.warn(
+          `[${FUNCTION_NAME}] could not resolve monitor ${id}: ${err.message}`
+        );
+      }
+    }
+
     let batch = db.batch();
     let batchOps = 0;
 
@@ -153,6 +186,10 @@ const onPoolSessionClosed = onDocumentUpdated(
             .doc(clubId)
             .collection('student_logbook_entries')
             .doc();
+          const moniteurIds = Array.isArray(ga.moniteurIds) ? ga.moniteurIds : [];
+          const moniteurNames = moniteurIds
+            .map((id) => monitorNames.get(id))
+            .filter(Boolean);
           batch.set(logbookRef, {
             member_id: memberId,
             member_name: memberName,
@@ -162,7 +199,9 @@ const onPoolSessionClosed = onDocumentUpdated(
             session_id: sessionId,
             theme_snapshot: ga.themeSnapshot || null,
             validator_id: ga.validatorId,
-            moniteur_ids: Array.isArray(ga.moniteurIds) ? ga.moniteurIds : [],
+            validator_name: monitorNames.get(ga.validatorId) || null,
+            moniteur_ids: moniteurIds,
+            moniteur_names: moniteurNames,
             // Pool-specific snapshot — surfaces in the carnet detail view.
             group_level: ga.level || null,
             group_number:
@@ -180,6 +219,9 @@ const onPoolSessionClosed = onDocumentUpdated(
               'source',
               'theme_snapshot',
               'validator_id',
+              'validator_name',
+              'moniteur_ids',
+              'moniteur_names',
               'group_level',
               'group_number',
               'group_key',

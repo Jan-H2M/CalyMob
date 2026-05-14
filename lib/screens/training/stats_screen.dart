@@ -169,6 +169,8 @@ class _StatsScreenState extends State<StatsScreen> {
         _kpi('${s.totalHours} h', 'temps total'),
         _kpi('${s.seaDives}', 'en mer', highlight: true),
         _kpi('${s.maxDepth.toStringAsFixed(0)} m', 'profondeur max'),
+        if (s.poolSessions > 0)
+          _kpi('${s.poolSessions}', 'séances piscine'),
       ],
     );
   }
@@ -530,6 +532,7 @@ class _Stats {
   final int dpDives;
   final int sfDives;
   final int exerciseDives;
+  final int poolSessions;
   final List<int> depthHistogram;
   final List<int> months;
   final List<Map<String, dynamic>> topLocations;
@@ -545,6 +548,7 @@ class _Stats {
     required this.dpDives,
     required this.sfDives,
     required this.exerciseDives,
+    required this.poolSessions,
     required this.depthHistogram,
     required this.months,
     required this.topLocations,
@@ -555,11 +559,20 @@ _Stats _computeStats(List<Map<String, dynamic>> entries) {
   int totalMinutes = 0;
   double maxDepth = 0;
   int sea = 0, nitrox = 0, deco = 0, night = 0, dp = 0, sf = 0, exo = 0;
+  int totalDives = 0;
+  int poolSessions = 0;
   final histogram = List<int>.filled(8, 0);
   final months = List<int>.filled(12, 0);
   final locationCounts = <String, Map<String, dynamic>>{};
 
   for (final e in entries) {
+    // Pool sessions (source=piscine) are counted separately from dives
+    // and excluded from every dive-oriented metric.
+    if (e['source'] == 'piscine') {
+      poolSessions += 1;
+      continue;
+    }
+    totalDives += 1;
     final dur = e['duration_minutes'];
     if (dur is num) totalMinutes += dur.toInt();
     final depth = e['depth_max_meters'];
@@ -597,7 +610,7 @@ _Stats _computeStats(List<Map<String, dynamic>> entries) {
     ..sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
 
   return _Stats(
-    totalDives: entries.length,
+    totalDives: totalDives,
     totalHours: (totalMinutes / 60).round(),
     maxDepth: maxDepth,
     seaDives: sea,
@@ -607,6 +620,7 @@ _Stats _computeStats(List<Map<String, dynamic>> entries) {
     dpDives: dp,
     sfDives: sf,
     exerciseDives: exo,
+    poolSessions: poolSessions,
     depthHistogram: histogram,
     months: months,
     topLocations: top,

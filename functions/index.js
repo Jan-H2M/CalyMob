@@ -223,3 +223,12 @@ exports.onPoolSessionClosed = onPoolSessionClosed;
 // fires onPoolSessionClosed, which fans out logbook + monitor_observation.
 const { autoClosePoolSessions } = require('./src/training/autoClosePoolSessions');
 exports.autoClosePoolSessions = autoClosePoolSessions;
+
+// Phase A follow-up (2026-05-14) — Re-route the open monitor_observation
+// task when a student corrects the pool entry group_level / group_number
+// from their carnet. Keeps the task in sync with whoever validates the
+// newly chosen group.
+const {
+  onLogbookEntryGroupChanged,
+} = require('./src/training/onLogbookEntryGroupChanged');
+exports.onLogbookEntryGroupChanged = onLogbookEntryGroupChanged;

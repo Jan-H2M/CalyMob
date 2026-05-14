@@ -23,6 +23,7 @@ import '../exercises/member_exercises_screen.dart';
 import '../../providers/member_provider.dart';
 import 'logbook_entry_detail_screen.dart';
 import 'logbook_entry_screen.dart';
+import 'logbook_ocr_capture_screen.dart';
 import 'stats_screen.dart';
 
 class MonCarnetScreen extends StatefulWidget {
@@ -57,7 +58,8 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
     if (_year != null) {
       q = q
           .where('date',
-              isGreaterThanOrEqualTo: Timestamp.fromDate(DateTime(_year!, 1, 1)))
+              isGreaterThanOrEqualTo:
+                  Timestamp.fromDate(DateTime(_year!, 1, 1)))
           .where('date',
               isLessThan: Timestamp.fromDate(DateTime(_year! + 1, 1, 1)));
     }
@@ -93,13 +95,15 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
               const SizedBox(height: 12),
               Expanded(
                 child: userId == null
-                    ? const _CenterMessage(text: 'Session expirée — reconnecte-toi.')
+                    ? const _CenterMessage(
+                        text: 'Session expirée — reconnecte-toi.')
                     : StreamBuilder<List<_LogbookEntryRow>>(
                         stream: _stream(clubId, userId),
                         builder: (context, snap) {
                           if (snap.connectionState == ConnectionState.waiting) {
                             return const Center(
-                              child: CircularProgressIndicator(color: Colors.white),
+                              child: CircularProgressIndicator(
+                                  color: Colors.white),
                             );
                           }
                           if (snap.hasError) {
@@ -111,8 +115,7 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
                           final rows = snap.data ?? const [];
                           if (rows.isEmpty) return _emptyState();
                           return ListView.separated(
-                            padding:
-                                const EdgeInsets.fromLTRB(16, 0, 16, 100),
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
                             itemCount: rows.length,
                             separatorBuilder: (_, __) =>
                                 const SizedBox(height: 10),
@@ -128,8 +131,14 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
       // Manual entry only makes sense for sea/lake/quarry dives. Pool entries
       // are system-generated from the check-in flow at the pool entrance.
       floatingActionButton: _mode == _CarnetMode.dives
-          ? _Fab(
-              onTap: () => Navigator.push(
+          ? _CarnetActions(
+              onScanPaper: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const LogbookOcrCaptureScreen(),
+                ),
+              ),
+              onAddDive: () => Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => const LogbookEntryScreen.manual(),
@@ -137,6 +146,7 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
               ),
             )
           : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 
@@ -261,8 +271,7 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
                 MaterialPageRoute(
                   builder: (_) => MemberExercisesScreen(
                     memberId: userId,
-                    memberName:
-                        memberName.isEmpty ? 'Moi' : memberName,
+                    memberName: memberName.isEmpty ? 'Moi' : memberName,
                     isOwnProfile: true,
                   ),
                 ),
@@ -380,6 +389,7 @@ class _LogbookEntryRow {
   final String? themeSnapshot;
   final String? groupLevel;
   final int? groupNumber;
+
   /// Full raw map for the detail screen — keeps us from having to refetch.
   final Map<String, dynamic> raw;
 
@@ -728,6 +738,7 @@ class _SourceBadge extends StatelessWidget {
         icon = Icons.pool;
         break;
       case 'imported':
+      case 'ocr_import':
         label = 'Importée';
         bg = const Color(0xFF8B5CF6); // violet-500
         icon = Icons.cloud_download;
@@ -765,19 +776,98 @@ class _SourceBadge extends StatelessWidget {
   }
 }
 
-class _Fab extends StatelessWidget {
-  final VoidCallback onTap;
-  const _Fab({required this.onTap});
+class _CarnetActions extends StatelessWidget {
+  final VoidCallback onScanPaper;
+  final VoidCallback onAddDive;
+  const _CarnetActions({
+    required this.onScanPaper,
+    required this.onAddDive,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return FloatingActionButton.extended(
-      onPressed: onTap,
-      backgroundColor: AppColors.middenblauw,
-      icon: const Icon(Icons.add, color: Colors.white),
-      label: const Text(
-        'Ajouter une plongée',
-        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          Expanded(
+            child: _BottomActionButton(
+              onTap: onScanPaper,
+              icon: Icons.document_scanner_outlined,
+              label: 'Scanner Carnet papier',
+              backgroundColor: Colors.white.withValues(alpha: 0.94),
+              foregroundColor: AppColors.donkerblauw,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _BottomActionButton(
+              onTap: onAddDive,
+              icon: Icons.add,
+              label: 'Ajouter une plongée',
+              backgroundColor: AppColors.middenblauw,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BottomActionButton extends StatelessWidget {
+  final VoidCallback onTap;
+  final IconData icon;
+  final String label;
+  final Color backgroundColor;
+  final Color foregroundColor;
+
+  const _BottomActionButton({
+    required this.onTap,
+    required this.icon,
+    required this.label,
+    required this.backgroundColor,
+    required this.foregroundColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: backgroundColor,
+      borderRadius: BorderRadius.circular(14),
+      elevation: 8,
+      shadowColor: AppColors.donkerblauw.withValues(alpha: 0.28),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 56),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, color: foregroundColor, size: 21),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: foregroundColor,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                      height: 1.05,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
