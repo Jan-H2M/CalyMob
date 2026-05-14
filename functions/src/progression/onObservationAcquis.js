@@ -18,6 +18,7 @@
 
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
+const { FieldValue } = require('firebase-admin/firestore');
 const { logger } = require('firebase-functions');
 
 const db = admin.firestore();
@@ -77,13 +78,13 @@ exports.onObservationAcquis = onDocumentCreated(
         exercice_id: '',  // Will be linked later if needed
         exercice_niveau: data.memberNiveau || '',
         exercice_specialite: '',
-        date_validation: data.contextDate || admin.firestore.FieldValue.serverTimestamp(),
+        date_validation: data.contextDate || FieldValue.serverTimestamp(),
         moniteur_nom: data.observerName || '',
         moniteur_id: data.observerId || '',
         notes: `Auto-validé via Carnet de Formation (session: ${data.contextTitle || ''})`,
         lieu: data.contextType === 'piscine' ? 'Piscine' : 'Plongée',
-        created_at: admin.firestore.FieldValue.serverTimestamp(),
-        updated_at: admin.firestore.FieldValue.serverTimestamp(),
+        created_at: FieldValue.serverTimestamp(),
+        updated_at: FieldValue.serverTimestamp(),
         created_by: data.observerId || '',
         source: 'carnet_formation',
         observation_id: event.params.observationId,
