@@ -198,6 +198,23 @@ exports.processFormationTaskReminders = processFormationTaskReminders;
 const { onClaimAccepted } = require('./src/training/onClaimAccepted');
 exports.onClaimAccepted = onClaimAccepted;
 
+// 2026-05-14 — Audit blocker #1 + #4: spawn a formation_task on every new
+// reviewable exercise_claim so monitors / admins actually see the claim in
+// their inbox. Reads validation_mode + tries claim.monitor_id, club settings,
+// palanquée chef, club admin pool in order.
+const { onClaimSubmitted } = require('./src/training/onClaimSubmitted');
+exports.onClaimSubmitted = onClaimSubmitted;
+
+// 2026-05-14 — Audit blocker #2: materialise the verdict written by
+// MonitorObservationForm into a permanent member_observations doc. Today
+// this captures a theme-level verdict (acquis/en_progres/a_revoir); the
+// per-LIFRAS-code fan-out into exercices_valides waits on the form being
+// extended to capture per-code ticks.
+const {
+  onMonitorObservationCompleted,
+} = require('./src/training/onMonitorObservationCompleted');
+exports.onMonitorObservationCompleted = onMonitorObservationCompleted;
+
 // Phase 4 — Palanquée planning → draft exercise_claims pre-fill
 const { onPalanqueeSaved } = require('./src/training/onPalanqueeSaved');
 exports.onPalanqueeSaved = onPalanqueeSaved;
@@ -232,6 +249,19 @@ const {
   onLogbookEntryGroupChanged,
 } = require('./src/training/onLogbookEntryGroupChanged');
 exports.onLogbookEntryGroupChanged = onLogbookEntryGroupChanged;
+
+// 2026-05-14 — Auto-assign unique per-member dive numbers.
+// `assignDiveNumber` runs on every new student_logbook_entries doc and
+// pulls the next available number from an atomic counter in the member's
+// settings. `backfillMyDiveNumbers` is a callable Mon Carnet invokes the
+// first time it loads, to retroactively number any legacy entries that
+// were created before the trigger shipped.
+const {
+  assignDiveNumber,
+  backfillMyDiveNumbers,
+} = require('./src/training/assignDiveNumber');
+exports.assignDiveNumber = assignDiveNumber;
+exports.backfillMyDiveNumbers = backfillMyDiveNumbers;
 
 // Paper logbook OCR/AI import.
 const { analyzeLogbookPage } = require('./src/logbookOcr/analyzeLogbookPage');
