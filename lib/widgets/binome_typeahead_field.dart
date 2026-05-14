@@ -237,6 +237,10 @@ class _BinomeTypeaheadFieldState extends State<BinomeTypeaheadField> {
           decoration: InputDecoration(
             prefixIcon: const Icon(Icons.search),
             hintText: 'Tape un nom de membre…',
+            hintStyle: TextStyle(
+              color: Colors.grey.shade400,
+              fontStyle: FontStyle.italic,
+            ),
             border: InputBorder.none,
             isDense: true,
             contentPadding: const EdgeInsets.symmetric(vertical: 12),
@@ -540,6 +544,10 @@ class _ExternalBinomeSheetState extends State<_ExternalBinomeSheet> {
           onChanged: (_) => setState(() {}),
           decoration: InputDecoration(
             hintText: hint,
+            hintStyle: TextStyle(
+              color: Colors.grey.shade400,
+              fontStyle: FontStyle.italic,
+            ),
             filled: true,
             fillColor: Colors.grey.shade100,
             border: OutlineInputBorder(

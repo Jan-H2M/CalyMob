@@ -288,40 +288,156 @@ class _CombiPickerFieldState extends State<CombiPickerField> {
               },
             ),
           ),
-        const SizedBox(height: 4),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: _openAddModal,
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Ajouter une combinaison…'),
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.middenblauw,
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-              minimumSize: const Size(0, 30),
+        const SizedBox(height: 2),
+        // Compact action row — Ajouter on the left, Gérer on the right,
+        // plus an optional Retirer link when something is selected.
+        Row(
+          children: [
+            _MiniAction(
+              icon: Icons.add,
+              label: 'Ajouter',
+              onTap: _openAddModal,
+              color: AppColors.middenblauw,
             ),
-          ),
-        ),
-        if (widget.value != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: () => widget.onChanged(null),
-                icon: const Icon(Icons.close, size: 14),
-                label: const Text('Retirer'),
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.grey.shade600,
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  minimumSize: const Size(0, 26),
-                  textStyle: const TextStyle(fontSize: 12),
-                ),
+            if (_combis.isNotEmpty) ...[
+              const SizedBox(width: 6),
+              _MiniAction(
+                icon: Icons.tune,
+                label: 'Gérer',
+                onTap: _openManageDialog,
+                color: Colors.grey.shade600,
               ),
-            ),
-          ),
+            ],
+            const Spacer(),
+            if (widget.value != null)
+              _MiniAction(
+                icon: Icons.close,
+                label: 'Retirer',
+                onTap: () => widget.onChanged(null),
+                color: Colors.grey.shade500,
+              ),
+          ],
+        ),
       ],
     );
+  }
+
+  Future<void> _openManageDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setLocalState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              titlePadding: const EdgeInsets.fromLTRB(20, 18, 16, 0),
+              contentPadding:
+                  const EdgeInsets.fromLTRB(0, 8, 0, 4),
+              title: const Row(
+                children: [
+                  Icon(Icons.dry_cleaning, color: AppColors.middenblauw),
+                  SizedBox(width: 8),
+                  Text('Mes combinaisons'),
+                ],
+              ),
+              content: SizedBox(
+                width: 360,
+                child: _combis.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                        child: Text(
+                          'La liste est vide.',
+                          style:
+                              TextStyle(color: Colors.grey.shade600),
+                        ),
+                      )
+                    : ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: _combis.length,
+                        separatorBuilder: (_, __) =>
+                            Divider(height: 1, color: Colors.grey.shade200),
+                        itemBuilder: (_, i) {
+                          final c = _combis[i];
+                          return ListTile(
+                            dense: true,
+                            leading: Icon(
+                              c.type == 'etanche'
+                                  ? Icons.shield_outlined
+                                  : Icons.opacity,
+                              color: AppColors.middenblauw,
+                            ),
+                            title: Text(_label(c),
+                                style: const TextStyle(fontSize: 14)),
+                            trailing: IconButton(
+                              icon: Icon(Icons.delete_outline,
+                                  color: Colors.red.shade400),
+                              tooltip: 'Supprimer',
+                              onPressed: () async {
+                                final confirmed = await showDialog<bool>(
+                                  context: ctx,
+                                  builder: (cctx) => AlertDialog(
+                                    title: Text(
+                                        'Supprimer « ${_label(c)} » ?'),
+                                    content: const Text(
+                                      'Tu peux toujours en recréer une plus tard. Les plongées déjà enregistrées avec cette combinaison restent intactes.',
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(cctx, false),
+                                        child: const Text('Annuler'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(cctx, true),
+                                        style: TextButton.styleFrom(
+                                            foregroundColor: Colors.red),
+                                        child: const Text('Supprimer'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (confirmed != true) return;
+                                await _deleteCombi(c);
+                                // Refresh local list inside the dialog.
+                                setLocalState(() {});
+                              },
+                            ),
+                          );
+                        },
+                      ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Fermer'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _deleteCombi(_Combi target) async {
+    final next = _combis.where((c) => c.id != target.id).toList();
+    try {
+      await _persistCombis(next);
+      if (!mounted) return;
+      setState(() => _combis = next);
+      // If the deleted combi was the active selection, clear it.
+      if (widget.value?.sourceCombiId == target.id) {
+        widget.onChanged(null);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Suppression impossible : $e')),
+      );
+    }
   }
 
   String _label(_Combi c) {
@@ -332,6 +448,47 @@ class _CombiPickerFieldState extends State<CombiPickerField> {
       if (c.brand != null && c.brand!.trim().isNotEmpty) c.brand!.trim(),
     ];
     return parts.join(' · ');
+  }
+}
+
+/// Compact text-only action used under the picker dropdowns. Lighter than
+/// a TextButton.icon so the dropdown stays the primary action.
+class _MiniAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  const _MiniAction({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -562,6 +719,10 @@ class _CombiFormSheetState extends State<_CombiFormSheet> {
           onChanged: (_) => setState(() {}),
           decoration: InputDecoration(
             hintText: hint,
+            hintStyle: TextStyle(
+              color: Colors.grey.shade400,
+              fontStyle: FontStyle.italic,
+            ),
             suffixText: suffix,
             filled: true,
             fillColor: Colors.grey.shade100,
@@ -599,6 +760,10 @@ class _CombiFormSheetState extends State<_CombiFormSheet> {
           controller: controller,
           decoration: InputDecoration(
             hintText: hint,
+            hintStyle: TextStyle(
+              color: Colors.grey.shade400,
+              fontStyle: FontStyle.italic,
+            ),
             filled: true,
             fillColor: Colors.grey.shade100,
             border: OutlineInputBorder(

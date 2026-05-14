@@ -248,6 +248,10 @@ class _DiveLocationPickerSheetState extends State<_DiveLocationPickerSheet> {
                   decoration: InputDecoration(
                     prefixIcon: const Icon(Icons.search),
                     hintText: 'Vodelée, Strijenham, La Gombe…',
+                    hintStyle: TextStyle(
+                      color: Colors.grey.shade400,
+                      fontStyle: FontStyle.italic,
+                    ),
                     filled: true,
                     fillColor: Colors.grey.shade100,
                     border: OutlineInputBorder(

@@ -284,40 +284,148 @@ class _TankPickerFieldState extends State<TankPickerField> {
               },
             ),
           ),
-        const SizedBox(height: 4),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: _openAddModal,
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Ajouter une bouteille…'),
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.middenblauw,
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-              minimumSize: const Size(0, 30),
+        const SizedBox(height: 2),
+        Row(
+          children: [
+            _TankMiniAction(
+              icon: Icons.add,
+              label: 'Ajouter',
+              onTap: _openAddModal,
+              color: AppColors.middenblauw,
             ),
-          ),
-        ),
-        if (widget.value != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: () => widget.onChanged(null),
-                icon: const Icon(Icons.close, size: 14),
-                label: const Text('Retirer'),
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.grey.shade600,
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  minimumSize: const Size(0, 26),
-                  textStyle: const TextStyle(fontSize: 12),
-                ),
+            if (_tanks.isNotEmpty) ...[
+              const SizedBox(width: 6),
+              _TankMiniAction(
+                icon: Icons.tune,
+                label: 'Gérer',
+                onTap: _openManageDialog,
+                color: Colors.grey.shade600,
               ),
-            ),
-          ),
+            ],
+            const Spacer(),
+            if (widget.value != null)
+              _TankMiniAction(
+                icon: Icons.close,
+                label: 'Retirer',
+                onTap: () => widget.onChanged(null),
+                color: Colors.grey.shade500,
+              ),
+          ],
+        ),
       ],
     );
+  }
+
+  Future<void> _openManageDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setLocalState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              titlePadding: const EdgeInsets.fromLTRB(20, 18, 16, 0),
+              contentPadding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
+              title: const Row(
+                children: [
+                  Icon(Icons.scuba_diving, color: AppColors.middenblauw),
+                  SizedBox(width: 8),
+                  Text('Mes bouteilles'),
+                ],
+              ),
+              content: SizedBox(
+                width: 360,
+                child: _tanks.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                        child: Text(
+                          'La liste est vide.',
+                          style: TextStyle(color: Colors.grey.shade600),
+                        ),
+                      )
+                    : ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: _tanks.length,
+                        separatorBuilder: (_, __) => Divider(
+                            height: 1, color: Colors.grey.shade200),
+                        itemBuilder: (_, i) {
+                          final t = _tanks[i];
+                          return ListTile(
+                            dense: true,
+                            leading: const Icon(
+                              Icons.scuba_diving,
+                              color: AppColors.middenblauw,
+                            ),
+                            title: Text(_label(t),
+                                style: const TextStyle(fontSize: 14)),
+                            trailing: IconButton(
+                              icon: Icon(Icons.delete_outline,
+                                  color: Colors.red.shade400),
+                              tooltip: 'Supprimer',
+                              onPressed: () async {
+                                final confirmed = await showDialog<bool>(
+                                  context: ctx,
+                                  builder: (cctx) => AlertDialog(
+                                    title: Text(
+                                        'Supprimer « ${_label(t)} » ?'),
+                                    content: const Text(
+                                      'Tu peux toujours en recréer une plus tard. Les plongées déjà enregistrées avec cette bouteille restent intactes.',
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(cctx, false),
+                                        child: const Text('Annuler'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(cctx, true),
+                                        style: TextButton.styleFrom(
+                                            foregroundColor: Colors.red),
+                                        child: const Text('Supprimer'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (confirmed != true) return;
+                                await _deleteTank(t);
+                                setLocalState(() {});
+                              },
+                            ),
+                          );
+                        },
+                      ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Fermer'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _deleteTank(_Tank target) async {
+    final next = _tanks.where((t) => t.id != target.id).toList();
+    try {
+      await _persistTanks(next);
+      if (!mounted) return;
+      setState(() => _tanks = next);
+      if (widget.value?.sourceTankId == target.id) {
+        widget.onChanged(null);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Suppression impossible : $e')),
+      );
+    }
   }
 
   String _label(_Tank t) {
@@ -332,6 +440,45 @@ class _TankPickerFieldState extends State<TankPickerField> {
       return '${t.label!.trim()} · $base';
     }
     return base;
+  }
+}
+
+class _TankMiniAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  const _TankMiniAction({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -499,6 +646,10 @@ class _TankFormSheetState extends State<_TankFormSheet> {
           onChanged: (_) => setState(() {}),
           decoration: InputDecoration(
             hintText: hint,
+            hintStyle: TextStyle(
+              color: Colors.grey.shade400,
+              fontStyle: FontStyle.italic,
+            ),
             suffixText: suffix,
             filled: true,
             fillColor: Colors.grey.shade100,
@@ -536,6 +687,10 @@ class _TankFormSheetState extends State<_TankFormSheet> {
           controller: controller,
           decoration: InputDecoration(
             hintText: hint,
+            hintStyle: TextStyle(
+              color: Colors.grey.shade400,
+              fontStyle: FontStyle.italic,
+            ),
             filled: true,
             fillColor: Colors.grey.shade100,
             border: OutlineInputBorder(

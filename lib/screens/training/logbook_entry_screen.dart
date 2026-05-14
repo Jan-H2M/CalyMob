@@ -467,8 +467,12 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
                           child: TextField(
                             controller: _depth,
                             keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
+                            decoration: InputDecoration(
                               hintText: 'Profondeur (m)',
+                              hintStyle: TextStyle(
+                                color: Colors.grey.shade400,
+                                fontStyle: FontStyle.italic,
+                              ),
                               border: InputBorder.none,
                             ),
                           ),
@@ -480,8 +484,12 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
                           child: TextField(
                             controller: _duration,
                             keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
+                            decoration: InputDecoration(
                               hintText: 'Durée (min)',
+                              hintStyle: TextStyle(
+                                color: Colors.grey.shade400,
+                                fontStyle: FontStyle.italic,
+                              ),
                               border: InputBorder.none,
                             ),
                           ),
@@ -510,8 +518,12 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
                     child: TextField(
                       controller: _notes,
                       maxLines: 3,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         hintText: 'Belle visibilité, fond à 22 m…',
+                        hintStyle: TextStyle(
+                          color: Colors.grey.shade400,
+                          fontStyle: FontStyle.italic,
+                        ),
                         border: InputBorder.none,
                       ),
                     ),
@@ -884,12 +896,16 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
                 controller: _lestage,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   hintText: 'ex: 6',
+                  hintStyle: TextStyle(
+                    color: Colors.grey.shade400,
+                    fontStyle: FontStyle.italic,
+                  ),
                   suffixText: 'kg',
                   border: InputBorder.none,
                   isDense: true,
-                  contentPadding: EdgeInsets.symmetric(vertical: 4),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 4),
                 ),
               ),
             ),
