@@ -116,10 +116,18 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
                           if (rows.isEmpty) return _emptyState();
                           return ListView.separated(
                             padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-                            itemCount: rows.length,
+                            itemCount: rows.length + 1,
                             separatorBuilder: (_, __) =>
                                 const SizedBox(height: 10),
-                            itemBuilder: (_, i) => _EntryCard(entry: rows[i]),
+                            itemBuilder: (_, i) {
+                              if (i == rows.length) {
+                                return const Padding(
+                                  padding: EdgeInsets.only(top: 12),
+                                  child: _WebEspaceFooter(),
+                                );
+                              }
+                              return _EntryCard(entry: rows[i]);
+                            },
                           );
                         },
                       ),
@@ -868,6 +876,46 @@ class _BottomActionButton extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Discreet hint that the carnet is also available on caly.club. Same data,
+/// bigger screen — useful for members who want to consult their logbook on
+/// a desktop browser. Placed after the entries list as a soft footer.
+class _WebEspaceFooter extends StatelessWidget {
+  const _WebEspaceFooter();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        children: [
+          Icon(
+            Icons.open_in_new,
+            size: 13,
+            color: Colors.white.withValues(alpha: 0.55),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Aussi disponible sur caly.club',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.65),
+              fontSize: 11.5,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Calypso · Mon espace',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.45),
+              fontSize: 10,
+              letterSpacing: 0.4,
+            ),
+          ),
+        ],
       ),
     );
   }

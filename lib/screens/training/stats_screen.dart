@@ -94,6 +94,8 @@ class _StatsScreenState extends State<StatsScreen> {
                           _countersCard(stats),
                           const SizedBox(height: 12),
                           _locationsCard(stats),
+                          const SizedBox(height: 18),
+                          _webEspaceFooter(),
                         ],
                       ),
               ),
@@ -507,6 +509,43 @@ class _StatsScreenState extends State<StatsScreen> {
             );
           }),
         ],
+      ),
+    );
+  }
+
+  /// Discreet footer hint — also surfaces `caly.club/me/carnet` for the
+  /// web equivalent. Same data, bigger screen.
+  Widget _webEspaceFooter() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 4),
+      child: Center(
+        child: Column(
+          children: [
+            Icon(
+              Icons.open_in_new,
+              size: 13,
+              color: Colors.white.withValues(alpha: 0.55),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Aussi disponible sur caly.club',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.65),
+                fontSize: 11.5,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Calypso · Mon espace',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.45),
+                fontSize: 10,
+                letterSpacing: 0.4,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
