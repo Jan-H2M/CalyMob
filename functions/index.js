@@ -232,3 +232,7 @@ const {
   onLogbookEntryGroupChanged,
 } = require('./src/training/onLogbookEntryGroupChanged');
 exports.onLogbookEntryGroupChanged = onLogbookEntryGroupChanged;
+
+// Paper logbook OCR/AI import.
+const { analyzeLogbookPage } = require('./src/logbookOcr/analyzeLogbookPage');
+exports.analyzeLogbookPage = analyzeLogbookPage;

@@ -25,6 +25,10 @@ service firebase.storage {
       return request.resource.size < 5 * 1024 * 1024; // 5MB
     }
 
+    function isValidOcrImageSize() {
+      return request.resource.size < 8 * 1024 * 1024; // 8MB
+    }
+
     function isValidDocumentSize() {
       return request.resource.size < 10 * 1024 * 1024; // 10MB
     }
@@ -149,6 +153,18 @@ service firebase.storage {
                       request.resource.size < 50 * 1024 * 1024 && // 50MB for Excel files
                       isValidFileType('(application/vnd.*|text/csv)');
       allow delete: if hasRole(clubId, ['admin']);
+    }
+
+    // Paper logbook OCR imports.
+    // A member may upload their own temporary page photo. Reads are limited to
+    // the owner; the Cloud Function reads via Admin SDK and writes the
+    // extracted review job to Firestore.
+    match /clubs/{clubId}/ocr_imports/{userId}/{jobId}/{fileName} {
+      allow read, delete: if isOwner(userId) && isClubMember(clubId);
+      allow create: if isOwner(userId) &&
+                      isClubMember(clubId) &&
+                      isValidOcrImageSize() &&
+                      isValidFileType('image/.*');
     }
 
     // ============================================
