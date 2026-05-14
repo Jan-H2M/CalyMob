@@ -215,3 +215,11 @@ exports.onPoolCheckinCompleted = onPoolCheckinCompleted;
 // DRY_RUN_POOL_CLOSE env flag during initial rollout.
 const { onPoolSessionClosed } = require('./src/training/onPoolSessionClosed');
 exports.onPoolSessionClosed = onPoolSessionClosed;
+
+// Phase A (v2.2) — Daily auto-close of stale pool sessions.
+// The "chef d'école closes the session" rule was removed from the design
+// after pilot 2026-05-14 — closes are now automatic at 04:00 Europe/Brussels
+// for any open session whose date is >18h in the past. The close itself
+// fires onPoolSessionClosed, which fans out logbook + monitor_observation.
+const { autoClosePoolSessions } = require('./src/training/autoClosePoolSessions');
+exports.autoClosePoolSessions = autoClosePoolSessions;

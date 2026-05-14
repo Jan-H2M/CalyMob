@@ -275,34 +275,44 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
           return _buildNoNiveauState();
         }
 
-        // Split catalog into 2 sections: validated + todo. Pending declarations
-        // (legacy self-declare flow) are rolled into 'todo' with a discrete
-        // 'demande envoyée' tag so members still see their request status.
-        final validated = <ExerciceLIFRAS>[];
-        final todo = <ExerciceLIFRAS>[];
+        // Split catalog three ways:
+        //   - target exercises that are still TODO (priority — top of list)
+        //   - target exercises already validated
+        //   - "Tous Niveaux" specialties (Etanche / Nitrox / …) — bottom,
+        //     less central to brevet progression but useful to surface
+        // Pending declarations (legacy self-declare flow) get a discreet
+        // "demande envoyée" tag in TODO.
+        final targetTodo = <ExerciceLIFRAS>[];
+        final targetValidated = <ExerciceLIFRAS>[];
+        final tnAll = <ExerciceLIFRAS>[];
         final pendingIds = <String>{};
 
         for (final ex in _catalog) {
+          final isTN = ex.niveau == NiveauLIFRAS.tn;
           final match =
               provider.exercicesValides.where((e) => e.exerciceId == ex.id);
-          if (match.isEmpty) {
-            todo.add(ex);
+          final isValid = match.any((e) => e.isValidated);
+          final isPending = match.any((e) => e.isPending);
+
+          if (isTN) {
+            tnAll.add(ex);
+            if (isPending) pendingIds.add(ex.id);
             continue;
           }
-          if (match.any((e) => e.isValidated)) {
-            validated.add(ex);
-          } else if (match.any((e) => e.isPending)) {
-            todo.add(ex);
-            pendingIds.add(ex.id);
+          if (isValid) {
+            targetValidated.add(ex);
           } else {
-            // Only refused → back to todo
-            todo.add(ex);
+            targetTodo.add(ex);
+            if (isPending) pendingIds.add(ex.id);
           }
         }
 
-        final totalCatalog = _catalog.length;
-        final progressFraction =
-            totalCatalog == 0 ? 0.0 : validated.length / totalCatalog;
+        // Progress counts only target-level — TN are cross-level and don't
+        // gate the next brevet, so we keep them out of the headline metric.
+        final targetTotal = targetTodo.length + targetValidated.length;
+        final progressFraction = targetTotal == 0
+            ? 0.0
+            : targetValidated.length / targetTotal;
 
         return RefreshIndicator(
           onRefresh: () async {
@@ -314,20 +324,20 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
               // Progress header
               _buildProgressHeader(
                 niveau: _targetNiveau!,
-                validated: validated.length,
-                total: totalCatalog,
+                validated: targetValidated.length,
+                total: targetTotal,
                 progress: progressFraction,
               ),
               const SizedBox(height: 20),
 
-              // Section: À faire (compact)
+              // Section 1: À faire (target-level, priority)
               _buildSection(
                 title: 'À faire',
                 icon: Icons.radio_button_unchecked,
                 iconColor: Colors.blueGrey,
                 emptyText: 'Tous les exercices de ${_targetNiveau!.code} '
                     'sont validés 🎉',
-                children: todo
+                children: targetTodo
                     .map((ex) => _buildTodoRow(
                           ex,
                           isPending: pendingIds.contains(ex.id),
@@ -336,13 +346,13 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
               ),
               const SizedBox(height: 20),
 
-              // Section: Validés (compact)
+              // Section 2: Validés (target-level)
               _buildSection(
                 title: 'Validés',
                 icon: Icons.check_circle,
                 iconColor: Colors.green,
                 emptyText: 'Aucun exercice validé pour le moment',
-                children: validated.map((ex) {
+                children: targetValidated.map((ex) {
                   final match = provider.exercicesValides.firstWhere(
                     (e) => e.exerciceId == ex.id && e.isValidated,
                     orElse: () => provider.exercicesValides
@@ -351,6 +361,27 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                   return _buildValidatedRow(ex, match);
                 }).toList(),
               ),
+              const SizedBox(height: 20),
+
+              // Section 3: Spécialités — cross-level, lower priority.
+              if (tnAll.isNotEmpty)
+                _buildSection(
+                  title: 'Spécialités (Tous niveaux)',
+                  icon: Icons.workspace_premium_outlined,
+                  iconColor: Colors.teal,
+                  emptyText: null,
+                  children: tnAll.map((ex) {
+                    final match = provider.exercicesValides
+                        .where((e) => e.exerciceId == ex.id);
+                    final isValid = match.any((e) => e.isValidated);
+                    if (isValid) {
+                      final v = match.firstWhere((e) => e.isValidated);
+                      return _buildValidatedRow(ex, v);
+                    }
+                    return _buildTodoRow(ex,
+                        isPending: pendingIds.contains(ex.id));
+                  }).toList(),
+                ),
               const SizedBox(height: 40),
             ],
           ),
@@ -456,16 +487,24 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Section header — white text on the blue ocean gradient.
         Row(
           children: [
-            Icon(icon, size: 18, color: iconColor),
+            Icon(icon, size: 18, color: Colors.white),
             const SizedBox(width: 6),
             Text(
               title,
-              style: TextStyle(
+              style: const TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 15,
-                color: Colors.grey[800],
+                color: Colors.white,
+                shadows: [
+                  Shadow(
+                    offset: Offset(0, 1),
+                    blurRadius: 3,
+                    color: Colors.black26,
+                  ),
+                ],
               ),
             ),
             const SizedBox(width: 6),
@@ -474,15 +513,18 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                 padding: const EdgeInsets.symmetric(
                     horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: iconColor.withOpacity(0.15),
+                  color: Colors.white.withValues(alpha: 0.22),
                   borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.35),
+                  ),
                 ),
                 child: Text(
                   children.length.toString(),
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.bold,
-                    color: iconColor,
+                    color: Colors.white,
                   ),
                 ),
               ),
@@ -493,20 +535,47 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.grey[200]!),
+              color: Colors.white.withValues(alpha: 0.95),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
               emptyText,
               style: TextStyle(
                 fontSize: 13,
-                color: Colors.grey[600],
+                color: Colors.grey[700],
               ),
             ),
           )
         else
-          ...children,
+          // Wrap all rows in one white card so dark text reads cleanly
+          // on the blue ocean gradient backdrop.
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.96),
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.08),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Column(
+              children: [
+                for (int i = 0; i < children.length; i++) ...[
+                  if (i > 0)
+                    Divider(
+                      height: 1,
+                      thickness: 1,
+                      color: Colors.grey.shade200,
+                    ),
+                  children[i],
+                ],
+              ],
+            ),
+          ),
       ],
     );
   }

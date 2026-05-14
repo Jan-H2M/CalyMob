@@ -85,6 +85,21 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
   TankSelection? _tank;
   bool _submitting = false;
 
+  // Pool-edit editable fields. Pre-filled from the entry, written back on
+  // save through the pool-specific update path. Theme and validator stay
+  // read-only context (changing them would invalidate the existing
+  // monitor_observation task fan-out).
+  String? _poolLevel;
+  int? _poolGroupNumber;
+
+  /// True when the form is editing an existing pool entry (source=piscine).
+  /// Pool entries strip equipment / binôme / counters / depth / duration /
+  /// times — only the date, location and notes carry meaning. The date and
+  /// location are source-locked by the Cloud Function that wrote them.
+  bool get _isPoolEdit =>
+      widget.mode == LogbookEntryMode.edit &&
+      (widget.initialData?['source'] as String?) == 'piscine';
+
   /// Triple-binding anchor: tracks which two of (entry / exit / duration) the
   /// user touched most recently. The third one is derived from the other two.
   /// Keys: 'entry', 'exit', 'duration'.
@@ -151,6 +166,11 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
       country: map['country'] as String?,
       isSea: (map['counters'] as Map?)?['mer'] == true,
     );
+
+    // Pool group context — only meaningful when source == piscine.
+    _poolLevel = map['group_level'] as String?;
+    final gn = map['group_number'];
+    _poolGroupNumber = gn is num ? gn.toInt() : null;
 
     final depth = (map['depth_max_meters'] as num?)?.toDouble();
     if (depth != null) _depth.text = _fmtNum(depth);
@@ -437,98 +457,9 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
             children: [
               ListView(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 140),
-                children: [
-                  _header(),
-                  if (widget.mode == LogbookEntryMode.auto) _autoBanner(),
-                  const SizedBox(height: 12),
-                  _sectionTitle('DATE & HEURES'),
-                  _dateTimeCard(),
-                  const SizedBox(height: 12),
-                  _sectionTitle('LIEU'),
-                  _whiteCard(
-                    padding: EdgeInsets.zero,
-                    child: DiveLocationPickerField(
-                      value: _locationSelection,
-                      readOnly: widget.mode == LogbookEntryMode.auto,
-                      onSelected: (selection) => setState(() {
-                        _locationSelection = selection;
-                        if (selection.isSea) {
-                          _counters = _counters.copyWith(mer: true);
-                        }
-                      }),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  _sectionTitle('PROFONDEUR · DURÉE'),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _whiteCard(
-                          child: TextField(
-                            controller: _depth,
-                            keyboardType: TextInputType.number,
-                            decoration: InputDecoration(
-                              hintText: 'Profondeur (m)',
-                              hintStyle: TextStyle(
-                                color: Colors.grey.shade400,
-                                fontStyle: FontStyle.italic,
-                              ),
-                              border: InputBorder.none,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _whiteCard(
-                          child: TextField(
-                            controller: _duration,
-                            keyboardType: TextInputType.number,
-                            decoration: InputDecoration(
-                              hintText: 'Durée (min)',
-                              hintStyle: TextStyle(
-                                color: Colors.grey.shade400,
-                                fontStyle: FontStyle.italic,
-                              ),
-                              border: InputBorder.none,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  _sectionTitle('COMPTEUR — TAPE TOUT CE QUI COMPTE'),
-                  _whiteCard(child: _counterChips()),
-                  const SizedBox(height: 12),
-                  _sectionTitle('ÉQUIPEMENT'),
-                  _whiteCard(child: _equipmentSection(userId)),
-                  const SizedBox(height: 12),
-                  _sectionTitle('BINÔMES'),
-                  _whiteCard(
-                    child: BinomeTypeaheadField(
-                      binomes: _binomes,
-                      currentUserId: userId,
-                      onChanged: (next) => setState(() => _binomes = next),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  _sectionTitle('NOTES (optionnel)'),
-                  _whiteCard(
-                    child: TextField(
-                      controller: _notes,
-                      maxLines: 3,
-                      decoration: InputDecoration(
-                        hintText: 'Belle visibilité, fond à 22 m…',
-                        hintStyle: TextStyle(
-                          color: Colors.grey.shade400,
-                          fontStyle: FontStyle.italic,
-                        ),
-                        border: InputBorder.none,
-                      ),
-                    ),
-                  ),
-                ],
+                children: _isPoolEdit
+                    ? _poolEditChildren()
+                    : _diveEditChildren(userId),
               ),
               Positioned(
                 left: 0,
@@ -541,6 +472,300 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         ),
       ),
     );
+  }
+
+  List<Widget> _diveEditChildren(String? userId) {
+    return [
+      _header(),
+      if (widget.mode == LogbookEntryMode.auto) _autoBanner(),
+      const SizedBox(height: 12),
+      _sectionTitle('DATE & HEURES'),
+      _dateTimeCard(),
+      const SizedBox(height: 12),
+      _sectionTitle('LIEU'),
+      _whiteCard(
+        padding: EdgeInsets.zero,
+        child: DiveLocationPickerField(
+          value: _locationSelection,
+          readOnly: widget.mode == LogbookEntryMode.auto,
+          onSelected: (selection) => setState(() {
+            _locationSelection = selection;
+            if (selection.isSea) {
+              _counters = _counters.copyWith(mer: true);
+            }
+          }),
+        ),
+      ),
+      const SizedBox(height: 12),
+      _sectionTitle('PROFONDEUR · DURÉE'),
+      Row(
+        children: [
+          Expanded(
+            child: _whiteCard(
+              child: TextField(
+                controller: _depth,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  hintText: 'Profondeur (m)',
+                  hintStyle: TextStyle(
+                    color: Colors.grey.shade400,
+                    fontStyle: FontStyle.italic,
+                  ),
+                  border: InputBorder.none,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _whiteCard(
+              child: TextField(
+                controller: _duration,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  hintText: 'Durée (min)',
+                  hintStyle: TextStyle(
+                    color: Colors.grey.shade400,
+                    fontStyle: FontStyle.italic,
+                  ),
+                  border: InputBorder.none,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      _sectionTitle('COMPTEUR — TAPE TOUT CE QUI COMPTE'),
+      _whiteCard(child: _counterChips()),
+      const SizedBox(height: 12),
+      _sectionTitle('ÉQUIPEMENT'),
+      _whiteCard(child: _equipmentSection(userId)),
+      const SizedBox(height: 12),
+      _sectionTitle('BINÔMES'),
+      _whiteCard(
+        child: BinomeTypeaheadField(
+          binomes: _binomes,
+          currentUserId: userId,
+          onChanged: (next) => setState(() => _binomes = next),
+        ),
+      ),
+      const SizedBox(height: 12),
+      _sectionTitle('NOTES (optionnel)'),
+      _whiteCard(
+        child: TextField(
+          controller: _notes,
+          maxLines: 3,
+          decoration: InputDecoration(
+            hintText: 'Belle visibilité, fond à 22 m…',
+            hintStyle: TextStyle(
+              color: Colors.grey.shade400,
+              fontStyle: FontStyle.italic,
+            ),
+            border: InputBorder.none,
+          ),
+        ),
+      ),
+    ];
+  }
+
+  /// Pool edit form — date / location are source-locked context, group is
+  /// editable (to correct a check-in mistake), theme and monitor stay
+  /// read-only context, notes are free-text.
+  List<Widget> _poolEditChildren() {
+    final data = widget.initialData ?? const {};
+    final locationName = (data['location_name'] as String?) ??
+        (data['lieu'] as String?) ??
+        'Watermael-Boitsfort';
+    final themeSnapshot = (data['theme_snapshot'] as String?)?.trim();
+
+    return [
+      _header(),
+      const SizedBox(height: 12),
+      _sectionTitle('DATE'),
+      _whiteCard(
+        child: Row(
+          children: [
+            Icon(Icons.calendar_today_outlined,
+                color: AppColors.middenblauw, size: 18),
+            const SizedBox(width: 10),
+            Text(
+              _formatDate(_date),
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 12),
+      _sectionTitle('LIEU'),
+      _whiteCard(
+        child: Row(
+          children: [
+            Icon(Icons.place_outlined,
+                color: AppColors.middenblauw, size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                locationName,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 12),
+      _sectionTitle('GROUPE'),
+      _whiteCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  flex: 5,
+                  child: _PoolLevelDropdown(
+                    value: _poolLevel,
+                    onChanged: (v) => setState(() => _poolLevel = v),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 4,
+                  child: _PoolGroupNumberStepper(
+                    value: _poolGroupNumber,
+                    onChanged: (v) => setState(() => _poolGroupNumber = v),
+                  ),
+                ),
+              ],
+            ),
+            if (themeSnapshot != null && themeSnapshot.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.bookmark_outline,
+                        size: 16, color: Colors.grey.shade700),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        themeSnapshot,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade800,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      'thème',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      // Read-only context — straight from the pool session at close-time.
+      // Not editable here because changing these on the entry would not
+      // re-route the monitor_observation task that already fanned out.
+      ..._poolPeopleSections(data),
+      const SizedBox(height: 12),
+      _sectionTitle('NOTES'),
+      _whiteCard(
+        child: TextField(
+          controller: _notes,
+          maxLines: 4,
+          decoration: InputDecoration(
+            hintText: 'Tes impressions, ce que tu as appris…',
+            hintStyle: TextStyle(
+              color: Colors.grey.shade400,
+              fontStyle: FontStyle.italic,
+            ),
+            border: InputBorder.none,
+          ),
+        ),
+      ),
+    ];
+  }
+
+  /// Read-only "MONITEUR" + "CO-ÉQUIPIERS" sections for the pool edit form.
+  /// Both are sourced from the snapshot the Cloud Function wrote at session
+  /// close — names are resolved lazily for member IDs when no snapshot
+  /// displayName is available.
+  List<Widget> _poolPeopleSections(Map<String, dynamic> data) {
+    final validatorId = data['validator_id'] as String?;
+    final moniteurIds =
+        (data['moniteur_ids'] as List?)?.cast<String>() ?? const [];
+    final monitorIds = <String>{
+      if (validatorId != null && validatorId.isNotEmpty) validatorId,
+      ...moniteurIds,
+    }.toList();
+
+    final rawMembers = data['pool_group_members'] as List? ?? const [];
+    final members = <Map<String, dynamic>>[];
+    for (final m in rawMembers) {
+      if (m is Map) members.add(Map<String, dynamic>.from(m));
+    }
+
+    final widgets = <Widget>[];
+    if (monitorIds.isNotEmpty) {
+      widgets.add(const SizedBox(height: 12));
+      widgets.add(_sectionTitle('MONITEUR'));
+      widgets.add(_whiteCard(
+        child: _PoolMemberNameList(memberIds: monitorIds),
+      ));
+    }
+    if (members.isNotEmpty) {
+      widgets.add(const SizedBox(height: 12));
+      widgets.add(_sectionTitle('CO-ÉQUIPIERS'));
+      widgets.add(_whiteCard(
+        child: Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final m in members)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Text(
+                  (m['displayName'] as String?) ??
+                      (m['name'] as String?) ??
+                      (m['member_id'] as String?) ??
+                      '?',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ));
+    }
+    return widgets;
   }
 
   Widget _header() {
@@ -559,11 +784,13 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isEdit
-                      ? 'Modifier la plongée'
-                      : isAuto
-                          ? 'Carnet — sortie Calypso'
-                          : 'Nouvelle plongée',
+                  _isPoolEdit
+                      ? 'Modifier la séance piscine'
+                      : isEdit
+                          ? 'Modifier la plongée'
+                          : isAuto
+                              ? 'Carnet — sortie Calypso'
+                              : 'Nouvelle plongée',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 20,
@@ -571,11 +798,13 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
                   ),
                 ),
                 Text(
-                  isEdit
-                      ? 'corrige ou complète'
-                      : isAuto
-                          ? 'pré-rempli — complète et enregistre'
-                          : 'manuelle · ailleurs',
+                  _isPoolEdit
+                      ? 'tes notes uniquement'
+                      : isEdit
+                          ? 'corrige ou complète'
+                          : isAuto
+                              ? 'pré-rempli — complète et enregistre'
+                              : 'manuelle · ailleurs',
                   style: const TextStyle(color: Colors.white70, fontSize: 12),
                 ),
               ],
@@ -1022,6 +1251,38 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
       if (userId == null) throw 'Session non identifiée';
 
       const clubId = FirebaseConfig.defaultClubId;
+
+      // Pool entries: date / location / theme / validator stay locked
+      // (those reflect what the session actually was), but group level +
+      // group number are editable so the student can fix a check-in
+      // mistake. Notes are free-text as usual.
+      if (_isPoolEdit && widget.entryId != null) {
+        await FirebaseFirestore.instance
+            .collection('clubs')
+            .doc(clubId)
+            .collection('student_logbook_entries')
+            .doc(widget.entryId)
+            .update({
+          'notes': _notes.text.trim().isEmpty ? null : _notes.text.trim(),
+          'group_level': _poolLevel,
+          'group_number': _poolGroupNumber,
+          'updated_at': FieldValue.serverTimestamp(),
+        });
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+              'Séance piscine mise à jour ✓',
+              style: TextStyle(color: Colors.white),
+            ),
+            backgroundColor: Colors.green.shade700,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        Navigator.of(context).pop();
+        return;
+      }
+
       final memberName =
           '${memberProvider.prenom ?? ''} ${memberProvider.nom ?? ''}'.trim();
 
@@ -1123,16 +1384,21 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.delete_outline, color: Colors.red),
-            SizedBox(width: 8),
-            Text('Supprimer cette plongée ?'),
+            const Icon(Icons.delete_outline, color: Colors.red),
+            const SizedBox(width: 8),
+            Text(_isPoolEdit
+                ? 'Supprimer cette séance piscine ?'
+                : 'Supprimer cette plongée ?'),
           ],
         ),
-        content: const Text(
-          "Cette action est définitive — la plongée disparaît "
-          "de ton carnet et des statistiques.",
+        content: Text(
+          _isPoolEdit
+              ? "Cette action est définitive — la séance disparaît "
+                  "de ton carnet."
+              : "Cette action est définitive — la plongée disparaît "
+                  "de ton carnet et des statistiques.",
         ),
         actions: [
           TextButton(
@@ -1167,5 +1433,154 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+}
+
+// ===========================================================================
+// Pool-edit form widgets — level dropdown + group-number stepper.
+// ===========================================================================
+
+class _PoolLevelDropdown extends StatelessWidget {
+  final String? value;
+  final ValueChanged<String?> onChanged;
+  const _PoolLevelDropdown({required this.value, required this.onChanged});
+
+  static const _options = <String>['1*', '2*', '3*', '4*', 'Perfectionnement'];
+
+  @override
+  Widget build(BuildContext context) {
+    final current = _options.contains(value) ? value : null;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey.shade300),
+        color: Colors.white,
+      ),
+      child: DropdownButton<String>(
+        value: current,
+        isExpanded: true,
+        underline: const SizedBox.shrink(),
+        hint: Text(
+          'Niveau',
+          style: TextStyle(
+            color: Colors.grey.shade400,
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+        items: [
+          for (final opt in _options)
+            DropdownMenuItem<String>(
+              value: opt,
+              child: Text('Formation $opt'),
+            ),
+        ],
+        onChanged: onChanged,
+      ),
+    );
+  }
+}
+
+/// Resolves a list of member IDs to "Prenom NOM" labels via Firestore.
+/// Used for the read-only MONITEUR section in the pool edit form.
+class _PoolMemberNameList extends StatelessWidget {
+  final List<String> memberIds;
+  const _PoolMemberNameList({required this.memberIds});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<String>>(
+      future: _resolve(memberIds),
+      builder: (context, snap) {
+        final names = snap.data ?? memberIds;
+        return Row(
+          children: [
+            Icon(Icons.person_outline,
+                color: Colors.grey.shade700, size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                names.join(', '),
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<List<String>> _resolve(List<String> ids) async {
+    final db = FirebaseFirestore.instance;
+    final out = <String>[];
+    for (final id in ids) {
+      try {
+        final s = await db
+            .collection('clubs')
+            .doc(FirebaseConfig.defaultClubId)
+            .collection('members')
+            .doc(id)
+            .get();
+        if (!s.exists) {
+          out.add(id);
+          continue;
+        }
+        final v = s.data() ?? {};
+        final prenom = (v['prenom'] as String?) ?? '';
+        final nom = (v['nom'] as String?) ?? '';
+        final display = ('$prenom $nom').trim();
+        out.add(display.isEmpty ? id : display);
+      } catch (_) {
+        out.add(id);
+      }
+    }
+    return out;
+  }
+}
+
+class _PoolGroupNumberStepper extends StatelessWidget {
+  final int? value;
+  final ValueChanged<int?> onChanged;
+  const _PoolGroupNumberStepper({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final v = value ?? 1;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey.shade300),
+        color: Colors.white,
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.remove, size: 18),
+            visualDensity: VisualDensity.compact,
+            onPressed: v > 1 ? () => onChanged(v - 1) : null,
+          ),
+          Expanded(
+            child: Center(
+              child: Text(
+                'Groupe $v',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.add, size: 18),
+            visualDensity: VisualDensity.compact,
+            onPressed: v < 12 ? () => onChanged(v + 1) : null,
+          ),
+        ],
+      ),
+    );
   }
 }

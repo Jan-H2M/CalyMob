@@ -19,6 +19,8 @@ import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import '../exercises/member_exercises_screen.dart';
+import '../../providers/member_provider.dart';
 import 'logbook_entry_detail_screen.dart';
 import 'logbook_entry_screen.dart';
 import 'stats_screen.dart';
@@ -242,6 +244,30 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
                 ],
               ),
             ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.school_outlined, color: Colors.white),
+            tooltip: 'Ma progression LIFRAS',
+            onPressed: () {
+              final auth = context.read<AuthProvider>();
+              final memberProvider = context.read<MemberProvider>();
+              final userId = auth.currentUser?.uid;
+              if (userId == null) return;
+              final memberName = ('${memberProvider.prenom ?? ''} '
+                      '${memberProvider.nom ?? ''}')
+                  .trim();
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => MemberExercisesScreen(
+                    memberId: userId,
+                    memberName:
+                        memberName.isEmpty ? 'Moi' : memberName,
+                    isOwnProfile: true,
+                  ),
+                ),
+              );
+            },
           ),
           IconButton(
             icon: const Icon(Icons.bar_chart, color: Colors.white),
