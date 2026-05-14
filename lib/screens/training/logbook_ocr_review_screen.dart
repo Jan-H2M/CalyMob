@@ -47,37 +47,108 @@ class _LogbookOcrReviewScreenState extends State<LogbookOcrReviewScreen> {
   Future<void> _loadSuggestions() async {
     final db = FirebaseFirestore.instance;
     final clubId = FirebaseConfig.defaultClubId;
+    final auth = context.read<AuthProvider>();
+    final userId = auth.currentUser?.uid;
     try {
+      // 1. Personal history — frequency from the user's own logbook entries.
+      // Most-used items surface first so the typeahead matches what the
+      // diver actually writes about in practice (not just whatever the
+      // club catalog happens to contain).
+      final locFreq = <String, int>{};
+      final buddyFreq = <String, int>{};
+      if (userId != null) {
+        final ownEntries = await db
+            .collection('clubs').doc(clubId)
+            .collection('student_logbook_entries')
+            .where('member_id', isEqualTo: userId)
+            .get();
+        for (final d in ownEntries.docs) {
+          final v = d.data();
+          final loc = (v['location_name'] ?? '').toString().trim();
+          if (loc.isNotEmpty) {
+            locFreq[loc] = (locFreq[loc] ?? 0) + 1;
+          }
+          final binomes = v['binomes'] as List?;
+          if (binomes != null) {
+            for (final b in binomes) {
+              if (b is Map) {
+                final name = (b['displayName'] ?? b['name'] ?? '').toString().trim();
+                if (name.isNotEmpty) buddyFreq[name] = (buddyFreq[name] ?? 0) + 1;
+              }
+            }
+          } else {
+            final buddies = v['buddies'] as List?;
+            if (buddies != null) {
+              for (final b in buddies) {
+                String name = '';
+                if (b is String) name = b.trim();
+                else if (b is Map) {
+                  name = (b['name'] ?? b['displayName'] ?? '').toString().trim();
+                }
+                if (name.isNotEmpty) buddyFreq[name] = (buddyFreq[name] ?? 0) + 1;
+              }
+            }
+          }
+        }
+      }
+
+      // 2. Club catalog — dive_locations + all members (for completeness).
       final locSnap = await db
           .collection('clubs').doc(clubId)
           .collection('dive_locations').limit(300).get();
-      final locs = <String>{};
+      final clubLocs = <String>{};
       for (final d in locSnap.docs) {
         final v = d.data();
         final n = (v['name'] ?? v['nom'] ?? '').toString().trim();
-        if (n.isNotEmpty) locs.add(n);
+        if (n.isNotEmpty) clubLocs.add(n);
       }
       final memSnap = await db
           .collection('clubs').doc(clubId)
           .collection('members').limit(500).get();
-      final members = <String>{};
+      final clubMembers = <String>{};
       for (final d in memSnap.docs) {
         final v = d.data();
         final p = (v['prenom'] ?? '').toString().trim();
         final n = (v['nom'] ?? '').toString().trim();
         final display = '$p $n'.trim();
-        if (display.isNotEmpty) members.add(display);
+        if (display.isNotEmpty) clubMembers.add(display);
       }
+
+      // 3. Merge: personal history (sorted by frequency desc) first, then
+      // club entries the user hasn't logged yet (alphabetical).
+      final favLocs = locFreq.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      final orderedLocs = <String>[
+        for (final e in favLocs) e.key,
+        for (final n in (clubLocs.toList()..sort()))
+          if (!locFreq.containsKey(n)) n,
+      ];
+
+      final favBuddies = buddyFreq.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      final orderedBuddies = <String>[
+        for (final e in favBuddies) e.key,
+        for (final n in (clubMembers.toList()..sort()))
+          if (!buddyFreq.containsKey(n)) n,
+      ];
+
       if (!mounted) return;
       setState(() {
-        _locationSuggestions = (locs.toList()..sort());
-        _buddySuggestions = (members.toList()..sort());
+        _locationSuggestions = orderedLocs;
+        _buddySuggestions = orderedBuddies;
+        _personalLocations = locFreq.keys.toSet();
+        _personalBuddies = buddyFreq.keys.toSet();
       });
     } catch (e) {
       // Best-effort — typeahead just won't suggest anything.
       debugPrint('[OcrReview] suggestion lookup failed: $e');
     }
   }
+
+  /// Sets used by the option renderer to draw a small star icon next to
+  /// items the diver has already logged at least once before.
+  Set<String> _personalLocations = const {};
+  Set<String> _personalBuddies = const {};
 
   Future<void> _importSelected() async {
     if (_importing) return;
@@ -148,6 +219,8 @@ class _LogbookOcrReviewScreenState extends State<LogbookOcrReviewScreen> {
                     onChanged: (next) => _replaceRow(i, next),
                     locationSuggestions: _locationSuggestions,
                     buddySuggestions: _buddySuggestions,
+                    personalLocations: _personalLocations,
+                    personalBuddies: _personalBuddies,
                   ),
                 ),
               ),
@@ -315,12 +388,16 @@ class _ReviewCard extends StatefulWidget {
   final ValueChanged<LogbookOcrSuggestedRow> onChanged;
   final List<String> locationSuggestions;
   final List<String> buddySuggestions;
+  final Set<String> personalLocations;
+  final Set<String> personalBuddies;
 
   const _ReviewCard({
     required this.row,
     required this.onChanged,
     this.locationSuggestions = const [],
     this.buddySuggestions = const [],
+    this.personalLocations = const {},
+    this.personalBuddies = const {},
   });
 
   @override
@@ -613,8 +690,14 @@ class _ReviewCardState extends State<_ReviewCard> {
                   itemCount: options.length,
                   itemBuilder: (_, i) {
                     final opt = options.elementAt(i);
+                    final isPersonal = widget.personalLocations.contains(opt);
                     return ListTile(
                       dense: true,
+                      leading: isPersonal
+                          ? Icon(Icons.star,
+                              size: 14, color: Colors.amber.shade700)
+                          : null,
+                      horizontalTitleGap: isPersonal ? 4 : null,
                       title: Text(opt, style: const TextStyle(fontSize: 13.5)),
                       onTap: () {
                         onSelected(opt);
@@ -704,9 +787,14 @@ class _ReviewCardState extends State<_ReviewCard> {
                   itemCount: options.length,
                   itemBuilder: (_, i) {
                     final opt = options.elementAt(i);
+                    final isPersonal = widget.personalBuddies.contains(opt);
                     return ListTile(
                       dense: true,
-                      leading: const Icon(Icons.person_outline, size: 16),
+                      leading: isPersonal
+                          ? Icon(Icons.star,
+                              size: 14, color: Colors.amber.shade700)
+                          : const Icon(Icons.person_outline, size: 16),
+                      horizontalTitleGap: 4,
                       title: Text(opt, style: const TextStyle(fontSize: 13.5)),
                       onTap: () => onSelected(opt),
                     );

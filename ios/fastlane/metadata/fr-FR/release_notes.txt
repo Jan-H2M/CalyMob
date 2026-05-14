@@ -1,8 +1,6 @@
 Carnet de formation :
-• Flow piscine complète : check-in, groupe, moniteur
-• Mon carnet séparé : onglets Plongées / Piscine
-• Édition inline (groupe, notes, équipement)
-• Progression LIFRAS : exercices à faire / validés
-• Scan OCR de carnets papier :
-  – AI lit la faune marine (Nudibranche, Rascasse…)
-  – Autocomplete pour les lieux et les binômes
+• Mon carnet : pills d'année visibles (correctif)
+• Scan OCR : suggestions personnalisées :
+  – Lieux et binômes triés par ta fréquence d'usage
+  – ⭐ Étoile à côté de ceux déjà loggés
+• AI lit la faune marine (Nudibranche, Rascasse…)
