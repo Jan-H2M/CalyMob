@@ -56,6 +56,8 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
     return false;
   }
 
+  bool get _isPool => (data['source'] as String?) == 'piscine';
+
   @override
   Widget build(BuildContext context) {
     final date = (data['date'] as Timestamp?)?.toDate();
@@ -65,6 +67,24 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
             '${date.year}'
         : '—';
 
+    return Scaffold(
+      body: OceanGradientBackground(
+        creatures: CreatureSet.jellyfishAndBubbles,
+        child: SafeArea(
+          child: Column(
+            children: [
+              _header(context, dateLabel),
+              Expanded(
+                child: _isPool ? _poolBody() : _diveBody(date),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _diveBody(DateTime? date) {
     final locationName =
         (data['location_name'] as String?) ?? (data['lieu'] as String?) ?? '—';
     final country = data['country'] as String?;
@@ -81,57 +101,108 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
 
     final binomes = _parseBinomes(data);
 
-    return Scaffold(
-      body: OceanGradientBackground(
-        creatures: CreatureSet.jellyfishAndBubbles,
-        child: SafeArea(
-          child: Column(
-            children: [
-              _header(context, dateLabel),
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                  children: [
-                    _LocationCard(name: locationName, country: country, isSea: isSea),
-                    const SizedBox(height: 12),
-                    _DateTimeCard(
-                      date: date,
-                      entryTime: _readTime(data, 'entry_time', 'entry_time_str'),
-                      exitTime: _readTime(data, 'exit_time', 'exit_time_str'),
-                    ),
-                    const SizedBox(height: 12),
-                    _ParamsCard(depth: depth, duration: duration),
-                    if (counters.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      _CountersCard(counters: counters),
-                    ],
-                    if (_hasEquipment(data)) ...[
-                      const SizedBox(height: 12),
-                      _EquipmentCard(data: data),
-                    ],
-                    if (binomes.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      _BinomesCard(binomes: binomes),
-                    ],
-                    if (notes != null && notes.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      _NotesCard(notes: notes),
-                    ],
-                    const SizedBox(height: 12),
-                    _SourceCard(
-                      source: source,
-                      operationTitle: operationTitle,
-                      themeSnapshot: themeSnapshot,
-                      validatorId: validatorId,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      children: [
+        _LocationCard(name: locationName, country: country, isSea: isSea),
+        const SizedBox(height: 12),
+        _DateTimeCard(
+          date: date,
+          entryTime: _readTime(data, 'entry_time', 'entry_time_str'),
+          exitTime: _readTime(data, 'exit_time', 'exit_time_str'),
         ),
-      ),
+        const SizedBox(height: 12),
+        _ParamsCard(depth: depth, duration: duration),
+        if (counters.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _CountersCard(counters: counters),
+        ],
+        if (_hasEquipment(data)) ...[
+          const SizedBox(height: 12),
+          _EquipmentCard(data: data),
+        ],
+        if (binomes.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _BinomesCard(binomes: binomes),
+        ],
+        if (notes != null && notes.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _NotesCard(notes: notes),
+        ],
+        const SizedBox(height: 12),
+        _SourceCard(
+          source: source,
+          operationTitle: operationTitle,
+          themeSnapshot: themeSnapshot,
+          validatorId: validatorId,
+        ),
+      ],
     );
+  }
+
+  /// Pool entries are a different beast. No equipment, no binôme list, no
+  /// counters, no depth/duration/times. What matters is : where, in which
+  /// group, what theme, with which monitor, and who else was in your group.
+  Widget _poolBody() {
+    final locationName =
+        (data['location_name'] as String?) ?? (data['lieu'] as String?) ??
+            'Watermael-Boitsfort';
+    final themeSnapshot = (data['theme_snapshot'] as String?)?.trim();
+    final notes = (data['notes'] as String?)?.trim();
+    final groupLevel = data['group_level'] as String?;
+    final groupNumberRaw = data['group_number'];
+    final groupNumber =
+        groupNumberRaw is num ? groupNumberRaw.toInt() : null;
+    final validatorId = data['validator_id'] as String?;
+    final moniteurIds = (data['moniteur_ids'] as List?)?.cast<String>() ?? [];
+    final groupMembers = _parsePoolGroupMembers(data);
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      children: [
+        _LocationCard(name: locationName, country: null, isSea: false),
+        const SizedBox(height: 12),
+        _PoolGroupCard(
+          level: groupLevel,
+          groupNumber: groupNumber,
+          theme: themeSnapshot,
+          validatorId: validatorId,
+          moniteurIds: moniteurIds,
+        ),
+        if (groupMembers.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _PoolGroupMembersCard(members: groupMembers),
+        ],
+        if (notes != null && notes.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _NotesCard(notes: notes),
+        ],
+        const SizedBox(height: 12),
+        _SourceCard(
+          source: 'piscine',
+          operationTitle: null,
+          themeSnapshot: themeSnapshot,
+          validatorId: validatorId,
+        ),
+      ],
+    );
+  }
+
+  List<_PoolGroupMember> _parsePoolGroupMembers(Map<String, dynamic> data) {
+    final raw = data['pool_group_members'] as List? ?? const [];
+    final result = <_PoolGroupMember>[];
+    for (final m in raw) {
+      if (m is! Map) continue;
+      final displayName = (m['displayName'] as String?) ??
+          (m['name'] as String?) ??
+          (m['memberName'] as String?);
+      if (displayName == null || displayName.isEmpty) continue;
+      result.add(_PoolGroupMember(
+        displayName: displayName,
+        memberId: m['member_id'] as String?,
+      ));
+    }
+    return result;
   }
 
   Widget _header(BuildContext context, String dateLabel) {
@@ -148,7 +219,9 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Plongée du $dateLabel',
+                  _isPool
+                      ? 'Piscine du $dateLabel'
+                      : 'Plongée du $dateLabel',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 20,
@@ -284,6 +357,244 @@ class _ParsedBinome {
     this.niveau,
     this.club,
   });
+}
+
+class _PoolGroupMember {
+  final String displayName;
+  final String? memberId;
+  const _PoolGroupMember({required this.displayName, this.memberId});
+}
+
+/// Pool-specific group card — replaces the dive ParamsCard/CountersCard/
+/// EquipmentCard stack with a single block that summarises which group the
+/// member was in, what was taught, and who the monitor was.
+class _PoolGroupCard extends StatelessWidget {
+  final String? level;
+  final int? groupNumber;
+  final String? theme;
+  final String? validatorId;
+  final List<String> moniteurIds;
+
+  const _PoolGroupCard({
+    required this.level,
+    required this.groupNumber,
+    required this.theme,
+    required this.validatorId,
+    required this.moniteurIds,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final groupParts = <String>[];
+    if (level != null && level!.isNotEmpty) {
+      groupParts.add('Formation $level');
+    }
+    if (groupNumber != null) {
+      groupParts.add('Groupe $groupNumber');
+    }
+    final groupLabel = groupParts.join(' · ');
+    final hasMonitor =
+        validatorId != null && validatorId!.isNotEmpty || moniteurIds.isNotEmpty;
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        color: Colors.white.withValues(alpha: 0.10),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+      ),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.school_outlined,
+                  size: 18, color: Colors.white),
+              const SizedBox(width: 8),
+              const Text(
+                'Groupe',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.3,
+                ),
+              ),
+              const Spacer(),
+              if (groupLabel.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    groupLabel,
+                    style: TextStyle(
+                      color: AppColors.donkerblauw,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          if (theme != null && theme!.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              theme!,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 2),
+            const Text(
+              'thème de la séance',
+              style: TextStyle(color: Colors.white70, fontSize: 11),
+            ),
+          ],
+          if (hasMonitor) ...[
+            const SizedBox(height: 12),
+            _MonitorLine(
+              validatorId: validatorId,
+              moniteurIds: moniteurIds,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _MonitorLine extends StatelessWidget {
+  final String? validatorId;
+  final List<String> moniteurIds;
+  const _MonitorLine({required this.validatorId, required this.moniteurIds});
+
+  @override
+  Widget build(BuildContext context) {
+    // We have raw member IDs here, not display names. Resolve them via a
+    // single roundtrip per member. To keep the card snappy we don't block
+    // the UI — show the IDs as a fallback while we wait. For the pilot
+    // this gracefully degrades to the ID; once pool_group_members carries
+    // resolved names we'll route through it instead.
+    final ids = <String>{
+      if (validatorId != null && validatorId!.isNotEmpty) validatorId!,
+      ...moniteurIds,
+    }.toList();
+    if (ids.isEmpty) return const SizedBox.shrink();
+
+    return FutureBuilder<Map<String, String>>(
+      future: _resolveMemberNames(ids),
+      builder: (context, snap) {
+        final names = snap.data ?? const {};
+        final labels = ids.map((id) => names[id] ?? id).toList();
+        return Row(
+          children: [
+            const Icon(Icons.person_outline, color: Colors.white70, size: 16),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'avec ${labels.join(', ')}',
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<Map<String, String>> _resolveMemberNames(List<String> ids) async {
+    final out = <String, String>{};
+    final db = FirebaseFirestore.instance;
+    for (final id in ids) {
+      try {
+        final s = await db
+            .collection('clubs')
+            .doc(FirebaseConfig.defaultClubId)
+            .collection('members')
+            .doc(id)
+            .get();
+        if (!s.exists) continue;
+        final v = s.data() ?? {};
+        final prenom = (v['prenom'] as String?) ?? '';
+        final nom = (v['nom'] as String?) ?? '';
+        final display = ('$prenom $nom').trim();
+        if (display.isNotEmpty) out[id] = display;
+      } catch (_) {
+        // best-effort
+      }
+    }
+    return out;
+  }
+}
+
+class _PoolGroupMembersCard extends StatelessWidget {
+  final List<_PoolGroupMember> members;
+  const _PoolGroupMembersCard({required this.members});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        color: Colors.white.withValues(alpha: 0.10),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+      ),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.group_outlined, color: Colors.white, size: 18),
+              SizedBox(width: 8),
+              Text(
+                'Co-équipiers',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              for (final m in members)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.28),
+                    ),
+                  ),
+                  child: Text(
+                    m.displayName,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

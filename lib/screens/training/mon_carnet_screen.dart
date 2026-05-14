@@ -30,8 +30,14 @@ class MonCarnetScreen extends StatefulWidget {
   State<MonCarnetScreen> createState() => _MonCarnetScreenState();
 }
 
+/// Two distinct lists, never mixed — pool sessions are conceptually a
+/// different artefact from sea/lake/quarry dives and have a different
+/// detail layout.
+enum _CarnetMode { dives, pool }
+
 class _MonCarnetScreenState extends State<MonCarnetScreen> {
   int? _year;
+  _CarnetMode _mode = _CarnetMode.dives;
 
   @override
   void initState() {
@@ -53,9 +59,19 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
           .where('date',
               isLessThan: Timestamp.fromDate(DateTime(_year! + 1, 1, 1)));
     }
-    return q.snapshots().map((snap) => snap.docs
-        .map((d) => _LogbookEntryRow.fromMap(d.id, d.data()))
-        .toList());
+    return q.snapshots().map((snap) {
+      final rows = snap.docs
+          .map((d) => _LogbookEntryRow.fromMap(d.id, d.data()))
+          .toList();
+      // Mode-based partition — pool entries (source=piscine) are isolated
+      // from dive entries (everything else). We don't ship the count back
+      // up the tree, so the badge counts above re-listen via the same
+      // stream when the mode flips.
+      return rows.where((r) {
+        final isPool = r.source == 'piscine';
+        return _mode == _CarnetMode.pool ? isPool : !isPool;
+      }).toList();
+    });
   }
 
   @override
@@ -70,6 +86,7 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
           child: Column(
             children: [
               _header(context),
+              _modeSegmented(),
               _yearPills(),
               const SizedBox(height: 12),
               Expanded(
@@ -106,11 +123,94 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
           ),
         ),
       ),
-      floatingActionButton: _Fab(
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => const LogbookEntryScreen.manual(),
+      // Manual entry only makes sense for sea/lake/quarry dives. Pool entries
+      // are system-generated from the check-in flow at the pool entrance.
+      floatingActionButton: _mode == _CarnetMode.dives
+          ? _Fab(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const LogbookEntryScreen.manual(),
+                ),
+              ),
+            )
+          : null,
+    );
+  }
+
+  Widget _modeSegmented() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+        ),
+        padding: const EdgeInsets.all(4),
+        child: Row(
+          children: [
+            Expanded(
+              child: _modeChip(
+                label: 'Plongées',
+                icon: Icons.scuba_diving_outlined,
+                active: _mode == _CarnetMode.dives,
+                onTap: () => setState(() => _mode = _CarnetMode.dives),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: _modeChip(
+                label: 'Piscine',
+                icon: Icons.pool_outlined,
+                active: _mode == _CarnetMode.pool,
+                onTap: () => setState(() => _mode = _CarnetMode.pool),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _modeChip({
+    required String label,
+    required IconData icon,
+    required bool active,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(9),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: active ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 17,
+                color: active ? AppColors.donkerblauw : Colors.white,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: active ? AppColors.donkerblauw : Colors.white,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -194,6 +294,7 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
   }
 
   Widget _emptyState() {
+    final isPool = _mode == _CarnetMode.pool;
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -201,14 +302,14 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              Icons.menu_book_outlined,
+              isPool ? Icons.pool_outlined : Icons.menu_book_outlined,
               size: 64,
               color: Colors.white.withValues(alpha: 0.7),
             ),
             const SizedBox(height: 14),
-            const Text(
-              'Pas encore de plongées',
-              style: TextStyle(
+            Text(
+              isPool ? 'Pas encore de piscine' : 'Pas encore de plongées',
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -216,9 +317,13 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Tes plongées Calypso apparaîtront automatiquement ici '
-              'dès que tu auras complété un carnet après une sortie. '
-              'Tu peux aussi ajouter une plongée hors club en bas à droite.',
+              isPool
+                  ? 'Tes séances de piscine apparaîtront ici dès que tu '
+                      'auras scanné ton badge à l\'entrée et confirmé '
+                      'le check-in dans Communication.'
+                  : 'Tes plongées Calypso apparaîtront automatiquement ici '
+                      'dès que tu auras complété un carnet après une sortie. '
+                      'Tu peux aussi ajouter une plongée hors club en bas à droite.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.85),
@@ -244,6 +349,11 @@ class _LogbookEntryRow {
   final List<String> counters;
   final String? notes;
   final List<String> buddyNames;
+  // Pool-only metadata, snapshotted on the logbook entry by
+  // onPoolSessionClosed. Empty/null for dive entries.
+  final String? themeSnapshot;
+  final String? groupLevel;
+  final int? groupNumber;
   /// Full raw map for the detail screen — keeps us from having to refetch.
   final Map<String, dynamic> raw;
 
@@ -258,6 +368,9 @@ class _LogbookEntryRow {
     required this.counters,
     this.notes,
     this.buddyNames = const [],
+    this.themeSnapshot,
+    this.groupLevel,
+    this.groupNumber,
     this.raw = const {},
   });
 
@@ -294,9 +407,13 @@ class _LogbookEntryRow {
       }
     }
 
+    final groupNumberRaw = map['group_number'];
     return _LogbookEntryRow(
       id: id,
       date: date,
+      themeSnapshot: map['theme_snapshot'] as String?,
+      groupLevel: map['group_level'] as String?,
+      groupNumber: groupNumberRaw is num ? groupNumberRaw.toInt() : null,
       locationName:
           (map['location_name'] as String?) ?? (map['lieu'] as String?) ?? '—',
       country: map['country'] as String?,
@@ -322,6 +439,7 @@ class _EntryCard extends StatelessWidget {
             '${entry.date!.month.toString().padLeft(2, '0')}/'
             '${entry.date!.year}'
         : '—';
+    final isPool = entry.source == 'piscine';
 
     return Container(
       decoration: BoxDecoration(
@@ -351,104 +469,183 @@ class _EntryCard extends StatelessWidget {
           ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    _SourceBadge(source: entry.source),
-                    const SizedBox(width: 8),
-                    Text(
-                      dateLabel,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const Spacer(),
-                    if (entry.depthMeters != null)
-                      _Stat(
-                        icon: Icons.straighten,
-                        text: '${entry.depthMeters!.toStringAsFixed(0)} m',
-                      ),
-                    if (entry.durationMinutes != null) ...[
-                      const SizedBox(width: 8),
-                      _Stat(
-                        icon: Icons.timer_outlined,
-                        text: '${entry.durationMinutes} min',
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  entry.locationName,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                if (entry.buddyNames.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    'avec ${entry.buddyNames.join(', ')}',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.78),
-                      fontSize: 12.5,
-                    ),
-                  ),
-                ],
-                if (entry.counters.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      for (final c in entry.counters)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.18),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.25),
-                            ),
-                          ),
-                          child: Text(
-                            c,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
-                if (entry.notes != null && entry.notes!.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    entry.notes!,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.85),
-                      fontSize: 12.5,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
-              ],
-            ),
+            child: isPool ? _poolBody(dateLabel) : _diveBody(dateLabel),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _diveBody(String dateLabel) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            _SourceBadge(source: entry.source),
+            const SizedBox(width: 8),
+            Text(
+              dateLabel,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const Spacer(),
+            if (entry.depthMeters != null)
+              _Stat(
+                icon: Icons.straighten,
+                text: '${entry.depthMeters!.toStringAsFixed(0)} m',
+              ),
+            if (entry.durationMinutes != null) ...[
+              const SizedBox(width: 8),
+              _Stat(
+                icon: Icons.timer_outlined,
+                text: '${entry.durationMinutes} min',
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          entry.locationName,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 17,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        if (entry.buddyNames.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            'avec ${entry.buddyNames.join(', ')}',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.78),
+              fontSize: 12.5,
+            ),
+          ),
+        ],
+        if (entry.counters.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final c in entry.counters)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.25),
+                    ),
+                  ),
+                  child: Text(
+                    c,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+        if (entry.notes != null && entry.notes!.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            entry.notes!,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.85),
+              fontSize: 12.5,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _poolBody(String dateLabel) {
+    final groupParts = <String>[];
+    if (entry.groupLevel != null && entry.groupLevel!.isNotEmpty) {
+      groupParts.add('Formation ${entry.groupLevel}');
+    }
+    if (entry.groupNumber != null) {
+      groupParts.add('Groupe ${entry.groupNumber}');
+    }
+    final groupLabel = groupParts.join(' · ');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const _SourceBadge(source: 'piscine'),
+            const SizedBox(width: 8),
+            Text(
+              dateLabel,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          entry.locationName,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 17,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        if (groupLabel.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            groupLabel,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.85),
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+        if (entry.themeSnapshot != null && entry.themeSnapshot!.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            entry.themeSnapshot!,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.78),
+              fontSize: 12.5,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ],
+        if (entry.notes != null && entry.notes!.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            entry.notes!,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.85),
+              fontSize: 12.5,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

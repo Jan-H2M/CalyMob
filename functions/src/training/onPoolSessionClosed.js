@@ -82,6 +82,25 @@ const onPoolSessionClosed = onDocumentUpdated(
     let skippedExistingTask = 0;
     let skippedNoValidator = 0;
 
+    // Build a peer-lookup keyed by (level, groupNumber) so each member's
+    // logbook entry can carry a snapshot of who else was in their group.
+    // We prefer (level + groupNumber) over groupKey because production
+    // sessions usually don't have an explicit groups subcollection yet.
+    const groupPeers = new Map();
+    const peerKey = (level, groupNumber) =>
+      `${level || ''}#${groupNumber == null ? '' : groupNumber}`;
+    for (const attDoc of attendeesSnap.docs) {
+      const att = attDoc.data();
+      const ga = att.groupAssignment || null;
+      if (!ga) continue;
+      const k = peerKey(ga.level, ga.groupNumber);
+      if (!groupPeers.has(k)) groupPeers.set(k, []);
+      groupPeers.get(k).push({
+        member_id: att.memberId || att.membre_id || attDoc.id,
+        displayName: att.memberName || att.member_name || 'Membre',
+      });
+    }
+
     let batch = db.batch();
     let batchOps = 0;
 
@@ -98,6 +117,10 @@ const onPoolSessionClosed = onDocumentUpdated(
         skippedNoValidator++;
         continue;
       }
+
+      // Peers in the same group (level + groupNumber), excluding self.
+      const peers = (groupPeers.get(peerKey(ga.level, ga.groupNumber)) || [])
+        .filter((p) => p.member_id !== memberId);
 
       // ---- Idempotency: existing logbook entry? ----
       const existingLogbook = await db
@@ -140,6 +163,12 @@ const onPoolSessionClosed = onDocumentUpdated(
             theme_snapshot: ga.themeSnapshot || null,
             validator_id: ga.validatorId,
             moniteur_ids: Array.isArray(ga.moniteurIds) ? ga.moniteurIds : [],
+            // Pool-specific snapshot — surfaces in the carnet detail view.
+            group_level: ga.level || null,
+            group_number:
+              typeof ga.groupNumber === 'number' ? ga.groupNumber : null,
+            group_key: ga.groupKey || null,
+            pool_group_members: peers,
             notes: att.personalNotes || null,
             counters: {},
             binomes: [],
@@ -151,6 +180,10 @@ const onPoolSessionClosed = onDocumentUpdated(
               'source',
               'theme_snapshot',
               'validator_id',
+              'group_level',
+              'group_number',
+              'group_key',
+              'pool_group_members',
             ],
             created_at: FieldValue.serverTimestamp(),
             updated_at: FieldValue.serverTimestamp(),
