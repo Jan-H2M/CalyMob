@@ -1,7 +1,8 @@
-Améliorations:
-• Liens cliquables dans les messages
-• Liste exercices simplifiée
-• Importer une photo de profil depuis la galerie
-• Marquage présence automatique au paiement
-• Compteur de notifications fiabilisé
-• Corrections d'interface
+Carnet de formation :
+• Flow piscine complète : check-in, groupe, moniteur
+• Mon carnet séparé : onglets Plongées / Piscine
+• Édition inline (groupe, notes, équipement)
+• Progression LIFRAS : exercices à faire / validés
+• Scan OCR de carnets papier :
+  – AI lit la faune marine (Nudibranche, Rascasse…)
+  – Autocomplete pour les lieux et les binômes
