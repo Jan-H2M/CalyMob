@@ -829,17 +829,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Combi (suit catalogue — same pattern as the tank picker)
-        Text(
-          'COMBINAISON',
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.bold,
-            color: Colors.grey.shade600,
-            letterSpacing: 1,
-          ),
-        ),
-        const SizedBox(height: 4),
+        // CombiPickerField renders its own COMBINAISON title row + manage icon.
         if (userId == null)
           Text(
             'Connecte-toi pour gérer tes combinaisons.',
@@ -851,18 +841,8 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
             value: _combi,
             onChanged: (next) => setState(() => _combi = next),
           ),
-        const Divider(height: 22),
-        // Bouteille
-        Text(
-          'BOUTEILLE',
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.bold,
-            color: Colors.grey.shade600,
-            letterSpacing: 1,
-          ),
-        ),
-        const SizedBox(height: 4),
+        const Divider(height: 18),
+        // TankPickerField renders its own BOUTEILLE title row + manage icon.
         if (userId == null)
           Text(
             'Connecte-toi pour gérer tes bouteilles.',
@@ -874,7 +854,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
             value: _tank,
             onChanged: (next) => setState(() => _tank = next),
           ),
-        const Divider(height: 22),
+        const Divider(height: 18),
         // Lestage
         Text(
           'LESTAGE',

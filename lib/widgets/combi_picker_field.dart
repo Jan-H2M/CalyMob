@@ -107,12 +107,16 @@ class CombiPickerField extends StatefulWidget {
   final String userId;
   final CombiSelection? value;
   final ValueChanged<CombiSelection?> onChanged;
+  /// Optional section label rendered above the dropdown. Defaults to
+  /// "COMBINAISON". Pass null to suppress the title row entirely.
+  final String? title;
 
   const CombiPickerField({
     super.key,
     required this.userId,
     required this.value,
     required this.onChanged,
+    this.title = 'COMBINAISON',
   });
 
   @override
@@ -234,87 +238,116 @@ class _CombiPickerFieldState extends State<CombiPickerField> {
       );
     }
     final selectedId = widget.value?.sourceCombiId;
+    // Two compact rows:
+    //   1. Title (e.g. COMBINAISON) ⋯⋯⋯⋯⋯⋯⋯ ⚙ Gérer
+    //   2. [ dropdown ──────────────────── ] × Retirer
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (_combis.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Text(
-              'Pas encore de combinaison enregistrée — ajoute la tienne pour pouvoir la sélectionner ensuite.',
-              style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700),
-            ),
-          )
-        else
-          DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              isExpanded: true,
-              value: selectedId,
-              hint: const Text('Choisis une combinaison…'),
-              items: [
-                for (final c in _combis)
-                  DropdownMenuItem<String>(
-                    value: c.id,
-                    child: Row(
-                      children: [
-                        Icon(
-                          c.type == 'etanche'
-                              ? Icons.shield_outlined
-                              : Icons.opacity,
-                          size: 18,
-                          color: AppColors.middenblauw,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _label(c),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-              onChanged: (id) {
-                if (id == null) return;
-                final c = _combis.firstWhere((x) => x.id == id);
-                widget.onChanged(CombiSelection(
-                  sourceCombiId: c.id,
-                  type: c.type,
-                  thicknessMm: c.thicknessMm,
-                  brand: c.brand,
-                  label: c.label,
-                ));
-              },
-            ),
-          ),
-        const SizedBox(height: 2),
-        // Compact action row — Ajouter on the left, Gérer on the right,
-        // plus an optional Retirer link when something is selected.
-        Row(
-          children: [
-            _MiniAction(
-              icon: Icons.add,
-              label: 'Ajouter',
-              onTap: _openAddModal,
-              color: AppColors.middenblauw,
-            ),
-            if (_combis.isNotEmpty) ...[
-              const SizedBox(width: 6),
-              _MiniAction(
-                icon: Icons.tune,
-                label: 'Gérer',
-                onTap: _openManageDialog,
-                color: Colors.grey.shade600,
+        if (widget.title != null)
+          Row(
+            children: [
+              Text(
+                widget.title!,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey.shade600,
+                  letterSpacing: 1,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.tune, size: 18),
+                color: AppColors.middenblauw,
+                tooltip: 'Gérer mes combinaisons',
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                padding: EdgeInsets.zero,
+                onPressed: _openManageDialog,
               ),
             ],
-            const Spacer(),
+          ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: _combis.isEmpty
+                  ? InkWell(
+                      onTap: _openManageDialog,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        child: Text(
+                          'Aucune combinaison — tape ⚙ pour en ajouter',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey.shade500,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
+                    )
+                  : DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        isExpanded: true,
+                        isDense: true,
+                        value: selectedId,
+                        hint: Text(
+                          'Choisis une combinaison…',
+                          style: TextStyle(
+                            color: Colors.grey.shade500,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                        items: [
+                          for (final c in _combis)
+                            DropdownMenuItem<String>(
+                              value: c.id,
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    c.type == 'etanche'
+                                        ? Icons.shield_outlined
+                                        : Icons.opacity,
+                                    size: 18,
+                                    color: AppColors.middenblauw,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _label(c),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                        onChanged: (id) {
+                          if (id == null) return;
+                          final c = _combis.firstWhere((x) => x.id == id);
+                          widget.onChanged(CombiSelection(
+                            sourceCombiId: c.id,
+                            type: c.type,
+                            thicknessMm: c.thicknessMm,
+                            brand: c.brand,
+                            label: c.label,
+                          ));
+                        },
+                      ),
+                    ),
+            ),
             if (widget.value != null)
-              _MiniAction(
-                icon: Icons.close,
-                label: 'Retirer',
-                onTap: () => widget.onChanged(null),
-                color: Colors.grey.shade500,
+              IconButton(
+                icon: const Icon(Icons.close, size: 18),
+                color: Colors.grey.shade600,
+                tooltip: 'Retirer',
+                visualDensity: VisualDensity.compact,
+                constraints:
+                    const BoxConstraints(minWidth: 28, minHeight: 28),
+                padding: EdgeInsets.zero,
+                onPressed: () => widget.onChanged(null),
               ),
           ],
         ),
@@ -333,8 +366,7 @@ class _CombiPickerFieldState extends State<CombiPickerField> {
                 borderRadius: BorderRadius.circular(16),
               ),
               titlePadding: const EdgeInsets.fromLTRB(20, 18, 16, 0),
-              contentPadding:
-                  const EdgeInsets.fromLTRB(0, 8, 0, 4),
+              contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
               title: const Row(
                 children: [
                   Icon(Icons.dry_cleaning, color: AppColors.middenblauw),
@@ -344,70 +376,145 @@ class _CombiPickerFieldState extends State<CombiPickerField> {
               ),
               content: SizedBox(
                 width: 360,
-                child: _combis.isEmpty
-                    ? Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Add CTA at the top — primary action of this dialog.
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        final created = await showDialog<_Combi>(
+                          context: ctx,
+                          builder: (dctx) => Dialog(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            insetPadding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 40,
+                            ),
+                            child: SingleChildScrollView(
+                              child: ConstrainedBox(
+                                constraints:
+                                    const BoxConstraints(maxWidth: 400),
+                                child: const _CombiFormSheet(
+                                  insideDialog: true,
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                        if (created == null) return;
+                        final newCombi = _Combi(
+                          id: 'combi_${DateTime.now().millisecondsSinceEpoch}',
+                          type: created.type,
+                          thicknessMm: created.thicknessMm,
+                          brand: created.brand,
+                          label: created.label,
+                        );
+                        final next = [..._combis, newCombi];
+                        try {
+                          await _persistCombis(next);
+                          if (!mounted) return;
+                          setState(() => _combis = next);
+                          setLocalState(() {});
+                          // Auto-select the freshly added combi.
+                          widget.onChanged(CombiSelection(
+                            sourceCombiId: newCombi.id,
+                            type: newCombi.type,
+                            thicknessMm: newCombi.thicknessMm,
+                            brand: newCombi.brand,
+                            label: newCombi.label,
+                          ));
+                        } catch (e) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                                content:
+                                    Text('Impossible de sauver : $e')),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.add, size: 18),
+                      label: const Text('Ajouter une combinaison'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.middenblauw,
+                        side: const BorderSide(color: AppColors.middenblauw),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (_combis.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
                         child: Text(
-                          'La liste est vide.',
+                          'Aucune combinaison enregistrée pour l\'instant.',
                           style:
                               TextStyle(color: Colors.grey.shade600),
+                          textAlign: TextAlign.center,
                         ),
                       )
-                    : ListView.separated(
-                        shrinkWrap: true,
-                        itemCount: _combis.length,
-                        separatorBuilder: (_, __) =>
-                            Divider(height: 1, color: Colors.grey.shade200),
-                        itemBuilder: (_, i) {
-                          final c = _combis[i];
-                          return ListTile(
-                            dense: true,
-                            leading: Icon(
-                              c.type == 'etanche'
-                                  ? Icons.shield_outlined
-                                  : Icons.opacity,
-                              color: AppColors.middenblauw,
-                            ),
-                            title: Text(_label(c),
-                                style: const TextStyle(fontSize: 14)),
-                            trailing: IconButton(
-                              icon: Icon(Icons.delete_outline,
-                                  color: Colors.red.shade400),
-                              tooltip: 'Supprimer',
-                              onPressed: () async {
-                                final confirmed = await showDialog<bool>(
-                                  context: ctx,
-                                  builder: (cctx) => AlertDialog(
-                                    title: Text(
-                                        'Supprimer « ${_label(c)} » ?'),
-                                    content: const Text(
-                                      'Tu peux toujours en recréer une plus tard. Les plongées déjà enregistrées avec cette combinaison restent intactes.',
+                    else
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 320),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: _combis.length,
+                          separatorBuilder: (_, __) => Divider(
+                              height: 1, color: Colors.grey.shade200),
+                          itemBuilder: (_, i) {
+                            final c = _combis[i];
+                            return ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(
+                                c.type == 'etanche'
+                                    ? Icons.shield_outlined
+                                    : Icons.opacity,
+                                color: AppColors.middenblauw,
+                              ),
+                              title: Text(_label(c),
+                                  style: const TextStyle(fontSize: 14)),
+                              trailing: IconButton(
+                                icon: Icon(Icons.delete_outline,
+                                    color: Colors.red.shade400),
+                                tooltip: 'Supprimer',
+                                onPressed: () async {
+                                  final confirmed = await showDialog<bool>(
+                                    context: ctx,
+                                    builder: (cctx) => AlertDialog(
+                                      title: Text(
+                                          'Supprimer « ${_label(c)} » ?'),
+                                      content: const Text(
+                                        'Tu peux toujours en recréer une plus tard. Les plongées déjà enregistrées avec cette combinaison restent intactes.',
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(cctx, false),
+                                          child: const Text('Annuler'),
+                                        ),
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(cctx, true),
+                                          style: TextButton.styleFrom(
+                                              foregroundColor: Colors.red),
+                                          child: const Text('Supprimer'),
+                                        ),
+                                      ],
                                     ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(cctx, false),
-                                        child: const Text('Annuler'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(cctx, true),
-                                        style: TextButton.styleFrom(
-                                            foregroundColor: Colors.red),
-                                        child: const Text('Supprimer'),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                                if (confirmed != true) return;
-                                await _deleteCombi(c);
-                                // Refresh local list inside the dialog.
-                                setLocalState(() {});
-                              },
-                            ),
-                          );
-                        },
+                                  );
+                                  if (confirmed != true) return;
+                                  await _deleteCombi(c);
+                                  setLocalState(() {});
+                                },
+                              ),
+                            );
+                          },
+                        ),
                       ),
+                  ],
+                ),
               ),
               actions: [
                 TextButton(
@@ -493,7 +600,11 @@ class _MiniAction extends StatelessWidget {
 }
 
 class _CombiFormSheet extends StatefulWidget {
-  const _CombiFormSheet();
+  /// When true, the form renders without its own bottom-sheet container
+  /// (drag handle, rounded top corners). Used when the form is shown
+  /// inside a centered AlertDialog instead of as a modal bottom sheet.
+  final bool insideDialog;
+  const _CombiFormSheet({this.insideDialog = false});
 
   @override
   State<_CombiFormSheet> createState() => _CombiFormSheetState();
@@ -539,6 +650,109 @@ class _CombiFormSheetState extends State<_CombiFormSheet> {
   @override
   Widget build(BuildContext context) {
     final viewInsets = MediaQuery.of(context).viewInsets.bottom;
+    final body = Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (!widget.insideDialog) ...[
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          const Row(
+            children: [
+              Icon(Icons.dry_cleaning, color: AppColors.middenblauw),
+              SizedBox(width: 8),
+              Text(
+                'Nouvelle combinaison',
+                style:
+                    TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Elle sera sauvée dans ton profil pour les prochaines plongées.',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _typeChip(
+                  label: 'Humide',
+                  icon: Icons.opacity,
+                  active: _type == 'humide',
+                  onTap: () => setState(() => _type = 'humide'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _typeChip(
+                  label: 'Étanche',
+                  icon: Icons.shield_outlined,
+                  active: _type == 'etanche',
+                  onTap: () => setState(() => _type = 'etanche'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_type == 'humide')
+            _numField(
+              label: 'Épaisseur',
+              controller: _thickness,
+              suffix: 'mm',
+              hint: '5',
+            ),
+          if (_type == 'humide') const SizedBox(height: 12),
+          _field(
+            label: 'Marque (optionnel)',
+            controller: _brand,
+            hint: 'Bare, Mares, Aqualung…',
+          ),
+          const SizedBox(height: 12),
+          _field(
+            label: 'Étiquette (optionnel)',
+            controller: _label,
+            hint: 'Humide 7mm noire, Étanche DUI…',
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Annuler'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: _canSave ? _save : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.middenblauw,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Ajouter'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+    if (widget.insideDialog) return body;
     return Padding(
       padding: EdgeInsets.only(bottom: viewInsets),
       child: Container(
@@ -546,107 +760,7 @@ class _CombiFormSheetState extends State<_CombiFormSheet> {
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              const Row(
-                children: [
-                  Icon(Icons.dry_cleaning, color: AppColors.middenblauw),
-                  SizedBox(width: 8),
-                  Text(
-                    'Nouvelle combinaison',
-                    style:
-                        TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Elle sera sauvée dans ton profil pour les prochaines plongées.',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-              ),
-              const SizedBox(height: 14),
-              // Type chips
-              Row(
-                children: [
-                  Expanded(
-                    child: _typeChip(
-                      label: 'Humide',
-                      icon: Icons.opacity,
-                      active: _type == 'humide',
-                      onTap: () => setState(() => _type = 'humide'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _typeChip(
-                      label: 'Étanche',
-                      icon: Icons.shield_outlined,
-                      active: _type == 'etanche',
-                      onTap: () => setState(() => _type = 'etanche'),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              if (_type == 'humide')
-                _numField(
-                  label: 'Épaisseur',
-                  controller: _thickness,
-                  suffix: 'mm',
-                  hint: '5',
-                ),
-              if (_type == 'humide') const SizedBox(height: 12),
-              _field(
-                label: 'Marque (optionnel)',
-                controller: _brand,
-                hint: 'Bare, Mares, Aqualung…',
-              ),
-              const SizedBox(height: 12),
-              _field(
-                label: 'Étiquette (optionnel)',
-                controller: _label,
-                hint: 'Humide 7mm noire, Étanche DUI…',
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Annuler'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: _canSave ? _save : null,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.middenblauw,
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('Ajouter'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
+        child: body,
       ),
     );
   }

@@ -108,12 +108,16 @@ class TankPickerField extends StatefulWidget {
   final String userId;
   final TankSelection? value;
   final ValueChanged<TankSelection?> onChanged;
+  /// Optional section label rendered above the dropdown. Defaults to
+  /// "BOUTEILLE". Pass null to suppress the title row entirely.
+  final String? title;
 
   const TankPickerField({
     super.key,
     required this.userId,
     required this.value,
     required this.onChanged,
+    this.title = 'BOUTEILLE',
   });
 
   @override
@@ -236,79 +240,107 @@ class _TankPickerFieldState extends State<TankPickerField> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (_tanks.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Text(
-              'Pas encore de bouteille enregistrée — ajoute la tienne pour pouvoir la sélectionner ensuite.',
-              style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700),
-            ),
-          )
-        else
-          DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              isExpanded: true,
-              value: selectedId,
-              hint: const Text('Choisis une bouteille…'),
-              items: [
-                for (final t in _tanks)
-                  DropdownMenuItem<String>(
-                    value: t.id,
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.scuba_diving,
-                          size: 18,
-                          color: AppColors.middenblauw,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _label(t),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-              onChanged: (id) {
-                if (id == null) return;
-                final t = _tanks.firstWhere((x) => x.id == id);
-                widget.onChanged(TankSelection(
-                  sourceTankId: t.id,
-                  volumeL: t.volumeL,
-                  pressureBar: t.pressureBar,
-                  label: t.label,
-                ));
-              },
-            ),
-          ),
-        const SizedBox(height: 2),
-        Row(
-          children: [
-            _TankMiniAction(
-              icon: Icons.add,
-              label: 'Ajouter',
-              onTap: _openAddModal,
-              color: AppColors.middenblauw,
-            ),
-            if (_tanks.isNotEmpty) ...[
-              const SizedBox(width: 6),
-              _TankMiniAction(
-                icon: Icons.tune,
-                label: 'Gérer',
-                onTap: _openManageDialog,
-                color: Colors.grey.shade600,
+        if (widget.title != null)
+          Row(
+            children: [
+              Text(
+                widget.title!,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey.shade600,
+                  letterSpacing: 1,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.tune, size: 18),
+                color: AppColors.middenblauw,
+                tooltip: 'Gérer mes bouteilles',
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                padding: EdgeInsets.zero,
+                onPressed: _openManageDialog,
               ),
             ],
-            const Spacer(),
+          ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: _tanks.isEmpty
+                  ? InkWell(
+                      onTap: _openManageDialog,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        child: Text(
+                          'Aucune bouteille — tape ⚙ pour en ajouter',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey.shade500,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
+                    )
+                  : DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        isExpanded: true,
+                        isDense: true,
+                        value: selectedId,
+                        hint: Text(
+                          'Choisis une bouteille…',
+                          style: TextStyle(
+                            color: Colors.grey.shade500,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                        items: [
+                          for (final t in _tanks)
+                            DropdownMenuItem<String>(
+                              value: t.id,
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.scuba_diving,
+                                    size: 18,
+                                    color: AppColors.middenblauw,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _label(t),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                        onChanged: (id) {
+                          if (id == null) return;
+                          final t = _tanks.firstWhere((x) => x.id == id);
+                          widget.onChanged(TankSelection(
+                            sourceTankId: t.id,
+                            volumeL: t.volumeL,
+                            pressureBar: t.pressureBar,
+                            label: t.label,
+                          ));
+                        },
+                      ),
+                    ),
+            ),
             if (widget.value != null)
-              _TankMiniAction(
-                icon: Icons.close,
-                label: 'Retirer',
-                onTap: () => widget.onChanged(null),
-                color: Colors.grey.shade500,
+              IconButton(
+                icon: const Icon(Icons.close, size: 18),
+                color: Colors.grey.shade600,
+                tooltip: 'Retirer',
+                visualDensity: VisualDensity.compact,
+                constraints:
+                    const BoxConstraints(minWidth: 28, minHeight: 28),
+                padding: EdgeInsets.zero,
+                onPressed: () => widget.onChanged(null),
               ),
           ],
         ),
@@ -327,7 +359,7 @@ class _TankPickerFieldState extends State<TankPickerField> {
                 borderRadius: BorderRadius.circular(16),
               ),
               titlePadding: const EdgeInsets.fromLTRB(20, 18, 16, 0),
-              contentPadding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
+              contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
               title: const Row(
                 children: [
                   Icon(Icons.scuba_diving, color: AppColors.middenblauw),
@@ -337,29 +369,96 @@ class _TankPickerFieldState extends State<TankPickerField> {
               ),
               content: SizedBox(
                 width: 360,
-                child: _tanks.isEmpty
-                    ? Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        final created = await showDialog<_Tank>(
+                          context: ctx,
+                          builder: (dctx) => Dialog(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            insetPadding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 40,
+                            ),
+                            child: SingleChildScrollView(
+                              child: ConstrainedBox(
+                                constraints:
+                                    const BoxConstraints(maxWidth: 400),
+                                child: const _TankFormSheet(
+                                  insideDialog: true,
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                        if (created == null) return;
+                        final newTank = _Tank(
+                          id: 'tank_${DateTime.now().millisecondsSinceEpoch}',
+                          volumeL: created.volumeL,
+                          pressureBar: created.pressureBar,
+                          label: created.label,
+                        );
+                        final next = [..._tanks, newTank];
+                        try {
+                          await _persistTanks(next);
+                          if (!mounted) return;
+                          setState(() => _tanks = next);
+                          setLocalState(() {});
+                          widget.onChanged(TankSelection(
+                            sourceTankId: newTank.id,
+                            volumeL: newTank.volumeL,
+                            pressureBar: newTank.pressureBar,
+                            label: newTank.label,
+                          ));
+                        } catch (e) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Impossible de sauver : $e')),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.add, size: 18),
+                      label: const Text('Ajouter une bouteille'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.middenblauw,
+                        side: const BorderSide(color: AppColors.middenblauw),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (_tanks.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
                         child: Text(
-                          'La liste est vide.',
+                          'Aucune bouteille enregistrée pour l\'instant.',
                           style: TextStyle(color: Colors.grey.shade600),
+                          textAlign: TextAlign.center,
                         ),
                       )
-                    : ListView.separated(
-                        shrinkWrap: true,
-                        itemCount: _tanks.length,
-                        separatorBuilder: (_, __) => Divider(
-                            height: 1, color: Colors.grey.shade200),
-                        itemBuilder: (_, i) {
-                          final t = _tanks[i];
-                          return ListTile(
-                            dense: true,
-                            leading: const Icon(
-                              Icons.scuba_diving,
-                              color: AppColors.middenblauw,
-                            ),
-                            title: Text(_label(t),
-                                style: const TextStyle(fontSize: 14)),
+                    else
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 320),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: _tanks.length,
+                          separatorBuilder: (_, __) => Divider(
+                              height: 1, color: Colors.grey.shade200),
+                          itemBuilder: (_, i) {
+                            final t = _tanks[i];
+                            return ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              leading: const Icon(
+                                Icons.scuba_diving,
+                                color: AppColors.middenblauw,
+                              ),
+                              title: Text(_label(t),
+                                  style: const TextStyle(fontSize: 14)),
                             trailing: IconButton(
                               icon: Icon(Icons.delete_outline,
                                   color: Colors.red.shade400),
@@ -394,9 +493,12 @@ class _TankPickerFieldState extends State<TankPickerField> {
                                 setLocalState(() {});
                               },
                             ),
-                          );
-                        },
+                            );
+                          },
+                        ),
                       ),
+                  ],
+                ),
               ),
               actions: [
                 TextButton(
@@ -483,7 +585,10 @@ class _TankMiniAction extends StatelessWidget {
 }
 
 class _TankFormSheet extends StatefulWidget {
-  const _TankFormSheet();
+  /// When true, render without the bottom-sheet container so the form
+  /// can be embedded inside a centered AlertDialog.
+  final bool insideDialog;
+  const _TankFormSheet({this.insideDialog = false});
 
   @override
   State<_TankFormSheet> createState() => _TankFormSheetState();
@@ -526,40 +631,35 @@ class _TankFormSheetState extends State<_TankFormSheet> {
   @override
   Widget build(BuildContext context) {
     final viewInsets = MediaQuery.of(context).viewInsets.bottom;
-    return Padding(
-      padding: EdgeInsets.only(bottom: viewInsets),
-      child: Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
+    final body = Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (!widget.insideDialog) ...[
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              const SizedBox(height: 12),
-              const Row(
-                children: [
-                  Icon(Icons.scuba_diving, color: AppColors.middenblauw),
-                  SizedBox(width: 8),
-                  Text(
-                    'Nouvelle bouteille',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-                  ),
-                ],
+            ),
+            const SizedBox(height: 12),
+          ],
+          const Row(
+            children: [
+              Icon(Icons.scuba_diving, color: AppColors.middenblauw),
+              SizedBox(width: 8),
+              Text(
+                'Nouvelle bouteille',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
               ),
+            ],
+          ),
               const SizedBox(height: 4),
               Text(
                 'Elle sera sauvée dans ton profil pour les prochaines plongées.',
@@ -603,21 +703,30 @@ class _TankFormSheetState extends State<_TankFormSheet> {
                     ),
                   ),
                   const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: _canSave ? _save : null,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.middenblauw,
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('Ajouter'),
-                    ),
-                  ),
-                ],
+          Expanded(
+            child: ElevatedButton(
+              onPressed: _canSave ? _save : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.middenblauw,
+                foregroundColor: Colors.white,
               ),
-            ],
+              child: const Text('Ajouter'),
+            ),
           ),
+        ],
+      ),
+    ],
+      ),
+    );
+    if (widget.insideDialog) return body;
+    return Padding(
+      padding: EdgeInsets.only(bottom: viewInsets),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
+        child: body,
       ),
     );
   }
