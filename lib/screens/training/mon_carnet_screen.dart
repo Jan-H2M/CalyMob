@@ -321,17 +321,45 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
     final isActive = _year == value;
     return Padding(
       padding: const EdgeInsets.only(right: 8),
-      child: ChoiceChip(
-        label: Text(label),
-        selected: isActive,
-        onSelected: (_) => setState(() => _year = value),
-        labelStyle: TextStyle(
-          color: isActive ? AppColors.donkerblauw : Colors.white,
-          fontWeight: FontWeight.w600,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () => setState(() => _year = value),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOut,
+            padding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            decoration: BoxDecoration(
+              color:
+                  isActive ? Colors.white : Colors.white.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: isActive ? 1 : 0.35),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isActive) ...[
+                  Icon(Icons.check, size: 14, color: AppColors.donkerblauw),
+                  const SizedBox(width: 4),
+                ],
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: isActive ? AppColors.donkerblauw : Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-        selectedColor: Colors.white,
-        backgroundColor: Colors.white.withValues(alpha: 0.18),
-        side: BorderSide(color: Colors.white.withValues(alpha: 0.35)),
       ),
     );
   }
