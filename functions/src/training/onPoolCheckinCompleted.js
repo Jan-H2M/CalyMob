@@ -30,6 +30,7 @@
 
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
+const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 
 const FUNCTION_NAME = 'onPoolCheckinCompleted';
 const FUNCTION_REGION = 'europe-west1';
@@ -103,7 +104,7 @@ const onPoolCheckinCompleted = onDocumentUpdated(
         groupAssignment,
         personalNotes: completion.personalNotes || null,
         outcome,
-        checkinCompletedAt: admin.firestore.FieldValue.serverTimestamp(),
+        checkinCompletedAt: FieldValue.serverTimestamp(),
       },
       { merge: true }
     );

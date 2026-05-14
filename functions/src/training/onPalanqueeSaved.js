@@ -16,6 +16,7 @@
 
 const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
+const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 
 const FUNCTION_NAME = 'onPalanqueeSaved';
 const FUNCTION_REGION = 'europe-west1';
@@ -82,13 +83,13 @@ const onPalanqueeSaved = onDocumentWritten(
           operation_id: operationId,
           palanquee_id: palanqueeId,
           declared_by: 'system',
-          declared_at: admin.firestore.FieldValue.serverTimestamp(),
+          declared_at: FieldValue.serverTimestamp(),
           validation_mode: 'calypso_monitor',
           monitor_id: monitorId,
           evidence: [],
           status: 'draft',
-          created_at: admin.firestore.FieldValue.serverTimestamp(),
-          updated_at: admin.firestore.FieldValue.serverTimestamp(),
+          created_at: FieldValue.serverTimestamp(),
+          updated_at: FieldValue.serverTimestamp(),
         });
         created += 1;
       }

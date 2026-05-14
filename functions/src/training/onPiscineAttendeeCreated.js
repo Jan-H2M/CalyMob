@@ -42,6 +42,7 @@
 
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
+const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 
 const FUNCTION_NAME = 'onPiscineAttendeeCreated';
 const FUNCTION_REGION = 'europe-west1';
@@ -192,10 +193,19 @@ const onPiscineAttendeeCreated = onDocumentCreated(
     }
     const member = memberSnap.data();
 
-    // v2.2 (2026-05-13): the legacy `member.formation_active` filter was
-    // removed here. Every attendee scan now produces a pool_checkin task.
-    // The student picks the outcome (training / service_only / nage_libre)
-    // in the check-in UI; downstream side-effects only fire for `training`.
+    // v2.2 (2026-05-13): canonically the formation_active filter is removed
+    // and every attendee gets a pool_checkin task with outcome chooser.
+    // PRODUCTION DEPLOY 2026-05-14: filter temporarily reinstated until the
+    // CalyMob mobile release with the outcome chooser ships — otherwise
+    // non-formation members would see a stale pool_checkin task with the
+    // legacy LIFRAS chip UI in their installed app. Remove this guard once
+    // the new PoolCheckinScreen is in production on iOS + Android.
+    if (member.formation_active !== true) {
+      console.log(
+        `[${FUNCTION_NAME}] member ${memberId} formation_active=false, skipping (TODO: lift after CalyMob v2.2 release)`
+      );
+      return;
+    }
 
     // ---- 2. Idempotency check ----
     const existingTasks = await db
@@ -290,8 +300,8 @@ const onPiscineAttendeeCreated = onDocumentCreated(
       notification_state: { reminder_count: 0 },
       created_by: 'system',
       created_by_name: FUNCTION_NAME,
-      created_at: admin.firestore.FieldValue.serverTimestamp(),
-      updated_at: admin.firestore.FieldValue.serverTimestamp(),
+      created_at: FieldValue.serverTimestamp(),
+      updated_at: FieldValue.serverTimestamp(),
     });
 
     console.log(
@@ -354,8 +364,8 @@ async function createBlockedTask(db, clubId, attendeeId, member, memberId, sessi
     notification_state: { reminder_count: 0 },
     created_by: 'system',
     created_by_name: FUNCTION_NAME,
-    created_at: admin.firestore.FieldValue.serverTimestamp(),
-    updated_at: admin.firestore.FieldValue.serverTimestamp(),
+    created_at: FieldValue.serverTimestamp(),
+    updated_at: FieldValue.serverTimestamp(),
   });
 
   console.log(`[${FUNCTION_NAME}] created BLOCKED task ${taskRef.id} for member ${memberId}`);

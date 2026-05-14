@@ -19,6 +19,7 @@
 
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
+const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 
 const FUNCTION_NAME = 'onOperationFinished';
 const FUNCTION_REGION = 'europe-west1';
@@ -215,8 +216,8 @@ async function processParticipants(db, clubId, operationId, operationTitle, loca
       notification_state: { reminder_count: 0 },
       created_by: 'system',
       created_by_name: FUNCTION_NAME,
-      created_at: admin.firestore.FieldValue.serverTimestamp(),
-      updated_at: admin.firestore.FieldValue.serverTimestamp(),
+      created_at: FieldValue.serverTimestamp(),
+      updated_at: FieldValue.serverTimestamp(),
     });
     createdCount += 1;
   }

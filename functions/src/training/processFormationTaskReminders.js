@@ -20,6 +20,7 @@
 
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const admin = require('firebase-admin');
+const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 
 const FUNCTION_NAME = 'processFormationTaskReminders';
 const FUNCTION_REGION = 'europe-west1';
@@ -150,7 +151,7 @@ const processFormationTaskReminders = onSchedule(
           .collection('members')
           .doc(memberId)
           .update({
-            last_formation_push_at: admin.firestore.FieldValue.serverTimestamp(),
+            last_formation_push_at: FieldValue.serverTimestamp(),
           });
 
         await bumpTasksAfterPush(db, dueTasks);
@@ -177,8 +178,8 @@ const processFormationTaskReminders = onSchedule(
         // don't email the same set every cycle.
         for (const task of ancient) {
           await task.ref.update({
-            'notification_state.last_digest_sent_at': admin.firestore.FieldValue.serverTimestamp(),
-            updated_at: admin.firestore.FieldValue.serverTimestamp(),
+            'notification_state.last_digest_sent_at': FieldValue.serverTimestamp(),
+            updated_at: FieldValue.serverTimestamp(),
           });
         }
       }
@@ -219,10 +220,10 @@ function collectFcmTokens(member) {
 async function bumpTasksAfterPush(db, tasks) {
   for (const task of tasks) {
     await task.ref.update({
-      'notification_state.reminder_count': admin.firestore.FieldValue.increment(1),
-      'notification_state.last_reminder_at': admin.firestore.FieldValue.serverTimestamp(),
-      'notification_state.push_sent_at': admin.firestore.FieldValue.serverTimestamp(),
-      updated_at: admin.firestore.FieldValue.serverTimestamp(),
+      'notification_state.reminder_count': FieldValue.increment(1),
+      'notification_state.last_reminder_at': FieldValue.serverTimestamp(),
+      'notification_state.push_sent_at': FieldValue.serverTimestamp(),
+      updated_at: FieldValue.serverTimestamp(),
     });
   }
 }
@@ -233,8 +234,8 @@ async function bumpTasksWithoutPush(db, tasks) {
   // because no actual reminder was sent.
   for (const task of tasks) {
     await task.ref.update({
-      'notification_state.last_reminder_at': admin.firestore.FieldValue.serverTimestamp(),
-      updated_at: admin.firestore.FieldValue.serverTimestamp(),
+      'notification_state.last_reminder_at': FieldValue.serverTimestamp(),
+      updated_at: FieldValue.serverTimestamp(),
     });
   }
 }

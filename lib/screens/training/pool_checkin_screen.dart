@@ -109,13 +109,28 @@ class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Piscine confirmée — merci !')),
+        SnackBar(
+          content: const Text(
+            'Piscine confirmée — merci !',
+            style: TextStyle(color: Colors.white),
+          ),
+          backgroundColor: Colors.green.shade700,
+          behavior: SnackBarBehavior.floating,
+        ),
       );
       Navigator.pop(context);
     } catch (err) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("L'enregistrement a échoué : $err")),
+        SnackBar(
+          content: Text(
+            "L'enregistrement a échoué : $err",
+            style: const TextStyle(color: Colors.white),
+          ),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 6),
+        ),
       );
     } finally {
       if (mounted) setState(() => _submitting = false);

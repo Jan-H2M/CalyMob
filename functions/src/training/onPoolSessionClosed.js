@@ -27,6 +27,7 @@
 
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
+const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 
 const FUNCTION_NAME = 'onPoolSessionClosed';
 const FUNCTION_REGION = 'europe-west1';
@@ -151,8 +152,8 @@ const onPoolSessionClosed = onDocumentUpdated(
               'theme_snapshot',
               'validator_id',
             ],
-            created_at: admin.firestore.FieldValue.serverTimestamp(),
-            updated_at: admin.firestore.FieldValue.serverTimestamp(),
+            created_at: FieldValue.serverTimestamp(),
+            updated_at: FieldValue.serverTimestamp(),
             created_by: 'system',
           });
           batchOps++;
@@ -191,8 +192,8 @@ const onPoolSessionClosed = onDocumentUpdated(
             notification_state: { reminder_count: 0 },
             created_by: 'system',
             created_by_name: FUNCTION_NAME,
-            created_at: admin.firestore.FieldValue.serverTimestamp(),
-            updated_at: admin.firestore.FieldValue.serverTimestamp(),
+            created_at: FieldValue.serverTimestamp(),
+            updated_at: FieldValue.serverTimestamp(),
           });
           batchOps++;
         }
@@ -231,9 +232,9 @@ function parseSessionDate(sessionId) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(sessionId);
   if (m) {
     const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
-    return admin.firestore.Timestamp.fromDate(d);
+    return Timestamp.fromDate(d);
   }
-  return admin.firestore.Timestamp.now();
+  return Timestamp.now();
 }
 
 module.exports = {

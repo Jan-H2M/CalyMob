@@ -23,6 +23,7 @@
 
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
+const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 
 const FUNCTION_NAME = 'onClaimAccepted';
 const FUNCTION_REGION = 'europe-west1';
@@ -80,7 +81,7 @@ const onClaimAccepted = onDocumentUpdated(
       // Contexte
       contextType,
       contextId: after.operation_id || after.pool_session_id || claimId,
-      contextDate: after.decision.decided_at || admin.firestore.FieldValue.serverTimestamp(),
+      contextDate: after.decision.decided_at || FieldValue.serverTimestamp(),
       contextTitle: deriveContextTitle(after),
 
       // Catégorie
@@ -101,8 +102,8 @@ const onClaimAccepted = onDocumentUpdated(
       sourceType: 'exercise_claim',
 
       // Audit
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     });
 
     // ---- 2. Back-link from the claim ----
@@ -113,7 +114,7 @@ const onClaimAccepted = onDocumentUpdated(
       .doc(claimId)
       .update({
         'decision.resulting_observation_id': observationRef.id,
-        updated_at: admin.firestore.FieldValue.serverTimestamp(),
+        updated_at: FieldValue.serverTimestamp(),
       });
 
     // ---- 3. Resolve parent monitor_validation task (if any) ----
@@ -129,9 +130,9 @@ const onClaimAccepted = onDocumentUpdated(
     if (!parentTaskSnap.empty) {
       await parentTaskSnap.docs[0].ref.update({
         status: 'done',
-        completed_at: admin.firestore.FieldValue.serverTimestamp(),
+        completed_at: FieldValue.serverTimestamp(),
         completed_by: after.decision.decided_by,
-        updated_at: admin.firestore.FieldValue.serverTimestamp(),
+        updated_at: FieldValue.serverTimestamp(),
       });
     }
 
@@ -157,13 +158,13 @@ const onClaimAccepted = onDocumentUpdated(
         pool_session_id: after.pool_session_id || null,
       },
       available_actions: [{ key: 'open', label: 'Voir' }],
-      completed_at: admin.firestore.FieldValue.serverTimestamp(),
+      completed_at: FieldValue.serverTimestamp(),
       completed_by: 'system',
       notification_state: { reminder_count: 0 },
       created_by: 'system',
       created_by_name: FUNCTION_NAME,
-      created_at: admin.firestore.FieldValue.serverTimestamp(),
-      updated_at: admin.firestore.FieldValue.serverTimestamp(),
+      created_at: FieldValue.serverTimestamp(),
+      updated_at: FieldValue.serverTimestamp(),
     });
 
     console.log(
