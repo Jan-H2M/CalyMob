@@ -46,6 +46,9 @@ const assignDiveNumber = onDocumentCreated(
     const data = event.data?.data();
     if (!data) return;
 
+    // Pool sessions are training artefacts, not numbered dive-log entries.
+    if (data.source === 'piscine') return;
+
     // Already numbered (Excel import flow, manual override, …) — leave it.
     if (typeof data.dive_number === 'number' && data.dive_number > 0) return;
 
@@ -58,6 +61,9 @@ const assignDiveNumber = onDocumentCreated(
     }
 
     const db = admin.firestore();
+    const entriesCol = db
+      .collection('clubs').doc(clubId)
+      .collection('student_logbook_entries');
     const counterRef = db
       .collection('clubs').doc(clubId)
       .collection('members').doc(memberId)
@@ -66,15 +72,25 @@ const assignDiveNumber = onDocumentCreated(
 
     try {
       const next = await db.runTransaction(async (tx) => {
-        const snap = await tx.get(counterRef);
+        const [counterSnap, entriesSnap] = await Promise.all([
+          tx.get(counterRef),
+          tx.get(entriesCol.where('member_id', '==', memberId)),
+        ]);
         const current =
-          (snap.exists && typeof snap.data().next === 'number')
-            ? snap.data().next
+          (counterSnap.exists && typeof counterSnap.data().next === 'number')
+            ? counterSnap.data().next
             : 1;
-        // Skip numbers already used (e.g. when the counter was reset but
-        // entries with higher numbers exist). Cheap one-time recovery — we
-        // ask Firestore for the max we know about.
-        let assigned = current;
+        let highestExisting = 0;
+        entriesSnap.forEach((doc) => {
+          if (doc.id === entryId) return;
+          const n = doc.data().dive_number;
+          if (typeof n === 'number' && n > highestExisting) {
+            highestExisting = n;
+          }
+        });
+        // If the member counter is stale/reset, recover from the actual
+        // highest known dive number before assigning the next one.
+        const assigned = Math.max(current, highestExisting + 1);
         tx.set(
           counterRef,
           { next: assigned + 1, updated_at: FieldValue.serverTimestamp() },

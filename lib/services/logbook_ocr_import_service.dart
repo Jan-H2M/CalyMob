@@ -373,7 +373,11 @@ class LogbookOcrImportService {
       final lestage = row.lestageKg.value;
       final binomesSnapshot = (row.buddies.value ?? const [])
           .where((name) => name.trim().isNotEmpty)
-          .map((name) => {'type': 'external', 'displayName': name.trim()})
+          .map((name) => {
+                'type': 'external',
+                'display_name': name.trim(),
+                'displayName': name.trim(),
+              })
           .toList();
 
       final id = await _logbookService.create(
@@ -436,7 +440,8 @@ class LogbookOcrImportService {
     // Pull all entries for this member once; we'll filter client-side.
     // Member carnets typically stay under ~500 entries — totally fine.
     final snap = await FirebaseFirestore.instance
-        .collection('clubs').doc(clubId)
+        .collection('clubs')
+        .doc(clubId)
         .collection('student_logbook_entries')
         .where('member_id', isEqualTo: memberId)
         .get();
@@ -464,16 +469,14 @@ class LogbookOcrImportService {
         final label = n is num
             ? 'Plongée #$n du ${_fmtDate(dd)}'
             : 'Plongée du ${_fmtDate(dd)}';
-        existing[r.rowId] =
-            ExistingLogbookMatch(entryId: doc.id, label: label);
+        existing[r.rowId] = ExistingLogbookMatch(entryId: doc.id, label: label);
         break;
       }
     }
     return existing;
   }
 
-  String _fmtDate(DateTime d) =>
-      '${d.day.toString().padLeft(2, '0')}/'
+  String _fmtDate(DateTime d) => '${d.day.toString().padLeft(2, '0')}/'
       '${d.month.toString().padLeft(2, '0')}/${d.year}';
 }
 

@@ -22,9 +22,9 @@ import '../../providers/auth_provider.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../exercises/member_exercises_screen.dart';
 import '../../providers/member_provider.dart';
+import 'logbook_add_choice_screen.dart';
 import 'logbook_entry_detail_screen.dart';
 import 'logbook_entry_screen.dart';
-import 'logbook_ocr_capture_screen.dart';
 import 'stats_screen.dart';
 
 class MonCarnetScreen extends StatefulWidget {
@@ -66,15 +66,14 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
     try {
       FirebaseFunctions.instanceFor(region: 'europe-west1')
           .httpsCallable('backfillMyDiveNumbers')
-          .call(<String, dynamic>{'clubId': FirebaseConfig.defaultClubId})
-          .then((res) {
-            debugPrint('[mon_carnet][backfill] ok: ${res.data}');
-          })
-          .catchError((Object err) {
-            debugPrint('[mon_carnet][backfill] failed: $err');
-            // Allow retry next session if it failed
-            _backfillTriggered = false;
-          });
+          .call(<String, dynamic>{'clubId': FirebaseConfig.defaultClubId}).then(
+              (res) {
+        debugPrint('[mon_carnet][backfill] ok: ${res.data}');
+      }).catchError((Object err) {
+        debugPrint('[mon_carnet][backfill] failed: $err');
+        // Allow retry next session if it failed
+        _backfillTriggered = false;
+      });
     } catch (e) {
       debugPrint('[mon_carnet][backfill] threw: $e');
       _backfillTriggered = false;
@@ -173,18 +172,7 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
       // are system-generated from the check-in flow at the pool entrance.
       floatingActionButton: _mode == _CarnetMode.dives
           ? _CarnetActions(
-              onScanPaper: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const LogbookOcrCaptureScreen(),
-                ),
-              ),
-              onAddDive: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const LogbookEntryScreen.manual(),
-                ),
-              ),
+              onAddDive: () => _openAddDive(context),
             )
           : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
@@ -222,6 +210,29 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _openAddDive(BuildContext context) async {
+    final result = await Navigator.push<LogbookEntrySaveResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const LogbookAddChoiceScreen(),
+      ),
+    );
+    if (!mounted || !context.mounted || result == null) return;
+    setState(() {
+      _mode = _CarnetMode.dives;
+      _year = result.date.year;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Plongée enregistrée dans ${result.date.year} : '
+          '${result.locationName.isEmpty ? 'sans lieu' : result.locationName}',
+        ),
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
@@ -362,11 +373,11 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 160),
             curve: Curves.easeOut,
-            padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
             decoration: BoxDecoration(
-              color:
-                  isActive ? Colors.white : Colors.white.withValues(alpha: 0.18),
+              color: isActive
+                  ? Colors.white
+                  : Colors.white.withValues(alpha: 0.18),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
                 color: Colors.white.withValues(alpha: isActive ? 1 : 0.35),
@@ -377,7 +388,11 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (isActive) ...[
-                  Icon(Icons.check, size: 14, color: AppColors.donkerblauw),
+                  const Icon(
+                    Icons.check,
+                    size: 14,
+                    color: AppColors.donkerblauw,
+                  ),
                   const SizedBox(width: 4),
                 ],
                 Text(
@@ -498,7 +513,7 @@ class _LogbookEntryRow {
     if (binomes != null) {
       for (final b in binomes) {
         if (b is Map) {
-          final name = b['displayName'] ?? b['name'];
+          final name = b['display_name'] ?? b['displayName'] ?? b['name'];
           if (name is String && name.isNotEmpty) buddies.add(name);
         }
       }
@@ -552,7 +567,7 @@ class _EntryCard extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(10),
         color: Colors.white.withValues(alpha: 0.10),
         border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
         boxShadow: [
@@ -566,7 +581,7 @@ class _EntryCard extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(10),
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(
@@ -577,7 +592,7 @@ class _EntryCard extends StatelessWidget {
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
             child: isPool ? _poolBody(dateLabel) : _diveBody(dateLabel),
           ),
         ),
@@ -593,10 +608,10 @@ class _EntryCard extends StatelessWidget {
           children: [
             if (entry.diveNumber != null)
               Padding(
-                padding: const EdgeInsets.only(right: 6),
+                padding: const EdgeInsets.only(right: 5),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 7, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.22),
                     borderRadius: BorderRadius.circular(6),
@@ -608,67 +623,84 @@ class _EntryCard extends StatelessWidget {
                     'N°${entry.diveNumber}',
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 11,
+                      fontSize: 10.5,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                 ),
               ),
             _SourceBadge(source: entry.source),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             Text(
               dateLabel,
               style: const TextStyle(
                 color: Colors.white70,
-                fontSize: 12.5,
+                fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const Spacer(),
-            if (entry.depthMeters != null)
-              _Stat(
-                icon: Icons.straighten,
-                text: '${entry.depthMeters!.toStringAsFixed(0)} m',
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                entry.locationName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 15.5,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            if (entry.durationMinutes != null) ...[
-              const SizedBox(width: 8),
-              _Stat(
-                icon: Icons.timer_outlined,
-                text: '${entry.durationMinutes} min',
-              ),
-            ],
+            ),
           ],
         ),
-        const SizedBox(height: 8),
-        Text(
-          entry.locationName,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 17,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        if (entry.buddyNames.isNotEmpty) ...[
-          const SizedBox(height: 4),
-          Text(
-            'avec ${entry.buddyNames.join(', ')}',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.78),
-              fontSize: 12.5,
-            ),
+        if (entry.depthMeters != null ||
+            entry.durationMinutes != null ||
+            entry.buddyNames.isNotEmpty) ...[
+          const SizedBox(height: 5),
+          Row(
+            children: [
+              if (entry.depthMeters != null)
+                _Stat(
+                  icon: Icons.straighten,
+                  text: '${entry.depthMeters!.toStringAsFixed(0)} m',
+                ),
+              if (entry.durationMinutes != null) ...[
+                const SizedBox(width: 6),
+                _Stat(
+                  icon: Icons.timer_outlined,
+                  text: '${entry.durationMinutes} min',
+                ),
+              ],
+              if (entry.buddyNames.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'avec ${entry.buddyNames.join(', ')}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.78),
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ] else
+                const Spacer(),
+            ],
           ),
         ],
         if (entry.counters.isNotEmpty) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Wrap(
-            spacing: 6,
-            runSpacing: 6,
+            spacing: 5,
+            runSpacing: 5,
             children: [
               for (final c in entry.counters)
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
+                    horizontal: 7,
+                    vertical: 2,
                   ),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.18),
@@ -681,7 +713,7 @@ class _EntryCard extends StatelessWidget {
                     c,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 11,
+                      fontSize: 10.5,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -690,14 +722,14 @@ class _EntryCard extends StatelessWidget {
           ),
         ],
         if (entry.notes != null && entry.notes!.isNotEmpty) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 5),
           Text(
             entry.notes!,
-            maxLines: 2,
+            maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.85),
-              fontSize: 12.5,
+              fontSize: 12,
               fontStyle: FontStyle.italic,
             ),
           ),
@@ -873,10 +905,8 @@ class _SourceBadge extends StatelessWidget {
 }
 
 class _CarnetActions extends StatelessWidget {
-  final VoidCallback onScanPaper;
   final VoidCallback onAddDive;
   const _CarnetActions({
-    required this.onScanPaper,
     required this.onAddDive,
   });
 
@@ -884,28 +914,12 @@ class _CarnetActions extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          Expanded(
-            child: _BottomActionButton(
-              onTap: onScanPaper,
-              icon: Icons.document_scanner_outlined,
-              label: 'Scanner Carnet papier',
-              backgroundColor: Colors.white.withValues(alpha: 0.94),
-              foregroundColor: AppColors.donkerblauw,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _BottomActionButton(
-              onTap: onAddDive,
-              icon: Icons.add,
-              label: 'Ajouter une plongée',
-              backgroundColor: AppColors.middenblauw,
-              foregroundColor: Colors.white,
-            ),
-          ),
-        ],
+      child: _BottomActionButton(
+        onTap: onAddDive,
+        icon: Icons.add,
+        label: 'Ajouter une plongée',
+        backgroundColor: AppColors.middenblauw,
+        foregroundColor: Colors.white,
       ),
     );
   }

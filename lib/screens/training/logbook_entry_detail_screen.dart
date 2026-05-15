@@ -50,7 +50,9 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
   /// §11 Q19 also adds: manual + <7 days; we surface both editable paths).
   bool get _canEdit {
     final source = (data['source'] as String?) ?? 'manual';
-    if (source == 'manual' || source == 'calypso_operation' || source == 'piscine') {
+    if (source == 'manual' ||
+        source == 'calypso_operation' ||
+        source == 'piscine') {
       return true;
     }
     return false;
@@ -144,20 +146,20 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
   /// counters, no depth/duration/times. What matters is : where, in which
   /// group, what theme, with which monitor, and who else was in your group.
   Widget _poolBody() {
-    final locationName =
-        (data['location_name'] as String?) ?? (data['lieu'] as String?) ??
-            'Watermael-Boitsfort';
+    final locationName = (data['location_name'] as String?) ??
+        (data['lieu'] as String?) ??
+        'Watermael-Boitsfort';
     final themeSnapshot = (data['theme_snapshot'] as String?)?.trim();
     final notes = (data['notes'] as String?)?.trim();
     final groupLevel = data['group_level'] as String?;
     final groupNumberRaw = data['group_number'];
-    final groupNumber =
-        groupNumberRaw is num ? groupNumberRaw.toInt() : null;
+    final groupNumber = groupNumberRaw is num ? groupNumberRaw.toInt() : null;
     final validatorId = data['validator_id'] as String?;
     final moniteurIds = (data['moniteur_ids'] as List?)?.cast<String>() ?? [];
     final groupMembers = _parsePoolGroupMembers(data);
     final validatorName = data['validator_name'] as String?;
-    final moniteurNames = (data['moniteur_names'] as List?)?.cast<String>() ?? const [];
+    final moniteurNames =
+        (data['moniteur_names'] as List?)?.cast<String>() ?? const [];
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
@@ -197,7 +199,8 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
     final result = <_PoolGroupMember>[];
     for (final m in raw) {
       if (m is! Map) continue;
-      final displayName = (m['displayName'] as String?) ??
+      final displayName = (m['display_name'] as String?) ??
+          (m['displayName'] as String?) ??
           (m['name'] as String?) ??
           (m['memberName'] as String?);
       if (displayName == null || displayName.isEmpty) continue;
@@ -316,12 +319,15 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
         final type = (b['type'] as String?) ?? '';
         if (type == 'member') {
           result.add(_ParsedBinome(
-            displayName: (b['displayName'] as String?) ?? '?',
+            displayName: (b['display_name'] as String?) ??
+                (b['displayName'] as String?) ??
+                '?',
             isExternal: false,
           ));
         } else {
           result.add(_ParsedBinome(
-            displayName: (b['displayName'] as String?) ??
+            displayName: (b['display_name'] as String?) ??
+                (b['displayName'] as String?) ??
                 (b['name'] as String?) ??
                 'Binôme externe',
             niveau: b['niveau'] as String?,
@@ -403,8 +409,8 @@ class _PoolGroupCard extends StatelessWidget {
       groupParts.add('Groupe $groupNumber');
     }
     final groupLabel = groupParts.join(' · ');
-    final hasMonitor =
-        validatorId != null && validatorId!.isNotEmpty || moniteurIds.isNotEmpty;
+    final hasMonitor = validatorId != null && validatorId!.isNotEmpty ||
+        moniteurIds.isNotEmpty;
 
     return Container(
       decoration: BoxDecoration(
@@ -418,8 +424,7 @@ class _PoolGroupCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.school_outlined,
-                  size: 18, color: Colors.white),
+              const Icon(Icons.school_outlined, size: 18, color: Colors.white),
               const SizedBox(width: 8),
               const Text(
                 'Groupe',
@@ -433,15 +438,15 @@ class _PoolGroupCard extends StatelessWidget {
               const Spacer(),
               if (groupLabel.isNotEmpty)
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
                     groupLabel,
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: AppColors.donkerblauw,
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
@@ -606,8 +611,8 @@ class _PoolGroupMembersCard extends StatelessWidget {
             children: [
               for (final m in members)
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 5),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.18),
                     borderRadius: BorderRadius.circular(10),
@@ -740,12 +745,28 @@ class _DateTimeCard extends StatelessWidget {
   const _DateTimeCard({this.date, this.entryTime, this.exitTime});
 
   static const _months = [
-    'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
-    'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'
+    'janvier',
+    'février',
+    'mars',
+    'avril',
+    'mai',
+    'juin',
+    'juillet',
+    'août',
+    'septembre',
+    'octobre',
+    'novembre',
+    'décembre'
   ];
 
   static const _weekdays = [
-    'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'
+    'lundi',
+    'mardi',
+    'mercredi',
+    'jeudi',
+    'vendredi',
+    'samedi',
+    'dimanche'
   ];
 
   @override
@@ -764,7 +785,7 @@ class _DateTimeCard extends StatelessWidget {
           const SizedBox(height: 6),
           Row(
             children: [
-              Icon(Icons.calendar_today_outlined,
+              const Icon(Icons.calendar_today_outlined,
                   color: AppColors.middenblauw, size: 18),
               const SizedBox(width: 8),
               Expanded(
@@ -839,7 +860,8 @@ class _TimeBox extends StatelessWidget {
           const SizedBox(height: 2),
           Row(
             children: [
-              Icon(icon, size: 14,
+              Icon(icon,
+                  size: 14,
                   color: has ? AppColors.middenblauw : Colors.grey.shade400),
               const SizedBox(width: 4),
               Text(
@@ -1076,7 +1098,8 @@ class _EquipmentCard extends StatelessWidget {
     return n.toStringAsFixed(1);
   }
 
-  Widget _row({required IconData icon, required String label, required String value}) {
+  Widget _row(
+      {required IconData icon, required String label, required String value}) {
     return Row(
       children: [
         Icon(icon, size: 18, color: AppColors.middenblauw),

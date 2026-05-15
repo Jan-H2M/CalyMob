@@ -57,10 +57,17 @@ class BinomeSelection {
   Map<String, dynamic> toMap() {
     return {
       'type': type,
+      // Snake_case is the canonical web/shared schema. Keep camelCase for
+      // older CalyMob readers until every client has migrated.
+      if (memberId != null) 'member_id': memberId,
       if (memberId != null) 'memberId': memberId,
-      if (displayName != null && displayName!.isNotEmpty) 'displayName': displayName,
+      if (displayName != null && displayName!.isNotEmpty)
+        'display_name': displayName,
+      if (displayName != null && displayName!.isNotEmpty)
+        'displayName': displayName,
       if (niveau != null && niveau!.isNotEmpty) 'niveau': niveau,
       if (club != null && club!.isNotEmpty) 'club': club,
+      'added_at': Timestamp.now(),
       'addedAt': Timestamp.now(),
     };
   }
@@ -136,19 +143,22 @@ class _BinomeTypeaheadFieldState extends State<BinomeTypeaheadField> {
           .collection('members')
           .orderBy('nom')
           .get();
-      final rows = snap.docs.map((d) {
-        final data = d.data();
-        return _MemberRow(
-          id: d.id,
-          prenom: (data['prenom'] as String?)?.trim() ??
-              (data['first_name'] as String?)?.trim() ??
-              '',
-          nom: (data['nom'] as String?)?.trim() ??
-              (data['last_name'] as String?)?.trim() ??
-              '',
-          brevet: (data['plongeur_code'] as String?)?.trim(),
-        );
-      }).where((r) => r.displayName.isNotEmpty).toList();
+      final rows = snap.docs
+          .map((d) {
+            final data = d.data();
+            return _MemberRow(
+              id: d.id,
+              prenom: (data['prenom'] as String?)?.trim() ??
+                  (data['first_name'] as String?)?.trim() ??
+                  '',
+              nom: (data['nom'] as String?)?.trim() ??
+                  (data['last_name'] as String?)?.trim() ??
+                  '',
+              brevet: (data['plongeur_code'] as String?)?.trim(),
+            );
+          })
+          .where((r) => r.displayName.isNotEmpty)
+          .toList();
       if (!mounted) return;
       setState(() {
         _members = rows;
@@ -170,12 +180,16 @@ class _BinomeTypeaheadFieldState extends State<BinomeTypeaheadField> {
   List<_MemberRow> get _filtered {
     final q = _query.trim().toLowerCase();
     if (q.isEmpty) return const [];
-    final alreadyMemberIds =
-        widget.binomes.where((b) => b.memberId != null).map((b) => b.memberId).toSet();
+    final alreadyMemberIds = widget.binomes
+        .where((b) => b.memberId != null)
+        .map((b) => b.memberId)
+        .toSet();
     return _members
         .where((m) {
           if (alreadyMemberIds.contains(m.id)) return false;
-          if (widget.currentUserId != null && m.id == widget.currentUserId) return false;
+          if (widget.currentUserId != null && m.id == widget.currentUserId) {
+            return false;
+          }
           return m.searchKey.contains(q);
         })
         .take(8)
@@ -490,9 +504,11 @@ class _ExternalBinomeSheetState extends State<_ExternalBinomeSheet> {
               const SizedBox(height: 14),
               _field(label: 'Nom', controller: _nom, hint: 'Pierre Dupont'),
               const SizedBox(height: 10),
-              _field(label: 'Niveau', controller: _niveau, hint: '2★, MN, etc.'),
+              _field(
+                  label: 'Niveau', controller: _niveau, hint: '2★, MN, etc.'),
               const SizedBox(height: 10),
-              _field(label: 'Club', controller: _club, hint: 'Néréides Charleroi'),
+              _field(
+                  label: 'Club', controller: _club, hint: 'Néréides Charleroi'),
               const SizedBox(height: 18),
               Row(
                 children: [
@@ -555,7 +571,8 @@ class _ExternalBinomeSheetState extends State<_ExternalBinomeSheet> {
               borderSide: BorderSide.none,
             ),
             isDense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           ),
         ),
       ],

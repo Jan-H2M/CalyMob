@@ -216,8 +216,12 @@ const {
 exports.onMonitorObservationCompleted = onMonitorObservationCompleted;
 
 // Phase 4 — Palanquée planning → draft exercise_claims pre-fill
-const { onPalanqueeSaved } = require('./src/training/onPalanqueeSaved');
+const {
+  onPalanqueeSaved,
+  onOperationPalanqueeSaved,
+} = require('./src/training/onPalanqueeSaved');
 exports.onPalanqueeSaved = onPalanqueeSaved;
+exports.onOperationPalanqueeSaved = onOperationPalanqueeSaved;
 
 // Phase A (v2.2) — Pool check-in completion propagation:
 // when a student submits the pool check-in task, mirror the chosen
