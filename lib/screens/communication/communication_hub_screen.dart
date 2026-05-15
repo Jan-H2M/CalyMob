@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -67,6 +68,7 @@ class CommunicationHubScreen extends StatelessWidget {
                     // Carnet de Formation — persistent inbox. Always rendered;
                     // empty state shows nothing visible to non-formation members.
                     const _ActionsCalypsoSection(),
+                    const _PlannedExercisesSection(),
                     const SizedBox(height: 18),
                     _AnnouncementsCard(
                       unreadCount: unreadProvider.announcements,
@@ -172,6 +174,153 @@ class _ActionsCalypsoSectionState extends State<_ActionsCalypsoSection> {
                   child: _ActionCalypsoCard(task: task),
                 )),
           ],
+        );
+      },
+    );
+  }
+}
+
+class _PlannedExercisesSection extends StatelessWidget {
+  const _PlannedExercisesSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final userId = context.watch<AuthProvider>().currentUser?.uid;
+    if (userId == null) return const SizedBox.shrink();
+
+    const clubId = FirebaseConfig.defaultClubId;
+    final stream = FirebaseFirestore.instance
+        .collection('clubs')
+        .doc(clubId)
+        .collection('exercise_claims')
+        .where('member_id', isEqualTo: userId)
+        .where('status', isEqualTo: 'draft')
+        .snapshots();
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: stream,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) return const SizedBox.shrink();
+        final docs = snapshot.data?.docs ?? const [];
+        if (docs.isEmpty) return const SizedBox.shrink();
+
+        final byOperation = <String, List<Map<String, dynamic>>>{};
+        for (final doc in docs) {
+          final data = {'id': doc.id, ...doc.data()};
+          final key = (data['operation_id'] ??
+                  data['palanquee_id'] ??
+                  'planned')
+              .toString();
+          byOperation.putIfAbsent(key, () => []).add(data);
+        }
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.96),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.72)),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.donkerblauw.withValues(alpha: 0.10),
+                  blurRadius: 14,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.assignment_outlined,
+                        color: AppColors.middenblauw, size: 20),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Exercices prévus pour ta sortie',
+                        style: TextStyle(
+                          color: AppColors.donkerblauw,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  'Informatif: après la plongée, tu confirmeras dans ton carnet ce qui a vraiment été fait.',
+                  style: TextStyle(
+                    color: AppColors.donkerblauw.withValues(alpha: 0.68),
+                    fontSize: 12,
+                    height: 1.25,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                ...byOperation.entries.map((entry) {
+                  final claims = entry.value;
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (entry.key != 'planned')
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Text(
+                              'Sortie ${entry.key.length > 8 ? entry.key.substring(0, 8) : entry.key}',
+                              style: TextStyle(
+                                color: AppColors.donkerblauw
+                                    .withValues(alpha: 0.58),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        Wrap(
+                          spacing: 7,
+                          runSpacing: 7,
+                          children: claims.map((claim) {
+                            final code = (claim['exercise_code'] ??
+                                    claim['exercise_id'] ??
+                                    '?')
+                                .toString();
+                            final label =
+                                claim['exercise_label']?.toString() ?? '';
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 9,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE6F6FD),
+                                borderRadius: BorderRadius.circular(9),
+                                border: Border.all(
+                                  color: AppColors.middenblauw
+                                      .withValues(alpha: 0.18),
+                                ),
+                              ),
+                              child: Text(
+                                label.isEmpty ? code : '$code · $label',
+                                style: const TextStyle(
+                                  color: AppColors.donkerblauw,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
         );
       },
     );
@@ -320,7 +469,7 @@ class _ActionCalypsoCard extends StatelessWidget {
       final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!ok && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Text(
               'Ouvre cette action sur caly.club — l\'écran mobile arrive bientôt.',
             ),
