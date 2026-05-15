@@ -392,6 +392,23 @@ service cloud.firestore {
             && hasValidSession(clubId)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by', 'reactions', 'poll']);
         }
+
+        // Palanquées / préparation pédagogique d'une opération.
+        // CalyCompta et CalyMob écrivent ici le plan d'exercices préparé par
+        // le moniteur; une Cloud Function transforme ensuite les exercices
+        // prévus en exercise_claims brouillons.
+        match /palanquees/{palanqueeId} {
+          allow read: if isAuthenticated();
+          allow create, update: if isAuthenticated()
+            && hasValidSession(clubId)
+            && (
+              getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
+              canScanAttendance(clubId)
+            );
+          allow delete: if isAuthenticated()
+            && hasValidSession(clubId)
+            && getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'];
+        }
       }
 
       // Operation participants (inscriptions, cotisations payées, etc.) - LEGACY

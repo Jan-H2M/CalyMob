@@ -40,6 +40,7 @@ import 'palanquee_screen.dart';
 import '../../config/firebase_config.dart';
 import '../../widgets/observation_bottom_sheet.dart';
 import 'event_discussion_screen.dart';
+import '../training/monitor_planning_screen.dart';
 
 /// Écran de détail d'une opération avec bouton inscription
 class OperationDetailScreen extends StatefulWidget {
@@ -1733,6 +1734,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                             if (operation.categorie == 'plongee' &&
                                 operationProvider
                                     .selectedOperationParticipants.isNotEmpty) ...[
+                              if (_canManagePalanquees(operation)) ...[
+                                _buildPrepareExercisesButton(operationProvider),
+                                const SizedBox(height: 12),
+                              ],
                               _buildPalanqueeButton(operationProvider),
                               const SizedBox(height: 12),
                             ],
@@ -3631,6 +3636,64 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                   fontWeight: FontWeight.bold,
                   fontSize: 13,
                 ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(Icons.chevron_right, color: Colors.grey[400], size: 22),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Button to prepare pedagogical roles/exercises for the dive.
+  Widget _buildPrepareExercisesButton(OperationProvider operationProvider) {
+    final operation = operationProvider.selectedOperation;
+    if (operation == null) return const SizedBox.shrink();
+
+    return GestureDetector(
+      onTap: () async {
+        final result = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => MonitorPlanningScreen(operationId: operation.id),
+          ),
+        );
+        if (result == true && mounted) {
+          _loadOperation();
+        }
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Icon(Icons.fact_check_outlined, color: AppColors.primary, size: 22),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Préparer exercices',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1A1A1A),
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Rôles, exercices ouverts et validations à suivre',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF607085),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(width: 8),

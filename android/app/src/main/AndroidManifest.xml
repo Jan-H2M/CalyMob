@@ -21,6 +21,9 @@
     <!-- Camera for expense receipts and profile photos -->
     <uses-permission android:name="android.permission.CAMERA"/>
 
+    <!-- Microphone for dictated logbook entry input -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+
     <!-- Storage - Android 13+ (API 33+) — Photo Picker (image_picker_android >= 0.8.9)
          needs no media permissions. Explicitly remove in case a transitive plugin
          tries to merge them in (Play policy: invalid use of media permissions). -->

@@ -54,6 +54,11 @@
 	<!-- Photo Library Add Permission (saving cropped profile photo if needed) -->
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>CalyMob a besoin d'enregistrer des images dans votre photothèque (par exemple votre photo de profil recadrée).</string>
+	<!-- Microphone / speech recognition for dictated logbook entries -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>CalyMob utilise le micro pour dicter une plongée dans votre carnet.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>CalyMob utilise la reconnaissance vocale pour transformer votre dictée en champs de plongée.</string>
 	<!-- Push Notifications -->
 	<key>UIBackgroundModes</key>
 	<array>
