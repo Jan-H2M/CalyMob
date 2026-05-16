@@ -7,6 +7,7 @@ import 'package:app_links/app_links.dart';
 /// Supported deep link formats:
 /// - calymob://payment/return?provider=noda&payment=xxx&clubId=xxx&operationId=xxx
 /// - calymob://reset-password?oobCode=xxx&mode=resetPassword (custom scheme)
+/// - calymob://historical-validation?batchId=xxx
 /// - https://caly.club/reset-password?oobCode=xxx&mode=resetPassword (Universal/App Links)
 class DeepLinkService {
   static final DeepLinkService _instance = DeepLinkService._internal();
@@ -16,12 +17,21 @@ class DeepLinkService {
   final AppLinks _appLinks = AppLinks();
 
   // Stream controller for payment return events
-  final _paymentReturnController = StreamController<PaymentReturnData>.broadcast();
-  Stream<PaymentReturnData> get onPaymentReturn => _paymentReturnController.stream;
+  final _paymentReturnController =
+      StreamController<PaymentReturnData>.broadcast();
+  Stream<PaymentReturnData> get onPaymentReturn =>
+      _paymentReturnController.stream;
 
   // Stream controller for password reset events
-  final _passwordResetController = StreamController<PasswordResetData>.broadcast();
-  Stream<PasswordResetData> get onPasswordReset => _passwordResetController.stream;
+  final _passwordResetController =
+      StreamController<PasswordResetData>.broadcast();
+  Stream<PasswordResetData> get onPasswordReset =>
+      _passwordResetController.stream;
+
+  final _historicalValidationController =
+      StreamController<HistoricalValidationLinkData>.broadcast();
+  Stream<HistoricalValidationLinkData> get onHistoricalValidation =>
+      _historicalValidationController.stream;
 
   StreamSubscription<Uri>? _linkSubscription;
   bool _isInitialized = false;
@@ -59,7 +69,8 @@ class DeepLinkService {
   /// Handle incoming deep link
   void _handleDeepLink(Uri uri) {
     debugPrint('DeepLink: Handling URI: $uri');
-    debugPrint('DeepLink: Scheme: ${uri.scheme}, Host: ${uri.host}, Path: ${uri.path}');
+    debugPrint(
+        'DeepLink: Scheme: ${uri.scheme}, Host: ${uri.host}, Path: ${uri.path}');
 
     // Check if it's a password reset link from caly.club
     // Format: https://caly.club/reset-password?oobCode=xxx&mode=resetPassword
@@ -70,13 +81,15 @@ class DeepLinkService {
       final mode = uri.queryParameters['mode'];
 
       if (oobCode != null && mode == 'resetPassword') {
-        debugPrint('DeepLink: Password reset detected - oobCode: ${oobCode.substring(0, 10)}...');
+        debugPrint(
+            'DeepLink: Password reset detected - oobCode: ${oobCode.substring(0, 10)}...');
 
         _passwordResetController.add(PasswordResetData(
           oobCode: oobCode,
         ));
       } else {
-        debugPrint('DeepLink: Missing oobCode or invalid mode for password reset');
+        debugPrint(
+            'DeepLink: Missing oobCode or invalid mode for password reset');
       }
       return;
     }
@@ -88,27 +101,32 @@ class DeepLinkService {
       final mode = uri.queryParameters['mode'];
 
       if (oobCode != null && mode == 'resetPassword') {
-        debugPrint('DeepLink: Password reset via custom scheme - oobCode: ${oobCode.substring(0, 10)}...');
+        debugPrint(
+            'DeepLink: Password reset via custom scheme - oobCode: ${oobCode.substring(0, 10)}...');
 
         _passwordResetController.add(PasswordResetData(
           oobCode: oobCode,
         ));
       } else {
-        debugPrint('DeepLink: Missing oobCode or invalid mode for password reset (custom scheme)');
+        debugPrint(
+            'DeepLink: Missing oobCode or invalid mode for password reset (custom scheme)');
       }
       return;
     }
 
     // Check if it's a payment return link
     // Format: calymob://payment/return?provider=noda&payment=xxx
-    if (uri.scheme == 'calymob' && uri.host == 'payment' && uri.path == '/return') {
+    if (uri.scheme == 'calymob' &&
+        uri.host == 'payment' &&
+        uri.path == '/return') {
       final provider = uri.queryParameters['provider'];
       final paymentId = uri.queryParameters['payment'];
       final clubId = uri.queryParameters['clubId'];
       final operationId = uri.queryParameters['operationId'];
 
       if (provider != null && paymentId != null) {
-        debugPrint('DeepLink: Payment return detected - provider: $provider, paymentId: $paymentId');
+        debugPrint(
+            'DeepLink: Payment return detected - provider: $provider, paymentId: $paymentId');
 
         _paymentReturnController.add(PaymentReturnData(
           provider: provider,
@@ -122,6 +140,20 @@ class DeepLinkService {
       return;
     }
 
+    if (uri.scheme == 'calymob' && uri.host == 'historical-validation') {
+      final batchId = uri.queryParameters['batchId'];
+      if (batchId != null && batchId.isNotEmpty) {
+        debugPrint(
+            'DeepLink: Historical validation detected - batchId: $batchId');
+        _historicalValidationController.add(
+          HistoricalValidationLinkData(batchId: batchId),
+        );
+      } else {
+        debugPrint('DeepLink: Missing batchId for historical validation');
+      }
+      return;
+    }
+
     debugPrint('DeepLink: Unknown deep link format');
   }
 
@@ -130,6 +162,7 @@ class DeepLinkService {
     _linkSubscription?.cancel();
     _paymentReturnController.close();
     _passwordResetController.close();
+    _historicalValidationController.close();
     _isInitialized = false;
   }
 }
@@ -149,7 +182,8 @@ class PaymentReturnData {
   });
 
   @override
-  String toString() => 'PaymentReturnData(provider: $provider, paymentId: $paymentId, clubId: $clubId, operationId: $operationId)';
+  String toString() =>
+      'PaymentReturnData(provider: $provider, paymentId: $paymentId, clubId: $clubId, operationId: $operationId)';
 }
 
 /// Data class for password reset events
@@ -161,5 +195,15 @@ class PasswordResetData {
   });
 
   @override
-  String toString() => 'PasswordResetData(oobCode: ${oobCode.substring(0, 10)}...)';
+  String toString() =>
+      'PasswordResetData(oobCode: ${oobCode.substring(0, 10)}...)';
+}
+
+class HistoricalValidationLinkData {
+  final String batchId;
+
+  HistoricalValidationLinkData({required this.batchId});
+
+  @override
+  String toString() => 'HistoricalValidationLinkData(batchId: $batchId)';
 }

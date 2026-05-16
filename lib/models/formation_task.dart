@@ -19,14 +19,33 @@ enum FormationTaskType {
   buddyConfirmation,
   eventPreparation,
   manualReminder,
+
+  /// Student submitted existing paper-card exercises; a monitor must verify
+  /// the physical card before the rows become official.
+  historicalValidation,
+
   /// v2.2 — holistic evaluation by the group validator after a pool
   /// session is closed. Created by Cloud Function `onPoolSessionClosed`.
   monitorObservation,
 }
 
-enum FormationTaskStatus { open, snoozed, waitingForOther, done, dismissed, blocked, expired }
+enum FormationTaskStatus {
+  open,
+  snoozed,
+  waitingForOther,
+  done,
+  dismissed,
+  blocked,
+  expired
+}
 
-enum FormationTaskAssigneeType { student, monitor, buddy, schoolResponsible, system }
+enum FormationTaskAssigneeType {
+  student,
+  monitor,
+  buddy,
+  schoolResponsible,
+  system
+}
 
 class FormationTaskAction {
   final String key;
@@ -58,6 +77,7 @@ class FormationTaskContext {
   final List<String> candidateValidatorIds;
   final String? logbookEntryId;
   final String? exerciseClaimId;
+  final String? historicalClaimBatchId;
   final String? palanqueeId;
   final String? locationId;
 
@@ -71,6 +91,7 @@ class FormationTaskContext {
     this.candidateValidatorIds = const [],
     this.logbookEntryId,
     this.exerciseClaimId,
+    this.historicalClaimBatchId,
     this.palanqueeId,
     this.locationId,
   });
@@ -88,6 +109,7 @@ class FormationTaskContext {
           (map['candidate_validator_ids'] as List?)?.cast<String>() ?? const [],
       logbookEntryId: map['logbook_entry_id'],
       exerciseClaimId: map['exercise_claim_id'],
+      historicalClaimBatchId: map['historical_claim_batch_id'],
       palanqueeId: map['palanquee_id'],
       locationId: map['location_id'],
     );
@@ -181,13 +203,15 @@ class FormationTask {
       currentAssigneeId: data['current_assignee_id'] ?? '',
       currentAssigneeName: data['current_assignee_name'],
       currentAssigneeType: _parseAssigneeType(data['current_assignee_type']),
-      context: FormationTaskContext.fromMap(data['context'] as Map<String, dynamic>?),
+      context: FormationTaskContext.fromMap(
+          data['context'] as Map<String, dynamic>?),
       dueAt: (data['due_at'] as Timestamp?)?.toDate(),
       snoozedUntil: (data['snoozed_until'] as Timestamp?)?.toDate(),
       completedAt: (data['completed_at'] as Timestamp?)?.toDate(),
       completedBy: data['completed_by'],
       availableActions: (data['available_actions'] as List?)
-              ?.map((e) => FormationTaskAction.fromMap(e as Map<String, dynamic>))
+              ?.map(
+                  (e) => FormationTaskAction.fromMap(e as Map<String, dynamic>))
               .toList() ??
           const [],
       notificationState: FormationTaskNotificationState.fromMap(
@@ -201,67 +225,112 @@ class FormationTask {
 
   static FormationTaskType _parseType(String? s) {
     switch (s) {
-      case 'pool_checkin': return FormationTaskType.poolCheckin;
-      case 'logbook_completion': return FormationTaskType.logbookCompletion;
-      case 'exercise_claim': return FormationTaskType.exerciseClaim;
-      case 'monitor_validation': return FormationTaskType.monitorValidation;
-      case 'external_proof_review': return FormationTaskType.externalProofReview;
-      case 'buddy_confirmation': return FormationTaskType.buddyConfirmation;
-      case 'event_preparation': return FormationTaskType.eventPreparation;
-      case 'monitor_observation': return FormationTaskType.monitorObservation;
-      default: return FormationTaskType.manualReminder;
+      case 'pool_checkin':
+        return FormationTaskType.poolCheckin;
+      case 'logbook_completion':
+        return FormationTaskType.logbookCompletion;
+      case 'exercise_claim':
+        return FormationTaskType.exerciseClaim;
+      case 'monitor_validation':
+        return FormationTaskType.monitorValidation;
+      case 'external_proof_review':
+        return FormationTaskType.externalProofReview;
+      case 'buddy_confirmation':
+        return FormationTaskType.buddyConfirmation;
+      case 'event_preparation':
+        return FormationTaskType.eventPreparation;
+      case 'historical_validation':
+        return FormationTaskType.historicalValidation;
+      case 'monitor_observation':
+        return FormationTaskType.monitorObservation;
+      default:
+        return FormationTaskType.manualReminder;
     }
   }
 
   static FormationTaskStatus _parseStatus(String? s) {
     switch (s) {
-      case 'snoozed': return FormationTaskStatus.snoozed;
-      case 'waiting_for_other': return FormationTaskStatus.waitingForOther;
-      case 'done': return FormationTaskStatus.done;
-      case 'dismissed': return FormationTaskStatus.dismissed;
-      case 'blocked': return FormationTaskStatus.blocked;
-      case 'expired': return FormationTaskStatus.expired;
-      default: return FormationTaskStatus.open;
+      case 'snoozed':
+        return FormationTaskStatus.snoozed;
+      case 'waiting_for_other':
+        return FormationTaskStatus.waitingForOther;
+      case 'done':
+        return FormationTaskStatus.done;
+      case 'dismissed':
+        return FormationTaskStatus.dismissed;
+      case 'blocked':
+        return FormationTaskStatus.blocked;
+      case 'expired':
+        return FormationTaskStatus.expired;
+      default:
+        return FormationTaskStatus.open;
     }
   }
 
   static FormationTaskAssigneeType _parseAssigneeType(String? s) {
     switch (s) {
-      case 'monitor': return FormationTaskAssigneeType.monitor;
-      case 'buddy': return FormationTaskAssigneeType.buddy;
-      case 'school_responsible': return FormationTaskAssigneeType.schoolResponsible;
-      case 'system': return FormationTaskAssigneeType.system;
-      default: return FormationTaskAssigneeType.student;
+      case 'monitor':
+        return FormationTaskAssigneeType.monitor;
+      case 'buddy':
+        return FormationTaskAssigneeType.buddy;
+      case 'school_responsible':
+        return FormationTaskAssigneeType.schoolResponsible;
+      case 'system':
+        return FormationTaskAssigneeType.system;
+      default:
+        return FormationTaskAssigneeType.student;
     }
   }
 
   /// Human-readable French label for the task type (used in cards).
   String get typeLabel {
     switch (type) {
-      case FormationTaskType.poolCheckin: return 'Piscine à compléter';
-      case FormationTaskType.logbookCompletion: return 'Carnet à compléter';
-      case FormationTaskType.exerciseClaim: return 'Exercice déclaré';
-      case FormationTaskType.monitorValidation: return 'Validation';
-      case FormationTaskType.externalProofReview: return 'Preuve externe';
-      case FormationTaskType.buddyConfirmation: return 'Confirmation buddy';
-      case FormationTaskType.eventPreparation: return 'Préparation';
-      case FormationTaskType.manualReminder: return 'Rappel';
-      case FormationTaskType.monitorObservation: return 'Évaluation';
+      case FormationTaskType.poolCheckin:
+        return 'Piscine à compléter';
+      case FormationTaskType.logbookCompletion:
+        return 'Carnet à compléter';
+      case FormationTaskType.exerciseClaim:
+        return 'Exercice déclaré';
+      case FormationTaskType.monitorValidation:
+        return 'Validation';
+      case FormationTaskType.externalProofReview:
+        return 'Preuve externe';
+      case FormationTaskType.buddyConfirmation:
+        return 'Confirmation buddy';
+      case FormationTaskType.eventPreparation:
+        return 'Préparation';
+      case FormationTaskType.manualReminder:
+        return 'Rappel';
+      case FormationTaskType.historicalValidation:
+        return 'Carte papier';
+      case FormationTaskType.monitorObservation:
+        return 'Évaluation';
     }
   }
 
   /// Initial used for the avatar in the inbox card.
   String get glyph {
     switch (type) {
-      case FormationTaskType.poolCheckin: return 'P';
-      case FormationTaskType.logbookCompletion: return 'C';
-      case FormationTaskType.exerciseClaim: return 'E';
-      case FormationTaskType.monitorValidation: return 'V';
-      case FormationTaskType.externalProofReview: return '!';
-      case FormationTaskType.buddyConfirmation: return 'B';
-      case FormationTaskType.eventPreparation: return 'P';
-      case FormationTaskType.manualReminder: return '·';
-      case FormationTaskType.monitorObservation: return 'O';
+      case FormationTaskType.poolCheckin:
+        return 'P';
+      case FormationTaskType.logbookCompletion:
+        return 'C';
+      case FormationTaskType.exerciseClaim:
+        return 'E';
+      case FormationTaskType.monitorValidation:
+        return 'V';
+      case FormationTaskType.externalProofReview:
+        return '!';
+      case FormationTaskType.buddyConfirmation:
+        return 'B';
+      case FormationTaskType.eventPreparation:
+        return 'P';
+      case FormationTaskType.manualReminder:
+        return '·';
+      case FormationTaskType.historicalValidation:
+        return 'H';
+      case FormationTaskType.monitorObservation:
+        return 'O';
     }
   }
 }

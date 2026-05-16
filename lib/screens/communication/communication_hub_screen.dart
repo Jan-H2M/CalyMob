@@ -13,12 +13,16 @@ import '../../services/formation_task_service.dart';
 import '../../services/team_channel_service.dart';
 import '../../services/unread_count_service.dart';
 import '../../utils/club_role_utils.dart';
+import '../../utils/permission_helper.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../announcements/announcements_screen.dart';
 import '../teams/team_chat_screen.dart';
 import '../training/pool_checkin_screen.dart';
 import '../training/monitor_validation_screen.dart';
 import '../training/logbook_entry_screen.dart';
+import '../training/historical_claims_screen.dart';
+import '../training/historical_qr_scan_screen.dart';
+import '../training/historical_validation_screen.dart';
 
 class CommunicationHubScreen extends StatelessWidget {
   const CommunicationHubScreen({super.key});
@@ -133,8 +137,13 @@ class _ActionsCalypsoSectionState extends State<_ActionsCalypsoSection> {
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
+    final memberProvider = context.watch<MemberProvider>();
     final userId = authProvider.currentUser?.uid;
     if (userId == null) return const SizedBox.shrink();
+    final canScanHistoricalQr = PermissionHelper.canValidateLifras(
+      clubStatuten: memberProvider.clubStatuten,
+      plongeurCode: memberProvider.plongeurCode,
+    );
 
     const clubId = FirebaseConfig.defaultClubId;
 
@@ -143,9 +152,9 @@ class _ActionsCalypsoSectionState extends State<_ActionsCalypsoSection> {
       builder: (context, snapshot) {
         final tasks = snapshot.data ?? const <FormationTask>[];
 
-        // Hide the section entirely when the user has no tasks at all.
-        // Keeps the screen clean for members who aren't en formation.
-        if (tasks.isEmpty) return const SizedBox.shrink();
+        if (tasks.isEmpty && !canScanHistoricalQr) {
+          return const SizedBox.shrink();
+        }
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -154,7 +163,8 @@ class _ActionsCalypsoSectionState extends State<_ActionsCalypsoSection> {
               padding: const EdgeInsets.only(bottom: 10, left: 2),
               child: Row(
                 children: [
-                  Icon(Icons.flag, color: Colors.white.withValues(alpha: 0.9), size: 20),
+                  Icon(Icons.flag,
+                      color: Colors.white.withValues(alpha: 0.9), size: 20),
                   const SizedBox(width: 8),
                   Text(
                     'Actions Calypso',
@@ -165,10 +175,15 @@ class _ActionsCalypsoSectionState extends State<_ActionsCalypsoSection> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  _CountBadge(tasks.length),
+                  if (tasks.isNotEmpty) _CountBadge(tasks.length),
                 ],
               ),
             ),
+            if (canScanHistoricalQr)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 10),
+                child: _HistoricalQrScanActionCard(),
+              ),
             ...tasks.map((task) => Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: _ActionCalypsoCard(task: task),
@@ -176,6 +191,63 @@ class _ActionsCalypsoSectionState extends State<_ActionsCalypsoSection> {
           ],
         );
       },
+    );
+  }
+}
+
+class _HistoricalQrScanActionCard extends StatelessWidget {
+  const _HistoricalQrScanActionCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white.withValues(alpha: 0.96),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const HistoricalQrScanScreen()),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFD8B4FE), Color(0xFF7C3AED)],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.qr_code_scanner, color: Colors.white),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Scanner une carte papier',
+                      style: TextStyle(
+                        color: AppColors.donkerblauw,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'Scanne le QR de l’élève, puis contrôle sa carte avant validation.',
+                      style: TextStyle(fontSize: 12.5, height: 1.25),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: Colors.grey.shade500),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -207,10 +279,9 @@ class _PlannedExercisesSection extends StatelessWidget {
         final byOperation = <String, List<Map<String, dynamic>>>{};
         for (final doc in docs) {
           final data = {'id': doc.id, ...doc.data()};
-          final key = (data['operation_id'] ??
-                  data['palanquee_id'] ??
-                  'planned')
-              .toString();
+          final key =
+              (data['operation_id'] ?? data['palanquee_id'] ?? 'planned')
+                  .toString();
           byOperation.putIfAbsent(key, () => []).add(data);
         }
 
@@ -399,8 +470,12 @@ class _ActionCalypsoCard extends StatelessWidget {
 
   static String _subtitleFor(FormationTask task) {
     final parts = <String>[];
-    if (task.context.targetGroupLevel != null) parts.add(task.context.targetGroupLevel!);
-    if (task.context.operationTitle != null) parts.add(task.context.operationTitle!);
+    if (task.context.targetGroupLevel != null) {
+      parts.add(task.context.targetGroupLevel!);
+    }
+    if (task.context.operationTitle != null) {
+      parts.add(task.context.operationTitle!);
+    }
     if (task.status == FormationTaskStatus.blocked) parts.add('bloquée');
     if (task.status == FormationTaskStatus.snoozed) parts.add('reportée');
     return parts.join(' · ');
@@ -421,6 +496,22 @@ class _ActionCalypsoCard extends StatelessWidget {
       case FormationTaskType.logbookCompletion:
         Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => LogbookEntryScreen.auto(task: task),
+        ));
+        break;
+      case FormationTaskType.historicalValidation:
+        Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) {
+            final batchId = task.context.historicalClaimBatchId;
+            if (batchId == null || batchId.isEmpty) {
+              return const HistoricalClaimsScreen();
+            }
+            if (task.currentAssigneeType == FormationTaskAssigneeType.monitor ||
+                task.currentAssigneeType ==
+                    FormationTaskAssigneeType.schoolResponsible) {
+              return HistoricalValidationScreen(batchId: batchId);
+            }
+            return HistoricalClaimQrScreen(batchId: batchId);
+          },
         ));
         break;
       // Types that don't have a dedicated mobile screen yet — open the
@@ -530,6 +621,8 @@ class _StatusGlyph extends StatelessWidget {
       case FormationTaskType.exerciseClaim:
       case FormationTaskType.monitorValidation:
         return [const Color(0xFFB8E2BC), const Color(0xFF4CAF50)];
+      case FormationTaskType.historicalValidation:
+        return [const Color(0xFFD8B4FE), const Color(0xFF7C3AED)];
       case FormationTaskType.externalProofReview:
         return [const Color(0xFFFCD9A6), const Color(0xFFF6921E)];
       default:

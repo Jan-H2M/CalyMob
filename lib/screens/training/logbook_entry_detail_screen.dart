@@ -19,6 +19,7 @@
 /// LogbookEntryScreen.manual() in a future iteration.
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
@@ -45,17 +46,12 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
 
   String get entryId => widget.entryId;
 
-  /// Editable if this is the user's own entry (we don't enforce identity here
-  /// because the underlying Firestore rules already gate that — but the spec
-  /// §11 Q19 also adds: manual + <7 days; we surface both editable paths).
+  /// Editable when this is the signed-in member's own entry. Imported,
+  /// manually created and pool-generated entries all use the same edit screen;
+  /// Firestore rules still enforce ownership on save.
   bool get _canEdit {
-    final source = (data['source'] as String?) ?? 'manual';
-    if (source == 'manual' ||
-        source == 'calypso_operation' ||
-        source == 'piscine') {
-      return true;
-    }
-    return false;
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    return userId != null && data['member_id'] == userId;
   }
 
   bool get _isPool => (data['source'] as String?) == 'piscine';

@@ -22,6 +22,7 @@ import '../../providers/auth_provider.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../exercises/member_exercises_screen.dart';
 import '../../providers/member_provider.dart';
+import 'historical_claims_screen.dart';
 import 'logbook_add_choice_screen.dart';
 import 'logbook_entry_detail_screen.dart';
 import 'logbook_entry_screen.dart';
@@ -329,6 +330,16 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
                 ),
               );
             },
+          ),
+          IconButton(
+            icon: const Icon(Icons.history_edu_outlined, color: Colors.white),
+            tooltip: 'Reprendre ma carte papier',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const HistoricalClaimsScreen(),
+              ),
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.bar_chart, color: Colors.white),

@@ -802,10 +802,90 @@ service cloud.firestore {
       }
 
       // ========== LIFRAS EXERCISES (Formation module) ==========
+      // Historical paper-card reprise: students submit what is already signed
+      // on paper; encadrants validate in person.
+      match /historical_exercise_claim_batches/{batchId} {
+        allow read: if isAuthenticated() && (
+          resource.data.member_id == request.auth.uid ||
+          isPiscineFormationEditor(clubId)
+        );
+        allow create: if isAuthenticated()
+          && hasValidSession(clubId)
+          && request.resource.data.member_id == request.auth.uid
+          && request.resource.data.source == 'student_historical_claim';
+        allow update: if isAuthenticated()
+          && hasValidSession(clubId)
+          && (
+            resource.data.member_id == request.auth.uid ||
+            isPiscineFormationEditor(clubId)
+          );
+        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
+      }
+
+      match /exercise_claims/{claimId} {
+        allow read: if isAuthenticated() && (
+          resource.data.member_id == request.auth.uid ||
+          isPiscineFormationEditor(clubId)
+        );
+        allow create: if isAuthenticated()
+          && hasValidSession(clubId)
+          && request.resource.data.member_id == request.auth.uid
+          && request.resource.data.source == 'student_historical_claim'
+          && request.resource.data.context_type == 'historical_paper_card'
+          && request.resource.data.status == 'submitted';
+        allow update: if isAuthenticated()
+          && hasValidSession(clubId)
+          && (
+            isPiscineFormationEditor(clubId) ||
+            resource.data.member_id == request.auth.uid
+          );
+        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
+      }
+
+      match /formation_tasks/{taskId} {
+        allow read: if isAuthenticated() && (
+          resource.data.member_id == request.auth.uid ||
+          resource.data.current_assignee_id == request.auth.uid ||
+          isPiscineFormationEditor(clubId)
+        );
+        allow create: if isAuthenticated()
+          && hasValidSession(clubId)
+          && request.resource.data.member_id == request.auth.uid
+          && request.resource.data.type == 'historical_validation';
+        allow update: if isAuthenticated()
+          && hasValidSession(clubId)
+          && (
+            resource.data.current_assignee_id == request.auth.uid ||
+            isPiscineFormationEditor(clubId)
+          );
+        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
+      }
+
       // exercices_lifras: LIFRAS exercise definitions, read by all members
       match /exercices_lifras/{exerciceId} {
         allow read: if isAuthenticated();
         allow write: if isAdmin(clubId) && hasValidSession(clubId);
+      }
+
+      // student_logbook_entries: personal Mon carnet entries.
+      // Students can manage their own dives; encadrants/admins can read for
+      // formation support. System-created pool entries are written by Cloud
+      // Functions with admin privileges and then editable by the owning member.
+      match /student_logbook_entries/{entryId} {
+        allow read: if isAuthenticated() && hasValidSession(clubId) && (
+          resource.data.member_id == request.auth.uid ||
+          isPiscineFormationEditor(clubId)
+        );
+        allow create: if isAuthenticated()
+          && hasValidSession(clubId)
+          && request.resource.data.member_id == request.auth.uid;
+        allow update: if isAuthenticated()
+          && hasValidSession(clubId)
+          && resource.data.member_id == request.auth.uid
+          && request.resource.data.member_id == resource.data.member_id;
+        allow delete: if isAuthenticated()
+          && hasValidSession(clubId)
+          && resource.data.member_id == request.auth.uid;
       }
 
       // ========== MEMBER OBSERVATIONS (Formation module) ==========

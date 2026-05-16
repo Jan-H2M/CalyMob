@@ -46,6 +46,7 @@ import 'screens/teams/team_chat_screen.dart';
 import 'screens/piscine/session_chat_screen.dart';
 import 'screens/piscine/session_detail_screen.dart';
 import 'screens/profile/medical_certification_screen.dart';
+import 'screens/training/historical_validation_screen.dart';
 
 // Models (pour la navigation depuis les notifications)
 import 'models/announcement.dart';
@@ -76,7 +77,8 @@ void main() async {
       options.dsn = kDebugMode
           ? '' // Désactivé en debug — pas d'envoi vers Sentry
           : 'https://c6c7e5f63f5700bf5cb4f2b02a6ea0b5@o4510996349386752.ingest.de.sentry.io/4510996559429712';
-      options.tracesSampleRate = kReleaseMode ? 0.2 : 0.0; // 20% en prod, 0 en debug
+      options.tracesSampleRate =
+          kReleaseMode ? 0.2 : 0.0; // 20% en prod, 0 en debug
       options.environment = kReleaseMode
           ? const String.fromEnvironment('ENV', defaultValue: 'production')
           : 'debug';
@@ -414,6 +416,15 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       _navigatorKey.currentState?.push(
         MaterialPageRoute(
           builder: (_) => ResetPasswordScreen(oobCode: data.oobCode),
+        ),
+      );
+    });
+
+    _deepLinkService.onHistoricalValidation.listen((data) {
+      debugPrint('Main: Historical validation deep link received');
+      _navigatorKey.currentState?.push(
+        MaterialPageRoute(
+          builder: (_) => HistoricalValidationScreen(batchId: data.batchId),
         ),
       );
     });
