@@ -19,6 +19,8 @@ import '../teams/team_chat_screen.dart';
 import '../training/pool_checkin_screen.dart';
 import '../training/monitor_validation_screen.dart';
 import '../training/logbook_entry_screen.dart';
+import '../training/historical_claims_screen.dart';
+import '../training/historical_validation_screen.dart';
 
 class CommunicationHubScreen extends StatelessWidget {
   const CommunicationHubScreen({super.key});
@@ -154,7 +156,8 @@ class _ActionsCalypsoSectionState extends State<_ActionsCalypsoSection> {
               padding: const EdgeInsets.only(bottom: 10, left: 2),
               child: Row(
                 children: [
-                  Icon(Icons.flag, color: Colors.white.withValues(alpha: 0.9), size: 20),
+                  Icon(Icons.flag,
+                      color: Colors.white.withValues(alpha: 0.9), size: 20),
                   const SizedBox(width: 8),
                   Text(
                     'Actions Calypso',
@@ -207,10 +210,9 @@ class _PlannedExercisesSection extends StatelessWidget {
         final byOperation = <String, List<Map<String, dynamic>>>{};
         for (final doc in docs) {
           final data = {'id': doc.id, ...doc.data()};
-          final key = (data['operation_id'] ??
-                  data['palanquee_id'] ??
-                  'planned')
-              .toString();
+          final key =
+              (data['operation_id'] ?? data['palanquee_id'] ?? 'planned')
+                  .toString();
           byOperation.putIfAbsent(key, () => []).add(data);
         }
 
@@ -399,8 +401,12 @@ class _ActionCalypsoCard extends StatelessWidget {
 
   static String _subtitleFor(FormationTask task) {
     final parts = <String>[];
-    if (task.context.targetGroupLevel != null) parts.add(task.context.targetGroupLevel!);
-    if (task.context.operationTitle != null) parts.add(task.context.operationTitle!);
+    if (task.context.targetGroupLevel != null) {
+      parts.add(task.context.targetGroupLevel!);
+    }
+    if (task.context.operationTitle != null) {
+      parts.add(task.context.operationTitle!);
+    }
     if (task.status == FormationTaskStatus.blocked) parts.add('bloquée');
     if (task.status == FormationTaskStatus.snoozed) parts.add('reportée');
     return parts.join(' · ');
@@ -421,6 +427,22 @@ class _ActionCalypsoCard extends StatelessWidget {
       case FormationTaskType.logbookCompletion:
         Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => LogbookEntryScreen.auto(task: task),
+        ));
+        break;
+      case FormationTaskType.historicalValidation:
+        Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) {
+            final batchId = task.context.historicalClaimBatchId;
+            if (batchId == null || batchId.isEmpty) {
+              return const HistoricalClaimsScreen();
+            }
+            if (task.currentAssigneeType == FormationTaskAssigneeType.monitor ||
+                task.currentAssigneeType ==
+                    FormationTaskAssigneeType.schoolResponsible) {
+              return HistoricalValidationScreen(batchId: batchId);
+            }
+            return HistoricalClaimQrScreen(batchId: batchId);
+          },
         ));
         break;
       // Types that don't have a dedicated mobile screen yet — open the
@@ -530,6 +552,8 @@ class _StatusGlyph extends StatelessWidget {
       case FormationTaskType.exerciseClaim:
       case FormationTaskType.monitorValidation:
         return [const Color(0xFFB8E2BC), const Color(0xFF4CAF50)];
+      case FormationTaskType.historicalValidation:
+        return [const Color(0xFFD8B4FE), const Color(0xFF7C3AED)];
       case FormationTaskType.externalProofReview:
         return [const Color(0xFFFCD9A6), const Color(0xFFF6921E)];
       default:

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../models/exercice_valide.dart';
 import '../../models/exercice_lifras.dart';
@@ -10,6 +11,7 @@ import '../../services/lifras_service.dart';
 import '../../utils/date_formatter.dart';
 import '../../utils/plongeur_utils.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import '../training/historical_claims_screen.dart';
 import 'validate_exercise_screen.dart';
 
 /// Écran affichant les exercices LIFRAS d'un membre.
@@ -160,8 +162,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Supprimer',
-                style: TextStyle(color: Colors.white)),
+            child:
+                const Text('Supprimer', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -253,8 +255,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
       body: OceanGradientBackground(
         creatures: CreatureSet.fish,
         child: SafeArea(
-          child:
-              widget.isOwnProfile ? _buildSelfView() : _buildClassicView(),
+          child: widget.isOwnProfile ? _buildSelfView() : _buildClassicView(),
         ),
       ),
     );
@@ -310,9 +311,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
         // Progress counts only target-level — TN are cross-level and don't
         // gate the next brevet, so we keep them out of the headline metric.
         final targetTotal = targetTodo.length + targetValidated.length;
-        final progressFraction = targetTotal == 0
-            ? 0.0
-            : targetValidated.length / targetTotal;
+        final progressFraction =
+            targetTotal == 0 ? 0.0 : targetValidated.length / targetTotal;
 
         return RefreshIndicator(
           onRefresh: () async {
@@ -328,6 +328,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                 total: targetTotal,
                 progress: progressFraction,
               ),
+              const SizedBox(height: 12),
+              _buildHistoricalRepriseCard(),
               const SizedBox(height: 20),
 
               // Section 1: À faire (target-level, priority)
@@ -473,6 +475,64 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
     );
   }
 
+  Widget _buildHistoricalRepriseCard() {
+    return Material(
+      color: Colors.white.withValues(alpha: 0.96),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const HistoricalClaimsScreen()),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: AppColors.middenblauw.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.history_edu_outlined,
+                  color: AppColors.middenblauw,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'J’ai déjà des exercices sur papier',
+                      style: TextStyle(
+                        color: AppColors.donkerblauw,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Prépare la liste; un moniteur validera après contrôle de ta carte.',
+                      style: TextStyle(
+                        color: AppColors.donkerblauw.withValues(alpha: 0.65),
+                        fontSize: 12.5,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: Colors.grey.shade500),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildSection({
     required String title,
     required IconData icon,
@@ -510,8 +570,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
             const SizedBox(width: 6),
             if (children.isNotEmpty)
               Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.22),
                   borderRadius: BorderRadius.circular(10),
@@ -605,7 +664,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
               width: 28,
               height: 28,
               decoration: BoxDecoration(
-                color: isValidated ? Colors.green : niveauColor.withOpacity(0.18),
+                color:
+                    isValidated ? Colors.green : niveauColor.withOpacity(0.18),
                 borderRadius: BorderRadius.circular(6),
                 border: isValidated
                     ? null
@@ -718,8 +778,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: _getNiveauColor(exercice.niveau),
                     borderRadius: BorderRadius.circular(6),
@@ -913,8 +973,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                   child: FilterChip(
                     label: Text(niveau.code),
                     selected: _filterNiveau == niveau,
-                    onSelected: (_) =>
-                        setState(() => _filterNiveau = niveau),
+                    onSelected: (_) => setState(() => _filterNiveau = niveau),
                     selectedColor: _getNiveauColor(niveau).withOpacity(0.3),
                     avatar: CircleAvatar(
                       backgroundColor: _getNiveauColor(niveau),
@@ -924,8 +983,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                             .where((e) => e.exerciceNiveau == niveau)
                             .length
                             .toString(),
-                        style: const TextStyle(
-                            fontSize: 10, color: Colors.white),
+                        style:
+                            const TextStyle(fontSize: 10, color: Colors.white),
                       ),
                     ),
                   ),
@@ -1014,8 +1073,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
             const SizedBox(height: 4),
             Row(
               children: [
-                Icon(Icons.calendar_today,
-                    size: 12, color: Colors.grey[600]),
+                Icon(Icons.calendar_today, size: 12, color: Colors.grey[600]),
                 const SizedBox(width: 4),
                 Text(
                   DateFormatter.formatMedium(exercice.dateValidation),
@@ -1027,8 +1085,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                 Expanded(
                   child: Text(
                     exercice.moniteurNom,
-                    style:
-                        TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -1038,8 +1095,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
               const SizedBox(height: 2),
               Row(
                 children: [
-                  Icon(Icons.location_on,
-                      size: 12, color: Colors.grey[600]),
+                  Icon(Icons.location_on, size: 12, color: Colors.grey[600]),
                   const SizedBox(width: 4),
                   Text(
                     exercice.lieu!,
@@ -1088,8 +1144,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: _getNiveauColor(exercice.exerciceNiveau),
                     borderRadius: BorderRadius.circular(8),
@@ -1122,8 +1178,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
             const Divider(height: 32),
             _buildDetailRow(Icons.calendar_today, 'Date de validation',
                 DateFormatter.formatLong(exercice.dateValidation)),
-            _buildDetailRow(
-                Icons.person, 'Moniteur', exercice.moniteurNom),
+            _buildDetailRow(Icons.person, 'Moniteur', exercice.moniteurNom),
             if (exercice.lieu != null && exercice.lieu!.isNotEmpty)
               _buildDetailRow(Icons.location_on, 'Lieu', exercice.lieu!),
             if (exercice.notes != null && exercice.notes!.isNotEmpty)
