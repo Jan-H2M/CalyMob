@@ -63,7 +63,7 @@ class _HistoricalClaimsScreenState extends State<HistoricalClaimsScreen> {
 
     if (!mounted) return;
     setState(() {
-      _catalog = exercises.where((e) => e.niveau != NiveauLIFRAS.tn).toList();
+      _catalog = exercises;
       _loading = false;
     });
   }
@@ -151,16 +151,16 @@ class _HistoricalClaimsScreenState extends State<HistoricalClaimsScreen> {
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                         children: [
                           _explanationCard(),
+                          if (userId != null) ...[
+                            const SizedBox(height: 14),
+                            _history(userId),
+                          ],
                           const SizedBox(height: 14),
                           _exerciseList(),
                           const SizedBox(height: 14),
                           _noteField(),
                           const SizedBox(height: 18),
                           _submitButton(),
-                          if (userId != null) ...[
-                            const SizedBox(height: 24),
-                            _history(userId),
-                          ],
                         ],
                       ),
               ),
@@ -240,56 +240,110 @@ class _HistoricalClaimsScreenState extends State<HistoricalClaimsScreen> {
         child: Text('Aucun exercice LIFRAS trouvé pour ce niveau.'),
       );
     }
+    final levelExercises =
+        _catalog.where((e) => e.niveau != NiveauLIFRAS.tn).toList();
+    final tnExercises =
+        _catalog.where((e) => e.niveau == NiveauLIFRAS.tn).toList();
+
     return _WhiteCard(
       padding: EdgeInsets.zero,
       child: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-            child: Row(
+          _exerciseSectionHeader(
+            title: 'Brevet ${_targetNiveau?.code ?? ''}',
+            subtitle: 'Exercices propres au brevet en cours',
+            showSelectionCount: true,
+          ),
+          const Divider(height: 1),
+          if (levelExercises.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Aucun exercice spécifique pour ce brevet.'),
+              ),
+            )
+          else
+            for (final exercise in levelExercises) _exerciseTile(exercise),
+          if (tnExercises.isNotEmpty) ...[
+            const Divider(height: 18, thickness: 8),
+            _exerciseSectionHeader(
+              title: 'Tous niveaux',
+              subtitle:
+                  'Spécialités et exercices valables pour plusieurs brevets',
+            ),
+            const Divider(height: 1),
+            for (final exercise in tnExercises) _exerciseTile(exercise),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _exerciseSectionHeader({
+    required String title,
+    required String subtitle,
+    bool showSelectionCount = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Text(
-                    'Brevet ${_targetNiveau?.code ?? ''}',
-                    style: const TextStyle(
-                      color: AppColors.donkerblauw,
-                      fontWeight: FontWeight.w800,
-                    ),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: AppColors.donkerblauw,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
+                const SizedBox(height: 2),
                 Text(
-                  '${_selected.length} sélectionné${_selected.length > 1 ? 's' : ''}',
+                  subtitle,
                   style: TextStyle(
-                    color: AppColors.donkerblauw.withValues(alpha: 0.6),
+                    color: AppColors.donkerblauw.withValues(alpha: 0.58),
                     fontSize: 12,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
             ),
           ),
-          const Divider(height: 1),
-          for (final exercise in _catalog)
-            CheckboxListTile(
-              value: _selected.contains(exercise.id),
-              onChanged: (checked) {
-                setState(() {
-                  if (checked == true) {
-                    _selected.add(exercise.id);
-                  } else {
-                    _selected.remove(exercise.id);
-                  }
-                });
-              },
-              controlAffinity: ListTileControlAffinity.leading,
-              title: Text(
-                exercise.code,
-                style: const TextStyle(fontWeight: FontWeight.w800),
+          if (showSelectionCount)
+            Text(
+              '${_selected.length} sélectionné${_selected.length > 1 ? 's' : ''}',
+              style: TextStyle(
+                color: AppColors.donkerblauw.withValues(alpha: 0.6),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
               ),
-              subtitle: Text(exercise.description),
             ),
         ],
       ),
+    );
+  }
+
+  Widget _exerciseTile(ExerciceLIFRAS exercise) {
+    return CheckboxListTile(
+      value: _selected.contains(exercise.id),
+      onChanged: (checked) {
+        setState(() {
+          if (checked == true) {
+            _selected.add(exercise.id);
+          } else {
+            _selected.remove(exercise.id);
+          }
+        });
+      },
+      controlAffinity: ListTileControlAffinity.leading,
+      title: Text(
+        exercise.code,
+        style: const TextStyle(fontWeight: FontWeight.w800),
+      ),
+      subtitle: Text(exercise.description),
     );
   }
 
