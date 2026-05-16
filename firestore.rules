@@ -867,6 +867,27 @@ service cloud.firestore {
         allow write: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
+      // student_logbook_entries: personal Mon carnet entries.
+      // Students can manage their own dives; encadrants/admins can read for
+      // formation support. System-created pool entries are written by Cloud
+      // Functions with admin privileges and then editable by the owning member.
+      match /student_logbook_entries/{entryId} {
+        allow read: if isAuthenticated() && hasValidSession(clubId) && (
+          resource.data.member_id == request.auth.uid ||
+          isPiscineFormationEditor(clubId)
+        );
+        allow create: if isAuthenticated()
+          && hasValidSession(clubId)
+          && request.resource.data.member_id == request.auth.uid;
+        allow update: if isAuthenticated()
+          && hasValidSession(clubId)
+          && resource.data.member_id == request.auth.uid
+          && request.resource.data.member_id == resource.data.member_id;
+        allow delete: if isAuthenticated()
+          && hasValidSession(clubId)
+          && resource.data.member_id == request.auth.uid;
+      }
+
       // ========== MEMBER OBSERVATIONS (Formation module) ==========
       // member_observations: training observations per member, read by admins/encadrants
       match /member_observations/{observationId} {
