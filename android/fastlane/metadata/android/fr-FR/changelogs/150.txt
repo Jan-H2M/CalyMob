@@ -1,0 +1,5 @@
+• Reprise des plongées historiques sur fiches papier
+• Saisie historique par QR code
+• Historique des prérogatives : mise en page améliorée
+• Carnet : accès et modification de vos propres entrées
+• Corrections diverses
