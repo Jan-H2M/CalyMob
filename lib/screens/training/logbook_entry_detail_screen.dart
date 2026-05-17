@@ -258,6 +258,7 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
         builder: (_) => LogbookEntryScreen.edit(
           entryId: entryId,
           initialData: data,
+          enableDictation: false,
         ),
       ),
     );

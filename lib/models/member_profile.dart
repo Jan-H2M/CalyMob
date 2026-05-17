@@ -11,7 +11,8 @@ class MemberProfile {
   final String email;
   final String? plongeurCode; // Niveau de plongée (ex: "P2", "P4", "MC")
   final String? plongeurNiveau; // Niveau complet en texte
-  final String? fonctionDefaut; // Fonction par défaut: "membre", "encadrant", "ca"
+  final String?
+      fonctionDefaut; // Fonction par défaut: "membre", "encadrant", "ca"
   final List<String> clubStatuten; // Fonctions multiples dans le club
 
   // Photo de profil
@@ -20,7 +21,8 @@ class MemberProfile {
 
   // Consentements
   final bool consentInternalPhoto; // Consentement pour usage interne (REQUIS)
-  final bool consentExternalPhoto; // Consentement pour usage externe (OPTIONNEL)
+  final bool
+      consentExternalPhoto; // Consentement pour usage externe (OPTIONNEL)
   final DateTime? consentInternalPhotoDate; // Date du consentement interne
   final DateTime? consentExternalPhotoDate; // Date du consentement externe
 
@@ -84,21 +86,25 @@ class MemberProfile {
       plongeurCode: data['plongeur_code'],
       plongeurNiveau: data['plongeur_niveau'],
       fonctionDefaut: data['fonction_defaut'],
-      clubStatuten: (data['clubStatuten'] as List<dynamic>?)?.cast<String>() ?? [],
+      clubStatuten:
+          (data['clubStatuten'] as List<dynamic>?)?.cast<String>() ?? [],
       photoUrl: data['photo_url'],
       photoUploadedAt: (data['photo_uploaded_at'] as Timestamp?)?.toDate(),
       consentInternalPhoto: data['consent_internal_photo'] ?? false,
       consentExternalPhoto: data['consent_external_photo'] ?? false,
-      consentInternalPhotoDate: (data['consent_internal_photo_date'] as Timestamp?)?.toDate(),
-      consentExternalPhotoDate: (data['consent_external_photo_date'] as Timestamp?)?.toDate(),
+      consentInternalPhotoDate:
+          (data['consent_internal_photo_date'] as Timestamp?)?.toDate(),
+      consentExternalPhotoDate:
+          (data['consent_external_photo_date'] as Timestamp?)?.toDate(),
       shareEmail: data['share_email'] ?? true,
       sharePhone: data['share_phone'] ?? false,
       phoneNumber: data['phone_number'],
       notificationsEnabled: data['notifications_enabled'] ?? true,
       fcmToken: data['fcm_token'],
-      memberStatus: data['member_status'] ?? data['status'],
+      memberStatus: resolveMemberStatus(data),
       cotisationValidite: (data['cotisation_validite'] as Timestamp?)?.toDate(),
-      certificatMedicalValidite: (data['certificat_medical_validite'] as Timestamp?)?.toDate(),
+      certificatMedicalValidite:
+          (data['certificat_medical_validite'] as Timestamp?)?.toDate(),
       createdAt: (data['created_at'] as Timestamp?)?.toDate(),
       updatedAt: (data['updated_at'] as Timestamp?)?.toDate(),
     );
@@ -115,11 +121,16 @@ class MemberProfile {
       'fonction_defaut': fonctionDefaut,
       'clubStatuten': clubStatuten,
       'photo_url': photoUrl,
-      'photo_uploaded_at': photoUploadedAt != null ? Timestamp.fromDate(photoUploadedAt!) : null,
+      'photo_uploaded_at':
+          photoUploadedAt != null ? Timestamp.fromDate(photoUploadedAt!) : null,
       'consent_internal_photo': consentInternalPhoto,
       'consent_external_photo': consentExternalPhoto,
-      'consent_internal_photo_date': consentInternalPhotoDate != null ? Timestamp.fromDate(consentInternalPhotoDate!) : null,
-      'consent_external_photo_date': consentExternalPhotoDate != null ? Timestamp.fromDate(consentExternalPhotoDate!) : null,
+      'consent_internal_photo_date': consentInternalPhotoDate != null
+          ? Timestamp.fromDate(consentInternalPhotoDate!)
+          : null,
+      'consent_external_photo_date': consentExternalPhotoDate != null
+          ? Timestamp.fromDate(consentExternalPhotoDate!)
+          : null,
       'share_email': shareEmail,
       'share_phone': sharePhone,
       'phone_number': phoneNumber,
@@ -163,8 +174,10 @@ class MemberProfile {
       photoUploadedAt: photoUploadedAt ?? this.photoUploadedAt,
       consentInternalPhoto: consentInternalPhoto ?? this.consentInternalPhoto,
       consentExternalPhoto: consentExternalPhoto ?? this.consentExternalPhoto,
-      consentInternalPhotoDate: consentInternalPhotoDate ?? this.consentInternalPhotoDate,
-      consentExternalPhotoDate: consentExternalPhotoDate ?? this.consentExternalPhotoDate,
+      consentInternalPhotoDate:
+          consentInternalPhotoDate ?? this.consentInternalPhotoDate,
+      consentExternalPhotoDate:
+          consentExternalPhotoDate ?? this.consentExternalPhotoDate,
       shareEmail: shareEmail ?? this.shareEmail,
       sharePhone: sharePhone ?? this.sharePhone,
       phoneNumber: phoneNumber ?? this.phoneNumber,
@@ -184,6 +197,36 @@ class MemberProfile {
   /// Vérifie si le profil est complet (photo + consentements)
   bool get isComplete => hasPhoto && consentInternalPhoto;
 
+  /// Resolve active status from the same legacy fields used by CalyCompta.
+  ///
+  /// Older member documents can carry contradictory status fields after
+  /// migrations. For mobile display we treat any explicit active signal as
+  /// active, while still excluding explicit inactive/deleted records when no
+  /// active signal exists.
+  static String? resolveMemberStatus(Map<String, dynamic> data) {
+    if (data['member_status'] == 'active' ||
+        data['app_status'] == 'active' ||
+        data['status'] == 'active' ||
+        data['isActive'] == true ||
+        data['actif'] == true) {
+      return 'active';
+    }
+
+    final rawStatus =
+        data['member_status'] ?? data['app_status'] ?? data['status'];
+    if (rawStatus == 'inactive' ||
+        rawStatus == 'deleted' ||
+        rawStatus == 'archived' ||
+        rawStatus == 'suspended' ||
+        rawStatus == 'pending' ||
+        data['isActive'] == false ||
+        data['actif'] == false) {
+      return 'inactive';
+    }
+
+    return null;
+  }
+
   /// Vérifie si le membre est actif
   bool get isActive => memberStatus == 'active' || memberStatus == null;
 
@@ -192,7 +235,7 @@ class MemberProfile {
     if (cotisationValidite == null) return ValidationStatus.missing;
     final now = DateTime.now();
     final daysUntilExpiry = cotisationValidite!.difference(now).inDays;
-    
+
     if (daysUntilExpiry < 0) return ValidationStatus.expired;
     if (daysUntilExpiry <= 30) return ValidationStatus.warning;
     return ValidationStatus.valid;
@@ -203,7 +246,7 @@ class MemberProfile {
     if (certificatMedicalValidite == null) return ValidationStatus.missing;
     final now = DateTime.now();
     final daysUntilExpiry = certificatMedicalValidite!.difference(now).inDays;
-    
+
     if (daysUntilExpiry < 0) return ValidationStatus.expired;
     if (daysUntilExpiry <= 30) return ValidationStatus.warning;
     return ValidationStatus.valid;

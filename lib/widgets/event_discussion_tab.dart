@@ -726,6 +726,7 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
                 MessageReactions(
                   reactions: message.reactions,
                   currentUserId: currentUserId,
+                  clubId: widget.clubId,
                   onToggleReaction: (emoji) =>
                       _toggleReaction(message.id, emoji),
                   compact: true,

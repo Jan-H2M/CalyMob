@@ -874,6 +874,7 @@ class _MessageBubble extends StatelessWidget {
                       MessageReactions(
                         reactions: message.reactions,
                         currentUserId: currentUserId,
+                        clubId: FirebaseConfig.defaultClubId,
                         onToggleReaction: onToggleReaction,
                         compact: true,
                       ),

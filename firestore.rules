@@ -387,10 +387,17 @@ service cloud.firestore {
               resource.data.sender_id == request.auth.uid ||
               getUserData(clubId).app_role in ['superadmin', 'admin']
             );
-          // Modification: uniquement pour marquer comme lu (read_by)
+          // Modification: read/reactions/poll for everyone, own message edits for the author.
           allow update: if isAuthenticated()
             && hasValidSession(clubId)
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by', 'reactions', 'poll']);
+            && (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by', 'reactions', 'poll'])
+              || (
+                resource.data.sender_id == request.auth.uid
+                && request.resource.data.diff(resource.data).affectedKeys()
+                     .hasOnly(['message', 'attachments', 'edited_at'])
+              )
+            );
         }
 
         // Palanquées / préparation pédagogique d'une opération.
@@ -606,10 +613,17 @@ service cloud.firestore {
           allow delete: if isAuthenticated()
             && hasValidSession(clubId)
             && (resource.data.sender_id == request.auth.uid || isAdmin(clubId));
-          // Modification: uniquement pour marquer comme lu (read_by)
+          // Modification: read/reactions/poll for everyone, own message edits for the author.
           allow update: if isAuthenticated()
             && hasValidSession(clubId)
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by', 'reactions', 'poll']);
+            && (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by', 'reactions', 'poll'])
+              || (
+                resource.data.sender_id == request.auth.uid
+                && request.resource.data.diff(resource.data).affectedKeys()
+                     .hasOnly(['message', 'attachments', 'edited_at'])
+              )
+            );
         }
       }
 
@@ -634,10 +648,17 @@ service cloud.firestore {
           allow create: if canAccessTeamChannel(clubId, channelId) &&
             hasValidSession(clubId) &&
             request.resource.data.sender_id == request.auth.uid;
-          // Modification: réactions, votes/clôture de sondage ou marquage comme lu
+          // Modification: read/reactions/poll for everyone, own message edits for the author.
           allow update: if canAccessTeamChannel(clubId, channelId) &&
             hasValidSession(clubId) &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by', 'reactions', 'poll']);
+            (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by', 'reactions', 'poll'])
+              || (
+                resource.data.sender_id == request.auth.uid
+                && request.resource.data.diff(resource.data).affectedKeys()
+                     .hasOnly(['message', 'attachments', 'edited_at'])
+              )
+            );
           // Suppression: auteur ou admin
           allow delete: if isAuthenticated() &&
             hasValidSession(clubId) &&
@@ -675,10 +696,17 @@ service cloud.firestore {
           allow create: if isAuthenticated()
             && hasValidSession(clubId)
             && request.resource.data.sender_id == request.auth.uid;
-          // Modification: seulement pour marquer comme lu (read_by)
+          // Modification: read markers for everyone, own reply edits for the author.
           allow update: if isAuthenticated()
             && hasValidSession(clubId)
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by']);
+            && (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by'])
+              || (
+                resource.data.sender_id == request.auth.uid
+                && request.resource.data.diff(resource.data).affectedKeys()
+                     .hasOnly(['message', 'attachments', 'edited_at'])
+              )
+            );
           // Suppression: auteur ou admin
           allow delete: if isAuthenticated()
             && hasValidSession(clubId)
@@ -805,60 +833,53 @@ service cloud.firestore {
       // Historical paper-card reprise: students submit what is already signed
       // on paper; encadrants validate in person.
       match /historical_exercise_claim_batches/{batchId} {
-        allow read: if isAuthenticated() && (
+        allow read: if isClubMember(clubId) && (
           resource.data.member_id == request.auth.uid ||
           isPiscineFormationEditor(clubId)
         );
-        allow create: if isAuthenticated()
-          && hasValidSession(clubId)
+        allow create: if isClubMember(clubId)
           && request.resource.data.member_id == request.auth.uid
-          && request.resource.data.source == 'student_historical_claim';
-        allow update: if isAuthenticated()
-          && hasValidSession(clubId)
-          && (
-            resource.data.member_id == request.auth.uid ||
-            isPiscineFormationEditor(clubId)
-          );
-        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
+          && request.resource.data.submitted_by == request.auth.uid
+          && request.resource.data.status == 'submitted'
+          && request.resource.data.source == 'student_historical_claim'
+          && request.resource.data.evidence_required == 'paper_progress_card';
+        allow update: if isClubMember(clubId) && isPiscineFormationEditor(clubId);
+        allow delete: if isAdmin(clubId);
       }
 
       match /exercise_claims/{claimId} {
-        allow read: if isAuthenticated() && (
+        allow read: if isClubMember(clubId) && (
           resource.data.member_id == request.auth.uid ||
           isPiscineFormationEditor(clubId)
         );
-        allow create: if isAuthenticated()
-          && hasValidSession(clubId)
+        allow create: if isClubMember(clubId)
           && request.resource.data.member_id == request.auth.uid
+          && request.resource.data.declared_by == request.auth.uid
           && request.resource.data.source == 'student_historical_claim'
           && request.resource.data.context_type == 'historical_paper_card'
           && request.resource.data.status == 'submitted';
-        allow update: if isAuthenticated()
-          && hasValidSession(clubId)
-          && (
-            isPiscineFormationEditor(clubId) ||
-            resource.data.member_id == request.auth.uid
-          );
-        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
+        allow update: if isClubMember(clubId) && isPiscineFormationEditor(clubId);
+        allow delete: if isAdmin(clubId);
       }
 
       match /formation_tasks/{taskId} {
-        allow read: if isAuthenticated() && (
+        allow read: if isClubMember(clubId) && (
           resource.data.member_id == request.auth.uid ||
           resource.data.current_assignee_id == request.auth.uid ||
           isPiscineFormationEditor(clubId)
         );
-        allow create: if isAuthenticated()
-          && hasValidSession(clubId)
+        allow create: if isClubMember(clubId)
+          && request.resource.data.type == 'historical_validation'
+          && request.resource.data.status == 'waiting_for_other'
           && request.resource.data.member_id == request.auth.uid
-          && request.resource.data.type == 'historical_validation';
-        allow update: if isAuthenticated()
-          && hasValidSession(clubId)
-          && (
-            resource.data.current_assignee_id == request.auth.uid ||
-            isPiscineFormationEditor(clubId)
-          );
-        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
+          && request.resource.data.current_assignee_id == request.auth.uid
+          && request.resource.data.current_assignee_type == 'student'
+          && request.resource.data.created_by == request.auth.uid;
+        allow update: if isClubMember(clubId) && (
+          resource.data.current_assignee_id == request.auth.uid ||
+          isPiscineFormationEditor(clubId)
+        );
+        allow delete: if isAdmin(clubId);
       }
 
       // exercices_lifras: LIFRAS exercise definitions, read by all members

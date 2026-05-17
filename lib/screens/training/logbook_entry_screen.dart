@@ -67,7 +67,7 @@ class LogbookEntryScreen extends StatefulWidget {
     super.key,
     required String this.entryId,
     required Map<String, dynamic> this.initialData,
-    this.enableDictation = true,
+    this.enableDictation = false,
   })  : task = null,
         mode = LogbookEntryMode.edit;
 

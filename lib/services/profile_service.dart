@@ -53,7 +53,8 @@ class ProfileService {
       debugPrint('📤 Upload photo profil pour $userId...');
 
       // Chemin dans Storage: clubs/{clubId}/members/{userId}/profile.jpg
-      final ref = _storage.ref().child('clubs/$clubId/members/$userId/profile.jpg');
+      final ref =
+          _storage.ref().child('clubs/$clubId/members/$userId/profile.jpg');
 
       // Upload avec metadata
       final uploadTask = await ref.putFile(
@@ -95,23 +96,21 @@ class ProfileService {
         'photo_url': photoUrl,
         'photo_uploaded_at': FieldValue.serverTimestamp(),
         'consent_internal_photo': consentInternalPhoto,
-        'consent_internal_photo_date': consentInternalPhoto
-            ? FieldValue.serverTimestamp()
-            : null,
+        'consent_internal_photo_date':
+            consentInternalPhoto ? FieldValue.serverTimestamp() : null,
         'updated_at': FieldValue.serverTimestamp(),
       };
 
       if (consentExternalPhoto != null) {
         updateData['consent_external_photo'] = consentExternalPhoto;
-        updateData['consent_external_photo_date'] = consentExternalPhoto
-            ? FieldValue.serverTimestamp()
-            : null;
+        updateData['consent_external_photo_date'] =
+            consentExternalPhoto ? FieldValue.serverTimestamp() : null;
       }
 
       await _firestore.collection('clubs/$clubId/members').doc(userId).set(
-        updateData,
-        SetOptions(merge: true),
-      );
+            updateData,
+            SetOptions(merge: true),
+          );
 
       debugPrint('✅ Profil photo mis à jour');
     } catch (e) {
@@ -124,7 +123,8 @@ class ProfileService {
   Future<void> deleteProfilePhoto(String clubId, String userId) async {
     try {
       // 1. Supprimer de Storage
-      final ref = _storage.ref().child('clubs/$clubId/members/$userId/profile.jpg');
+      final ref =
+          _storage.ref().child('clubs/$clubId/members/$userId/profile.jpg');
       await ref.delete();
 
       // 2. Mettre à jour Firestore
@@ -279,14 +279,18 @@ class ProfileService {
   /// Récupérer tous les profils (pour "Who's Who")
   Future<List<MemberProfile>> getAllProfiles(String clubId) async {
     try {
-      final snapshot = await _firestore
-          .collection('clubs/$clubId/members')
-          .orderBy('nom')
-          .get();
+      final snapshot =
+          await _firestore.collection('clubs/$clubId/members').get();
 
-      final profiles = snapshot.docs
-          .map((doc) => MemberProfile.fromFirestore(doc))
-          .toList();
+      final profiles =
+          snapshot.docs.map((doc) => MemberProfile.fromFirestore(doc)).toList();
+
+      profiles.sort((a, b) {
+        final lastNameCompare =
+            a.nom.toLowerCase().compareTo(b.nom.toLowerCase());
+        if (lastNameCompare != 0) return lastNameCompare;
+        return a.prenom.toLowerCase().compareTo(b.prenom.toLowerCase());
+      });
 
       debugPrint('✅ ${profiles.length} profils chargés');
       return profiles;
@@ -337,7 +341,8 @@ class ProfileService {
 
       // 1. Supprimer la photo de profil si elle existe
       try {
-        final photoRef = _storage.ref().child('clubs/$clubId/members/$userId/profile.jpg');
+        final photoRef =
+            _storage.ref().child('clubs/$clubId/members/$userId/profile.jpg');
         await photoRef.delete();
         debugPrint('✅ Photo profil supprimée');
       } catch (e) {

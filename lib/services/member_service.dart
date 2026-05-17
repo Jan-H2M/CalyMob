@@ -26,9 +26,9 @@ class MemberService {
       // Essayer différents champs possibles
       // CORRECT: plongeur_code est le champ standardisé
       final niveauCode = data['plongeur_code'] ??
-                        data['niveau_plongee'] ??
-                        data['diveLevel'] ??
-                        data['niveau_plongeur'];
+          data['niveau_plongee'] ??
+          data['diveLevel'] ??
+          data['niveau_plongeur'];
 
       if (niveauCode == null) {
         debugPrint('⚠️ Niveau de plongée non défini pour membre $memberId');
@@ -39,7 +39,8 @@ class MemberService {
       final standardizedCode = _standardizeCode(niveauCode as String);
       final niveau = NiveauLIFRASExtension.fromCode(standardizedCode);
 
-      debugPrint('🏊 Niveau membre $memberId: ${niveau?.label ?? "Non défini"} (code: $niveauCode → $standardizedCode)');
+      debugPrint(
+          '🏊 Niveau membre $memberId: ${niveau?.label ?? "Non défini"} (code: $niveauCode → $standardizedCode)');
       return niveau;
     } catch (e) {
       debugPrint('❌ Erreur récupération niveau membre: $e');
@@ -52,26 +53,27 @@ class MemberService {
   String _standardizeCode(String code) {
     switch (code.toUpperCase()) {
       case '1':
-        return 'NB';  // Non Breveté (Plongeur 1*)
+        return 'NB'; // Non Breveté (Plongeur 1*)
       case '2':
-        return 'P2';  // Plongeur 2*
+        return 'P2'; // Plongeur 2*
       case '3':
-        return 'P3';  // Plongeur 3*
+        return 'P3'; // Plongeur 3*
       case '4':
-        return 'P4';  // Plongeur 4*
+        return 'P4'; // Plongeur 4*
       case 'AM':
-        return 'AM';  // Assistant Moniteur
+        return 'AM'; // Assistant Moniteur
       case 'MC':
-        return 'MC';  // Moniteur Club
+        return 'MC'; // Moniteur Club
       case 'MF':
-        return 'MC';  // Moniteur Fédéral → treat as MC for now
+        return 'MC'; // Moniteur Fédéral → treat as MC for now
       default:
-        return code.toUpperCase();  // Pass through if already standardized
+        return code.toUpperCase(); // Pass through if already standardized
     }
   }
 
   /// Récupérer les informations complètes d'un membre
-  Future<Map<String, dynamic>?> getMemberData(String clubId, String memberId) async {
+  Future<Map<String, dynamic>?> getMemberData(
+      String clubId, String memberId) async {
     try {
       final doc = await _firestore
           .collection('clubs/$clubId/members')
@@ -95,8 +97,7 @@ class MemberService {
     try {
       final snapshot = await _firestore
           .collection('clubs/$clubId/members')
-          .where('plongeur_code', whereIn: ['MC', 'MF', 'MN', 'AM'])
-          .get();
+          .where('plongeur_code', whereIn: ['MC', 'MF', 'MN', 'AM']).get();
 
       final monitors = snapshot.docs.map((doc) {
         final data = doc.data();
@@ -110,8 +111,8 @@ class MemberService {
       }).toList();
 
       // Sort by displayName
-      monitors.sort((a, b) => (a['displayName'] as String)
-          .compareTo(b['displayName'] as String));
+      monitors.sort((a, b) =>
+          (a['displayName'] as String).compareTo(b['displayName'] as String));
 
       debugPrint('👨‍🏫 ${monitors.length} moniteurs trouvés dans le club');
       return monitors;
@@ -124,10 +125,8 @@ class MemberService {
   /// Récupérer tous les membres du club
   Future<List<Map<String, dynamic>>> getAllMembers(String clubId) async {
     try {
-      final snapshot = await _firestore
-          .collection('clubs/$clubId/members')
-          .orderBy('nom')
-          .get();
+      final snapshot =
+          await _firestore.collection('clubs/$clubId/members').get();
 
       final members = snapshot.docs.map((doc) {
         final data = doc.data();
@@ -138,13 +137,16 @@ class MemberService {
           'displayName': '${data['prenom'] ?? ''} ${data['nom'] ?? ''}'.trim(),
           'plongeur_code': data['plongeur_code'] ?? '',
           'email': data['email'] ?? '',
-          'member_status': data['member_status'] ?? data['status'],
+          'member_status': MemberProfile.resolveMemberStatus(data),
         };
       }).where((m) {
         // Montrer seulement les membres actifs (null = actif par défaut)
         final status = m['member_status'] as String?;
         return status == null || status == 'active';
       }).toList();
+
+      members.sort((a, b) =>
+          (a['displayName'] as String).compareTo(b['displayName'] as String));
 
       debugPrint('👥 ${members.length} membres trouvés dans le club');
       return members;
@@ -199,10 +201,8 @@ class MemberService {
 
       // Get all members and filter client-side
       // (Firestore doesn't support full-text search natively)
-      final snapshot = await _firestore
-          .collection('clubs/$clubId/members')
-          .orderBy('nom')
-          .get();
+      final snapshot =
+          await _firestore.collection('clubs/$clubId/members').get();
 
       final members = snapshot.docs
           .map((doc) => MemberProfile.fromFirestore(doc))
