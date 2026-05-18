@@ -1,0 +1,3 @@
+• Annuaire des membres : tous les membres actifs s'affichent à nouveau correctement
+• Réactions chat : appui long sur un emoji pour voir qui l'a posé (événements, piscine, équipe)
+• Carnet : la dictée vocale n'est plus activée par défaut en mode édition
