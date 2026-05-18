@@ -100,7 +100,7 @@ class _MemberRow {
   });
 
   String get displayName => '$prenom $nom'.trim();
-  String get searchKey => '${prenom.toLowerCase()} ${nom.toLowerCase()}';
+  String get searchKey => _normalizeBinomeSearch('$prenom $nom');
 }
 
 class BinomeTypeaheadField extends StatefulWidget {
@@ -178,22 +178,26 @@ class _BinomeTypeaheadFieldState extends State<BinomeTypeaheadField> {
   }
 
   List<_MemberRow> get _filtered {
-    final q = _query.trim().toLowerCase();
+    final q = _normalizeBinomeSearch(_query);
     if (q.isEmpty) return const [];
     final alreadyMemberIds = widget.binomes
         .where((b) => b.memberId != null)
         .map((b) => b.memberId)
         .toSet();
-    return _members
-        .where((m) {
-          if (alreadyMemberIds.contains(m.id)) return false;
-          if (widget.currentUserId != null && m.id == widget.currentUserId) {
-            return false;
-          }
-          return m.searchKey.contains(q);
-        })
-        .take(8)
-        .toList();
+    final rows = _members.where((m) {
+      if (alreadyMemberIds.contains(m.id)) return false;
+      if (widget.currentUserId != null && m.id == widget.currentUserId) {
+        return false;
+      }
+      return _memberSearchScore(q, m.searchKey) < 999;
+    }).toList()
+      ..sort((a, b) {
+        final scoreCmp = _memberSearchScore(q, a.searchKey)
+            .compareTo(_memberSearchScore(q, b.searchKey));
+        if (scoreCmp != 0) return scoreCmp;
+        return a.displayName.compareTo(b.displayName);
+      });
+    return rows.take(8).toList();
   }
 
   void _addBinome(BinomeSelection b) {
@@ -578,4 +582,37 @@ class _ExternalBinomeSheetState extends State<_ExternalBinomeSheet> {
       ],
     );
   }
+}
+
+String _normalizeBinomeSearch(String value) {
+  return value
+      .toLowerCase()
+      .replaceAll(RegExp(r'[àáâä]'), 'a')
+      .replaceAll(RegExp(r'[èéêë]'), 'e')
+      .replaceAll(RegExp(r'[ìíîï]'), 'i')
+      .replaceAll(RegExp(r'[òóôö]'), 'o')
+      .replaceAll(RegExp(r'[ùúûü]'), 'u')
+      .replaceAll(RegExp(r'[ç]'), 'c')
+      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+      .trim()
+      .replaceAll(RegExp(r'\s+'), ' ');
+}
+
+int _memberSearchScore(String query, String target) {
+  if (query.isEmpty || target.isEmpty) return 999;
+  if (query == target) return 0;
+  final queryParts = query.split(' ').where((p) => p.isNotEmpty).toList();
+  final targetParts = target.split(' ').where((p) => p.isNotEmpty).toList();
+  if (queryParts.isEmpty || targetParts.isEmpty) return 999;
+  var score = 0;
+  for (final part in queryParts) {
+    if (targetParts.any((t) => t == part)) {
+      score += 0;
+    } else if (targetParts.any((t) => t.startsWith(part))) {
+      score += 2;
+    } else {
+      return 999;
+    }
+  }
+  return score + targetParts.length;
 }

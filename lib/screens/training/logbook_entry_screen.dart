@@ -19,6 +19,7 @@
 ///   - Removed the "Pas de Jour…" hint per Jan's feedback.
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -37,6 +38,8 @@ import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/tank_picker_field.dart';
 
 enum LogbookEntryMode { auto, manual, edit }
+
+enum _SpeechCaptureMode { free, guided }
 
 class LogbookEntryScreen extends StatefulWidget {
   final LogbookEntryMode mode;
@@ -101,6 +104,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
   final TextEditingController _duration = TextEditingController();
   final TextEditingController _notes = TextEditingController();
   final TextEditingController _lestage = TextEditingController();
+  final TextEditingController _diveNumber = TextEditingController();
   final TextEditingController _dictation = TextEditingController();
   final stt.SpeechToText _speech = stt.SpeechToText();
   List<BinomeSelection> _binomes = const [];
@@ -109,12 +113,19 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
   LogbookCounters _counters = const LogbookCounters();
   CombiSelection? _combi;
   TankSelection? _tank;
+  final Set<String> _manualFieldOverrides = <String>{};
   String _dictationListenBase = '';
+  String _speechPendingText = '';
+  String? _lastAnalysisMessage;
+  String? _aiDictationText;
+  _DictatedDiveDraft? _aiDictationDraft;
+  _SpeechCaptureMode _speechMode = _SpeechCaptureMode.free;
+  int _guidedStepIndex = 0;
   bool _submitting = false;
+  bool _analyzingDictation = false;
   bool _dictationOpen = true;
   bool _speechAvailable = false;
   bool _listening = false;
-  bool _manualFormVisible = false;
   bool _saved = false;
 
   // Pool-edit editable fields. Pre-filled from the entry, written back on
@@ -133,9 +144,118 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
       (widget.initialData?['source'] as String?) == 'piscine';
 
   bool get _isDictationPrefill =>
-      widget.mode == LogbookEntryMode.manual &&
-      widget.enableDictation &&
-      !_manualFormVisible;
+      widget.mode == LogbookEntryMode.manual && widget.enableDictation;
+
+  static const List<_GuidedDictationStep> _guidedSteps = [
+    _GuidedDictationStep(
+      field: 'dive_number',
+      label: 'N°',
+      prompt: 'Dis le numéro de plongée.',
+      example: 'Ex: 413',
+    ),
+    _GuidedDictationStep(
+      field: 'date',
+      label: 'Date',
+      prompt: 'Dis la date de la plongée.',
+      example: 'Ex: 22 février 2016',
+    ),
+    _GuidedDictationStep(
+      field: 'location',
+      label: 'Lieu',
+      prompt: 'Dis le lieu de plongée.',
+      example: 'Ex: Lanzarote Charco del Palo',
+    ),
+    _GuidedDictationStep(
+      field: 'entry_time',
+      label: 'Immersion',
+      prompt: 'Dis l’heure d’immersion.',
+      example: 'Ex: 14 h 30',
+    ),
+    _GuidedDictationStep(
+      field: 'exit_time',
+      label: 'Sortie',
+      prompt: 'Dis l’heure de sortie.',
+      example: 'Ex: 15 h 17',
+    ),
+    _GuidedDictationStep(
+      field: 'depth',
+      label: 'Profondeur',
+      prompt: 'Dis la profondeur maximale.',
+      example: 'Ex: 25 mètres',
+    ),
+    _GuidedDictationStep(
+      field: 'duration',
+      label: 'Durée',
+      prompt: 'Dis la durée de la plongée.',
+      example: 'Ex: 47 minutes',
+    ),
+    _GuidedDictationStep(
+      field: 'buddy',
+      label: 'Binôme',
+      prompt: 'Dis le ou les binômes.',
+      example: 'Ex: avec Sébastien et Marie',
+    ),
+    _GuidedDictationStep(
+      field: 'tank',
+      label: 'Bouteille',
+      prompt: 'Dis le volume de la bouteille.',
+      example: 'Ex: 12 litres',
+    ),
+    _GuidedDictationStep(
+      field: 'lestage',
+      label: 'Lestage',
+      prompt: 'Dis le lestage.',
+      example: 'Ex: 8 kilos',
+    ),
+    _GuidedDictationStep(
+      field: 'exo',
+      label: 'Formation',
+      prompt: 'Dis oui ou non.',
+      example: 'Ex: oui',
+    ),
+    _GuidedDictationStep(
+      field: 'nitrox',
+      label: 'Nitrox',
+      prompt: 'Dis oui ou non.',
+      example: 'Ex: oui',
+    ),
+    _GuidedDictationStep(
+      field: 'deco',
+      label: 'Déco',
+      prompt: 'Dis oui ou non.',
+      example: 'Ex: non',
+    ),
+    _GuidedDictationStep(
+      field: 'dp',
+      label: 'DP',
+      prompt: 'Dis oui ou non.',
+      example: 'Ex: oui',
+    ),
+    _GuidedDictationStep(
+      field: 'sf',
+      label: 'SF',
+      prompt: 'Dis oui ou non.',
+      example: 'Ex: non',
+    ),
+    _GuidedDictationStep(
+      field: 'nuit',
+      label: 'Nuit',
+      prompt: 'Dis oui ou non.',
+      example: 'Ex: non',
+    ),
+    _GuidedDictationStep(
+      field: 'mer',
+      label: 'Mer',
+      prompt: 'Dis oui ou non.',
+      example: 'Ex: oui',
+    ),
+    _GuidedDictationStep(
+      field: 'notes',
+      label: 'Notes',
+      prompt: 'Dis les notes ou la faune observée.',
+      example: 'Ex: vu un mérou, belle visi',
+    ),
+  ];
 
   /// Triple-binding anchor: tracks which two of (entry / exit / duration) the
   /// user touched most recently. The third one is derived from the other two.
@@ -147,19 +267,33 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
   void initState() {
     super.initState();
     _duration.addListener(_onDurationChanged);
-    _dictation.addListener(() => setState(() {}));
+    _dictation.addListener(() {
+      final currentText = _dictation.text.trim();
+      setState(() {
+        if (_aiDictationText != currentText) {
+          _aiDictationText = null;
+          _aiDictationDraft = null;
+        }
+      });
+    });
     _loadDictationCatalogs();
     if (widget.mode == LogbookEntryMode.auto && widget.task != null) {
       _prefillFromTask();
     } else if (widget.mode == LogbookEntryMode.edit &&
         widget.initialData != null) {
       _prefillFromMap(widget.initialData!);
+    } else {
+      _prefillNextDiveNumber();
     }
   }
 
   void _prefillFromMap(Map<String, dynamic> map) {
     final date = (map['date'] as Timestamp?)?.toDate();
     if (date != null) _date = date;
+    final diveNumber = map['dive_number'];
+    if (diveNumber is num && diveNumber > 0) {
+      _diveNumber.text = diveNumber.toInt().toString();
+    }
 
     final entryTs = map['entry_time'];
     final exitTs = map['exit_time'];
@@ -269,6 +403,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
   Future<void> _loadDictationCatalogs() async {
     try {
       const clubId = FirebaseConfig.defaultClubId;
+      final userId = context.read<AuthProvider>().currentUser?.uid;
       final db = FirebaseFirestore.instance;
       final snaps = await Future.wait([
         db.collection('clubs').doc(clubId).collection('members').get(),
@@ -278,16 +413,35 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
             .collection('dive_locations')
             .limit(500)
             .get(),
+        if (userId != null)
+          db
+              .collection('clubs')
+              .doc(clubId)
+              .collection('student_logbook_entries')
+              .where('member_id', isEqualTo: userId)
+              .limit(1000)
+              .get(),
       ]);
       final memberSnap = snaps[0];
       final locationSnap = snaps[1];
+      final carnetSnap = snaps.length > 2 ? snaps[2] : null;
       final members = memberSnap.docs
           .map((doc) {
             final data = doc.data();
-            final prenom =
-                ((data['prenom'] ?? data['firstName']) as String? ?? '').trim();
-            final nom =
-                ((data['nom'] ?? data['lastName']) as String? ?? '').trim();
+            final prenom = ((data['prenom'] ??
+                        data['firstName'] ??
+                        data['first_name'] ??
+                        data['membre_prenom'] ??
+                        data['member_first_name']) as String? ??
+                    '')
+                .trim();
+            final nom = ((data['nom'] ??
+                        data['lastName'] ??
+                        data['last_name'] ??
+                        data['membre_nom'] ??
+                        data['member_last_name']) as String? ??
+                    '')
+                .trim();
             final display = ('$prenom $nom').trim().isNotEmpty
                 ? '$prenom $nom'.trim()
                 : doc.id;
@@ -305,24 +459,49 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           })
           .where((m) => m.displayName.trim().isNotEmpty)
           .toList();
-      final locations = locationSnap.docs
-          .map((doc) {
-            final data = doc.data();
-            final name =
-                ((data['name'] ?? data['nom']) as String? ?? '').trim();
-            final waterType =
-                ((data['water_type'] ?? data['type']) as String? ?? '')
-                    .toLowerCase()
-                    .trim();
-            return _DictationLocation(
-              id: doc.id,
-              name: name,
-              country: data['country'] as String?,
-              isSea: waterType == 'sea' || waterType == 'mer',
-            );
-          })
-          .where((l) => l.name.trim().isNotEmpty)
-          .toList();
+      final locationsByName = <String, _DictationLocation>{};
+      void addLocation(_DictationLocation location) {
+        final key = _normalizeDictation(location.name);
+        if (key.isEmpty) return;
+        final existing = locationsByName[key];
+        locationsByName[key] = existing == null
+            ? location
+            : _DictationLocation(
+                id: existing.id.isNotEmpty ? existing.id : location.id,
+                name: existing.name,
+                country: existing.country ?? location.country,
+                isSea: existing.isSea || location.isSea,
+              );
+      }
+
+      for (final doc in locationSnap.docs) {
+        final data = doc.data();
+        final name = ((data['name'] ?? data['nom']) as String? ?? '').trim();
+        final waterType =
+            ((data['water_type'] ?? data['type']) as String? ?? '')
+                .toLowerCase()
+                .trim();
+        addLocation(_DictationLocation(
+          id: doc.id,
+          name: name,
+          country: data['country'] as String?,
+          isSea: waterType == 'sea' || waterType == 'mer',
+        ));
+      }
+      for (final doc in carnetSnap?.docs ?? const []) {
+        final data = doc.data();
+        final name =
+            ((data['location_name'] ?? data['lieu']) as String? ?? '').trim();
+        final counters = data['counters'];
+        addLocation(_DictationLocation(
+          id: '',
+          name: name,
+          country: data['country'] as String?,
+          isSea: counters is Map && counters['mer'] == true,
+        ));
+      }
+      final locations = locationsByName.values.toList()
+        ..sort((a, b) => a.name.compareTo(b.name));
       if (!mounted) return;
       setState(() {
         _dictationMembers = members;
@@ -330,6 +509,63 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
       });
     } catch (e) {
       debugPrint('[LogbookEntry] dictation catalog load failed: $e');
+    }
+  }
+
+  Future<void> _prefillNextDiveNumber() async {
+    final userId = context.read<AuthProvider>().currentUser?.uid;
+    if (userId == null || _diveNumber.text.trim().isNotEmpty) return;
+    try {
+      const clubId = FirebaseConfig.defaultClubId;
+      final snap = await FirebaseFirestore.instance
+          .collection('clubs')
+          .doc(clubId)
+          .collection('student_logbook_entries')
+          .where('member_id', isEqualTo: userId)
+          .get();
+      var highest = 0;
+      for (final doc in snap.docs) {
+        final n = doc.data()['dive_number'];
+        if (n is num && n > highest) highest = n.toInt();
+      }
+      if (!mounted || _diveNumber.text.trim().isNotEmpty) return;
+      setState(() {
+        _diveNumber.text = (highest + 1).toString();
+        _manualFieldOverrides.add('dive_number');
+      });
+    } catch (e) {
+      debugPrint('[LogbookEntry] next dive number load failed: $e');
+    }
+  }
+
+  Future<int?> _resolveDiveNumberForSave({
+    required String clubId,
+    required String userId,
+  }) async {
+    final typed = int.tryParse(_diveNumber.text.trim());
+    if (widget.mode == LogbookEntryMode.edit) {
+      return typed != null && typed > 0 ? typed : null;
+    }
+
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('clubs')
+          .doc(clubId)
+          .collection('student_logbook_entries')
+          .where('member_id', isEqualTo: userId)
+          .get();
+      var highest = 0;
+      for (final doc in snap.docs) {
+        final n = doc.data()['dive_number'];
+        if (n is num && n > highest) highest = n.toInt();
+      }
+      final next = highest + 1;
+      if (typed != null && typed > highest) return typed;
+      _diveNumber.text = next.toString();
+      return next;
+    } catch (e) {
+      debugPrint('[LogbookEntry] save dive number guard failed: $e');
+      return typed != null && typed > 0 ? typed : null;
     }
   }
 
@@ -438,6 +674,32 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
       final entryMin = exitMin - _parseDuration()!;
       setState(() => _entryTime = _minutesToTime(entryMin));
       return;
+    }
+  }
+
+  void _resolveMissingTiming({bool allowOverride = false}) {
+    final duration = _parseDuration();
+    if (_entryTime == null && _exitTime != null && duration != null) {
+      setState(() {
+        _entryTime = _minutesToTime(_timeToMinutes(_exitTime!) - duration);
+      });
+      return;
+    }
+    if (_exitTime == null && _entryTime != null && duration != null) {
+      setState(() {
+        _exitTime = _minutesToTime(_timeToMinutes(_entryTime!) + duration);
+      });
+      return;
+    }
+    if (allowOverride ||
+        (_duration.text.trim().isEmpty &&
+            _entryTime != null &&
+            _exitTime != null)) {
+      final entryMin = _timeToMinutes(_entryTime!);
+      var exitMin = _timeToMinutes(_exitTime!);
+      if (exitMin < entryMin) exitMin += 24 * 60;
+      final minutes = exitMin - entryMin;
+      if (minutes > 0) _setDurationSilent(minutes.toString());
     }
   }
 
@@ -554,6 +816,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
     _duration.dispose();
     _notes.dispose();
     _lestage.dispose();
+    _diveNumber.dispose();
     _speech.stop();
     _dictation.dispose();
     super.dispose();
@@ -1003,7 +1266,10 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
   }
 
   Widget _dictationProfileCard() {
-    final parsed = _parseDictatedDive(_dictation.text);
+    final text = _dictation.text.trim();
+    final parsed = _aiDictationText == text && _aiDictationDraft != null
+        ? _aiDictationDraft!
+        : _parseDictatedDive(_dictation.text);
     final rows = _dictationProfileRows(parsed);
 
     return _whiteCard(
@@ -1040,17 +1306,13 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           ),
           if (_dictationOpen) ...[
             const SizedBox(height: 8),
-            _dictationActions(),
-            const SizedBox(height: 10),
-            _dictationProfileGrid(rows),
-            const SizedBox(height: 10),
             TextField(
               controller: _dictation,
-              minLines: 3,
-              maxLines: 6,
+              minLines: 2,
+              maxLines: 4,
               textInputAction: TextInputAction.newline,
               decoration: InputDecoration(
-                hintText: 'Dicte champ par champ, par exemple:\n'
+                hintText: 'Optionnel: dictée libre complète, par exemple:\n'
                     'Date: 10 octobre 2025. Lieu: Rochefontaine. '
                     'Immersion: 14 h 30. Profondeur: 31 mètres. Durée: 44 minutes. '
                     'Binôme: Jan de Nul. Bouteille: 12 litres. Lestage: 9 kilos. '
@@ -1075,7 +1337,43 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
                 ),
               ),
             ),
+            const SizedBox(height: 8),
+            _dictationActions(),
+            if (_lastAnalysisMessage != null) ...[
+              const SizedBox(height: 10),
+              _dictationStatusBanner(_lastAnalysisMessage!),
+            ],
+            const SizedBox(height: 10),
+            _dictationProfileGrid(rows),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _dictationStatusBanner(String text) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.green.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.green.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.check_circle_outline, color: Colors.green, size: 17),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: Colors.green.shade900,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1110,10 +1408,12 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           actionBox(
             width: smallWidth,
             child: ElevatedButton.icon(
-              onPressed: _toggleDictationRecording,
+              onPressed: () => _toggleSpeechCapture(_SpeechCaptureMode.free),
               icon: Icon(_listening ? Icons.stop : Icons.mic, size: 18),
               label: Text(
-                _listening ? 'Arrêter' : 'Dicter',
+                _listening && _speechMode == _SpeechCaptureMode.free
+                    ? 'Arrêter'
+                    : 'Libre',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 softWrap: false,
@@ -1131,10 +1431,14 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           actionBox(
             width: smallWidth,
             child: OutlinedButton.icon(
-              onPressed: hasText ? () => setState(() {}) : null,
-              icon: const Icon(Icons.manage_search, size: 18),
-              label: const Text(
-                'Analyser',
+              onPressed:
+                  hasText && !_analyzingDictation ? _analyzeDictation : null,
+              icon: Icon(
+                _analyzingDictation ? Icons.hourglass_top : Icons.manage_search,
+                size: 18,
+              ),
+              label: Text(
+                _analyzingDictation ? 'IA...' : 'Analyser',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 softWrap: false,
@@ -1149,6 +1453,8 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
                   ? () => setState(() {
                         _dictationListenBase = '';
                         _dictation.clear();
+                        _aiDictationText = null;
+                        _aiDictationDraft = null;
                       })
                   : null,
               icon: const Icon(Icons.clear, size: 18),
@@ -1163,20 +1469,22 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           ),
         ];
 
+        final canActFromDictation =
+            (hasText || _canSubmit) && !_submitting && !_analyzingDictation;
         final fillButton = actionBox(
           width: mainWidth,
           child: ElevatedButton.icon(
-            onPressed: hasText ? _applyDictation : null,
-            icon: const Icon(Icons.auto_fix_high, size: 18),
+            onPressed: canActFromDictation ? _applyDictationAndSave : null,
+            icon: const Icon(Icons.save_alt, size: 18),
             label: const Text(
-              'Remplir les champs',
+              'Enregistrer',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               softWrap: false,
             ),
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 14),
-              backgroundColor: AppColors.middenblauw,
+              backgroundColor: Colors.green,
               foregroundColor: Colors.white,
               textStyle:
                   const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
@@ -1224,7 +1532,11 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         : parsed.notesParts.isNotEmpty
             ? parsed.notesParts.join(' ')
             : _notes.text.trim();
-    final dateValue = parsed.date == null ? null : _formatDate(parsed.date!);
+    final dateValue = _manualFieldOverrides.contains('date')
+        ? _formatDate(_date)
+        : parsed.date == null
+            ? null
+            : _formatDate(parsed.date!);
     final entryTimeValue = _entryTime != null
         ? _formatTime(_entryTime!)
         : parsed.entryTime == null
@@ -1243,25 +1555,40 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
             : derivedExitTime == null
                 ? null
                 : _formatTime(derivedExitTime);
+    final diveNumberValue = _diveNumber.text.trim().isNotEmpty
+        ? 'N°${_diveNumber.text.trim()}'
+        : parsed.diveNumber == null
+            ? null
+            : 'N°${parsed.diveNumber}';
 
     return [
       _DictationField(
+        field: 'dive_number',
+        label: 'N°',
+        value: diveNumberValue,
+        hint: 'Ex: 413',
+      ),
+      _DictationField(
+        field: 'date',
         label: 'Date',
         required: true,
         value: dateValue,
         hint: 'Ex: 10 octobre 2025',
       ),
       _DictationField(
+        field: 'entry_time',
         label: 'Immersion',
         value: entryTimeValue,
         hint: 'Ex: 14:30',
       ),
       _DictationField(
+        field: 'exit_time',
         label: 'Sortie',
         value: exitTimeValue,
         hint: 'Ex: 15:14',
       ),
       _DictationField(
+        field: 'location',
         label: 'Lieu',
         required: true,
         value: locationValue,
@@ -1269,6 +1596,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         wide: true,
       ),
       _DictationField(
+        field: 'depth',
         label: 'Profondeur',
         required: true,
         value: _depth.text.trim().isNotEmpty
@@ -1279,6 +1607,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         hint: 'Ex: 25 m',
       ),
       _DictationField(
+        field: 'duration',
         label: 'Durée',
         required: true,
         value: _duration.text.trim().isNotEmpty
@@ -1289,6 +1618,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         hint: 'Ex: 47 min',
       ),
       _DictationField(
+        field: 'buddy',
         label: 'Binôme',
         required: true,
         value: buddyValue.isEmpty ? null : buddyValue,
@@ -1296,6 +1626,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         wide: true,
       ),
       _DictationField(
+        field: 'tank',
         label: 'Bouteille',
         value: _tank?.summary ??
             (parsed.tankVolumeL == null
@@ -1303,6 +1634,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
                 : '${_fmtNum(parsed.tankVolumeL!)} L'),
       ),
       _DictationField(
+        field: 'lestage',
         label: 'Lestage',
         value: _lestage.text.trim().isNotEmpty
             ? '${_lestage.text.trim()} kg'
@@ -1311,44 +1643,52 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
                 : '${_fmtNum(parsed.lestageKg!)} kg',
       ),
       _DictationField(
+        field: 'exo',
         label: 'Formation',
         value:
             _counters.exo == true || parsed.counters.exo == true ? 'Oui' : null,
       ),
       _DictationField(
+        field: 'nitrox',
         label: 'Nitrox',
         value: _counters.nitrox == true || parsed.counters.nitrox == true
             ? 'Oui'
             : null,
       ),
       _DictationField(
+        field: 'deco',
         label: 'Déco',
         value: _counters.deco == true || parsed.counters.deco == true
             ? 'Oui'
             : null,
       ),
       _DictationField(
+        field: 'dp',
         label: 'DP',
         value:
             _counters.dp == true || parsed.counters.dp == true ? 'Oui' : null,
       ),
       _DictationField(
+        field: 'sf',
         label: 'SF',
         value:
             _counters.sf == true || parsed.counters.sf == true ? 'Oui' : null,
       ),
       _DictationField(
+        field: 'nuit',
         label: 'Nuit',
         value: _counters.nuit == true || parsed.counters.nuit == true
             ? 'Oui'
             : null,
       ),
       _DictationField(
+        field: 'mer',
         label: 'Mer',
         value:
             _counters.mer == true || parsed.counters.mer == true ? 'Oui' : null,
       ),
       _DictationField(
+        field: 'notes',
         label: 'Notes',
         value: notesValue.isEmpty ? null : notesValue,
         wide: true,
@@ -1381,69 +1721,432 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
 
   Widget _dictationProfileRow(_DictationField field) {
     final done = field.value != null && field.value!.trim().isNotEmpty;
+    final active = _listening &&
+        _speechMode == _SpeechCaptureMode.guided &&
+        _guidedSteps[_guidedStepIndex].field == field.field;
     final MaterialColor color = done
-        ? Colors.green
+        ? active
+            ? Colors.blue
+            : Colors.green
         : field.required
-            ? Colors.red
+            ? active
+                ? Colors.blue
+                : Colors.red
             : Colors.grey;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.10),
+    final displayValue = active && _speechPendingText.trim().isNotEmpty
+        ? _speechPendingText.trim()
+        : done
+            ? field.value!
+            : (field.hint ?? 'à compléter');
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: 0.45)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            done
-                ? Icons.check_circle
-                : field.required
-                    ? Icons.error_outline
-                    : Icons.radio_button_unchecked,
-            size: 17,
-            color: color.shade700,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  field.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w900,
-                    color: color.shade800,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  done ? field.value! : (field.hint ?? 'à compléter'),
-                  maxLines: field.wide ? 3 : 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: done ? FontWeight.w700 : FontWeight.w500,
-                    color: done ? color.shade900 : Colors.grey.shade600,
-                    fontStyle: done ? FontStyle.normal : FontStyle.italic,
-                  ),
-                ),
-              ],
+        onTap: () => _openFieldInput(field),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: active ? 0.16 : 0.10),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: color.withValues(alpha: active ? 0.85 : 0.45),
+              width: active ? 1.5 : 1,
             ),
           ),
-        ],
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                active
+                    ? Icons.mic
+                    : done
+                        ? Icons.check_circle
+                        : field.required
+                            ? Icons.error_outline
+                            : Icons.radio_button_unchecked,
+                size: 17,
+                color: color.shade700,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      field.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w900,
+                        color: color.shade800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      active && _speechPendingText.trim().isEmpty
+                          ? 'Écoute...'
+                          : displayValue,
+                      maxLines: field.wide ? 3 : 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight:
+                            done || active ? FontWeight.w700 : FontWeight.w500,
+                        color: done || active
+                            ? color.shade900
+                            : Colors.grey.shade600,
+                        fontStyle: done || active
+                            ? FontStyle.normal
+                            : FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              Icon(Icons.edit_outlined, size: 16, color: color.shade600),
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  Future<void> _toggleDictationRecording() async {
+  Future<void> _openFieldInput(_DictationField field) async {
+    if (field.field == 'date') {
+      final picked = await showDatePicker(
+        context: context,
+        initialDate: _date,
+        firstDate: DateTime(1950),
+        lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
+      );
+      if (!mounted || picked == null) return;
+      setState(() {
+        _date = DateTime(picked.year, picked.month, picked.day);
+        _manualFieldOverrides.add('date');
+        _lastAnalysisMessage = 'Date mise à jour.';
+      });
+      return;
+    }
+
+    if (field.field == 'entry_time' || field.field == 'exit_time') {
+      final isEntry = field.field == 'entry_time';
+      final picked = await showTimePicker(
+        context: context,
+        initialTime: isEntry
+            ? (_entryTime ?? const TimeOfDay(hour: 14, minute: 30))
+            : (_exitTime ?? const TimeOfDay(hour: 15, minute: 15)),
+      );
+      if (!mounted || picked == null) return;
+      setState(() {
+        if (isEntry) {
+          _entryTime = picked;
+        } else {
+          _exitTime = picked;
+        }
+      });
+      _touchTiming(isEntry ? 'entry' : 'exit');
+      if (!mounted) return;
+      setState(() {
+        _manualFieldOverrides.add(field.field);
+        _lastAnalysisMessage = '${field.label} mis à jour.';
+      });
+      return;
+    }
+
+    final controller = TextEditingController(text: field.value ?? '');
+    final result = await showModalBottomSheet<_FieldInputResult>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            final suggestions = _fieldSuggestions(field.field, controller.text);
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 16,
+                bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 16,
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.18),
+                      blurRadius: 24,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.edit_outlined,
+                            color: AppColors.middenblauw),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            field.label,
+                            style: const TextStyle(
+                              color: AppColors.donkerblauw,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(sheetContext),
+                          icon: const Icon(Icons.close),
+                          tooltip: 'Fermer',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: controller,
+                      autofocus: true,
+                      minLines: field.wide || field.field == 'notes' ? 2 : 1,
+                      maxLines: field.field == 'notes' ? 5 : 3,
+                      textInputAction: TextInputAction.done,
+                      onChanged: (_) => setSheetState(() {}),
+                      onSubmitted: (_) => Navigator.pop(
+                        sheetContext,
+                        _FieldInputResult.text(controller.text),
+                      ),
+                      decoration: InputDecoration(
+                        hintText:
+                            field.hint ?? _dictationExampleFor(field.field),
+                        filled: true,
+                        fillColor: Colors.grey.shade50,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                    if (suggestions.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final suggestion in suggestions)
+                            ActionChip(
+                              label: Text(suggestion),
+                              avatar: Icon(
+                                field.field == 'buddy'
+                                    ? Icons.person_outline
+                                    : Icons.place_outlined,
+                                size: 16,
+                              ),
+                              onPressed: () => setSheetState(() {
+                                controller.text = _applySuggestionTextToField(
+                                  field.field,
+                                  controller.text,
+                                  suggestion,
+                                );
+                                controller.selection =
+                                    TextSelection.fromPosition(
+                                  TextPosition(offset: controller.text.length),
+                                );
+                              }),
+                            ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () => Navigator.pop(
+                              sheetContext,
+                              const _FieldInputResult.dictate(),
+                            ),
+                            icon: const Icon(Icons.mic),
+                            label: const Text('Dicter'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: () => Navigator.pop(
+                              sheetContext,
+                              _FieldInputResult.text(controller.text),
+                            ),
+                            icon: const Icon(Icons.check),
+                            label: const Text('Appliquer'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppColors.middenblauw,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    if (!mounted || result == null) return;
+    if (result.dictate) {
+      await _startFieldDictation(field.field);
+      return;
+    }
+    final changed = _applyDictationField(field.field, result.text);
+    setState(() {
+      if (changed) _manualFieldOverrides.add(field.field);
+      _lastAnalysisMessage = changed
+          ? '${field.label} mis à jour.'
+          : 'Je n’ai pas reconnu ${field.label.toLowerCase()}.';
+    });
+  }
+
+  List<String> _fieldSuggestions(String field, String rawQuery) {
+    final query = _normalizeDictation(
+      field == 'buddy' ? _lastListInputPart(rawQuery) : rawQuery,
+    );
+    final scored = <({String name, int score})>[];
+    if (field == 'buddy') {
+      for (final member in _dictationMembers) {
+        final name = member.displayName.trim();
+        if (name.isEmpty) continue;
+        final score = query.isEmpty
+            ? 10
+            : _personSuggestionScore(query, _normalizeDictation(name));
+        if (score < 999) scored.add((name: name, score: score));
+      }
+      scored.sort((a, b) {
+        final scoreCmp = a.score.compareTo(b.score);
+        if (scoreCmp != 0) return scoreCmp;
+        return a.name.compareTo(b.name);
+      });
+      return _uniqueStrings(scored.map((s) => s.name).toList())
+          .take(6)
+          .toList();
+    }
+    if (field != 'location') return const [];
+    for (final location in _dictationLocations) {
+      final name = location.name.trim();
+      if (name.isEmpty) continue;
+      final normalizedName = _normalizeDictation(name);
+      final score =
+          query.isEmpty ? 10 : _locationSuggestionScore(query, normalizedName);
+      if (score < 999) {
+        scored.add((name: name, score: score));
+      }
+    }
+    scored.sort((a, b) {
+      final scoreCmp = a.score.compareTo(b.score);
+      if (scoreCmp != 0) return scoreCmp;
+      return a.name.compareTo(b.name);
+    });
+    return _uniqueStrings(scored.map((s) => s.name).toList()).take(6).toList();
+  }
+
+  String _applySuggestionTextToField(
+    String field,
+    String current,
+    String suggestion,
+  ) {
+    if (field != 'buddy') return suggestion;
+    final comma = current.lastIndexOf(',');
+    final semicolon = current.lastIndexOf(';');
+    final lastSeparator = comma > semicolon ? comma : semicolon;
+    if (lastSeparator < 0) return suggestion;
+    final prefix = current.substring(0, lastSeparator).trim();
+    if (prefix.isEmpty) return suggestion;
+    return '$prefix; $suggestion';
+  }
+
+  String _lastListInputPart(String value) {
+    final parts = value.split(RegExp(r'[,;]'));
+    return parts.isEmpty ? value : parts.last.trim();
+  }
+
+  int _locationSuggestionScore(String query, String target) {
+    if (query.isEmpty || target.isEmpty) return query.isEmpty ? 10 : 999;
+    if (target == query) return 0;
+    final words = target.split(' ').where((w) => w.isNotEmpty).toList();
+    if (words.any((w) => w == query)) return 1;
+    if (words.any((w) => w.startsWith(query))) return 2;
+    if (query.length >= 4 && target.contains(query)) return 5;
+    return 999;
+  }
+
+  int _personSuggestionScore(String query, String target) {
+    if (query.isEmpty || target.isEmpty) return query.isEmpty ? 10 : 999;
+    if (query == target) return 0;
+    final queryParts = query.split(' ').where((w) => w.isNotEmpty).toList();
+    final targetParts = target.split(' ').where((w) => w.isNotEmpty).toList();
+    if (queryParts.isEmpty || targetParts.isEmpty) return 999;
+    var score = targetParts.length;
+    for (final part in queryParts) {
+      if (targetParts.any((t) => t == part)) {
+        score += 0;
+      } else if (targetParts.any((t) => t.startsWith(part))) {
+        score += 2;
+      } else {
+        return 999;
+      }
+    }
+    return score;
+  }
+
+  Future<void> _startFieldDictation(String field) async {
+    final index = _guidedSteps.indexWhere((step) => step.field == field);
+    if (index < 0) {
+      final changed = _applyDictationField(field, 'oui');
+      setState(() {
+        _lastAnalysisMessage = changed
+            ? '${_dictationLabelFor(field)} mis à jour.'
+            : '${_dictationLabelFor(field)} non modifié.';
+      });
+      return;
+    }
+
+    if (_listening &&
+        _speechMode == _SpeechCaptureMode.guided &&
+        _guidedSteps[_guidedStepIndex].field == field) {
+      await _toggleSpeechCapture(_SpeechCaptureMode.guided);
+      return;
+    }
+
     if (_listening) {
       await _speech.stop();
-      if (mounted) setState(() => _listening = false);
+      if (mounted) {
+        setState(() {
+          _listening = false;
+          _speechPendingText = '';
+        });
+      }
+    }
+
+    setState(() {
+      _guidedStepIndex = index;
+      _lastAnalysisMessage =
+          'Dicte ${_guidedSteps[index].label.toLowerCase()}.';
+    });
+    await _toggleSpeechCapture(_SpeechCaptureMode.guided);
+  }
+
+  Future<void> _toggleSpeechCapture(_SpeechCaptureMode mode) async {
+    if (_listening) {
+      await _speech.stop();
+      _finalizeSpeechCapture();
       return;
     }
 
@@ -1452,12 +2155,15 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           onStatus: (status) {
             if (!mounted) return;
             if (status == 'done' || status == 'notListening') {
-              setState(() => _listening = false);
+              _finalizeSpeechCapture();
             }
           },
           onError: (error) {
             if (!mounted) return;
-            setState(() => _listening = false);
+            setState(() {
+              _listening = false;
+              _speechPendingText = '';
+            });
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('Micro impossible: ${error.errorMsg}')),
             );
@@ -1475,8 +2181,11 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
     setState(() {
       _speechAvailable = true;
       _listening = true;
+      _speechMode = mode;
+      _speechPendingText = '';
       _dictationOpen = true;
-      _dictationListenBase = _dictation.text.trim();
+      _dictationListenBase =
+          mode == _SpeechCaptureMode.free ? _dictation.text.trim() : '';
     });
 
     await _speech.listen(
@@ -1489,59 +2198,289 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         if (!mounted) return;
         setState(() {
           final recognized = result.recognizedWords.trim();
-          _dictation.text = [
-            if (_dictationListenBase.isNotEmpty) _dictationListenBase,
-            if (recognized.isNotEmpty) recognized,
-          ].join(' ');
-          _dictation.selection = TextSelection.fromPosition(
-            TextPosition(offset: _dictation.text.length),
-          );
+          _speechPendingText = recognized;
+          if (mode == _SpeechCaptureMode.free) {
+            _dictation.text = [
+              if (_dictationListenBase.isNotEmpty) _dictationListenBase,
+              if (recognized.isNotEmpty) recognized,
+            ].join(' ');
+            _dictation.selection = TextSelection.fromPosition(
+              TextPosition(offset: _dictation.text.length),
+            );
+          }
         });
+        if (result.finalResult) {
+          _finalizeSpeechCapture();
+        }
       },
     );
   }
 
-  void _applyDictation() {
-    final draft = _parseDictatedDive(_dictation.text);
+  void _finalizeSpeechCapture() {
+    if (!mounted) return;
+    final mode = _speechMode;
+    final text = _speechPendingText.trim();
+    setState(() {
+      _listening = false;
+      _speechPendingText = '';
+    });
+    if (text.isEmpty || mode == _SpeechCaptureMode.free) return;
+    _applyGuidedText(text);
+  }
+
+  Future<void> _analyzeDictation() async {
+    final draft = await _dictationDraftForCurrentText(preferAi: true) ??
+        _parseDictatedDive(_dictation.text);
+    final detected = _dictationProfileRows(draft)
+        .where((f) => f.value != null && f.value!.trim().isNotEmpty)
+        .length;
+    final requiredMissing = _dictationProfileRows(draft)
+        .where(
+            (f) => f.required && (f.value == null || f.value!.trim().isEmpty))
+        .length;
+    setState(() {
+      _lastAnalysisMessage = requiredMissing == 0
+          ? '$detected champs détectés. Prêt à remplir.'
+          : '$detected champs détectés, $requiredMissing à compléter.';
+    });
+  }
+
+  Future<void> _applyDictationAndSave() async {
+    if (_dictation.text.trim().isNotEmpty) {
+      final draft = await _dictationDraftForCurrentText(preferAi: true) ??
+          _parseDictatedDive(_dictation.text);
+      _applyDictationDraft(draft);
+    }
+    if (!_canSubmit) {
+      final draft = _aiDictationDraft ?? _parseDictatedDive(_dictation.text);
+      final requiredMissing = _dictationProfileRows(draft)
+          .where(
+              (f) => f.required && (f.value == null || f.value!.trim().isEmpty))
+          .length;
+      setState(() {
+        _lastAnalysisMessage = requiredMissing == 0
+            ? 'Complète encore le lieu avant d’enregistrer.'
+            : '$requiredMissing champ obligatoire à compléter.';
+      });
+      return;
+    }
+    await _save();
+  }
+
+  Future<_DictatedDiveDraft?> _dictationDraftForCurrentText({
+    required bool preferAi,
+  }) async {
+    final text = _dictation.text.trim();
+    if (text.isEmpty || !preferAi) return null;
+    if (_aiDictationText == text && _aiDictationDraft != null) {
+      return _aiDictationDraft;
+    }
+
+    final userId = context.read<AuthProvider>().currentUser?.uid;
+    if (userId == null) return null;
+
+    setState(() {
+      _analyzingDictation = true;
+      _lastAnalysisMessage = 'Analyse IA en cours...';
+    });
+    try {
+      final result = await FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('analyzeLogbookDictation')
+          .call({
+        'clubId': FirebaseConfig.defaultClubId,
+        'text': text,
+        'defaultYear': DateTime.now().year,
+        'currentDiveNumber': int.tryParse(_diveNumber.text.trim()),
+        'lockedFields': _manualFieldOverrides.toList(),
+      });
+      final draft = _draftFromAiResult(result.data);
+      if (!mounted) return draft;
+      setState(() {
+        _aiDictationText = text;
+        _aiDictationDraft = draft;
+        _lastAnalysisMessage = 'Analyse IA terminée.';
+      });
+      return draft;
+    } on FirebaseFunctionsException catch (e) {
+      debugPrint('[LogbookEntry] AI dictation failed: ${e.code} ${e.message}');
+      if (mounted) {
+        setState(() {
+          _lastAnalysisMessage =
+              'Analyse IA indisponible, analyse locale utilisée.';
+        });
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[LogbookEntry] AI dictation failed: $e');
+      if (mounted) {
+        setState(() {
+          _lastAnalysisMessage =
+              'Analyse IA indisponible, analyse locale utilisée.';
+        });
+      }
+      return null;
+    } finally {
+      if (mounted) setState(() => _analyzingDictation = false);
+    }
+  }
+
+  _DictatedDiveDraft _draftFromAiResult(dynamic raw) {
+    final root = Map<String, dynamic>.from(raw as Map);
+    final fields = Map<String, dynamic>.from((root['fields'] as Map?) ?? {});
+    final locationMap = fields['location'] is Map
+        ? Map<String, dynamic>.from(fields['location'] as Map)
+        : null;
+    final countersMap =
+        Map<String, dynamic>.from((fields['counters'] as Map?) ?? {});
+
+    return _DictatedDiveDraft(
+      diveNumber: _aiInt(fields['diveNumber']),
+      date: _aiDate(fields['date']),
+      entryTime: _aiTime(fields['entryTime']),
+      exitTime: _aiTime(fields['exitTime']),
+      locationName: locationMap?['name'] as String?,
+      locationSelection: locationMap == null
+          ? null
+          : DiveLocationSelection(
+              id: locationMap['id'] as String?,
+              name: (locationMap['name'] as String?) ?? '',
+              country: locationMap['country'] as String?,
+              isSea: locationMap['isSea'] == true,
+            ),
+      depthMeters: _aiDouble(fields['depthMeters']),
+      durationMinutes: _aiInt(fields['durationMinutes']),
+      binomes: _aiBinomes(fields['buddies']),
+      tankVolumeL: _aiDouble(fields['tankVolumeL']),
+      lestageKg: _aiDouble(fields['lestageKg']),
+      counters: LogbookCounters(
+        exo: _aiBool(countersMap['exo']),
+        nitrox: _aiBool(countersMap['nitrox']),
+        deco: _aiBool(countersMap['deco']),
+        dp: _aiBool(countersMap['dp']),
+        sf: _aiBool(countersMap['sf']),
+        nuit: _aiBool(countersMap['nuit']),
+        mer: _aiBool(countersMap['mer']),
+      ),
+      fauna: _aiStringList(fields['fauna']),
+      notesParts: _aiStringList(fields['notesParts']),
+    );
+  }
+
+  int? _aiInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.round();
+    if (value is String) return int.tryParse(value.trim());
+    return null;
+  }
+
+  double? _aiDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value.replaceAll(',', '.'));
+    return null;
+  }
+
+  bool? _aiBool(dynamic value) => value is bool ? value : null;
+
+  DateTime? _aiDate(dynamic value) {
+    if (value is! String || value.trim().isEmpty) return null;
+    final parsed = DateTime.tryParse(value.trim());
+    if (parsed == null) return null;
+    return DateTime(parsed.year, parsed.month, parsed.day);
+  }
+
+  TimeOfDay? _aiTime(dynamic value) {
+    if (value is! String || value.trim().isEmpty) return null;
+    final match = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(value.trim());
+    if (match == null) return null;
+    final hour = int.tryParse(match.group(1)!);
+    final minute = int.tryParse(match.group(2)!);
+    if (hour == null || minute == null) return null;
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+    return TimeOfDay(hour: hour, minute: minute);
+  }
+
+  List<String> _aiStringList(dynamic value) {
+    if (value is! List) return const [];
+    return value
+        .whereType<String>()
+        .map((v) => v.trim())
+        .where((v) => v.isNotEmpty)
+        .toList();
+  }
+
+  List<BinomeSelection> _aiBinomes(dynamic value) {
+    if (value is! List) return const [];
+    final out = <BinomeSelection>[];
+    for (final raw in value) {
+      if (raw is! Map) continue;
+      final map = Map<String, dynamic>.from(raw);
+      final name = (map['displayName'] as String? ?? '').trim();
+      if (name.isEmpty) continue;
+      final memberId = (map['memberId'] as String?)?.trim();
+      if (memberId != null && memberId.isNotEmpty) {
+        out.add(BinomeSelection.member(memberId: memberId, displayName: name));
+      } else {
+        out.add(BinomeSelection.external(displayName: name));
+      }
+    }
+    return out;
+  }
+
+  void _applyDictationDraft(_DictatedDiveDraft draft) {
     final timingTouches = <String>[];
     setState(() {
-      if (draft.date != null) _date = draft.date!;
-      if (draft.entryTime != null) {
+      if (_canApplyDictationField('dive_number') && draft.diveNumber != null) {
+        _diveNumber.text = draft.diveNumber.toString();
+      }
+      if (_canApplyDictationField('date') && draft.date != null) {
+        _date = draft.date!;
+      }
+      if (_canApplyDictationField('entry_time') && draft.entryTime != null) {
         _entryTime = draft.entryTime;
         timingTouches.add('entry');
       }
-      if (draft.exitTime != null) {
+      if (_canApplyDictationField('exit_time') && draft.exitTime != null) {
         _exitTime = draft.exitTime;
         timingTouches.add('exit');
       }
-      final location = draft.locationSelection ??
-          (draft.locationName == null || draft.locationName!.isEmpty
-              ? null
-              : DiveLocationSelection(
-                  name: draft.locationName!,
-                  isSea: _looksLikeSeaLocation(draft.locationName!),
-                ));
-      if (location != null) {
-        _locationSelection = location;
-        if (_locationSelection!.isSea) {
-          _counters = _counters.copyWith(mer: true);
+      if (_canApplyDictationField('location')) {
+        final location = draft.locationSelection ??
+            (draft.locationName == null || draft.locationName!.isEmpty
+                ? null
+                : DiveLocationSelection(
+                    name: draft.locationName!,
+                    isSea: _looksLikeSeaLocation(draft.locationName!),
+                  ));
+        if (location != null) {
+          _locationSelection = location;
+          if (_locationSelection!.isSea && _canApplyDictationField('mer')) {
+            _counters = _counters.copyWith(mer: true);
+          }
         }
       }
-      if (draft.depthMeters != null) _depth.text = _fmtNum(draft.depthMeters!);
-      if (draft.durationMinutes != null) {
+      if (_canApplyDictationField('depth') && draft.depthMeters != null) {
+        _depth.text = _fmtNum(draft.depthMeters!);
+      }
+      if (_canApplyDictationField('duration') &&
+          draft.durationMinutes != null) {
         _setDurationSilent(draft.durationMinutes.toString());
         timingTouches.add('duration');
       }
-      if (draft.tankVolumeL != null) {
+      if (_canApplyDictationField('tank') && draft.tankVolumeL != null) {
         _tank = TankSelection(
           volumeL: draft.tankVolumeL!,
           pressureBar: 200,
           label: '${_fmtNum(draft.tankVolumeL!)} L',
         );
       }
-      if (draft.lestageKg != null) _lestage.text = _fmtNum(draft.lestageKg!);
-      _counters = _mergeCounters(_counters, draft.counters);
-      if (draft.binomes.isNotEmpty) {
+      if (_canApplyDictationField('lestage') && draft.lestageKg != null) {
+        _lestage.text = _fmtNum(draft.lestageKg!);
+      }
+      _counters = _mergeCounters(
+        _counters,
+        _withoutManualCounterOverrides(draft.counters),
+      );
+      if (_canApplyDictationField('buddy') && draft.binomes.isNotEmpty) {
         final existing = _binomes
             .map((b) => _normalizeDictation(b.displayName ?? b.chipLabel))
             .toSet();
@@ -1554,22 +2493,254 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         }
         _binomes = [..._binomes, ...additions];
       }
-      final notes = <String>[
-        if (_notes.text.trim().isNotEmpty) _notes.text.trim(),
-        if (draft.fauna.isNotEmpty)
-          'Faune observée: ${draft.fauna.join(', ')}.',
-        ...draft.notesParts,
-      ];
-      _notes.text = _dedupeSentences(notes).join('\n');
-      if (_isDictationPrefill) {
-        _manualFormVisible = true;
-      } else {
-        _dictationOpen = false;
+      if (_canApplyDictationField('notes')) {
+        final notes = <String>[
+          if (_notes.text.trim().isNotEmpty) _notes.text.trim(),
+          if (draft.fauna.isNotEmpty)
+            'Faune observée: ${draft.fauna.join(', ')}.',
+          ...draft.notesParts,
+        ];
+        _notes.text = _dedupeSentences(notes).join('\n');
       }
+      _dictationOpen = true;
     });
     for (final key in timingTouches) {
       _touchTiming(key);
     }
+    _resolveMissingTiming();
+  }
+
+  void _applyGuidedText(String text) {
+    final step = _guidedSteps[_guidedStepIndex];
+    final changed = _applyDictationField(step.field, text);
+    setState(() {
+      if (changed) _manualFieldOverrides.add(step.field);
+      _lastAnalysisMessage = changed
+          ? '${step.label} mis à jour.'
+          : 'Je n’ai pas reconnu ${step.label.toLowerCase()}.';
+      if (changed) {
+        _guidedStepIndex = (_guidedStepIndex + 1) % _guidedSteps.length;
+      }
+    });
+  }
+
+  bool _canApplyDictationField(String field) =>
+      !_manualFieldOverrides.contains(field);
+
+  LogbookCounters _withoutManualCounterOverrides(LogbookCounters counters) {
+    return LogbookCounters(
+      exo: _canApplyDictationField('exo') ? counters.exo : null,
+      nitrox: _canApplyDictationField('nitrox') ? counters.nitrox : null,
+      deco: _canApplyDictationField('deco') ? counters.deco : null,
+      dp: _canApplyDictationField('dp') ? counters.dp : null,
+      sf: _canApplyDictationField('sf') ? counters.sf : null,
+      nuit: _canApplyDictationField('nuit') ? counters.nuit : null,
+      mer: _canApplyDictationField('mer') ? counters.mer : null,
+    );
+  }
+
+  bool _applyDictationField(String field, String value) {
+    final raw = value.trim();
+    if (raw.isEmpty) return false;
+    final normalized = _normalizeDictation(raw);
+
+    switch (field) {
+      case 'dive_number':
+        final n = _numberFromSpeech(raw);
+        if (n == null || n <= 0) return false;
+        setState(() => _diveNumber.text = n.round().toString());
+        return true;
+      case 'date':
+        final date = _parseDictatedDate(normalized);
+        if (date == null) return false;
+        setState(() => _date = date);
+        return true;
+      case 'location':
+        final location = _matchDictatedLocation(raw, normalized);
+        if (location == null) return false;
+        setState(() {
+          _locationSelection = location;
+          if (location.isSea) _counters = _counters.copyWith(mer: true);
+        });
+        return true;
+      case 'entry_time':
+        final time = _timeFromSpeech(raw);
+        if (time == null) return false;
+        setState(() => _entryTime = time);
+        _touchTiming('entry');
+        return true;
+      case 'exit_time':
+        final time = _timeFromSpeech(raw);
+        if (time == null) return false;
+        setState(() => _exitTime = time);
+        _touchTiming('exit');
+        return true;
+      case 'depth':
+        final n = _numberFromSpeech(raw);
+        if (n == null) return false;
+        setState(() => _depth.text = _fmtNum(n));
+        return true;
+      case 'duration':
+        final n = _numberFromSpeech(raw);
+        if (n == null) return false;
+        setState(() => _setDurationSilent(n.round().toString()));
+        _touchTiming('duration');
+        return true;
+      case 'buddy':
+        final names = raw
+            .split(RegExp(r'\s+(?:en|et|and|avec|met)\s+|[,;]'))
+            .map(_cleanDictatedName)
+            .where((name) => name.isNotEmpty)
+            .toList();
+        if (names.isEmpty) return false;
+        final existing = _binomes
+            .map((b) => _normalizeDictation(b.displayName ?? b.chipLabel))
+            .toSet();
+        final additions = <BinomeSelection>[];
+        for (final name in names) {
+          final binome = _matchDictatedBuddy(name);
+          if (existing.add(
+              _normalizeDictation(binome.displayName ?? binome.chipLabel))) {
+            additions.add(binome);
+          }
+        }
+        if (additions.isEmpty) return false;
+        setState(() => _binomes = [..._binomes, ...additions]);
+        return true;
+      case 'notes':
+        setState(() {
+          final next = [if (_notes.text.trim().isNotEmpty) _notes.text, raw];
+          _notes.text = _dedupeSentences(next).join('\n');
+        });
+        return true;
+      case 'tank':
+        final n = _numberFromSpeech(raw);
+        if (n == null) return false;
+        setState(() {
+          _tank = TankSelection(
+            volumeL: n,
+            pressureBar: 200,
+            label: '${_fmtNum(n)} L',
+          );
+        });
+        return true;
+      case 'lestage':
+        final n = _numberFromSpeech(raw);
+        if (n == null) return false;
+        setState(() => _lestage.text = _fmtNum(n));
+        return true;
+      case 'exo':
+      case 'nitrox':
+      case 'deco':
+      case 'dp':
+      case 'sf':
+      case 'nuit':
+      case 'mer':
+        final enabled = !_isNegativeDictation(raw);
+        setState(() => _counters = _setCounter(_counters, field, enabled));
+        return true;
+    }
+    return false;
+  }
+
+  bool _isNegativeDictation(String raw) {
+    final normalized = _normalizeDictation(raw);
+    return RegExp(r'\b(non|nee|nein|no|pas|geen|zonder|sans)\b')
+        .hasMatch(normalized);
+  }
+
+  LogbookCounters _setCounter(
+    LogbookCounters counters,
+    String field,
+    bool value,
+  ) {
+    switch (field) {
+      case 'exo':
+        return counters.copyWith(exo: value);
+      case 'nitrox':
+        return counters.copyWith(nitrox: value);
+      case 'deco':
+        return counters.copyWith(deco: value);
+      case 'dp':
+        return counters.copyWith(dp: value);
+      case 'sf':
+        return counters.copyWith(sf: value);
+      case 'nuit':
+        return counters.copyWith(nuit: value);
+      case 'mer':
+        return counters.copyWith(mer: value);
+      default:
+        return counters;
+    }
+  }
+
+  double? _numberFromSpeech(String raw) {
+    final normalized = _normalizeDictation(raw);
+    return _firstNumberForPatterns(normalized, [
+      RegExp(r'\b(\d+(?:[\.,]\d+)?)\b'),
+    ]);
+  }
+
+  TimeOfDay? _timeFromSpeech(String raw) {
+    final normalized = _normalizeDictation(raw);
+    final match = RegExp(
+      r'\b(\d{1,2})\s*(?:h|heure|heures|uur|:)\s*(\d{1,2})?\b',
+    ).firstMatch(normalized);
+    if (match == null) return null;
+    final hour = int.tryParse(match.group(1)!);
+    final minute = int.tryParse(match.group(2) ?? '0') ?? 0;
+    if (hour == null || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+      return null;
+    }
+    return TimeOfDay(hour: hour, minute: minute);
+  }
+
+  String _dictationLabelFor(String field) {
+    switch (field) {
+      case 'date':
+        return 'Date';
+      case 'dive_number':
+        return 'N°';
+      case 'location':
+        return 'Lieu';
+      case 'entry_time':
+        return 'Immersion';
+      case 'exit_time':
+        return 'Sortie';
+      case 'depth':
+        return 'Profondeur';
+      case 'duration':
+        return 'Durée';
+      case 'buddy':
+        return 'Binôme';
+      case 'tank':
+        return 'Bouteille';
+      case 'lestage':
+        return 'Lestage';
+      case 'exo':
+        return 'Formation';
+      case 'nitrox':
+        return 'Nitrox';
+      case 'deco':
+        return 'Déco';
+      case 'dp':
+        return 'DP';
+      case 'sf':
+        return 'SF';
+      case 'nuit':
+        return 'Nuit';
+      case 'mer':
+        return 'Mer';
+      default:
+        return 'Notes';
+    }
+  }
+
+  String _dictationExampleFor(String field) {
+    for (final step in _guidedSteps) {
+      if (step.field == field) return step.example;
+    }
+    return 'Tape une valeur ou utilise Dicter';
   }
 
   Widget _dateTimeCard() {
@@ -1988,11 +3159,11 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           _locationSelection?.name.trim() !=
               ((widget.initialData?['location_name'] as String?) ?? '').trim();
     }
-    return _manualFormVisible ||
-        _dictation.text.trim().isNotEmpty ||
+    return _dictation.text.trim().isNotEmpty ||
         _locationSelection?.name.trim().isNotEmpty == true ||
         _depth.text.trim().isNotEmpty ||
         _duration.text.trim().isNotEmpty ||
+        _diveNumber.text.trim().isNotEmpty ||
         _notes.text.trim().isNotEmpty ||
         _lestage.text.trim().isNotEmpty ||
         _entryTime != null ||
@@ -2122,6 +3293,10 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
     final durationDouble = numberAfter(['duree', 'duration', 'duur']) ??
         _firstNumberForPatterns(normalized, [
           RegExp(
+            r'(?:duree|duration|duur)\s+(?:totale?|total|de|van|ongeveer|environ)?\s*(\d+(?:[\.,]\d+)?)\b',
+            caseSensitive: false,
+          ),
+          RegExp(
             r'(?:pendant|durant|total|temps)?\s*(\d+(?:[\.,]\d+)?)\s*(?:min|mins|minute|minutes)',
             caseSensitive: false,
           ),
@@ -2159,24 +3334,15 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
 
     final buddies = <String>[];
     final buddyRx = RegExp(
-      r'(?:gedoken met|buddy(?:s)?|binomes?|binomes|binome c est|binome etait|binome was|avec\s+(?!\d)|met\s+(?!\d))\s+(.+?)(?=,?\s+(?:j avais|ik had|een|une|un)?\s*(?:bouteille|fles|tank|lestage|poids|gewicht|plombee|plongee deco)\b|\.|;|$)',
+      r"(?:gedoken met|buddy(?:s)?|bin[oô]mes?|binome c est|binome etait|binome was|avec\s+(?!\d)|met\s+(?!\d))\s+(.+?)(?=,?\s+(?:lieu|plaats|locatie|location|site|profondeur|profond|diepte|depth|duree|durée|duur|duration|j\s*[’\']?ai\s+vu|vu|gezien|seen|j avais|ik had|een|une|un)?\s*(?:bouteille|fles|tank|lestage|poids|gewicht|plombee|plongee deco)\b|,?\s+(?:lieu|plaats|locatie|location|site|profondeur|profond|diepte|depth|duree|durée|duur|duration|j\s*[’\']?ai\s+vu|vu|gezien|seen)\b|\.|;|$)",
       caseSensitive: false,
     );
-    for (final match in buddyRx.allMatches(text)) {
-      final chunk = match.group(1)?.trim() ?? '';
-      if (chunk.isEmpty) continue;
-      for (final part in chunk.split(RegExp(r'\s+(?:en|et|and)\s+|,'))) {
-        final name = _cleanDictatedName(part);
-        if (name.isNotEmpty) buddies.add(name);
-      }
-    }
-
-    for (final member in _dictationMembers) {
-      final first = _normalizeDictation(member.prenom);
-      if (first.length >= 3 && normalized.contains(RegExp('\\b$first\\b'))) {
-        buddies.add(member.prenom);
-      }
-    }
+    _collectDictatedBuddies(text, buddyRx, buddies);
+    final fallbackBuddyRx = RegExp(
+      r"\b(?:manger|mange|mangé|manager|manche|mangeait|plonge(?:r|ait)?|duik(?:en)?)?\s*(?:avec|met)\s+(.+?)(?=,?\s+(?:lieu|plaats|locatie|location|site|profondeur|profond|diepte|depth|duree|durée|duur|duration|j\s*[’\']?ai\s+vu|vu|gezien|seen)\b|[.;]|$)",
+      caseSensitive: false,
+    );
+    _collectDictatedBuddies(text, fallbackBuddyRx, buddies);
 
     final fauna = <String>[];
     final seenRx = RegExp(
@@ -2244,6 +3410,19 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
       final day = int.tryParse(numeric.group(1)!);
       final month = int.tryParse(numeric.group(2)!);
       var year = int.tryParse(numeric.group(3) ?? today.year.toString());
+      if (year != null && year < 100) year += 2000;
+      if (day != null && month != null && year != null) {
+        return _safeDate(year, month, day);
+      }
+    }
+
+    final spokenNumeric = RegExp(
+      r'\b(?:date\s+)?(\d{1,2})\s+(?:du|de|d|sur)\s+(\d{1,2})(?:\s+(\d{2,4}))?\b',
+    ).firstMatch(normalized);
+    if (spokenNumeric != null) {
+      final day = int.tryParse(spokenNumeric.group(1)!);
+      final month = int.tryParse(spokenNumeric.group(2)!);
+      var year = int.tryParse(spokenNumeric.group(3) ?? today.year.toString());
       if (year != null && year < 100) year += 2000;
       if (day != null && month != null && year != null) {
         return _safeDate(year, month, day);
@@ -2319,12 +3498,12 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         RegExp(
           r'\b' +
               escaped +
-              r'\s*(?:a|om|:)?\s*(\d{1,2})\s*(?:h|heure|heures|uur|:)\s*(\d{1,2})?\b',
+              r'(?:\s+(?:de|d|a|à|om|l|eau|water))*\s*:?\s*(\d{1,2})\s*(?:h|heure|heures|uur|:)\s*(\d{1,2})?\b',
         ),
         RegExp(
           r'\b' +
               escaped +
-              r'\s*(?:a|om|:)?\s*(\d{1,2})\s*(?:h|heure|heures|uur)\b',
+              r'(?:\s+(?:de|d|a|à|om|l|eau|water))*\s*:?\s*(\d{1,2})\s*(?:h|heure|heures|uur)\b',
         ),
       ];
       for (final rx in patterns) {
@@ -2391,46 +3570,85 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
     );
   }
 
+  void _collectDictatedBuddies(
+    String text,
+    RegExp regex,
+    List<String> buddies,
+  ) {
+    for (final match in regex.allMatches(text)) {
+      final chunk = match.group(1)?.trim() ?? '';
+      if (chunk.isEmpty) continue;
+      for (final part in chunk.split(RegExp(r'\s+(?:en|et|and)\s+|[,;]'))) {
+        final name = _cleanDictatedName(part);
+        if (name.isNotEmpty) buddies.add(name);
+      }
+    }
+  }
+
   String? _extractDictatedLocation(String text) {
     final cleaned = text.replaceAll('\n', ' ').trim();
     if (cleaned.isEmpty) return null;
-    final beforeDepth = cleaned
-        .split(RegExp(r'\b(?:diepte|profondeur|depth|duree|durée|duur)\b',
-            caseSensitive: false))
-        .first;
-    final withoutDive = beforeDepth
+
+    final explicit = RegExp(
+      r'\b(?:le\s+)?(?:lieu|plaats|locatie|location|site)\s*(?:est|et|is|:)?\s+(.+?)(?=\s+\b(?:profondeur|profond|diepte|depth|duree|durée|duur|duration|bin[oô]mes?|buddy|buddies|bouteille|fles|tank|lestage|poids|gewicht|notes?|vu|gezien)\b|[.;]|$)',
+      caseSensitive: false,
+    ).firstMatch(cleaned);
+    if (explicit != null) {
+      final value = explicit.group(1)?.trim();
+      if (value != null && value.isNotEmpty) {
+        return _cleanDictatedLocation(value);
+      }
+    }
+
+    return null;
+  }
+
+  String _cleanDictatedLocation(String value) {
+    return value
+        .replaceAll(
+          RegExp(
+            r'\b(?:date|le|la|les|du|de|d)\s+\d{1,2}\s+(?:du|de|d|sur)?\s*\d{1,2}(?:\s+\d{2,4})?\b',
+            caseSensitive: false,
+          ),
+          ' ',
+        )
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim()
         .replaceFirst(
-            RegExp(r'^\s*(?:duik|plong[eé]e|dive)\s*\d+\s*,?\s*',
-                caseSensitive: false),
-            '')
-        .trim();
-    final parts = withoutDive
-        .split(RegExp(r'[,.]'))
-        .map((p) => p.trim())
-        .where((p) => p.isNotEmpty)
-        .toList();
-    if (parts.isEmpty) return null;
-    return parts.join(' - ');
+          RegExp(r'^(?:le\s+)?(?:lieu|plaats|locatie|location|site)\s+',
+              caseSensitive: false),
+          '',
+        )
+        .replaceFirst(
+            RegExp(r'^(?:est|et|is|a|à|:)\s+', caseSensitive: false), '')
+        .replaceAll(RegExp(r'[,.。]+$'), '');
   }
 
   DiveLocationSelection? _matchDictatedLocation(
     String? rawLocation,
     String normalizedFullText,
   ) {
-    final alias = _locationAlias(normalizedFullText);
-    final source = alias ?? rawLocation;
+    final source = rawLocation;
     if (source == null || source.trim().isEmpty) return null;
+    final alias = _locationAlias(_normalizeDictation(source));
+    if (alias != null) {
+      return DiveLocationSelection(
+        name: alias,
+        isSea: _looksLikeSeaLocation(alias),
+      );
+    }
     final sourceNorm = _normalizeDictation(source);
     _DictationLocation? best;
     var bestScore = 999;
     for (final location in _dictationLocations) {
-      final score = _matchScore(sourceNorm, _normalizeDictation(location.name));
+      final score =
+          _locationMatchScore(sourceNorm, _normalizeDictation(location.name));
       if (score < bestScore) {
         best = location;
         bestScore = score;
       }
     }
-    if (best != null && bestScore <= 3) {
+    if (best != null && bestScore < 999) {
       return DiveLocationSelection(
         id: best.id,
         name: best.name,
@@ -2444,10 +3662,78 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
     );
   }
 
+  int _locationMatchScore(String source, String target) {
+    if (source.isEmpty || target.isEmpty) return 999;
+    if (source == target) return 0;
+    final sourceParts = _locationMatchParts(source);
+    final targetParts = _locationMatchParts(target);
+    if (sourceParts.isEmpty || targetParts.isEmpty) return 999;
+
+    if (sourceParts.length == 1) {
+      final token = sourceParts.first;
+      if (targetParts.any((t) => t == token)) return 5;
+      if (token.length >= 3 && targetParts.any((t) => t.startsWith(token))) {
+        return 15;
+      }
+      return 999;
+    }
+
+    final exactOverlap =
+        sourceParts.where((s) => targetParts.any((t) => s == t)).length;
+    if (exactOverlap == sourceParts.length) {
+      return 10 + (targetParts.length - exactOverlap).clamp(0, 20);
+    }
+    if (exactOverlap >= 2) return 40 - exactOverlap;
+    final fuzzyOverlap = sourceParts
+        .where((s) => targetParts.any((t) => _levenshtein(s, t) <= 1))
+        .length;
+    if (fuzzyOverlap >= 2) return 60 - fuzzyOverlap;
+    return 999;
+  }
+
+  List<String> _locationMatchParts(String value) {
+    const stop = {
+      'date',
+      'lieu',
+      'plaats',
+      'locatie',
+      'location',
+      'site',
+      'profondeur',
+      'duree',
+      'durée',
+      'binome',
+      'binomes',
+      'buddy',
+      'buddies',
+      'notes',
+      'note',
+      'vu',
+      'gezien',
+      'est',
+      'et',
+      'is',
+      'the',
+      'le',
+      'la',
+      'les',
+      'de',
+      'du',
+      'des',
+      'a',
+      'à',
+    };
+    return value
+        .split(' ')
+        .where((p) => p.length >= 3)
+        .where((p) => int.tryParse(p) == null)
+        .where((p) => !stop.contains(p))
+        .toList();
+  }
+
   String? _locationAlias(String normalizedText) {
     if (normalizedText.contains('danza hot') ||
-        normalizedText.contains('danza') ||
-        normalizedText.contains('lanzarote')) {
+        normalizedText.contains('danza')) {
       final place = normalizedText.contains('carmen')
           ? 'Lanzarote - Puerto del Carmen'
           : 'Lanzarote';
@@ -2462,6 +3748,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
 
   BinomeSelection _matchDictatedBuddy(String rawName) {
     final source = _normalizeDictation(rawName);
+    final sourceParts = source.split(' ').where((p) => p.length >= 3).toList();
     _DictationMember? best;
     var bestScore = 999;
     for (final member in _dictationMembers) {
@@ -2478,7 +3765,9 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         }
       }
     }
-    if (best != null && bestScore <= 2) {
+    if (best != null &&
+        bestScore < 999 &&
+        _isReliableBuddyMatch(sourceParts, best)) {
       return BinomeSelection.member(
         memberId: best.id,
         displayName: best.displayName,
@@ -2487,19 +3776,54 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
     return BinomeSelection.external(displayName: rawName);
   }
 
+  bool _isReliableBuddyMatch(
+      List<String> sourceParts, _DictationMember member) {
+    if (sourceParts.isEmpty) return false;
+    final memberParts = _normalizeDictation(member.displayName)
+        .split(' ')
+        .where((p) => p.length >= 3)
+        .toList();
+    final strongOverlap = sourceParts
+        .where((s) => memberParts.any((m) => _personTokenMatches(s, m)))
+        .length;
+    if (sourceParts.length >= 2) return strongOverlap >= 2;
+    final exactOverlap =
+        sourceParts.where((s) => memberParts.any((m) => s == m)).length;
+    return exactOverlap >= 1 && memberParts.length == 1;
+  }
+
   int _matchScore(String source, String target) {
     if (source.isEmpty || target.isEmpty) return 999;
     if (source == target) return 0;
-    if (target.startsWith(source) || source.startsWith(target)) return 1;
-    if (target.contains(source) || source.contains(target)) return 2;
     final sourceParts = source.split(' ').where((p) => p.length >= 3).toList();
     final targetParts = target.split(' ').where((p) => p.length >= 3).toList();
-    if (sourceParts.any((s) => targetParts.any((t) => s == t))) return 2;
-    if (sourceParts
-        .any((s) => targetParts.any((t) => _levenshtein(s, t) <= 2))) {
-      return 3;
+    if (sourceParts.isEmpty || targetParts.isEmpty) return 999;
+    if (sourceParts.length == 1) {
+      final token = sourceParts.first;
+      if (targetParts.length == 1 && targetParts.first == token) return 1;
+      return 999;
     }
-    return 999;
+    var score = targetParts.length;
+    for (final part in sourceParts) {
+      final exact = targetParts.any((t) => t == part);
+      final strong = targetParts.any((t) => _personTokenMatches(part, t));
+      if (exact) {
+        score += 0;
+      } else if (strong) {
+        score += 8;
+      } else {
+        return 999;
+      }
+    }
+    return score;
+  }
+
+  bool _personTokenMatches(String source, String target) {
+    if (source == target) return true;
+    if (source.length >= 3 && target.startsWith(source)) return true;
+    if (target.length >= 3 && source.startsWith(target)) return true;
+    final maxDistance = source.length <= 5 || target.length <= 5 ? 1 : 2;
+    return _levenshtein(source, target) <= maxDistance;
   }
 
   bool _looksLikeSeaLocation(String name) {
@@ -2521,7 +3845,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
             ' ')
         .replaceAll(
             RegExp(
-              r'\b(?:bouteille|fles|tank|lestage|poids|gewicht|kg|kilo|kilos).*$',
+              r'\b(?:lieu|plaats|locatie|location|site|profondeur|profond|diepte|depth|duree|durée|duur|duration|bouteille|fles|tank|lestage|poids|gewicht|kg|kilo|kilos).*$',
               caseSensitive: false,
             ),
             ' ')
@@ -2672,6 +3996,10 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           .toList();
 
       final lestage = double.tryParse(_lestage.text.replaceAll(',', '.'));
+      final explicitDiveNumber = await _resolveDiveNumberForSave(
+        clubId: clubId,
+        userId: userId,
+      );
       final extras = <String, dynamic>{
         'binomes': _binomes.map((b) => b.toMap()).toList(),
         if (_entryTime != null)
@@ -2687,9 +4015,8 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         if (_combi != null) 'combi_type': _combi!.type,
         if (_tank != null) 'tank': _tank!.toMap(),
         if (lestage != null && lestage > 0) 'lestage_kg': lestage,
-        if (widget.mode != LogbookEntryMode.edit &&
-            _parseDictatedDive(_dictation.text).diveNumber != null)
-          'dive_number': _parseDictatedDive(_dictation.text).diveNumber,
+        if (explicitDiveNumber != null && explicitDiveNumber > 0)
+          'dive_number': explicitDiveNumber,
       };
 
       final source = widget.mode == LogbookEntryMode.auto
@@ -2860,6 +4187,7 @@ class _DictatedDiveDraft {
 }
 
 class _DictationField {
+  final String field;
   final String label;
   final bool required;
   final String? value;
@@ -2867,11 +4195,36 @@ class _DictationField {
   final bool wide;
 
   const _DictationField({
+    required this.field,
     required this.label,
     this.required = false,
     this.value,
     this.hint,
     this.wide = false,
+  });
+}
+
+class _FieldInputResult {
+  final String text;
+  final bool dictate;
+
+  const _FieldInputResult.text(this.text) : dictate = false;
+  const _FieldInputResult.dictate()
+      : text = '',
+        dictate = true;
+}
+
+class _GuidedDictationStep {
+  final String field;
+  final String label;
+  final String prompt;
+  final String example;
+
+  const _GuidedDictationStep({
+    required this.field,
+    required this.label,
+    required this.prompt,
+    required this.example,
   });
 }
 

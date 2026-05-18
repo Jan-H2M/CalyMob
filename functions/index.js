@@ -270,3 +270,9 @@ exports.backfillMyDiveNumbers = backfillMyDiveNumbers;
 // Paper logbook OCR/AI import.
 const { analyzeLogbookPage } = require('./src/logbookOcr/analyzeLogbookPage');
 exports.analyzeLogbookPage = analyzeLogbookPage;
+
+// Free dictation AI extraction for new logbook entries.
+const {
+  analyzeLogbookDictation,
+} = require('./src/logbookDictation/analyzeLogbookDictation');
+exports.analyzeLogbookDictation = analyzeLogbookDictation;

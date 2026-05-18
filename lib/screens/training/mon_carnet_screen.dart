@@ -53,7 +53,10 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
   @override
   void initState() {
     super.initState();
-    _year = DateTime.now().year;
+    // Show the full logbook by default. Historical dives added from the web
+    // app often get the newest N° while carrying an old dive date; a current
+    // year filter made those entries look like they had not synced to mobile.
+    _year = null;
     _maybeTriggerDiveNumberBackfill();
   }
 
@@ -82,20 +85,11 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
   }
 
   Stream<List<_LogbookEntryRow>> _stream(String clubId, String userId) {
-    Query<Map<String, dynamic>> q = FirebaseFirestore.instance
+    final q = FirebaseFirestore.instance
         .collection('clubs')
         .doc(clubId)
         .collection('student_logbook_entries')
-        .where('member_id', isEqualTo: userId)
-        .orderBy('date', descending: true);
-    if (_year != null) {
-      q = q
-          .where('date',
-              isGreaterThanOrEqualTo:
-                  Timestamp.fromDate(DateTime(_year!, 1, 1)))
-          .where('date',
-              isLessThan: Timestamp.fromDate(DateTime(_year! + 1, 1, 1)));
-    }
+        .where('member_id', isEqualTo: userId);
     return q.snapshots().map((snap) {
       final rows = snap.docs
           .map((d) => _LogbookEntryRow.fromMap(d.id, d.data()))
@@ -104,11 +98,52 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
       // from dive entries (everything else). We don't ship the count back
       // up the tree, so the badge counts above re-listen via the same
       // stream when the mode flips.
-      return rows.where((r) {
+      final filtered = rows.where((r) {
+        if (_year != null && r.date?.year != _year) return false;
         final isPool = r.source == 'piscine';
         return _mode == _CarnetMode.pool ? isPool : !isPool;
       }).toList();
+      filtered.sort(_compareRows);
+      return filtered;
     });
+  }
+
+  int _compareRows(_LogbookEntryRow a, _LogbookEntryRow b) {
+    if (_mode == _CarnetMode.dives) {
+      final aNumber = a.diveNumber;
+      final bNumber = b.diveNumber;
+      if (aNumber != null && bNumber != null && aNumber != bNumber) {
+        return bNumber.compareTo(aNumber);
+      }
+      if (aNumber == null || bNumber == null) {
+        final createdCmp = _compareNullableDateDesc(
+          a.createdAt ?? a.updatedAt,
+          b.createdAt ?? b.updatedAt,
+        );
+        if (createdCmp != 0) return createdCmp;
+        if (aNumber == null && bNumber != null) return -1;
+        if (aNumber != null && bNumber == null) return 1;
+      }
+    }
+
+    final aDate = a.date;
+    final bDate = b.date;
+    if (aDate != null && bDate != null) {
+      final dateCmp = bDate.compareTo(aDate);
+      if (dateCmp != 0) return dateCmp;
+    }
+    if (aDate != null && bDate == null) return -1;
+    if (aDate == null && bDate != null) return 1;
+    return a.locationName.compareTo(b.locationName);
+  }
+
+  int _compareNullableDateDesc(DateTime? a, DateTime? b) {
+    if (a != null && b != null) {
+      return b.compareTo(a);
+    }
+    if (a != null) return -1;
+    if (b != null) return 1;
+    return 0;
   }
 
   @override
@@ -169,14 +204,6 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
           ),
         ),
       ),
-      // Manual entry only makes sense for sea/lake/quarry dives. Pool entries
-      // are system-generated from the check-in flow at the pool entrance.
-      floatingActionButton: _mode == _CarnetMode.dives
-          ? _CarnetActions(
-              onAddDive: () => _openAddDive(context),
-            )
-          : null,
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 
@@ -225,7 +252,10 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
     if (!mounted || !context.mounted || result == null) return;
     setState(() {
       _mode = _CarnetMode.dives;
-      _year = result.date.year;
+      // Keep the full logbook visible after saving. New manual entries can
+      // briefly arrive without their server-assigned dive number; narrowing
+      // the list to a year makes that feel like the entry disappeared.
+      _year = null;
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -308,6 +338,29 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
               ),
             ),
           ),
+          if (_mode == _CarnetMode.dives)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Material(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                shadowColor: AppColors.donkerblauw.withValues(alpha: 0.25),
+                elevation: 4,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: () => _openAddDive(context),
+                  child: const SizedBox(
+                    width: 40,
+                    height: 36,
+                    child: Icon(
+                      Icons.add,
+                      color: AppColors.donkerblauw,
+                      size: 24,
+                    ),
+                  ),
+                ),
+              ),
+            ),
           IconButton(
             icon: const Icon(Icons.school_outlined, color: Colors.white),
             tooltip: 'Ma progression LIFRAS',
@@ -480,6 +533,8 @@ class _LogbookEntryRow {
   final List<String> counters;
   final String? notes;
   final List<String> buddyNames;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
   // Pool-only metadata, snapshotted on the logbook entry by
   // onPoolSessionClosed. Empty/null for dive entries.
   final String? themeSnapshot;
@@ -501,6 +556,8 @@ class _LogbookEntryRow {
     required this.counters,
     this.notes,
     this.buddyNames = const [],
+    this.createdAt,
+    this.updatedAt,
     this.themeSnapshot,
     this.groupLevel,
     this.groupNumber,
@@ -546,6 +603,8 @@ class _LogbookEntryRow {
       id: id,
       diveNumber: diveN is num ? diveN.toInt() : null,
       date: date,
+      createdAt: (map['created_at'] as Timestamp?)?.toDate(),
+      updatedAt: (map['updated_at'] as Timestamp?)?.toDate(),
       themeSnapshot: map['theme_snapshot'] as String?,
       groupLevel: map['group_level'] as String?,
       groupNumber: groupNumberRaw is num ? groupNumberRaw.toInt() : null,
@@ -910,85 +969,6 @@ class _SourceBadge extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _CarnetActions extends StatelessWidget {
-  final VoidCallback onAddDive;
-  const _CarnetActions({
-    required this.onAddDive,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: _BottomActionButton(
-        onTap: onAddDive,
-        icon: Icons.add,
-        label: 'Ajouter une plongée',
-        backgroundColor: AppColors.middenblauw,
-        foregroundColor: Colors.white,
-      ),
-    );
-  }
-}
-
-class _BottomActionButton extends StatelessWidget {
-  final VoidCallback onTap;
-  final IconData icon;
-  final String label;
-  final Color backgroundColor;
-  final Color foregroundColor;
-
-  const _BottomActionButton({
-    required this.onTap,
-    required this.icon,
-    required this.label,
-    required this.backgroundColor,
-    required this.foregroundColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: backgroundColor,
-      borderRadius: BorderRadius.circular(14),
-      elevation: 8,
-      shadowColor: AppColors.donkerblauw.withValues(alpha: 0.28),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: onTap,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 56),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, color: foregroundColor, size: 21),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    label,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: foregroundColor,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14,
-                      height: 1.05,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }

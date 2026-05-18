@@ -18,8 +18,10 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../config/app_colors.dart';
 import '../config/firebase_config.dart';
+import '../providers/auth_provider.dart';
 
 class DiveLocationSelection {
   final String? id;
@@ -58,7 +60,8 @@ class DiveLocationPickerField extends StatelessWidget {
         onTap: readOnly
             ? null
             : () async {
-                final result = await showModalBottomSheet<DiveLocationSelection>(
+                final result =
+                    await showModalBottomSheet<DiveLocationSelection>(
                   context: context,
                   isScrollControlled: true,
                   backgroundColor: Colors.transparent,
@@ -91,7 +94,8 @@ class DiveLocationPickerField extends StatelessWidget {
                               color: Colors.black87,
                             ),
                           ),
-                          if (value!.country != null && value!.country!.isNotEmpty)
+                          if (value!.country != null &&
+                              value!.country!.isNotEmpty)
                             Text(
                               '${value!.country}'
                               '${value!.isSea ? ' · mer' : ''}',
@@ -147,22 +151,62 @@ class _DiveLocationPickerSheetState extends State<_DiveLocationPickerSheet> {
   Future<void> _load() async {
     try {
       const clubId = FirebaseConfig.defaultClubId;
-      final snap = await FirebaseFirestore.instance
+      final userId = context.read<AuthProvider>().currentUser?.uid;
+      final db = FirebaseFirestore.instance;
+      final centralSnap = await db
           .collection('clubs')
           .doc(clubId)
           .collection('dive_locations')
           .orderBy('name')
           .get();
-      final rows = snap.docs.map((d) {
+      QuerySnapshot<Map<String, dynamic>>? carnetSnap;
+      if (userId != null) {
+        carnetSnap = await db
+            .collection('clubs')
+            .doc(clubId)
+            .collection('student_logbook_entries')
+            .where('member_id', isEqualTo: userId)
+            .limit(1000)
+            .get();
+      }
+      final rowsByName = <String, _LocationRow>{};
+      void addRow(_LocationRow row) {
+        final key = _normalizeLocationSearch(row.name);
+        if (key.isEmpty) return;
+        final existing = rowsByName[key];
+        rowsByName[key] = existing == null
+            ? row
+            : _LocationRow(
+                id: existing.id ?? row.id,
+                name: existing.name,
+                country: existing.country ?? row.country,
+                isSea: existing.isSea || row.isSea,
+              );
+      }
+
+      for (final d in centralSnap.docs) {
         final data = d.data();
         final waterType = (data['water_type'] as String?)?.toLowerCase();
-        return _LocationRow(
+        addRow(_LocationRow(
           id: d.id,
           name: (data['name'] as String?)?.trim() ?? '—',
           country: (data['country'] as String?)?.trim(),
           isSea: waterType == 'sea' || waterType == 'mer',
-        );
-      }).toList();
+        ));
+      }
+      for (final d in carnetSnap?.docs ?? const []) {
+        final data = d.data();
+        final name =
+            ((data['location_name'] ?? data['lieu']) as String? ?? '').trim();
+        final counters = data['counters'];
+        addRow(_LocationRow(
+          name: name,
+          country: (data['country'] as String?)?.trim(),
+          isSea: counters is Map && counters['mer'] == true,
+        ));
+      }
+      final rows = rowsByName.values.toList()
+        ..sort((a, b) => a.name.compareTo(b.name));
       if (!mounted) return;
       setState(() {
         _all = rows;
@@ -185,13 +229,8 @@ class _DiveLocationPickerSheetState extends State<_DiveLocationPickerSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final q = _query.text.trim().toLowerCase();
-    final filtered = q.isEmpty
-        ? _all
-        : _all.where((r) {
-            final hay = '${r.name} ${r.country ?? ''}'.toLowerCase();
-            return hay.contains(q);
-          }).toList();
+    final q = _normalizeLocationSearch(_query.text);
+    final filtered = _filteredLocations(q);
 
     final maxHeight = MediaQuery.of(context).size.height * 0.85;
     final viewInsets = MediaQuery.of(context).viewInsets.bottom;
@@ -282,6 +321,21 @@ class _DiveLocationPickerSheetState extends State<_DiveLocationPickerSheet> {
     );
   }
 
+  List<_LocationRow> _filteredLocations(String q) {
+    if (q.isEmpty) return _all;
+    final scored = <({_LocationRow row, int score})>[];
+    for (final row in _all) {
+      final score = _locationSearchScore(q, row);
+      if (score < 999) scored.add((row: row, score: score));
+    }
+    scored.sort((a, b) {
+      final scoreCmp = a.score.compareTo(b.score);
+      if (scoreCmp != 0) return scoreCmp;
+      return a.row.name.compareTo(b.row.name);
+    });
+    return scored.map((s) => s.row).toList();
+  }
+
   Widget _resultsList(List<_LocationRow> rows, String q) {
     final children = <Widget>[];
     for (final r in rows) {
@@ -310,13 +364,13 @@ class _DiveLocationPickerSheetState extends State<_DiveLocationPickerSheet> {
     }
 
     // Free-typed fallback when query has text but doesn't match any row.
-    if (q.isNotEmpty &&
-        !rows.any((r) => r.name.toLowerCase() == q)) {
+    if (q.isNotEmpty && !rows.any((r) => r.name.toLowerCase() == q)) {
       children.add(const Divider(height: 1));
       children.add(_tile(
         title: 'Utiliser « ${_query.text.trim()} » tel quel',
         subtitle: 'Lieu libre — pas dans la base',
-        leading: const Icon(Icons.edit_location_alt_outlined, color: Colors.grey),
+        leading:
+            const Icon(Icons.edit_location_alt_outlined, color: Colors.grey),
         onTap: () {
           Navigator.pop(
             context,
@@ -365,15 +419,42 @@ class _DiveLocationPickerSheetState extends State<_DiveLocationPickerSheet> {
 }
 
 class _LocationRow {
-  final String id;
+  final String? id;
   final String name;
   final String? country;
   final bool isSea;
 
   const _LocationRow({
-    required this.id,
+    this.id,
     required this.name,
     this.country,
     this.isSea = false,
   });
+}
+
+String _normalizeLocationSearch(String value) {
+  return value
+      .toLowerCase()
+      .replaceAll(RegExp(r'[àáâä]'), 'a')
+      .replaceAll(RegExp(r'[èéêë]'), 'e')
+      .replaceAll(RegExp(r'[ìíîï]'), 'i')
+      .replaceAll(RegExp(r'[òóôö]'), 'o')
+      .replaceAll(RegExp(r'[ùúûü]'), 'u')
+      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+      .trim()
+      .replaceAll(RegExp(r'\s+'), ' ');
+}
+
+int _locationSearchScore(String query, _LocationRow row) {
+  final name = _normalizeLocationSearch(row.name);
+  final country = _normalizeLocationSearch(row.country ?? '');
+  if (name == query || country == query) return 0;
+  final words = [
+    ...name.split(' '),
+    if (country.isNotEmpty) ...country.split(' '),
+  ].where((w) => w.isNotEmpty).toList();
+  if (words.any((w) => w == query)) return 1;
+  if (words.any((w) => w.startsWith(query))) return 2;
+  if (query.length >= 4 && name.contains(query)) return 5;
+  return 999;
 }
