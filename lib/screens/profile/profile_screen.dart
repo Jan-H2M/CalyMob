@@ -1,15 +1,4 @@
-/// Phase C polish (2026-05-13) — Mon Profil hub.
-///
-/// Compact hub per `_carnet_plan.md` §3.1.10:
-///   - Compact header with avatar + name + niveau pill.
-///   - QR card on top (tap → fullscreen scan mode via existing dialog).
-///   - "Mes accès" section (role-gated): Piscine + Finances tiles.
-///   - "Mon compte" section: Identité / Certificat médical / Paramètres
-///     / Déconnexion tiles.
-///
-/// All the editable bits (photo / phone / consents) now live inside
-/// `identite_screen.dart` so this hub stays small (~250 lines vs the
-/// previous ~870-line monolith).
+/// Compact "Mon espace" hub.
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -24,13 +13,14 @@ import '../../services/medical_certification_service.dart';
 import '../../services/profile_service.dart';
 import '../../utils/club_role_utils.dart';
 import '../../widgets/certification_status_badge.dart';
+import '../../widgets/cotisation_status_badge.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/user_qr_card.dart';
 import '../auth/login_screen.dart';
 import '../expenses/financial_screen.dart';
 import '../piscine/availability_screen.dart';
-import 'identite_screen.dart';
 import 'medical_certification_screen.dart';
+import 'mes_informations_screen.dart';
 import 'settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -114,8 +104,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title:
-            const Text('Mon Profil', style: TextStyle(color: Colors.white)),
+        title: const Text('Mon Profil', style: TextStyle(color: Colors.white)),
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
@@ -144,7 +133,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               // Finances stays universally available — matches the old
               // landing behaviour. If a stricter gate becomes needed we'll
               // add it here.
-              final showFinances = true;
+              const showFinances = true;
               final showMesAcces = showPiscine || showFinances;
 
               return SingleChildScrollView(
@@ -157,7 +146,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     UserQRCard(profile: profile),
                     if (showMesAcces) ...[
                       const SizedBox(height: 24),
-                      _SectionHeader(label: 'Mes accès'),
+                      const _SectionHeader(label: 'Mes accès'),
                       const SizedBox(height: 8),
                       _whiteCard(
                         child: Column(
@@ -180,8 +169,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   );
                                 },
                               ),
-                            if (showPiscine && showFinances)
-                              _divider(),
+                            if (showPiscine && showFinances) _divider(),
                             if (showFinances)
                               _TileRow(
                                 icon: Icons.account_balance_wallet_outlined,
@@ -199,29 +187,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ],
                     const SizedBox(height: 24),
-                    _SectionHeader(label: 'Mon compte'),
+                    const _SectionHeader(label: 'Mon statut au club'),
                     const SizedBox(height: 8),
                     _whiteCard(
                       child: Column(
                         children: [
                           _TileRow(
-                            icon: Icons.person_outline,
-                            iconBg: Colors.green.shade50,
-                            iconColor: Colors.green.shade700,
-                            title: 'Identité',
-                            subtitle: 'Photo, téléphone, niveau LIFRAS',
-                            trailingPreview: _identityPreview(profile),
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const IdentiteScreen(),
-                              ),
+                            icon: Icons.card_membership_outlined,
+                            iconBg: Colors.teal.shade50,
+                            iconColor: Colors.teal.shade700,
+                            title: 'Ma cotisation',
+                            subtitleWidget: CotisationStatusBadge(
+                              profile: profile,
+                              compact: true,
                             ),
                           ),
                           _divider(),
                           StreamBuilder<MedicalCertification?>(
-                            stream: _certService
-                                .watchCurrentCertification(_clubId, userId),
+                            stream: _certService.watchCurrentCertification(
+                                _clubId, userId),
                             builder: (context, certSnap) {
                               final cert = certSnap.data;
                               return _TileRow(
@@ -244,14 +228,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               );
                             },
                           ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    const _SectionHeader(label: 'Mon compte'),
+                    const SizedBox(height: 8),
+                    _whiteCard(
+                      child: Column(
+                        children: [
+                          _TileRow(
+                            icon: Icons.person_outline,
+                            iconBg: Colors.green.shade50,
+                            iconColor: Colors.green.shade700,
+                            title: 'Mes informations',
+                            subtitle: 'Identité, banque, contacts, RGPD',
+                            trailingPreview: _identityPreview(profile),
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const MesInformationsScreen(),
+                              ),
+                            ),
+                          ),
                           _divider(),
                           _TileRow(
                             icon: Icons.settings_outlined,
                             iconBg: Colors.blue.shade50,
                             iconColor: AppColors.middenblauw,
                             title: 'Paramètres',
-                            subtitle:
-                                'Notifications, agenda, vie privée',
+                            subtitle: 'Notifications, agenda, vie privée',
                             onTap: () => Navigator.push(
                               context,
                               MaterialPageRoute(
@@ -466,12 +472,12 @@ class _TileRow extends StatelessWidget {
   final String? subtitle;
   final Widget? subtitleWidget;
   final String? trailingPreview;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   const _TileRow({
     required this.icon,
     required this.title,
-    required this.onTap,
+    this.onTap,
     this.iconBg,
     this.iconColor,
     this.titleColor,
@@ -495,7 +501,8 @@ class _TileRow extends StatelessWidget {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: iconBg ?? AppColors.middenblauw.withValues(alpha: 0.10),
+                  color:
+                      iconBg ?? AppColors.middenblauw.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
@@ -543,11 +550,13 @@ class _TileRow extends StatelessWidget {
                   ),
                 ),
               ],
-              const SizedBox(width: 6),
-              Icon(
-                Icons.chevron_right,
-                color: Colors.grey.shade400,
-              ),
+              if (onTap != null) ...[
+                const SizedBox(width: 6),
+                Icon(
+                  Icons.chevron_right,
+                  color: Colors.grey.shade400,
+                ),
+              ],
             ],
           ),
         ),

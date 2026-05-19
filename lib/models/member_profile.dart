@@ -31,6 +31,18 @@ class MemberProfile {
   final bool sharePhone; // Partager le téléphone dans "Who's Who"
   final String? phoneNumber; // Numéro de téléphone
 
+  // Informations personnelles complémentaires
+  final DateTime? birthDate;
+  final String? addressStreet;
+  final String? addressPostcode;
+  final String? addressCity;
+  final String? addressCountry;
+  final String? legacyAddress;
+
+  // Legacy banking fields kept for display while sensitive_info/banking rolls out
+  final String? iban;
+  final List<String> ibans;
+
   // Notifications
   final bool notificationsEnabled; // Notifications push activées
   final String? fcmToken; // Token FCM pour les notifications
@@ -62,8 +74,16 @@ class MemberProfile {
     this.consentInternalPhotoDate,
     this.consentExternalPhotoDate,
     this.shareEmail = true, // Par défaut, partager l'email
-    this.sharePhone = false, // Par défaut, ne pas partager le téléphone
+    this.sharePhone = true, // Par défaut, partager le téléphone
     this.phoneNumber,
+    this.birthDate,
+    this.addressStreet,
+    this.addressPostcode,
+    this.addressCity,
+    this.addressCountry,
+    this.legacyAddress,
+    this.iban,
+    this.ibans = const [],
     this.notificationsEnabled = true, // Par défaut, notifications activées
     this.fcmToken,
     this.memberStatus,
@@ -97,8 +117,17 @@ class MemberProfile {
       consentExternalPhotoDate:
           (data['consent_external_photo_date'] as Timestamp?)?.toDate(),
       shareEmail: data['share_email'] ?? true,
-      sharePhone: data['share_phone'] ?? false,
+      sharePhone: data['share_phone'] ?? true,
       phoneNumber: data['phone_number'],
+      birthDate: (data['birth_date'] as Timestamp?)?.toDate() ??
+          (data['date_naissance'] as Timestamp?)?.toDate(),
+      addressStreet: data['address_street'],
+      addressPostcode: data['address_postcode'] ?? data['code_postal'],
+      addressCity: data['address_city'] ?? data['localite'],
+      addressCountry: data['address_country'] ?? data['pays'],
+      legacyAddress: data['adresse'] ?? data['address'],
+      iban: data['iban'],
+      ibans: (data['ibans'] as List<dynamic>?)?.cast<String>() ?? [],
       notificationsEnabled: data['notifications_enabled'] ?? true,
       fcmToken: data['fcm_token'],
       memberStatus: resolveMemberStatus(data),
@@ -134,6 +163,11 @@ class MemberProfile {
       'share_email': shareEmail,
       'share_phone': sharePhone,
       'phone_number': phoneNumber,
+      'birth_date': birthDate != null ? Timestamp.fromDate(birthDate!) : null,
+      'address_street': addressStreet,
+      'address_postcode': addressPostcode,
+      'address_city': addressCity,
+      'address_country': addressCountry,
       'notifications_enabled': notificationsEnabled,
       'fcm_token': fcmToken,
       'updated_at': FieldValue.serverTimestamp(),
@@ -158,6 +192,14 @@ class MemberProfile {
     bool? shareEmail,
     bool? sharePhone,
     String? phoneNumber,
+    DateTime? birthDate,
+    String? addressStreet,
+    String? addressPostcode,
+    String? addressCity,
+    String? addressCountry,
+    String? legacyAddress,
+    String? iban,
+    List<String>? ibans,
     bool? notificationsEnabled,
     String? fcmToken,
   }) {
@@ -181,6 +223,14 @@ class MemberProfile {
       shareEmail: shareEmail ?? this.shareEmail,
       sharePhone: sharePhone ?? this.sharePhone,
       phoneNumber: phoneNumber ?? this.phoneNumber,
+      birthDate: birthDate ?? this.birthDate,
+      addressStreet: addressStreet ?? this.addressStreet,
+      addressPostcode: addressPostcode ?? this.addressPostcode,
+      addressCity: addressCity ?? this.addressCity,
+      addressCountry: addressCountry ?? this.addressCountry,
+      legacyAddress: legacyAddress ?? this.legacyAddress,
+      iban: iban ?? this.iban,
+      ibans: ibans ?? this.ibans,
       notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
       fcmToken: fcmToken ?? this.fcmToken,
       createdAt: createdAt,
@@ -190,6 +240,25 @@ class MemberProfile {
 
   /// Nom complet
   String get fullName => '$prenom $nom'.trim();
+
+  String? get primaryIban {
+    if (iban != null && iban!.trim().isNotEmpty) return iban;
+    if (ibans.isNotEmpty && ibans.first.trim().isNotEmpty) return ibans.first;
+    return null;
+  }
+
+  String? get formattedAddress {
+    final locality = [addressPostcode, addressCity]
+        .whereType<String>()
+        .where((part) => part.trim().isNotEmpty)
+        .join(' ');
+    final parts = [addressStreet, locality, addressCountry]
+        .whereType<String>()
+        .where((part) => part.trim().isNotEmpty)
+        .toList();
+    if (parts.isNotEmpty) return parts.join(', ');
+    return legacyAddress;
+  }
 
   /// Vérifie si le profil a une photo
   bool get hasPhoto => photoUrl != null && photoUrl!.isNotEmpty;

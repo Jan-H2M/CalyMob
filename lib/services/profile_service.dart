@@ -247,6 +247,67 @@ class ProfileService {
     }
   }
 
+  /// Mettre à jour la date de naissance
+  Future<void> updateBirthDate(
+    String clubId,
+    String userId,
+    DateTime? birthDate,
+  ) async {
+    try {
+      await _firestore.collection('clubs/$clubId/members').doc(userId).update({
+        'birth_date': birthDate != null ? Timestamp.fromDate(birthDate) : null,
+        // Legacy CalyCompta field kept in sync while both apps coexist.
+        'date_naissance':
+            birthDate != null ? Timestamp.fromDate(birthDate) : null,
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      debugPrint('✅ Date de naissance mise à jour');
+    } catch (e) {
+      debugPrint('❌ Erreur mise à jour date de naissance: $e');
+      rethrow;
+    }
+  }
+
+  /// Mettre à jour l'adresse
+  Future<void> updateAddress(
+    String clubId,
+    String userId, {
+    String? street,
+    String? postcode,
+    String? city,
+    String? country,
+  }) async {
+    try {
+      final locality = [postcode, city]
+          .whereType<String>()
+          .where((part) => part.trim().isNotEmpty)
+          .join(' ');
+      final compactAddress = [street, locality, country]
+          .whereType<String>()
+          .where((part) => part.trim().isNotEmpty)
+          .join(', ');
+
+      await _firestore.collection('clubs/$clubId/members').doc(userId).update({
+        'address_street': _emptyToNull(street),
+        'address_postcode': _emptyToNull(postcode),
+        'address_city': _emptyToNull(city),
+        'address_country': _emptyToNull(country),
+        // Legacy CalyCompta fields kept readable for the back-office.
+        'adresse': compactAddress.isEmpty ? null : compactAddress,
+        'code_postal': _emptyToNull(postcode),
+        'localite': _emptyToNull(city),
+        'pays': _emptyToNull(country),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      debugPrint('✅ Adresse mise à jour');
+    } catch (e) {
+      debugPrint('❌ Erreur mise à jour adresse: $e');
+      rethrow;
+    }
+  }
+
   /// Mettre à jour les préférences de notifications
   Future<void> updateNotificationSettings(
     String clubId,
@@ -391,5 +452,10 @@ class ProfileService {
       debugPrint('❌ Erreur suppression données utilisateur: $e');
       rethrow;
     }
+  }
+
+  String? _emptyToNull(String? value) {
+    final trimmed = value?.trim();
+    return trimmed == null || trimmed.isEmpty ? null : trimmed;
   }
 }

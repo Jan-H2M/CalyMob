@@ -22,11 +22,14 @@ class MedicalCertificationScreen extends StatefulWidget {
   });
 
   @override
-  State<MedicalCertificationScreen> createState() => _MedicalCertificationScreenState();
+  State<MedicalCertificationScreen> createState() =>
+      _MedicalCertificationScreenState();
 }
 
-class _MedicalCertificationScreenState extends State<MedicalCertificationScreen> {
-  final MedicalCertificationService _certService = MedicalCertificationService();
+class _MedicalCertificationScreenState
+    extends State<MedicalCertificationScreen> {
+  final MedicalCertificationService _certService =
+      MedicalCertificationService();
   final String _clubId = FirebaseConfig.defaultClubId;
 
   // Maximum file size: 10 MB
@@ -45,7 +48,8 @@ class _MedicalCertificationScreenState extends State<MedicalCertificationScreen>
   Future<void> _loadCertification() async {
     setState(() => _isLoading = true);
     try {
-      final cert = await _certService.getCurrentCertification(_clubId, widget.userId);
+      final cert =
+          await _certService.getCurrentCertification(_clubId, widget.userId);
       setState(() {
         _certification = cert;
         _isLoading = false;
@@ -177,33 +181,34 @@ class _MedicalCertificationScreenState extends State<MedicalCertificationScreen>
 
   _BannerStyle _resolveBannerStyle(MedicalCertification? cert) {
     if (cert == null) {
-      return _BannerStyle(
+      return const _BannerStyle(
         heading: 'AUCUN CERTIFICAT',
         subheading:
             'Télécharge ton certificat pour pouvoir t\'inscrire aux sorties.',
         icon: Icons.error_outline,
-        fg: const Color(0xFFB91C1C), // red-700
-        bg: const Color(0xFFFEE2E2), // red-100
-        borderColor: const Color(0xFFFCA5A5),
+        fg: Color(0xFFB91C1C), // red-700
+        bg: Color(0xFFFEE2E2), // red-100
+        borderColor: Color(0xFFFCA5A5),
       );
     }
     if (cert.status == CertificateStatus.pending) {
-      return _BannerStyle(
+      return const _BannerStyle(
         heading: 'EN ATTENTE',
         subheading:
             'Ton certificat est en cours d\'examen par l\'administration.',
         icon: Icons.hourglass_top,
-        fg: const Color(0xFFB45309), // amber-700
-        bg: const Color(0xFFFEF3C7), // amber-100
-        borderColor: const Color(0xFFFCD34D),
+        fg: Color(0xFFB45309), // amber-700
+        bg: Color(0xFFFEF3C7), // amber-100
+        borderColor: Color(0xFFFCD34D),
       );
     }
     if (cert.status == CertificateStatus.rejected) {
       return _BannerStyle(
         heading: 'REFUSÉ',
-        subheading: cert.rejectionReason != null && cert.rejectionReason!.isNotEmpty
-            ? 'Motif : ${cert.rejectionReason!}'
-            : 'Merci de téléverser un nouveau certificat.',
+        subheading:
+            cert.rejectionReason != null && cert.rejectionReason!.isNotEmpty
+                ? 'Motif : ${cert.rejectionReason!}'
+                : 'Merci de téléverser un nouveau certificat.',
         icon: Icons.cancel_outlined,
         fg: const Color(0xFFB91C1C),
         bg: const Color(0xFFFEE2E2),
@@ -303,7 +308,6 @@ class _MedicalCertificationScreenState extends State<MedicalCertificationScreen>
               ],
             ),
             const SizedBox(height: 16),
-
             if (_isUploading)
               const Center(
                 child: Padding(
@@ -332,7 +336,7 @@ class _MedicalCertificationScreenState extends State<MedicalCertificationScreen>
               _buildUploadOption(
                 icon: Icons.folder_open,
                 title: 'Importer un fichier',
-                subtitle: 'Image ou PDF depuis vos fichiers',
+                subtitle: 'Photo, image ou PDF — max 10 Mo',
                 color: AppColors.middenblauw,
                 onTap: _pickFile,
               ),
@@ -409,7 +413,8 @@ class _MedicalCertificationScreenState extends State<MedicalCertificationScreen>
       ),
       child: Row(
         children: [
-          Icon(Icons.info_outline, color: Colors.white.withOpacity(0.9), size: 20),
+          Icon(Icons.info_outline,
+              color: Colors.white.withOpacity(0.9), size: 20),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -430,7 +435,8 @@ class _MedicalCertificationScreenState extends State<MedicalCertificationScreen>
   Future<File?> _compressImage(File file) async {
     try {
       final dir = await getTemporaryDirectory();
-      final targetPath = '${dir.path}/compressed_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final targetPath =
+          '${dir.path}/compressed_${DateTime.now().millisecondsSinceEpoch}.jpg';
 
       final result = await FlutterImageCompress.compressAndGetFile(
         file.absolute.path,
@@ -455,7 +461,8 @@ class _MedicalCertificationScreenState extends State<MedicalCertificationScreen>
       // cunning_document_scanner uses native iOS VisionKit / Android ML Kit
       debugPrint('🔍 Scanner: Starting document scan...');
 
-      final List<String>? scannedPaths = await CunningDocumentScanner.getPictures(
+      final List<String>? scannedPaths =
+          await CunningDocumentScanner.getPictures(
         isGalleryImportAllowed: true,
       );
 
@@ -472,17 +479,20 @@ class _MedicalCertificationScreenState extends State<MedicalCertificationScreen>
         if (await originalFile.exists()) {
           final compressedFile = await _compressImage(originalFile);
           if (compressedFile != null) {
-            debugPrint('🔍 Scanner: Uploading compressed file: ${compressedFile.path}');
+            debugPrint(
+                '🔍 Scanner: Uploading compressed file: ${compressedFile.path}');
             // Use current year for the certificate name (matching CalyCompta convention)
             final year = DateTime.now().year;
-            await _uploadFile(compressedFile, 'image', 'Certificat médical $year');
+            await _uploadFile(
+                compressedFile, 'image', 'Certificat médical $year');
           }
         } else {
           debugPrint('🔍 Scanner: File does not exist at path: $path');
           _showError('Erreur: fichier scanné introuvable');
         }
       } else {
-        debugPrint('🔍 Scanner: No documents scanned (user cancelled or empty result)');
+        debugPrint(
+            '🔍 Scanner: No documents scanned (user cancelled or empty result)');
       }
     } catch (e, stackTrace) {
       debugPrint('🔍 Scanner: Error: $e');
@@ -501,17 +511,26 @@ class _MedicalCertificationScreenState extends State<MedicalCertificationScreen>
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+        allowedExtensions: [
+          'jpg',
+          'jpeg',
+          'png',
+          'heic',
+          'heif',
+          'webp',
+          'pdf'
+        ],
       );
 
       if (result != null && result.files.single.path != null) {
         final file = File(result.files.single.path!);
         final extension = result.files.single.extension?.toLowerCase();
         final isPdf = extension == 'pdf';
+        final uploadFile = isPdf ? file : (await _compressImage(file) ?? file);
         final year = DateTime.now().year;
 
         await _uploadFile(
-          file,
+          uploadFile,
           isPdf ? 'pdf' : 'image',
           'Certificat médical $year',
         );

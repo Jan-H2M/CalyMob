@@ -475,6 +475,9 @@ service cloud.firestore {
             'consent_internal_photo', 'consent_internal_photo_date',
             'consent_external_photo', 'consent_external_photo_date',
             'share_email', 'share_phone', 'phone_number',
+            'birth_date', 'date_naissance',
+            'address_street', 'address_postcode', 'address_city', 'address_country',
+            'adresse', 'code_postal', 'localite', 'pays',
             // Push notifications (CalyMob)
             'fcm_token', 'fcm_tokens', 'fcm_token_updated_at', 'notifications_enabled',
             // Notification preferences (CalyMob) - granular per-type toggle
@@ -531,6 +534,28 @@ service cloud.firestore {
 
           // Delete: Admin only - for removing old/invalid certificates
           allow delete: if isAdmin(clubId);
+        }
+
+        // Sensitive self-service profile data (banking, emergency, medical).
+        match /sensitive_info/{infoId} {
+          allow read: if isAuthenticated() && (
+            request.auth.uid == memberId ||
+            isAdmin(clubId) ||
+            (
+              infoId == 'emergency' &&
+              resource.data.gdpr_share_emergency_with_staff == true &&
+              (hasEncadrantRole(clubId) || hasCARole(clubId))
+            ) ||
+            (
+              infoId == 'medical' &&
+              resource.data.gdpr_share_medical_with_staff == true &&
+              (hasEncadrantRole(clubId) || hasCARole(clubId))
+            )
+          );
+
+          allow create, update, delete: if isAuthenticated()
+            && request.auth.uid == memberId
+            && infoId in ['banking', 'emergency', 'medical'];
         }
       }
 
