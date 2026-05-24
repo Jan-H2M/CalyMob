@@ -24,6 +24,7 @@ import '../exercises/member_exercises_screen.dart';
 import '../../providers/member_provider.dart';
 import 'historical_claims_screen.dart';
 import 'logbook_add_choice_screen.dart';
+import 'logbook_dive_confirmation_screen.dart';
 import 'logbook_entry_detail_screen.dart';
 import 'logbook_entry_screen.dart';
 import 'stats_screen.dart';
@@ -361,6 +362,7 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
                 ),
               ),
             ),
+          _pendingConfirmationsButton(context),
           IconButton(
             icon: const Icon(Icons.school_outlined, color: Colors.white),
             tooltip: 'Ma progression LIFRAS',
@@ -404,6 +406,77 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _pendingConfirmationsButton(BuildContext context) {
+    final userId = context.watch<AuthProvider>().currentUser?.uid;
+    if (userId == null) {
+      return IconButton(
+        icon: const Icon(Icons.task_alt_outlined, color: Colors.white),
+        tooltip: 'Plongées à confirmer',
+        onPressed: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const LogbookDiveConfirmationsInboxScreen(),
+          ),
+        ),
+      );
+    }
+
+    const clubId = FirebaseConfig.defaultClubId;
+    final stream = FirebaseFirestore.instance
+        .collection('clubs')
+        .doc(clubId)
+        .collection('logbook_dive_confirmations')
+        .where('target_member_id', isEqualTo: userId)
+        .where('status', isEqualTo: 'pending')
+        .snapshots();
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: stream,
+      builder: (context, snap) {
+        final count = snap.data?.docs.length ?? 0;
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.task_alt_outlined, color: Colors.white),
+              tooltip: 'Plongées à confirmer',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const LogbookDiveConfirmationsInboxScreen(),
+                ),
+              ),
+            ),
+            if (count > 0)
+              Positioned(
+                right: 5,
+                top: 5,
+                child: Container(
+                  constraints:
+                      const BoxConstraints(minWidth: 17, minHeight: 17),
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade600,
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(color: Colors.white, width: 1),
+                  ),
+                  child: Text(
+                    count > 9 ? '9+' : '$count',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 

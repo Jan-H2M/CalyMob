@@ -11,6 +11,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../services/logbook_ocr_import_service.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import 'logbook_entry_screen.dart';
 
 class LogbookOcrReviewScreen extends StatefulWidget {
   final LogbookOcrImportDraft draft;
@@ -76,7 +77,7 @@ class _LogbookOcrReviewScreenState extends State<LogbookOcrReviewScreen> {
 
   Future<void> _loadSuggestions() async {
     final db = FirebaseFirestore.instance;
-    final clubId = FirebaseConfig.defaultClubId;
+    const clubId = FirebaseConfig.defaultClubId;
     final auth = context.read<AuthProvider>();
     final userId = auth.currentUser?.uid;
     try {
@@ -88,7 +89,8 @@ class _LogbookOcrReviewScreenState extends State<LogbookOcrReviewScreen> {
       final buddyFreq = <String, int>{};
       if (userId != null) {
         final ownEntries = await db
-            .collection('clubs').doc(clubId)
+            .collection('clubs')
+            .doc(clubId)
             .collection('student_logbook_entries')
             .where('member_id', isEqualTo: userId)
             .get();
@@ -102,8 +104,11 @@ class _LogbookOcrReviewScreenState extends State<LogbookOcrReviewScreen> {
           if (binomes != null) {
             for (final b in binomes) {
               if (b is Map) {
-                final name = (b['displayName'] ?? b['name'] ?? '').toString().trim();
-                if (name.isNotEmpty) buddyFreq[name] = (buddyFreq[name] ?? 0) + 1;
+                final name =
+                    (b['displayName'] ?? b['name'] ?? '').toString().trim();
+                if (name.isNotEmpty) {
+                  buddyFreq[name] = (buddyFreq[name] ?? 0) + 1;
+                }
               }
             }
           } else {
@@ -111,11 +116,15 @@ class _LogbookOcrReviewScreenState extends State<LogbookOcrReviewScreen> {
             if (buddies != null) {
               for (final b in buddies) {
                 String name = '';
-                if (b is String) name = b.trim();
-                else if (b is Map) {
-                  name = (b['name'] ?? b['displayName'] ?? '').toString().trim();
+                if (b is String) {
+                  name = b.trim();
+                } else if (b is Map) {
+                  name =
+                      (b['name'] ?? b['displayName'] ?? '').toString().trim();
                 }
-                if (name.isNotEmpty) buddyFreq[name] = (buddyFreq[name] ?? 0) + 1;
+                if (name.isNotEmpty) {
+                  buddyFreq[name] = (buddyFreq[name] ?? 0) + 1;
+                }
               }
             }
           }
@@ -124,8 +133,11 @@ class _LogbookOcrReviewScreenState extends State<LogbookOcrReviewScreen> {
 
       // 2. Club catalog — dive_locations + all members (for completeness).
       final locSnap = await db
-          .collection('clubs').doc(clubId)
-          .collection('dive_locations').limit(300).get();
+          .collection('clubs')
+          .doc(clubId)
+          .collection('dive_locations')
+          .limit(300)
+          .get();
       final clubLocs = <String>{};
       for (final d in locSnap.docs) {
         final v = d.data();
@@ -133,8 +145,11 @@ class _LogbookOcrReviewScreenState extends State<LogbookOcrReviewScreen> {
         if (n.isNotEmpty) clubLocs.add(n);
       }
       final memSnap = await db
-          .collection('clubs').doc(clubId)
-          .collection('members').limit(500).get();
+          .collection('clubs')
+          .doc(clubId)
+          .collection('members')
+          .limit(500)
+          .get();
       final clubMembers = <String>{};
       for (final d in memSnap.docs) {
         final v = d.data();
@@ -259,7 +274,12 @@ class _LogbookOcrReviewScreenState extends State<LogbookOcrReviewScreen> {
                     }
                     return _ReviewCard(
                       row: _rows[i],
+                      importJobId: widget.draft.importJobId,
                       onChanged: (next) => _replaceRow(i, next),
+                      onImportedViaManualForm: () {
+                        if (!mounted) return;
+                        setState(() => _rows.removeAt(i));
+                      },
                       locationSuggestions: _locationSuggestions,
                       buddySuggestions: _buddySuggestions,
                       personalLocations: _personalLocations,
@@ -430,11 +450,14 @@ class _LogbookOcrReviewScreenState extends State<LogbookOcrReviewScreen> {
 
 class _ReviewCard extends StatefulWidget {
   final LogbookOcrSuggestedRow row;
+  final String importJobId;
   final ValueChanged<LogbookOcrSuggestedRow> onChanged;
+  final VoidCallback onImportedViaManualForm;
   final List<String> locationSuggestions;
   final List<String> buddySuggestions;
   final Set<String> personalLocations;
   final Set<String> personalBuddies;
+
   /// Locations from other rows in this same OCR batch — likely the same
   /// trip / region. Surfaced at the top of the typeahead with a 🏖️ icon
   /// even when the query is still empty, so a Krk dive feels at home.
@@ -442,7 +465,9 @@ class _ReviewCard extends StatefulWidget {
 
   const _ReviewCard({
     required this.row,
+    required this.importJobId,
     required this.onChanged,
+    required this.onImportedViaManualForm,
     this.locationSuggestions = const [],
     this.buddySuggestions = const [],
     this.personalLocations = const {},
@@ -619,6 +644,75 @@ class _ReviewCardState extends State<_ReviewCard> {
     );
   }
 
+  Future<void> _correctInManualForm() async {
+    final row = widget.row;
+    final parsedDate = _parseDate(_date.text);
+    final buddies = _buddies.text
+        .split(RegExp(r'[;,]'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    final binomesSnapshot = buddies
+        .where((name) => name.trim().isNotEmpty)
+        .map((name) => {
+              'type': 'external',
+              'display_name': name.trim(),
+              'displayName': name.trim(),
+            })
+        .toList();
+    final prefill = <String, dynamic>{
+      if (parsedDate != null) 'date': Timestamp.fromDate(parsedDate),
+      if (row.diveNumber.value != null) 'dive_number': row.diveNumber.value,
+      'location_name': _location.text.trim(),
+      if (row.country.value != null) 'country': row.country.value,
+      if (double.tryParse(_depth.text.replaceAll(',', '.')) != null)
+        'depth_max_meters': double.tryParse(_depth.text.replaceAll(',', '.')),
+      if (int.tryParse(_duration.text) != null)
+        'duration_minutes': int.tryParse(_duration.text),
+      'counters': {
+        if (row.exo.value == true) 'exo': true,
+        if (row.nitrox.value == true) 'nitrox': true,
+        if (row.deco.value == true) 'deco': true,
+        if (row.dp.value == true) 'dp': true,
+        if (row.sf.value == true) 'sf': true,
+        if (row.night.value == true) 'nuit': true,
+        if (row.sea.value == true) 'mer': true,
+      },
+      if (_notes.text.trim().isNotEmpty) 'notes': _notes.text.trim(),
+      if (row.entryTime.value != null) 'entry_time_str': row.entryTime.value,
+      if (row.exitTime.value != null) 'exit_time_str': row.exitTime.value,
+      if (row.combi.value != null) 'combi': row.combi.value,
+      if (row.tank.value != null) 'tank': row.tank.value,
+      if (double.tryParse(_lestage.text.replaceAll(',', '.')) != null)
+        'lestage_kg': double.tryParse(_lestage.text.replaceAll(',', '.')),
+      if (binomesSnapshot.isNotEmpty) 'binomes': binomesSnapshot,
+      if (binomesSnapshot.isNotEmpty)
+        'buddies': [
+          for (final b in binomesSnapshot) {'name': b['display_name']},
+        ],
+    };
+    final result = await Navigator.push<LogbookEntrySaveResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LogbookEntryScreen.manual(
+          enableDictation: false,
+          prefillData: prefill,
+          sourceOverride: 'ocr_import',
+          createExtras: {
+            'ocr_import_id': widget.importJobId,
+            'ocr_row_id': row.rowId,
+            'ocr_confidence': row.confidence,
+            if (row.warnings.isNotEmpty) 'ocr_warnings': row.warnings,
+            'ocr_reviewed_at': FieldValue.serverTimestamp(),
+          },
+        ),
+      ),
+    );
+    if (result != null && mounted) {
+      widget.onImportedViaManualForm();
+    }
+  }
+
   DateTime? _parseDate(String value) {
     final parts = value.trim().split('/');
     if (parts.length != 3) return null;
@@ -718,13 +812,22 @@ class _ReviewCardState extends State<_ReviewCard> {
           _equipmentRow(),
           _field('Notes', _notes, maxLines: 2),
           const SizedBox(height: 4),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: _emit,
-              icon: const Icon(Icons.check, size: 17),
-              label: const Text('Appliquer les corrections'),
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _correctInManualForm,
+                  icon: const Icon(Icons.edit_note, size: 17),
+                  label: const Text('Corriger comme saisie manuelle'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: _emit,
+                icon: const Icon(Icons.check, size: 17),
+                label: const Text('Appliquer'),
+              ),
+            ],
           ),
         ],
       ),
@@ -944,7 +1047,8 @@ class _ReviewCardState extends State<_ReviewCard> {
     final label = (m['label'] as String?)?.trim();
     final v = m['volume_l'];
     final p = m['pressure_bar'];
-    final base = (v is num && p is num) ? '${v.toInt()} L · ${p.toInt()} bar' : '';
+    final base =
+        (v is num && p is num) ? '${v.toInt()} L · ${p.toInt()} bar' : '';
     if (label != null && label.isNotEmpty) {
       return base.isEmpty ? label : '$label · $base';
     }
@@ -957,8 +1061,11 @@ class _ReviewCardState extends State<_ReviewCard> {
     if (userId == null) return const [];
     try {
       final snap = await FirebaseFirestore.instance
-          .collection('clubs').doc(FirebaseConfig.defaultClubId)
-          .collection('members').doc(userId).get();
+          .collection('clubs')
+          .doc(FirebaseConfig.defaultClubId)
+          .collection('members')
+          .doc(userId)
+          .get();
       final data = snap.data() ?? {};
       final raw = data[field] as List? ?? const [];
       return raw
@@ -980,7 +1087,8 @@ class _ReviewCardState extends State<_ReviewCard> {
         title: 'Choisir une combinaison',
         items: items,
         labelBuilder: _combiLabel,
-        emptyText: 'Ajoute des combinaisons dans Mon Profil → Mes combinaisons.',
+        emptyText:
+            'Ajoute des combinaisons dans Mon Profil → Mes combinaisons.',
       ),
     );
     if (picked != null) _setCombi(picked);
@@ -1058,8 +1166,7 @@ class _ReviewCardState extends State<_ReviewCard> {
           // With a query: prepend matching batch picks, then full catalog
           // matches that aren't already in batch.
           final lcBatch = batch.map((s) => s.toLowerCase()).toSet();
-          final batchMatches =
-              batch.where((s) => s.toLowerCase().contains(q));
+          final batchMatches = batch.where((s) => s.toLowerCase().contains(q));
           final catalogMatches = suggestions.where((s) =>
               s.toLowerCase().contains(q) &&
               !lcBatch.contains(s.toLowerCase()));
@@ -1085,8 +1192,7 @@ class _ReviewCardState extends State<_ReviewCard> {
               isDense: true,
               suffixIcon: suggestions.isEmpty
                   ? null
-                  : Icon(Icons.search,
-                      size: 18, color: Colors.grey.shade500),
+                  : Icon(Icons.search, size: 18, color: Colors.grey.shade500),
             ),
           );
         },
@@ -1097,7 +1203,8 @@ class _ReviewCardState extends State<_ReviewCard> {
               elevation: 4,
               borderRadius: BorderRadius.circular(10),
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 240, maxWidth: 360),
+                constraints:
+                    const BoxConstraints(maxHeight: 240, maxWidth: 360),
                 child: ListView.builder(
                   padding: EdgeInsets.zero,
                   shrinkWrap: true,
@@ -1105,19 +1212,16 @@ class _ReviewCardState extends State<_ReviewCard> {
                   itemBuilder: (_, i) {
                     final opt = options.elementAt(i);
                     final isPersonal = widget.personalLocations.contains(opt);
-                    final isBatch =
-                        widget.batchLocations.any((b) => b == opt);
+                    final isBatch = widget.batchLocations.any((b) => b == opt);
                     return ListTile(
                       dense: true,
                       leading: isBatch
-                          ? const Text('🏖️',
-                              style: TextStyle(fontSize: 14))
+                          ? const Text('🏖️', style: TextStyle(fontSize: 14))
                           : isPersonal
                               ? Icon(Icons.star,
                                   size: 14, color: Colors.amber.shade700)
                               : null,
-                      horizontalTitleGap:
-                          isBatch || isPersonal ? 4 : null,
+                      horizontalTitleGap: isBatch || isPersonal ? 4 : null,
                       title: Text(opt, style: const TextStyle(fontSize: 13.5)),
                       subtitle: isBatch
                           ? Text(
@@ -1156,9 +1260,7 @@ class _ReviewCardState extends State<_ReviewCard> {
         optionsBuilder: (textEditingValue) {
           final text = textEditingValue.text;
           final lastSep = text.lastIndexOf(RegExp(r'[;,]'));
-          final fragment = (lastSep == -1
-                  ? text
-                  : text.substring(lastSep + 1))
+          final fragment = (lastSep == -1 ? text : text.substring(lastSep + 1))
               .trim()
               .toLowerCase();
           if (fragment.isEmpty) return const Iterable<String>.empty();
@@ -1169,7 +1271,8 @@ class _ReviewCardState extends State<_ReviewCard> {
         onSelected: (selection) {
           final text = _buddies.text;
           final lastSep = text.lastIndexOf(RegExp(r'[;,]'));
-          final prefix = lastSep == -1 ? '' : '${text.substring(0, lastSep + 1)} ';
+          final prefix =
+              lastSep == -1 ? '' : '${text.substring(0, lastSep + 1)} ';
           final next = '$prefix$selection; ';
           _buddies.value = TextEditingValue(
             text: next,
@@ -1209,7 +1312,8 @@ class _ReviewCardState extends State<_ReviewCard> {
               elevation: 4,
               borderRadius: BorderRadius.circular(10),
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 240, maxWidth: 360),
+                constraints:
+                    const BoxConstraints(maxHeight: 240, maxWidth: 360),
                 child: ListView.builder(
                   padding: EdgeInsets.zero,
                   shrinkWrap: true,

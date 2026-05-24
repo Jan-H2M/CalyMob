@@ -934,6 +934,19 @@ service cloud.firestore {
           && resource.data.member_id == request.auth.uid;
       }
 
+      // Buddy confirmations for Mon Carnet. Creation and status mutation are
+      // handled by Cloud Functions; members can read requests concerning them.
+      match /logbook_dive_confirmations/{confirmationId} {
+        allow read: if isAuthenticated()
+          && hasValidSession(clubId)
+          && (
+            resource.data.target_member_id == request.auth.uid ||
+            resource.data.source_member_id == request.auth.uid ||
+            isPiscineFormationEditor(clubId)
+          );
+        allow create, update, delete: if false;
+      }
+
       // ========== MEMBER OBSERVATIONS (Formation module) ==========
       // member_observations: training observations per member, read by admins/encadrants
       match /member_observations/{observationId} {

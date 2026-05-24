@@ -45,6 +45,9 @@ class LogbookEntryScreen extends StatefulWidget {
   final LogbookEntryMode mode;
   final FormationTask? task; // required when mode == auto
   final bool enableDictation;
+  final Map<String, dynamic>? prefillData;
+  final String? sourceOverride;
+  final Map<String, dynamic>? createExtras;
 
   /// Entry id when mode == edit.
   final String? entryId;
@@ -55,12 +58,18 @@ class LogbookEntryScreen extends StatefulWidget {
   const LogbookEntryScreen.auto({super.key, required this.task})
       : mode = LogbookEntryMode.auto,
         enableDictation = false,
+        prefillData = null,
+        sourceOverride = null,
+        createExtras = null,
         entryId = null,
         initialData = null;
 
   const LogbookEntryScreen.manual({
     super.key,
     this.enableDictation = true,
+    this.prefillData,
+    this.sourceOverride,
+    this.createExtras,
   })  : task = null,
         entryId = null,
         initialData = null,
@@ -72,6 +81,9 @@ class LogbookEntryScreen extends StatefulWidget {
     required Map<String, dynamic> this.initialData,
     this.enableDictation = false,
   })  : task = null,
+        prefillData = null,
+        sourceOverride = null,
+        createExtras = null,
         mode = LogbookEntryMode.edit;
 
   @override
@@ -124,6 +136,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
   bool _submitting = false;
   bool _analyzingDictation = false;
   bool _dictationOpen = true;
+  bool _dictationAppliedToForm = false;
   bool _speechAvailable = false;
   bool _listening = false;
   bool _saved = false;
@@ -144,7 +157,9 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
       (widget.initialData?['source'] as String?) == 'piscine';
 
   bool get _isDictationPrefill =>
-      widget.mode == LogbookEntryMode.manual && widget.enableDictation;
+      widget.mode == LogbookEntryMode.manual &&
+      widget.enableDictation &&
+      !_dictationAppliedToForm;
 
   static const List<_GuidedDictationStep> _guidedSteps = [
     _GuidedDictationStep(
@@ -282,6 +297,8 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
     } else if (widget.mode == LogbookEntryMode.edit &&
         widget.initialData != null) {
       _prefillFromMap(widget.initialData!);
+    } else if (widget.prefillData != null) {
+      _prefillFromMap(widget.prefillData!);
     } else {
       _prefillNextDiveNumber();
     }
@@ -1474,10 +1491,10 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         final fillButton = actionBox(
           width: mainWidth,
           child: ElevatedButton.icon(
-            onPressed: canActFromDictation ? _applyDictationAndSave : null,
-            icon: const Icon(Icons.save_alt, size: 18),
+            onPressed: canActFromDictation ? _applyDictationAndOpenForm : null,
+            icon: const Icon(Icons.edit_note, size: 18),
             label: const Text(
-              'Enregistrer',
+              'Corriger',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               softWrap: false,
@@ -2245,7 +2262,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
     });
   }
 
-  Future<void> _applyDictationAndSave() async {
+  Future<void> _applyDictationAndOpenForm() async {
     if (_dictation.text.trim().isNotEmpty) {
       final draft = await _dictationDraftForCurrentText(preferAi: true) ??
           _parseDictatedDive(_dictation.text);
@@ -2264,7 +2281,10 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
       });
       return;
     }
-    await _save();
+    setState(() {
+      _dictationAppliedToForm = true;
+      _lastAnalysisMessage = null;
+    });
   }
 
   Future<_DictatedDiveDraft?> _dictationDraftForCurrentText({
@@ -4001,6 +4021,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         userId: userId,
       );
       final extras = <String, dynamic>{
+        ...?widget.createExtras,
         'binomes': _binomes.map((b) => b.toMap()).toList(),
         if (_entryTime != null)
           'entry_time':
@@ -4023,7 +4044,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           ? 'calypso_operation'
           : (widget.mode == LogbookEntryMode.edit
               ? (widget.initialData?['source'] as String?) ?? 'manual'
-              : 'manual');
+              : widget.sourceOverride ?? 'manual');
 
       final entry = StudentLogbookEntry(
         id: widget.entryId ?? '',

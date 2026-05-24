@@ -267,6 +267,15 @@ const {
 exports.assignDiveNumber = assignDiveNumber;
 exports.backfillMyDiveNumbers = backfillMyDiveNumbers;
 
+// Buddy confirmation flow for Mon Carnet: when a diver adds Calypso members as
+// binômes, those members confirm the shared dive and copy/compare it.
+const {
+  onLogbookDiveBuddiesChanged,
+  respondToLogbookDiveConfirmation,
+} = require('./src/training/logbookDiveConfirmations');
+exports.onLogbookDiveBuddiesChanged = onLogbookDiveBuddiesChanged;
+exports.respondToLogbookDiveConfirmation = respondToLogbookDiveConfirmation;
+
 // Paper logbook OCR/AI import.
 const { analyzeLogbookPage } = require('./src/logbookOcr/analyzeLogbookPage');
 exports.analyzeLogbookPage = analyzeLogbookPage;

@@ -46,6 +46,7 @@ import 'screens/teams/team_chat_screen.dart';
 import 'screens/piscine/session_chat_screen.dart';
 import 'screens/piscine/session_detail_screen.dart';
 import 'screens/profile/medical_certification_screen.dart';
+import 'screens/training/logbook_dive_confirmation_screen.dart';
 import 'screens/training/historical_validation_screen.dart';
 
 // Models (pour la navigation depuis les notifications)
@@ -98,6 +99,7 @@ void main() async {
       debugPrint('✅ Sentry initialisé');
 
       // Register Syncfusion license
+      // ignore: deprecated_member_use
       SyncfusionLicense.registerLicense(
           'Ngo9BigBOggjHTQxAR8/V1JFaF1cXGFCf1FpRGpGfV5ycUVHYVZQRXxeQE0SNHVRdkdmWH1fcnVUR2FdU0J+W0pWYEg=');
 
@@ -398,6 +400,21 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           }
           break;
 
+        case 'logbook_dive_confirmation':
+        case 'logbook_dive_confirmation_result':
+          final confirmationId = data['confirmation_id'] as String?;
+          if (confirmationId != null && confirmationId.isNotEmpty) {
+            _navigatorKey.currentState!.push(
+              MaterialPageRoute(
+                builder: (_) => LogbookDiveConfirmationScreen(
+                  confirmationId: confirmationId,
+                  clubId: clubId,
+                ),
+              ),
+            );
+          }
+          break;
+
         default:
           debugPrint('⚠️ Unknown notification type: $type');
       }
@@ -602,7 +619,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: AppColors.middenblauw, width: 2),
+                borderSide:
+                    const BorderSide(color: AppColors.middenblauw, width: 2),
               ),
             ),
           ),

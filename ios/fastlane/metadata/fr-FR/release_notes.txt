@@ -1,1 +1,1 @@
-Améliorations de l'espace membre et corrections de bugs.
+Améliorations du carnet de plongée et corrections de bugs.

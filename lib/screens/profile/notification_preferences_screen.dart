@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
-import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
@@ -23,7 +22,7 @@ class _NotificationPreferencesScreenState
   bool _isLoading = false;
 
   // Default preferences (all enabled)
-  Map<String, bool> _preferences = {
+  final Map<String, bool> _preferences = {
     'new_events': true,
     'event_messages': true,
     'piscine_tasks': true,
@@ -33,6 +32,7 @@ class _NotificationPreferencesScreenState
     'session_reminders': true,
     'medical_certificates': true,
     'exercise_declarations': true,
+    'logbook_confirmations': true,
   };
 
   @override
@@ -55,7 +55,8 @@ class _NotificationPreferencesScreenState
 
       if (doc.exists && mounted) {
         final data = doc.data();
-        final prefs = data?['notification_preferences'] as Map<String, dynamic>?;
+        final prefs =
+            data?['notification_preferences'] as Map<String, dynamic>?;
         if (prefs != null) {
           setState(() {
             for (final key in _preferences.keys) {
@@ -132,18 +133,20 @@ class _NotificationPreferencesScreenState
                     elevation: 2,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
-                    color: AppColors.middenblauw.withOpacity(0.9),
+                    color: AppColors.middenblauw.withValues(alpha: 0.9),
                     child: const Padding(
                       padding: EdgeInsets.all(16),
                       child: Row(
                         children: [
-                          Icon(Icons.info_outline, color: Colors.white, size: 20),
+                          Icon(Icons.info_outline,
+                              color: Colors.white, size: 20),
                           SizedBox(width: 12),
                           Expanded(
                             child: Text(
                               'Choisis les notifications que tu souhaites recevoir. '
                               'Les annonces du club sont toujours envoyées.',
-                              style: TextStyle(color: Colors.white, fontSize: 13),
+                              style:
+                                  TextStyle(color: Colors.white, fontSize: 13),
                             ),
                           ),
                         ],
@@ -183,7 +186,8 @@ class _NotificationPreferencesScreenState
                           icon: Icons.scuba_diving,
                           iconColor: AppColors.middenblauw,
                           title: 'Nouvelles sorties extérieures',
-                          subtitle: 'Quand une nouvelle plongée ou sortie est proposée',
+                          subtitle:
+                              'Quand une nouvelle plongée ou sortie est proposée',
                         ),
 
                         const Divider(height: 1),
@@ -269,6 +273,17 @@ class _NotificationPreferencesScreenState
 
                         const Divider(height: 1),
 
+                        _buildPreferenceTile(
+                          key: 'logbook_confirmations',
+                          icon: Icons.task_alt_outlined,
+                          iconColor: Colors.teal,
+                          title: 'Confirmations carnet',
+                          subtitle:
+                              'Quand un binôme te demande de confirmer une plongée',
+                        ),
+
+                        const Divider(height: 1),
+
                         // Exercise declarations digest (encadrants only — those
                         // without the role won't ever receive these anyway, but
                         // the toggle stays visible so opt-out is consistent).
@@ -289,7 +304,7 @@ class _NotificationPreferencesScreenState
 
             // Loading overlay
             if (_isLoading)
-              Positioned(
+              const Positioned(
                 top: 0,
                 left: 0,
                 right: 0,
