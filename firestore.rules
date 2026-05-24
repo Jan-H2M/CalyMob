@@ -25,6 +25,12 @@ service cloud.firestore {
         && getUserData(clubId).app_role == 'superadmin';
     }
 
+    function isOperationOrganizer(clubId, operationId) {
+      return isAuthenticated()
+        && exists(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId))
+        && get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)).data.organisateur_id == request.auth.uid;
+    }
+
     function isClubMember(clubId) {
       return isAuthenticated()
         && exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
@@ -369,6 +375,8 @@ service cloud.firestore {
               resource.data.membre_id == request.auth.uid ||
               // Ou être admin
               getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
+              // Ou être l'organisateur de l'événement
+              isOperationOrganizer(clubId, operationId) ||
               // Ou avoir le droit de scanner (encadrant, CA, accueil)
               canScanAttendance(clubId)
             );
@@ -385,6 +393,7 @@ service cloud.firestore {
             && hasValidSession(clubId)
             && (
               resource.data.sender_id == request.auth.uid ||
+              isOperationOrganizer(clubId, operationId) ||
               getUserData(clubId).app_role in ['superadmin', 'admin']
             );
           // Modification: read/reactions/poll for everyone, own message edits for the author.
@@ -414,7 +423,10 @@ service cloud.firestore {
             );
           allow delete: if isAuthenticated()
             && hasValidSession(clubId)
-            && getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'];
+            && (
+              getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
+              isOperationOrganizer(clubId, operationId)
+            );
         }
       }
 

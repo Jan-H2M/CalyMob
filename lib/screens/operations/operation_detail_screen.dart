@@ -102,6 +102,17 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     return role == 'admin' || role == 'superadmin';
   }
 
+  /// Duik-events mogen door de huidige organisator of door beheerders worden
+  /// gewist. Dit volgt de Firestore-regels: gewone users enkel voor hun eigen
+  /// `organisateur_id`, admin/validateur/superadmin voor alle events.
+  bool _canDeleteDiveEvent(Operation operation) {
+    if (operation.categorie != 'plongee') return false;
+    if (_isCurrentUserResponsable(operation)) return true;
+    final memberProvider = context.read<MemberProvider>();
+    final role = memberProvider.appRole?.toLowerCase();
+    return role == 'admin' || role == 'superadmin' || role == 'validateur';
+  }
+
   /// Check if the current user is the responsable (organisateur) currently
   /// assigned to the event. Distinct from `_isCurrentUserCreator`, which
   /// matches the original creator stamped at creation time.
@@ -262,14 +273,22 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     // Normalize: strip trailing '*' so '4*' == '4'
     final normalized = code.replaceAll('*', '').trim().toUpperCase();
     switch (normalized) {
-      case 'NB': return NiveauLIFRAS.nb;  // NB → do NB exercises → become 1*
-      case '1':  return NiveauLIFRAS.p2;  // 1* → do P2 exercises → become 2*
-      case '2':  return NiveauLIFRAS.p3;  // 2* → do P3 exercises → become 3*
-      case '3':  return NiveauLIFRAS.p4;  // 3* → do P4 exercises → become 4*
-      case '4':  return NiveauLIFRAS.am;  // 4* → do AM exercises → become AM
-      case 'AM': return NiveauLIFRAS.mc;  // AM → do MC exercises → become MC
-      case 'MC': return NiveauLIFRAS.mf;  // MC → do MF exercises → become MF
-      default:   return null;
+      case 'NB':
+        return NiveauLIFRAS.nb; // NB → do NB exercises → become 1*
+      case '1':
+        return NiveauLIFRAS.p2; // 1* → do P2 exercises → become 2*
+      case '2':
+        return NiveauLIFRAS.p3; // 2* → do P3 exercises → become 3*
+      case '3':
+        return NiveauLIFRAS.p4; // 3* → do P4 exercises → become 4*
+      case '4':
+        return NiveauLIFRAS.am; // 4* → do AM exercises → become AM
+      case 'AM':
+        return NiveauLIFRAS.mc; // AM → do MC exercises → become MC
+      case 'MC':
+        return NiveauLIFRAS.mf; // MC → do MF exercises → become MF
+      default:
+        return null;
     }
   }
 
@@ -396,7 +415,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
             // If there's a price, show payment options dialog.
             // Skip when priceTbd — the organiser will bill later.
-            if (totalPrice > 0 && !operation.priceTbd && _userInscription != null) {
+            if (totalPrice > 0 &&
+                !operation.priceTbd &&
+                _userInscription != null) {
               await _showPaymentOptionsDialog(
                 operation: operation,
                 amount: totalPrice,
@@ -477,7 +498,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
             // If there's a price, show payment options dialog.
             // Skip when priceTbd — the organiser will bill later.
-            if (basePrice > 0 && !operation.priceTbd && _userInscription != null) {
+            if (basePrice > 0 &&
+                !operation.priceTbd &&
+                _userInscription != null) {
               await _showPaymentOptionsDialog(
                 operation: operation,
                 amount: basePrice,
@@ -506,6 +529,58 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           }
         }
       }
+    }
+  }
+
+  Future<void> _handleDeleteEvent(Operation operation) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Supprimer cette plongée ?'),
+        content: Text(
+          'L\'événement "${operation.titre}" sera supprimé avec ses inscriptions, messages et palanquées.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Annuler'),
+          ),
+          TextButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.delete_outline, color: Colors.red),
+            label: const Text(
+              'Supprimer',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await _operationService.deleteOperation(
+        clubId: widget.clubId,
+        operationId: widget.operationId,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Plongée supprimée'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erreur suppression: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -562,8 +637,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     final selectedSupplements =
         (result['supplements'] as List).cast<SelectedSupplement>();
     final supplementTotal = result['supplementTotal'] as double;
-    final guestsList =
-        (result['guests'] as List).cast<Map<String, dynamic>>();
+    final guestsList = (result['guests'] as List).cast<Map<String, dynamic>>();
 
     try {
       // 1. Register the member themselves
@@ -573,9 +647,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         userId: userId,
         userName: userEmail,
         memberProfile: _userProfile,
-        selectedSupplements: selectedSupplements.isNotEmpty
-            ? selectedSupplements
-            : null,
+        selectedSupplements:
+            selectedSupplements.isNotEmpty ? selectedSupplements : null,
         supplementTotal:
             selectedSupplements.isNotEmpty ? supplementTotal : null,
       );
@@ -597,9 +670,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       // 2. Add each guest, linked to the member's parent inscription.
       final authProvider = context.read<AuthProvider>();
       for (final g in guestsList) {
-        final guestSupps = (g['supplements'] as List?)
-                ?.cast<SelectedSupplement>() ??
-            const <SelectedSupplement>[];
+        final guestSupps =
+            (g['supplements'] as List?)?.cast<SelectedSupplement>() ??
+                const <SelectedSupplement>[];
         final guestSuppTotal = (g['supplementTotal'] as num?)?.toDouble();
         await operationProvider.addGuestToOperation(
           clubId: widget.clubId,
@@ -613,10 +686,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           parentInscriptionId: _userInscription!.id,
           tariffId: g['tariffId'] as String?,
           selectedSupplements: guestSupps.isNotEmpty ? guestSupps : null,
-          supplementTotal:
-              (guestSuppTotal != null && guestSuppTotal > 0)
-                  ? guestSuppTotal
-                  : null,
+          supplementTotal: (guestSuppTotal != null && guestSuppTotal > 0)
+              ? guestSuppTotal
+              : null,
         );
       }
 
@@ -1029,8 +1101,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       // totalPrix into the parent's QR (single grouped payment).
       final allP = operationProvider.selectedOperationParticipants;
       final linkedGuests = allP
-          .where((p) =>
-              p.isGuest && p.parentInscriptionId == participant.id)
+          .where((p) => p.isGuest && p.parentInscriptionId == participant.id)
           .toList();
       final aggregatedAmount = participant.totalPrix +
           linkedGuests.fold<double>(0.0, (sum, g) => sum + g.totalPrix);
@@ -1101,8 +1172,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     final allParticipants = operationProvider.selectedOperationParticipants;
     final myGuests = (myInscriptionId != null)
         ? allParticipants
-            .where((p) =>
-                p.isGuest && p.parentInscriptionId == myInscriptionId)
+            .where((p) => p.isGuest && p.parentInscriptionId == myInscriptionId)
             .toList()
         : <ParticipantOperation>[];
 
@@ -1124,8 +1194,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Confirmer la désinscription'),
-          content: Text(
-              'Voulez-vous vous désinscrire de "${operation?.titre}" ?'),
+          content:
+              Text('Voulez-vous vous désinscrire de "${operation?.titre}" ?'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -1419,8 +1489,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     if (_guestTariffs.isEmpty) return false;
     // Capacity check: don't allow more guests when the event is at capacity
     if (operation.capaciteMax != null) {
-      final currentCount =
-          context.read<OperationProvider>().selectedOperationParticipants.length;
+      final currentCount = context
+          .read<OperationProvider>()
+          .selectedOperationParticipants
+          .length;
       if (currentCount >= operation.capaciteMax!) return false;
     }
     return true;
@@ -1549,6 +1621,13 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                 }
               },
             ),
+          if (operation != null && _canDeleteDiveEvent(operation))
+            IconButton(
+              icon: const Icon(Icons.delete_outline,
+                  color: Colors.white, size: 22),
+              tooltip: 'Supprimer la plongée',
+              onPressed: () => _handleDeleteEvent(operation),
+            ),
           // Scanner button — hidden for dive events (auto-presence on payment).
           // For sorties, presence still needs to be marked manually so we
           // keep the scanner there.
@@ -1641,40 +1720,53 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
                             // Responsable sortie + téléphone
                             Builder(builder: (_) {
-                              final responsableNom = (operation.organisateurNom != null && operation.organisateurNom!.isNotEmpty)
-                                  ? operation.organisateurNom!
-                                  : _organisateurProfile?.fullName;
-                              if (responsableNom == null || responsableNom.isEmpty) return const SizedBox.shrink();
+                              final responsableNom =
+                                  (operation.organisateurNom != null &&
+                                          operation.organisateurNom!.isNotEmpty)
+                                      ? operation.organisateurNom!
+                                      : _organisateurProfile?.fullName;
+                              if (responsableNom == null ||
+                                  responsableNom.isEmpty)
+                                return const SizedBox.shrink();
                               return Padding(
                                 padding: const EdgeInsets.only(top: 8),
                                 child: Row(
                                   children: [
-                                    const Icon(Icons.person, size: 18, color: Colors.white70),
+                                    const Icon(Icons.person,
+                                        size: 18, color: Colors.white70),
                                     const SizedBox(width: 6),
                                     Flexible(
                                       child: Text(
                                         'Responsable : $responsableNom',
-                                        style: const TextStyle(fontSize: 14, color: Colors.white),
+                                        style: const TextStyle(
+                                            fontSize: 14, color: Colors.white),
                                       ),
                                     ),
-                                    if (_organisateurProfile?.phoneNumber != null &&
-                                        _organisateurProfile!.phoneNumber!.isNotEmpty) ...[
+                                    if (_organisateurProfile?.phoneNumber !=
+                                            null &&
+                                        _organisateurProfile!
+                                            .phoneNumber!.isNotEmpty) ...[
                                       const SizedBox(width: 12),
                                       GestureDetector(
                                         onTap: () => launchUrl(
-                                          Uri.parse('tel:${_organisateurProfile!.phoneNumber!}'),
+                                          Uri.parse(
+                                              'tel:${_organisateurProfile!.phoneNumber!}'),
                                         ),
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            const Icon(Icons.phone, size: 16, color: Colors.white70),
+                                            const Icon(Icons.phone,
+                                                size: 16,
+                                                color: Colors.white70),
                                             const SizedBox(width: 4),
                                             Text(
-                                              _organisateurProfile!.phoneNumber!,
+                                              _organisateurProfile!
+                                                  .phoneNumber!,
                                               style: const TextStyle(
                                                 fontSize: 13,
                                                 color: Colors.white,
-                                                decoration: TextDecoration.underline,
+                                                decoration:
+                                                    TextDecoration.underline,
                                                 decorationColor: Colors.white70,
                                               ),
                                             ),
@@ -1732,8 +1824,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                             // pass _canManagePalanquees) automatically land on
                             // the read-only view inside PalanqueeScreen.
                             if (operation.categorie == 'plongee' &&
-                                operationProvider
-                                    .selectedOperationParticipants.isNotEmpty) ...[
+                                operationProvider.selectedOperationParticipants
+                                    .isNotEmpty) ...[
                               if (_canManagePalanquees(operation)) ...[
                                 _buildPrepareExercisesButton(operationProvider),
                                 const SizedBox(height: 12),
@@ -1776,8 +1868,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   /// Compact header: Date + Lieu on same line
   Widget _buildCompactHeader(operation) {
     final deadline = operation.effectiveDeadline as DateTime?;
-    final deadlinePassed =
-        deadline != null && DateTime.now().isAfter(deadline);
+    final deadlinePassed = deadline != null && DateTime.now().isAfter(deadline);
     return Row(
       children: [
         // Date + uur — gebruikt formatDayMonth (zonder jaar) zodat de
@@ -1810,9 +1901,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           Icon(
             Icons.lock_clock,
             size: 18,
-            color: deadlinePassed
-                ? Colors.orangeAccent
-                : Colors.white70,
+            color: deadlinePassed ? Colors.orangeAccent : Colors.white70,
           ),
           const SizedBox(width: 6),
           Flexible(
@@ -1824,12 +1913,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                       '${DateFormatter.formatTime(deadline)}',
               style: TextStyle(
                 fontSize: 13,
-                color: deadlinePassed
-                    ? Colors.orangeAccent
-                    : Colors.white,
-                fontWeight: deadlinePassed
-                    ? FontWeight.w600
-                    : FontWeight.normal,
+                color: deadlinePassed ? Colors.orangeAccent : Colors.white,
+                fontWeight:
+                    deadlinePassed ? FontWeight.w600 : FontWeight.normal,
               ),
               overflow: TextOverflow.ellipsis,
             ),
@@ -2302,11 +2388,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     final allIds = participants.map((p) => p.id).toSet();
 
     for (final p in participants) {
-      if (p.isGuest && p.parentInscriptionId != null &&
+      if (p.isGuest &&
+          p.parentInscriptionId != null &&
           allIds.contains(p.parentInscriptionId)) {
-        guestsByParent
-            .putIfAbsent(p.parentInscriptionId!, () => [])
-            .add(p);
+        guestsByParent.putIfAbsent(p.parentInscriptionId!, () => []).add(p);
       } else if (p.isGuest) {
         orphanGuests.add(p);
       } else {
@@ -2488,100 +2573,237 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                               ? const EdgeInsets.only(left: 24)
                               : EdgeInsets.zero,
                           child: ListTile(
-                          onTap: canShowPaymentCard
-                              ? () => _showParticipantPaymentCard(
-                                    participant: participant,
-                                    operation:
-                                        operationProvider.selectedOperation!,
-                                  )
-                              : null,
-                          leading: _buildParticipantAvatar(
-                            participant: participant,
-                            prenom: prenom,
-                            displayNom: displayNom,
-                            isGuest: isGuest,
-                            isCurrentUser: isCurrentUser,
-                          ),
-                          title: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  displayName,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w500,
-                                      fontSize: 15),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              // Guest badge
-                              if (isGuest) ...[
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.oranje.withOpacity(0.2),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
+                            onTap: canShowPaymentCard
+                                ? () => _showParticipantPaymentCard(
+                                      participant: participant,
+                                      operation:
+                                          operationProvider.selectedOperation!,
+                                    )
+                                : null,
+                            leading: _buildParticipantAvatar(
+                              participant: participant,
+                              prenom: prenom,
+                              displayNom: displayNom,
+                              isGuest: isGuest,
+                              isCurrentUser: isCurrentUser,
+                            ),
+                            title: Row(
+                              children: [
+                                Expanded(
                                   child: Text(
-                                    'invité',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: AppColors.oranje,
-                                      fontWeight: FontWeight.bold,
+                                    displayName,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w500,
+                                        fontSize: 15),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                // Guest badge
+                                if (isGuest) ...[
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.oranje.withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      'invité',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: AppColors.oranje,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ),
-                                ),
+                                ],
+                                // Current user badge
+                                if (isCurrentUser && !isGuest) ...[
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          AppColors.lichtblauw.withOpacity(0.3),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      'vous',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: AppColors.donkerblauw,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ],
-                              // Current user badge
-                              if (isCurrentUser && !isGuest) ...[
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color:
-                                        AppColors.lichtblauw.withOpacity(0.3),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    'vous',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: AppColors.donkerblauw,
-                                      fontWeight: FontWeight.bold,
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Payment status text (hide for free events)
+                                if (participant.totalPrix > 0)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: Text(
+                                      paymentInfo['text'] as String,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: paymentInfo['color'] as Color,
+                                        fontWeight: FontWeight.w500,
+                                      ),
                                     ),
                                   ),
-                                ),
+                                // Supplements (if any)
+                                if (participant.selectedSupplements.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Wrap(
+                                      spacing: 4,
+                                      runSpacing: 4,
+                                      children: participant.selectedSupplements
+                                          .where((s) => s.name.isNotEmpty)
+                                          .map((s) => Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 6,
+                                                        vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: AppColors.oranje
+                                                      .withOpacity(0.15),
+                                                  borderRadius:
+                                                      BorderRadius.circular(4),
+                                                ),
+                                                child: Text(
+                                                  '${s.name}: ${s.price.toStringAsFixed(2)} €',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: AppColors.oranje
+                                                        .withOpacity(0.9),
+                                                  ),
+                                                ),
+                                              ))
+                                          .toList(),
+                                    ),
+                                  ),
+                                // Exercices souhaités (tappable for evaluation by monitors)
+                                if (participant.exercices.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Wrap(
+                                      spacing: 4,
+                                      runSpacing: 4,
+                                      children:
+                                          participant.exercices.map((exId) {
+                                        final ex = _allExercicesMap[exId];
+                                        final code = ex?.code ?? exId;
+                                        // Look up observation for this member + exercise
+                                        final obs = _exerciceObservations[
+                                            participant.membreId]?[code];
+                                        final statusColor =
+                                            _getObservationColor(obs?.result);
+                                        final isMonitor = _canManagePalanquees(
+                                          context
+                                              .read<OperationProvider>()
+                                              .selectedOperation!,
+                                        );
+                                        return GestureDetector(
+                                          onTap: isMonitor
+                                              ? () =>
+                                                  _showExerciseEvaluationSheet(
+                                                    memberId:
+                                                        participant.membreId,
+                                                    memberName:
+                                                        '${participant.membrePrenom ?? ''} ${participant.membreNom ?? ''}'
+                                                            .trim(),
+                                                    exerciceId: exId,
+                                                    exerciceCode: code,
+                                                    exerciceDescription:
+                                                        ex?.description ?? '',
+                                                    existingObservation: obs,
+                                                  )
+                                              : null,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color:
+                                                  statusColor.withOpacity(0.15),
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                              border: Border.all(
+                                                  color: statusColor
+                                                      .withOpacity(0.4),
+                                                  width: 1),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                if (obs?.result != null)
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                            right: 3),
+                                                    child: Icon(
+                                                      _getObservationIcon(
+                                                          obs?.result),
+                                                      size: 12,
+                                                      color: statusColor,
+                                                    ),
+                                                  ),
+                                                Text(
+                                                  code,
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: statusColor,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  ),
                               ],
-                            ],
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Payment status text (hide for free events)
-                              if (participant.totalPrix > 0)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 2),
-                                  child: Text(
-                                    paymentInfo['text'] as String,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: paymentInfo['color'] as Color,
-                                      fontWeight: FontWeight.w500,
+                            ),
+                            trailing: SizedBox(
+                              width: 80,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  // Evaluate participant button (feature-flagged)
+                                  if (_canManagePalanquees(operationProvider
+                                          .selectedOperation!) &&
+                                      _isOperationTodayOrPast(
+                                          operationProvider.selectedOperation!))
+                                    Tooltip(
+                                      message: 'Évaluer le participant',
+                                      child: IconButton(
+                                        icon: Icon(Icons.assessment,
+                                            size: 20,
+                                            color: AppColors.middenblauw),
+                                        onPressed: () =>
+                                            _showObservationBottomSheet(
+                                          participant: participant,
+                                          operation: operationProvider
+                                              .selectedOperation!,
+                                        ),
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(
+                                            minWidth: 32, minHeight: 32),
+                                      ),
                                     ),
-                                  ),
-                                ),
-                              // Supplements (if any)
-                              if (participant.selectedSupplements.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4),
-                                  child: Wrap(
-                                    spacing: 4,
-                                    runSpacing: 4,
-                                    children: participant.selectedSupplements
-                                        .where((s) => s.name.isNotEmpty)
-                                        .map((s) => Container(
+                                  // Payment info
+                                  if (participant.totalPrix > 0) ...[
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: hasParent
+                                          ? Container(
                                               padding:
                                                   const EdgeInsets.symmetric(
                                                       horizontal: 6,
@@ -2593,160 +2815,28 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                                                     BorderRadius.circular(4),
                                               ),
                                               child: Text(
-                                                '${s.name}: ${s.price.toStringAsFixed(2)} €',
+                                                'payé via parent',
+                                                textAlign: TextAlign.center,
                                                 style: TextStyle(
-                                                  fontSize: 11,
-                                                  color: AppColors.oranje
-                                                      .withOpacity(0.9),
+                                                  fontSize: 10,
+                                                  color: AppColors.oranje,
+                                                  fontWeight: FontWeight.w500,
                                                 ),
                                               ),
-                                            ))
-                                        .toList(),
-                                  ),
-                                ),
-                              // Exercices souhaités (tappable for evaluation by monitors)
-                              if (participant.exercices.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4),
-                                  child: Wrap(
-                                    spacing: 4,
-                                    runSpacing: 4,
-                                    children: participant.exercices.map((exId) {
-                                      final ex = _allExercicesMap[exId];
-                                      final code = ex?.code ?? exId;
-                                      // Look up observation for this member + exercise
-                                      final obs = _exerciceObservations[
-                                          participant.membreId]?[code];
-                                      final statusColor =
-                                          _getObservationColor(obs?.result);
-                                      final isMonitor = _canManagePalanquees(
-                                        context
-                                            .read<OperationProvider>()
-                                            .selectedOperation!,
-                                      );
-                                      return GestureDetector(
-                                        onTap: isMonitor
-                                            ? () =>
-                                                _showExerciseEvaluationSheet(
-                                                  memberId:
-                                                      participant.membreId,
-                                                  memberName:
-                                                      '${participant.membrePrenom ?? ''} ${participant.membreNom ?? ''}'
-                                                          .trim(),
-                                                  exerciceId: exId,
-                                                  exerciceCode: code,
-                                                  exerciceDescription:
-                                                      ex?.description ?? '',
-                                                  existingObservation: obs,
-                                                )
-                                            : null,
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 6, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color:
-                                                statusColor.withOpacity(0.15),
-                                            borderRadius:
-                                                BorderRadius.circular(4),
-                                            border: Border.all(
-                                                color: statusColor
-                                                    .withOpacity(0.4),
-                                                width: 1),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              if (obs?.result != null)
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                          right: 3),
-                                                  child: Icon(
-                                                    _getObservationIcon(
-                                                        obs?.result),
-                                                    size: 12,
-                                                    color: statusColor,
-                                                  ),
-                                                ),
-                                              Text(
-                                                code,
-                                                style: TextStyle(
-                                                  fontSize: 11,
-                                                  color: statusColor,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      );
-                                    }).toList(),
-                                  ),
-                                ),
-                            ],
-                          ),
-                          trailing: SizedBox(
-                            width: 80,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                // Evaluate participant button (feature-flagged)
-                                if (_canManagePalanquees(
-                                        operationProvider.selectedOperation!) &&
-                                    _isOperationTodayOrPast(
-                                        operationProvider.selectedOperation!))
-                                  Tooltip(
-                                    message: 'Évaluer le participant',
-                                    child: IconButton(
-                                      icon: Icon(Icons.assessment,
-                                          size: 20,
-                                          color: AppColors.middenblauw),
-                                      onPressed: () =>
-                                          _showObservationBottomSheet(
-                                        participant: participant,
-                                        operation: operationProvider
-                                            .selectedOperation!,
-                                      ),
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(
-                                          minWidth: 32, minHeight: 32),
+                                            )
+                                          : (canShowPaymentCard
+                                              ? Icon(Icons.qr_code_2,
+                                                  size: 22,
+                                                  color:
+                                                      Colors.blueGrey.shade400)
+                                              : _buildPaymentBadge(
+                                                  participant)),
                                     ),
-                                  ),
-                                // Payment info
-                                if (participant.totalPrix > 0) ...[
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: hasParent
-                                        ? Container(
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 6, vertical: 2),
-                                            decoration: BoxDecoration(
-                                              color: AppColors.oranje
-                                                  .withOpacity(0.15),
-                                              borderRadius:
-                                                  BorderRadius.circular(4),
-                                            ),
-                                            child: Text(
-                                              'payé via parent',
-                                              textAlign: TextAlign.center,
-                                              style: TextStyle(
-                                                fontSize: 10,
-                                                color: AppColors.oranje,
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                            ),
-                                          )
-                                        : (canShowPaymentCard
-                                            ? Icon(Icons.qr_code_2,
-                                                size: 22,
-                                                color: Colors.blueGrey.shade400)
-                                            : _buildPaymentBadge(participant)),
-                                  ),
+                                  ],
                                 ],
-                              ],
+                              ),
                             ),
                           ),
-                        ),
                         );
                       }).toList(),
                     ),
@@ -2828,9 +2918,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     required bool isCurrentUser,
   }) {
     final info = _memberInfoCache[participant.membreId];
-    final hasPhoto = !isGuest &&
-        info?.photoUrl != null &&
-        info!.photoUrl!.isNotEmpty;
+    final hasPhoto =
+        !isGuest && info?.photoUrl != null && info!.photoUrl!.isNotEmpty;
     final niveau = isGuest ? null : info?.plongeurCode;
 
     final letter = prenom.isNotEmpty
@@ -2851,8 +2940,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                     ? AppColors.lichtblauw.withOpacity(0.5)
                     : AppColors.lichtblauw.withOpacity(0.3)),
             backgroundImage: hasPhoto ? NetworkImage(info.photoUrl!) : null,
-            onBackgroundImageError:
-                hasPhoto ? (_, __) {} : null,
+            onBackgroundImageError: hasPhoto ? (_, __) {} : null,
             child: hasPhoto
                 ? null
                 : (isGuest
@@ -2874,8 +2962,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               bottom: -2,
               right: -4,
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                 decoration: BoxDecoration(
                   color: AppColors.middenblauw,
                   borderRadius: BorderRadius.circular(8),
@@ -2953,8 +3040,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             runSpacing: 4,
             children: items.map((item) {
               return Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: Colors.blue.shade50,
                   borderRadius: BorderRadius.circular(6),
@@ -3116,23 +3202,18 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   }) {
     final isEmail = inscription.paymentStatus == 'qr_email_sent';
 
-    final Color bgColor = isEmail
-        ? Colors.blue.shade50
-        : Colors.blueGrey.shade50;
-    final Color borderColor = isEmail
-        ? Colors.blue.shade200
-        : Colors.blueGrey.shade200;
-    final Color accentColor = isEmail
-        ? Colors.blue.shade700
-        : Colors.blueGrey.shade700;
-    final IconData icon = isEmail
-        ? Icons.mark_email_read_outlined
-        : Icons.qr_code_scanner;
+    final Color bgColor =
+        isEmail ? Colors.blue.shade50 : Colors.blueGrey.shade50;
+    final Color borderColor =
+        isEmail ? Colors.blue.shade200 : Colors.blueGrey.shade200;
+    final Color accentColor =
+        isEmail ? Colors.blue.shade700 : Colors.blueGrey.shade700;
+    final IconData icon =
+        isEmail ? Icons.mark_email_read_outlined : Icons.qr_code_scanner;
 
     final String title = 'Inscrit';
-    final String subtitle = isEmail
-        ? 'QR code envoyé par email'
-        : 'Paiement sur place via QR code';
+    final String subtitle =
+        isEmail ? 'QR code envoyé par email' : 'Paiement sur place via QR code';
 
     String? timestampLine;
     if (isEmail && inscription.paymentStatusAt != null) {
@@ -3199,7 +3280,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                   ],
                 ),
               ),
-              Icon(Icons.more_horiz, color: accentColor.withOpacity(0.6), size: 20),
+              Icon(Icons.more_horiz,
+                  color: accentColor.withOpacity(0.6), size: 20),
             ],
           ),
         ),
