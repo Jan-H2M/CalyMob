@@ -26,6 +26,8 @@ const {
 } = require('../utils/badge-helper');
 
 const TIME_ZONE = 'Europe/Brussels';
+const DIGEST_LOOKBACK_DAYS = 7;
+const DIGEST_LOOKBACK_MS = DIGEST_LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
 
 /**
  * Normalize LIFRAS roles (mirror of onExerciceDeclared.normalizeRoles).
@@ -58,7 +60,25 @@ function memberIsEncadrant(memberData = {}) {
  * A pending declaration document is "real" (= worth notifying about) if it
  * isn't a backfill/migration import. Same heuristics as onExerciceDeclared.
  */
-function isRealPendingDeclaration(data) {
+function toDate(value) {
+  if (!value) return null;
+  if (value.toDate) return value.toDate();
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function isRecentEnoughForDigest(data, now = new Date()) {
+  const referenceDate =
+    toDate(data.created_at) ||
+    toDate(data.updated_at) ||
+    toDate(data.date_validation);
+
+  if (!referenceDate) return false;
+  const ageMs = now.getTime() - referenceDate.getTime();
+  return ageMs >= 0 && ageMs <= DIGEST_LOOKBACK_MS;
+}
+
+function isRealPendingDeclaration(data, now = new Date()) {
   if (!data) return false;
   if (data.status !== 'pending') return false;
   if (data.declared_by_member !== true) return false;
@@ -67,11 +87,13 @@ function isRealPendingDeclaration(data) {
   if (data.source === 'backfill') return false;
   const notes = String(data.notes || '');
   if (notes.includes('Importé depuis')) return false;
+  if (!isRecentEnoughForDigest(data, now)) return false;
   return true;
 }
 
 async function countPendingForClub(clubRef, membersDocs) {
   let total = 0;
+  const now = new Date();
   for (const memberDoc of membersDocs) {
     try {
       const pendingSnap = await memberDoc.ref
@@ -81,7 +103,7 @@ async function countPendingForClub(clubRef, membersDocs) {
         .get();
 
       for (const doc of pendingSnap.docs) {
-        if (isRealPendingDeclaration(doc.data())) {
+        if (isRealPendingDeclaration(doc.data(), now)) {
           total += 1;
         }
       }
@@ -122,6 +144,9 @@ exports.dailyExerciseDeclarationDigest = onSchedule(
           }
 
           // 1. Count pending declarations across the whole club
+          // Only recent pending declarations are included. Older pending
+          // items stay visible in the validation screen but no longer create
+          // a daily "ghost" push forever.
           const totalPending = await countPendingForClub(
             clubDoc.ref,
             membersSnap.docs,
