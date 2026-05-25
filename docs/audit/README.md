@@ -30,6 +30,7 @@
 | [PLATFORM_REQUIREMENTS.md](./PLATFORM_REQUIREMENTS.md) | Android & iOS configuration details |
 | [OPTIMIZATION_PLAN.md](./OPTIMIZATION_PLAN.md) | Prioritized fixes with code examples |
 | [CROSS_PLATFORM_STRATEGY.md](./CROSS_PLATFORM_STRATEGY.md) | Platform parity and deployment strategy |
+| [ACCESSIBILITY_LAYOUT_RISK_MAP_NL.md](./ACCESSIBILITY_LAYOUT_RISK_MAP_NL.md) | NL risk map for large text, small screens and scroll safety |
 
 ---
 
