@@ -185,13 +185,15 @@ async function findExistingMatch(db, clubId, targetMemberId, snapshot) {
     .collection('clubs').doc(clubId)
     .collection('student_logbook_entries')
     .where('member_id', '==', targetMemberId)
-    .where('date', '>=', Timestamp.fromDate(start))
-    .where('date', '<', Timestamp.fromDate(end))
     .get();
 
   let best = { matchType: 'none', differences: [], entryId: null };
   for (const doc of snap.docs) {
-    const cmp = compareDive(snapshot, doc.data());
+    const entry = doc.data();
+    const entryDate = asDate(entry.date);
+    if (!entryDate || entryDate < start || entryDate >= end) continue;
+
+    const cmp = compareDive(snapshot, entry);
     if (cmp.matchType === 'identical') {
       return { ...cmp, entryId: doc.id };
     }
