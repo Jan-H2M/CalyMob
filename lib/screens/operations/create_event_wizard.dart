@@ -61,7 +61,11 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
   bool _loadingEncadrants = false;
 
   DateTime _dateDebut = DateTime(
-    DateTime.now().year, DateTime.now().month, DateTime.now().day, 14, 0,
+    DateTime.now().year,
+    DateTime.now().month,
+    DateTime.now().day,
+    14,
+    0,
   );
   DateTime? _dateFin;
   String _statut = 'ouvert';
@@ -135,10 +139,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
 
         final prenom = (data['prenom'] ?? '').toString().trim();
         final nom = (data['nom'] ?? '').toString().trim();
-        final displayName = [prenom, nom]
-            .where((p) => p.isNotEmpty)
-            .join(' ')
-            .trim();
+        final displayName =
+            [prenom, nom].where((p) => p.isNotEmpty).join(' ').trim();
         if (displayName.isEmpty) continue;
 
         options.add(_EncadrantOption(
@@ -305,11 +307,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
                 label,
                 style: TextStyle(
                   fontSize: 14,
-                  color: hasValue
-                      ? AppColors.donkerblauw
-                      : Colors.grey[500],
-                  fontWeight:
-                      hasValue ? FontWeight.w500 : FontWeight.normal,
+                  color: hasValue ? AppColors.donkerblauw : Colors.grey[500],
+                  fontWeight: hasValue ? FontWeight.w500 : FontWeight.normal,
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
@@ -352,9 +351,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
       _titreController.text = location.name;
       _descriptionController.text = location.description ?? '';
       // Convertir locatie-tarieven naar bewerkbare tarieven
-      _editableTariffs = location.tariffs
-          .map((t) => _EditableTariff.fromTariff(t))
-          .toList();
+      _editableTariffs =
+          location.tariffs.map((t) => _EditableTariff.fromTariff(t)).toList();
 
       // Recalculer budget
       _recalculateBudget();
@@ -414,7 +412,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
     try {
       final authProvider = context.read<AuthProvider>();
       final userId = authProvider.currentUser?.uid ?? '';
-      final isDive = widget.eventCategory == 'plongee' || _selectedLocation != null;
+      final isDive =
+          widget.eventCategory == 'plongee' || _selectedLocation != null;
 
       // Refresh session to prevent permission-denied on expired session
       await SessionService().touchActivity();
@@ -443,7 +442,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
       }
 
       // Generate event number
-      final eventNumber = await _operationService.generateEventNumber(_clubId, isDive);
+      final eventNumber =
+          await _operationService.generateEventNumber(_clubId, isDive);
 
       // Build tariffs data vanuit editeerbare tarieven
       final tariffsData = _editableTariffs
@@ -479,9 +479,10 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
         // avec le nom affiché. Fallback sur userId si le picker n'a pas
         // encore été initialisé (edge case très rare).
         'organisateur_nom': (_organisateurNom ?? '').trim(),
-        'organisateur_id': (_organisateurId != null && _organisateurId!.isNotEmpty)
-            ? _organisateurId
-            : userId,
+        'organisateur_id':
+            (_organisateurId != null && _organisateurId!.isNotEmpty)
+                ? _organisateurId
+                : userId,
         'event_tariffs': tariffsData,
         'club_id': _clubId,
         'fiscal_year_id': fiscalYearId,
@@ -544,7 +545,9 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
         backgroundColor: AppColors.donkerblauw,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
-        leading: _currentStep == 2 && widget.eventCategory == 'plongee' && _selectedLocation != null
+        leading: _currentStep == 2 &&
+                widget.eventCategory == 'plongee' &&
+                _selectedLocation != null
             ? IconButton(
                 icon: const Icon(Icons.arrow_back),
                 tooltip: 'Retour au choix du lieu',
@@ -594,9 +597,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
           Expanded(
             child: Container(
               height: 2,
-              color: _currentStep >= 2
-                  ? AppColors.donkerblauw
-                  : Colors.grey[300],
+              color:
+                  _currentStep >= 2 ? AppColors.donkerblauw : Colors.grey[300],
             ),
           ),
           _buildStepDot(2, _currentStep == 2),
@@ -651,10 +653,9 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
           loc.country.toLowerCase().contains(q);
     }).toList();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 24),
       children: [
-        // Header text
         Padding(
           padding: const EdgeInsets.fromLTRB(24, 8, 24, 4),
           child: Text(
@@ -700,22 +701,25 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
           child: _buildSearchBar(),
         ),
 
-        // Location list
-        Expanded(
-          child: _loadingLocations
-              ? const Center(
-                  child: CircularProgressIndicator(color: AppColors.middenblauw),
-                )
-              : filteredLocations.isEmpty
-                  ? _buildEmptyLocations()
-                  : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                      itemCount: filteredLocations.length,
-                      itemBuilder: (context, index) {
-                        return _buildLocationCard(filteredLocations[index]);
-                      },
-                    ),
-        ),
+        if (_loadingLocations)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 48),
+            child: Center(
+              child: CircularProgressIndicator(color: AppColors.middenblauw),
+            ),
+          )
+        else if (filteredLocations.isEmpty)
+          _buildEmptyLocations()
+        else
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
+            child: Column(
+              children: [
+                for (final location in filteredLocations)
+                  _buildLocationCard(location),
+              ],
+            ),
+          ),
       ],
     );
   }
@@ -735,19 +739,20 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
           ),
         ],
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              'Événement hors plongée ou lieu non répertorié ?',
-              style: TextStyle(
-                fontSize: 13,
-                color: Colors.grey[700],
-              ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final textScale = MediaQuery.textScalerOf(context).scale(1);
+          final stacked = constraints.maxWidth < 420 || textScale > 1.35;
+
+          final label = Text(
+            'Événement hors plongée ou lieu non répertorié ?',
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.grey[700],
             ),
-          ),
-          const SizedBox(width: 12),
-          ElevatedButton(
+          );
+
+          final button = ElevatedButton(
             onPressed: _saving ? null : _onCreateManual,
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.middenblauw,
@@ -762,8 +767,32 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
               'Créer manuellement',
               style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
             ),
-          ),
-        ],
+          );
+
+          if (stacked) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                label,
+                const SizedBox(height: 12),
+                button,
+              ],
+            );
+          }
+
+          return Row(
+            children: [
+              Expanded(child: label),
+              const SizedBox(width: 12),
+              Flexible(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: button,
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -797,20 +826,24 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: AppColors.middenblauw, width: 2),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       ),
     );
   }
 
   Widget _buildEmptyLocations() {
-    return Center(
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 48),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.location_off, size: 48, color: Colors.grey[400]),
           const SizedBox(height: 16),
           Text(
-            _searchQuery.isNotEmpty ? 'Aucun lieu trouvé' : 'Aucun lieu configuré',
+            _searchQuery.isNotEmpty
+                ? 'Aucun lieu trouvé'
+                : 'Aucun lieu configuré',
             style: TextStyle(color: Colors.grey[600], fontSize: 16),
           ),
           if (_searchQuery.isEmpty) ...[
@@ -861,7 +894,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
                   // Name + country
                   Row(
                     children: [
-                      Icon(Icons.location_on, size: 18, color: AppColors.middenblauw),
+                      Icon(Icons.location_on,
+                          size: 18, color: AppColors.middenblauw),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
@@ -883,7 +917,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
                     ],
                   ),
                   // Description
-                  if (location.description != null && location.description!.isNotEmpty) ...[
+                  if (location.description != null &&
+                      location.description!.isNotEmpty) ...[
                     const SizedBox(height: 6),
                     Text(
                       location.description!,
@@ -900,7 +935,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
                       runSpacing: 6,
                       children: location.tariffs.map((tariff) {
                         return Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
                             color: AppColors.lichtblauw.withOpacity(0.15),
                             borderRadius: BorderRadius.circular(8),
@@ -975,19 +1011,20 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
           ],
 
           // Selected location badge (read-only)
-          if (_selectedLocation != null)
-            _buildSelectedLocationBadge(),
+          if (_selectedLocation != null) _buildSelectedLocationBadge(),
 
           // Titre *
           _buildSectionCard(
             children: [
-              _buildLabel('Titre de l\'événement', required: true, icon: Icons.edit_note),
+              _buildLabel('Titre de l\'événement',
+                  required: true, icon: Icons.edit_note),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _titreController,
                 decoration: _inputDecoration('Ex: Plongée Zélande Avril 2026'),
-                validator: (value) =>
-                    value == null || value.trim().isEmpty ? 'Le titre est requis' : null,
+                validator: (value) => value == null || value.trim().isEmpty
+                    ? 'Le titre est requis'
+                    : null,
               ),
             ],
           ),
@@ -1010,40 +1047,54 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
           // Dates
           _buildSectionCard(
             children: [
-              _buildLabel('Date et heure de début', required: true, icon: Icons.calendar_today),
+              _buildLabel('Date et heure de début',
+                  required: true, icon: Icons.calendar_today),
               const SizedBox(height: 8),
               _buildDateTimeRow(
                 date: _dateDebut,
                 onDateChanged: (date) => setState(() {
                   _dateDebut = DateTime(
-                    date.year, date.month, date.day,
-                    _dateDebut.hour, _dateDebut.minute,
+                    date.year,
+                    date.month,
+                    date.day,
+                    _dateDebut.hour,
+                    _dateDebut.minute,
                   );
                 }),
                 onTimeChanged: (time) => setState(() {
                   _dateDebut = DateTime(
-                    _dateDebut.year, _dateDebut.month, _dateDebut.day,
-                    time.hour, time.minute,
+                    _dateDebut.year,
+                    _dateDebut.month,
+                    _dateDebut.day,
+                    time.hour,
+                    time.minute,
                   );
                 }),
               ),
               const SizedBox(height: 16),
-              _buildLabel('Date et heure de fin (optionnel)', icon: Icons.event),
+              _buildLabel('Date et heure de fin (optionnel)',
+                  icon: Icons.event),
               const SizedBox(height: 8),
               _buildDateTimeRow(
                 date: _dateFin,
                 onDateChanged: (date) => setState(() {
                   _dateFin = DateTime(
-                    date.year, date.month, date.day,
-                    _dateFin?.hour ?? 18, _dateFin?.minute ?? 0,
+                    date.year,
+                    date.month,
+                    date.day,
+                    _dateFin?.hour ?? 18,
+                    _dateFin?.minute ?? 0,
                   );
                 }),
                 onTimeChanged: (time) {
                   if (_dateFin != null) {
                     setState(() {
                       _dateFin = DateTime(
-                        _dateFin!.year, _dateFin!.month, _dateFin!.day,
-                        time.hour, time.minute,
+                        _dateFin!.year,
+                        _dateFin!.month,
+                        _dateFin!.day,
+                        time.hour,
+                        time.minute,
                       );
                     });
                   }
@@ -1085,7 +1136,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
                         TextFormField(
                           controller: _budgetController,
                           decoration: _inputDecoration('0.00'),
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
                         ),
                       ],
                     ),
@@ -1203,7 +1255,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
     if (normalized.contains('encadrant')) return 'encadrant';
     if (normalized.contains('ca') || normalized.contains('comité')) return 'ca';
     if (normalized.contains('junior')) return 'junior';
-    if (normalized.contains('non-membre') || normalized.contains('non membre')) return 'non_membre';
+    if (normalized.contains('non-membre') || normalized.contains('non membre'))
+      return 'non_membre';
     if (normalized.contains('membre')) return 'membre';
     return normalized;
   }
@@ -1221,7 +1274,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
               label: const Text('Ajouter'),
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.middenblauw,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               ),
             ),
           ],
@@ -1293,8 +1347,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
                 filled: true,
                 fillColor: Colors.white,
                 isDense: true,
-                contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 10),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide(color: Colors.grey[300]!),
@@ -1314,7 +1368,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
           Expanded(
             flex: 2,
             child: TextFormField(
-              initialValue: tariff.price > 0 ? tariff.price.toStringAsFixed(2) : '',
+              initialValue:
+                  tariff.price > 0 ? tariff.price.toStringAsFixed(2) : '',
               decoration: InputDecoration(
                 hintText: '0.00',
                 hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
@@ -1326,8 +1381,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
                 filled: true,
                 fillColor: Colors.white,
                 isDense: true,
-                contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 10),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide(color: Colors.grey[300]!),
@@ -1439,12 +1494,9 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
     bool allowClear = false,
     VoidCallback? onClear,
   }) {
-    final dateText = date != null
-        ? DateFormat('dd/MM/yyyy').format(date)
-        : 'Sélectionner';
-    final timeText = date != null
-        ? DateFormat('HH:mm').format(date)
-        : '--:--';
+    final dateText =
+        date != null ? DateFormat('dd/MM/yyyy').format(date) : 'Sélectionner';
+    final timeText = date != null ? DateFormat('HH:mm').format(date) : '--:--';
 
     return Row(
       children: [
@@ -1470,13 +1522,16 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.calendar_today, size: 16, color: AppColors.middenblauw),
+                  Icon(Icons.calendar_today,
+                      size: 16, color: AppColors.middenblauw),
                   const SizedBox(width: 8),
                   Text(
                     dateText,
                     style: TextStyle(
                       fontSize: 14,
-                      color: date != null ? AppColors.donkerblauw : Colors.grey[400],
+                      color: date != null
+                          ? AppColors.donkerblauw
+                          : Colors.grey[400],
                     ),
                   ),
                 ],
@@ -1525,9 +1580,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
                   timeText,
                   style: TextStyle(
                     fontSize: 14,
-                    color: date != null
-                        ? AppColors.donkerblauw
-                        : Colors.grey[400],
+                    color:
+                        date != null ? AppColors.donkerblauw : Colors.grey[400],
                   ),
                 ),
               ],
@@ -1642,7 +1696,6 @@ class _EditableTariff {
     );
   }
 }
-
 
 /// Lightweight representation d'un membre qui peut être choisi comme
 /// responsable. Id (= clé pour organisateur_id et donc pour le lookup
