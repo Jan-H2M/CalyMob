@@ -21,11 +21,13 @@ class Operation {
   final DateTime? dateDebut;
   final DateTime? dateFin;
   final String? lieu;
+  final String? lieuId;
   final int? capaciteMax;
   final double? prixMembre; // Legacy: prix pour membres
   final double? prixNonMembre; // Legacy: prix pour non-membres
   final List<Tariff> eventTariffs; // Nouveau: tarifs flexibles par fonction
-  final List<Supplement> supplements; // Suppléments optionnels (location combinaison, etc.)
+  final List<Supplement>
+      supplements; // Suppléments optionnels (location combinaison, etc.)
   /// Price-to-be-determined flag. When true the event's price has not yet
   /// been set — UI displays "Prix à confirmer" instead of "Gratuit" / price.
   /// Registration stays open; the payment link/QR is sent later once the
@@ -66,7 +68,8 @@ class Operation {
   /// Falls back to dateDebut - 24h when no explicit deadline is set.
   DateTime? get effectiveDeadline {
     if (registrationDeadline != null) return registrationDeadline;
-    if (dateDebut != null) return dateDebut!.subtract(const Duration(hours: 24));
+    if (dateDebut != null)
+      return dateDebut!.subtract(const Duration(hours: 24));
     return null;
   }
 
@@ -86,6 +89,7 @@ class Operation {
     this.dateDebut,
     this.dateFin,
     this.lieu,
+    this.lieuId,
     this.capaciteMax,
     this.prixMembre,
     this.prixNonMembre,
@@ -120,6 +124,7 @@ class Operation {
       dateDebut: (data['date_debut'] as Timestamp?)?.toDate(),
       dateFin: (data['date_fin'] as Timestamp?)?.toDate(),
       lieu: data['lieu'],
+      lieuId: data['lieu_id'],
       capaciteMax: data['capacite_max'],
       prixMembre: (data['prix_membre'] as num?)?.toDouble(),
       prixNonMembre: (data['prix_non_membre'] as num?)?.toDouble(),
@@ -133,9 +138,11 @@ class Operation {
       communication: data['communication'],
       documentsJustificatifs: _parseDocuments(data['documents_justificatifs']),
       infoDocument: data['info_document'] != null
-          ? DocumentJustificatif.fromMap(data['info_document'] as Map<String, dynamic>)
+          ? DocumentJustificatif.fromMap(
+              data['info_document'] as Map<String, dynamic>)
           : null,
-      registrationDeadline: (data['registration_deadline'] as Timestamp?)?.toDate(),
+      registrationDeadline:
+          (data['registration_deadline'] as Timestamp?)?.toDate(),
       createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (data['updated_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
@@ -152,7 +159,8 @@ class Operation {
 
     // Debug logging
     if (tariffs.isNotEmpty) {
-      print('📊 Parsed ${tariffs.length} tariffs: ${tariffs.map((t) => "${t.label}=${t.price}€ (cat:${t.category})").join(", ")}');
+      print(
+          '📊 Parsed ${tariffs.length} tariffs: ${tariffs.map((t) => "${t.label}=${t.price}€ (cat:${t.category})").join(", ")}');
     }
 
     return tariffs;

@@ -16,9 +16,11 @@ import '../../utils/tariff_utils.dart';
 import '../../utils/permission_helper.dart';
 import '../../services/profile_service.dart';
 import '../../services/lifras_service.dart';
+import '../../services/dive_location_service.dart';
 import '../../services/operation_service.dart';
 import '../../services/payment_service.dart';
 import '../../models/operation.dart';
+import '../../models/dive_location.dart';
 import '../../models/member_profile.dart';
 import '../../models/exercice_lifras.dart';
 import '../../models/participant_operation.dart';
@@ -61,10 +63,13 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     with WidgetsBindingObserver {
   final ProfileService _profileService = ProfileService();
   final LifrasService _lifrasService = LifrasService();
+  final DiveLocationService _diveLocationService = DiveLocationService();
   final OperationService _operationService = OperationService();
 
   MemberProfile? _userProfile;
   MemberProfile? _organisateurProfile;
+  DiveLocation? _diveLocation;
+  String? _diveLocationLoadedFor;
   List<ExerciceLIFRAS> _availableExercices = [];
   Map<String, ExerciceLIFRAS> _allExercicesMap = {};
   Map<String, Map<String, MemberObservation>> _exerciceObservations =
@@ -184,8 +189,56 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     // Load organiser profile (for phone number display)
     _loadOrganisateurProfile();
 
+    // Load linked location to show address and navigation links.
+    _loadDiveLocation();
+
     // Load user's inscription to get selected exercices
     _loadUserInscription();
+  }
+
+  Future<void> _loadDiveLocation() async {
+    final operation = context.read<OperationProvider>().selectedOperation;
+    final locationId = operation?.lieuId;
+    final locationName = operation?.lieu?.trim();
+
+    if ((locationId == null || locationId.isEmpty) &&
+        (locationName == null || locationName.isEmpty)) {
+      if (mounted) {
+        setState(() {
+          _diveLocation = null;
+          _diveLocationLoadedFor = null;
+        });
+      }
+      return;
+    }
+
+    final cacheKey = locationId?.isNotEmpty == true
+        ? 'id:$locationId'
+        : 'name:${locationName!.toLowerCase()}';
+    if (_diveLocationLoadedFor == cacheKey) return;
+
+    DiveLocation? location;
+    if (locationId != null && locationId.isNotEmpty) {
+      location =
+          await _diveLocationService.getLocationById(widget.clubId, locationId);
+    } else if (locationName != null && locationName.isNotEmpty) {
+      final locations =
+          await _diveLocationService.getAllLocations(widget.clubId);
+      final normalizedName = locationName.toLowerCase();
+      for (final candidate in locations) {
+        if (candidate.name.trim().toLowerCase() == normalizedName) {
+          location = candidate;
+          break;
+        }
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _diveLocation = location;
+        _diveLocationLoadedFor = cacheKey;
+      });
+    }
   }
 
   Future<void> _loadOrganisateurProfile() async {
@@ -1787,8 +1840,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                             const SizedBox(height: 16),
 
                             // Description accordion
-                            if (operation.description != null &&
-                                operation.description!.isNotEmpty) ...[
+                            if (_hasDescriptionAccordionContent(operation)) ...[
                               _buildDescriptionAccordion(operation),
                               const SizedBox(height: 12),
                             ],
@@ -2015,12 +2067,29 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   }
 
   /// Description accordion with preview text and info document
+  bool _hasDescriptionAccordionContent(Operation operation) {
+    final description = operation.description?.trim();
+    final address = _diveLocation?.address?.trim();
+    return (description != null && description.isNotEmpty) ||
+        (address != null && address.isNotEmpty) ||
+        operation.infoDocument != null;
+  }
+
   Widget _buildDescriptionAccordion(operation) {
-    final description = operation.description ?? '';
+    final description = (operation.description ?? '').trim();
     final hasInfoDocument = operation.infoDocument != null;
+    final locationAddress = _diveLocation?.address?.trim();
+    final locationName = (operation.lieu as String?)?.trim();
+    final hasAddress = locationAddress != null && locationAddress.isNotEmpty;
 
     // Get preview: first line or first ~60 chars
-    String preview = description.split('\n').first;
+    String preview = description.isNotEmpty
+        ? description.split('\n').first
+        : hasAddress
+            ? locationAddress
+            : hasInfoDocument
+                ? operation.infoDocument!.nomAffichage
+                : 'Informations';
     if (preview.length > 60) {
       preview = '${preview.substring(0, 57)}...';
     }
@@ -2070,32 +2139,40 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Description text (with clickable links)
-                  Linkify(
-                    onOpen: (link) async {
-                      final uri = Uri.parse(link.url);
-                      if (await canLaunchUrl(uri)) {
-                        await launchUrl(uri,
-                            mode: LaunchMode.externalApplication);
-                      }
-                    },
-                    text: description,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: AppColors.donkerblauw,
-                      height: 1.5,
+                  if (hasAddress) ...[
+                    _buildLocationAddressBlock(
+                      locationName: locationName,
+                      address: locationAddress,
                     ),
-                    linkStyle: TextStyle(
-                      fontSize: 14,
-                      color: Colors.blue,
-                      decoration: TextDecoration.underline,
-                      height: 1.5,
+                    const SizedBox(height: 14),
+                  ],
+                  if (description.isNotEmpty)
+                    // Description text (with clickable links)
+                    Linkify(
+                      onOpen: (link) async {
+                        final uri = Uri.parse(link.url);
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(uri,
+                              mode: LaunchMode.externalApplication);
+                        }
+                      },
+                      text: description,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: AppColors.donkerblauw,
+                        height: 1.5,
+                      ),
+                      linkStyle: TextStyle(
+                        fontSize: 14,
+                        color: Colors.blue,
+                        decoration: TextDecoration.underline,
+                        height: 1.5,
+                      ),
                     ),
-                  ),
                   // Info document link (if exists)
                   if (hasInfoDocument) ...[
                     const SizedBox(height: 12),
-                    const Divider(),
+                    if (description.isNotEmpty || hasAddress) const Divider(),
                     const SizedBox(height: 8),
                     InkWell(
                       onTap: () async {
@@ -2167,6 +2244,131 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         ),
       ),
     );
+  }
+
+  Widget _buildLocationAddressBlock({
+    required String? locationName,
+    required String address,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.location_on, color: AppColors.middenblauw, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (locationName != null && locationName.isNotEmpty)
+                    Text(
+                      locationName,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.donkerblauw,
+                      ),
+                    ),
+                  Text(
+                    address,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: AppColors.donkerblauw,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 10,
+          runSpacing: 8,
+          children: [
+            _buildMapButton(
+              icon: Icons.map_outlined,
+              label: 'Google Maps',
+              onTap: () => _openGoogleMaps(address),
+            ),
+            _buildMapButton(
+              icon: Icons.navigation_outlined,
+              label: 'Waze',
+              onTap: () => _openWaze(address),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMapButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 18),
+      label: Text(label),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppColors.middenblauw,
+        side: BorderSide(color: AppColors.lichtblauw.withOpacity(0.8)),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+  }
+
+  Future<void> _openGoogleMaps(String address) async {
+    final uri = Uri.https('www.google.com', '/maps/search/', {
+      'api': '1',
+      'query': address,
+    });
+    await _launchNavigationUri(uri);
+  }
+
+  Future<void> _openWaze(String address) async {
+    final appUri = Uri(
+      scheme: 'waze',
+      host: '',
+      queryParameters: {
+        'q': address,
+        'navigate': 'yes',
+      },
+    );
+    final webUri = Uri.https('waze.com', '/ul', {
+      'q': address,
+      'navigate': 'yes',
+    });
+
+    var openedApp = false;
+    try {
+      openedApp = await launchUrl(appUri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      openedApp = false;
+    }
+    if (!openedApp) {
+      await _launchNavigationUri(webUri);
+    }
+  }
+
+  Future<void> _launchNavigationUri(Uri uri) async {
+    var opened = false;
+    try {
+      opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      opened = false;
+    }
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Impossible d’ouvrir la navigation')),
+      );
+    }
   }
 
   /// Communication accordion
