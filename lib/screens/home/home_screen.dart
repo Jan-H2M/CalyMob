@@ -25,7 +25,9 @@ import '../expenses/expense_list_screen.dart';
 // scan_page.dart is used from operation_detail_screen, not here
 import '../auth/login_screen.dart';
 import '../formation/my_progression_screen.dart';
+import '../boutique/boutique_screen.dart';
 import '../../services/feature_flag_service.dart';
+import '../../services/boutique/boutique_access_service.dart';
 
 /// Écran d'accueil avec navigation tabs (événements + demandes)
 class HomeScreen extends StatefulWidget {
@@ -427,6 +429,31 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
+          if (authProvider.currentUser?.uid != null)
+            StreamBuilder<bool>(
+              stream: BoutiqueAccessService().watchCanAccessBoutique(
+                clubId: FirebaseConfig.defaultClubId,
+                userId: authProvider.currentUser!.uid,
+              ),
+              builder: (context, snapshot) {
+                if (snapshot.data != true) return const SizedBox.shrink();
+                return IconButton(
+                  icon: const Icon(
+                    Icons.shopping_bag_outlined,
+                    color: Colors.white,
+                  ),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const BoutiqueScreen(),
+                      ),
+                    );
+                  },
+                  tooltip: 'Boutique',
+                );
+              },
+            ),
           // Ma Progression — behind feature flag
           StreamBuilder<bool>(
             stream: FeatureFlagService().isCarnetFormationEnabled(

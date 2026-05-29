@@ -169,6 +169,16 @@ exports.onObservationAcquis = onObservationAcquis;
 exports.createInscriptionRefund = require('./src/inscription/createRefundClaim').createInscriptionRefund;
 
 // =============================================================================
+// BOUTIQUE (Gen2)
+// =============================================================================
+
+const { createBoutiqueOrder } = require('./src/boutique/createOrder');
+exports.createBoutiqueOrder = createBoutiqueOrder;
+
+const { listBoutiqueOrders } = require('./src/boutique/listOrders');
+exports.listBoutiqueOrders = listBoutiqueOrders;
+
+// =============================================================================
 // CARNET DE FORMATION — Phase 1 (Gen2)
 // =============================================================================
 // Spec : `CARNET_DE_FORMATION_TECH.md` v2.1
