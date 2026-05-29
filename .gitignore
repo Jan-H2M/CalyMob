@@ -104,11 +104,15 @@ coverage/
 # Misc
 # ===================
 *.bak
+*.backup
 *.tmp
 *.cache
 *.local
 .temp/
 .vercel/
+*_backup.*
+*_old.*
+* [0-9].*
 
 # Fastlane auto-generated
 android/fastlane/report.xml
