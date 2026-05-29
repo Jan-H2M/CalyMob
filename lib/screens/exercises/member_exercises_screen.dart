@@ -290,8 +290,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
 
         for (final ex in _catalog) {
           final isTN = ex.niveau == NiveauLIFRAS.tn;
-          final match =
-              provider.exercicesValides.where((e) => e.exerciceId == ex.id);
+          final match = _matchingValidations(provider.exercicesValides, ex);
           final isValid = match.any((e) => e.isValidated);
           final isPending = match.any((e) => e.isPending);
 
@@ -355,10 +354,11 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                 iconColor: Colors.green,
                 emptyText: 'Aucun exercice validé pour le moment',
                 children: targetValidated.map((ex) {
-                  final match = provider.exercicesValides.firstWhere(
-                    (e) => e.exerciceId == ex.id && e.isValidated,
-                    orElse: () => provider.exercicesValides
-                        .firstWhere((e) => e.exerciceId == ex.id),
+                  final matches =
+                      _matchingValidations(provider.exercicesValides, ex);
+                  final match = matches.firstWhere(
+                    (e) => e.isValidated,
+                    orElse: () => matches.first,
                   );
                   return _buildValidatedRow(ex, match);
                 }).toList(),
@@ -373,8 +373,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                   iconColor: Colors.teal,
                   emptyText: null,
                   children: tnAll.map((ex) {
-                    final match = provider.exercicesValides
-                        .where((e) => e.exerciceId == ex.id);
+                    final match =
+                        _matchingValidations(provider.exercicesValides, ex);
                     final isValid = match.any((e) => e.isValidated);
                     if (isValid) {
                       final v = match.firstWhere((e) => e.isValidated);
@@ -389,6 +389,17 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
           ),
         );
       },
+    );
+  }
+
+  Iterable<ExerciceValide> _matchingValidations(
+    List<ExerciceValide> validations,
+    ExerciceLIFRAS exercice,
+  ) {
+    return validations.where(
+      (validation) =>
+          validation.exerciceId == exercice.id ||
+          validation.exerciceCode == exercice.code,
     );
   }
 
@@ -407,7 +418,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -646,6 +657,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
     required bool isValidated,
     String? trailingText,
     String? hintTag,
+    String? sourceTag,
     VoidCallback? onTap,
   }) {
     final niveauColor = _getNiveauColor(exercice.niveau);
@@ -665,11 +677,13 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
               height: 28,
               decoration: BoxDecoration(
                 color:
-                    isValidated ? Colors.green : niveauColor.withOpacity(0.18),
+                    isValidated
+                        ? Colors.green
+                        : niveauColor.withValues(alpha: 0.18),
                 borderRadius: BorderRadius.circular(6),
                 border: isValidated
                     ? null
-                    : Border.all(color: niveauColor.withOpacity(0.4)),
+                    : Border.all(color: niveauColor.withValues(alpha: 0.4)),
               ),
               child: Center(
                 child: isValidated
@@ -720,6 +734,25 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                           ),
                         ),
                       ],
+                      if (sourceTag != null) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.green[50],
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            sourceTag,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.green[800],
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                   Text(
@@ -760,6 +793,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
     return _buildExerciceRow(
       exercice: exercice,
       isValidated: true,
+      sourceTag: validation.isFromCarnetFormation ? 'QR moniteur' : null,
       trailingText: DateFormatter.formatShort(validation.dateValidation),
       onTap: () => _showValidatedDetails(exercice, validation),
     );
@@ -811,6 +845,12 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                 DateFormatter.formatLong(validation.dateValidation)),
             if (validation.moniteurNom.isNotEmpty)
               _buildDetailRow(Icons.person, 'Moniteur', validation.moniteurNom),
+            if (validation.isFromCarnetFormation)
+              _buildDetailRow(
+                Icons.verified_user_outlined,
+                'Origine',
+                'Confirmé par un moniteur via le carnet de formation',
+              ),
             if (validation.lieu != null && validation.lieu!.isNotEmpty)
               _buildDetailRow(Icons.location_on, 'Lieu', validation.lieu!),
             if (validation.notes != null && validation.notes!.isNotEmpty)
@@ -974,7 +1014,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                     label: Text(niveau.code),
                     selected: _filterNiveau == niveau,
                     onSelected: (_) => setState(() => _filterNiveau = niveau),
-                    selectedColor: _getNiveauColor(niveau).withOpacity(0.3),
+                    selectedColor:
+                        _getNiveauColor(niveau).withValues(alpha: 0.3),
                     avatar: CircleAvatar(
                       backgroundColor: _getNiveauColor(niveau),
                       radius: 10,
@@ -1091,6 +1132,24 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                 ),
               ],
             ),
+            if (exercice.isFromCarnetFormation) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Icon(Icons.verified_user_outlined,
+                      size: 12, color: Colors.green[700]),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Confirmé via QR / carnet',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.green[700],
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ],
             if (exercice.lieu != null && exercice.lieu!.isNotEmpty) ...[
               const SizedBox(height: 2),
               Row(
@@ -1179,6 +1238,12 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
             _buildDetailRow(Icons.calendar_today, 'Date de validation',
                 DateFormatter.formatLong(exercice.dateValidation)),
             _buildDetailRow(Icons.person, 'Moniteur', exercice.moniteurNom),
+            if (exercice.isFromCarnetFormation)
+              _buildDetailRow(
+                Icons.verified_user_outlined,
+                'Origine',
+                'Confirmé par un moniteur via le carnet de formation',
+              ),
             if (exercice.lieu != null && exercice.lieu!.isNotEmpty)
               _buildDetailRow(Icons.location_on, 'Lieu', exercice.lieu!),
             if (exercice.notes != null && exercice.notes!.isNotEmpty)

@@ -45,6 +45,8 @@ exports.onObservationAcquis = onDocumentCreated(
 
     const memberId = data.memberId;
     const exerciceCode = data.exerciceCode;
+    const exerciseDoc = await findExerciseByCode(clubId, exerciceCode);
+    const exercise = exerciseDoc?.data() || {};
 
     logger.info(
       `[onObservationAcquis] Processing: member=${memberId}, ` +
@@ -75,9 +77,11 @@ exports.onObservationAcquis = onDocumentCreated(
       await validesRef.add({
         exercice_code: exerciceCode,
         exercice_description: data.exerciceDescription || '',
-        exercice_id: '',  // Will be linked later if needed
-        exercice_niveau: data.memberNiveau || '',
-        exercice_specialite: '',
+        exercice_id: exerciseDoc?.id || '',
+        exercice_niveau: exercise.niveau || inferExerciseNiveau(exerciceCode),
+        exercice_specialite: exercise.specialite || '',
+        status: 'validated',
+        declared_by_member: false,
         date_validation: data.contextDate || FieldValue.serverTimestamp(),
         moniteur_nom: data.observerName || '',
         moniteur_id: data.observerId || '',
@@ -104,3 +108,25 @@ exports.onObservationAcquis = onDocumentCreated(
     return null;
   }
 );
+
+async function findExerciseByCode(clubId, exerciceCode) {
+  if (!exerciceCode) return null;
+
+  const snap = await db
+    .collection('clubs').doc(clubId)
+    .collection('exercices_lifras')
+    .where('code', '==', exerciceCode)
+    .limit(1)
+    .get();
+
+  return snap.empty ? null : snap.docs[0];
+}
+
+function inferExerciseNiveau(exerciceCode) {
+  if (!exerciceCode || typeof exerciceCode !== 'string') return '';
+  const prefix = exerciceCode.split('.')[0].toUpperCase();
+  if (['TN', 'NB', 'P2', 'P3', 'P4', 'AM', 'MC', 'MF', 'MN'].includes(prefix)) {
+    return prefix;
+  }
+  return '';
+}

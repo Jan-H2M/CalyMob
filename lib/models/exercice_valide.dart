@@ -86,6 +86,8 @@ class ExerciceValide {
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final String createdBy;            // User ID who created the entry
+  final String? source;              // e.g. carnet_formation
+  final String? observationId;       // Source member_observations doc
 
   ExerciceValide({
     required this.id,
@@ -107,6 +109,8 @@ class ExerciceValide {
     this.createdAt,
     this.updatedAt,
     required this.createdBy,
+    this.source,
+    this.observationId,
   });
 
   /// Convertir depuis Firestore
@@ -136,6 +140,8 @@ class ExerciceValide {
       createdAt: (data['created_at'] as Timestamp?)?.toDate(),
       updatedAt: (data['updated_at'] as Timestamp?)?.toDate(),
       createdBy: data['created_by'] ?? '',
+      source: data['source'],
+      observationId: data['observation_id'],
     );
   }
 
@@ -175,6 +181,12 @@ class ExerciceValide {
     }
     if (themaId != null && themaId!.isNotEmpty) {
       data['thema_id'] = themaId;
+    }
+    if (source != null && source!.isNotEmpty) {
+      data['source'] = source;
+    }
+    if (observationId != null && observationId!.isNotEmpty) {
+      data['observation_id'] = observationId;
     }
 
     return data;
@@ -278,6 +290,8 @@ class ExerciceValide {
     DateTime? createdAt,
     DateTime? updatedAt,
     String? createdBy,
+    String? source,
+    String? observationId,
   }) {
     return ExerciceValide(
       id: id ?? this.id,
@@ -299,6 +313,10 @@ class ExerciceValide {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       createdBy: createdBy ?? this.createdBy,
+      source: source ?? this.source,
+      observationId: observationId ?? this.observationId,
     );
   }
+
+  bool get isFromCarnetFormation => source == 'carnet_formation';
 }

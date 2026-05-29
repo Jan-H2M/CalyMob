@@ -59,6 +59,13 @@ service cloud.firestore {
       return hasClubStatut(clubId, ['ca', 'CA', 'comite', 'Comite', 'comité', 'Comité']);
     }
 
+    function canManageExpenses(clubId) {
+      return isAdmin(clubId) || hasCARole(clubId) || (
+        isClubMember(clubId) &&
+        getUserData(clubId).app_role == 'validateur'
+      );
+    }
+
     function hasBureauRole(clubId) {
       return hasClubStatut(clubId, [
         'BS', 'bs', 'Banque Signature', 'banque signature',
@@ -268,7 +275,7 @@ service cloud.firestore {
       match /demandes_remboursement/{claimId} {
         // Read: User role can only see their own demands (via demandeur_id)
         allow read: if isAuthenticated() && (
-          getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
+          canManageExpenses(clubId) ||
           (getUserData(clubId).app_role == 'user' && resource.data.demandeur_id == request.auth.uid)
         );
 
@@ -276,14 +283,17 @@ service cloud.firestore {
         // Mobile app: session check enabled - app creates session on login
         allow create: if isAuthenticated()
           && hasValidSession(clubId)
-          && request.resource.data.demandeur_id == request.auth.uid;
+          && (
+            canManageExpenses(clubId) ||
+            request.resource.data.demandeur_id == request.auth.uid
+          );
 
         // Update: User can update their own demands (if not yet approved), admin+ can update all
         // Mobile app: session check enabled
         allow update: if isAuthenticated()
           && hasValidSession(clubId)
           && (
-            getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
+            canManageExpenses(clubId) ||
             (
               getUserData(clubId).app_role == 'user' &&
               resource.data.demandeur_id == request.auth.uid &&
@@ -301,18 +311,21 @@ service cloud.firestore {
       match /expense_claims/{claimId} {
         // Read: User can only see their own, admin+ can see all
         allow read: if isAuthenticated() && (
-          getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
+          canManageExpenses(clubId) ||
           (getUserData(clubId).app_role == 'user' && resource.data.demandeur_id == request.auth.uid)
         );
         // Create: User can create their own claims with valid session
         allow create: if isAuthenticated()
           && hasValidSession(clubId)
-          && request.resource.data.demandeur_id == request.auth.uid;
+          && (
+            canManageExpenses(clubId) ||
+            request.resource.data.demandeur_id == request.auth.uid
+          );
         // Update: User can update own (if draft/submitted), admin+ can update all
         allow update: if isAuthenticated()
           && hasValidSession(clubId)
           && (
-            getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
+            canManageExpenses(clubId) ||
             (
               getUserData(clubId).app_role == 'user' &&
               resource.data.demandeur_id == request.auth.uid &&
@@ -863,6 +876,13 @@ service cloud.firestore {
         allow create, update: if isSuperAdmin(clubId)
           && hasValidSession(clubId)
           && (!('fiscal_year_id' in request.resource.data) || canModifyFiscalYearData(clubId, request.resource.data.fiscal_year_id));
+        allow delete: if isSuperAdmin(clubId) && hasValidSession(clubId);
+      }
+
+      // Fournisseurs - used by the expense reimbursement workflow.
+      match /fournisseurs/{fournisseurId} {
+        allow read: if isClubMember(clubId) && canManageExpenses(clubId);
+        allow create, update: if canManageExpenses(clubId) && hasValidSession(clubId);
         allow delete: if isSuperAdmin(clubId) && hasValidSession(clubId);
       }
 
