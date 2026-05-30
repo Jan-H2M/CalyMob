@@ -82,12 +82,15 @@ function sanitizeEpcText(text) {
   return sanitized.replace(/\s+/g, ' ').trim();
 }
 
-function buildEpcQrPayload({ iban, beneficiary, amount, ogm }) {
+function buildEpcQrPayload({ iban, beneficiary, amount, ogm, communication }) {
   const cleanIban = String(iban || '').replace(/\s/g, '').toUpperCase();
   const beneficiaryName = sanitizeEpcText(beneficiary).substring(0, 70);
   const reference = /^\d{12}$/.test(String(ogm || ''))
     ? `${ogm.slice(0, 3)}/${ogm.slice(3, 7)}/${ogm.slice(7, 12)}`
     : '';
+  const freeCommunication = reference
+    ? ''
+    : sanitizeEpcText(communication || '').substring(0, 140);
 
   const lines = [
     'BCD',
@@ -100,7 +103,7 @@ function buildEpcQrPayload({ iban, beneficiary, amount, ogm }) {
     `EUR${Number(amount || 0).toFixed(2)}`,
     '',
     reference,
-    '',
+    freeCommunication,
     '',
   ];
 

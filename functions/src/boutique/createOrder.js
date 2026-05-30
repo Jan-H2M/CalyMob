@@ -12,12 +12,6 @@ const {
   parseMoney,
   parsePositiveInteger,
 } = require('./shared');
-const { calculateOgmCheckDigit, formatOgmDisplay } = require('../shared/ogm');
-const {
-  OGM_COUNTER_FIELD,
-  OGM_COUNTER_START,
-  createPaymentReference,
-} = require('../shared/ogmService');
 
 function resolveVariantUnitPrice(product, variant) {
   if (typeof variant.salePriceOverride === 'number') {
@@ -185,7 +179,6 @@ exports.createBoutiqueOrder = onCall(
     const clubRef = getClubRef(db, clubId);
     const orderRef = clubRef.collection('orders').doc();
     const orderCounterRef = clubRef.collection('settings').doc('order_counter');
-    const ogmCounterRef = clubRef.collection('settings').doc('ogm_counter');
     const inventoryMutationsRef = clubRef.collection('inventoryMutations');
     const now = admin.firestore.Timestamp.now();
     const expiresAt = admin.firestore.Timestamp.fromMillis(now.toMillis() + (72 * 60 * 60 * 1000));
@@ -194,13 +187,6 @@ exports.createBoutiqueOrder = onCall(
 
     try {
       const result = await db.runTransaction(async (transaction) => {
-        const ogmCounterSnap = await transaction.get(ogmCounterRef);
-        const nextOgmCounter = ogmCounterSnap.exists
-          ? Number(ogmCounterSnap.get(OGM_COUNTER_FIELD) || 0) + 1
-          : OGM_COUNTER_START;
-        const baseOgm = String(nextOgmCounter).padStart(10, '0');
-        const ogm = baseOgm + calculateOgmCheckDigit(baseOgm);
-        const ogmDisplay = formatOgmDisplay(ogm);
         const counterSnap = await transaction.get(orderCounterRef);
         const nextCounter = counterSnap.exists
           ? Number(counterSnap.get('counter') || 0) + 1
@@ -341,20 +327,15 @@ exports.createBoutiqueOrder = onCall(
         }
 
         const orderNumber = `BTQ-${currentYear}-${String(nextCounter).padStart(4, '0')}`;
+        const paymentCommunication = `+++${orderNumber}+++`;
         const total = itemsSubtotal + deliverySurcharges;
         const epcPayload = buildEpcQrPayload({
           iban: bankSettings.iban,
           beneficiary: bankSettings.beneficiary,
           amount: total,
-          ogm,
+          communication: paymentCommunication,
         });
         const qrCodeUrl = await QRCode.toDataURL(epcPayload);
-
-        transaction.set(ogmCounterRef, {
-          [OGM_COUNTER_FIELD]: nextOgmCounter,
-          updated_at: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
 
         for (const cachedProduct of productCache.values()) {
           transaction.update(cachedProduct.ref, {
@@ -370,9 +351,10 @@ exports.createBoutiqueOrder = onCall(
 
         transaction.set(orderRef, {
           orderNumber,
-          structuredCommunication: ogmDisplay,
-          ogm,
-          ogm_display: ogmDisplay,
+          structuredCommunication: paymentCommunication,
+          paymentCommunication,
+          ogm: null,
+          ogm_display: paymentCommunication,
           buyer,
           items: lines,
           pricing: {
@@ -386,9 +368,10 @@ exports.createBoutiqueOrder = onCall(
             iban: bankSettings.iban,
             beneficiary: bankSettings.beneficiary,
             amount: total,
-            structuredCommunication: ogmDisplay,
-            ogm,
-            ogm_display: ogmDisplay,
+            structuredCommunication: paymentCommunication,
+            paymentCommunication,
+            ogm: null,
+            ogm_display: paymentCommunication,
             epcPayload,
             qrCodeUrl,
             status: 'pending',
@@ -401,15 +384,6 @@ exports.createBoutiqueOrder = onCall(
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
-
-        await createPaymentReference(db, clubId, {
-          ogm,
-          payload_text: `Boutique ${orderNumber}`,
-          context_type: 'BOUTIQUE_ORDER',
-          context_id: orderRef.id,
-          amount_cents: Math.round(total * 100),
-          created_by: request.auth.uid,
-        }, transaction);
 
         inventoryReservations.forEach((entry) => {
           const mutationRef = inventoryMutationsRef.doc();
@@ -430,9 +404,8 @@ exports.createBoutiqueOrder = onCall(
           deliverySurcharges,
           epcPayload,
           itemsSubtotal,
-          ogm,
-          ogmDisplay,
           orderNumber,
+          paymentCommunication,
           qrCodeUrl,
           total,
         };
@@ -442,17 +415,19 @@ exports.createBoutiqueOrder = onCall(
         success: true,
         orderId: orderRef.id,
         orderNumber: result.orderNumber,
-        ogm: result.ogm,
-        ogm_display: result.ogmDisplay,
+        ogm: null,
+        ogm_display: result.paymentCommunication,
+        paymentCommunication: result.paymentCommunication,
         total: result.total,
         expiresAt: expiresAt.toDate().toISOString(),
         payment: {
-          ogm: result.ogm,
-          ogm_display: result.ogmDisplay,
+          ogm: null,
+          ogm_display: result.paymentCommunication,
+          paymentCommunication: result.paymentCommunication,
           iban: bankSettings.iban,
           beneficiary: bankSettings.beneficiary,
           amount: result.total,
-          structuredCommunication: result.ogmDisplay,
+          structuredCommunication: result.paymentCommunication,
           epcPayload: result.epcPayload,
           qrCodeUrl: result.qrCodeUrl,
         },

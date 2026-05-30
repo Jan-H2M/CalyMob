@@ -39,8 +39,7 @@ class BoutiqueOrderConfirmationScreen extends StatelessWidget {
               beneficiaryName: beneficiary,
               iban: iban,
               amount: amount,
-              reference: ogmDisplay.replaceAll('+', '').replaceAll('/', ''),
-              description: 'Boutique $orderNumber',
+              description: ogmDisplay,
             ),
           );
 
