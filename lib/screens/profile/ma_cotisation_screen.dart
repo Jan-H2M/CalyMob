@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -282,11 +283,26 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Impossible de créer le paiement: $error')),
+        SnackBar(content: Text(_paymentErrorMessage(error))),
       );
     } finally {
       if (mounted) setState(() => _creating = false);
     }
+  }
+
+  String _paymentErrorMessage(Object error) {
+    if (error is FirebaseFunctionsException) {
+      final details = error.details;
+      if (details is Map && details['code'] == 'COTISATION_CLOSED') {
+        return error.message ?? 'Les cotisations ne sont pas encore ouvertes.';
+      }
+      if (error.message != null &&
+          error.message!.trim().isNotEmpty &&
+          error.message!.trim().toLowerCase() != 'internal') {
+        return error.message!.trim();
+      }
+    }
+    return 'Impossible de créer le paiement pour le moment. Réessayez plus tard ou contactez le club.';
   }
 
   String _periodLabel(String period) {
@@ -295,10 +311,18 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
 
   String _closedPaymentMessage(MembershipSeason season) {
     if (season.paymentMessage.trim().isNotEmpty) {
-      return season.paymentMessage.trim();
+      return _withoutSeasonYear(season.paymentMessage, season);
     }
-    return 'Les cotisations ${season.label} ne sont pas encore ouvertes aux membres. '
+    return 'Les cotisations ne sont pas encore ouvertes aux membres. '
         'Le paiement sera disponible ici dès que le club aura ouvert la période.';
+  }
+
+  String _withoutSeasonYear(String message, MembershipSeason season) {
+    return message
+        .replaceAll(season.label, '')
+        .replaceAll(season.startYear.toString(), '')
+        .replaceAll(RegExp(r'\s{2,}'), ' ')
+        .trim();
   }
 }
 
@@ -363,7 +387,7 @@ class _InfoLine extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(
-            width: 122,
+            width: 132,
             child: Text(
               label,
               style: TextStyle(
