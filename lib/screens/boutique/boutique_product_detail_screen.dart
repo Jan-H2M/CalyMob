@@ -6,6 +6,7 @@ import '../../config/app_colors.dart';
 import '../../models/boutique/boutique_product.dart';
 import '../../providers/boutique_cart_provider.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import 'boutique_cart_screen.dart';
 
 class BoutiqueProductDetailScreen extends StatefulWidget {
   final BoutiqueProduct product;
@@ -302,10 +303,27 @@ class _BoutiqueProductDetailScreenState
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
       SnackBar(
-        content: Text('${widget.product.name} ajouté au panier.'),
-        duration: const Duration(milliseconds: 1400),
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle_outline, color: Colors.white),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text('${widget.product.name} ajouté au panier.'),
+            ),
+          ],
+        ),
+        duration: const Duration(milliseconds: 900),
         behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFF168A43),
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      ),
+    );
+
+    await Future<void>.delayed(const Duration(milliseconds: 650));
+    if (!context.mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const BoutiqueCartScreen(),
       ),
     );
   }
