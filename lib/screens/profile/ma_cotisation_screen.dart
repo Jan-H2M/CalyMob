@@ -1,21 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../models/cotisation/cotisation_models.dart';
 import '../../models/member_profile.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/cotisation/cotisation_service.dart';
+import '../../services/profile_service.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 
 class MaCotisationScreen extends StatefulWidget {
-  final MemberProfile profile;
+  final MemberProfile? profile;
 
   const MaCotisationScreen({
     super.key,
-    required this.profile,
+    this.profile,
   });
 
   @override
@@ -24,6 +27,7 @@ class MaCotisationScreen extends StatefulWidget {
 
 class _MaCotisationScreenState extends State<MaCotisationScreen> {
   final CotisationService _service = CotisationService();
+  final ProfileService _profileService = ProfileService();
   bool _creating = false;
 
   @override
@@ -31,7 +35,8 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Ma cotisation', style: TextStyle(color: Colors.white)),
+        title:
+            const Text('Ma cotisation', style: TextStyle(color: Colors.white)),
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
@@ -39,58 +44,102 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
       body: OceanGradientBackground(
         creatures: CreatureSet.bubbles,
         child: SafeArea(
-          child: StreamBuilder<MembershipSeason?>(
-            stream: _service.watchActiveSeason(FirebaseConfig.defaultClubId),
-            builder: (context, seasonSnapshot) {
-              if (seasonSnapshot.connectionState == ConnectionState.waiting) {
-                return const Center(
-                  child: CircularProgressIndicator(color: Colors.white),
-                );
-              }
-
-              final season = seasonSnapshot.data;
-              if (season == null) {
-                return const _CenteredNotice(
-                  title: 'Aucun tarif actif',
-                  message: 'Les cotisations ne sont pas encore configurées.',
-                );
-              }
-
-              return StreamBuilder<List<CotisationPayment>>(
-                stream: _service.watchMyPayments(
-                  clubId: FirebaseConfig.defaultClubId,
-                  memberId: widget.profile.id,
-                ),
-                builder: (context, paymentSnapshot) {
-                  final payments = paymentSnapshot.data ?? const [];
-                  final activePayment = payments
-                      .where((payment) =>
-                          payment.seasonId == season.id &&
-                          (payment.status == 'awaiting_payment' ||
-                              payment.status == 'paid'))
-                      .cast<CotisationPayment?>()
-                      .firstWhere((payment) => payment != null,
-                          orElse: () => null);
-
-                  return _buildContent(season, activePayment);
-                },
-              );
-            },
-          ),
+          child: widget.profile == null
+              ? _buildProfileLoader()
+              : _buildWithProfile(widget.profile!),
         ),
       ),
     );
   }
 
-  Widget _buildContent(MembershipSeason season, CotisationPayment? payment) {
+  Widget _buildProfileLoader() {
+    final userId = context.watch<AuthProvider>().currentUser?.uid ?? '';
+
+    if (userId.isEmpty) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.white),
+      );
+    }
+
+    return StreamBuilder<MemberProfile?>(
+      stream:
+          _profileService.watchProfile(FirebaseConfig.defaultClubId, userId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          );
+        }
+
+        final profile = snapshot.data;
+        if (profile == null) {
+          return const _CenteredNotice(
+            title: 'Profil indisponible',
+            message: 'Impossible de charger votre fiche membre.',
+          );
+        }
+
+        return _buildWithProfile(profile);
+      },
+    );
+  }
+
+  Widget _buildWithProfile(MemberProfile profile) {
+    return StreamBuilder<MembershipSeason?>(
+      stream: _service.watchActiveSeason(FirebaseConfig.defaultClubId),
+      builder: (context, seasonSnapshot) {
+        if (seasonSnapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          );
+        }
+
+        final season = seasonSnapshot.data;
+        if (season == null) {
+          return const _CenteredNotice(
+            title: 'Aucun tarif actif',
+            message: 'Les cotisations ne sont pas encore configurées.',
+          );
+        }
+
+        return StreamBuilder<List<CotisationPayment>>(
+          stream: _service.watchMyPayments(
+            clubId: FirebaseConfig.defaultClubId,
+            memberId: profile.id,
+          ),
+          builder: (context, paymentSnapshot) {
+            final payments = paymentSnapshot.data ?? const [];
+            final activePayments = payments
+                .where(
+                  (payment) =>
+                      payment.seasonId == season.id &&
+                      (payment.status == 'awaiting_payment' ||
+                          payment.status == 'paid'),
+                )
+                .toList();
+            final activePayment =
+                activePayments.isEmpty ? null : activePayments.first;
+
+            return _buildContent(profile, season, activePayment);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildContent(
+    MemberProfile profile,
+    MembershipSeason season,
+    CotisationPayment? payment,
+  ) {
     final formatter = NumberFormat.currency(
       locale: 'fr_BE',
       symbol: '€',
       decimalDigits: 2,
     );
-    final period = widget.profile.membershipPeriod ?? 'jan_dec';
+    final period = profile.membershipPeriod ?? 'jan_dec';
     final tariff = season.tariffs.firstWhere(
-      (entry) => entry.code == widget.profile.membershipCategoryCode,
+      (entry) => entry.code == profile.membershipCategoryCode,
       orElse: () => const MembershipTariff(id: '', code: '', label: ''),
     );
     final price = tariff.priceForPeriod(period);
@@ -113,7 +162,7 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  widget.profile.fullName,
+                  profile.fullName,
                   style: const TextStyle(
                     color: AppColors.donkerblauw,
                     fontSize: 22,
@@ -133,15 +182,18 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
                 _InfoLine(label: 'Période', value: _periodLabel(period)),
                 _InfoLine(
                   label: 'Montant',
-                  value: price == null ? 'Non disponible' : formatter.format(price),
+                  value: price == null
+                      ? 'Non disponible'
+                      : formatter.format(price),
                   highlight: true,
                 ),
-                if (widget.profile.lifrasId?.isNotEmpty == true)
-                  _InfoLine(label: 'ID LIFRAS', value: widget.profile.lifrasId!),
+                if (profile.lifrasId?.isNotEmpty == true)
+                  _InfoLine(label: 'ID LIFRAS', value: profile.lifrasId!),
                 if (payment?.validityUntil != null)
                   _InfoLine(
                     label: 'Validité',
-                    value: DateFormat('dd/MM/yyyy').format(payment!.validityUntil!),
+                    value: DateFormat('dd/MM/yyyy')
+                        .format(payment!.validityUntil!),
                   ),
                 const SizedBox(height: 18),
                 if (!isOpen)

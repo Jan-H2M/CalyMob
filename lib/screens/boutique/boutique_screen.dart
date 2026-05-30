@@ -11,6 +11,7 @@ import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'boutique_cart_screen.dart';
 import 'boutique_product_detail_screen.dart';
 import 'mes_commandes_screen.dart';
+import '../profile/ma_cotisation_screen.dart';
 
 class BoutiqueScreen extends StatefulWidget {
   const BoutiqueScreen({super.key});
@@ -48,6 +49,20 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                 ),
               ),
               const SizedBox(height: 22),
+              _BoutiqueHomeCard(
+                icon: Icons.card_membership_outlined,
+                title: 'Ma cotisation',
+                subtitle: 'Consulter et payer votre cotisation membre.',
+                emphasized: true,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const MaCotisationScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
               _BoutiqueHomeCard(
                 icon: Icons.receipt_long_outlined,
                 title: 'Mes commandes',
