@@ -138,7 +138,7 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
       symbol: '€',
       decimalDigits: 2,
     );
-    final period = profile.membershipPeriod ?? 'jan_dec';
+    final period = _resolvePeriod(profile);
     final tariff = season.tariffs.firstWhere(
       (entry) => entry.code == profile.membershipCategoryCode,
       orElse: () => const MembershipTariff(id: '', code: '', label: ''),
@@ -306,7 +306,20 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
   }
 
   String _periodLabel(String period) {
-    return period == 'sept_dec' ? 'Sept → Déc+1' : 'Jan → Déc';
+    return period == 'sept_dec'
+        ? 'Nouveau membre · Sept → Déc année suivante'
+        : 'Jan → Déc';
+  }
+
+  String _resolvePeriod(MemberProfile profile) {
+    if (profile.membershipPeriod == 'sept_dec' ||
+        profile.membershipPeriod == 'jan_dec') {
+      return profile.membershipPeriod!;
+    }
+    if (profile.cotisationValidite != null) {
+      return 'jan_dec';
+    }
+    return DateTime.now().month >= 9 ? 'sept_dec' : 'jan_dec';
   }
 
   String _closedPaymentMessage(MembershipSeason season) {

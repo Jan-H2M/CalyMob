@@ -45,6 +45,16 @@ function resolvePrice(tariff, period) {
   return period === 'sept_dec' ? tariff.price_sept_dec : tariff.price_jan_dec;
 }
 
+function resolveMembershipPeriod(member) {
+  if (member.membership_period === 'sept_dec' || member.membership_period === 'jan_dec') {
+    return member.membership_period;
+  }
+  if (member.cotisation_validite || member.cotisationValidite) {
+    return 'jan_dec';
+  }
+  return new Date().getUTCMonth() >= 8 ? 'sept_dec' : 'jan_dec';
+}
+
 function resolveValidityUntil(startYear, period) {
   const year = period === 'sept_dec' ? startYear + 2 : startYear + 1;
   return admin.firestore.Timestamp.fromDate(new Date(Date.UTC(year, 0, 31, 12, 0, 0)));
@@ -150,7 +160,7 @@ exports.createCotisationPayment = onCall(
       }
 
       const tariffCode = member.membership_category_code || '';
-      const period = member.membership_period || 'jan_dec';
+      const period = resolveMembershipPeriod(member);
       if (!tariffCode) {
         throw buildDomainError('MEMBERSHIP_CATEGORY_MISSING', 'Type de membre manquant');
       }
