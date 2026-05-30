@@ -183,11 +183,11 @@ exports.createBoutiqueOrder = onCall(
 
     const clubRef = getClubRef(db, clubId);
     const orderRef = clubRef.collection('orders').doc();
-    const orderCounterRef = clubRef.collection('settings').doc(`boutique_order_counter_${currentYear}`);
     const inventoryMutationsRef = clubRef.collection('inventoryMutations');
     const now = admin.firestore.Timestamp.now();
     const expiresAt = admin.firestore.Timestamp.fromMillis(now.toMillis() + (72 * 60 * 60 * 1000));
     const currentYear = new Date(now.toMillis()).getUTCFullYear();
+    const orderCounterRef = clubRef.collection('settings').doc(`boutique_order_counter_${currentYear}`);
     const bankSettings = await resolveClubBankSettings(clubRef);
 
     try {
