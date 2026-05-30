@@ -30,6 +30,7 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
   final CotisationService _service = CotisationService();
   final ProfileService _profileService = ProfileService();
   bool _creating = false;
+  String? _selectedPeriod;
 
   @override
   Widget build(BuildContext context) {
@@ -138,15 +139,20 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
       symbol: '€',
       decimalDigits: 2,
     );
-    final period = _resolvePeriod(profile);
     final tariff = season.tariffs.firstWhere(
       (entry) => entry.code == profile.membershipCategoryCode,
       orElse: () => const MembershipTariff(id: '', code: '', label: ''),
     );
-    final price = tariff.priceForPeriod(period);
+    final availablePeriods = _availablePeriods(tariff);
+    final period =
+        _selectedPeriod != null && availablePeriods.contains(_selectedPeriod)
+            ? _selectedPeriod!
+            : _defaultPeriod(profile, availablePeriods);
+    final price = period == null ? null : tariff.priceForPeriod(period);
     final isOpen = season.paymentStatus == 'open';
     final canPay = isOpen &&
         tariff.code.isNotEmpty &&
+        period != null &&
         price != null &&
         price > 0 &&
         payment == null;
@@ -180,7 +186,18 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
                 ),
                 const SizedBox(height: 18),
                 _InfoLine(label: 'Type de membre', value: tariff.label),
-                _InfoLine(label: 'Période', value: _periodLabel(period)),
+                if (availablePeriods.length > 1)
+                  _PeriodChooser(
+                    selectedPeriod: period,
+                    periods: availablePeriods,
+                    formatter: formatter,
+                    tariff: tariff,
+                    onSelected: (value) {
+                      setState(() => _selectedPeriod = value);
+                    },
+                  )
+                else
+                  _InfoLine(label: 'Période', value: _periodLabel(period)),
                 if (profile.cotisationValidite != null)
                   _InfoLine(
                     label: 'Cotisation actuelle',
@@ -218,6 +235,15 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
                     icon: Icons.error_outline,
                     text: 'Votre type de membre n’est pas configuré.',
                   )
+                else if (period == null)
+                  const _StatusBox(
+                    color: Color(0xFFFFF3E0),
+                    textColor: Color(0xFFE65100),
+                    icon: Icons.event_note_outlined,
+                    title: 'Période à définir',
+                    text:
+                        'Votre période de cotisation doit être configurée par le club avant de créer le paiement.',
+                  )
                 else if (price == null || price <= 0)
                   const _StatusBox(
                     color: Color(0xFFFFEBEE),
@@ -246,7 +272,8 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                      onPressed: _creating ? null : _createPayment,
+                      onPressed:
+                          _creating ? null : () => _createPayment(period),
                       icon: _creating
                           ? const SizedBox(
                               width: 18,
@@ -272,10 +299,11 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
     );
   }
 
-  Future<void> _createPayment() async {
+  Future<void> _createPayment(String period) async {
     setState(() => _creating = true);
     try {
-      await _service.createPayment(FirebaseConfig.defaultClubId);
+      await _service.createPayment(FirebaseConfig.defaultClubId,
+          period: period);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('QR de paiement créé')),
@@ -305,21 +333,30 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
     return 'Impossible de créer le paiement pour le moment. Réessayez plus tard ou contactez le club.';
   }
 
-  String _periodLabel(String period) {
+  String _periodLabel(String? period) {
+    if (period == null) return 'À définir par le club';
     return period == 'sept_dec'
         ? 'Nouveau membre · Sept → Déc année suivante'
         : 'Jan → Déc';
   }
 
-  String _resolvePeriod(MemberProfile profile) {
+  String? _defaultPeriod(MemberProfile profile, List<String> availablePeriods) {
     if (profile.membershipPeriod == 'sept_dec' ||
         profile.membershipPeriod == 'jan_dec') {
-      return profile.membershipPeriod!;
+      if (availablePeriods.contains(profile.membershipPeriod)) {
+        return profile.membershipPeriod!;
+      }
     }
-    if (profile.cotisationValidite != null) {
-      return 'jan_dec';
-    }
-    return DateTime.now().month >= 9 ? 'sept_dec' : 'jan_dec';
+    if (availablePeriods.contains('jan_dec')) return 'jan_dec';
+    if (availablePeriods.contains('sept_dec')) return 'sept_dec';
+    return null;
+  }
+
+  List<String> _availablePeriods(MembershipTariff tariff) {
+    return [
+      if (tariff.priceJanDec != null) 'jan_dec',
+      if (tariff.priceSeptDec != null) 'sept_dec',
+    ];
   }
 
   String _closedPaymentMessage(MembershipSeason season) {
@@ -422,6 +459,105 @@ class _InfoLine extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _PeriodChooser extends StatelessWidget {
+  final String? selectedPeriod;
+  final List<String> periods;
+  final NumberFormat formatter;
+  final MembershipTariff tariff;
+  final ValueChanged<String> onSelected;
+
+  const _PeriodChooser({
+    required this.selectedPeriod,
+    required this.periods,
+    required this.formatter,
+    required this.tariff,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Type de cotisation',
+            style: TextStyle(
+              color: Colors.grey.shade700,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...periods.map((period) {
+            final selected = selectedPeriod == period;
+            final price = tariff.priceForPeriod(period);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: InkWell(
+                onTap: () => onSelected(period),
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? AppColors.middenblauw.withValues(alpha: 0.12)
+                        : AppColors.surfaceGrey,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: selected
+                          ? AppColors.middenblauw
+                          : Colors.grey.shade300,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        selected
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_unchecked,
+                        color: AppColors.middenblauw,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _periodLabel(period),
+                          style: const TextStyle(
+                            color: AppColors.donkerblauw,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      if (price != null)
+                        Text(
+                          formatter.format(price),
+                          style: const TextStyle(
+                            color: AppColors.oranje,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  String _periodLabel(String period) {
+    return period == 'sept_dec'
+        ? 'Nouveau membre · Sept → Déc année suivante'
+        : 'Jan → Déc';
   }
 }
 

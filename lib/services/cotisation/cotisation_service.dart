@@ -11,8 +11,8 @@ class CotisationService {
     FirebaseFirestore? firestore,
     FirebaseFunctions? functions,
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
-        _functions = functions ??
-            FirebaseFunctions.instanceFor(region: 'europe-west1');
+        _functions =
+            functions ?? FirebaseFunctions.instanceFor(region: 'europe-west1');
 
   Stream<MembershipSeason?> watchActiveSeason(String clubId) {
     return _firestore
@@ -46,9 +46,12 @@ class CotisationService {
     });
   }
 
-  Future<CotisationPayment> createPayment(String clubId) async {
-    final result = await _functions.httpsCallable('createCotisationPayment').call({
+  Future<CotisationPayment> createPayment(String clubId,
+      {required String period}) async {
+    final result =
+        await _functions.httpsCallable('createCotisationPayment').call({
       'clubId': clubId,
+      'period': period,
     });
     final data = Map<String, dynamic>.from(result.data as Map);
     return CotisationPayment(
