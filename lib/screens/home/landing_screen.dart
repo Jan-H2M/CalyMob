@@ -15,9 +15,11 @@ import '../../widgets/profile_tile.dart';
 import '../auth/login_screen.dart';
 import '../operations/operations_list_screen.dart';
 import '../communication/communication_hub_screen.dart';
+import '../boutique/boutique_screen.dart';
 import '../profile/profile_screen.dart';
 import '../profile/who_is_who_screen.dart';
 import '../training/mon_carnet_screen.dart';
+import '../../services/boutique/boutique_access_service.dart';
 
 /// Landing page avec thème maritime animé et boutons ronds
 class LandingScreen extends StatefulWidget {
@@ -261,6 +263,12 @@ class _LandingScreenState extends State<LandingScreen> {
     }
   }
 
+  void _openBoutique() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const BoutiqueScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
@@ -367,7 +375,7 @@ class _LandingScreenState extends State<LandingScreen> {
 
                     const SizedBox(height: 20),
 
-                    // Row 2 — Who is Who / Mon Profil
+                    // Row 2 — Who is Who / Boutique / Mon Profil
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
@@ -379,6 +387,10 @@ class _LandingScreenState extends State<LandingScreen> {
                             MaterialPageRoute(
                                 builder: (_) => const WhoIsWhoScreen()),
                           ),
+                        ),
+                        _BoutiqueLandingTile(
+                          userId: authProvider.currentUser?.uid,
+                          onTap: _openBoutique,
                         ),
                         ProfileTile.large(
                           title: 'Mon Profil',
@@ -411,6 +423,37 @@ class _LandingScreenState extends State<LandingScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _BoutiqueLandingTile extends StatelessWidget {
+  final String? userId;
+  final VoidCallback onTap;
+
+  const _BoutiqueLandingTile({
+    required this.userId,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (userId == null) return const SizedBox.shrink();
+
+    return StreamBuilder<bool>(
+      stream: BoutiqueAccessService().watchCanAccessBoutique(
+        clubId: FirebaseConfig.defaultClubId,
+        userId: userId!,
+      ),
+      builder: (context, snapshot) {
+        if (snapshot.data != true) return const SizedBox.shrink();
+
+        return ProfileTile.large(
+          title: 'Boutique',
+          icon: Icons.shopping_bag_outlined,
+          onTap: onTap,
+        );
+      },
     );
   }
 }
