@@ -248,13 +248,31 @@ class _CartItemCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    item.productName,
-                    style: const TextStyle(
-                      color: AppColors.donkerblauw,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 16,
-                    ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          item.productName,
+                          style: const TextStyle(
+                            color: AppColors.donkerblauw,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Supprimer',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 32,
+                          height: 32,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: onDelete,
+                        icon: const Icon(Icons.delete_outline, size: 20),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 3),
                   Text(
@@ -267,28 +285,12 @@ class _CartItemCard extends StatelessWidget {
                       personalization: item.personalization,
                     ),
                   ],
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      IconButton(
-                        tooltip: 'Supprimer',
-                        onPressed: onDelete,
-                        icon: const Icon(Icons.delete_outline),
-                      ),
-                      const Spacer(),
-                      Text(
-                        formatter.format(item.lineTotal),
-                        style: const TextStyle(
-                          color: AppColors.oranje,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ],
-                  ),
+                  const SizedBox(height: 8),
                   Row(
                     children: [
                       IconButton(
                         onPressed: () => onQtyChanged(item.qty - 1),
+                        visualDensity: VisualDensity.compact,
                         icon: const Icon(Icons.remove_circle_outline),
                       ),
                       SizedBox(
@@ -301,7 +303,16 @@ class _CartItemCard extends StatelessWidget {
                       ),
                       IconButton(
                         onPressed: () => onQtyChanged(item.qty + 1),
+                        visualDensity: VisualDensity.compact,
                         icon: const Icon(Icons.add_circle_outline),
+                      ),
+                      const Spacer(),
+                      Text(
+                        formatter.format(item.lineTotal),
+                        style: const TextStyle(
+                          color: AppColors.oranje,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
                     ],
                   ),

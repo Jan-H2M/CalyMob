@@ -242,9 +242,7 @@ class _BoutiqueCheckoutScreenState extends State<BoutiqueCheckoutScreen> {
                             )
                           : const Icon(Icons.receipt_long_outlined),
                       label: Text(
-                        _submitting
-                            ? 'Création...'
-                            : 'Créer la commande et le QR',
+                        _submitting ? 'Création...' : 'Commander',
                       ),
                     ),
                   ],

@@ -12,8 +12,12 @@ const {
   parseMoney,
   parsePositiveInteger,
 } = require('./shared');
-const { formatOgmDisplay } = require('../shared/ogm');
-const { createPaymentReference, generateNextOgm } = require('../shared/ogmService');
+const { calculateOgmCheckDigit, formatOgmDisplay } = require('../shared/ogm');
+const {
+  OGM_COUNTER_FIELD,
+  OGM_COUNTER_START,
+  createPaymentReference,
+} = require('../shared/ogmService');
 
 function resolveVariantUnitPrice(product, variant) {
   if (typeof variant.salePriceOverride === 'number') {
@@ -181,6 +185,7 @@ exports.createBoutiqueOrder = onCall(
     const clubRef = getClubRef(db, clubId);
     const orderRef = clubRef.collection('orders').doc();
     const orderCounterRef = clubRef.collection('settings').doc('order_counter');
+    const ogmCounterRef = clubRef.collection('settings').doc('ogm_counter');
     const inventoryMutationsRef = clubRef.collection('inventoryMutations');
     const now = admin.firestore.Timestamp.now();
     const expiresAt = admin.firestore.Timestamp.fromMillis(now.toMillis() + (72 * 60 * 60 * 1000));
@@ -189,8 +194,17 @@ exports.createBoutiqueOrder = onCall(
 
     try {
       const result = await db.runTransaction(async (transaction) => {
-        const ogm = await generateNextOgm(db, clubId, transaction);
+        const ogmCounterSnap = await transaction.get(ogmCounterRef);
+        const nextOgmCounter = ogmCounterSnap.exists
+          ? Number(ogmCounterSnap.get(OGM_COUNTER_FIELD) || 0) + 1
+          : OGM_COUNTER_START;
+        const baseOgm = String(nextOgmCounter).padStart(10, '0');
+        const ogm = baseOgm + calculateOgmCheckDigit(baseOgm);
         const ogmDisplay = formatOgmDisplay(ogm);
+        const counterSnap = await transaction.get(orderCounterRef);
+        const nextCounter = counterSnap.exists
+          ? Number(counterSnap.get('counter') || 0) + 1
+          : 1;
         const lines = [];
         const productCache = new Map();
         const inventoryReservations = [];
@@ -326,24 +340,7 @@ exports.createBoutiqueOrder = onCall(
           }
         }
 
-        for (const cachedProduct of productCache.values()) {
-          transaction.update(cachedProduct.ref, {
-            variants: cachedProduct.data.variants,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          });
-        }
-
-        const counterSnap = await transaction.get(orderCounterRef);
-        const nextCounter = counterSnap.exists
-          ? Number(counterSnap.get('counter') || 0) + 1
-          : 1;
         const orderNumber = `BTQ-${currentYear}-${String(nextCounter).padStart(4, '0')}`;
-
-        transaction.set(orderCounterRef, {
-          counter: nextCounter,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
-
         const total = itemsSubtotal + deliverySurcharges;
         const epcPayload = buildEpcQrPayload({
           iban: bankSettings.iban,
@@ -352,6 +349,24 @@ exports.createBoutiqueOrder = onCall(
           ogm,
         });
         const qrCodeUrl = await QRCode.toDataURL(epcPayload);
+
+        transaction.set(ogmCounterRef, {
+          [OGM_COUNTER_FIELD]: nextOgmCounter,
+          updated_at: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+
+        for (const cachedProduct of productCache.values()) {
+          transaction.update(cachedProduct.ref, {
+            variants: cachedProduct.data.variants,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+
+        transaction.set(orderCounterRef, {
+          counter: nextCounter,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
 
         transaction.set(orderRef, {
           orderNumber,

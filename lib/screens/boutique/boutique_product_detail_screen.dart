@@ -500,11 +500,10 @@ class _PersonalizationSection extends StatelessWidget {
             const SizedBox(height: 12),
             TextField(
               maxLength: config.name.maxLength,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Nom à personnaliser',
-                helperText:
-                    '${formatter.format(config.name.pricePerCharacter)} par lettre',
-                border: const OutlineInputBorder(),
+                counterText: '',
+                border: OutlineInputBorder(),
               ),
               onChanged: (value) {
                 onChanged(
@@ -519,7 +518,19 @@ class _PersonalizationSection extends StatelessWidget {
                 );
               },
             ),
-            if (selection.hasName)
+            Padding(
+              padding: const EdgeInsets.only(left: 4, top: 6),
+              child: Text(
+                '${formatter.format(config.name.pricePerCharacter)} par lettre',
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            if (selection.hasName) ...[
+              const SizedBox(height: 10),
               _ZoneDropdown(
                 label: 'Position nom',
                 zones: config.name.zones,
@@ -527,6 +538,7 @@ class _PersonalizationSection extends StatelessWidget {
                 onChanged: (zone) =>
                     onChanged(selection.copyWith(nameZone: zone)),
               ),
+            ],
           ],
           if (config.certification.canChoose) ...[
             const SizedBox(height: 12),
