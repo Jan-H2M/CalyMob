@@ -157,22 +157,15 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
         );
     final visiblePayment = alreadyCovered ? null : payment;
     final isOpen = season.paymentStatus == 'open';
-    final canCreatePayment = isOpen &&
+    final tariffReady = isOpen &&
         tariff.code.isNotEmpty &&
         period != null &&
         price != null &&
-        price > 0 &&
-        !alreadyCovered &&
-        visiblePayment == null;
-    final canSendPaymentEmail = isOpen &&
-        tariff.code.isNotEmpty &&
-        period != null &&
-        price != null &&
-        price > 0 &&
-        !alreadyCovered &&
-        visiblePayment?.status == 'awaiting_payment';
-    final paymentButtonEnabled =
-        !_creating && (canCreatePayment || canSendPaymentEmail);
+        price > 0;
+    final canSendPaymentEmail =
+        tariffReady && visiblePayment?.status == 'awaiting_payment';
+    final canCreatePayment = tariffReady && !canSendPaymentEmail;
+    final paymentButtonEnabled = !_creating && tariffReady;
     final paymentButtonLabel = _creating
         ? 'Envoi...'
         : canSendPaymentEmail

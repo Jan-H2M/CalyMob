@@ -60,31 +60,6 @@ function resolveValidityUntil(startYear, period) {
   return admin.firestore.Timestamp.fromDate(new Date(Date.UTC(year, 0, 31, 12, 0, 0)));
 }
 
-function resolveMemberCotisationValidity(member) {
-  const candidate =
-    member.cotisation_validite ||
-    member.cotisationValidite ||
-    member.cotisation_valid_until ||
-    member.cotisationValidUntil ||
-    null;
-  if (!candidate) return null;
-  if (typeof candidate.toDate === 'function') return candidate.toDate();
-  if (candidate instanceof Date) return candidate;
-  return null;
-}
-
-function dayKey(date) {
-  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
-}
-
-function cotisationAlreadyCoversPeriod(member, validityUntil) {
-  const currentValidity = resolveMemberCotisationValidity(member);
-  if (!currentValidity || !validityUntil || typeof validityUntil.toDate !== 'function') {
-    return false;
-  }
-  return dayKey(currentValidity) >= dayKey(validityUntil.toDate());
-}
-
 async function resolveClubBankSettings(clubRef) {
   const [bankSnap, generalSnap, clubInfoSnap] = await Promise.all([
     clubRef.collection('settings').doc('bank').get(),
@@ -442,18 +417,6 @@ exports.createCotisationPayment = onCall(
           validityUntil: data.validity_until?.toDate?.()?.toISOString?.() || null,
           emailSentAt: emailSentAt?.toDate?.()?.toISOString?.() || null,
         };
-      }
-
-      if (cotisationAlreadyCoversPeriod(member, validityUntil)) {
-        throw buildDomainError(
-          'COTISATION_ALREADY_VALID',
-          'Votre cotisation actuelle couvre déjà cette période.',
-          {
-            period,
-            currentValidity: resolveMemberCotisationValidity(member)?.toISOString?.() || null,
-            requestedValidity: validityUntil.toDate().toISOString(),
-          },
-        );
       }
 
       const { first, last, displayName } = resolveMemberName(member);
