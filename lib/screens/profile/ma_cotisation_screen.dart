@@ -155,6 +155,7 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
         !_dateOnly(profile.cotisationValidite!).isBefore(
           _dateOnly(targetValidity),
         );
+    final visiblePayment = alreadyCovered ? null : payment;
     final isOpen = season.paymentStatus == 'open';
     final canCreatePayment = isOpen &&
         tariff.code.isNotEmpty &&
@@ -162,14 +163,14 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
         price != null &&
         price > 0 &&
         !alreadyCovered &&
-        payment == null;
+        visiblePayment == null;
     final canSendPaymentEmail = isOpen &&
         tariff.code.isNotEmpty &&
         period != null &&
         price != null &&
         price > 0 &&
         !alreadyCovered &&
-        payment?.status == 'awaiting_payment';
+        visiblePayment?.status == 'awaiting_payment';
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
@@ -227,11 +228,11 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
                 ),
                 if (profile.lifrasId?.isNotEmpty == true)
                   _InfoLine(label: 'ID LIFRAS', value: profile.lifrasId!),
-                if (payment?.validityUntil != null)
+                if (visiblePayment?.validityUntil != null)
                   _InfoLine(
                     label: 'Validité',
                     value: DateFormat('dd/MM/yyyy')
-                        .format(payment!.validityUntil!),
+                        .format(visiblePayment!.validityUntil!),
                   ),
                 const SizedBox(height: 18),
                 if (alreadyCovered) ...[
@@ -277,7 +278,7 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
                     icon: Icons.error_outline,
                     text: 'Aucun montant n’est disponible pour votre période.',
                   )
-                else if (payment?.status == 'paid')
+                else if (visiblePayment?.status == 'paid')
                   const _StatusBox(
                     color: Color(0xFFE8F5E9),
                     textColor: Color(0xFF1B5E20),
@@ -285,8 +286,8 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
                     title: 'Cotisation payée',
                     text: 'Votre cotisation est payée.',
                   )
-                else if (payment != null)
-                  _PaymentQr(payment: payment, formatter: formatter),
+                else if (visiblePayment != null)
+                  _PaymentQr(payment: visiblePayment, formatter: formatter),
                 if (canCreatePayment || canSendPaymentEmail) ...[
                   const SizedBox(height: 8),
                   SizedBox(
@@ -321,7 +322,7 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
                         _creating
                             ? 'Envoi...'
                             : canSendPaymentEmail
-                                ? payment?.emailSentAt == null
+                                ? visiblePayment?.emailSentAt == null
                                     ? 'Envoyer l’email de paiement'
                                     : 'Renvoyer l’email de paiement'
                                 : 'Payer ma cotisation',
