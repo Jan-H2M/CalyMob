@@ -228,7 +228,8 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
                 ),
                 if (profile.lifrasId?.isNotEmpty == true)
                   _InfoLine(label: 'ID LIFRAS', value: profile.lifrasId!),
-                if (visiblePayment?.validityUntil != null)
+                if (visiblePayment?.validityUntil != null &&
+                    profile.cotisationValidite == null)
                   _InfoLine(
                     label: 'Validité',
                     value: DateFormat('dd/MM/yyyy')
