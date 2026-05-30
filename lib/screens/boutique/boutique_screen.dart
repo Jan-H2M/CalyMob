@@ -32,17 +32,6 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          _CartActionButton(
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const BoutiqueCartScreen(),
-                ),
-              );
-            },
-          ),
-        ],
       ),
       body: OceanGradientBackground(
         creatures: CreatureSet.fishAndBubbles,
@@ -220,32 +209,6 @@ class _BoutiqueProductsScreenState extends State<BoutiqueProductsScreen> {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _CartActionButton extends StatelessWidget {
-  final VoidCallback onPressed;
-
-  const _CartActionButton({required this.onPressed});
-
-  @override
-  Widget build(BuildContext context) {
-    return Consumer<BoutiqueCartProvider>(
-      builder: (context, cart, _) {
-        return IconButton(
-          iconSize: 32,
-          constraints: const BoxConstraints.tightFor(width: 52, height: 52),
-          padding: const EdgeInsets.all(10),
-          icon: Badge(
-            isLabelVisible: cart.itemCount > 0,
-            label: Text('${cart.itemCount}'),
-            child: const Icon(Icons.shopping_bag_outlined, size: 32),
-          ),
-          tooltip: 'Panier',
-          onPressed: onPressed,
-        );
-      },
     );
   }
 }
