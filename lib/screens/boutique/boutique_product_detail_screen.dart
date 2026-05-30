@@ -299,31 +299,97 @@ class _BoutiqueProductDetailScreenState
     await context.read<BoutiqueCartProvider>().addItem(item);
     if (!context.mounted) return;
 
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle_outline, color: Colors.white),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text('${widget.product.name} ajouté au panier.'),
-            ),
-          ],
-        ),
-        duration: const Duration(milliseconds: 900),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: const Color(0xFF168A43),
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      ),
-    );
-
-    await Future<void>.delayed(const Duration(milliseconds: 650));
+    _showAddedToCartToast(context);
+    await Future<void>.delayed(const Duration(milliseconds: 850));
+    if (!context.mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+    await Future<void>.delayed(const Duration(milliseconds: 120));
     if (!context.mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => const BoutiqueCartScreen(),
+      ),
+    );
+  }
+
+  void _showAddedToCartToast(BuildContext context) {
+    showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierLabel: 'Article ajouté',
+      barrierColor: Colors.black.withValues(alpha: 0.08),
+      transitionDuration: const Duration(milliseconds: 220),
+      pageBuilder: (_, __, ___) {
+        return const Center(
+          child: _AddedToCartToast(),
+        );
+      },
+      transitionBuilder: (_, animation, __, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutBack,
+          reverseCurve: Curves.easeIn,
+        );
+        return FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.82, end: 1).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _AddedToCartToast extends StatelessWidget {
+  const _AddedToCartToast();
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        width: 156,
+        height: 156,
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF1FC66A),
+              Color(0xFF0A9F72),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(32),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF08744F).withValues(alpha: 0.38),
+              blurRadius: 26,
+              offset: const Offset(0, 14),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Container(
+            width: 82,
+            height: 82,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.18),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.45),
+                width: 2,
+              ),
+            ),
+            child: const Icon(
+              Icons.check_rounded,
+              color: Colors.white,
+              size: 62,
+              weight: 900,
+            ),
+          ),
+        ),
       ),
     );
   }
