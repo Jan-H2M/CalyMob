@@ -338,8 +338,7 @@ class _HomeScreenState extends State<HomeScreen> {
       );
 
       // Save status to Firestore
-      await CompatibilityService.saveCompatibilityStatus(
-          _clubId, userId, status);
+      await CompatibilityService.saveCompatibilityStatus(_clubId, userId, status);
 
       // Update UI if warning needed
       if (status.warningLevel != 'none' && mounted) {
@@ -348,13 +347,11 @@ class _HomeScreenState extends State<HomeScreen> {
         });
 
         // Show SnackBar for warning/error
-        if (status.warningLevel == 'warning' ||
-            status.warningLevel == 'error') {
+        if (status.warningLevel == 'warning' || status.warningLevel == 'error') {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(status.message ?? 'Compatibilité device'),
-              backgroundColor:
-                  status.warningLevel == 'error' ? Colors.red : Colors.orange,
+              backgroundColor: status.warningLevel == 'error' ? Colors.red : Colors.orange,
               duration: const Duration(seconds: 5),
               action: SnackBarAction(
                 label: 'OK',
@@ -395,8 +392,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Déconnecter',
-                style: TextStyle(color: Colors.white)),
+            child: const Text('Déconnecter', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -422,129 +418,107 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
     final operationProvider = context.watch<OperationProvider>();
-    final userId = authProvider.currentUser?.uid;
 
-    return StreamBuilder<bool>(
-      stream: userId == null
-          ? Stream<bool>.value(false)
-          : BoutiqueAccessService().watchCanAccessBoutique(
-              clubId: FirebaseConfig.defaultClubId,
-              userId: userId,
-            ),
-      builder: (context, boutiqueAccessSnap) {
-        final canAccessBoutique = boutiqueAccessSnap.data == true;
-        final navItems = <BottomNavigationBarItem>[
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.event),
-            label: 'Événements',
-          ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.receipt_long),
-            label: 'Demandes',
-          ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.qr_code_scanner),
-            label: 'Scanner',
-          ),
-          if (canAccessBoutique)
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.shopping_bag_outlined),
-              label: 'Boutique',
-            ),
-        ];
-        final selectedIndex =
-            _currentIndex >= navItems.length ? 0 : _currentIndex;
-
-        return Scaffold(
-          extendBodyBehindAppBar: true,
-          appBar: AppBar(
-            title: Text(
-              _getAppBarTitle(),
-              style: const TextStyle(color: Colors.white),
-            ),
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            actions: [
-              if (canAccessBoutique)
-                IconButton(
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        title: Text(
+          _getAppBarTitle(),
+          style: const TextStyle(color: Colors.white),
+        ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        actions: [
+          if (authProvider.currentUser?.uid != null)
+            StreamBuilder<bool>(
+              stream: BoutiqueAccessService().watchCanAccessBoutique(
+                clubId: FirebaseConfig.defaultClubId,
+                userId: authProvider.currentUser!.uid,
+              ),
+              builder: (context, snapshot) {
+                if (snapshot.data != true) return const SizedBox.shrink();
+                return IconButton(
                   icon: const Icon(
                     Icons.shopping_bag_outlined,
                     color: Colors.white,
                   ),
-                  onPressed: _openBoutique,
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const BoutiqueScreen(),
+                      ),
+                    );
+                  },
                   tooltip: 'Boutique',
-                ),
-              // Ma Progression — behind feature flag
-              StreamBuilder<bool>(
-                stream: FeatureFlagService().isCarnetFormationEnabled(
-                  FirebaseConfig.defaultClubId,
-                ),
-                builder: (context, flagSnap) {
-                  if (flagSnap.data != true) return const SizedBox.shrink();
-                  return IconButton(
-                    icon:
-                        const Icon(Icons.school_outlined, color: Colors.white),
-                    onPressed: () {
-                      Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const MyProgressionScreen(),
-                          ));
-                    },
-                    tooltip: 'Ma Progression',
-                  );
+                );
+              },
+            ),
+          // Ma Progression — behind feature flag
+          StreamBuilder<bool>(
+            stream: FeatureFlagService().isCarnetFormationEnabled(
+              FirebaseConfig.defaultClubId,
+            ),
+            builder: (context, flagSnap) {
+              if (flagSnap.data != true) return const SizedBox.shrink();
+              return IconButton(
+                icon: const Icon(Icons.school_outlined, color: Colors.white),
+                onPressed: () {
+                  Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => const MyProgressionScreen(),
+                  ));
                 },
-              ),
-              IconButton(
-                icon: const Icon(Icons.logout, color: Colors.white),
-                onPressed: _handleLogout,
-                tooltip: 'Déconnexion',
+                tooltip: 'Ma Progression',
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.white),
+            onPressed: _handleLogout,
+            tooltip: 'Déconnexion',
+          ),
+        ],
+      ),
+      body: OceanGradientBackground(
+        creatures: CreatureSet.fishAndBubbles,
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Compatibility warning banner
+              if (_compatibilityStatus != null && _compatibilityStatus!.warningLevel != 'none')
+                _buildCompatibilityBanner(),
+              // Main content
+              Expanded(
+                child: _buildContent(operationProvider, authProvider),
               ),
             ],
           ),
-          body: OceanGradientBackground(
-            creatures: CreatureSet.fishAndBubbles,
-            child: SafeArea(
-              child: Column(
-                children: [
-                  // Compatibility warning banner
-                  if (_compatibilityStatus != null &&
-                      _compatibilityStatus!.warningLevel != 'none')
-                    _buildCompatibilityBanner(),
-                  // Main content
-                  Expanded(
-                    child: _buildContent(operationProvider, authProvider),
-                  ),
-                ],
-              ),
-            ),
+        ),
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        onTap: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.event),
+            label: 'Événements',
           ),
-          bottomNavigationBar: BottomNavigationBar(
-            currentIndex: selectedIndex,
-            onTap: (index) {
-              if (canAccessBoutique && index == navItems.length - 1) {
-                _openBoutique();
-                return;
-              }
-
-              setState(() {
-                _currentIndex = index;
-              });
-            },
-            items: navItems,
-            selectedItemColor: AppColors.middenblauw,
-            unselectedItemColor: Colors.grey,
+          BottomNavigationBarItem(
+            icon: Icon(Icons.receipt_long),
+            label: 'Demandes',
           ),
-        );
-      },
-    );
-  }
-
-  void _openBoutique() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const BoutiqueScreen(),
+          // Scanner tab - always visible for all logged-in users
+          BottomNavigationBarItem(
+            icon: Icon(Icons.qr_code_scanner),
+            label: 'Scanner',
+          ),
+        ],
+        selectedItemColor: AppColors.middenblauw,
+        unselectedItemColor: Colors.grey,
       ),
     );
   }
@@ -689,8 +663,7 @@ class _HomeScreenState extends State<HomeScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.middenblauw,
                 foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               ),
             ),
           ],
