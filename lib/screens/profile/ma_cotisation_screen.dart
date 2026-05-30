@@ -180,6 +180,12 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
                 const SizedBox(height: 18),
                 _InfoLine(label: 'Type de membre', value: tariff.label),
                 _InfoLine(label: 'Période', value: _periodLabel(period)),
+                if (profile.cotisationValidite != null)
+                  _InfoLine(
+                    label: 'Cotisation actuelle',
+                    value:
+                        'valable jusqu’au ${DateFormat('dd/MM/yyyy').format(profile.cotisationValidite!)}',
+                  ),
                 _InfoLine(
                   label: 'Montant',
                   value: price == null
@@ -201,9 +207,8 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
                     color: Colors.amber.shade50,
                     textColor: Colors.amber.shade900,
                     icon: Icons.lock_clock,
-                    text: season.paymentMessage.isNotEmpty
-                        ? season.paymentMessage
-                        : 'Les cotisations ne sont pas encore ouvertes.',
+                    title: 'Cotisations fermées',
+                    text: _closedPaymentMessage(season),
                   )
                 else if (tariff.code.isEmpty)
                   const _StatusBox(
@@ -286,6 +291,14 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
 
   String _periodLabel(String period) {
     return period == 'sept_dec' ? 'Sept → Déc+1' : 'Jan → Déc';
+  }
+
+  String _closedPaymentMessage(MembershipSeason season) {
+    if (season.paymentMessage.trim().isNotEmpty) {
+      return season.paymentMessage.trim();
+    }
+    return 'Les cotisations ${season.label} ne sont pas encore ouvertes aux membres. '
+        'Le paiement sera disponible ici dès que le club aura ouvert la période.';
   }
 }
 
@@ -410,6 +423,7 @@ class _StatusBox extends StatelessWidget {
   final Color color;
   final Color textColor;
   final IconData icon;
+  final String? title;
   final String text;
 
   const _StatusBox({
@@ -417,6 +431,7 @@ class _StatusBox extends StatelessWidget {
     required this.textColor,
     required this.icon,
     required this.text,
+    this.title,
   });
 
   @override
@@ -433,12 +448,28 @@ class _StatusBox extends StatelessWidget {
           Icon(icon, color: textColor),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              text,
-              style: TextStyle(
-                color: textColor,
-                fontWeight: FontWeight.w700,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (title != null) ...[
+                  Text(
+                    title!,
+                    style: TextStyle(
+                      color: textColor,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                ],
+                Text(
+                  text,
+                  style: TextStyle(
+                    color: textColor,
+                    fontWeight: FontWeight.w700,
+                    height: 1.25,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
