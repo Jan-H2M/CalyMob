@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
@@ -149,13 +148,28 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
             ? _selectedPeriod!
             : _defaultPeriod(profile, availablePeriods);
     final price = period == null ? null : tariff.priceForPeriod(period);
+    final targetValidity =
+        period == null ? null : _targetValidityUntil(season, period);
+    final alreadyCovered = profile.cotisationValidite != null &&
+        targetValidity != null &&
+        !_dateOnly(profile.cotisationValidite!).isBefore(
+          _dateOnly(targetValidity),
+        );
     final isOpen = season.paymentStatus == 'open';
-    final canPay = isOpen &&
+    final canCreatePayment = isOpen &&
         tariff.code.isNotEmpty &&
         period != null &&
         price != null &&
         price > 0 &&
+        !alreadyCovered &&
         payment == null;
+    final canSendPaymentEmail = isOpen &&
+        tariff.code.isNotEmpty &&
+        period != null &&
+        price != null &&
+        price > 0 &&
+        !alreadyCovered &&
+        payment?.status == 'awaiting_payment';
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
@@ -220,6 +234,18 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
                         .format(payment!.validityUntil!),
                   ),
                 const SizedBox(height: 18),
+                if (alreadyCovered) ...[
+                  const _StatusBox(
+                    color: Color(0xFFE8F5E9),
+                    textColor: Color(0xFF1B5E20),
+                    icon: Icons.check_circle_outline,
+                    title: 'Paiement pas nécessaire',
+                    text:
+                        'Votre cotisation actuelle couvre déjà cette période. '
+                        'Le renouvellement sera utile en janvier du prochain exercice.',
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 if (!isOpen)
                   _StatusBox(
                     color: Colors.amber.shade50,
@@ -256,11 +282,12 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
                     color: Color(0xFFE8F5E9),
                     textColor: Color(0xFF1B5E20),
                     icon: Icons.check_circle_outline,
+                    title: 'Cotisation payée',
                     text: 'Votre cotisation est payée.',
                   )
                 else if (payment != null)
                   _PaymentQr(payment: payment, formatter: formatter),
-                if (canPay) ...[
+                if (canCreatePayment || canSendPaymentEmail) ...[
                   const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
@@ -272,8 +299,12 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                      onPressed:
-                          _creating ? null : () => _createPayment(period),
+                      onPressed: _creating
+                          ? null
+                          : () => _createPayment(
+                                period,
+                                resendEmail: canSendPaymentEmail,
+                              ),
                       icon: _creating
                           ? const SizedBox(
                               width: 18,
@@ -283,9 +314,17 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
                                 color: Colors.white,
                               ),
                             )
-                          : const Icon(Icons.qr_code_2),
+                          : Icon(canSendPaymentEmail
+                              ? Icons.mark_email_read_outlined
+                              : Icons.qr_code_2),
                       label: Text(
-                        _creating ? 'Création...' : 'Payer ma cotisation',
+                        _creating
+                            ? 'Envoi...'
+                            : canSendPaymentEmail
+                                ? payment?.emailSentAt == null
+                                    ? 'Envoyer l’email de paiement'
+                                    : 'Renvoyer l’email de paiement'
+                                : 'Payer ma cotisation',
                         style: const TextStyle(fontWeight: FontWeight.w800),
                       ),
                     ),
@@ -299,14 +338,19 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
     );
   }
 
-  Future<void> _createPayment(String period) async {
+  Future<void> _createPayment(
+    String period, {
+    bool resendEmail = false,
+  }) async {
     setState(() => _creating = true);
     try {
       await _service.createPayment(FirebaseConfig.defaultClubId,
-          period: period);
+          period: period, resendEmail: resendEmail);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('QR de paiement créé')),
+        const SnackBar(
+          content: Text('Email de paiement envoyé'),
+        ),
       );
     } catch (error) {
       if (!mounted) return;
@@ -359,6 +403,15 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
     ];
   }
 
+  DateTime _targetValidityUntil(MembershipSeason season, String period) {
+    final validityYear =
+        period == 'sept_dec' ? season.startYear + 2 : season.startYear + 1;
+    return DateTime(validityYear, 1, 31);
+  }
+
+  DateTime _dateOnly(DateTime date) =>
+      DateTime(date.year, date.month, date.day);
+
   String _closedPaymentMessage(MembershipSeason season) {
     if (season.paymentMessage.trim().isNotEmpty) {
       return _withoutSeasonYear(season.paymentMessage, season);
@@ -390,20 +443,13 @@ class _PaymentQr extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Center(
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: QrImageView(
-              data: payment.epcPayload ?? payment.communication,
-              version: QrVersions.auto,
-              size: 230,
-            ),
-          ),
+        const _StatusBox(
+          color: Color(0xFFE3F2FD),
+          textColor: AppColors.donkerblauw,
+          icon: Icons.mark_email_read_outlined,
+          title: 'Email envoyé',
+          text:
+              'Le QR code de paiement est envoyé par email. Ouvrez ce mail sur ordinateur et scannez le QR avec votre application bancaire.',
         ),
         const SizedBox(height: 14),
         _InfoLine(

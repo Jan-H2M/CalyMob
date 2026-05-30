@@ -175,6 +175,9 @@ exports.createInscriptionRefund = require('./src/inscription/createRefundClaim')
 const { createBoutiqueOrder } = require('./src/boutique/createOrder');
 exports.createBoutiqueOrder = createBoutiqueOrder;
 
+const { sendBoutiqueOrderPaymentEmail } = require('./src/boutique/createOrder');
+exports.sendBoutiqueOrderPaymentEmail = sendBoutiqueOrderPaymentEmail;
+
 const { listBoutiqueOrders } = require('./src/boutique/listOrders');
 exports.listBoutiqueOrders = listBoutiqueOrders;
 

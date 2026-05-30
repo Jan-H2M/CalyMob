@@ -290,6 +290,7 @@ class _BoutiqueCheckoutScreenState extends State<BoutiqueCheckoutScreen> {
             beneficiary: payment['beneficiary']?.toString() ?? '',
             amount: _asDouble(data['total'] ?? payment['amount']),
             epcPayload: payment['epcPayload']?.toString(),
+            emailSent: payment['emailStatus'] == 'sent',
           ),
         ),
         (route) => route.isFirst,

@@ -152,6 +152,163 @@ async function resolveClubBankSettings(clubRef) {
   return { iban, beneficiary };
 }
 
+async function resolveClubEmailSettings(clubRef) {
+  const [emailSnap, generalSnap] = await Promise.all([
+    clubRef.collection('settings').doc('email_config').get(),
+    clubRef.collection('settings').doc('general').get(),
+  ]);
+  const emailConfig = emailSnap.exists ? emailSnap.data() : {};
+  const general = generalSnap.exists ? generalSnap.data() : {};
+  if (emailConfig.provider !== 'resend' || !emailConfig.resend?.apiKey) {
+    throw buildDomainError('EMAIL_NOT_CONFIGURED', 'La configuration email du club est manquante.');
+  }
+  const clubName = general.clubName || 'Calypso';
+  return {
+    apiKey: emailConfig.resend.apiKey,
+    fromEmail: emailConfig.resend.fromEmail || 'onboarding@resend.dev',
+    fromName: emailConfig.resend.fromName || clubName,
+    clubName,
+  };
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function formatAmount(amount) {
+  return `${Number(amount || 0).toFixed(2).replace('.', ',')} €`;
+}
+
+function buildOrderEmailHtml({ order, clubName }) {
+  const buyer = order.buyer || {};
+  const payment = order.payment || {};
+  const items = Array.isArray(order.items) ? order.items : [];
+  const itemRows = items.map((item) => {
+    const snapshot = item.productSnapshot || {};
+    return `
+      <tr>
+        <td style="padding:8px 0;border-bottom:1px solid #edf2f7;">${escapeHtml(snapshot.name || item.productId)}</td>
+        <td style="padding:8px 0;border-bottom:1px solid #edf2f7;text-align:center;">${escapeHtml(item.qty || 0)}</td>
+        <td style="padding:8px 0;border-bottom:1px solid #edf2f7;text-align:right;">${escapeHtml(formatAmount(item.lineTotal))}</td>
+      </tr>`;
+  }).join('');
+
+  return `
+<!doctype html>
+<html>
+<body style="margin:0;background:#f3f7fb;font-family:Arial,Helvetica,sans-serif;color:#12325c;">
+  <div style="max-width:640px;margin:0 auto;padding:28px 18px;">
+    <div style="background:#ffffff;border-radius:16px;padding:26px;border:1px solid #dfe8f2;">
+      <h1 style="margin:0 0 10px;font-size:24px;color:#12325c;">Commande ${escapeHtml(order.orderNumber)}</h1>
+      <p style="margin:0 0 18px;font-size:16px;line-height:1.45;">
+        Bonjour ${escapeHtml(buyer.displayName)}, voici le QR code pour payer votre commande Boutique.
+        Ouvrez ce mail sur ordinateur et scannez le QR avec votre application bancaire.
+      </p>
+      <div style="text-align:center;margin:24px 0;">
+        <img src="cid:qrcode" alt="QR code de paiement" style="width:260px;max-width:100%;border:1px solid #dfe8f2;border-radius:14px;padding:12px;background:#fff;">
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:15px;margin-bottom:18px;">
+        ${itemRows}
+      </table>
+      <table style="width:100%;border-collapse:collapse;font-size:15px;">
+        <tr><td style="padding:8px 0;color:#667085;">Total</td><td style="padding:8px 0;font-weight:800;color:#ff8500;">${escapeHtml(formatAmount(payment.amount))}</td></tr>
+        <tr><td style="padding:8px 0;color:#667085;">Bénéficiaire</td><td style="padding:8px 0;font-weight:700;">${escapeHtml(payment.beneficiary)}</td></tr>
+        <tr><td style="padding:8px 0;color:#667085;">IBAN</td><td style="padding:8px 0;font-weight:700;">${escapeHtml(payment.iban)}</td></tr>
+        <tr><td style="padding:8px 0;color:#667085;">Communication</td><td style="padding:8px 0;font-weight:800;">${escapeHtml(payment.paymentCommunication)}</td></tr>
+      </table>
+      <p style="margin:22px 0 0;font-size:14px;line-height:1.45;color:#667085;">
+        Si vous préférez faire un virement manuel, utilisez exactement l'IBAN et la communication ci-dessus.
+      </p>
+      <p style="margin:14px 0 0;font-size:14px;color:#667085;">À bientôt,<br><strong>${escapeHtml(clubName)}</strong></p>
+    </div>
+  </div>
+</body>
+</html>`.trim();
+}
+
+async function sendEmailViaResend(apiKey, from, to, subject, html, attachments = []) {
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ from, to, subject, html, attachments }),
+  });
+  if (!response.ok) {
+    let message = `Resend API failed (${response.status})`;
+    try {
+      const data = await response.json();
+      message = data.message || message;
+    } catch (_) {
+      // Keep fallback.
+    }
+    throw new Error(message);
+  }
+  return response.json();
+}
+
+async function sendBoutiqueOrderEmail({ clubRef, clubId, orderRef, order }) {
+  const buyer = order.buyer || {};
+  const recipientEmail = String(buyer.email || '').trim();
+  if (!recipientEmail) {
+    throw buildDomainError('EMAIL_MISSING', 'Votre commande ne contient pas d’adresse email.');
+  }
+  const emailSettings = await resolveClubEmailSettings(clubRef);
+  const payment = order.payment || {};
+  const html = buildOrderEmailHtml({ order, clubName: emailSettings.clubName });
+  const subject = `Commande ${order.orderNumber} - ${formatAmount(payment.amount)}`;
+  const qrBase64 = String(payment.qrCodeUrl || '').replace(/^data:image\/png;base64,/, '');
+  const result = await sendEmailViaResend(
+    emailSettings.apiKey,
+    `${emailSettings.fromName} <${emailSettings.fromEmail}>`,
+    recipientEmail,
+    subject,
+    html,
+    [
+      {
+        filename: 'boutique-qrcode.png',
+        content: qrBase64,
+        content_id: 'qrcode',
+      },
+    ],
+  );
+  const now = admin.firestore.Timestamp.now();
+  await Promise.all([
+    orderRef.update({
+      'payment.email_sent_at': now,
+      'payment.email_status': 'sent',
+      'payment.email_resend_id': result.id || null,
+      updatedAt: now,
+    }),
+    clubRef.collection('email_history').add({
+      recipientEmail,
+      recipientName: buyer.displayName || recipientEmail,
+      htmlContent: html,
+      sendType: 'automated',
+      provider: 'resend',
+      emailType: 'boutique_order_payment',
+      createdAt: now,
+      sentAt: now,
+      clubId,
+      type: 'boutique_order_payment',
+      to: recipientEmail,
+      subject,
+      amount: payment.amount,
+      orderId: orderRef.id,
+      orderNumber: order.orderNumber,
+      resendId: result.id || null,
+      status: 'sent',
+    }),
+  ]);
+  return now;
+}
+
 exports.createBoutiqueOrder = onCall(
   {
     region: REGION,
@@ -363,7 +520,7 @@ exports.createBoutiqueOrder = onCall(
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         }, { merge: true });
 
-        transaction.set(orderRef, {
+        const orderData = {
           orderNumber,
           structuredCommunication: paymentCommunication,
           paymentCommunication,
@@ -397,7 +554,9 @@ exports.createBoutiqueOrder = onCall(
           _backfill: false,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
+        };
+
+        transaction.set(orderRef, orderData);
 
         inventoryReservations.forEach((entry) => {
           const mutationRef = inventoryMutationsRef.doc();
@@ -422,8 +581,34 @@ exports.createBoutiqueOrder = onCall(
           paymentCommunication,
           qrCodeUrl,
           total,
+          orderData,
         };
       });
+
+      let emailSentAt = null;
+      let emailStatus = 'failed';
+      try {
+        emailSentAt = await sendBoutiqueOrderEmail({
+          clubRef,
+          clubId,
+          orderRef,
+          order: {
+            ...result.orderData,
+            pricing: {
+              ...result.orderData.pricing,
+              total: result.total,
+            },
+          },
+        });
+        emailStatus = 'sent';
+      } catch (emailError) {
+        console.error(`[createBoutiqueOrder] Email failed for ${clubId}/${orderRef.id}:`, emailError);
+        await orderRef.update({
+          'payment.email_status': 'failed',
+          'payment.email_error': emailError.message || 'Email failed',
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
 
       return {
         success: true,
@@ -444,10 +629,61 @@ exports.createBoutiqueOrder = onCall(
           structuredCommunication: result.paymentCommunication,
           epcPayload: result.epcPayload,
           qrCodeUrl: result.qrCodeUrl,
+          emailSentAt: emailSentAt?.toDate?.()?.toISOString?.() || null,
+          emailStatus,
         },
       };
     } catch (error) {
       console.error(`[createBoutiqueOrder] Failed for ${clubId}/${orderRef.id}:`, error);
+      throw mapErrorToHttps(error, HttpsError);
+    }
+  },
+);
+
+exports.sendBoutiqueOrderPaymentEmail = onCall(
+  {
+    region: REGION,
+    memory: '256MiB',
+    timeoutSeconds: 60,
+    maxInstances: 10,
+  },
+  async (request) => {
+    if (!request.auth || !request.auth.uid) {
+      throw new HttpsError('unauthenticated', 'Authentification requise');
+    }
+
+    const db = admin.firestore();
+    const clubId = typeof request.data?.clubId === 'string' ? request.data.clubId.trim() : '';
+    const orderId = typeof request.data?.orderId === 'string' ? request.data.orderId.trim() : '';
+    if (!clubId || !orderId) {
+      throw new HttpsError('invalid-argument', 'clubId ou orderId manquant', { code: 'INVALID_INPUT' });
+    }
+
+    try {
+      const clubRef = getClubRef(db, clubId);
+      const orderRef = clubRef.collection('orders').doc(orderId);
+      const orderSnap = await orderRef.get();
+      if (!orderSnap.exists) {
+        throw buildDomainError('ORDER_NOT_FOUND', 'Commande introuvable');
+      }
+      const order = orderSnap.data();
+      if (order.buyer?.userId !== request.auth.uid) {
+        throw new HttpsError('permission-denied', 'Accès refusé');
+      }
+      if (order.status !== 'awaiting_payment' || order.payment?.status !== 'pending') {
+        throw buildDomainError('ORDER_NOT_CANCELLABLE', 'Cette commande n’est plus en attente de paiement.');
+      }
+      const emailSentAt = await sendBoutiqueOrderEmail({
+        clubRef,
+        clubId,
+        orderRef,
+        order,
+      });
+      return {
+        success: true,
+        emailSentAt: emailSentAt.toDate().toISOString(),
+      };
+    } catch (error) {
       throw mapErrorToHttps(error, HttpsError);
     }
   },

@@ -2,7 +2,6 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
@@ -17,6 +16,7 @@ class BoutiqueOrderConfirmationScreen extends StatelessWidget {
   final String beneficiary;
   final double amount;
   final String? epcPayload;
+  final bool emailSent;
 
   const BoutiqueOrderConfirmationScreen({
     super.key,
@@ -27,6 +27,7 @@ class BoutiqueOrderConfirmationScreen extends StatelessWidget {
     required this.beneficiary,
     required this.amount,
     this.epcPayload,
+    this.emailSent = false,
   });
 
   @override
@@ -36,17 +37,6 @@ class BoutiqueOrderConfirmationScreen extends StatelessWidget {
       symbol: '€',
       decimalDigits: 2,
     );
-    final payload = epcPayload?.isNotEmpty == true
-        ? epcPayload!
-        : generateEpcPayload(
-            EpcQrCodeData(
-              beneficiaryName: beneficiary,
-              iban: iban,
-              amount: amount,
-              description: ogmDisplay,
-            ),
-          );
-
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -96,20 +86,16 @@ class BoutiqueOrderConfirmationScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 18),
-                      if (payload != null)
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: Colors.grey.shade200),
-                          ),
-                          child: QrImageView(
-                            data: payload,
-                            version: QrVersions.auto,
-                            size: 230,
-                          ),
-                        ),
+                      _InfoBox(
+                        icon: emailSent
+                            ? Icons.mark_email_read_outlined
+                            : Icons.email_outlined,
+                        title: emailSent
+                            ? 'Email de paiement envoyé'
+                            : 'Email de paiement',
+                        text:
+                            'Le QR code de paiement est envoyé par email. Ouvrez ce mail sur ordinateur et scannez le QR avec votre application bancaire.',
+                      ),
                       const SizedBox(height: 18),
                       _PaymentLine(label: 'Bénéficiaire', value: beneficiary),
                       _PaymentLine(
@@ -242,6 +228,59 @@ class _PaymentLine extends StatelessWidget {
               },
               icon: const Icon(Icons.copy, size: 18),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoBox extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String text;
+
+  const _InfoBox({
+    required this.icon,
+    required this.title,
+    required this.text,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE3F2FD),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: AppColors.donkerblauw),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: AppColors.donkerblauw,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  text,
+                  style: const TextStyle(
+                    color: AppColors.donkerblauw,
+                    fontWeight: FontWeight.w700,
+                    height: 1.25,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

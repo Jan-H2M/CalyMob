@@ -1,7 +1,6 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
@@ -84,6 +83,21 @@ class _MesCommandesScreenState extends State<MesCommandesScreen> {
     setState(() => _ordersFuture = _loadOrders());
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Commande supprimée')),
+    );
+  }
+
+  Future<void> _resendPaymentEmail(Map<String, dynamic> order) async {
+    await FirebaseFunctions.instanceFor(region: 'europe-west1')
+        .httpsCallable('sendBoutiqueOrderPaymentEmail')
+        .call({
+      'clubId': FirebaseConfig.defaultClubId,
+      'orderId': order['id'],
+    });
+
+    if (!mounted) return;
+    setState(() => _ordersFuture = _loadOrders());
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Email de paiement envoyé')),
     );
   }
 
@@ -174,6 +188,10 @@ class _MesCommandesScreenState extends State<MesCommandesScreen> {
                                       payment['status'] == 'pending'
                                   ? () => _cancelOrder(order)
                                   : null,
+                              onResendEmail: status == 'awaiting_payment' &&
+                                      payment['status'] == 'pending'
+                                  ? () => _resendPaymentEmail(order)
+                                  : null,
                             ),
                           ),
                         ),
@@ -242,12 +260,14 @@ class _OrderDetailScreen extends StatelessWidget {
   final String paymentCommunication;
   final double amount;
   final Future<void> Function()? onCancel;
+  final Future<void> Function()? onResendEmail;
 
   const _OrderDetailScreen({
     required this.order,
     required this.paymentCommunication,
     required this.amount,
     required this.onCancel,
+    required this.onResendEmail,
   });
 
   @override
@@ -262,8 +282,11 @@ class _OrderDetailScreen extends StatelessWidget {
         .whereType<Map>()
         .map((item) => Map<String, dynamic>.from(item))
         .toList();
-    final epcPayload = payment['epcPayload']?.toString() ?? '';
     final isAwaitingPayment = order['status'] == 'awaiting_payment';
+    final isPaid = order['status'] == 'paid' || payment['status'] == 'paid';
+    final emailSent = payment['email_status'] == 'sent' ||
+        payment['emailStatus'] == 'sent' ||
+        payment['email_sent_at'] != null;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -337,26 +360,43 @@ class _OrderDetailScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              if (isAwaitingPayment && epcPayload.isNotEmpty) ...[
+              if (isPaid || isAwaitingPayment) ...[
                 const SizedBox(height: 12),
                 _DetailPanel(
-                  child: Column(
-                    children: [
-                      const Text(
-                        'QR paiement',
-                        style: TextStyle(
-                          color: AppColors.donkerblauw,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
+                  child: _PaymentStatusPanel(
+                    isPaid: isPaid,
+                    emailSent: emailSent,
+                  ),
+                ),
+              ],
+              if (onResendEmail != null) ...[
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.middenblauw,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () async {
+                    try {
+                      await onResendEmail!();
+                    } catch (error) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Impossible d’envoyer l’email: $error'),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      QrImageView(
-                        data: epcPayload,
-                        size: 220,
-                        backgroundColor: Colors.white,
-                      ),
-                    ],
+                      );
+                    }
+                  },
+                  icon: Icon(
+                    emailSent
+                        ? Icons.mark_email_read_outlined
+                        : Icons.email_outlined,
+                  ),
+                  label: Text(
+                    emailSent
+                        ? 'Renvoyer l’email de paiement'
+                        : 'Envoyer l’email de paiement',
                   ),
                 ),
               ],
@@ -397,6 +437,62 @@ class _DetailPanel extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: child,
       ),
+    );
+  }
+}
+
+class _PaymentStatusPanel extends StatelessWidget {
+  final bool isPaid;
+  final bool emailSent;
+
+  const _PaymentStatusPanel({
+    required this.isPaid,
+    required this.emailSent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final title = isPaid
+        ? 'Commande payée'
+        : emailSent
+            ? 'Email de paiement envoyé'
+            : 'Email de paiement à envoyer';
+    final text = isPaid
+        ? 'Le paiement est enregistré.'
+        : 'Le QR code de paiement est envoyé par email. Ouvrez ce mail sur ordinateur et scannez le QR avec votre application bancaire.';
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          isPaid ? Icons.check_circle_outline : Icons.mark_email_read_outlined,
+          color: isPaid ? Colors.green.shade700 : AppColors.middenblauw,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  color: isPaid ? Colors.green.shade800 : AppColors.donkerblauw,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                text,
+                style: TextStyle(
+                  color: Colors.grey.shade700,
+                  fontWeight: FontWeight.w700,
+                  height: 1.25,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

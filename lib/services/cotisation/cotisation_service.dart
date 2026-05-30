@@ -46,12 +46,16 @@ class CotisationService {
     });
   }
 
-  Future<CotisationPayment> createPayment(String clubId,
-      {required String period}) async {
+  Future<CotisationPayment> createPayment(
+    String clubId, {
+    required String period,
+    bool resendEmail = false,
+  }) async {
     final result =
         await _functions.httpsCallable('createCotisationPayment').call({
       'clubId': clubId,
       'period': period,
+      if (resendEmail) 'resendEmail': true,
     });
     final data = Map<String, dynamic>.from(result.data as Map);
     return CotisationPayment(
@@ -68,6 +72,9 @@ class CotisationService {
       beneficiary: data['beneficiary']?.toString(),
       validityUntil: data['validityUntil'] != null
           ? DateTime.tryParse(data['validityUntil'].toString())
+          : null,
+      emailSentAt: data['emailSentAt'] != null
+          ? DateTime.tryParse(data['emailSentAt'].toString())
           : null,
     );
   }

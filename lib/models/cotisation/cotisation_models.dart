@@ -79,6 +79,7 @@ class CotisationPayment {
   final String? iban;
   final String? beneficiary;
   final DateTime? validityUntil;
+  final DateTime? emailSentAt;
 
   const CotisationPayment({
     required this.id,
@@ -93,6 +94,7 @@ class CotisationPayment {
     this.iban,
     this.beneficiary,
     this.validityUntil,
+    this.emailSentAt,
   });
 
   factory CotisationPayment.fromFirestore(DocumentSnapshot doc) {
@@ -105,7 +107,8 @@ class CotisationPayment {
           '',
       amount: _toDouble(data['amount']) ?? 0,
       seasonLabel: data['season_label']?.toString() ?? '',
-      seasonId: data['seasonId']?.toString() ?? data['season_id']?.toString() ?? '',
+      seasonId:
+          data['seasonId']?.toString() ?? data['season_id']?.toString() ?? '',
       tariffLabel: data['tariff_label_snapshot']?.toString() ??
           data['tariff_label']?.toString() ??
           '',
@@ -114,6 +117,7 @@ class CotisationPayment {
       iban: data['iban']?.toString(),
       beneficiary: data['beneficiary']?.toString(),
       validityUntil: (data['validity_until'] as Timestamp?)?.toDate(),
+      emailSentAt: (data['email_sent_at'] as Timestamp?)?.toDate(),
     );
   }
 }
