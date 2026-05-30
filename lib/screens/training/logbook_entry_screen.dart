@@ -2819,48 +2819,78 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
   }
 
   Widget _diveNumberField() {
-    return Row(
-      children: [
-        const Icon(Icons.tag, color: AppColors.middenblauw, size: 20),
-        const SizedBox(width: 8),
-        Expanded(
-          child: TextField(
-            controller: _diveNumber,
-            keyboardType: TextInputType.number,
-            decoration: InputDecoration(
-              labelText: 'N° plongée',
-              labelStyle: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey.shade600,
-                letterSpacing: 1,
-              ),
-              hintText: 'ex: 413',
-              hintStyle: TextStyle(
-                color: Colors.grey.shade400,
-                fontStyle: FontStyle.italic,
-              ),
-              border: InputBorder.none,
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(vertical: 2),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.middenblauw.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: AppColors.middenblauw.withValues(alpha: 0.28),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.tag, color: AppColors.middenblauw, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'N° PLONGÉE',
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.8,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                TextField(
+                  controller: _diveNumber,
+                  keyboardType: TextInputType.number,
+                  style: const TextStyle(
+                    color: AppColors.donkerblauw,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: '—',
+                    hintStyle: TextStyle(
+                      color: Colors.grey.shade400,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    border: InputBorder.none,
+                    isDense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
   Widget _datePickerField() {
     return InkWell(
       onTap: _pickDate,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.middenblauw.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: AppColors.middenblauw.withValues(alpha: 0.28),
+          ),
+        ),
         child: Row(
           children: [
             const Icon(Icons.calendar_today_outlined,
-                color: AppColors.middenblauw, size: 20),
-            const SizedBox(width: 10),
+                color: AppColors.middenblauw, size: 18),
+            const SizedBox(width: 8),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2868,10 +2898,10 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
                   Text(
                     'DATE',
                     style: TextStyle(
-                      fontSize: 10,
+                      fontSize: 9.5,
                       fontWeight: FontWeight.bold,
+                      letterSpacing: 0.8,
                       color: Colors.grey.shade600,
-                      letterSpacing: 1,
                     ),
                   ),
                   const SizedBox(height: 2),
