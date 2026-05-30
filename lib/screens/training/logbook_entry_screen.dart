@@ -2768,42 +2768,17 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
       child: Column(
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              const Icon(Icons.calendar_today_outlined,
-                  color: AppColors.middenblauw, size: 20),
-              const SizedBox(width: 10),
               Expanded(
-                child: InkWell(
-                  onTap: _pickDate,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'DATE',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey.shade600,
-                            letterSpacing: 1,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _formatDate(_date),
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black87,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+                flex: 4,
+                child: _diveNumberField(),
               ),
-              Icon(Icons.unfold_more, color: Colors.grey.shade400),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 6,
+                child: _datePickerField(),
+              ),
             ],
           ),
           const Divider(height: 16),
@@ -2839,6 +2814,81 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _diveNumberField() {
+    return Row(
+      children: [
+        const Icon(Icons.tag, color: AppColors.middenblauw, size: 20),
+        const SizedBox(width: 8),
+        Expanded(
+          child: TextField(
+            controller: _diveNumber,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: 'N° plongée',
+              labelStyle: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey.shade600,
+                letterSpacing: 1,
+              ),
+              hintText: 'ex: 413',
+              hintStyle: TextStyle(
+                color: Colors.grey.shade400,
+                fontStyle: FontStyle.italic,
+              ),
+              border: InputBorder.none,
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(vertical: 2),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _datePickerField() {
+    return InkWell(
+      onTap: _pickDate,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            const Icon(Icons.calendar_today_outlined,
+                color: AppColors.middenblauw, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'DATE',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey.shade600,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _formatDate(_date),
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.unfold_more, color: Colors.grey.shade400),
+          ],
+        ),
       ),
     );
   }
@@ -4038,6 +4088,8 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         if (lestage != null && lestage > 0) 'lestage_kg': lestage,
         if (explicitDiveNumber != null && explicitDiveNumber > 0)
           'dive_number': explicitDiveNumber,
+        if (widget.mode == LogbookEntryMode.edit && explicitDiveNumber == null)
+          'dive_number': FieldValue.delete(),
       };
 
       final source = widget.mode == LogbookEntryMode.auto
