@@ -20,6 +20,108 @@ class BoutiqueScreen extends StatefulWidget {
 }
 
 class _BoutiqueScreenState extends State<BoutiqueScreen> {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        title: const Text(
+          'Boutique',
+          style: TextStyle(color: Colors.white),
+        ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          _CartActionButton(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const BoutiqueCartScreen(),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+      body: OceanGradientBackground(
+        creatures: CreatureSet.fishAndBubbles,
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+            children: [
+              Text(
+                'Articles club, vêtements, abonnements et accessoires.',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.84),
+                  fontSize: 15,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 22),
+              _BoutiqueHomeCard(
+                icon: Icons.receipt_long_outlined,
+                title: 'Mes commandes',
+                subtitle: 'Suivre les commandes et retrouver les paiements.',
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const MesCommandesScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              Consumer<BoutiqueCartProvider>(
+                builder: (context, cart, _) {
+                  final subtitle = cart.isEmpty
+                      ? 'Votre panier est vide.'
+                      : '${cart.itemCount} article(s) en attente.';
+                  return _BoutiqueHomeCard(
+                    icon: Icons.shopping_bag_outlined,
+                    title: 'Mon panier',
+                    subtitle: subtitle,
+                    badge: cart.isEmpty ? null : '${cart.itemCount}',
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const BoutiqueCartScreen(),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              _BoutiqueHomeCard(
+                icon: Icons.storefront_outlined,
+                title: 'Produits',
+                subtitle: 'Parcourir le catalogue Boutique.',
+                emphasized: true,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const BoutiqueProductsScreen(),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class BoutiqueProductsScreen extends StatefulWidget {
+  const BoutiqueProductsScreen({super.key});
+
+  @override
+  State<BoutiqueProductsScreen> createState() => _BoutiqueProductsScreenState();
+}
+
+class _BoutiqueProductsScreenState extends State<BoutiqueProductsScreen> {
   final BoutiqueService _service = BoutiqueService();
   BoutiqueProductCategory? _selectedCategory;
 
@@ -37,7 +139,7 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
-            icon: const Icon(Icons.receipt_long_outlined),
+            icon: const Icon(Icons.receipt_long_outlined, size: 28),
             tooltip: 'Mes commandes',
             onPressed: () {
               Navigator.of(context).push(
@@ -47,22 +149,12 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
               );
             },
           ),
-          Consumer<BoutiqueCartProvider>(
-            builder: (context, cart, _) {
-              return IconButton(
-                icon: Badge(
-                  isLabelVisible: cart.itemCount > 0,
-                  label: Text('${cart.itemCount}'),
-                  child: const Icon(Icons.shopping_bag_outlined),
+          _CartActionButton(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const BoutiqueCartScreen(),
                 ),
-                tooltip: 'Panier',
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const BoutiqueCartScreen(),
-                    ),
-                  );
-                },
               );
             },
           ),
@@ -147,6 +239,135 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                 ],
               );
             },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CartActionButton extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const _CartActionButton({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<BoutiqueCartProvider>(
+      builder: (context, cart, _) {
+        return IconButton(
+          iconSize: 32,
+          constraints: const BoxConstraints.tightFor(width: 52, height: 52),
+          padding: const EdgeInsets.all(10),
+          icon: Badge(
+            isLabelVisible: cart.itemCount > 0,
+            label: Text('${cart.itemCount}'),
+            child: const Icon(Icons.shopping_bag_outlined, size: 32),
+          ),
+          tooltip: 'Panier',
+          onPressed: onPressed,
+        );
+      },
+    );
+  }
+}
+
+class _BoutiqueHomeCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String? badge;
+  final bool emphasized;
+  final VoidCallback onTap;
+
+  const _BoutiqueHomeCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.badge,
+    this.emphasized = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 58,
+                height: 58,
+                decoration: BoxDecoration(
+                  color: emphasized
+                      ? AppColors.middenblauw.withValues(alpha: 0.12)
+                      : AppColors.surfaceGrey,
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: Icon(
+                  icon,
+                  color: AppColors.middenblauw,
+                  size: 30,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: const TextStyle(
+                              color: AppColors.donkerblauw,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        if (badge != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 9,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.oranje,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              badge!,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: Colors.grey.shade700,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.chevron_right, color: AppColors.middenblauw),
+            ],
           ),
         ),
       ),
