@@ -281,6 +281,7 @@ class _BoutiqueCheckoutScreenState extends State<BoutiqueCheckoutScreen> {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(
           builder: (_) => BoutiqueOrderConfirmationScreen(
+            orderId: data['orderId']?.toString(),
             orderNumber: data['orderNumber']?.toString() ?? '',
             ogmDisplay: data['ogm_display']?.toString() ??
                 payment['ogm_display']?.toString() ??
