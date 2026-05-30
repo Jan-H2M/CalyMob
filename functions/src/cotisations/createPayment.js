@@ -140,6 +140,7 @@ async function resolveClubEmailSettings(clubRef) {
     fromEmail: emailConfig.resend.fromEmail || 'onboarding@resend.dev',
     fromName: emailConfig.resend.fromName || clubName,
     clubName,
+    logoUrl: general.logoUrl || '',
   };
 }
 
@@ -165,13 +166,18 @@ function buildCotisationEmailHtml({
   communication,
   iban,
   beneficiary,
+  logoUrl,
 }) {
+  const logoBlock = logoUrl
+    ? `<div style="text-align:center;margin:0 0 22px;"><img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(clubName)}" style="max-width:220px;max-height:90px;height:auto;"></div>`
+    : '';
   return `
 <!doctype html>
 <html>
 <body style="margin:0;background:#f3f7fb;font-family:Arial,Helvetica,sans-serif;color:#12325c;">
   <div style="max-width:640px;margin:0 auto;padding:28px 18px;">
     <div style="background:#ffffff;border-radius:16px;padding:26px;border:1px solid #dfe8f2;">
+      ${logoBlock}
       <h1 style="margin:0 0 10px;font-size:24px;color:#12325c;">Cotisation ${escapeHtml(clubName)}</h1>
       <p style="margin:0 0 18px;font-size:16px;line-height:1.45;">
         Bonjour ${escapeHtml(recipientName)}, voici le QR code pour payer votre cotisation.
@@ -254,6 +260,7 @@ async function sendCotisationPaymentEmail({
     communication,
     iban: bankSettings.iban,
     beneficiary: bankSettings.beneficiary,
+    logoUrl: emailSettings.logoUrl,
   });
   const qrBase64 = String(qrDataUrl || '').replace(/^data:image\/png;base64,/, '');
   const result = await sendEmailViaResend(

@@ -168,6 +168,7 @@ async function resolveClubEmailSettings(clubRef) {
     fromEmail: emailConfig.resend.fromEmail || 'onboarding@resend.dev',
     fromName: emailConfig.resend.fromName || clubName,
     clubName,
+    logoUrl: general.logoUrl || '',
   };
 }
 
@@ -184,10 +185,13 @@ function formatAmount(amount) {
   return `${Number(amount || 0).toFixed(2).replace('.', ',')} €`;
 }
 
-function buildOrderEmailHtml({ order, clubName }) {
+function buildOrderEmailHtml({ order, clubName, logoUrl }) {
   const buyer = order.buyer || {};
   const payment = order.payment || {};
   const items = Array.isArray(order.items) ? order.items : [];
+  const logoBlock = logoUrl
+    ? `<div style="text-align:center;margin:0 0 22px;"><img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(clubName)}" style="max-width:220px;max-height:90px;height:auto;"></div>`
+    : '';
   const itemRows = items.map((item) => {
     const snapshot = item.productSnapshot || {};
     return `
@@ -204,6 +208,7 @@ function buildOrderEmailHtml({ order, clubName }) {
 <body style="margin:0;background:#f3f7fb;font-family:Arial,Helvetica,sans-serif;color:#12325c;">
   <div style="max-width:640px;margin:0 auto;padding:28px 18px;">
     <div style="background:#ffffff;border-radius:16px;padding:26px;border:1px solid #dfe8f2;">
+      ${logoBlock}
       <h1 style="margin:0 0 10px;font-size:24px;color:#12325c;">Commande ${escapeHtml(order.orderNumber)}</h1>
       <p style="margin:0 0 18px;font-size:16px;line-height:1.45;">
         Bonjour ${escapeHtml(buyer.displayName)}, voici le QR code pour payer votre commande Boutique.
@@ -261,7 +266,11 @@ async function sendBoutiqueOrderEmail({ clubRef, clubId, orderRef, order }) {
   }
   const emailSettings = await resolveClubEmailSettings(clubRef);
   const payment = order.payment || {};
-  const html = buildOrderEmailHtml({ order, clubName: emailSettings.clubName });
+  const html = buildOrderEmailHtml({
+    order,
+    clubName: emailSettings.clubName,
+    logoUrl: emailSettings.logoUrl,
+  });
   const subject = `Commande ${order.orderNumber} - ${formatAmount(payment.amount)}`;
   const qrBase64 = String(payment.qrCodeUrl || '').replace(/^data:image\/png;base64,/, '');
   const result = await sendEmailViaResend(

@@ -80,7 +80,9 @@ class _MesCommandesScreenState extends State<MesCommandesScreen> {
     });
 
     if (!mounted) return;
-    setState(() => _ordersFuture = _loadOrders());
+    setState(() {
+      _ordersFuture = _loadOrders();
+    });
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Commande supprimée')),
     );
@@ -95,7 +97,9 @@ class _MesCommandesScreenState extends State<MesCommandesScreen> {
     });
 
     if (!mounted) return;
-    setState(() => _ordersFuture = _loadOrders());
+    setState(() {
+      _ordersFuture = _loadOrders();
+    });
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Email de paiement envoyé')),
     );
@@ -156,7 +160,9 @@ class _MesCommandesScreenState extends State<MesCommandesScreen> {
 
               return RefreshIndicator(
                 onRefresh: () async {
-                  setState(() => _ordersFuture = _loadOrders());
+                  setState(() {
+                    _ordersFuture = _loadOrders();
+                  });
                   await _ordersFuture;
                 },
                 child: ListView.separated(

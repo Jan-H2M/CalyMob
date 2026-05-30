@@ -171,6 +171,15 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
         price > 0 &&
         !alreadyCovered &&
         visiblePayment?.status == 'awaiting_payment';
+    final paymentButtonEnabled =
+        !_creating && (canCreatePayment || canSendPaymentEmail);
+    final paymentButtonLabel = _creating
+        ? 'Envoi...'
+        : canSendPaymentEmail
+            ? visiblePayment?.emailSentAt == null
+                ? 'Envoyer l’email de paiement'
+                : 'Renvoyer l’email de paiement'
+            : 'Payer ma cotisation';
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
@@ -247,6 +256,15 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
                         'Le renouvellement sera utile en janvier du prochain exercice.',
                   ),
                   const SizedBox(height: 12),
+                ] else if (canCreatePayment) ...[
+                  const _StatusBox(
+                    color: Color(0xFFE8F5E9),
+                    textColor: Color(0xFF1B5E20),
+                    icon: Icons.payments_outlined,
+                    title: 'Cotisation à payer',
+                    text: 'C’est le moment de payer votre cotisation.',
+                  ),
+                  const SizedBox(height: 12),
                 ],
                 if (!isOpen)
                   _StatusBox(
@@ -289,24 +307,26 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
                   )
                 else if (visiblePayment != null)
                   _PaymentQr(payment: visiblePayment, formatter: formatter),
-                if (canCreatePayment || canSendPaymentEmail) ...[
+                ...[
                   const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
                       style: FilledButton.styleFrom(
                         backgroundColor: AppColors.middenblauw,
+                        disabledBackgroundColor: Colors.grey.shade300,
+                        disabledForegroundColor: Colors.grey.shade700,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                      onPressed: _creating
-                          ? null
-                          : () => _createPayment(
+                      onPressed: paymentButtonEnabled
+                          ? () => _createPayment(
                                 period,
                                 resendEmail: canSendPaymentEmail,
-                              ),
+                              )
+                          : null,
                       icon: _creating
                           ? const SizedBox(
                               width: 18,
@@ -320,13 +340,7 @@ class _MaCotisationScreenState extends State<MaCotisationScreen> {
                               ? Icons.mark_email_read_outlined
                               : Icons.qr_code_2),
                       label: Text(
-                        _creating
-                            ? 'Envoi...'
-                            : canSendPaymentEmail
-                                ? visiblePayment?.emailSentAt == null
-                                    ? 'Envoyer l’email de paiement'
-                                    : 'Renvoyer l’email de paiement'
-                                : 'Payer ma cotisation',
+                        paymentButtonLabel,
                         style: const TextStyle(fontWeight: FontWeight.w800),
                       ),
                     ),
