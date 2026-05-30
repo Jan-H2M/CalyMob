@@ -693,7 +693,10 @@ class _ProductImages extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final networkImages = images.where(_isNetworkImage).toList();
+    final networkImages = images
+        .map(_resolveProductImageUrl)
+        .whereType<String>()
+        .toList(growable: false);
     if (networkImages.isEmpty) {
       return Container(
         height: 250,
@@ -787,13 +790,22 @@ class _StockLine extends StatelessWidget {
   }
 }
 
-bool _isNetworkImage(String imageUrl) {
-  return imageUrl.startsWith('http://') || imageUrl.startsWith('https://');
-}
-
 String? _firstNetworkImage(List<String> images) {
   for (final imageUrl in images) {
-    if (_isNetworkImage(imageUrl)) return imageUrl;
+    final resolved = _resolveProductImageUrl(imageUrl);
+    if (resolved != null) return resolved;
+  }
+  return null;
+}
+
+String? _resolveProductImageUrl(String imageUrl) {
+  final trimmed = imageUrl.trim();
+  if (trimmed.isEmpty) return null;
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+  if (trimmed.startsWith('/')) {
+    return 'https://caly.club$trimmed';
   }
   return null;
 }

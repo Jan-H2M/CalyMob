@@ -137,28 +137,6 @@ class _BoutiqueProductsScreenState extends State<BoutiqueProductsScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.receipt_long_outlined, size: 28),
-            tooltip: 'Mes commandes',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const MesCommandesScreen(),
-                ),
-              );
-            },
-          ),
-          _CartActionButton(
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const BoutiqueCartScreen(),
-                ),
-              );
-            },
-          ),
-        ],
       ),
       body: OceanGradientBackground(
         creatures: CreatureSet.fishAndBubbles,
@@ -584,13 +562,22 @@ class _EmptyBoutiqueState extends StatelessWidget {
   }
 }
 
-bool _isNetworkImage(String imageUrl) {
-  return imageUrl.startsWith('http://') || imageUrl.startsWith('https://');
-}
-
 String? _firstNetworkImage(List<String> images) {
   for (final imageUrl in images) {
-    if (_isNetworkImage(imageUrl)) return imageUrl;
+    final resolved = _resolveProductImageUrl(imageUrl);
+    if (resolved != null) return resolved;
+  }
+  return null;
+}
+
+String? _resolveProductImageUrl(String imageUrl) {
+  final trimmed = imageUrl.trim();
+  if (trimmed.isEmpty) return null;
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+  if (trimmed.startsWith('/')) {
+    return 'https://caly.club$trimmed';
   }
   return null;
 }
