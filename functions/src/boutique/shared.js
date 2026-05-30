@@ -32,6 +32,12 @@ function mapErrorToHttps(error, HttpsError) {
     case 'PRODUCT_ARCHIVED':
     case 'ORDER_NOT_FOUND':
     case 'ORDER_NOT_CANCELLABLE':
+    case 'MEMBER_NOT_FOUND':
+    case 'SEASON_NOT_FOUND':
+    case 'COTISATION_CLOSED':
+    case 'MEMBERSHIP_CATEGORY_MISSING':
+    case 'TARIFF_NOT_FOUND':
+    case 'TARIFF_UNAVAILABLE':
       return new HttpsError('failed-precondition', error.message || code, {
         code,
         ...error.details,

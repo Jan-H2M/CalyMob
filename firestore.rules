@@ -879,6 +879,18 @@ service cloud.firestore {
         allow delete: if isSuperAdmin(clubId) && hasValidSession(clubId);
       }
 
+      match /membership_seasons/{seasonId} {
+        allow read: if isClubMember(clubId);
+        allow write: if isAdmin(clubId) && hasValidSession(clubId);
+      }
+
+      match /cotisation_payments/{paymentId} {
+        allow read: if isAdmin(clubId) || (
+          isClubMember(clubId) && resource.data.memberId == request.auth.uid
+        );
+        allow write: if isAdmin(clubId) && hasValidSession(clubId);
+      }
+
       // Fournisseurs - used by the expense reimbursement workflow.
       match /fournisseurs/{fournisseurId} {
         allow read: if isClubMember(clubId) && canManageExpenses(clubId);

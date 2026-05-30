@@ -20,6 +20,7 @@ import '../auth/login_screen.dart';
 import '../expenses/financial_screen.dart';
 import '../piscine/availability_screen.dart';
 import 'medical_certification_screen.dart';
+import 'ma_cotisation_screen.dart';
 import 'mes_informations_screen.dart';
 import 'settings_screen.dart';
 
@@ -200,6 +201,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             subtitleWidget: CotisationStatusBadge(
                               profile: profile,
                               compact: true,
+                            ),
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => MaCotisationScreen(
+                                  profile: profile,
+                                ),
+                              ),
                             ),
                           ),
                           _divider(),

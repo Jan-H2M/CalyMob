@@ -53,6 +53,10 @@ class MemberProfile {
   // Validation dates (for attendance tracking)
   final DateTime? cotisationValidite; // Membership fee validity
   final DateTime? certificatMedicalValidite; // Medical certificate validity
+  final String? membershipCategoryCode;
+  final String? membershipPeriod;
+  final String? membershipSeasonId;
+  final String? lifrasId;
 
   // Métadonnées
   final DateTime? createdAt;
@@ -89,6 +93,10 @@ class MemberProfile {
     this.memberStatus,
     this.cotisationValidite,
     this.certificatMedicalValidite,
+    this.membershipCategoryCode,
+    this.membershipPeriod,
+    this.membershipSeasonId,
+    this.lifrasId,
     this.createdAt,
     this.updatedAt,
   });
@@ -134,6 +142,10 @@ class MemberProfile {
       cotisationValidite: (data['cotisation_validite'] as Timestamp?)?.toDate(),
       certificatMedicalValidite:
           (data['certificat_medical_validite'] as Timestamp?)?.toDate(),
+      membershipCategoryCode: data['membership_category_code'],
+      membershipPeriod: data['membership_period'],
+      membershipSeasonId: data['membership_season_id'],
+      lifrasId: data['lifras_id'] ?? data['licence_lifras'],
       createdAt: (data['created_at'] as Timestamp?)?.toDate(),
       updatedAt: (data['updated_at'] as Timestamp?)?.toDate(),
     );
@@ -233,6 +245,13 @@ class MemberProfile {
       ibans: ibans ?? this.ibans,
       notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
       fcmToken: fcmToken ?? this.fcmToken,
+      memberStatus: memberStatus,
+      cotisationValidite: cotisationValidite,
+      certificatMedicalValidite: certificatMedicalValidite,
+      membershipCategoryCode: membershipCategoryCode,
+      membershipPeriod: membershipPeriod,
+      membershipSeasonId: membershipSeasonId,
+      lifrasId: lifrasId,
       createdAt: createdAt,
       updatedAt: DateTime.now(),
     );
