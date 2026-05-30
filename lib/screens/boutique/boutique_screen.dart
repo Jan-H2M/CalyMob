@@ -50,20 +50,6 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
               ),
               const SizedBox(height: 22),
               _BoutiqueHomeCard(
-                icon: Icons.card_membership_outlined,
-                title: 'Ma cotisation',
-                subtitle: 'Consulter et payer votre cotisation membre.',
-                emphasized: true,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const MaCotisationScreen(),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 12),
-              _BoutiqueHomeCard(
                 icon: Icons.receipt_long_outlined,
                 title: 'Mes commandes',
                 subtitle: 'Suivre les commandes et retrouver les paiements.',
@@ -106,6 +92,20 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                   Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => const BoutiqueProductsScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              _BoutiqueHomeCard(
+                icon: Icons.card_membership_outlined,
+                title: 'Ma cotisation',
+                subtitle: 'Consulter et payer votre cotisation membre.',
+                emphasized: true,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const MaCotisationScreen(),
                     ),
                   );
                 },
