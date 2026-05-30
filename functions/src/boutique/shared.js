@@ -30,6 +30,8 @@ function mapErrorToHttps(error, HttpsError) {
     case 'OUT_OF_STOCK':
     case 'PRODUCT_NOT_FOUND':
     case 'PRODUCT_ARCHIVED':
+    case 'ORDER_NOT_FOUND':
+    case 'ORDER_NOT_CANCELLABLE':
       return new HttpsError('failed-precondition', error.message || code, {
         code,
         ...error.details,

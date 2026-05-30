@@ -178,6 +178,9 @@ exports.createBoutiqueOrder = createBoutiqueOrder;
 const { listBoutiqueOrders } = require('./src/boutique/listOrders');
 exports.listBoutiqueOrders = listBoutiqueOrders;
 
+const { cancelBoutiqueOrder } = require('./src/boutique/cancelOrder');
+exports.cancelBoutiqueOrder = cancelBoutiqueOrder;
+
 // =============================================================================
 // CARNET DE FORMATION — Phase 1 (Gen2)
 // =============================================================================

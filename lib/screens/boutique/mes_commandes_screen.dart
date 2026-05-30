@@ -1,11 +1,11 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
-import 'boutique_order_confirmation_screen.dart';
 
 class MesCommandesScreen extends StatefulWidget {
   const MesCommandesScreen({super.key});
@@ -33,6 +33,58 @@ class _MesCommandesScreenState extends State<MesCommandesScreen> {
     return orders
         .map((entry) => Map<String, dynamic>.from(entry as Map))
         .toList();
+  }
+
+  String _paymentCommunication(Map<String, dynamic> order) {
+    final payment = Map<String, dynamic>.from((order['payment'] as Map?) ?? {});
+    return order['paymentCommunication']?.toString().trim().isNotEmpty == true
+        ? order['paymentCommunication'].toString()
+        : payment['paymentCommunication']?.toString().trim().isNotEmpty == true
+            ? payment['paymentCommunication'].toString()
+            : payment['structuredCommunication']
+                        ?.toString()
+                        .trim()
+                        .isNotEmpty ==
+                    true
+                ? payment['structuredCommunication'].toString()
+                : payment['ogm_display']?.toString() ?? '';
+  }
+
+  Future<void> _cancelOrder(Map<String, dynamic> order) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Supprimer la commande ?'),
+        content: Text(
+          'La commande ${order['orderNumber'] ?? ''} sera annulée. Le stock réservé sera libéré.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    await FirebaseFunctions.instanceFor(region: 'europe-west1')
+        .httpsCallable('cancelBoutiqueOrder')
+        .call({
+      'clubId': FirebaseConfig.defaultClubId,
+      'orderId': order['id'],
+    });
+
+    if (!mounted) return;
+    setState(() => _ordersFuture = _loadOrders());
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Commande supprimée')),
+    );
   }
 
   @override
@@ -104,37 +156,27 @@ class _MesCommandesScreenState extends State<MesCommandesScreen> {
                       (order['payment'] as Map?) ?? {},
                     );
                     final status = order['status']?.toString() ?? '';
-                    final canShowPaymentQr = status == 'awaiting_payment' &&
-                        payment['epcPayload'] != null;
                     final items = (order['items'] as List?) ?? const [];
                     final total = _asDouble(pricing['total']);
+                    final paymentCommunication = _paymentCommunication(order);
                     return Material(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(16),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(16),
-                        onTap: canShowPaymentQr
-                            ? () => Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        BoutiqueOrderConfirmationScreen(
-                                      orderNumber:
-                                          order['orderNumber']?.toString() ??
-                                              '',
-                                      ogmDisplay:
-                                          payment['ogm_display']?.toString() ??
-                                              '',
-                                      iban: payment['iban']?.toString() ?? '',
-                                      beneficiary:
-                                          payment['beneficiary']?.toString() ??
-                                              '',
-                                      amount: total,
-                                      epcPayload:
-                                          payment['epcPayload']?.toString(),
-                                    ),
-                                  ),
-                                )
-                            : null,
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => _OrderDetailScreen(
+                              order: order,
+                              paymentCommunication: paymentCommunication,
+                              amount: total,
+                              onCancel: status == 'awaiting_payment' &&
+                                      payment['status'] == 'pending'
+                                  ? () => _cancelOrder(order)
+                                  : null,
+                            ),
+                          ),
+                        ),
                         child: Padding(
                           padding: const EdgeInsets.all(16),
                           child: Column(
@@ -162,12 +204,10 @@ class _MesCommandesScreenState extends State<MesCommandesScreen> {
                                 '${items.length} article(s) · ${formatter.format(total)}',
                                 style: TextStyle(color: Colors.grey.shade700),
                               ),
-                              if ((payment['ogm_display'] ?? '')
-                                  .toString()
-                                  .isNotEmpty) ...[
+                              if (paymentCommunication.isNotEmpty) ...[
                                 const SizedBox(height: 6),
                                 Text(
-                                  payment['ogm_display'].toString(),
+                                  paymentCommunication,
                                   style: const TextStyle(
                                     color: AppColors.middenblauw,
                                     fontWeight: FontWeight.w800,
@@ -195,6 +235,242 @@ class _MesCommandesScreenState extends State<MesCommandesScreen> {
     if (value is num) return value.toDouble();
     return double.tryParse(value?.toString() ?? '') ?? 0;
   }
+}
+
+class _OrderDetailScreen extends StatelessWidget {
+  final Map<String, dynamic> order;
+  final String paymentCommunication;
+  final double amount;
+  final Future<void> Function()? onCancel;
+
+  const _OrderDetailScreen({
+    required this.order,
+    required this.paymentCommunication,
+    required this.amount,
+    required this.onCancel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final formatter = NumberFormat.currency(
+      locale: 'fr_BE',
+      symbol: '€',
+      decimalDigits: 2,
+    );
+    final payment = Map<String, dynamic>.from((order['payment'] as Map?) ?? {});
+    final items = ((order['items'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+    final epcPayload = payment['epcPayload']?.toString() ?? '';
+    final isAwaitingPayment = order['status'] == 'awaiting_payment';
+
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        title: Text(
+          order['orderNumber']?.toString() ?? 'Commande',
+          style: const TextStyle(color: Colors.white),
+        ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: OceanGradientBackground(
+        creatures: CreatureSet.bubbles,
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+            children: [
+              _DetailPanel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      order['orderNumber']?.toString() ?? '',
+                      style: const TextStyle(
+                        color: AppColors.donkerblauw,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      formatter.format(amount),
+                      style: const TextStyle(
+                        color: AppColors.oranje,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    if (paymentCommunication.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        paymentCommunication,
+                        style: const TextStyle(
+                          color: AppColors.middenblauw,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              _DetailPanel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Articles',
+                      style: TextStyle(
+                        color: AppColors.donkerblauw,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    for (final item in items) ...[
+                      _OrderItemRow(item: item, formatter: formatter),
+                      if (item != items.last) const Divider(height: 22),
+                    ],
+                  ],
+                ),
+              ),
+              if (isAwaitingPayment && epcPayload.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _DetailPanel(
+                  child: Column(
+                    children: [
+                      const Text(
+                        'QR paiement',
+                        style: TextStyle(
+                          color: AppColors.donkerblauw,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      QrImageView(
+                        data: epcPayload,
+                        size: 220,
+                        backgroundColor: Colors.white,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (onCancel != null) ...[
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.red.shade700,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () async {
+                    await onCancel!();
+                    if (context.mounted) Navigator.of(context).pop();
+                  },
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Supprimer la commande'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DetailPanel extends StatelessWidget {
+  final Widget child;
+
+  const _DetailPanel({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: child,
+      ),
+    );
+  }
+}
+
+class _OrderItemRow extends StatelessWidget {
+  final Map<String, dynamic> item;
+  final NumberFormat formatter;
+
+  const _OrderItemRow({
+    required this.item,
+    required this.formatter,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final snapshot = Map<String, dynamic>.from(
+      (item['productSnapshot'] as Map?) ?? {},
+    );
+    final name =
+        snapshot['name']?.toString() ?? item['productId']?.toString() ?? '';
+    final variant = snapshot['variantLabel']?.toString() ??
+        item['variantId']?.toString() ??
+        '';
+    final customizations = Map<String, dynamic>.from(
+      (item['customizations'] as Map?) ?? {},
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          name,
+          style: const TextStyle(
+            color: AppColors.donkerblauw,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '$variant · ${item['deliveryMode'] ?? ''}',
+          style: TextStyle(color: Colors.grey.shade700),
+        ),
+        if (customizations.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            customizations.entries
+                .where((entry) => entry.key != 'surcharge')
+                .map((entry) => '${entry.key}: ${entry.value}')
+                .join(' · '),
+            style: TextStyle(color: Colors.grey.shade700),
+          ),
+        ],
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Text('x${item['qty'] ?? 0}'),
+            const Spacer(),
+            Text(
+              formatter.format(_asStaticDouble(item['lineTotal'])),
+              style: const TextStyle(
+                color: AppColors.oranje,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+double _asStaticDouble(dynamic value) {
+  if (value is num) return value.toDouble();
+  return double.tryParse(value?.toString() ?? '') ?? 0;
 }
 
 class _StatusBadge extends StatelessWidget {

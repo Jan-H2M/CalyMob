@@ -17,6 +17,9 @@ function simplifyOrder(doc) {
     expiresAt: timestampToIso(data.expiresAt),
     pricing: data.pricing || {},
     payment: data.payment || {},
+    buyer: data.buyer || {},
+    paymentCommunication: data.paymentCommunication || data.structuredCommunication || data.ogm_display || '',
+    structuredCommunication: data.structuredCommunication || '',
     items: Array.isArray(data.items)
       ? data.items.map((item) => ({
           lineId: item.lineId || '',
@@ -26,6 +29,8 @@ function simplifyOrder(doc) {
           unitPrice: item.unitPrice || 0,
           lineTotal: item.lineTotal || 0,
           fulfillmentStatus: item.fulfillmentStatus || '',
+          deliveryMode: item.deliveryMode || '',
+          deliveryAddress: item.deliveryAddress || null,
           customizations: item.customizations || null,
           productSnapshot: item.productSnapshot || {},
         }))

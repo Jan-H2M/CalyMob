@@ -113,6 +113,11 @@ function sanitizeCustomizations(value) {
   return customizations;
 }
 
+function extractOrderCounter(orderNumber, year) {
+  const match = String(orderNumber || '').match(new RegExp(`^BTQ-${year}-(\\d{4,})$`));
+  return match ? Number(match[1]) : 0;
+}
+
 async function resolveClubBankSettings(clubRef) {
   const [bankSnap, generalSnap, clubInfoSnap] = await Promise.all([
     clubRef.collection('settings').doc('bank').get(),
@@ -178,7 +183,7 @@ exports.createBoutiqueOrder = onCall(
 
     const clubRef = getClubRef(db, clubId);
     const orderRef = clubRef.collection('orders').doc();
-    const orderCounterRef = clubRef.collection('settings').doc('order_counter');
+    const orderCounterRef = clubRef.collection('settings').doc(`boutique_order_counter_${currentYear}`);
     const inventoryMutationsRef = clubRef.collection('inventoryMutations');
     const now = admin.firestore.Timestamp.now();
     const expiresAt = admin.firestore.Timestamp.fromMillis(now.toMillis() + (72 * 60 * 60 * 1000));
@@ -188,9 +193,17 @@ exports.createBoutiqueOrder = onCall(
     try {
       const result = await db.runTransaction(async (transaction) => {
         const counterSnap = await transaction.get(orderCounterRef);
-        const nextCounter = counterSnap.exists
-          ? Number(counterSnap.get('counter') || 0) + 1
-          : 1;
+        const prefix = `BTQ-${currentYear}-`;
+        const existingNumbersSnap = await transaction.get(
+          clubRef.collection('orders')
+            .where('orderNumber', '>=', prefix)
+            .where('orderNumber', '<=', `${prefix}\uf8ff`),
+        );
+        const highestExistingCounter = existingNumbersSnap.docs.reduce((highest, doc) => {
+          return Math.max(highest, extractOrderCounter(doc.get('orderNumber'), currentYear));
+        }, 0);
+        const storedCounter = counterSnap.exists ? Number(counterSnap.get('counter') || 0) : 0;
+        const nextCounter = Math.max(storedCounter, highestExistingCounter) + 1;
         const lines = [];
         const productCache = new Map();
         const inventoryReservations = [];
@@ -346,6 +359,7 @@ exports.createBoutiqueOrder = onCall(
 
         transaction.set(orderCounterRef, {
           counter: nextCounter,
+          year: currentYear,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         }, { merge: true });
 
