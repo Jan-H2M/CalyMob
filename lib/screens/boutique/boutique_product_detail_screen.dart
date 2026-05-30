@@ -217,7 +217,7 @@ class _BoutiqueProductDetailScreenState
                               : null,
                           icon: const Icon(Icons.shopping_bag_outlined),
                           label: Text(
-                            'Préparer la commande · ${formatter.format(orderTotal)}',
+                            'Ajouter au panier · ${formatter.format(orderTotal)}',
                           ),
                         ),
                       ),
