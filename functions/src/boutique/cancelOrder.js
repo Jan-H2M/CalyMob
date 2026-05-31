@@ -2,6 +2,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const {
   REGION,
+  assertBoutiqueAccess,
   buildDomainError,
   getClubRef,
   mapErrorToHttps,
@@ -27,6 +28,8 @@ exports.cancelBoutiqueOrder = onCall(
 
     const db = admin.firestore();
     const clubRef = getClubRef(db, clubId);
+    await assertBoutiqueAccess({ clubRef, authUid: request.auth.uid, HttpsError });
+
     const orderRef = clubRef.collection('orders').doc(orderId);
     const inventoryMutationsRef = clubRef.collection('inventoryMutations');
 

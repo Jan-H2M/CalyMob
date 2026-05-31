@@ -4,6 +4,27 @@ function getClubRef(db, clubId) {
   return db.collection('clubs').doc(clubId);
 }
 
+async function assertBoutiqueAccess({ clubRef, authUid, HttpsError }) {
+  const [flagsSnap, memberSnap] = await Promise.all([
+    clubRef.collection('settings').doc('feature_flags').get(),
+    clubRef.collection('members').doc(authUid).get(),
+  ]);
+
+  const flags = flagsSnap.exists ? flagsSnap.data() : {};
+  const enabled = flags.boutiqueEnabled === true || flags.boutiqueMobileEnabled === true;
+  const member = memberSnap.exists ? memberSnap.data() : {};
+  const appRole = String(member.app_role || '').toLowerCase();
+  const isAdmin = appRole === 'admin' || appRole === 'superadmin';
+  const access = member.feature_access;
+  const hasMemberAccess = access && typeof access === 'object' && access.boutique === true;
+
+  if (!enabled || (!isAdmin && !hasMemberAccess)) {
+    throw new HttpsError('permission-denied', 'Accès Boutique non autorisé');
+  }
+
+  return { isAdmin, hasMemberAccess };
+}
+
 function buildInvalidInputError(message, details = {}) {
   const error = new Error(message || 'INVALID_INPUT');
   error.code = 'INVALID_INPUT';
@@ -127,6 +148,7 @@ function buildEpcQrPayload({ iban, beneficiary, amount, ogm, communication }) {
 
 module.exports = {
   REGION,
+  assertBoutiqueAccess,
   buildDomainError,
   buildEpcQrPayload,
   buildInvalidInputError,

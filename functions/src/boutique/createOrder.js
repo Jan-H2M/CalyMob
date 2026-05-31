@@ -4,6 +4,7 @@ const { randomUUID } = require('crypto');
 const QRCode = require('qrcode');
 const {
   REGION,
+  assertBoutiqueAccess,
   buildDomainError,
   buildEpcQrPayload,
   buildInvalidInputError,
@@ -348,6 +349,8 @@ exports.createBoutiqueOrder = onCall(
     }
 
     const clubRef = getClubRef(db, clubId);
+    await assertBoutiqueAccess({ clubRef, authUid: request.auth.uid, HttpsError });
+
     const orderRef = clubRef.collection('orders').doc();
     const inventoryMutationsRef = clubRef.collection('inventoryMutations');
     const now = admin.firestore.Timestamp.now();
@@ -670,6 +673,8 @@ exports.sendBoutiqueOrderPaymentEmail = onCall(
 
     try {
       const clubRef = getClubRef(db, clubId);
+      await assertBoutiqueAccess({ clubRef, authUid: request.auth.uid, HttpsError });
+
       const orderRef = clubRef.collection('orders').doc(orderId);
       const orderSnap = await orderRef.get();
       if (!orderSnap.exists) {

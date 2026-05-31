@@ -1,6 +1,10 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
-const { REGION } = require('./shared');
+const {
+  REGION,
+  assertBoutiqueAccess,
+  getClubRef,
+} = require('./shared');
 
 function timestampToIso(value) {
   if (!value || typeof value.toDate !== 'function') return null;
@@ -55,9 +59,11 @@ exports.listBoutiqueOrders = onCall(
       throw new HttpsError('invalid-argument', 'clubId manquant');
     }
 
-    const snapshot = await admin.firestore()
-      .collection('clubs')
-      .doc(clubId)
+    const db = admin.firestore();
+    const clubRef = getClubRef(db, clubId);
+    await assertBoutiqueAccess({ clubRef, authUid: request.auth.uid, HttpsError });
+
+    const snapshot = await clubRef
       .collection('orders')
       .where('buyer.userId', '==', request.auth.uid)
       .get();

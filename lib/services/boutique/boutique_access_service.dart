@@ -42,12 +42,11 @@ class BoutiqueAccessService {
     final isAdmin = appRole == 'admin' || appRole == 'superadmin';
     final enabled = flags?['boutiqueEnabled'] == true ||
         flags?['boutiqueMobileEnabled'] == true;
-    final adminOnly = flags?['boutiqueAdminOnly'] == true;
     final access = member['feature_access'];
     final hasMemberAccess = access is Map && access['boutique'] == true;
 
     if (!enabled) return false;
     if (isAdmin || hasMemberAccess) return true;
-    return !adminOnly;
+    return false;
   }
 }
