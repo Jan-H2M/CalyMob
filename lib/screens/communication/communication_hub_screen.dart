@@ -24,8 +24,33 @@ import '../training/historical_claims_screen.dart';
 import '../training/historical_qr_scan_screen.dart';
 import '../training/historical_validation_screen.dart';
 
-class CommunicationHubScreen extends StatelessWidget {
+enum _CommunicationFilter {
+  all('Tout', Icons.view_agenda_outlined),
+  announcements('Annonces', Icons.campaign_outlined),
+  teams('Équipes', Icons.groups_outlined),
+  actions('Actions', Icons.flag_outlined),
+  formation('Formation', Icons.school_outlined);
+
+  final String label;
+  final IconData icon;
+
+  const _CommunicationFilter(this.label, this.icon);
+}
+
+class CommunicationHubScreen extends StatefulWidget {
   const CommunicationHubScreen({super.key});
+
+  @override
+  State<CommunicationHubScreen> createState() => _CommunicationHubScreenState();
+}
+
+class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
+  _CommunicationFilter _selectedFilter = _CommunicationFilter.all;
+
+  bool _shows(_CommunicationFilter filter) {
+    return _selectedFilter == _CommunicationFilter.all ||
+        _selectedFilter == filter;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,76 +68,226 @@ class CommunicationHubScreen extends StatelessWidget {
         child: SafeArea(
           child: Column(
             children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back,
-                          color: Colors.white, size: 28),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                    const Expanded(
-                      child: Text(
-                        'Communication',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              const _CommunicationHeader(),
+              _CommunicationFilterBar(
+                selectedFilter: _selectedFilter,
+                onSelected: (filter) {
+                  setState(() {
+                    _selectedFilter = filter;
+                  });
+                },
               ),
               Expanded(
                 child: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                   children: [
                     // Carnet de Formation — persistent inbox. Always rendered;
                     // empty state shows nothing visible to non-formation members.
-                    const _ActionsCalypsoSection(),
-                    const _PlannedExercisesSection(),
-                    const SizedBox(height: 18),
-                    _AnnouncementsCard(
-                      unreadCount: unreadProvider.announcements,
-                    ),
-                    const SizedBox(height: 18),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Canaux d\'équipe',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.9),
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          'Affichés selon vos accès',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.68),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    _TeamChannelsSection(
-                      roles: roles,
-                      includeAllChannels: includeAllChannels,
-                      plongeurCode: memberProvider.plongeurCode,
-                      targetFormationLevel: memberProvider.targetFormationLevel,
-                    ),
+                    if (_shows(_CommunicationFilter.actions))
+                      const _ActionsCalypsoSection(),
+                    if (_shows(_CommunicationFilter.formation))
+                      const _PlannedExercisesSection(),
+                    if (_shows(_CommunicationFilter.announcements)) ...[
+                      _SectionHeader(
+                        icon: Icons.campaign_outlined,
+                        title: 'Aujourd\'hui',
+                        subtitle: unreadProvider.announcements > 0
+                            ? 'Nouveautés du club'
+                            : 'À jour',
+                        count: unreadProvider.announcements,
+                      ),
+                      const SizedBox(height: 10),
+                      _AnnouncementsCard(
+                        unreadCount: unreadProvider.announcements,
+                      ),
+                      const SizedBox(height: 18),
+                    ],
+                    if (_shows(_CommunicationFilter.teams)) ...[
+                      const _SectionHeader(
+                        icon: Icons.groups_outlined,
+                        title: 'Canaux d\'équipe',
+                        subtitle: 'Affichés selon vos accès',
+                      ),
+                      const SizedBox(height: 10),
+                      _TeamChannelsSection(
+                        roles: roles,
+                        includeAllChannels: includeAllChannels,
+                        plongeurCode: memberProvider.plongeurCode,
+                        targetFormationLevel:
+                            memberProvider.targetFormationLevel,
+                      ),
+                    ],
+                    if (_selectedFilter != _CommunicationFilter.all)
+                      const SizedBox(height: 4),
                   ],
                 ),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _CommunicationHeader extends StatelessWidget {
+  const _CommunicationHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 16, 6),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+            onPressed: () => Navigator.pop(context),
+          ),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Communication',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 23,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Messages, équipes et actions Calypso',
+                  style: TextStyle(
+                    color: Color(0xD9FFFFFF),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CommunicationFilterBar extends StatelessWidget {
+  final _CommunicationFilter selectedFilter;
+  final ValueChanged<_CommunicationFilter> onSelected;
+
+  const _CommunicationFilterBar({
+    required this.selectedFilter,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 44,
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        scrollDirection: Axis.horizontal,
+        itemBuilder: (context, index) {
+          final filter = _CommunicationFilter.values[index];
+          final selected = selectedFilter == filter;
+          return GestureDetector(
+            onTap: () => onSelected(filter),
+            child: Container(
+              alignment: Alignment.center,
+              constraints: const BoxConstraints(minWidth: 52),
+              padding: const EdgeInsets.symmetric(horizontal: 13),
+              decoration: BoxDecoration(
+                color: selected
+                    ? Colors.white
+                    : Colors.white.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.32)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    filter.icon,
+                    size: 16,
+                    color: selected ? AppColors.donkerblauw : Colors.white,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    filter.label,
+                    style: TextStyle(
+                      color: selected ? AppColors.donkerblauw : Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemCount: _CommunicationFilter.values.length,
+      ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final int count;
+
+  const _SectionHeader({
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    this.count = 0,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 2, bottom: 2),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.white.withValues(alpha: 0.9), size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.96),
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    if (count > 0) _CountBadge(count),
+                  ],
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle!,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.72),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -161,26 +336,15 @@ class _ActionsCalypsoSectionState extends State<_ActionsCalypsoSection> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10, left: 2),
-              child: Row(
-                children: [
-                  Icon(Icons.flag,
-                      color: Colors.white.withValues(alpha: 0.9), size: 20),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Actions Calypso',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.95),
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  if (tasks.isNotEmpty) _CountBadge(tasks.length),
-                ],
-              ),
+            _SectionHeader(
+              icon: Icons.flag_outlined,
+              title: 'À traiter',
+              subtitle: canScanHistoricalQr
+                  ? 'Actions Calypso et validation papier'
+                  : 'Actions Calypso',
+              count: tasks.length,
             ),
+            const SizedBox(height: 10),
             if (canScanHistoricalQr)
               const Padding(
                 padding: EdgeInsets.only(bottom: 10),
@@ -190,6 +354,7 @@ class _ActionsCalypsoSectionState extends State<_ActionsCalypsoSection> {
                   padding: const EdgeInsets.only(bottom: 10),
                   child: _ActionCalypsoCard(task: task),
                 )),
+            const SizedBox(height: 8),
           ],
         );
       },
@@ -670,23 +835,25 @@ class _AnnouncementsCard extends StatelessWidget {
           MaterialPageRoute(builder: (_) => const AnnouncementsScreen()),
         );
       },
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(16),
       child: Ink(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(16),
           gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
             colors: [
-              Colors.white.withValues(alpha: 0.22),
-              Colors.white.withValues(alpha: 0.12),
+              Colors.white.withValues(alpha: 0.97),
+              Colors.white.withValues(alpha: 0.9),
             ],
           ),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.72)),
           boxShadow: [
             BoxShadow(
-              color: AppColors.donkerblauw.withValues(alpha: 0.12),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
+              color: AppColors.donkerblauw.withValues(alpha: 0.09),
+              blurRadius: 16,
+              offset: const Offset(0, 7),
             ),
           ],
         ),
@@ -696,16 +863,26 @@ class _AnnouncementsCard extends StatelessWidget {
               clipBehavior: Clip.none,
               children: [
                 Container(
-                  width: 58,
-                  height: 58,
+                  width: 50,
+                  height: 50,
                   decoration: BoxDecoration(
-                    color: AppColors.middenblauw.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(18),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        AppColors.middenblauw.withValues(alpha: 0.24),
+                        AppColors.middenblauw.withValues(alpha: 0.08),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: AppColors.middenblauw.withValues(alpha: 0.18),
+                    ),
                   ),
                   child: const Icon(
                     Icons.campaign,
-                    color: Colors.white,
-                    size: 28,
+                    color: AppColors.middenblauw,
+                    size: 25,
                   ),
                 ),
                 if (unreadCount > 0)
@@ -724,9 +901,9 @@ class _AnnouncementsCard extends StatelessWidget {
                   const Text(
                     'Annonces du club',
                     style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
+                      color: AppColors.donkerblauw,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -735,15 +912,15 @@ class _AnnouncementsCard extends StatelessWidget {
                         ? '$unreadCount nouveau${unreadCount > 1 ? 'x' : ''}'
                         : 'Toutes les annonces sont lues',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.88),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
+                      color: AppColors.donkerblauw.withValues(alpha: 0.72),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right, color: Colors.white),
+            Icon(Icons.chevron_right, color: Colors.grey.shade500),
           ],
         ),
       ),
@@ -793,7 +970,7 @@ class _TeamChannelsSection extends StatelessWidget {
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(16),
             ),
             child: Text(
               'Aucun canal disponible pour ce profil.',
@@ -842,11 +1019,11 @@ class _TeamChannelTile extends StatelessWidget {
               ),
             );
           },
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(16),
           child: Ink(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(22),
+              borderRadius: BorderRadius.circular(16),
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
