@@ -1,0 +1,1 @@
+Page Communication repensée selon la nouvelle maquette, avec une inbox plus claire et des canaux mieux organisés.
