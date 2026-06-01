@@ -66,6 +66,17 @@ service cloud.firestore {
       );
     }
 
+    function canValidateMaterialReturns(clubId) {
+      return isAdmin(clubId)
+        || hasCARole(clubId)
+        || hasGonflageRole(clubId)
+        || hasEncadrantRole(clubId)
+        || (
+          isClubMember(clubId) &&
+          getUserData(clubId).app_role == 'validateur'
+        );
+    }
+
     function hasBureauRole(clubId) {
       return hasClubStatut(clubId, [
         'BS', 'bs', 'Banque Signature', 'banque signature',
@@ -297,6 +308,11 @@ service cloud.firestore {
           && hasValidSession(clubId)
           && (
             canManageExpenses(clubId) ||
+            (
+              canValidateMaterialReturns(clubId) &&
+              request.resource.data.source == 'loan_caution_return' &&
+              request.resource.data.linked_entity_type == 'loan_caution_refund'
+            ) ||
             request.resource.data.demandeur_id == request.auth.uid
           );
 
@@ -331,6 +347,11 @@ service cloud.firestore {
           && hasValidSession(clubId)
           && (
             canManageExpenses(clubId) ||
+            (
+              canValidateMaterialReturns(clubId) &&
+              request.resource.data.accounting_context == 'loan_caution_refunded' &&
+              request.resource.data.source_loan_id is string
+            ) ||
             request.resource.data.demandeur_id == request.auth.uid
           );
         // Update: User can update own (if draft/submitted), admin+ can update all
@@ -797,7 +818,11 @@ service cloud.firestore {
       match /inventory_config/settings/{subcollection}/{docId} {
         // PHASE DÉVELOPPEMENT: Admin et Superadmin
         // Subcollections: item_types, checklists, caution_rules, locations, email_templates
-        allow read, write: if isAdmin(clubId) && hasValidSession(clubId);
+        allow read: if hasValidSession(clubId) && (
+          isAdmin(clubId) ||
+          (isClubMember(clubId) && subcollection == 'item_types')
+        );
+        allow write: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
       // Item types - flat structure (used by test scripts, alternative to nested)
@@ -814,12 +839,19 @@ service cloud.firestore {
 
       // Inventory items (matériel unitaire)
       match /inventory_items/{itemId} {
-        // PHASE DÉVELOPPEMENT: Superadmin uniquement
-        allow read: if isSuperAdmin(clubId) && hasValidSession(clubId);
+        allow read: if (
+          isSuperAdmin(clubId) ||
+          canValidateMaterialReturns(clubId) ||
+          (isClubMember(clubId) && resource.data.statut == 'disponible')
+        ) && hasValidSession(clubId);
         // Write requires fiscal year check if fiscal_year_id is present
         allow create, update: if isSuperAdmin(clubId)
           && hasValidSession(clubId)
           && (!('fiscal_year_id' in request.resource.data) || canModifyFiscalYearData(clubId, request.resource.data.fiscal_year_id));
+        allow update: if canValidateMaterialReturns(clubId)
+          && hasValidSession(clubId)
+          && request.resource.data.diff(resource.data).changedKeys().hasOnly(['statut', 'updatedAt'])
+          && request.resource.data.statut == 'disponible';
         allow delete: if isSuperAdmin(clubId) && hasValidSession(clubId);
       }
 
@@ -829,9 +861,56 @@ service cloud.firestore {
 
       // Inventory loans (prêts de matériel) - full name used by services
       match /inventory_loans/{loanId} {
-        // PHASE DÉVELOPPEMENT: Superadmin uniquement
         // Prêts n'ont pas d'impact comptable direct (gratuit), pas de fiscal_year_id
-        allow read, write: if isSuperAdmin(clubId) && hasValidSession(clubId);
+        allow read: if (isSuperAdmin(clubId) || canValidateMaterialReturns(clubId)) && hasValidSession(clubId);
+        allow create, delete: if isSuperAdmin(clubId) && hasValidSession(clubId);
+        allow update: if isSuperAdmin(clubId) && hasValidSession(clubId);
+        allow update: if canValidateMaterialReturns(clubId)
+          && hasValidSession(clubId)
+          && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+            'statut',
+            'date_retour_reel',
+            'return_validated_at',
+            'return_validated_by',
+            'return_validated_by_name',
+            'return_decision',
+            'return_notes',
+            'notes_retour',
+            'caution_retournee',
+            'caution_non_rendue',
+            'caution_payment_status',
+            'caution_refund_demand_id',
+            'updatedAt'
+          ])
+          && request.resource.data.statut == 'rendu'
+          && request.resource.data.return_validated_by == request.auth.uid;
+      }
+
+      match /inventory_loan_requests/{requestId} {
+        allow read: if hasValidSession(clubId) && (
+          canValidateMaterialReturns(clubId) ||
+          resource.data.memberId == request.auth.uid
+        );
+        allow create: if isClubMember(clubId)
+          && hasValidSession(clubId)
+          && request.resource.data.memberId == request.auth.uid
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.status == 'submitted'
+          && request.resource.data.source == 'calymob';
+        allow update: if hasValidSession(clubId) && (
+          canValidateMaterialReturns(clubId) ||
+          (
+            resource.data.memberId == request.auth.uid &&
+            resource.data.status == 'submitted' &&
+            request.resource.data.status == 'cancelled' &&
+            request.resource.data.diff(resource.data).changedKeys().hasOnly([
+              'status',
+              'updatedAt',
+              'cancelledAt'
+            ])
+          )
+        );
+        allow delete: if isSuperAdmin(clubId) && hasValidSession(clubId);
       }
 
       // Loans - simplified name (used by test scripts, alternative to inventory_loans)

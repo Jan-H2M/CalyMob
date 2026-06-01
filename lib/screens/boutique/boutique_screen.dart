@@ -6,11 +6,14 @@ import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../models/boutique/boutique_product.dart';
 import '../../providers/boutique_cart_provider.dart';
+import '../../providers/member_provider.dart';
 import '../../services/boutique/boutique_service.dart';
+import '../../utils/club_role_utils.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'boutique_cart_screen.dart';
 import 'boutique_product_detail_screen.dart';
 import 'mes_commandes_screen.dart';
+import '../stock/material_returns_screen.dart';
 import '../profile/ma_cotisation_screen.dart';
 
 class BoutiqueScreen extends StatefulWidget {
@@ -23,6 +26,9 @@ class BoutiqueScreen extends StatefulWidget {
 class _BoutiqueScreenState extends State<BoutiqueScreen> {
   @override
   Widget build(BuildContext context) {
+    final memberProvider = context.watch<MemberProvider>();
+    final showMaterialReturns = _canOpenMaterialReturns(memberProvider);
+
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -96,7 +102,13 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                   );
                 },
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 26),
+              Container(
+                height: 1,
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                color: Colors.white.withValues(alpha: 0.42),
+              ),
+              const SizedBox(height: 22),
               _BoutiqueHomeCard(
                 icon: Icons.card_membership_outlined,
                 title: 'Ma cotisation',
@@ -110,11 +122,40 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                   );
                 },
               ),
+              if (showMaterialReturns) ...[
+                const SizedBox(height: 12),
+                _BoutiqueHomeCard(
+                  icon: Icons.assignment_return_outlined,
+                  title: 'Prêts matériel',
+                  subtitle:
+                      'Valider les retours et créer le remboursement caution.',
+                  emphasized: true,
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const MaterialReturnsScreen(),
+                      ),
+                    );
+                  },
+                ),
+              ],
             ],
           ),
         ),
       ),
     );
+  }
+
+  bool _canOpenMaterialReturns(MemberProvider memberProvider) {
+    final role = memberProvider.appRole?.toLowerCase();
+    if (role == 'admin' || role == 'superadmin' || role == 'validateur') {
+      return true;
+    }
+
+    final roles = ClubRoleUtils.normalizeRoles(memberProvider.clubStatuten);
+    return roles.contains('gonflage') ||
+        roles.contains('ca') ||
+        roles.contains('encadrant');
   }
 }
 
@@ -359,7 +400,7 @@ class _CategoryFilter extends StatelessWidget {
           }
           final category = categories[index - 1];
           return _FilterChip(
-            label: boutiqueCategoryLabel(category),
+            label: _boutiqueCategoryShortLabel(category),
             selected: selectedCategory == category,
             onTap: () => onSelected(category),
           );
@@ -388,7 +429,8 @@ class _FilterChip extends StatelessWidget {
       onTap: onTap,
       child: Container(
         alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        constraints: const BoxConstraints(minWidth: 54),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
           color: selected ? Colors.white : Colors.white.withValues(alpha: 0.18),
           borderRadius: BorderRadius.circular(22),
@@ -399,10 +441,28 @@ class _FilterChip extends StatelessWidget {
           style: TextStyle(
             color: selected ? AppColors.donkerblauw : Colors.white,
             fontWeight: FontWeight.w700,
+            fontSize: 13,
           ),
         ),
       ),
     );
+  }
+}
+
+String _boutiqueCategoryShortLabel(BoutiqueProductCategory category) {
+  switch (category) {
+    case BoutiqueProductCategory.brevetsFormations:
+      return 'Brev.';
+    case BoutiqueProductCategory.vetements:
+      return 'Vêt.';
+    case BoutiqueProductCategory.accessoiresClub:
+      return 'Acc.';
+    case BoutiqueProductCategory.abonnements:
+      return 'Abonn.';
+    case BoutiqueProductCategory.produitsDigitaux:
+      return 'Digit.';
+    case BoutiqueProductCategory.autre:
+      return 'Autre';
   }
 }
 

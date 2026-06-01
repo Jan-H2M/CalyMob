@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../config/firebase_config.dart';
-import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
@@ -20,6 +20,8 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  static const _lastLoginEmailKey = 'calymob_last_login_email';
+
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -35,7 +37,27 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
+    _loadLastLoginEmail();
     _checkBiometricAvailability();
+  }
+
+  Future<void> _loadLastLoginEmail() async {
+    final emailFromUrl = Uri.base.queryParameters['loginEmail']?.trim();
+    if (emailFromUrl != null && emailFromUrl.isNotEmpty) {
+      _emailController.text = emailFromUrl;
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final lastEmail = prefs.getString(_lastLoginEmailKey);
+    if (!mounted || lastEmail == null || lastEmail.isEmpty) return;
+
+    _emailController.text = lastEmail;
+  }
+
+  Future<void> _saveLastLoginEmail(String email) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_lastLoginEmailKey, email);
   }
 
   Future<void> _checkBiometricAvailability() async {
@@ -81,6 +103,8 @@ class _LoginScreenState extends State<LoginScreen> {
         clubId: _clubId,
       );
 
+      await _saveLastLoginEmail(email);
+
       if (authProvider.currentUser != null) {
         await memberProvider.loadMemberData(
           _clubId,
@@ -95,7 +119,8 @@ class _LoginScreenState extends State<LoginScreen> {
       if (memberProvider.requirePasswordChange) {
         if (mounted) {
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const ForcePasswordChangeScreen()),
+            MaterialPageRoute(
+                builder: (_) => const ForcePasswordChangeScreen()),
           );
         }
         return;
@@ -119,6 +144,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleBiometricLogin() async {
+    final authProvider = context.read<AuthProvider>();
+    final memberProvider = context.read<MemberProvider>();
+
     final authenticated = await _biometricService.authenticate(
       reason: 'Authentifiez-vous pour accéder à CalyMob',
     );
@@ -127,9 +155,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final credentials = await _biometricService.getCredentials();
     if (credentials == null) return;
-
-    final authProvider = context.read<AuthProvider>();
-    final memberProvider = context.read<MemberProvider>();
 
     try {
       await authProvider.login(
@@ -153,7 +178,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
         if (mounted) {
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const ForcePasswordChangeScreen()),
+            MaterialPageRoute(
+                builder: (_) => const ForcePasswordChangeScreen()),
           );
         }
         return;
@@ -167,11 +193,12 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       if (mounted) {
         await _biometricService.clearCredentials();
+        if (!mounted) return;
         setState(() {
           _hasStoredCredentials = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Text('Session expirée. Veuillez vous reconnecter.'),
             backgroundColor: Colors.orange,
           ),
@@ -263,17 +290,19 @@ class _LoginScreenState extends State<LoginScreen> {
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
-                            side: const BorderSide(color: Colors.white54, width: 2),
+                            side: const BorderSide(
+                                color: Colors.white54, width: 2),
                           ),
                         ),
                       ),
                       const SizedBox(height: 24),
-                      Row(
+                      const Row(
                         children: [
                           Expanded(child: Divider(color: Colors.white38)),
                           Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Text('ou', style: TextStyle(color: Colors.white60)),
+                            padding: EdgeInsets.symmetric(horizontal: 16),
+                            child: Text('ou',
+                                style: TextStyle(color: Colors.white60)),
                           ),
                           Expanded(child: Divider(color: Colors.white38)),
                         ],
@@ -288,7 +317,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           TextFormField(
                             controller: _emailController,
                             keyboardType: TextInputType.emailAddress,
-                            autofillHints: const [AutofillHints.email, AutofillHints.username],
+                            autofillHints: const [
+                              AutofillHints.email,
+                              AutofillHints.username
+                            ],
                             textInputAction: TextInputAction.next,
                             style: const TextStyle(color: Colors.black87),
                             decoration: InputDecoration(
@@ -298,39 +330,45 @@ class _LoginScreenState extends State<LoginScreen> {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               filled: true,
-                              fillColor: Colors.white.withOpacity( 0.9),
+                              fillColor: Colors.white.withValues(alpha: 0.9),
                             ),
                             validator: (value) {
-                              if (value == null || value.isEmpty) return 'Email requis';
+                              if (value == null || value.isEmpty) {
+                                return 'Email requis';
+                              }
                               if (!value.contains('@')) return 'Email invalide';
                               return null;
                             },
                           ),
-
                           const SizedBox(height: 16),
-
                           TextFormField(
                             controller: _passwordController,
                             obscureText: _obscurePassword,
                             autofillHints: const [AutofillHints.password],
                             textInputAction: TextInputAction.done,
-                            onFieldSubmitted: (_) => _handleLoginWithBiometricSetup(),
+                            onFieldSubmitted: (_) =>
+                                _handleLoginWithBiometricSetup(),
                             style: const TextStyle(color: Colors.black87),
                             decoration: InputDecoration(
                               hintText: 'Mot de passe',
                               prefixIcon: const Icon(Icons.lock),
                               suffixIcon: IconButton(
-                                icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
-                                onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                                icon: Icon(_obscurePassword
+                                    ? Icons.visibility
+                                    : Icons.visibility_off),
+                                onPressed: () => setState(
+                                    () => _obscurePassword = !_obscurePassword),
                               ),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               filled: true,
-                              fillColor: Colors.white.withOpacity( 0.9),
+                              fillColor: Colors.white.withValues(alpha: 0.9),
                             ),
                             validator: (value) {
-                              if (value == null || value.isEmpty) return 'Mot de passe requis';
+                              if (value == null || value.isEmpty) {
+                                return 'Mot de passe requis';
+                              }
                               return null;
                             },
                           ),
@@ -347,7 +385,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           width: double.infinity,
                           height: 50,
                           child: ElevatedButton(
-                            onPressed: authProvider.isLoading ? null : _handleLoginWithBiometricSetup,
+                            onPressed: authProvider.isLoading
+                                ? null
+                                : _handleLoginWithBiometricSetup,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.middenblauw,
                               shape: RoundedRectangleBorder(
@@ -356,9 +396,11 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             child: authProvider.isLoading
                                 ? const SizedBox(
-                                    width: 20, height: 20,
+                                    width: 20,
+                                    height: 20,
                                     child: CircularProgressIndicator(
-                                      color: Colors.white, strokeWidth: 2,
+                                      color: Colors.white,
+                                      strokeWidth: 2,
                                     ),
                                   )
                                 : const Text(
@@ -378,14 +420,18 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     TextButton(
                       onPressed: _handleForgotPassword,
-                      style: TextButton.styleFrom(foregroundColor: Colors.white),
+                      style:
+                          TextButton.styleFrom(foregroundColor: Colors.white),
                       child: const Text(
                         'Mot de passe oublié ?',
                         style: TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w500,
                           shadows: [
-                            Shadow(offset: Offset(0, 1), blurRadius: 2, color: Colors.black38),
+                            Shadow(
+                                offset: Offset(0, 1),
+                                blurRadius: 2,
+                                color: Colors.black38),
                           ],
                         ),
                       ),
