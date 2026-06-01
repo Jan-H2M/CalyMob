@@ -81,12 +81,12 @@ class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                   children: [
+                    _CommunicationHeroCard(
+                      unreadCount: unreadProvider.announcements,
+                    ),
+                    const SizedBox(height: 18),
                     // Carnet de Formation — persistent inbox. Always rendered;
                     // empty state shows nothing visible to non-formation members.
-                    if (_shows(_CommunicationFilter.actions))
-                      const _ActionsCalypsoSection(),
-                    if (_shows(_CommunicationFilter.formation))
-                      const _PlannedExercisesSection(),
                     if (_shows(_CommunicationFilter.announcements)) ...[
                       _SectionHeader(
                         icon: Icons.campaign_outlined,
@@ -102,6 +102,8 @@ class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
                       ),
                       const SizedBox(height: 18),
                     ],
+                    if (_shows(_CommunicationFilter.actions))
+                      const _ActionsCalypsoSection(),
                     if (_shows(_CommunicationFilter.teams)) ...[
                       const _SectionHeader(
                         icon: Icons.groups_outlined,
@@ -117,6 +119,8 @@ class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
                             memberProvider.targetFormationLevel,
                       ),
                     ],
+                    if (_shows(_CommunicationFilter.formation))
+                      const _PlannedExercisesSection(),
                     if (_selectedFilter != _CommunicationFilter.all)
                       const SizedBox(height: 4),
                   ],
@@ -125,6 +129,167 @@ class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _CommunicationHeroCard extends StatelessWidget {
+  final int unreadCount;
+
+  const _CommunicationHeroCard({required this.unreadCount});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.donkerblauw.withValues(alpha: 0.14),
+            blurRadius: 22,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.96),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: const Icon(
+                  Icons.forum_outlined,
+                  color: AppColors.middenblauw,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Centre de communication',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'Annonces, canaux et actions du club',
+                      style: TextStyle(
+                        color: Color(0xD9FFFFFF),
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _HeroMetric(
+                  icon: Icons.campaign_outlined,
+                  label: 'Annonces',
+                  value: unreadCount > 0 ? '$unreadCount' : 'OK',
+                  highlighted: unreadCount > 0,
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: _HeroMetric(
+                  icon: Icons.groups_outlined,
+                  label: 'Équipes',
+                  value: 'Live',
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: _HeroMetric(
+                  icon: Icons.flag_outlined,
+                  label: 'Actions',
+                  value: 'Inbox',
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroMetric extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final bool highlighted;
+
+  const _HeroMetric({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.highlighted = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: highlighted ? 0.98 : 0.16),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.24)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            icon,
+            size: 17,
+            color: highlighted ? AppColors.oranje : Colors.white,
+          ),
+          const SizedBox(height: 7),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: highlighted ? AppColors.donkerblauw : Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 1),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: highlighted
+                  ? AppColors.donkerblauw.withValues(alpha: 0.68)
+                  : Colors.white.withValues(alpha: 0.78),
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -293,6 +458,60 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
+BoxDecoration _cardDecoration() {
+  return BoxDecoration(
+    borderRadius: BorderRadius.circular(16),
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        Colors.white.withValues(alpha: 0.98),
+        Colors.white.withValues(alpha: 0.91),
+      ],
+    ),
+    border: Border.all(color: Colors.white.withValues(alpha: 0.74)),
+    boxShadow: [
+      BoxShadow(
+        color: AppColors.donkerblauw.withValues(alpha: 0.10),
+        blurRadius: 16,
+        offset: const Offset(0, 8),
+      ),
+    ],
+  );
+}
+
+class _MiniPill extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _MiniPill({
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 120),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: color,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
 /// Carnet de Formation — Actions Calypso inbox section.
 ///
 /// Sits at the top of the Communication screen, BEFORE announcements and
@@ -368,44 +587,70 @@ class _HistoricalQrScanActionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white.withValues(alpha: 0.96),
+      color: Colors.transparent,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const HistoricalQrScanScreen()),
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
+        child: Ink(
+          padding: const EdgeInsets.all(15),
+          decoration: _cardDecoration(),
           child: Row(
             children: [
               Container(
-                width: 44,
-                height: 44,
+                width: 50,
+                height: 50,
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
                     colors: [Color(0xFFD8B4FE), Color(0xFF7C3AED)],
                   ),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(16),
                 ),
                 child: const Icon(Icons.qr_code_scanner, color: Colors.white),
               ),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    const Row(
+                      children: [
+                        _MiniPill(
+                          label: 'Validation',
+                          color: Color(0xFF7C3AED),
+                        ),
+                        SizedBox(width: 6),
+                        Text(
+                          'Aujourd\'hui',
+                          style: TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 7),
+                    const Text(
                       'Scanner une carte papier',
                       style: TextStyle(
                         color: AppColors.donkerblauw,
                         fontWeight: FontWeight.w800,
+                        fontSize: 15,
                       ),
                     ),
-                    SizedBox(height: 3),
+                    const SizedBox(height: 3),
                     Text(
                       'Scanne le QR de l’élève, puis contrôle sa carte avant validation.',
-                      style: TextStyle(fontSize: 12.5, height: 1.25),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppColors.donkerblauw.withValues(alpha: 0.68),
+                        fontSize: 12.5,
+                        height: 1.25,
+                      ),
                     ),
                   ],
                 ),
@@ -452,113 +697,134 @@ class _PlannedExercisesSection extends StatelessWidget {
           byOperation.putIfAbsent(key, () => []).add(data);
         }
 
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.96),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.72)),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.donkerblauw.withValues(alpha: 0.10),
-                  blurRadius: 14,
-                  offset: const Offset(0, 6),
-                ),
-              ],
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const _SectionHeader(
+              icon: Icons.school_outlined,
+              title: 'Formation',
+              subtitle: 'Exercices prévus',
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 18),
+              child: Container(
+                padding: const EdgeInsets.all(15),
+                decoration: _cardDecoration(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.assignment_outlined,
-                        color: AppColors.middenblauw, size: 20),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Exercices prévus pour ta sortie',
-                        style: TextStyle(
-                          color: AppColors.donkerblauw,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  'Informatif: après la plongée, tu confirmeras dans ton carnet ce qui a vraiment été fait.',
-                  style: TextStyle(
-                    color: AppColors.donkerblauw.withValues(alpha: 0.68),
-                    fontSize: 12,
-                    height: 1.25,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                ...byOperation.entries.map((entry) {
-                  final claims = entry.value;
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    const Row(
                       children: [
-                        if (entry.key != 'planned')
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 6),
-                            child: Text(
-                              'Sortie ${entry.key.length > 8 ? entry.key.substring(0, 8) : entry.key}',
-                              style: TextStyle(
-                                color: AppColors.donkerblauw
-                                    .withValues(alpha: 0.58),
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
+                        _MiniPill(
+                          label: 'Carnet',
+                          color: AppColors.middenblauw,
+                        ),
+                        SizedBox(width: 6),
+                        Text(
+                          'À confirmer après plongée',
+                          style: TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
                           ),
-                        Wrap(
-                          spacing: 7,
-                          runSpacing: 7,
-                          children: claims.map((claim) {
-                            final code = (claim['exercise_code'] ??
-                                    claim['exercise_id'] ??
-                                    '?')
-                                .toString();
-                            final label =
-                                claim['exercise_label']?.toString() ?? '';
-                            return Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 9,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFE6F6FD),
-                                borderRadius: BorderRadius.circular(9),
-                                border: Border.all(
-                                  color: AppColors.middenblauw
-                                      .withValues(alpha: 0.18),
-                                ),
-                              ),
-                              child: Text(
-                                label.isEmpty ? code : '$code · $label',
-                                style: const TextStyle(
-                                  color: AppColors.donkerblauw,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            );
-                          }).toList(),
                         ),
                       ],
                     ),
-                  );
-                }),
-              ],
+                    const SizedBox(height: 8),
+                    const Row(
+                      children: [
+                        Icon(
+                          Icons.assignment_outlined,
+                          color: AppColors.middenblauw,
+                          size: 20,
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Exercices prévus pour ta sortie',
+                            style: TextStyle(
+                              color: AppColors.donkerblauw,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      'Informatif: après la plongée, tu confirmeras dans ton carnet ce qui a vraiment été fait.',
+                      style: TextStyle(
+                        color: AppColors.donkerblauw.withValues(alpha: 0.68),
+                        fontSize: 12,
+                        height: 1.25,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    ...byOperation.entries.map((entry) {
+                      final claims = entry.value;
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (entry.key != 'planned')
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 6),
+                                child: Text(
+                                  'Sortie ${entry.key.length > 8 ? entry.key.substring(0, 8) : entry.key}',
+                                  style: TextStyle(
+                                    color: AppColors.donkerblauw
+                                        .withValues(alpha: 0.58),
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            Wrap(
+                              spacing: 7,
+                              runSpacing: 7,
+                              children: claims.map((claim) {
+                                final code = (claim['exercise_code'] ??
+                                        claim['exercise_id'] ??
+                                        '?')
+                                    .toString();
+                                final label =
+                                    claim['exercise_label']?.toString() ?? '';
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 9,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFE6F6FD),
+                                    borderRadius: BorderRadius.circular(9),
+                                    border: Border.all(
+                                      color: AppColors.middenblauw
+                                          .withValues(alpha: 0.18),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    label.isEmpty ? code : '$code · $label',
+                                    style: const TextStyle(
+                                      color: AppColors.donkerblauw,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
             ),
-          ),
+          ],
         );
       },
     );
@@ -576,26 +842,8 @@ class _ActionCalypsoCard extends StatelessWidget {
       onTap: () => _open(context, task),
       borderRadius: BorderRadius.circular(16),
       child: Ink(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Colors.white.withValues(alpha: 0.96),
-              Colors.white.withValues(alpha: 0.9),
-            ],
-          ),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.72)),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.donkerblauw.withValues(alpha: 0.10),
-              blurRadius: 14,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
+        padding: const EdgeInsets.all(15),
+        decoration: _cardDecoration(),
         child: Row(
           children: [
             _StatusGlyph(task: task),
@@ -604,12 +852,30 @@ class _ActionCalypsoCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Row(
+                    children: [
+                      _MiniPill(
+                        label: task.typeLabel,
+                        color: AppColors.middenblauw,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _statusLabel(task),
+                        style: TextStyle(
+                          color: AppColors.donkerblauw.withValues(alpha: 0.52),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 7),
                   Text(
                     task.title,
                     style: const TextStyle(
                       color: AppColors.donkerblauw,
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                   if (_subtitleFor(task).isNotEmpty)
@@ -646,6 +912,12 @@ class _ActionCalypsoCard extends StatelessWidget {
     if (task.status == FormationTaskStatus.blocked) parts.add('bloquée');
     if (task.status == FormationTaskStatus.snoozed) parts.add('reportée');
     return parts.join(' · ');
+  }
+
+  static String _statusLabel(FormationTask task) {
+    if (task.status == FormationTaskStatus.blocked) return 'Bloquée';
+    if (task.status == FormationTaskStatus.snoozed) return 'Reportée';
+    return 'À traiter';
   }
 
   static void _open(BuildContext context, FormationTask task) {
@@ -838,25 +1110,7 @@ class _AnnouncementsCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(16),
       child: Ink(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Colors.white.withValues(alpha: 0.97),
-              Colors.white.withValues(alpha: 0.9),
-            ],
-          ),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.72)),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.donkerblauw.withValues(alpha: 0.09),
-              blurRadius: 16,
-              offset: const Offset(0, 7),
-            ),
-          ],
-        ),
+        decoration: _cardDecoration(),
         child: Row(
           children: [
             Stack(
@@ -898,6 +1152,24 @@ class _AnnouncementsCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Row(
+                    children: [
+                      const _MiniPill(
+                        label: 'Club',
+                        color: AppColors.middenblauw,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        unreadCount > 0 ? 'Non lu' : 'À jour',
+                        style: TextStyle(
+                          color: AppColors.donkerblauw.withValues(alpha: 0.52),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 7),
                   const Text(
                     'Annonces du club',
                     style: TextStyle(
@@ -1022,27 +1294,7 @@ class _TeamChannelTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           child: Ink(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Colors.white.withValues(alpha: 0.96),
-                  Colors.white.withValues(alpha: 0.9),
-                ],
-              ),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.72),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.donkerblauw.withValues(alpha: 0.09),
-                  blurRadius: 16,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
+            decoration: _cardDecoration(),
             child: Row(
               children: [
                 Stack(
@@ -1085,15 +1337,38 @@ class _TeamChannelTile extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: _MiniPill(
+                              label: channel.type.displayName,
+                              color: accentColor,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            unreadCount > 0
+                                ? '$unreadCount nouveau${unreadCount > 1 ? 'x' : ''}'
+                                : 'Canal actif',
+                            style: TextStyle(
+                              color:
+                                  AppColors.donkerblauw.withValues(alpha: 0.52),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 7),
                       Text(
                         channel.name,
                         style: const TextStyle(
                           color: AppColors.donkerblauw,
                           fontSize: 15,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 4),
                       Text(
                         channel.description ?? channel.type.description,
                         maxLines: 2,
