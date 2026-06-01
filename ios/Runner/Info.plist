@@ -67,7 +67,7 @@
 	</array>
 	<!-- Firebase Configuration -->
 	<key>FirebaseAppDelegateProxyEnabled</key>
-	<false/>
+	<true/>
 	<!-- Face ID / Biometric Authentication -->
 	<key>NSFaceIDUsageDescription</key>
 	<string>CalyMob uses Face ID for secure and fast login.</string>
