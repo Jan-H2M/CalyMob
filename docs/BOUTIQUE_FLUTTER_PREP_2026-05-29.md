@@ -113,7 +113,7 @@ Voor gewone leden is uploaden van productfoto's niet nodig.
 ## Niet vergeten
 
 - Geen hardcoded categorieflows; alle opties komen uit productconfiguratie.
-- Geen "Boutique V2" naam gebruiken.
+- Geen versie-naam gebruiken; het is gewoon "Boutique".
 - "Carnets & documentation" is nu `accessoires_club`.
 - "Vêtements brodés" is nu `vetements`.
 - "Abonnements sites de plongée" is nu `abonnements`.

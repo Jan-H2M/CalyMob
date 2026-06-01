@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 /// Service voor feature flags — bestuurt of Carnet de Formation of
-/// Boutique V2 zichtbaar is.
+/// Boutique zichtbaar is.
 /// Luistert real-time naar clubs/{clubId}/settings/feature_flags.
 class FeatureFlagService extends ChangeNotifier {
   late final FirebaseFirestore _firestore;
