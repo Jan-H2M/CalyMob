@@ -53,6 +53,9 @@ flutter --version
 echo "Getting Flutter dependencies..."
 flutter pub get
 
+echo "Pre-caching iOS Flutter engine artifacts..."
+flutter precache --ios
+
 echo "Installing CocoaPods dependencies..."
 cd "$REPO_ROOT/ios"
 pod install --repo-update
