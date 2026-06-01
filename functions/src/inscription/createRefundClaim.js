@@ -15,6 +15,29 @@ const admin = require('firebase-admin');
 
 const REGION = 'europe-west1';
 
+async function generateNextRemReference(clubRef, year) {
+  const counterRef = clubRef.collection('settings').doc(`rem_reference_counter_${year}`);
+
+  const nextCounter = await admin.firestore().runTransaction(async (transaction) => {
+    const snap = await transaction.get(counterRef);
+    const current = snap.exists ? Number(snap.get('counter') || 0) : 0;
+    const next = current + 1;
+    transaction.set(counterRef, {
+      counter: next,
+      year,
+      updated_at: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return next;
+  });
+
+  return `REM-${year}-${String(nextCounter).padStart(4, '0')}`;
+}
+
+function buildRemCommunication(reference, title, fallbackName) {
+  const label = String(title || '').trim() || `Remboursement ${String(fallbackName || 'Demande').trim()}`;
+  return `+++${reference}+++ ${label}`.substring(0, 140);
+}
+
 function validateAuth(request) {
   if (!request.auth || !request.auth.uid) {
     throw new HttpsError('unauthenticated', 'Authentification requise');
@@ -186,6 +209,7 @@ exports.createInscriptionRefund = onCall(
     // Using batch ensures atomicity — both writes succeed or neither does.
     const demandeRef = clubRef.collection('demandes_remboursement').doc();
     const now = admin.firestore.Timestamp.now();
+    const paymentReference = await generateNextRemReference(clubRef, new Date().getFullYear());
 
     // Status depends on whether the parent inscription was already paid
     // when the edit happened. For unverified payments (member declared
@@ -207,6 +231,13 @@ exports.createInscriptionRefund = onCall(
       titre: `Modification inscription — ${eventTitre}`,
       montant: delta,
       description: description,
+      communication_qr: buildRemCommunication(
+        paymentReference,
+        `Modification inscription - ${eventTitre}`,
+        `${demandeurPrenom} ${demandeurNom}`.trim(),
+      ),
+      payment_reference: paymentReference,
+      payment_reference_key: `+++${paymentReference}+++`,
 
       // Account & status
       categorie: 'remboursement_inscription',

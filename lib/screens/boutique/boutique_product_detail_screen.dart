@@ -271,6 +271,9 @@ class _BoutiqueProductDetailScreenState
   }
 
   Future<void> _addToCart(BuildContext context, double unitPrice) async {
+    final navigator = Navigator.of(context);
+    final rootNavigator = Navigator.of(context, rootNavigator: true);
+    final messenger = ScaffoldMessenger.of(context);
     final variant = _selectedVariant;
     final personalizationPayload =
         _personalization.toOrderPayload(widget.product.personalization);
@@ -302,12 +305,24 @@ class _BoutiqueProductDetailScreenState
     _showAddedToCartToast(context);
     await Future<void>.delayed(const Duration(milliseconds: 850));
     if (!context.mounted) return;
-    Navigator.of(context, rootNavigator: true).pop();
+    rootNavigator.pop();
     await Future<void>.delayed(const Duration(milliseconds: 120));
     if (!context.mounted) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const BoutiqueCartScreen(),
+    navigator.pop();
+    messenger.showSnackBar(
+      SnackBar(
+        content: const Text('Article ajouté au panier.'),
+        duration: const Duration(seconds: 3),
+        action: SnackBarAction(
+          label: 'Voir le panier',
+          onPressed: () {
+            navigator.push(
+              MaterialPageRoute(
+                builder: (_) => const BoutiqueCartScreen(),
+              ),
+            );
+          },
+        ),
       ),
     );
   }

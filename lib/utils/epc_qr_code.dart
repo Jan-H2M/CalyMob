@@ -278,8 +278,8 @@ String replaceDigitsWithFrenchWords(String text) {
 
 /// Génère la communication de paiement sans chiffres
 ///
-/// Format: {eventNumber} {eventName} {participantName}
-/// Exemple: PAAAG Villers-deux-Eglises Jean Dupont
+/// Format: +++OP-{eventNumber}+++ {eventName} {participantName}
+/// Exemple: +++OP-PAAAG+++ Villers-deux-Eglises Jean Dupont
 ///
 /// Le event_number est déjà en lettres (généré par CalyCompta).
 /// Les chiffres dans le titre sont remplacés par des mots français (workaround bug BNP).
@@ -299,12 +299,13 @@ String generatePaymentCommunication({
   //    l'import bancaire. Si eventNumber manque, on laisse le code vide
   //    — l'organisateur devra lier la transaction manuellement, mais au
   //    moins on ne produit pas une fausse référence non-matchable.
-  final code = eventNumber ?? '';
-  if (code.isEmpty) {
+  final rawCode = eventNumber ?? '';
+  if (rawCode.isEmpty) {
     // ignore: avoid_print
     print('[generatePaymentCommunication] WARN: missing eventNumber for event $eventId; '
         'bank transfer will NOT auto-match at import. Fix the event to have an event_number.');
   }
+  final code = rawCode.isEmpty ? '' : '+++OP-$rawCode+++';
 
   // 2. Nom de l'événement avec chiffres remplacés par mots français
   String name = replaceDigitsWithFrenchWords(eventTitle);

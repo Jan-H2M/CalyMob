@@ -29,6 +29,101 @@ function formatMontant(amount) {
   return amount.toFixed(2);
 }
 
+function getReferenceYear(dateDepense) {
+  const date = dateDepense?.toDate ? dateDepense.toDate() : new Date(dateDepense || Date.now());
+  return Number.isNaN(date.getTime()) ? new Date().getFullYear() : date.getFullYear();
+}
+
+function buildRemCommunication(reference, demande) {
+  const label = String(demande.titre || demande.description || '').trim() || `Remboursement ${(
+    demande.fournisseur_nom ||
+    demande.demandeur_nom ||
+    'Demande'
+  ).toString().trim()}`;
+  return `+++${reference}+++ ${label}`.substring(0, 140);
+}
+
+const OPEN_UNPAID_STATUSES = new Set([
+  'brouillon',
+  'soumis',
+  'en_attente_validation',
+  'approuve',
+  'cree_banque_attente_validation',
+  'paiement_effectue',
+  'a_verifier_paiement',
+]);
+
+async function generateNextRemReference(db, clubId, year) {
+  const counterRef = db
+    .collection('clubs')
+    .doc(clubId)
+    .collection('settings')
+    .doc(`rem_reference_counter_${year}`);
+
+  const nextCounter = await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(counterRef);
+    const current = snapshot.exists ? Number(snapshot.data().counter || 0) : 0;
+    const next = current + 1;
+
+    transaction.set(counterRef, {
+      counter: next,
+      year,
+      updated_at: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    return next;
+  });
+
+  return `REM-${year}-${String(nextCounter).padStart(4, '0')}`;
+}
+
+async function ensureRemReference(db, clubId, demandeId, demande) {
+  if (demande.transaction_id || demande.payment_reference) {
+    return demande.payment_reference || null;
+  }
+  if (!OPEN_UNPAID_STATUSES.has(String(demande.statut || ''))) {
+    return null;
+  }
+
+  const year = getReferenceYear(demande.date_depense || demande.date_demande || demande.created_at);
+  const paymentReference = await generateNextRemReference(db, clubId, year);
+  const paymentReferencePatch = {
+    payment_reference: paymentReference,
+    payment_reference_key: `+++${paymentReference}+++`,
+    communication_qr: buildRemCommunication(paymentReference, demande),
+    updated_at: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  const legacyRef = db
+    .collection('clubs')
+    .doc(clubId)
+    .collection('demandes_remboursement')
+    .doc(demandeId);
+  const canonicalRef = db
+    .collection('clubs')
+    .doc(clubId)
+    .collection('expense_claims')
+    .doc(demandeId);
+
+  const canonicalSnap = await canonicalRef.get();
+  const writes = [
+    legacyRef.set(paymentReferencePatch, { merge: true }),
+  ];
+
+  if (canonicalSnap.exists) {
+    writes.push(canonicalRef.set({
+      payment_reference: paymentReference,
+      payment_reference_key: paymentReferencePatch.payment_reference_key,
+      payment_qr_message: paymentReferencePatch.communication_qr,
+      updated_at: paymentReferencePatch.updated_at,
+    }, { merge: true }));
+  }
+
+  await Promise.all(writes);
+
+  return paymentReference;
+}
+
 /**
  * Generate HTML email content for expense submitted notification
  */
@@ -180,19 +275,24 @@ exports.onExpenseCreated = onDocumentCreated(
       send_confirmation_email: demande.send_confirmation_email,
     }));
 
-    // Only send automatic email for mobile app submissions
-    // Web (CalyCompta) uses manual email sending via button
-    const source = demande.source || 'web'; // Default to 'web' if not specified
-    const sendEmail = demande.send_confirmation_email === true || source === 'mobile';
-
-    if (!sendEmail) {
-      console.log('📧 [onExpenseCreated] Skipping automatic email (source: web, no explicit send request)');
-      return null;
-    }
-
     const db = admin.firestore();
 
     try {
+      const paymentReference = await ensureRemReference(db, clubId, demandeId, demande);
+      if (paymentReference) {
+        console.log(`✅ [onExpenseCreated] REM reference ready: ${paymentReference}`);
+      }
+
+      // Only send automatic email for mobile app submissions
+      // Web (CalyCompta) uses manual email sending via button
+      const source = demande.source || 'web'; // Default to 'web' if not specified
+      const sendEmail = demande.send_confirmation_email === true || source === 'mobile';
+
+      if (!sendEmail) {
+        console.log('📧 [onExpenseCreated] Skipping automatic email (source: web, no explicit send request)');
+        return null;
+      }
+
       // 1. Get the submitter's email from members collection
       const demandeurId = demande.demandeur_id;
       if (!demandeurId) {

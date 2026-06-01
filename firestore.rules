@@ -148,6 +148,18 @@ service cloud.firestore {
              (userRole == 'user' && request.auth.uid == ownerId);
     }
 
+    function canAccessBoutique(clubId) {
+      let userData = getUserData(clubId);
+      let flags = get(/databases/$(database)/documents/clubs/$(clubId)/settings/feature_flags).data;
+
+      return isClubMember(clubId)
+        && (flags.boutiqueEnabled == true || flags.boutiqueMobileEnabled == true)
+        && (
+          userData.app_role in ['admin', 'superadmin'] ||
+          (('feature_access' in userData) && userData.feature_access.boutique == true)
+        );
+    }
+
     // Check if user can scan/mark attendance (encadrants, CA, accueil)
     // Uses clubStatuten array which contains club functions
     // Note: Firestore rules are case-sensitive, so we list all variations
@@ -879,6 +891,14 @@ service cloud.firestore {
         allow delete: if isSuperAdmin(clubId) && hasValidSession(clubId);
       }
 
+      match /products/{productId} {
+        allow read: if isAdmin(clubId) || (
+          canAccessBoutique(clubId) &&
+          resource.data.visibility == 'published'
+        );
+        allow create, update, delete: if isAdmin(clubId) && hasValidSession(clubId);
+      }
+
       match /membership_seasons/{seasonId} {
         allow read: if isClubMember(clubId);
         allow write: if isAdmin(clubId) && hasValidSession(clubId);
@@ -981,8 +1001,7 @@ service cloud.firestore {
       // Buddy confirmations for Mon Carnet. Creation and status mutation are
       // handled by Cloud Functions; members can read requests concerning them.
       match /logbook_dive_confirmations/{confirmationId} {
-        allow read: if isAuthenticated()
-          && hasValidSession(clubId)
+        allow read: if isClubMember(clubId)
           && (
             resource.data.target_member_id == request.auth.uid ||
             resource.data.source_member_id == request.auth.uid ||

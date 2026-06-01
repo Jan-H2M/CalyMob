@@ -247,8 +247,8 @@ async function ensureEventNumber(db, clubId, operationId) {
 /**
  * Generate digit-free payment communication string
  *
- * Format: {eventNumber} {eventName} {participantName}
- * Example: PAAAG Villers-deux-Eglises Jean Dupont
+ * Format: +++OP-{eventNumber}+++ {eventName} {participantName}
+ * Example: +++OP-PAAAG+++ Villers-deux-Eglises Jean Dupont
  *
  * The eventNumber MUST be in letter format — callers are expected to call
  * ensureEventNumber() first so a valid code is persisted on the operation.
@@ -264,7 +264,7 @@ function generatePaymentCommunication(eventNumber, eventId, eventTitle, eventDat
   if (!VALID_NEW_CODE.test(eventNumber) && !VALID_OLD_CODE.test(eventNumber)) {
     throw new Error(`[generatePaymentCommunication] Invalid eventNumber "${eventNumber}" — must match [PS][A-Z]{4} or \\d[A-Z0-9]{5}`);
   }
-  const code = eventNumber;
+  const code = `+++OP-${eventNumber}+++`;
 
   // 2. Event name with digits replaced by French words
   let name = replaceDigitsWithFrenchWords(eventTitle);

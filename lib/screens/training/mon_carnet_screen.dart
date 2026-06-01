@@ -161,6 +161,7 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
               _header(context),
               _modeSegmented(),
               _yearPills(),
+              if (userId != null) _pendingConfirmationsBanner(userId),
               const SizedBox(height: 12),
               Expanded(
                 child: userId == null
@@ -415,26 +416,12 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
       return IconButton(
         icon: const Icon(Icons.task_alt_outlined, color: Colors.white),
         tooltip: 'Plongées à confirmer',
-        onPressed: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => const LogbookDiveConfirmationsInboxScreen(),
-          ),
-        ),
+        onPressed: () => _openPendingConfirmations(context),
       );
     }
 
-    const clubId = FirebaseConfig.defaultClubId;
-    final stream = FirebaseFirestore.instance
-        .collection('clubs')
-        .doc(clubId)
-        .collection('logbook_dive_confirmations')
-        .where('target_member_id', isEqualTo: userId)
-        .where('status', isEqualTo: 'pending')
-        .snapshots();
-
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: stream,
+      stream: _pendingConfirmationsStream(userId),
       builder: (context, snap) {
         final count = snap.data?.docs.length ?? 0;
         return Stack(
@@ -443,12 +430,7 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
             IconButton(
               icon: const Icon(Icons.task_alt_outlined, color: Colors.white),
               tooltip: 'Plongées à confirmer',
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const LogbookDiveConfirmationsInboxScreen(),
-                ),
-              ),
+              onPressed: () => _openPendingConfirmations(context),
             ),
             if (count > 0)
               Positioned(
@@ -475,6 +457,103 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
                 ),
               ),
           ],
+        );
+      },
+    );
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> _pendingConfirmationsStream(
+    String userId,
+  ) {
+    const clubId = FirebaseConfig.defaultClubId;
+    return FirebaseFirestore.instance
+        .collection('clubs')
+        .doc(clubId)
+        .collection('logbook_dive_confirmations')
+        .where('target_member_id', isEqualTo: userId)
+        .where('status', isEqualTo: 'pending')
+        .snapshots();
+  }
+
+  void _openPendingConfirmations(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const LogbookDiveConfirmationsInboxScreen(),
+      ),
+    );
+  }
+
+  Widget _pendingConfirmationsBanner(String userId) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _pendingConfirmationsStream(userId),
+      builder: (context, snap) {
+        final count = snap.data?.docs.length ?? 0;
+        if (count == 0) return const SizedBox.shrink();
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          child: Material(
+            color: Colors.white.withValues(alpha: 0.95),
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => _openPendingConfirmations(context),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: AppColors.middenblauw.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: const Icon(
+                        Icons.check_box_outline_blank,
+                        color: AppColors.middenblauw,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            count == 1
+                                ? '1 plongée de binôme à confirmer'
+                                : '$count plongées de binômes à confirmer',
+                            style: const TextStyle(
+                              color: AppColors.donkerblauw,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Ouvre la liste pour confirmer ou refuser.',
+                            style: TextStyle(
+                              color: Colors.grey.shade700,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(
+                      Icons.chevron_right,
+                      color: AppColors.donkerblauw,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         );
       },
     );

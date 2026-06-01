@@ -2,9 +2,9 @@
  * Buddy confirmation flow for Mon Carnet.
  *
  * When a member saves a dive with Calypso members in `binomes[]`, each member
- * receives a confirmation request. The target member confirms the shared dive
- * and decides whether to copy it, keep an existing version, or replace an
- * existing version.
+ * receives a confirmation request. If older/mobile clients store a Calypso
+ * member as a text buddy, the trigger resolves the name conservatively before
+ * deciding whether to create a request.
  */
 
 const { onDocumentWritten } = require('firebase-functions/v2/firestore');
@@ -57,6 +57,13 @@ function memberDisplayName(data = {}) {
   return name || data.displayName || data.display_name || 'Membre';
 }
 
+function binomeDisplayName(item) {
+  if (!item) return '';
+  if (typeof item === 'string') return item;
+  if (typeof item !== 'object') return '';
+  return item.display_name || item.displayName || item.name || item.nom || '';
+}
+
 function removeEmpty(payload) {
   const out = {};
   for (const [key, value] of Object.entries(payload)) {
@@ -65,34 +72,119 @@ function removeEmpty(payload) {
   return out;
 }
 
-function extractMemberBinomes(entry = {}) {
-  const out = [];
+function collectBinomeCandidates(entry = {}) {
+  const candidates = [];
   const seen = new Set();
   const rawBinomes = Array.isArray(entry.binomes) ? entry.binomes : [];
   for (const item of rawBinomes) {
     if (!item || typeof item !== 'object') continue;
     const memberId = item.member_id || item.memberId;
     const type = item.type || 'member';
-    if (type !== 'member' || !memberId || seen.has(memberId)) continue;
-    seen.add(memberId);
-    out.push({
-      memberId,
-      displayName: item.display_name || item.displayName || item.name || 'Membre',
+    const displayName = binomeDisplayName(item);
+    if (type === 'member' && memberId) {
+      if (seen.has(`id:${memberId}`)) continue;
+      seen.add(`id:${memberId}`);
+      candidates.push({
+        memberId,
+        displayName: displayName || 'Membre',
+        explicit: true,
+      });
+      continue;
+    }
+    if (!displayName) continue;
+    const key = `name:${normalizeText(displayName)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    candidates.push({
+      memberId: null,
+      displayName,
+      explicit: false,
     });
   }
 
   const legacyBuddies = Array.isArray(entry.buddies) ? entry.buddies : [];
   for (const item of legacyBuddies) {
-    if (!item || typeof item !== 'object') continue;
-    const memberId = item.member_id || item.memberId;
-    if (!memberId || seen.has(memberId)) continue;
-    seen.add(memberId);
-    out.push({
-      memberId,
-      displayName: item.name || item.display_name || item.displayName || 'Membre',
+    const memberId =
+      item && typeof item === 'object' ? item.member_id || item.memberId : null;
+    const displayName = binomeDisplayName(item);
+    if (memberId) {
+      if (seen.has(`id:${memberId}`)) continue;
+      seen.add(`id:${memberId}`);
+      candidates.push({
+        memberId,
+        displayName: displayName || 'Membre',
+        explicit: true,
+      });
+      continue;
+    }
+    if (!displayName) continue;
+    const key = `name:${normalizeText(displayName)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    candidates.push({
+      memberId: null,
+      displayName,
+      explicit: false,
     });
   }
-  return out;
+  return candidates;
+}
+
+function exactTokenNameMatch(rawName, memberName) {
+  const candidate = normalizeText(rawName);
+  const target = normalizeText(memberName);
+  if (!candidate || !target) return false;
+  if (candidate === target) return true;
+
+  const candidateParts = candidate.split(' ').filter((p) => p.length >= 3);
+  const targetParts = new Set(target.split(' ').filter((p) => p.length >= 3));
+  if (candidateParts.length < 2 || targetParts.size < 2) return false;
+  return candidateParts.every((part) => targetParts.has(part));
+}
+
+async function resolveTextBinomes(db, clubId, candidates) {
+  if (!candidates.some((candidate) => !candidate.memberId)) {
+    return candidates.filter((candidate) => candidate.memberId);
+  }
+
+  const membersSnap = await db
+    .collection('clubs').doc(clubId)
+    .collection('members')
+    .get();
+  const members = membersSnap.docs.map((doc) => ({
+    id: doc.id,
+    displayName: memberDisplayName(doc.data()),
+  }));
+
+  const resolved = [];
+  const seenIds = new Set();
+  for (const candidate of candidates) {
+    if (candidate.memberId) {
+      if (seenIds.has(candidate.memberId)) continue;
+      seenIds.add(candidate.memberId);
+      resolved.push(candidate);
+      continue;
+    }
+
+    const matches = members.filter((member) =>
+      exactTokenNameMatch(candidate.displayName, member.displayName)
+    );
+    if (matches.length !== 1) continue;
+    const match = matches[0];
+    if (seenIds.has(match.id)) continue;
+    seenIds.add(match.id);
+    resolved.push({
+      memberId: match.id,
+      displayName: match.displayName,
+      explicit: false,
+      resolvedFromName: candidate.displayName,
+    });
+  }
+  return resolved;
+}
+
+async function extractMemberBinomes(db, clubId, entry = {}) {
+  return resolveTextBinomes(db, clubId, collectBinomeCandidates(entry));
 }
 
 function buildDiveSnapshot(entry = {}) {
@@ -271,14 +363,11 @@ const onLogbookDiveBuddiesChanged = onDocumentWritten(
     const sourceMemberId = after.member_id;
     if (!sourceMemberId) return;
 
-    const before = event.data?.before?.exists ? event.data.before.data() : null;
-    const beforeIds = new Set(before ? extractMemberBinomes(before).map((b) => b.memberId) : []);
-    const targets = extractMemberBinomes(after)
-      .filter((b) => b.memberId && b.memberId !== sourceMemberId)
-      .filter((b) => !beforeIds.has(b.memberId));
+    const db = admin.firestore();
+    const targets = (await extractMemberBinomes(db, clubId, after))
+      .filter((b) => b.memberId && b.memberId !== sourceMemberId);
     if (targets.length === 0) return;
 
-    const db = admin.firestore();
     const sourceMemberSnap = await db
       .collection('clubs').doc(clubId)
       .collection('members').doc(sourceMemberId).get();

@@ -121,7 +121,7 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
         ],
         if (binomes.isNotEmpty) ...[
           const SizedBox(height: 12),
-          _BinomesCard(binomes: binomes),
+          _BinomesCard(entryId: entryId, binomes: binomes),
         ],
         if (notes != null && notes.isNotEmpty) ...[
           const SizedBox(height: 12),
@@ -320,6 +320,7 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
                 (b['displayName'] as String?) ??
                 '?',
             isExternal: false,
+            memberId: (b['member_id'] as String?) ?? (b['memberId'] as String?),
           ));
         } else {
           result.add(_ParsedBinome(
@@ -343,6 +344,7 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
           result.add(_ParsedBinome(
             displayName: name.isEmpty ? '?' : name,
             isExternal: memberId == null,
+            memberId: memberId,
             club: b['external_organization'] as String?,
           ));
         } else if (b is String && b.isNotEmpty) {
@@ -357,12 +359,14 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
 class _ParsedBinome {
   final String displayName;
   final bool isExternal;
+  final String? memberId;
   final String? niveau;
   final String? club;
 
   const _ParsedBinome({
     required this.displayName,
     required this.isExternal,
+    this.memberId,
     this.niveau,
     this.club,
   });
@@ -1128,64 +1132,155 @@ class _EquipmentCard extends StatelessWidget {
 }
 
 class _BinomesCard extends StatelessWidget {
+  final String entryId;
   final List<_ParsedBinome> binomes;
-  const _BinomesCard({required this.binomes});
+  const _BinomesCard({
+    required this.entryId,
+    required this.binomes,
+  });
 
   @override
   Widget build(BuildContext context) {
+    const clubId = FirebaseConfig.defaultClubId;
     return _Card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const _SectionLabel('BINÔMES'),
           const SizedBox(height: 8),
-          for (final b in binomes)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
+          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance
+                .collection('clubs')
+                .doc(clubId)
+                .collection('logbook_dive_confirmations')
+                .where('source_entry_id', isEqualTo: entryId)
+                .snapshots(),
+            builder: (context, snap) {
+              final confirmations = <String, Map<String, dynamic>>{};
+              for (final doc in snap.data?.docs ?? const []) {
+                final data = doc.data();
+                final memberId = data['target_member_id'] as String?;
+                if (memberId != null) confirmations[memberId] = data;
+              }
+
+              return Column(
                 children: [
-                  Icon(
-                    b.isExternal ? Icons.public : Icons.person,
-                    size: 18,
-                    color: b.isExternal
-                        ? const Color(0xFF0369A1)
-                        : Colors.green.shade800,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          b.displayName,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black87,
-                          ),
-                        ),
-                        if (b.isExternal &&
-                            (b.niveau != null || b.club != null))
-                          Text(
-                            [
-                              if (b.niveau != null && b.niveau!.isNotEmpty)
-                                b.niveau!,
-                              if (b.club != null && b.club!.isNotEmpty) b.club!,
-                            ].join(' · '),
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                      ],
+                  for (final b in binomes)
+                    _BinomeStatusRow(
+                      binome: b,
+                      confirmation: b.memberId == null
+                          ? null
+                          : confirmations[b.memberId!],
                     ),
-                  ),
                 ],
-              ),
-            ),
+              );
+            },
+          ),
         ],
       ),
     );
+  }
+}
+
+class _BinomeStatusRow extends StatelessWidget {
+  final _ParsedBinome binome;
+  final Map<String, dynamic>? confirmation;
+
+  const _BinomeStatusRow({
+    required this.binome,
+    this.confirmation,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final status = confirmation?['status'] as String?;
+    final confirmed = status != null && status.startsWith('confirmed');
+    final declined = status == 'declined';
+    final statusText = _statusText(status, binome.isExternal);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(
+            binome.isExternal
+                ? Icons.public
+                : confirmed
+                    ? Icons.check_box
+                    : Icons.check_box_outline_blank,
+            size: 18,
+            color: binome.isExternal
+                ? const Color(0xFF0369A1)
+                : declined
+                    ? Colors.red.shade700
+                    : confirmed
+                        ? Colors.green.shade800
+                        : Colors.grey.shade600,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  binome.displayName,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+                if (statusText != null)
+                  Text(
+                    statusText,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: declined
+                          ? Colors.red.shade700
+                          : confirmed
+                              ? Colors.green.shade800
+                              : Colors.grey.shade600,
+                    ),
+                  )
+                else if (binome.isExternal &&
+                    (binome.niveau != null || binome.club != null))
+                  Text(
+                    [
+                      if (binome.niveau != null && binome.niveau!.isNotEmpty)
+                        binome.niveau!,
+                      if (binome.club != null && binome.club!.isNotEmpty)
+                        binome.club!,
+                    ].join(' · '),
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String? _statusText(String? status, bool isExternal) {
+    if (isExternal) return null;
+    switch (status) {
+      case 'confirmed_copied':
+        return 'Confirmé · copié dans son carnet';
+      case 'confirmed_existing_identical':
+        return 'Confirmé';
+      case 'confirmed_existing_different':
+        return 'Confirmé · garde sa version';
+      case 'declined':
+        return 'Refusé';
+      case 'pending':
+      case null:
+        return 'En attente';
+      default:
+        return 'Statut: $status';
+    }
   }
 }
 
