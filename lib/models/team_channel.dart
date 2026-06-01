@@ -11,6 +11,11 @@ enum TeamChannelType {
   encadrants,
   gonflage,
   bureau,
+  formation1,
+  formation2,
+  formation3,
+  formation4,
+  formationAM,
 }
 
 extension TeamChannelTypeExtension on TeamChannelType {
@@ -28,6 +33,16 @@ extension TeamChannelTypeExtension on TeamChannelType {
         return 'gonflage';
       case TeamChannelType.bureau:
         return 'bureau';
+      case TeamChannelType.formation1:
+        return 'formation_1_etoile';
+      case TeamChannelType.formation2:
+        return 'formation_2_etoiles';
+      case TeamChannelType.formation3:
+        return 'formation_3_etoiles';
+      case TeamChannelType.formation4:
+        return 'formation_4_etoiles';
+      case TeamChannelType.formationAM:
+        return 'formation_AM';
     }
   }
 
@@ -45,6 +60,16 @@ extension TeamChannelTypeExtension on TeamChannelType {
         return 'equipe_gonflage';
       case TeamChannelType.bureau:
         return 'bureau';
+      case TeamChannelType.formation1:
+        return 'formation_1_etoile';
+      case TeamChannelType.formation2:
+        return 'formation_2_etoiles';
+      case TeamChannelType.formation3:
+        return 'formation_3_etoiles';
+      case TeamChannelType.formation4:
+        return 'formation_4_etoiles';
+      case TeamChannelType.formationAM:
+        return 'formation_AM';
     }
   }
 
@@ -62,6 +87,16 @@ extension TeamChannelTypeExtension on TeamChannelType {
         return TeamChannelType.gonflage;
       case 'bureau':
         return TeamChannelType.bureau;
+      case 'formation_1_etoile':
+        return TeamChannelType.formation1;
+      case 'formation_2_etoiles':
+        return TeamChannelType.formation2;
+      case 'formation_3_etoiles':
+        return TeamChannelType.formation3;
+      case 'formation_4_etoiles':
+        return TeamChannelType.formation4;
+      case 'formation_AM':
+        return TeamChannelType.formationAM;
       default:
         return TeamChannelType.encadrants;
     }
@@ -81,6 +116,16 @@ extension TeamChannelTypeExtension on TeamChannelType {
         return 'Équipe Gonflage';
       case TeamChannelType.bureau:
         return 'Bureau';
+      case TeamChannelType.formation1:
+        return 'Formation 1*';
+      case TeamChannelType.formation2:
+        return 'Formation 2*';
+      case TeamChannelType.formation3:
+        return 'Formation 3*';
+      case TeamChannelType.formation4:
+        return 'Formation 4*';
+      case TeamChannelType.formationAM:
+        return 'Formation AM';
     }
   }
 
@@ -98,6 +143,16 @@ extension TeamChannelTypeExtension on TeamChannelType {
         return 'Discussion permanente pour l\'équipe gonflage';
       case TeamChannelType.bureau:
         return 'Discussion permanente pour les signataires et la coordination financière';
+      case TeamChannelType.formation1:
+        return 'Discussion permanente pour les NB et débutants qui préparent le 1*';
+      case TeamChannelType.formation2:
+        return 'Discussion permanente pour les 1* qui préparent le 2*';
+      case TeamChannelType.formation3:
+        return 'Discussion permanente pour les 2* qui préparent le 3*';
+      case TeamChannelType.formation4:
+        return 'Discussion permanente pour les 3* qui préparent le 4*';
+      case TeamChannelType.formationAM:
+        return 'Discussion permanente pour les 4* qui préparent AM';
     }
   }
 
@@ -115,6 +170,16 @@ extension TeamChannelTypeExtension on TeamChannelType {
         return '🎈';
       case TeamChannelType.bureau:
         return '📋';
+      case TeamChannelType.formation1:
+        return '⭐';
+      case TeamChannelType.formation2:
+        return '⭐⭐';
+      case TeamChannelType.formation3:
+        return '⭐⭐⭐';
+      case TeamChannelType.formation4:
+        return '⭐⭐⭐⭐';
+      case TeamChannelType.formationAM:
+        return '🧭';
     }
   }
 
@@ -132,6 +197,16 @@ extension TeamChannelTypeExtension on TeamChannelType {
         return Icons.air_rounded;
       case TeamChannelType.bureau:
         return Icons.assignment_outlined;
+      case TeamChannelType.formation1:
+        return Icons.looks_one_outlined;
+      case TeamChannelType.formation2:
+        return Icons.looks_two_outlined;
+      case TeamChannelType.formation3:
+        return Icons.looks_3_outlined;
+      case TeamChannelType.formation4:
+        return Icons.looks_4_outlined;
+      case TeamChannelType.formationAM:
+        return Icons.explore_outlined;
     }
   }
 }

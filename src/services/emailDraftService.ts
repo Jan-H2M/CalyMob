@@ -28,6 +28,7 @@ export interface EmailDraft {
     clubStatuten?: string[];
     roles?: string[];
     membershipCategories?: string[];
+    formationAudiences?: string[];
     activeOnly?: boolean;
     withAppAccess?: boolean;
     individualIds?: string[];

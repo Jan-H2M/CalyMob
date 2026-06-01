@@ -104,6 +104,8 @@ class CommunicationHubScreen extends StatelessWidget {
                     _TeamChannelsSection(
                       roles: roles,
                       includeAllChannels: includeAllChannels,
+                      plongeurCode: memberProvider.plongeurCode,
+                      targetFormationLevel: memberProvider.targetFormationLevel,
                     ),
                   ],
                 ),
@@ -752,11 +754,15 @@ class _AnnouncementsCard extends StatelessWidget {
 class _TeamChannelsSection extends StatelessWidget {
   final List<String> roles;
   final bool includeAllChannels;
+  final String? plongeurCode;
+  final String? targetFormationLevel;
   final TeamChannelService _channelService = TeamChannelService();
 
   _TeamChannelsSection({
     required this.roles,
     required this.includeAllChannels,
+    this.plongeurCode,
+    this.targetFormationLevel,
   });
 
   @override
@@ -768,6 +774,8 @@ class _TeamChannelsSection extends StatelessWidget {
         clubId,
         roles,
         includeAllChannels: includeAllChannels,
+        plongeurCode: plongeurCode,
+        targetFormationLevel: targetFormationLevel,
       ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -946,6 +954,12 @@ class _TeamChannelTile extends StatelessWidget {
         return const Color(0xFFE86B7A);
       case TeamChannelType.bureau:
         return const Color(0xFF7B5CE1);
+      case TeamChannelType.formation1:
+      case TeamChannelType.formation2:
+      case TeamChannelType.formation3:
+      case TeamChannelType.formation4:
+      case TeamChannelType.formationAM:
+        return const Color(0xFF0E8A75);
     }
   }
 }

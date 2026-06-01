@@ -92,9 +92,32 @@ service cloud.firestore {
           (channelId == 'equipe_accueil' && hasAccueilRole(clubId)) ||
           (channelId == 'equipe_encadrants' && hasEncadrantRole(clubId)) ||
           (channelId == 'equipe_gonflage' && hasGonflageRole(clubId)) ||
-          (channelId == 'bureau' && (hasBureauRole(clubId) || hasCARole(clubId)))
+          (channelId == 'bureau' && (hasBureauRole(clubId) || hasCARole(clubId))) ||
+          (channelId == 'formation_1_etoile' && hasFormationTarget(clubId, '1*')) ||
+          (channelId == 'formation_2_etoiles' && hasFormationTarget(clubId, '2*')) ||
+          (channelId == 'formation_3_etoiles' && hasFormationTarget(clubId, '3*')) ||
+          (channelId == 'formation_4_etoiles' && hasFormationTarget(clubId, '4*')) ||
+          (channelId == 'formation_AM' && hasFormationTarget(clubId, 'AM'))
         )
       );
+    }
+
+    function hasFormationTarget(clubId, targetLevel) {
+      return targetFormationLevel(clubId) == targetLevel;
+    }
+
+    function targetFormationLevel(clubId) {
+      return ('target_formation_level' in getUserData(clubId) && getUserData(clubId).target_formation_level in ['1*', '1', 'P1']) ? '1*'
+        : ('target_formation_level' in getUserData(clubId) && getUserData(clubId).target_formation_level in ['2*', '2', 'P2']) ? '2*'
+        : ('target_formation_level' in getUserData(clubId) && getUserData(clubId).target_formation_level in ['3*', '3', 'P3']) ? '3*'
+        : ('target_formation_level' in getUserData(clubId) && getUserData(clubId).target_formation_level in ['4*', '4', 'P4']) ? '4*'
+        : ('target_formation_level' in getUserData(clubId) && getUserData(clubId).target_formation_level == 'AM') ? 'AM'
+        : ('plongeur_code' in getUserData(clubId) && getUserData(clubId).plongeur_code in ['NB']) ? '1*'
+        : ('plongeur_code' in getUserData(clubId) && getUserData(clubId).plongeur_code in ['P1', '1', '1*']) ? '2*'
+        : ('plongeur_code' in getUserData(clubId) && getUserData(clubId).plongeur_code in ['P2', '2', '2*']) ? '3*'
+        : ('plongeur_code' in getUserData(clubId) && getUserData(clubId).plongeur_code in ['P3', '3', '3*']) ? '4*'
+        : ('plongeur_code' in getUserData(clubId) && getUserData(clubId).plongeur_code in ['P4', '4', '4*']) ? 'AM'
+        : null;
     }
 
     function teamChannelTypeMatches(channelId, type) {
@@ -103,7 +126,12 @@ service cloud.firestore {
         || (channelId == 'equipe_accueil' && type == 'accueil')
         || (channelId == 'equipe_encadrants' && type == 'encadrants')
         || (channelId == 'equipe_gonflage' && type == 'gonflage')
-        || (channelId == 'bureau' && type == 'bureau');
+        || (channelId == 'bureau' && type == 'bureau')
+        || (channelId == 'formation_1_etoile' && type == 'formation_1_etoile')
+        || (channelId == 'formation_2_etoiles' && type == 'formation_2_etoiles')
+        || (channelId == 'formation_3_etoiles' && type == 'formation_3_etoiles')
+        || (channelId == 'formation_4_etoiles' && type == 'formation_4_etoiles')
+        || (channelId == 'formation_AM' && type == 'formation_AM');
     }
 
     // Encadrants and admins can manage attendee reassignments for piscine

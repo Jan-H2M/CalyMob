@@ -244,6 +244,8 @@ class _SeancesTab extends StatelessWidget {
                 memberProvider.clubStatuten,
                 appRole: memberProvider.appRole,
               ),
+              plongeurCode: memberProvider.plongeurCode,
+              targetFormationLevel: memberProvider.targetFormationLevel,
             ),
             builder: (context, snapshot) {
               final channels = snapshot.data ?? [];

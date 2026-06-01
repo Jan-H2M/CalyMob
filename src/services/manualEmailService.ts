@@ -6,6 +6,7 @@ import { logger } from '@/utils/logger';
 
 import { auth, db } from '@/lib/firebase';
 import {
+  collection,
   getDocs,
   query,
   where,
@@ -21,6 +22,7 @@ export interface RecipientFilters {
   clubStatuten?: string[]; // ['CA', 'Encadrants']
   roles?: string[]; // ['admin', 'validateur', 'user']
   membershipCategories?: string[]; // ['membre_1ere', 'instructeur_oa']
+  formationAudiences?: FormationAudienceId[]; // ['formation_2_etoiles']
   activeOnly?: boolean;
   withAppAccess?: boolean;
   individualIds?: string[]; // Specific member IDs to include
@@ -37,6 +39,130 @@ export interface ManualEmailRecipient {
 }
 
 export type ManualEmailCategoryPrices = Record<string, Partial<Record<MembershipPeriod, string>>>;
+
+export type FormationAudienceId =
+  | 'formation_1_etoile'
+  | 'formation_2_etoiles'
+  | 'formation_3_etoiles'
+  | 'formation_4_etoiles'
+  | 'formation_AM';
+
+export interface FormationAudienceDefinition {
+  id: FormationAudienceId;
+  label: string;
+  targetLevel: '1*' | '2*' | '3*' | '4*' | 'AM';
+  sourceLevels: string[];
+  description: string;
+}
+
+export const FORMATION_AUDIENCES: FormationAudienceDefinition[] = [
+  {
+    id: 'formation_1_etoile',
+    label: 'Formation 1*',
+    targetLevel: '1*',
+    sourceLevels: ['NB', 'débutants', 'sans brevet'],
+    description: 'NB / débutants qui préparent le 1*',
+  },
+  {
+    id: 'formation_2_etoiles',
+    label: 'Formation 2*',
+    targetLevel: '2*',
+    sourceLevels: ['1*'],
+    description: '1* qui préparent le 2*',
+  },
+  {
+    id: 'formation_3_etoiles',
+    label: 'Formation 3*',
+    targetLevel: '3*',
+    sourceLevels: ['2*'],
+    description: '2* qui préparent le 3*',
+  },
+  {
+    id: 'formation_4_etoiles',
+    label: 'Formation 4*',
+    targetLevel: '4*',
+    sourceLevels: ['3*'],
+    description: '3* qui préparent le 4*',
+  },
+  {
+    id: 'formation_AM',
+    label: 'Formation AM',
+    targetLevel: 'AM',
+    sourceLevels: ['4*'],
+    description: '4* / candidats AM qui préparent AM',
+  },
+];
+
+const FORMATION_AUDIENCE_BY_ID = new Map(
+  FORMATION_AUDIENCES.map((audience) => [audience.id, audience])
+);
+
+function normalizeTargetFormationLevel(value: unknown): FormationAudienceDefinition['targetLevel'] | null {
+  const raw = String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/★/g, '*')
+    .replace(/^FORMATION[_\s-]*/i, '')
+    .replace(/_/g, ' ');
+
+  if (!raw) return null;
+  if (raw.includes('AM') || raw === 'AIDE MONITEUR') return 'AM';
+  if (raw.includes('1') || raw.includes('P1')) return '1*';
+  if (raw.includes('2') || raw.includes('P2')) return '2*';
+  if (raw.includes('3') || raw.includes('P3')) return '3*';
+  if (raw.includes('4') || raw.includes('P4')) return '4*';
+  return null;
+}
+
+function normalizeCurrentDiverCode(member: Membre): string {
+  const code =
+    member.plongeur_code ||
+    member.niveau_plongee ||
+    member.niveau_plongeur ||
+    member.plongeur_niveau ||
+    '';
+
+  return String(code)
+    .trim()
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/★/g, '*');
+}
+
+export function getMemberFormationTargetLevel(member: Membre): FormationAudienceDefinition['targetLevel'] | null {
+  const explicitTarget = normalizeTargetFormationLevel((member as any).target_formation_level);
+  if (explicitTarget) return explicitTarget;
+
+  const code = normalizeCurrentDiverCode(member);
+  if (!code) return null;
+
+  if (
+    code === 'NB' ||
+    code.includes('NON BREVETE') ||
+    code.includes('SANS BREVET') ||
+    code.includes('DEBUTANT') ||
+    code.includes('BAPTEME') ||
+    code.includes('INITIATION')
+  ) {
+    return '1*';
+  }
+
+  if (code === 'P1' || code === '1' || code === '1*' || code.includes('PLONGEUR 1')) {
+    return '2*';
+  }
+  if (code === 'P2' || code === '2' || code === '2*' || code.includes('PLONGEUR 2')) {
+    return '3*';
+  }
+  if (code === 'P3' || code === '3' || code === '3*' || code.includes('PLONGEUR 3')) {
+    return '4*';
+  }
+  if (code === 'P4' || code === '4' || code === '4*' || code.includes('PLONGEUR 4')) {
+    return 'AM';
+  }
+
+  return null;
+}
 
 /**
  * Delay between individual email sends (ms) to avoid rate limiting
@@ -195,6 +321,26 @@ export async function getRecipients(
       if (filters.membershipCategories && filters.membershipCategories.length > 0) {
         const memberCategory = data.membership_category_code;
         if (!memberCategory || !filters.membershipCategories.includes(memberCategory)) {
+          return;
+        }
+      }
+
+      // Check formation audiences.
+      //
+      // Naming convention:
+      // - formation_1_etoile = NB / débutants working toward 1*
+      // - formation_2_etoiles = 1* working toward 2*
+      // - formation_3_etoiles = 2* working toward 3*
+      // - formation_4_etoiles = 3* working toward 4*
+      // - formation_AM = 4* / candidate AM working toward AM
+      if (filters.formationAudiences && filters.formationAudiences.length > 0) {
+        const targetLevel = getMemberFormationTargetLevel(data);
+        const matchesFormationAudience = filters.formationAudiences.some((audienceId) => {
+          const audience = FORMATION_AUDIENCE_BY_ID.get(audienceId);
+          return audience?.targetLevel === targetLevel;
+        });
+
+        if (!matchesFormationAudience) {
           return;
         }
       }

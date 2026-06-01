@@ -103,6 +103,8 @@ export interface Membre {
   niveau_plongeur?: string;            // DEPRECATED - Utiliser plongeur_niveau
   plongeur_niveau?: string;            // Niveau plongeur (valeur brute: "Plongeur 1*", "Moniteur Club", etc.)
   plongeur_code?: string;              // Code standardisé calculé (1, 2, 3, 4, MC, MF, AM, etc.) - pour filtrage
+  target_formation_level?: string;     // Niveau de formation cible explicite (ex: "2*", "AM")
+  formation_active?: boolean;          // Participe activement au carnet/flux formation
   date_adhesion?: Date;                // Date adhésion club
   isDebutant?: boolean;                // Calculé automatiquement (< 1 an ancienneté)
   anciennete?: number;                 // Années depuis adhésion (calculé)

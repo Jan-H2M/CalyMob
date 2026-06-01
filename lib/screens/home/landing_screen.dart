@@ -94,6 +94,8 @@ class _LandingScreenState extends State<LandingScreen> {
         uid,
         roles: roles,
         includeAllTeamChannels: includeAllTeamChannels,
+        plongeurCode: memberProvider.plongeurCode,
+        targetFormationLevel: memberProvider.targetFormationLevel,
       );
     }
   }

@@ -31,9 +31,11 @@ import {
   sendManualEmailSimple,
   previewEmailSimple,
   sendTestEmailSimple,
+  FORMATION_AUDIENCES,
   type ManualEmailRecipient,
   type ManualEmailCategoryPrices,
   type RecipientFilters,
+  type FormationAudienceId,
 } from '@/services/manualEmailService';
 import {
   getEmailDrafts,
@@ -80,6 +82,7 @@ export function ManualEmailPage() {
   const [selectedIndividuals, setSelectedIndividuals] = useState<string[]>([]);
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedFormationAudiences, setSelectedFormationAudiences] = useState<FormationAudienceId[]>([]);
 
   // Membership category data (from active season)
   const [categoryLabels, setCategoryLabels] = useState<Record<string, string>>({});
@@ -190,7 +193,12 @@ export function ManualEmailPage() {
         return;
       }
 
-      if (selectedClubStatuten.length === 0 && selectedRoles.length === 0 && selectedCategories.length === 0) {
+      if (
+        selectedClubStatuten.length === 0 &&
+        selectedRoles.length === 0 &&
+        selectedCategories.length === 0 &&
+        selectedFormationAudiences.length === 0
+      ) {
         setCalculatedRecipients([]);
         setRecipientCount(0);
         return;
@@ -201,6 +209,7 @@ export function ManualEmailPage() {
           clubStatuten: selectedClubStatuten.length > 0 ? selectedClubStatuten : undefined,
           roles: selectedRoles.length > 0 ? selectedRoles : undefined,
           membershipCategories: selectedCategories.length > 0 ? selectedCategories : undefined,
+          formationAudiences: selectedFormationAudiences.length > 0 ? selectedFormationAudiences : undefined,
           activeOnly,
           withAppAccess: withAppAccess || undefined,
         };
@@ -214,7 +223,17 @@ export function ManualEmailPage() {
     };
 
     calculateRecipients();
-  }, [clubId, selectedClubStatuten, selectedRoles, selectedCategories, activeOnly, withAppAccess, selectedIndividuals, allMembers]);
+  }, [
+    clubId,
+    selectedClubStatuten,
+    selectedRoles,
+    selectedCategories,
+    selectedFormationAudiences,
+    activeOnly,
+    withAppAccess,
+    selectedIndividuals,
+    allMembers,
+  ]);
 
   // Filter members for search
   const filteredMembers = useMemo(() => {
@@ -245,6 +264,7 @@ export function ManualEmailPage() {
       setSelectedClubStatuten(draft.recipientFilters.clubStatuten || []);
       setSelectedRoles((draft.recipientFilters.roles || []) as UserRole[]);
       setSelectedCategories(draft.recipientFilters.membershipCategories || []);
+      setSelectedFormationAudiences((draft.recipientFilters.formationAudiences || []) as FormationAudienceId[]);
       setActiveOnly(draft.recipientFilters.activeOnly ?? true);
       setWithAppAccess(draft.recipientFilters.withAppAccess ?? false);
       setSelectedIndividuals(draft.recipientFilters.individualIds || []);
@@ -252,6 +272,7 @@ export function ManualEmailPage() {
       setSelectedClubStatuten([]);
       setSelectedRoles([]);
       setSelectedCategories([]);
+      setSelectedFormationAudiences([]);
       setActiveOnly(true);
       setWithAppAccess(false);
       setSelectedIndividuals([]);
@@ -269,6 +290,7 @@ export function ManualEmailPage() {
     setSelectedClubStatuten([]);
     setSelectedRoles([]);
     setSelectedCategories([]);
+    setSelectedFormationAudiences([]);
     setActiveOnly(true);
     setWithAppAccess(false);
     setSelectedIndividuals([]);
@@ -290,6 +312,7 @@ export function ManualEmailPage() {
         clubStatuten: selectedClubStatuten,
         roles: selectedRoles,
         membershipCategories: selectedCategories,
+        formationAudiences: selectedFormationAudiences,
         activeOnly,
         withAppAccess,
         individualIds: selectedIndividuals,
@@ -530,10 +553,20 @@ export function ManualEmailPage() {
     setSelectedIndividuals([]);
   };
 
+  const toggleFormationAudience = (audienceId: FormationAudienceId) => {
+    setSelectedFormationAudiences((prev) =>
+      prev.includes(audienceId)
+        ? prev.filter((id) => id !== audienceId)
+        : [...prev, audienceId]
+    );
+    setSelectedIndividuals([]);
+  };
+
   const selectAllActive = () => {
     setSelectedClubStatuten(['Membre']);
     setSelectedRoles([]);
     setSelectedCategories([]);
+    setSelectedFormationAudiences([]);
     setSelectedIndividuals([]);
     setActiveOnly(true);
     setWithAppAccess(false);
@@ -812,6 +845,37 @@ export function ManualEmailPage() {
                     </div>
                   </div>
                 )}
+
+                {/* Formation Audiences */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-dark-text-primary mb-2">
+                    Par formation
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {FORMATION_AUDIENCES.map((audience) => (
+                      <button
+                        key={audience.id}
+                        onClick={() => toggleFormationAudience(audience.id)}
+                        className={`px-3 py-2 rounded-lg text-left text-sm transition-colors ${
+                          selectedFormationAudiences.includes(audience.id)
+                            ? 'bg-calypso-blue text-white'
+                            : 'bg-gray-100 dark:bg-dark-bg-tertiary text-gray-700 dark:text-dark-text-primary hover:bg-gray-200'
+                        }`}
+                      >
+                        <span className="block font-medium">{audience.label}</span>
+                        <span
+                          className={`block text-xs mt-0.5 ${
+                            selectedFormationAudiences.includes(audience.id)
+                              ? 'text-white/80'
+                              : 'text-gray-500 dark:text-dark-text-muted'
+                          }`}
+                        >
+                          {audience.description}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
                 {/* Roles */}
                 <div>

@@ -31,9 +31,9 @@ void main() {
       expect(availableTypes, contains(TeamChannelType.gonflage));
     });
 
-    test('includeAllChannels exposes every type for admins', () {
+    test('includeAllChannels exposes every type for admins with BS', () {
       final availableTypes = ClubRoleUtils.getVisibleTeamChannelTypes(
-        const [],
+        const ['BS'],
         includeAllChannels: true,
       );
 
@@ -46,6 +46,55 @@ void main() {
       );
 
       expect(availableTypes, [TeamChannelType.general]);
+    });
+
+    test('formation audiences map current level to target formation', () {
+      expect(
+        ClubRoleUtils.getVisibleTeamChannelTypes(
+          ['membre'],
+          plongeurCode: 'NB',
+        ),
+        contains(TeamChannelType.formation1),
+      );
+      expect(
+        ClubRoleUtils.getVisibleTeamChannelTypes(
+          ['membre'],
+          plongeurCode: '1*',
+        ),
+        contains(TeamChannelType.formation2),
+      );
+      expect(
+        ClubRoleUtils.getVisibleTeamChannelTypes(
+          ['membre'],
+          plongeurCode: '2*',
+        ),
+        contains(TeamChannelType.formation3),
+      );
+      expect(
+        ClubRoleUtils.getVisibleTeamChannelTypes(
+          ['membre'],
+          plongeurCode: '3*',
+        ),
+        contains(TeamChannelType.formation4),
+      );
+      expect(
+        ClubRoleUtils.getVisibleTeamChannelTypes(
+          ['membre'],
+          plongeurCode: '4*',
+        ),
+        contains(TeamChannelType.formationAM),
+      );
+    });
+
+    test('explicit formation target overrides current brevet', () {
+      final availableTypes = ClubRoleUtils.getVisibleTeamChannelTypes(
+        ['membre'],
+        plongeurCode: '1*',
+        targetFormationLevel: 'AM',
+      );
+
+      expect(availableTypes, contains(TeamChannelType.formationAM));
+      expect(availableTypes, isNot(contains(TeamChannelType.formation2)));
     });
   });
 
@@ -172,6 +221,26 @@ void main() {
         'equipe_gonflage',
       );
       expect(TeamChannel.defaultForType(TeamChannelType.bureau).id, 'bureau');
+      expect(
+        TeamChannel.defaultForType(TeamChannelType.formation1).id,
+        'formation_1_etoile',
+      );
+      expect(
+        TeamChannel.defaultForType(TeamChannelType.formation2).id,
+        'formation_2_etoiles',
+      );
+      expect(
+        TeamChannel.defaultForType(TeamChannelType.formation3).id,
+        'formation_3_etoiles',
+      );
+      expect(
+        TeamChannel.defaultForType(TeamChannelType.formation4).id,
+        'formation_4_etoiles',
+      );
+      expect(
+        TeamChannel.defaultForType(TeamChannelType.formationAM).id,
+        'formation_AM',
+      );
     });
 
     test('fromString resolves newly added channels', () {
@@ -186,6 +255,14 @@ void main() {
       expect(
         TeamChannelTypeExtension.fromString('bureau'),
         TeamChannelType.bureau,
+      );
+      expect(
+        TeamChannelTypeExtension.fromString('formation_2_etoiles'),
+        TeamChannelType.formation2,
+      );
+      expect(
+        TeamChannelTypeExtension.fromString('formation_AM'),
+        TeamChannelType.formationAM,
       );
       expect(
         TeamChannelTypeExtension.fromString('unknown'),

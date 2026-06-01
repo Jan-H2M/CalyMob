@@ -171,6 +171,8 @@ export interface User {
   lifras_id?: string; // LIFRAS ID number
   plongeur_niveau?: string; // Diver level (e.g., "Plongeur 1*", "Moniteur Club")
   plongeur_code?: string; // Standardized diver code (e.g., "1", "2", "MC", "MF")
+  target_formation_level?: string; // Explicit target level for formation audiences (e.g., "2*", "AM")
+  formation_active?: boolean; // Member is actively in formation flow
   createdAt: Date | Timestamp;
   updatedAt: Date | Timestamp;
   lastLogin?: Date | Timestamp;

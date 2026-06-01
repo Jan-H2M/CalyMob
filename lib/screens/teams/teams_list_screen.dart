@@ -54,7 +54,12 @@ class _TeamsListScreenState extends State<TeamsListScreen> {
         creatures: CreatureSet.fishAndBubbles,
         child: SafeArea(
           child: StreamBuilder<List<TeamChannel>>(
-            stream: _channelService.getChannelsForUser(clubId, userRoles),
+            stream: _channelService.getChannelsForUser(
+              clubId,
+              userRoles,
+              plongeurCode: memberProvider.plongeurCode,
+              targetFormationLevel: memberProvider.targetFormationLevel,
+            ),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(

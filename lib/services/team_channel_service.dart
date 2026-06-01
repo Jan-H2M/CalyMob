@@ -47,19 +47,28 @@ class TeamChannelService {
   /// Stream des canaux disponibles pour un utilisateur
   Stream<List<TeamChannel>> getChannelsForUser(
       String clubId, List<String> userRoles,
-      {bool includeAllChannels = false}) {
+      {bool includeAllChannels = false,
+      String? plongeurCode,
+      String? targetFormationLevel}) {
     final availableTypes = ClubRoleUtils.getVisibleTeamChannelTypes(
       userRoles,
       includeAllChannels: includeAllChannels,
+      plongeurCode: plongeurCode,
+      targetFormationLevel: targetFormationLevel,
     );
 
+    final availableTypeValues = availableTypes.map((t) => t.value).toSet();
+    final query = availableTypes.length > 10
+        ? _channelsCollection(clubId)
+        : _channelsCollection(clubId)
+            .where('type', whereIn: availableTypeValues.toList());
+
     // Récupérer les canaux correspondants
-    return _channelsCollection(clubId)
-        .where('type', whereIn: availableTypes.map((t) => t.value).toList())
-        .snapshots()
-        .map((snapshot) {
-      final channels =
-          snapshot.docs.map((doc) => TeamChannel.fromFirestore(doc)).toList();
+    return query.snapshots().map((snapshot) {
+      final channels = snapshot.docs
+          .map((doc) => TeamChannel.fromFirestore(doc))
+          .where((channel) => availableTypeValues.contains(channel.type.value))
+          .toList();
 
       // Ajouter les canaux manquants
       for (final type in availableTypes) {
@@ -111,6 +120,16 @@ class TeamChannelService {
           type = TeamChannelType.gonflage;
         } else if (channelId == TeamChannelType.bureau.id) {
           type = TeamChannelType.bureau;
+        } else if (channelId == TeamChannelType.formation1.id) {
+          type = TeamChannelType.formation1;
+        } else if (channelId == TeamChannelType.formation2.id) {
+          type = TeamChannelType.formation2;
+        } else if (channelId == TeamChannelType.formation3.id) {
+          type = TeamChannelType.formation3;
+        } else if (channelId == TeamChannelType.formation4.id) {
+          type = TeamChannelType.formation4;
+        } else if (channelId == TeamChannelType.formationAM.id) {
+          type = TeamChannelType.formationAM;
         } else {
           type = TeamChannelType.encadrants;
         }

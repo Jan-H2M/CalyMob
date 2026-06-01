@@ -61,6 +61,16 @@ function inferChannelInfo(channelId, channelData = {}) {
       return { channelName: 'Équipe Gonflage', channelType: 'gonflage' };
     case 'bureau':
       return { channelName: 'Bureau', channelType: 'bureau' };
+    case 'formation_1_etoile':
+      return { channelName: 'Formation 1*', channelType: 'formation_1_etoile' };
+    case 'formation_2_etoiles':
+      return { channelName: 'Formation 2*', channelType: 'formation_2_etoiles' };
+    case 'formation_3_etoiles':
+      return { channelName: 'Formation 3*', channelType: 'formation_3_etoiles' };
+    case 'formation_4_etoiles':
+      return { channelName: 'Formation 4*', channelType: 'formation_4_etoiles' };
+    case 'formation_AM':
+      return { channelName: 'Formation AM', channelType: 'formation_AM' };
     default:
       return { channelName: 'Équipe Encadrants', channelType: 'encadrants' };
   }
@@ -69,6 +79,43 @@ function inferChannelInfo(channelId, channelData = {}) {
 function hasAdminAccess(memberData = {}) {
   const appRole = String(memberData.app_role || '').toLowerCase();
   return appRole === 'admin' || appRole === 'superadmin';
+}
+
+function normalizeTargetFormationLevel(value) {
+  const raw = String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/★/g, '*')
+    .replace(/_/g, ' ');
+
+  if (!raw) return null;
+  if (raw.includes('AM') || raw === 'AIDE MONITEUR') return 'AM';
+  if (raw.includes('1') || raw.includes('P1')) return '1*';
+  if (raw.includes('2') || raw.includes('P2')) return '2*';
+  if (raw.includes('3') || raw.includes('P3')) return '3*';
+  if (raw.includes('4') || raw.includes('P4')) return '4*';
+  return null;
+}
+
+function getMemberFormationTargetLevel(memberData = {}) {
+  const explicitTarget = normalizeTargetFormationLevel(memberData.target_formation_level);
+  if (explicitTarget) return explicitTarget;
+
+  const code = String(memberData.plongeur_code || memberData.plongeur_niveau || '')
+    .trim()
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/★/g, '*');
+
+  if (!code) return null;
+  if (code === 'NB' || code.includes('NON BREVETE') || code.includes('SANS BREVET') || code.includes('DEBUTANT') || code.includes('BAPTEME') || code.includes('INITIATION')) return '1*';
+  if (code === 'P1' || code === '1' || code === '1*' || code.includes('PLONGEUR 1')) return '2*';
+  if (code === 'P2' || code === '2' || code === '2*' || code.includes('PLONGEUR 2')) return '3*';
+  if (code === 'P3' || code === '3' || code === '3*' || code.includes('PLONGEUR 3')) return '4*';
+  if (code === 'P4' || code === '4' || code === '4*' || code.includes('PLONGEUR 4')) return 'AM';
+
+  return null;
 }
 
 function memberHasChannelAccess(memberData = {}, channelType) {
@@ -92,6 +139,16 @@ function memberHasChannelAccess(memberData = {}, channelType) {
       return normalizedRoles.has('accueil');
     case 'gonflage':
       return normalizedRoles.has('gonflage');
+    case 'formation_1_etoile':
+      return getMemberFormationTargetLevel(memberData) === '1*';
+    case 'formation_2_etoiles':
+      return getMemberFormationTargetLevel(memberData) === '2*';
+    case 'formation_3_etoiles':
+      return getMemberFormationTargetLevel(memberData) === '3*';
+    case 'formation_4_etoiles':
+      return getMemberFormationTargetLevel(memberData) === '4*';
+    case 'formation_AM':
+      return getMemberFormationTargetLevel(memberData) === 'AM';
     case 'encadrants':
     default:
       return normalizedRoles.has('encadrant');

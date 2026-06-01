@@ -89,6 +89,12 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
         return AppColors.oranje;
       case TeamChannelType.bureau:
         return const Color(0xFF0E8A75);
+      case TeamChannelType.formation1:
+      case TeamChannelType.formation2:
+      case TeamChannelType.formation3:
+      case TeamChannelType.formation4:
+      case TeamChannelType.formationAM:
+        return const Color(0xFF0E8A75);
     }
   }
 

@@ -184,10 +184,14 @@ class UnreadCountService {
   // ============================================================
 
   Future<int> countUnreadTeamMessages(String clubId, List<String> roles,
-      {bool includeAllChannels = false}) async {
+      {bool includeAllChannels = false,
+      String? plongeurCode,
+      String? targetFormationLevel}) async {
     final channelIds = ClubRoleUtils.getVisibleTeamChannelIds(
       roles,
       includeAllChannels: includeAllChannels,
+      plongeurCode: plongeurCode,
+      targetFormationLevel: targetFormationLevel,
     );
 
     try {
@@ -303,7 +307,9 @@ class UnreadCountService {
   /// Bereken alle ongelezen counts in één keer.
   /// Retourneert een map met categorie → count.
   Future<Map<String, int>> refreshAllCounts(String clubId, List<String> roles,
-      {bool includeAllTeamChannels = false}) async {
+      {bool includeAllTeamChannels = false,
+      String? plongeurCode,
+      String? targetFormationLevel}) async {
     final results = await Future.wait([
       countUnreadAnnouncements(clubId),
       countUnreadEventMessages(clubId),
@@ -311,6 +317,8 @@ class UnreadCountService {
         clubId,
         roles,
         includeAllChannels: includeAllTeamChannels,
+        plongeurCode: plongeurCode,
+        targetFormationLevel: targetFormationLevel,
       ),
       countUnreadSessionMessages(clubId, roles),
     ]);

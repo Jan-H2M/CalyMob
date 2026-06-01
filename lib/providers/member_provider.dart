@@ -32,6 +32,10 @@ class MemberProvider with ChangeNotifier {
   /// Determineert het brevet-niveau van de member.
   String? get plongeurCode => _memberData?['plongeur_code'] as String?;
 
+  /// Expliciete formation-doelgroep, bv. "2*" of "AM".
+  String? get targetFormationLevel =>
+      _memberData?['target_formation_level'] as String?;
+
   /// True wanneer de member actief aan een formation deelneemt.
   /// Een 1★ + formation_active=true traint voor P2, etc.
   bool get formationActive => _memberData?['formation_active'] == true;
