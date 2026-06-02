@@ -1,0 +1,2 @@
+Amélioration de l’écran Communication avec une recherche plus claire et des résultats mis en évidence.
+Optimisation de l’affichage des événements et corrections dans le carnet de plongée.
