@@ -61,10 +61,18 @@ class MaterialReturnService {
         .snapshots()
         .asyncMap((snapshot) async {
       final typeNames = await _loadItemTypeNames(clubId);
-      final items = snapshot.docs.map((doc) {
-        final item = MaterialLoanItem.fromFirestore(doc);
-        return item.copyWithTypeName(typeNames[item.typeId]);
-      }).toList();
+      final items = snapshot.docs
+          .map((doc) {
+            final item = MaterialLoanItem.fromFirestore(doc);
+            return item.copyWithTypeName(typeNames[item.typeId]);
+          })
+          .where((item) => item.isBorrowable)
+          .toList();
+      if (kDebugMode) {
+        debugPrint(
+          'Materiel disponible geladen: ${items.length}/${snapshot.docs.length}',
+        );
+      }
       items.sort((a, b) => a.displayName.compareTo(b.displayName));
       return items;
     });

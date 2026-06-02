@@ -66,6 +66,14 @@ class MaterialLoanItem {
 
   String get displayName => '$typeLabel - $technicalDetails';
 
+  bool get isBorrowable {
+    final normalized = status.trim().toLowerCase();
+    return normalized == 'disponible' ||
+        normalized == 'available' ||
+        normalized == 'en_stock' ||
+        normalized == 'libre';
+  }
+
   MaterialLoanItem copyWithTypeName(String? value) {
     return MaterialLoanItem(
       id: id,
@@ -91,7 +99,10 @@ class MaterialLoanItem {
       brand: data['fabricant']?.toString(),
       model: data['modele']?.toString(),
       serialNumber: data['numero_serie']?.toString(),
-      status: data['statut']?.toString() ?? 'disponible',
+      status: data['statut']?.toString() ??
+          data['status']?.toString() ??
+          data['etat_stock']?.toString() ??
+          'disponible',
       typeId: data['typeId']?.toString() ?? data['type_id']?.toString(),
       typeName: data['typeName']?.toString() ?? data['type_name']?.toString(),
     );

@@ -851,13 +851,14 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
                 stream: widget.service.watchBorrowableItems(widget.clubId),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const LoadingWidget(
+                    return const _SheetStatusState(
+                      icon: Icons.inventory_2_outlined,
                       message: 'Chargement du materiel disponible...',
                     );
                   }
 
                   if (snapshot.hasError) {
-                    return EmptyStateWidget(
+                    return _SheetStatusState(
                       icon: Icons.error_outline,
                       title: 'Impossible de charger le materiel',
                       subtitle: snapshot.error.toString(),
@@ -866,7 +867,7 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
 
                   final items = snapshot.data ?? const [];
                   if (items.isEmpty) {
-                    return const EmptyStateWidget(
+                    return const _SheetStatusState(
                       icon: Icons.inventory_2_outlined,
                       title: 'Aucun materiel disponible',
                       subtitle:
@@ -918,7 +919,7 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
                       const SizedBox(height: 8),
                       Expanded(
                         child: filteredItems.isEmpty
-                            ? const EmptyStateWidget(
+                            ? const _SheetStatusState(
                                 icon: Icons.search_off,
                                 title: 'Aucun resultat',
                                 subtitle:
@@ -1116,6 +1117,61 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+}
+
+class _SheetStatusState extends StatelessWidget {
+  final IconData icon;
+  final String? title;
+  final String? subtitle;
+  final String? message;
+
+  const _SheetStatusState({
+    required this.icon,
+    this.title,
+    this.subtitle,
+    this.message,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final loading = message != null;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 18),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (loading)
+              const CircularProgressIndicator(color: AppColors.middenblauw)
+            else
+              Icon(icon, size: 56, color: AppColors.middenblauw),
+            const SizedBox(height: 16),
+            Text(
+              message ?? title ?? '',
+              style: const TextStyle(
+                color: AppColors.donkerblauw,
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            if (!loading && subtitle != null && subtitle!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                subtitle!,
+                style: TextStyle(
+                  color: Colors.grey.shade700,
+                  fontSize: 14,
+                  height: 1.35,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }
 
