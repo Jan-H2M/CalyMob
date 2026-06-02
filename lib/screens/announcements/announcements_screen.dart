@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:lottie/lottie.dart';
-import '../../config/app_assets.dart';
 import '../../models/announcement.dart';
 import '../../providers/announcement_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -10,21 +8,25 @@ import '../../utils/permission_helper.dart';
 import '../../widgets/announcement_card.dart';
 import '../../widgets/glossy_button.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
-import '../../services/announcement_service.dart';
 import '../../services/local_read_tracker.dart';
+import '../../utils/search_highlight.dart';
 import '../../providers/unread_count_provider.dart';
 import 'announcement_detail_screen.dart';
 import 'create_announcement_dialog.dart';
 
 class AnnouncementsScreen extends StatefulWidget {
-  const AnnouncementsScreen({super.key});
+  final String initialSearchQuery;
+
+  const AnnouncementsScreen({
+    super.key,
+    this.initialSearchQuery = '',
+  });
 
   @override
   State<AnnouncementsScreen> createState() => _AnnouncementsScreenState();
 }
 
 class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
-  final AnnouncementService _announcementService = AnnouncementService();
   List<String>? _clubStatuten;
   String? _appRole;
 
@@ -60,7 +62,8 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
         debugPrint('📋 app_role: ${data?['app_role']}');
         debugPrint('📋 clubStatuten: ${data?['clubStatuten']}');
         setState(() {
-          _clubStatuten = (data?['clubStatuten'] as List<dynamic>?)?.cast<String>();
+          _clubStatuten =
+              (data?['clubStatuten'] as List<dynamic>?)?.cast<String>();
           _appRole = data?['app_role'] as String?;
         });
       }
@@ -71,7 +74,8 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
 
   /// Vérifie si l'utilisateur est admin (via clubStatuten OU app_role)
   bool _isUserAdmin() {
-    debugPrint('🔐 Checking admin: app_role=$_appRole, clubStatuten=$_clubStatuten');
+    debugPrint(
+        '🔐 Checking admin: app_role=$_appRole, clubStatuten=$_clubStatuten');
     // Vérifier app_role d'abord (superadmin, admin)
     if (_appRole != null) {
       final role = _appRole!.toLowerCase();
@@ -159,6 +163,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
         builder: (context) => AnnouncementDetailScreen(
           announcement: announcement,
           clubId: 'calypso',
+          initialSearchQuery: widget.initialSearchQuery,
         ),
       ),
     );
@@ -171,7 +176,8 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
     // Refresh unread counts so badge disappears
     if (mounted) {
       try {
-        final unreadProvider = Provider.of<UnreadCountProvider>(context, listen: false);
+        final unreadProvider =
+            Provider.of<UnreadCountProvider>(context, listen: false);
         unreadProvider.refresh();
       } catch (_) {}
     }
@@ -185,7 +191,6 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
     return announcement.createdAt.isAfter(lastRead);
   }
 
-
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
@@ -196,11 +201,12 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
     const clubId = 'calypso';
 
     if (currentUser == null) {
-      return Scaffold(
+      return const Scaffold(
         body: OceanGradientBackground(
           creatures: CreatureSet.jellyfish,
-          child: const Center(
-            child: Text('Veuillez vous connecter', style: TextStyle(color: Colors.white)),
+          child: Center(
+            child: Text('Veuillez vous connecter',
+                style: TextStyle(color: Colors.white)),
           ),
         ),
       );
@@ -218,7 +224,8 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                 child: Row(
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                      icon: const Icon(Icons.arrow_back,
+                          color: Colors.white, size: 28),
                       onPressed: () => Navigator.pop(context),
                     ),
                     const Expanded(
@@ -247,7 +254,9 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                   stream: announcementProvider.watchAnnouncements(clubId),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator(color: Colors.white));
+                      return const Center(
+                          child:
+                              CircularProgressIndicator(color: Colors.white));
                     }
 
                     if (snapshot.hasError) {
@@ -255,7 +264,8 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                            const Icon(Icons.error_outline,
+                                size: 64, color: Colors.red),
                             const SizedBox(height: 16),
                             Text(
                               'Erreur: ${snapshot.error}',
@@ -271,31 +281,48 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                       );
                     }
 
-                    final announcements = snapshot.data ?? [];
+                    final searchQuery = widget.initialSearchQuery.trim();
+                    final allAnnouncements = snapshot.data ?? [];
+                    final announcements = allAnnouncements
+                        .where(
+                          (announcement) => textMatchesSearch(searchQuery, [
+                            announcement.title,
+                            announcement.message,
+                            announcement.senderName,
+                            announcement.type.name,
+                          ]),
+                        )
+                        .toList();
 
                     if (announcements.isEmpty) {
                       return Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.campaign_outlined, size: 80, color: Colors.white.withOpacity(0.6)),
+                            Icon(Icons.campaign_outlined,
+                                size: 80,
+                                color: Colors.white.withValues(alpha: 0.6)),
                             const SizedBox(height: 16),
                             Text(
-                              'Aucune annonce',
+                              searchQuery.isEmpty
+                                  ? 'Aucune annonce'
+                                  : 'Aucun résultat',
                               style: TextStyle(
                                 fontSize: 18,
-                                color: Colors.white.withOpacity(0.9),
+                                color: Colors.white.withValues(alpha: 0.9),
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              isAdmin
-                                  ? 'Cliquez sur + pour créer une annonce'
-                                  : 'Les annonces apparaîtront ici',
+                              searchQuery.isEmpty
+                                  ? (isAdmin
+                                      ? 'Cliquez sur + pour créer une annonce'
+                                      : 'Les annonces apparaîtront ici')
+                                  : 'Aucune annonce ne contient "$searchQuery"',
                               style: TextStyle(
                                 fontSize: 14,
-                                color: Colors.white.withOpacity(0.7),
+                                color: Colors.white.withValues(alpha: 0.7),
                               ),
                             ),
                           ],
@@ -306,14 +333,16 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                     return RefreshIndicator(
                       onRefresh: () async => _loadAnnouncements(),
                       child: ListView.builder(
-                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 8, horizontal: 16),
                         itemCount: announcements.length,
                         itemBuilder: (context, index) {
                           final announcement = announcements[index];
                           return AnnouncementCard(
                             announcement: announcement,
-                            currentUserId: currentUser!.uid,
+                            currentUserId: currentUser.uid,
                             isUnread: _isAnnouncementUnread(announcement),
+                            searchQuery: searchQuery,
                             onTap: () => _navigateToDetail(announcement),
                           );
                         },

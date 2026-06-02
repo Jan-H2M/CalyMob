@@ -481,6 +481,7 @@ const respondToLogbookDiveConfirmation = onCall(
       'confirm_existing_identical',
       'confirm_keep_existing',
       'confirm_replace_existing',
+      'confirm_no_import',
       'decline',
     ]);
     if (!allowed.has(action)) throw new HttpsError('invalid-argument', 'Action invalide');
@@ -530,6 +531,8 @@ const respondToLogbookDiveConfirmation = onCall(
       status = 'confirmed_existing_identical';
     } else if (action === 'confirm_keep_existing') {
       status = 'confirmed_existing_different';
+    } else if (action === 'confirm_no_import') {
+      status = 'confirmed_no_import';
     } else if (action === 'confirm_replace_existing') {
       if (!finalMatchedEntryId) throw new HttpsError('invalid-argument', 'matchedEntryId manquant');
       await db.collection('clubs').doc(clubId)
@@ -561,6 +564,7 @@ const respondToLogbookDiveConfirmation = onCall(
       confirmed_copied: 'bevestigd en gekopieerd',
       confirmed_existing_identical: 'bevestigd: identieke duik stond al in het logboek',
       confirmed_existing_different: 'bevestigd: bestaande duik had verschillen',
+      confirmed_no_import: 'bevestigd zonder te importeren',
       declined: 'geweigerd',
     };
     await sendMemberNotification(

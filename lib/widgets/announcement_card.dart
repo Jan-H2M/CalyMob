@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
-import '../models/announcement.dart';
-import 'linkified_message_text.dart';
 import 'package:intl/intl.dart';
+
+import '../models/announcement.dart';
+import '../utils/search_highlight.dart';
+import 'linkified_message_text.dart';
 
 class AnnouncementCard extends StatelessWidget {
   final Announcement announcement;
@@ -9,6 +11,7 @@ class AnnouncementCard extends StatelessWidget {
   final String? currentUserId;
   final int unreadReplyCount;
   final bool isUnread;
+  final String searchQuery;
 
   const AnnouncementCard({
     super.key,
@@ -17,6 +20,7 @@ class AnnouncementCard extends StatelessWidget {
     this.currentUserId,
     this.unreadReplyCount = 0,
     this.isUnread = false,
+    this.searchQuery = '',
   });
 
   Color _getTypeColor() {
@@ -56,6 +60,18 @@ class AnnouncementCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = _getTypeColor();
     final dateFormat = DateFormat('dd/MM/yyyy HH:mm');
+    final query = searchQuery.trim();
+    final titleStyle = TextStyle(
+      fontSize: 18,
+      fontWeight: FontWeight.w500,
+      color: Colors.grey[800],
+    );
+    final messageStyle = TextStyle(
+      fontSize: 15,
+      color: Colors.grey[800],
+      height: 1.4,
+    );
+    final senderStyle = TextStyle(fontSize: 13, color: Colors.grey[600]);
 
     return GestureDetector(
       onTap: onTap,
@@ -65,203 +81,199 @@ class AnnouncementCard extends StatelessWidget {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
           side: BorderSide(
-            color: isUnread ? Colors.red : color.withOpacity(0.3),
+            color: isUnread ? Colors.red : color.withValues(alpha: 0.3),
             width: isUnread ? 2 : 1,
           ),
         ),
         child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header with type badge + NOUVEAU indicator
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(12),
-                topRight: Radius.circular(12),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(12),
+                  topRight: Radius.circular(12),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(_getTypeIcon(), color: color, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    _getTypeLabel(),
+                    style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (isUnread)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Text(
+                        'NOUVEAU',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
-            child: Row(
-              children: [
-                Icon(_getTypeIcon(), color: color, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  _getTypeLabel(),
-                  style: TextStyle(
-                    color: color,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-                const Spacer(),
-                if (isUnread)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Text(
-                      'NOUVEAU',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text.rich(
+                    TextSpan(
+                      children: searchHighlightSpans(
+                        announcement.title,
+                        query,
+                        titleStyle,
                       ),
                     ),
                   ),
-              ],
-            ),
-          ),
-
-          // Content
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Title
-                Text(
-                  announcement.title,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.grey[800],
-                  ),
-                ),
-                const SizedBox(height: 8),
-
-                // Message
-                LinkifiedMessageText(
-                  text: announcement.message,
-                  style: TextStyle(
-                    fontSize: 15,
-                    color: Colors.grey[800],
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                // Footer with sender and date
-                Row(
-                  children: [
-                    Icon(Icons.person_outline, size: 16, color: Colors.grey[600]),
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: Text(
-                        announcement.senderName,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey[600],
+                  const SizedBox(height: 8),
+                  if (query.isEmpty)
+                    LinkifiedMessageText(
+                      text: announcement.message,
+                      style: messageStyle,
+                    )
+                  else
+                    Text.rich(
+                      TextSpan(
+                        children: searchHighlightSpans(
+                          announcement.message,
+                          query,
+                          messageStyle,
                         ),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
                       ),
                     ),
-                    const SizedBox(width: 16),
-                    Icon(Icons.access_time, size: 16, color: Colors.grey[600]),
-                    const SizedBox(width: 4),
-                    Text(
-                      dateFormat.format(announcement.createdAt),
-                      style: TextStyle(
-                        fontSize: 13,
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.person_outline,
+                        size: 16,
                         color: Colors.grey[600],
                       ),
-                    ),
-                  ],
-                ),
-
-                // Stats row (read count, reply count, attachments)
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    // Reply count (rood als ongelezen, blauw als alles gelezen)
-                    if (announcement.hasReplies)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: unreadReplyCount > 0
-                              ? Colors.red.shade50
-                              : Colors.blue.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              unreadReplyCount > 0
-                                  ? Icons.chat_bubble
-                                  : Icons.chat_bubble_outline,
-                              size: 14,
-                              color: unreadReplyCount > 0
-                                  ? Colors.red.shade700
-                                  : Colors.blue.shade700,
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text.rich(
+                          TextSpan(
+                            children: searchHighlightSpans(
+                              announcement.senderName,
+                              query,
+                              senderStyle,
                             ),
-                            const SizedBox(width: 4),
-                            Text(
-                              unreadReplyCount > 0
-                                  ? '$unreadReplyCount nouveau${unreadReplyCount > 1 ? 'x' : ''}'
-                                  : '${announcement.replyCount}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: unreadReplyCount > 0
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                                color: unreadReplyCount > 0
-                                    ? Colors.red.shade700
-                                    : Colors.blue.shade700,
-                              ),
-                            ),
-                          ],
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
                         ),
                       ),
-
-                    // Attachment indicator
-                    if (announcement.attachments.isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.attach_file,
-                              size: 14,
-                              color: Colors.orange.shade700,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${announcement.attachments.length}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.orange.shade700,
-                              ),
-                            ),
-                          ],
-                        ),
+                      const SizedBox(width: 16),
+                      Icon(
+                        Icons.access_time,
+                        size: 16,
+                        color: Colors.grey[600],
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        dateFormat.format(announcement.createdAt),
+                        style: senderStyle,
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      if (announcement.hasReplies) _buildReplyBadge(),
+                      if (announcement.attachments.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        _buildAttachmentBadge(),
+                      ],
+                      const Spacer(),
+                      Icon(
+                        Icons.chevron_right,
+                        size: 20,
+                        color: Colors.grey[400],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
-                    const Spacer(),
+  Widget _buildReplyBadge() {
+    final hasUnreadReplies = unreadReplyCount > 0;
+    final color = hasUnreadReplies ? Colors.red : Colors.blue;
 
-                    // Tap hint
-                    Icon(
-                      Icons.chevron_right,
-                      size: 20,
-                      color: Colors.grey[400],
-                    ),
-                  ],
-                ),
-              ],
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: hasUnreadReplies ? Colors.red.shade50 : Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            hasUnreadReplies ? Icons.chat_bubble : Icons.chat_bubble_outline,
+            size: 14,
+            color: color.shade700,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            hasUnreadReplies
+                ? '$unreadReplyCount nouveau${unreadReplyCount > 1 ? 'x' : ''}'
+                : '${announcement.replyCount}',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight:
+                  hasUnreadReplies ? FontWeight.bold : FontWeight.normal,
+              color: color.shade700,
             ),
           ),
         ],
-        ),
+      ),
+    );
+  }
+
+  Widget _buildAttachmentBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.attach_file, size: 14, color: Colors.orange.shade700),
+          const SizedBox(width: 4),
+          Text(
+            '${announcement.attachments.length}',
+            style: TextStyle(fontSize: 12, color: Colors.orange.shade700),
+          ),
+        ],
       ),
     );
   }

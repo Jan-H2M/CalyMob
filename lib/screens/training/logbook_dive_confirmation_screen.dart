@@ -152,6 +152,8 @@ class _LogbookDiveConfirmationScreenState
         return 'Plongée confirmée: elle était déjà identique.';
       case 'confirmed_existing_different':
         return 'Plongée confirmée avec ta version existante.';
+      case 'confirmed_no_import':
+        return 'Plongée confirmée sans import dans ton carnet.';
       case 'declined':
         return 'Plongée refusée.';
       default:
@@ -272,7 +274,7 @@ class _DetailBody extends StatelessWidget {
               icon: Icons.add_circle_outline,
               title: 'Pas encore dans ton carnet',
               text:
-                  'Si tu confirmes, CalyMob copiera cette plongée dans ton carnet.',
+                  'Tu peux confirmer la plongée et choisir si elle doit être copiée dans ton carnet.',
             ),
           const SizedBox(height: 14),
           if (matchType == 'identical')
@@ -308,11 +310,20 @@ class _DetailBody extends StatelessWidget {
           ] else
             _PrimaryAction(
               icon: Icons.library_add_check_outlined,
-              label: 'Confirmer et copier',
+              label: 'Confirmer et importer',
               submitting: submitting,
               onPressed: () => onRespond('confirm_copy'),
             ),
           const SizedBox(height: 8),
+          if (matchType != 'identical') ...[
+            _SecondaryAction(
+              icon: Icons.check_circle_outline,
+              label: 'Confirmer sans importer',
+              submitting: submitting,
+              onPressed: () => onRespond('confirm_no_import'),
+            ),
+            const SizedBox(height: 8),
+          ],
           _DeclineAction(
             submitting: submitting,
             onPressed: () => onRespond('decline'),
@@ -330,6 +341,8 @@ class _DetailBody extends StatelessWidget {
         return 'Confirmée: tu avais déjà cette plongée identique.';
       case 'confirmed_existing_different':
         return 'Confirmée: tu avais déjà une version différente.';
+      case 'confirmed_no_import':
+        return 'Confirmée: elle n’a pas été importée dans ton carnet.';
       case 'declined':
         return 'Tu as refusé cette plongée.';
       default:

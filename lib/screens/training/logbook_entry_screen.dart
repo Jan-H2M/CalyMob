@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 /// Carnet de Formation — Logbook entry screen.
 ///
 /// Two modes :
@@ -40,6 +42,13 @@ import '../../widgets/tank_picker_field.dart';
 enum LogbookEntryMode { auto, manual, edit }
 
 enum _SpeechCaptureMode { free, guided }
+
+enum _AutoTaskDiscardResolution {
+  keepEditing,
+  discardOnly,
+  noImport,
+  notRecognized
+}
 
 class LogbookEntryScreen extends StatefulWidget {
   final LogbookEntryMode mode;
@@ -134,12 +143,15 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
   _SpeechCaptureMode _speechMode = _SpeechCaptureMode.free;
   int _guidedStepIndex = 0;
   bool _submitting = false;
+  bool _resolvingTask = false;
   bool _analyzingDictation = false;
   bool _dictationOpen = true;
   bool _dictationAppliedToForm = false;
   bool _speechAvailable = false;
   bool _listening = false;
   bool _saved = false;
+  bool _autoDiveConfirmed = false;
+  Offset _autoTaskOverlayOffset = const Offset(16, 92);
 
   // Pool-edit editable fields. Pre-filled from the entry, written back on
   // save through the pool-specific update path. Theme and validator stay
@@ -854,26 +866,234 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           creatures: CreatureSet.jellyfishAndBubbles,
           child: SafeArea(
             bottom: false,
-            child: Stack(
-              children: [
-                ListView(
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    0,
-                    16,
-                    _isDictationPrefill ? 24 : 140,
-                  ),
-                  children: _isPoolEdit
-                      ? _poolEditChildren()
-                      : _diveEditChildren(userId),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return Stack(
+                  children: [
+                    ListView(
+                      padding: EdgeInsets.fromLTRB(
+                        16,
+                        0,
+                        16,
+                        _isDictationPrefill ? 24 : 140,
+                      ),
+                      children: _isPoolEdit
+                          ? _poolEditChildren()
+                          : _diveEditChildren(userId),
+                    ),
+                    if (!_isDictationPrefill && !_showAutoTaskOverlay)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: _bottomBar(),
+                      ),
+                    if (_showAutoTaskOverlay)
+                      _autoTaskDecisionOverlay(constraints),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  bool get _showAutoTaskOverlay =>
+      widget.mode == LogbookEntryMode.auto &&
+      widget.task != null &&
+      !_saved &&
+      !_submitting &&
+      !_resolvingTask;
+
+  Widget _autoTaskDecisionOverlay(BoxConstraints constraints) {
+    final width = math.min(380.0, constraints.maxWidth - 32);
+    final maxLeft = math.max(8.0, constraints.maxWidth - width - 8);
+    final maxTop = math.max(8.0, constraints.maxHeight - 360);
+    final left = _autoTaskOverlayOffset.dx.clamp(8.0, maxLeft).toDouble();
+    final top = _autoTaskOverlayOffset.dy.clamp(8.0, maxTop).toDouble();
+
+    return Positioned(
+      left: left,
+      top: top,
+      width: width,
+      child: GestureDetector(
+        onPanUpdate: (details) {
+          setState(() {
+            _autoTaskOverlayOffset = Offset(
+              (_autoTaskOverlayOffset.dx + details.delta.dx)
+                  .clamp(8.0, maxLeft)
+                  .toDouble(),
+              (_autoTaskOverlayOffset.dy + details.delta.dy)
+                  .clamp(8.0, maxTop)
+                  .toDouble(),
+            );
+          });
+        },
+        child: Material(
+          color: Colors.transparent,
+          elevation: 12,
+          borderRadius: BorderRadius.circular(18),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.blue.shade100),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.22),
+                  blurRadius: 24,
+                  offset: const Offset(0, 12),
                 ),
-                if (!_isDictationPrefill)
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    child: _bottomBar(),
+              ],
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.blueGrey.shade200,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
                   ),
+                ),
+                const SizedBox(height: 10),
+                const Row(
+                  children: [
+                    Icon(Icons.open_with, color: AppColors.primary, size: 18),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Que faire avec cette plongée ?',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF0B2E55),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Déplace cette carte pour vérifier les infos en dessous.',
+                  style: TextStyle(
+                    color: Colors.blueGrey.shade700,
+                    fontSize: 13,
+                    height: 1.25,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Confirmation',
+                  style: TextStyle(
+                    color: Color(0xFF42606F),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Tu confirmes uniquement que cette plongée a bien eu lieu avec tes buddy.',
+                  style: TextStyle(
+                    color: Colors.blueGrey.shade700,
+                    fontSize: 12,
+                    height: 1.25,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () => setState(() => _autoDiveConfirmed = true),
+                    icon: const Icon(Icons.check_circle_outline),
+                    label: Text(_autoDiveConfirmed
+                        ? 'Plongée confirmée'
+                        : 'Confirmer la plongée'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _autoDiveConfirmed
+                          ? Colors.green.shade700
+                          : AppColors.primary,
+                      minimumSize: const Size.fromHeight(44),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _resolveAutoTaskDiscard(
+                      _AutoTaskDiscardResolution.notRecognized,
+                    ),
+                    icon: Icon(Icons.block, color: Colors.red.shade700),
+                    label: const Text('Je ne reconnais pas cette plongée'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red.shade700,
+                      minimumSize: const Size.fromHeight(44),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Divider(color: Colors.blueGrey.shade100, height: 1),
+                const SizedBox(height: 10),
+                Text(
+                  'Carnet',
+                  style: TextStyle(
+                    color: _autoDiveConfirmed
+                        ? Colors.blueGrey.shade700
+                        : Colors.blueGrey.shade400,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0,
+                  ),
+                ),
+                if (!_autoDiveConfirmed) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Confirme d’abord la plongée pour décider si elle doit être ajoutée à ton carnet.',
+                    style: TextStyle(
+                      color: Colors.blueGrey.shade500,
+                      fontSize: 12,
+                      height: 1.2,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _autoDiveConfirmed ? _save : null,
+                    icon: const Icon(Icons.download_outlined),
+                    label: const Text('Ajouter à mon carnet'),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(44),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _autoDiveConfirmed
+                        ? () => _resolveAutoTaskDiscard(
+                              _AutoTaskDiscardResolution.noImport,
+                            )
+                        : null,
+                    icon: const Icon(Icons.close),
+                    label: const Text('Ne pas ajouter à mon carnet'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red.shade700,
+                      minimumSize: const Size.fromHeight(44),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -3246,7 +3466,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
   }
 
   bool get _hasUnsavedChanges {
-    if (_saved || _submitting) return false;
+    if (_saved || _submitting || _resolvingTask) return false;
     if (widget.mode == LogbookEntryMode.auto) return true;
     if (widget.mode == LogbookEntryMode.edit) {
       return _notes.text.trim() !=
@@ -3279,6 +3499,55 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
       Navigator.of(context).pop();
       return;
     }
+
+    if (widget.mode == LogbookEntryMode.auto && widget.task != null) {
+      final resolution = await showDialog<_AutoTaskDiscardResolution>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Que faire avec cette plongée ?'),
+          content: const Text(
+            'Cette plongée vient de Calypso. Si elle est déjà dans ton carnet, '
+            'ou si tu ne veux pas l’importer, on clôture cette action pour '
+            'qu’elle ne revienne plus.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(
+                ctx,
+                _AutoTaskDiscardResolution.keepEditing,
+              ),
+              child: const Text('Continuer la saisie'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(
+                ctx,
+                _AutoTaskDiscardResolution.noImport,
+              ),
+              child: const Text('Ne pas ajouter'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(
+                ctx,
+                _AutoTaskDiscardResolution.discardOnly,
+              ),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Quitter sans clôturer'),
+            ),
+          ],
+        ),
+      );
+
+      if (!mounted ||
+          resolution == null ||
+          resolution == _AutoTaskDiscardResolution.keepEditing) {
+        return;
+      }
+      await _resolveAutoTaskDiscard(resolution);
+      return;
+    }
+
     final discard = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -3303,6 +3572,67 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
     );
     if (discard == true && mounted) {
       Navigator.of(context).pop();
+    }
+  }
+
+  Future<void> _resolveAutoTaskDiscard(
+    _AutoTaskDiscardResolution resolution,
+  ) async {
+    if (resolution == _AutoTaskDiscardResolution.discardOnly) {
+      if (mounted) Navigator.of(context).pop();
+      return;
+    }
+
+    final userId = context.read<AuthProvider>().currentUser?.uid;
+    final task = widget.task;
+    if (userId == null || userId.isEmpty || task == null) {
+      if (mounted) Navigator.of(context).pop();
+      return;
+    }
+
+    setState(() => _resolvingTask = true);
+    try {
+      const clubId = FirebaseConfig.defaultClubId;
+      if (resolution == _AutoTaskDiscardResolution.noImport) {
+        await _taskService.markDone(
+          clubId,
+          task.id,
+          userId,
+          completionData: {
+            'resolution': 'confirmed_no_import',
+            'source': 'logbook_entry_discard_dialog',
+          },
+        );
+      } else if (resolution == _AutoTaskDiscardResolution.notRecognized) {
+        await _taskService.markDone(
+          clubId,
+          task.id,
+          userId,
+          completionData: {
+            'resolution': 'not_recognized',
+            'source': 'logbook_entry_discard_dialog',
+          },
+        );
+      }
+      if (!mounted) return;
+      _saved = true;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            resolution == _AutoTaskDiscardResolution.notRecognized
+                ? 'Action clôturée : la plongée n’a pas été confirmée.'
+                : 'Action clôturée : la plongée ne sera pas importée.',
+          ),
+        ),
+      );
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Impossible de clôturer cette action : $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _resolvingTask = false);
     }
   }
 

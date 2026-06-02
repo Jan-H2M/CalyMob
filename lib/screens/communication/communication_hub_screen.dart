@@ -20,16 +20,17 @@ import '../teams/team_chat_screen.dart';
 import '../training/pool_checkin_screen.dart';
 import '../training/monitor_validation_screen.dart';
 import '../training/logbook_entry_screen.dart';
+import '../training/logbook_dive_confirmation_screen.dart';
 import '../training/historical_claims_screen.dart';
 import '../training/historical_qr_scan_screen.dart';
 import '../training/historical_validation_screen.dart';
 
 enum _CommunicationFilter {
-  all('Tout', Icons.view_agenda_outlined),
+  all('Tout', Icons.forum_outlined),
+  unread('Non lus', Icons.mark_chat_unread_outlined),
   announcements('Annonces', Icons.campaign_outlined),
-  teams('Équipes', Icons.groups_outlined),
   actions('Actions', Icons.flag_outlined),
-  formation('Formation', Icons.school_outlined);
+  teams('Équipes', Icons.groups_outlined);
 
   final String label;
   final IconData icon;
@@ -46,11 +47,7 @@ class CommunicationHubScreen extends StatefulWidget {
 
 class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
   _CommunicationFilter _selectedFilter = _CommunicationFilter.all;
-
-  bool _shows(_CommunicationFilter filter) {
-    return _selectedFilter == _CommunicationFilter.all ||
-        _selectedFilter == filter;
-  }
+  String _searchQuery = '';
 
   @override
   Widget build(BuildContext context) {
@@ -63,12 +60,20 @@ class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
     );
 
     return Scaffold(
+      backgroundColor: Colors.transparent,
       body: OceanGradientBackground(
-        creatures: CreatureSet.jellyfishAndBubbles,
+        creatures: CreatureSet.fishAndBubbles,
         child: SafeArea(
           child: Column(
             children: [
-              const _CommunicationHeader(),
+              _CommunicationHeader(
+                searchQuery: _searchQuery,
+                onSearchChanged: (value) {
+                  setState(() {
+                    _searchQuery = value;
+                  });
+                },
+              ),
               _CommunicationFilterBar(
                 selectedFilter: _selectedFilter,
                 onSelected: (filter) {
@@ -78,52 +83,14 @@ class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
                 },
               ),
               Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-                  children: [
-                    _CommunicationHeroCard(
-                      unreadCount: unreadProvider.announcements,
-                    ),
-                    const SizedBox(height: 18),
-                    // Carnet de Formation — persistent inbox. Always rendered;
-                    // empty state shows nothing visible to non-formation members.
-                    if (_shows(_CommunicationFilter.announcements)) ...[
-                      _SectionHeader(
-                        icon: Icons.campaign_outlined,
-                        title: 'Aujourd\'hui',
-                        subtitle: unreadProvider.announcements > 0
-                            ? 'Nouveautés du club'
-                            : 'À jour',
-                        count: unreadProvider.announcements,
-                      ),
-                      const SizedBox(height: 10),
-                      _AnnouncementsCard(
-                        unreadCount: unreadProvider.announcements,
-                      ),
-                      const SizedBox(height: 18),
-                    ],
-                    if (_shows(_CommunicationFilter.actions))
-                      const _ActionsCalypsoSection(),
-                    if (_shows(_CommunicationFilter.teams)) ...[
-                      const _SectionHeader(
-                        icon: Icons.groups_outlined,
-                        title: 'Canaux d\'équipe',
-                        subtitle: 'Affichés selon vos accès',
-                      ),
-                      const SizedBox(height: 10),
-                      _TeamChannelsSection(
-                        roles: roles,
-                        includeAllChannels: includeAllChannels,
-                        plongeurCode: memberProvider.plongeurCode,
-                        targetFormationLevel:
-                            memberProvider.targetFormationLevel,
-                      ),
-                    ],
-                    if (_shows(_CommunicationFilter.formation))
-                      const _PlannedExercisesSection(),
-                    if (_selectedFilter != _CommunicationFilter.all)
-                      const SizedBox(height: 4),
-                  ],
+                child: _CommunicationInboxList(
+                  selectedFilter: _selectedFilter,
+                  searchQuery: _searchQuery,
+                  announcementUnreadCount: unreadProvider.announcements,
+                  roles: roles,
+                  includeAllChannels: includeAllChannels,
+                  plongeurCode: memberProvider.plongeurCode,
+                  targetFormationLevel: memberProvider.targetFormationLevel,
                 ),
               ),
             ],
@@ -134,65 +101,150 @@ class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
   }
 }
 
-class _CommunicationHeroCard extends StatelessWidget {
-  final int unreadCount;
+class _CommunicationInboxList extends StatelessWidget {
+  final _CommunicationFilter selectedFilter;
+  final String searchQuery;
+  final int announcementUnreadCount;
+  final List<String> roles;
+  final bool includeAllChannels;
+  final String? plongeurCode;
+  final String? targetFormationLevel;
 
-  const _CommunicationHeroCard({required this.unreadCount});
+  const _CommunicationInboxList({
+    required this.selectedFilter,
+    required this.searchQuery,
+    required this.announcementUnreadCount,
+    required this.roles,
+    required this.includeAllChannels,
+    this.plongeurCode,
+    this.targetFormationLevel,
+  });
+
+  bool _shows(_CommunicationFilter filter) {
+    return selectedFilter == _CommunicationFilter.all ||
+        selectedFilter == filter ||
+        selectedFilter == _CommunicationFilter.unread;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: EdgeInsets.zero,
+      children: [
+        if (_shows(_CommunicationFilter.announcements) &&
+            (selectedFilter != _CommunicationFilter.unread ||
+                announcementUnreadCount > 0) &&
+            _matchesSearch(searchQuery, const [
+              'Annonces du club',
+              'Club',
+              'Annonce',
+              'Toutes les annonces sont lues',
+              'nouveau à lire',
+            ]))
+          _AnnouncementChatRow(
+            unreadCount: announcementUnreadCount,
+            searchQuery: searchQuery,
+          ),
+        if (_shows(_CommunicationFilter.actions))
+          _LogbookConfirmationsInboxSection(searchQuery: searchQuery),
+        if (_shows(_CommunicationFilter.actions))
+          _ActionsCalypsoInboxSection(
+            filter: selectedFilter,
+            searchQuery: searchQuery,
+          ),
+        if (_shows(_CommunicationFilter.teams))
+          _TeamChannelsInboxSection(
+            filter: selectedFilter,
+            searchQuery: searchQuery,
+            roles: roles,
+            includeAllChannels: includeAllChannels,
+            plongeurCode: plongeurCode,
+            targetFormationLevel: targetFormationLevel,
+          ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+}
+
+class _CommunicationHeader extends StatefulWidget {
+  final String searchQuery;
+  final ValueChanged<String> onSearchChanged;
+
+  const _CommunicationHeader({
+    required this.searchQuery,
+    required this.onSearchChanged,
+  });
+
+  @override
+  State<_CommunicationHeader> createState() => _CommunicationHeaderState();
+}
+
+class _CommunicationHeaderState extends State<_CommunicationHeader> {
+  late final TextEditingController _searchController;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController(text: widget.searchQuery);
+  }
+
+  @override
+  void didUpdateWidget(covariant _CommunicationHeader oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.searchQuery != _searchController.text) {
+      _searchController.text = widget.searchQuery;
+      _searchController.selection = TextSelection.collapsed(
+        offset: _searchController.text.length,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.18),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.donkerblauw.withValues(alpha: 0.14),
-            blurRadius: 22,
-            offset: const Offset(0, 12),
-          ),
-        ],
+      padding: const EdgeInsets.fromLTRB(8, 12, 16, 12),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppColors.donkerblauw, AppColors.middenblauw],
+        ),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                width: 54,
-                height: 54,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.96),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: const Icon(
-                  Icons.forum_outlined,
-                  color: AppColors.middenblauw,
-                  size: 28,
-                ),
+              IconButton(
+                icon:
+                    const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                onPressed: () => Navigator.pop(context),
               ),
-              const SizedBox(width: 14),
               const Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Centre de communication',
+                      'Communication',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 20,
+                        fontSize: 23,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    SizedBox(height: 3),
+                    SizedBox(height: 2),
                     Text(
-                      'Annonces, canaux et actions du club',
+                      'Messages, annonces et actions',
                       style: TextStyle(
                         color: Color(0xD9FFFFFF),
                         fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ],
@@ -200,135 +252,55 @@ class _CommunicationHeroCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _HeroMetric(
-                  icon: Icons.campaign_outlined,
-                  label: 'Annonces',
-                  value: unreadCount > 0 ? '$unreadCount' : 'OK',
-                  highlighted: unreadCount > 0,
-                ),
-              ),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: _HeroMetric(
-                  icon: Icons.groups_outlined,
-                  label: 'Équipes',
-                  value: 'Live',
-                ),
-              ),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: _HeroMetric(
-                  icon: Icons.flag_outlined,
-                  label: 'Actions',
-                  value: 'Inbox',
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HeroMetric extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final bool highlighted;
-
-  const _HeroMetric({
-    required this.icon,
-    required this.label,
-    required this.value,
-    this.highlighted = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: highlighted ? 0.98 : 0.16),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.24)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            icon,
-            size: 17,
-            color: highlighted ? AppColors.oranje : Colors.white,
-          ),
-          const SizedBox(height: 7),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: highlighted ? AppColors.donkerblauw : Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.w900,
+          const SizedBox(height: 10),
+          Container(
+            height: 38,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.94),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: Colors.white),
             ),
-          ),
-          const SizedBox(height: 1),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: highlighted
-                  ? AppColors.donkerblauw.withValues(alpha: 0.68)
-                  : Colors.white.withValues(alpha: 0.78),
-              fontSize: 10.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CommunicationHeader extends StatelessWidget {
-  const _CommunicationHeader();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 16, 6),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
-            onPressed: () => Navigator.pop(context),
-          ),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                Text(
-                  'Communication',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 23,
-                    fontWeight: FontWeight.w800,
+                const Icon(
+                  Icons.search,
+                  size: 17,
+                  color: Color(0xFF4D6680),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: widget.onSearchChanged,
+                    textInputAction: TextInputAction.search,
+                    style: const TextStyle(
+                      color: AppColors.donkerblauw,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    cursorColor: AppColors.middenblauw,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      border: InputBorder.none,
+                      hintText: 'Rechercher une conversation',
+                      hintStyle: TextStyle(
+                        color: Color(0xFF6B7F95),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
                 ),
-                SizedBox(height: 2),
-                Text(
-                  'Messages, équipes et actions Calypso',
-                  style: TextStyle(
-                    color: Color(0xD9FFFFFF),
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
+                if (widget.searchQuery.trim().isNotEmpty)
+                  GestureDetector(
+                    onTap: () => widget.onSearchChanged(''),
+                    child: Icon(
+                      Icons.close,
+                      size: 17,
+                      color: AppColors.donkerblauw.withValues(alpha: 0.74),
+                    ),
                   ),
-                ),
               ],
             ),
           ),
@@ -349,142 +321,134 @@ class _CommunicationFilterBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 44,
-      child: ListView.separated(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        scrollDirection: Axis.horizontal,
-        itemBuilder: (context, index) {
-          final filter = _CommunicationFilter.values[index];
+    return Container(
+      height: 54,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          bottom: BorderSide(
+            color: AppColors.donkerblauw.withValues(alpha: 0.10),
+          ),
+        ),
+      ),
+      child: Row(
+        children: _CommunicationFilter.values.map((filter) {
           final selected = selectedFilter == filter;
-          return GestureDetector(
-            onTap: () => onSelected(filter),
-            child: Container(
-              alignment: Alignment.center,
-              constraints: const BoxConstraints(minWidth: 52),
-              padding: const EdgeInsets.symmetric(horizontal: 13),
-              decoration: BoxDecoration(
-                color: selected
-                    ? Colors.white
-                    : Colors.white.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.32)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    filter.icon,
-                    size: 16,
-                    color: selected ? AppColors.donkerblauw : Colors.white,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    filter.label,
-                    style: TextStyle(
-                      color: selected ? AppColors.donkerblauw : Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
+          return Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2.5),
+              child: GestureDetector(
+                onTap: () => onSelected(filter),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? AppColors.middenblauw
+                        : const Color(0xFFEEF6FB),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: selected
+                          ? AppColors.middenblauw
+                          : const Color(0xFFE0EDF5),
                     ),
                   ),
-                ],
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      filter.label,
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: selected ? Colors.white : AppColors.donkerblauw,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
           );
-        },
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemCount: _CommunicationFilter.values.length,
+        }).toList(),
       ),
     );
   }
 }
 
-class _SectionHeader extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String? subtitle;
-  final int count;
+class _CommunicationAvatar extends StatelessWidget {
+  final IconData? icon;
+  final String? text;
+  final List<Color> colors;
+  final bool online;
 
-  const _SectionHeader({
-    required this.icon,
-    required this.title,
-    this.subtitle,
-    this.count = 0,
+  const _CommunicationAvatar({
+    this.icon,
+    this.text,
+    required this.colors,
+    this.online = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 2, bottom: 2),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.white.withValues(alpha: 0.9), size: 20),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.96),
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    if (count > 0) _CountBadge(count),
-                  ],
-                ),
-                if (subtitle != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle!,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.72),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          width: 46,
+          height: 46,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: colors,
+            ),
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: colors.last.withValues(alpha: 0.20),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          alignment: Alignment.center,
+          child: icon != null
+              ? Icon(icon, color: Colors.white, size: 22)
+              : Text(
+                  text ?? '',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
                   ),
-                ],
-              ],
+                ),
+        ),
+        if (online)
+          Positioned(
+            right: 0,
+            bottom: 1,
+            child: Container(
+              width: 13,
+              height: 13,
+              decoration: BoxDecoration(
+                color: const Color(0xFF25D366),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+              ),
             ),
           ),
-        ],
-      ),
+      ],
     );
   }
 }
 
-BoxDecoration _cardDecoration() {
-  return BoxDecoration(
-    borderRadius: BorderRadius.circular(16),
-    gradient: LinearGradient(
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-      colors: [
-        Colors.white.withValues(alpha: 0.98),
-        Colors.white.withValues(alpha: 0.91),
-      ],
-    ),
-    border: Border.all(color: Colors.white.withValues(alpha: 0.74)),
-    boxShadow: [
-      BoxShadow(
-        color: AppColors.donkerblauw.withValues(alpha: 0.10),
-        blurRadius: 16,
-        offset: const Offset(0, 8),
-      ),
-    ],
-  );
-}
-
-class _MiniPill extends StatelessWidget {
+class _CommunicationTag extends StatelessWidget {
   final String label;
   final Color color;
 
-  const _MiniPill({
+  const _CommunicationTag({
     required this.label,
     required this.color,
   });
@@ -492,170 +456,162 @@ class _MiniPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(maxWidth: 120),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
+        color: color.withValues(alpha: 0.13),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        label,
+        label.toUpperCase(),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
           color: color,
-          fontSize: 10.5,
-          fontWeight: FontWeight.w800,
+          fontSize: 9,
+          fontWeight: FontWeight.w900,
         ),
       ),
     );
   }
 }
 
-/// Carnet de Formation — Actions Calypso inbox section.
-///
-/// Sits at the top of the Communication screen, BEFORE announcements and
-/// team channels. Surfaces all open formation_tasks where the user is
-/// `current_assignee_id`. Tapping a card opens the relevant flow
-/// (pool_checkin_screen for now; more in subsequent phases).
-///
-/// Tech doc reference : §11.1.
-class _ActionsCalypsoSection extends StatefulWidget {
-  const _ActionsCalypsoSection();
+class _CommunicationChatRow extends StatelessWidget {
+  final Widget avatar;
+  final String title;
+  final String sender;
+  final String preview;
+  final String timeLabel;
+  final String searchQuery;
+  final int unreadCount;
+  final String? tag;
+  final Color tagColor;
+  final VoidCallback onTap;
 
-  @override
-  State<_ActionsCalypsoSection> createState() => _ActionsCalypsoSectionState();
-}
-
-class _ActionsCalypsoSectionState extends State<_ActionsCalypsoSection> {
-  final FormationTaskService _service = FormationTaskService();
-
-  @override
-  Widget build(BuildContext context) {
-    final authProvider = context.watch<AuthProvider>();
-    final memberProvider = context.watch<MemberProvider>();
-    final userId = authProvider.currentUser?.uid;
-    if (userId == null) return const SizedBox.shrink();
-    final canScanHistoricalQr = PermissionHelper.canValidateLifras(
-      clubStatuten: memberProvider.clubStatuten,
-      plongeurCode: memberProvider.plongeurCode,
-    );
-
-    const clubId = FirebaseConfig.defaultClubId;
-
-    return StreamBuilder<List<FormationTask>>(
-      stream: _service.streamUserInbox(clubId, userId),
-      builder: (context, snapshot) {
-        final tasks = snapshot.data ?? const <FormationTask>[];
-
-        if (tasks.isEmpty && !canScanHistoricalQr) {
-          return const SizedBox.shrink();
-        }
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _SectionHeader(
-              icon: Icons.flag_outlined,
-              title: 'À traiter',
-              subtitle: canScanHistoricalQr
-                  ? 'Actions Calypso et validation papier'
-                  : 'Actions Calypso',
-              count: tasks.length,
-            ),
-            const SizedBox(height: 10),
-            if (canScanHistoricalQr)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 10),
-                child: _HistoricalQrScanActionCard(),
-              ),
-            ...tasks.map((task) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _ActionCalypsoCard(task: task),
-                )),
-            const SizedBox(height: 8),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _HistoricalQrScanActionCard extends StatelessWidget {
-  const _HistoricalQrScanActionCard();
+  const _CommunicationChatRow({
+    required this.avatar,
+    required this.title,
+    required this.sender,
+    required this.preview,
+    required this.timeLabel,
+    required this.onTap,
+    this.searchQuery = '',
+    this.unreadCount = 0,
+    this.tag,
+    this.tagColor = AppColors.middenblauw,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(16),
+      color: Colors.white,
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const HistoricalQrScanScreen()),
-        ),
-        child: Ink(
-          padding: const EdgeInsets.all(15),
-          decoration: _cardDecoration(),
+        onTap: onTap,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 68),
+          padding: const EdgeInsets.fromLTRB(14, 8, 12, 8),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: AppColors.donkerblauw.withValues(alpha: 0.08),
+              ),
+            ),
+          ),
           child: Row(
             children: [
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFD8B4FE), Color(0xFF7C3AED)],
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Icon(Icons.qr_code_scanner, color: Colors.white),
-              ),
-              const SizedBox(width: 12),
+              avatar,
+              const SizedBox(width: 11),
               Expanded(
                 child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Row(
+                    Row(
                       children: [
-                        _MiniPill(
-                          label: 'Validation',
-                          color: Color(0xFF7C3AED),
-                        ),
-                        SizedBox(width: 6),
-                        Text(
-                          'Aujourd\'hui',
-                          style: TextStyle(
-                            color: Color(0xFF64748B),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
+                        Expanded(
+                          child: Text.rich(
+                            TextSpan(
+                              children: _highlightSpans(
+                                title,
+                                searchQuery,
+                                const TextStyle(
+                                  color: AppColors.donkerblauw,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        if (tag != null) ...[
+                          const SizedBox(width: 6),
+                          Flexible(
+                            flex: 0,
+                            child: _CommunicationTag(
+                              label: tag!,
+                              color: tagColor,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
-                    const SizedBox(height: 7),
-                    const Text(
-                      'Scanner une carte papier',
-                      style: TextStyle(
-                        color: AppColors.donkerblauw,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
+                    const SizedBox(height: 4),
+                    Text.rich(
+                      TextSpan(
+                        children: [
+                          ..._highlightSpans(
+                            '$sender: ',
+                            searchQuery,
+                            const TextStyle(
+                              color: Color(0xFF3B4F68),
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          ..._highlightSpans(
+                            preview,
+                            searchQuery,
+                            const TextStyle(
+                              color: Color(0xFF64748B),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      'Scanne le QR de l’élève, puis contrôle sa carte avant validation.',
-                      maxLines: 2,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: AppColors.donkerblauw.withValues(alpha: 0.68),
-                        fontSize: 12.5,
-                        height: 1.25,
-                      ),
+                      style: const TextStyle(fontSize: 12.5),
                     ),
                   ],
                 ),
               ),
-              Icon(Icons.chevron_right, color: Colors.grey.shade500),
+              const SizedBox(width: 8),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    timeLabel,
+                    style: const TextStyle(
+                      color: Color(0xFF7A8AA0),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  if (unreadCount > 0)
+                    _UnreadBadge(count: unreadCount)
+                  else
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFC9D5E2),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                ],
+              ),
             ],
           ),
         ),
@@ -664,8 +620,75 @@ class _HistoricalQrScanActionCard extends StatelessWidget {
   }
 }
 
-class _PlannedExercisesSection extends StatelessWidget {
-  const _PlannedExercisesSection();
+class _UnreadBadge extends StatelessWidget {
+  final int count;
+  const _UnreadBadge({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 20),
+      height: 20,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      alignment: Alignment.center,
+      decoration: const BoxDecoration(
+        color: Color(0xFF25D366),
+        borderRadius: BorderRadius.all(Radius.circular(999)),
+      ),
+      child: Text(
+        count > 99 ? '99+' : '$count',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _AnnouncementChatRow extends StatelessWidget {
+  final int unreadCount;
+  final String searchQuery;
+
+  const _AnnouncementChatRow({
+    required this.unreadCount,
+    required this.searchQuery,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _CommunicationChatRow(
+      avatar: const _CommunicationAvatar(
+        icon: Icons.priority_high,
+        colors: [AppColors.oranje, Color(0xFFFFBF65)],
+      ),
+      title: 'Annonces du club',
+      sender: 'Club',
+      preview: unreadCount > 0
+          ? '$unreadCount nouveau${unreadCount > 1 ? 'x' : ''} à lire'
+          : 'Toutes les annonces sont lues',
+      timeLabel: unreadCount > 0 ? '12:41' : '08:17',
+      unreadCount: unreadCount,
+      searchQuery: searchQuery,
+      tag: 'Annonce',
+      tagColor: AppColors.oranje,
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) =>
+                AnnouncementsScreen(initialSearchQuery: searchQuery),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _LogbookConfirmationsInboxSection extends StatelessWidget {
+  final String searchQuery;
+
+  const _LogbookConfirmationsInboxSection({required this.searchQuery});
 
   @override
   Widget build(BuildContext context) {
@@ -676,538 +699,248 @@ class _PlannedExercisesSection extends StatelessWidget {
     final stream = FirebaseFirestore.instance
         .collection('clubs')
         .doc(clubId)
-        .collection('exercise_claims')
-        .where('member_id', isEqualTo: userId)
-        .where('status', isEqualTo: 'draft')
+        .collection('logbook_dive_confirmations')
+        .where('target_member_id', isEqualTo: userId)
+        .where('status', isEqualTo: 'pending')
         .snapshots();
 
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: stream,
       builder: (context, snapshot) {
-        if (snapshot.hasError) return const SizedBox.shrink();
-        final docs = snapshot.data?.docs ?? const [];
+        final docs = [...(snapshot.data?.docs ?? const [])];
         if (docs.isEmpty) return const SizedBox.shrink();
+        final visibleDocs = docs.where((doc) {
+          final data = doc.data();
+          final snapshot =
+              Map<String, dynamic>.from((data['dive_snapshot'] as Map?) ?? {});
+          final sourceName = data['source_member_name'] as String?;
+          final location = snapshot['location_name'] as String?;
+          return _matchesSearch(searchQuery, [
+            'Plongée avec ${sourceName ?? 'Un membre'}',
+            'Carnet',
+            location,
+            'confirmer',
+            'importer',
+            'ignorer',
+          ]);
+        }).toList();
+        if (visibleDocs.isEmpty) return const SizedBox.shrink();
 
-        final byOperation = <String, List<Map<String, dynamic>>>{};
-        for (final doc in docs) {
-          final data = {'id': doc.id, ...doc.data()};
-          final key =
-              (data['operation_id'] ?? data['palanquee_id'] ?? 'planned')
-                  .toString();
-          byOperation.putIfAbsent(key, () => []).add(data);
-        }
+        visibleDocs.sort((a, b) {
+          final aTs = a.data()['created_at'];
+          final bTs = b.data()['created_at'];
+          if (aTs is Timestamp && bTs is Timestamp) return bTs.compareTo(aTs);
+          return 0;
+        });
 
         return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const _SectionHeader(
-              icon: Icons.school_outlined,
-              title: 'Formation',
-              subtitle: 'Exercices prévus',
-            ),
-            const SizedBox(height: 10),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 18),
-              child: Container(
-                padding: const EdgeInsets.all(15),
-                decoration: _cardDecoration(),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        _MiniPill(
-                          label: 'Carnet',
-                          color: AppColors.middenblauw,
-                        ),
-                        SizedBox(width: 6),
-                        Text(
-                          'À confirmer après plongée',
-                          style: TextStyle(
-                            color: Color(0xFF64748B),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    const Row(
-                      children: [
-                        Icon(
-                          Icons.assignment_outlined,
-                          color: AppColors.middenblauw,
-                          size: 20,
-                        ),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Exercices prévus pour ta sortie',
-                            style: TextStyle(
-                              color: AppColors.donkerblauw,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      'Informatif: après la plongée, tu confirmeras dans ton carnet ce qui a vraiment été fait.',
-                      style: TextStyle(
-                        color: AppColors.donkerblauw.withValues(alpha: 0.68),
-                        fontSize: 12,
-                        height: 1.25,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    ...byOperation.entries.map((entry) {
-                      final claims = entry.value;
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (entry.key != 'planned')
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 6),
-                                child: Text(
-                                  'Sortie ${entry.key.length > 8 ? entry.key.substring(0, 8) : entry.key}',
-                                  style: TextStyle(
-                                    color: AppColors.donkerblauw
-                                        .withValues(alpha: 0.58),
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            Wrap(
-                              spacing: 7,
-                              runSpacing: 7,
-                              children: claims.map((claim) {
-                                final code = (claim['exercise_code'] ??
-                                        claim['exercise_id'] ??
-                                        '?')
-                                    .toString();
-                                final label =
-                                    claim['exercise_label']?.toString() ?? '';
-                                return Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 9,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFE6F6FD),
-                                    borderRadius: BorderRadius.circular(9),
-                                    border: Border.all(
-                                      color: AppColors.middenblauw
-                                          .withValues(alpha: 0.18),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    label.isEmpty ? code : '$code · $label',
-                                    style: const TextStyle(
-                                      color: AppColors.donkerblauw,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
-                  ],
+          children: visibleDocs
+              .map(
+                (doc) => _LogbookConfirmationChatRow(
+                  confirmationId: doc.id,
+                  data: doc.data(),
+                  searchQuery: searchQuery,
                 ),
-              ),
-            ),
-          ],
+              )
+              .toList(),
         );
       },
     );
   }
 }
 
-class _ActionCalypsoCard extends StatelessWidget {
-  final FormationTask task;
+class _LogbookConfirmationChatRow extends StatelessWidget {
+  final String confirmationId;
+  final Map<String, dynamic> data;
+  final String searchQuery;
 
-  const _ActionCalypsoCard({required this.task});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () => _open(context, task),
-      borderRadius: BorderRadius.circular(16),
-      child: Ink(
-        padding: const EdgeInsets.all(15),
-        decoration: _cardDecoration(),
-        child: Row(
-          children: [
-            _StatusGlyph(task: task),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      _MiniPill(
-                        label: task.typeLabel,
-                        color: AppColors.middenblauw,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        _statusLabel(task),
-                        style: TextStyle(
-                          color: AppColors.donkerblauw.withValues(alpha: 0.52),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 7),
-                  Text(
-                    task.title,
-                    style: const TextStyle(
-                      color: AppColors.donkerblauw,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  if (_subtitleFor(task).isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 3),
-                      child: Text(
-                        _subtitleFor(task),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: AppColors.donkerblauw.withValues(alpha: 0.68),
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            Icon(Icons.chevron_right, color: Colors.grey.shade500),
-          ],
-        ),
-      ),
-    );
-  }
-
-  static String _subtitleFor(FormationTask task) {
-    final parts = <String>[];
-    if (task.context.targetGroupLevel != null) {
-      parts.add(task.context.targetGroupLevel!);
-    }
-    if (task.context.operationTitle != null) {
-      parts.add(task.context.operationTitle!);
-    }
-    if (task.status == FormationTaskStatus.blocked) parts.add('bloquée');
-    if (task.status == FormationTaskStatus.snoozed) parts.add('reportée');
-    return parts.join(' · ');
-  }
-
-  static String _statusLabel(FormationTask task) {
-    if (task.status == FormationTaskStatus.blocked) return 'Bloquée';
-    if (task.status == FormationTaskStatus.snoozed) return 'Reportée';
-    return 'À traiter';
-  }
-
-  static void _open(BuildContext context, FormationTask task) {
-    switch (task.type) {
-      case FormationTaskType.poolCheckin:
-        Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => PoolCheckinScreen(task: task),
-        ));
-        break;
-      case FormationTaskType.monitorValidation:
-        Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => MonitorValidationScreen(task: task),
-        ));
-        break;
-      case FormationTaskType.logbookCompletion:
-        Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => LogbookEntryScreen.auto(task: task),
-        ));
-        break;
-      case FormationTaskType.historicalValidation:
-        Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) {
-            final batchId = task.context.historicalClaimBatchId;
-            if (batchId == null || batchId.isEmpty) {
-              return const HistoricalClaimsScreen();
-            }
-            if (task.currentAssigneeType == FormationTaskAssigneeType.monitor ||
-                task.currentAssigneeType ==
-                    FormationTaskAssigneeType.schoolResponsible) {
-              return HistoricalValidationScreen(batchId: batchId);
-            }
-            return HistoricalClaimQrScreen(batchId: batchId);
-          },
-        ));
-        break;
-      // Types that don't have a dedicated mobile screen yet — open the
-      // already-shipped web equivalent on caly.club. The student is already
-      // signed in via the same Firebase Auth account, so the deep link lands
-      // them directly on the form. Better UX than "bientôt disponible".
-      case FormationTaskType.monitorObservation:
-        _openOnWeb(context, task, 'observation');
-        break;
-      case FormationTaskType.externalProofReview:
-        _openOnWeb(context, task, 'external-proof-review');
-        break;
-      case FormationTaskType.exerciseClaim:
-        _openOnWeb(context, task, 'claim');
-        break;
-      case FormationTaskType.buddyConfirmation:
-        _openOnWeb(context, task, 'buddy-confirm');
-        break;
-      case FormationTaskType.eventPreparation:
-        _openOnWeb(context, task, 'event-prep');
-        break;
-      case FormationTaskType.manualReminder:
-        _openOnWeb(context, task, 'reminder');
-        break;
-      // Truly unknown future types stay friendly.
-      // ignore: unreachable_switch_default
-      default:
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action « ${task.typeLabel} » — bientôt disponible'),
-          ),
-        );
-    }
-  }
-
-  /// Open the web equivalent of a formation task on caly.club. Used for
-  /// task types that don't have a dedicated mobile screen yet. The path
-  /// segment matches the route slug declared in `CalyCompta/src/me/index.tsx`.
-  static Future<void> _openOnWeb(
-    BuildContext context,
-    FormationTask task,
-    String slug,
-  ) async {
-    final uri = Uri.parse('https://caly.club/me/inbox/${task.id}/$slug');
-    try {
-      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!ok && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Ouvre cette action sur caly.club — l\'écran mobile arrive bientôt.',
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Impossible d\'ouvrir caly.club ($e).')),
-      );
-    }
-  }
-}
-
-class _StatusGlyph extends StatelessWidget {
-  final FormationTask task;
-  const _StatusGlyph({required this.task});
+  const _LogbookConfirmationChatRow({
+    required this.confirmationId,
+    required this.data,
+    required this.searchQuery,
+  });
 
   @override
   Widget build(BuildContext context) {
-    // Color by task type, intensity by status.
-    final colors = _gradientFor(task);
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: colors,
-        ),
-        borderRadius: BorderRadius.circular(12),
+    final snapshot =
+        Map<String, dynamic>.from((data['dive_snapshot'] as Map?) ?? {});
+    final sourceName = data['source_member_name'] as String? ?? 'Un membre';
+    final location = (snapshot['location_name'] as String?) ?? 'Plongée';
+    final matchType = data['match_type'] as String? ?? 'none';
+
+    return _CommunicationChatRow(
+      avatar: _CommunicationAvatar(
+        icon: matchType == 'identical'
+            ? Icons.verified_outlined
+            : matchType == 'similar'
+                ? Icons.compare_arrows
+                : Icons.scuba_diving_outlined,
+        colors: const [Color(0xFFB875F2), Color(0xFF7C3AED)],
+        online: true,
       ),
-      alignment: Alignment.center,
-      child: Text(
-        task.glyph,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 17,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
-  }
-
-  static List<Color> _gradientFor(FormationTask task) {
-    if (task.status == FormationTaskStatus.blocked) {
-      return [const Color(0xFFFAB7B9), const Color(0xFFE5484D)];
-    }
-    if (task.status == FormationTaskStatus.snoozed) {
-      return [const Color(0xFFCBD5E1), const Color(0xFF94A3B8)];
-    }
-    switch (task.type) {
-      case FormationTaskType.poolCheckin:
-      case FormationTaskType.logbookCompletion:
-        return [const Color(0xFF6BCBE8), const Color(0xFF006DB6)];
-      case FormationTaskType.exerciseClaim:
-      case FormationTaskType.monitorValidation:
-        return [const Color(0xFFB8E2BC), const Color(0xFF4CAF50)];
-      case FormationTaskType.historicalValidation:
-        return [const Color(0xFFD8B4FE), const Color(0xFF7C3AED)];
-      case FormationTaskType.externalProofReview:
-        return [const Color(0xFFFCD9A6), const Color(0xFFF6921E)];
-      default:
-        return [const Color(0xFF94A3B8), const Color(0xFF475569)];
-    }
-  }
-}
-
-class _CountBadge extends StatelessWidget {
-  final int count;
-  const _CountBadge(this.count);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: AppColors.oranje,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text(
-        '$count',
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
-  }
-}
-
-class _AnnouncementsCard extends StatelessWidget {
-  final int unreadCount;
-
-  const _AnnouncementsCard({required this.unreadCount});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
+      title: 'Plongée avec $sourceName',
+      sender: 'Carnet',
+      preview: '$location · confirmer, importer ou ignorer',
+      timeLabel: _formatShortTime(_timestampToDateTime(data['created_at'])),
+      unreadCount: 1,
+      searchQuery: searchQuery,
+      tag: 'Action',
+      tagColor: const Color(0xFF0F6D36),
       onTap: () {
         Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const AnnouncementsScreen()),
+          MaterialPageRoute(
+            builder: (_) => LogbookDiveConfirmationScreen(
+              confirmationId: confirmationId,
+            ),
+          ),
         );
       },
-      borderRadius: BorderRadius.circular(16),
-      child: Ink(
-        padding: const EdgeInsets.all(16),
-        decoration: _cardDecoration(),
-        child: Row(
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  width: 50,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        AppColors.middenblauw.withValues(alpha: 0.24),
-                        AppColors.middenblauw.withValues(alpha: 0.08),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: AppColors.middenblauw.withValues(alpha: 0.18),
-                    ),
-                  ),
-                  child: const Icon(
-                    Icons.campaign,
-                    color: AppColors.middenblauw,
-                    size: 25,
-                  ),
-                ),
-                if (unreadCount > 0)
-                  const Positioned(
-                    top: -2,
-                    right: -2,
-                    child: _UnreadDot(),
-                  ),
-              ],
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const _MiniPill(
-                        label: 'Club',
-                        color: AppColors.middenblauw,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        unreadCount > 0 ? 'Non lu' : 'À jour',
-                        style: TextStyle(
-                          color: AppColors.donkerblauw.withValues(alpha: 0.52),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 7),
-                  const Text(
-                    'Annonces du club',
-                    style: TextStyle(
-                      color: AppColors.donkerblauw,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    unreadCount > 0
-                        ? '$unreadCount nouveau${unreadCount > 1 ? 'x' : ''}'
-                        : 'Toutes les annonces sont lues',
-                    style: TextStyle(
-                      color: AppColors.donkerblauw.withValues(alpha: 0.72),
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.chevron_right, color: Colors.grey.shade500),
-          ],
-        ),
+    );
+  }
+}
+
+class _ActionsCalypsoInboxSection extends StatefulWidget {
+  final _CommunicationFilter filter;
+  final String searchQuery;
+
+  const _ActionsCalypsoInboxSection({
+    required this.filter,
+    required this.searchQuery,
+  });
+
+  @override
+  State<_ActionsCalypsoInboxSection> createState() =>
+      _ActionsCalypsoInboxSectionState();
+}
+
+class _ActionsCalypsoInboxSectionState
+    extends State<_ActionsCalypsoInboxSection> {
+  final FormationTaskService _service = FormationTaskService();
+
+  @override
+  Widget build(BuildContext context) {
+    final authProvider = context.watch<AuthProvider>();
+    final memberProvider = context.watch<MemberProvider>();
+    final userId = authProvider.currentUser?.uid;
+    if (userId == null) return const SizedBox.shrink();
+
+    final canScanHistoricalQr = PermissionHelper.canValidateLifras(
+      clubStatuten: memberProvider.clubStatuten,
+      plongeurCode: memberProvider.plongeurCode,
+    );
+    const clubId = FirebaseConfig.defaultClubId;
+
+    return StreamBuilder<List<FormationTask>>(
+      stream: _service.streamUserInbox(clubId, userId),
+      builder: (context, snapshot) {
+        final tasks = snapshot.data ?? const <FormationTask>[];
+        final rows = <Widget>[];
+
+        if (canScanHistoricalQr &&
+            widget.filter != _CommunicationFilter.unread &&
+            _matchesSearch(widget.searchQuery, const [
+              'Scanner une carte papier',
+              'Validation',
+              'Contrôle une ancienne carte d’élève',
+              'QR',
+            ])) {
+          rows.add(_HistoricalQrScanChatRow(searchQuery: widget.searchQuery));
+        }
+
+        rows.addAll(
+          tasks
+              .where((task) => _formationTaskMatchesSearch(
+                    task,
+                    widget.searchQuery,
+                  ))
+              .map((task) => _FormationTaskChatRow(
+                    task: task,
+                    searchQuery: widget.searchQuery,
+                  )),
+        );
+
+        if (widget.filter == _CommunicationFilter.unread && rows.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        return Column(children: rows);
+      },
+    );
+  }
+}
+
+class _HistoricalQrScanChatRow extends StatelessWidget {
+  final String searchQuery;
+
+  const _HistoricalQrScanChatRow({required this.searchQuery});
+
+  @override
+  Widget build(BuildContext context) {
+    return _CommunicationChatRow(
+      avatar: const _CommunicationAvatar(
+        icon: Icons.qr_code_scanner,
+        colors: [Color(0xFFD8B4FE), Color(0xFF7C3AED)],
+        online: true,
+      ),
+      title: 'Scanner une carte papier',
+      sender: 'Validation',
+      preview: 'Contrôle une ancienne carte d’élève',
+      timeLabel: '11:08',
+      unreadCount: 1,
+      searchQuery: searchQuery,
+      tag: 'Action',
+      tagColor: const Color(0xFF0F6D36),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const HistoricalQrScanScreen()),
       ),
     );
   }
 }
 
-class _TeamChannelsSection extends StatelessWidget {
+class _FormationTaskChatRow extends StatelessWidget {
+  final FormationTask task;
+  final String searchQuery;
+
+  const _FormationTaskChatRow({
+    required this.task,
+    required this.searchQuery,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _CommunicationChatRow(
+      avatar: _CommunicationAvatar(
+        text: task.glyph,
+        colors: _formationTaskGradient(task),
+        online: task.status == FormationTaskStatus.open,
+      ),
+      title: task.title,
+      sender: task.typeLabel,
+      preview: _formationTaskSubtitle(task).isEmpty
+          ? _formationTaskStatusLabel(task)
+          : _formationTaskSubtitle(task),
+      timeLabel: _formatShortTime(task.updatedAt ?? task.createdAt),
+      unreadCount: 1,
+      searchQuery: searchQuery,
+      tag: 'Action',
+      tagColor: const Color(0xFF0F6D36),
+      onTap: () => _openFormationTask(context, task),
+    );
+  }
+}
+
+class _TeamChannelsInboxSection extends StatelessWidget {
+  final _CommunicationFilter filter;
+  final String searchQuery;
   final List<String> roles;
   final bool includeAllChannels;
   final String? plongeurCode;
   final String? targetFormationLevel;
   final TeamChannelService _channelService = TeamChannelService();
 
-  _TeamChannelsSection({
+  _TeamChannelsInboxSection({
+    required this.filter,
+    required this.searchQuery,
     required this.roles,
     required this.includeAllChannels,
     this.plongeurCode,
@@ -1227,39 +960,22 @@ class _TeamChannelsSection extends StatelessWidget {
         targetFormationLevel: targetFormationLevel,
       ),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.all(24),
-            child: Center(
-              child: CircularProgressIndicator(color: Colors.white),
-            ),
-          );
-        }
-
-        final channels = snapshot.data ?? [];
-        if (channels.isEmpty) {
-          return Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Text(
-              'Aucun canal disponible pour ce profil.',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.8),
-                fontSize: 14,
-              ),
-            ),
-          );
-        }
-
+        final channels = (snapshot.data ?? const <TeamChannel>[])
+            .where((channel) => _teamChannelMatchesSearch(
+                  channel,
+                  searchQuery,
+                ))
+            .toList();
+        if (channels.isEmpty) return const SizedBox.shrink();
         return Column(
           children: channels
-              .map((channel) => Padding(
-                    padding: const EdgeInsets.only(bottom: 14),
-                    child: _TeamChannelTile(channel: channel),
-                  ))
+              .map(
+                (channel) => _TeamChannelChatRow(
+                  channel: channel,
+                  hideIfRead: filter == _CommunicationFilter.unread,
+                  searchQuery: searchQuery,
+                ),
+              )
               .toList(),
         );
       },
@@ -1267,23 +983,42 @@ class _TeamChannelsSection extends StatelessWidget {
   }
 }
 
-class _TeamChannelTile extends StatelessWidget {
+class _TeamChannelChatRow extends StatelessWidget {
   final TeamChannel channel;
+  final bool hideIfRead;
+  final String searchQuery;
   static final UnreadCountService _unreadCountService = UnreadCountService();
 
-  const _TeamChannelTile({required this.channel});
+  const _TeamChannelChatRow({
+    required this.channel,
+    required this.hideIfRead,
+    required this.searchQuery,
+  });
 
   @override
   Widget build(BuildContext context) {
     const clubId = FirebaseConfig.defaultClubId;
-    final accentColor = _accentColorFor(channel.type);
+    final accentColor = _teamChannelAccentColor(channel.type);
 
     return FutureBuilder<int>(
       future: _unreadCountService.countUnreadForTeamChannel(clubId, channel.id),
       builder: (context, snapshot) {
         final unreadCount = snapshot.data ?? 0;
-
-        return InkWell(
+        if (hideIfRead && unreadCount == 0) return const SizedBox.shrink();
+        return _CommunicationChatRow(
+          avatar: _CommunicationAvatar(
+            icon: channel.type.iconData,
+            colors: [
+              accentColor.withValues(alpha: 0.80),
+              accentColor,
+            ],
+          ),
+          title: channel.name,
+          sender: channel.type.displayName,
+          preview: channel.description ?? channel.type.description,
+          timeLabel: unreadCount > 0 ? '10:22' : '09:55',
+          unreadCount: unreadCount,
+          searchQuery: searchQuery,
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute(
@@ -1291,151 +1026,298 @@ class _TeamChannelTile extends StatelessWidget {
               ),
             );
           },
-          borderRadius: BorderRadius.circular(16),
-          child: Ink(
-            padding: const EdgeInsets.all(16),
-            decoration: _cardDecoration(),
-            child: Row(
-              children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            accentColor.withValues(alpha: 0.24),
-                            accentColor.withValues(alpha: 0.08),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: accentColor.withValues(alpha: 0.18),
-                        ),
-                      ),
-                      alignment: Alignment.center,
-                      child: Icon(
-                        channel.type.iconData,
-                        color: accentColor,
-                        size: 24,
-                      ),
-                    ),
-                    if (unreadCount > 0)
-                      const Positioned(
-                        top: -2,
-                        right: -2,
-                        child: _UnreadDot(),
-                      ),
-                  ],
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: _MiniPill(
-                              label: channel.type.displayName,
-                              color: accentColor,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            unreadCount > 0
-                                ? '$unreadCount nouveau${unreadCount > 1 ? 'x' : ''}'
-                                : 'Canal actif',
-                            style: TextStyle(
-                              color:
-                                  AppColors.donkerblauw.withValues(alpha: 0.52),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 7),
-                      Text(
-                        channel.name,
-                        style: const TextStyle(
-                          color: AppColors.donkerblauw,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        channel.description ?? channel.type.description,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: AppColors.donkerblauw.withValues(alpha: 0.72),
-                          fontSize: 12.5,
-                          height: 1.35,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Icon(Icons.chevron_right, color: Colors.grey.shade500),
-              ],
-            ),
-          ),
         );
       },
     );
   }
+}
 
-  static Color _accentColorFor(TeamChannelType type) {
-    switch (type) {
-      case TeamChannelType.general:
-        return AppColors.middenblauw;
-      case TeamChannelType.ca:
-        return AppColors.oranje;
-      case TeamChannelType.accueil:
-        return const Color(0xFF0D9B8A);
-      case TeamChannelType.encadrants:
-        return const Color(0xFF4C6FFF);
-      case TeamChannelType.gonflage:
-        return const Color(0xFFE86B7A);
-      case TeamChannelType.bureau:
-        return const Color(0xFF7B5CE1);
-      case TeamChannelType.formation1:
-      case TeamChannelType.formation2:
-      case TeamChannelType.formation3:
-      case TeamChannelType.formation4:
-      case TeamChannelType.formationAM:
-        return const Color(0xFF0E8A75);
+String _formatShortTime(DateTime? date) {
+  final value = date ?? DateTime.now();
+  final hour = value.hour.toString().padLeft(2, '0');
+  final minute = value.minute.toString().padLeft(2, '0');
+  return '$hour:$minute';
+}
+
+DateTime? _timestampToDateTime(dynamic value) {
+  if (value is Timestamp) return value.toDate();
+  if (value is DateTime) return value;
+  return null;
+}
+
+bool _matchesSearch(String query, Iterable<String?> values) {
+  final needle = _normalizeSearch(query);
+  if (needle.isEmpty) return true;
+  return values
+      .where((value) => value != null && value.trim().isNotEmpty)
+      .map((value) => _normalizeSearch(value!))
+      .any((value) => value.contains(needle));
+}
+
+String _normalizeSearch(String value) {
+  return value
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'[àáâãäå]'), 'a')
+      .replaceAll(RegExp(r'[ç]'), 'c')
+      .replaceAll(RegExp(r'[èéêë]'), 'e')
+      .replaceAll(RegExp(r'[ìíîï]'), 'i')
+      .replaceAll(RegExp(r'[ñ]'), 'n')
+      .replaceAll(RegExp(r'[òóôõö]'), 'o')
+      .replaceAll(RegExp(r'[ùúûü]'), 'u')
+      .replaceAll(RegExp(r'[ýÿ]'), 'y')
+      .replaceAll(RegExp(r'\s+'), ' ');
+}
+
+List<TextSpan> _highlightSpans(
+  String text,
+  String query,
+  TextStyle baseStyle,
+) {
+  final needle = _normalizeSearch(query);
+  if (needle.isEmpty || text.isEmpty) {
+    return [TextSpan(text: text, style: baseStyle)];
+  }
+
+  final normalizedChars = <String>[];
+  final originalOffsets = <int>[];
+  var offset = 0;
+  for (final rune in text.runes) {
+    final char = String.fromCharCode(rune);
+    normalizedChars.add(_foldSearchChar(char));
+    originalOffsets.add(offset);
+    offset += char.length;
+  }
+
+  final normalizedText = normalizedChars.join();
+  final highlightStyle = baseStyle.copyWith(
+    color: AppColors.donkerblauw,
+    backgroundColor: const Color(0xFFFFE58A),
+    fontWeight: FontWeight.w900,
+  );
+
+  final spans = <TextSpan>[];
+  var normalizedIndex = 0;
+  var originalIndex = 0;
+
+  while (normalizedIndex < normalizedText.length) {
+    final matchIndex = normalizedText.indexOf(needle, normalizedIndex);
+    if (matchIndex < 0) break;
+
+    final matchEndIndex = matchIndex + needle.length - 1;
+    if (matchEndIndex >= originalOffsets.length) break;
+
+    final originalStart = originalOffsets[matchIndex];
+    final originalEndCharStart = originalOffsets[matchEndIndex];
+    final originalEnd = originalEndCharStart +
+        String.fromCharCode(text.runes.elementAt(matchEndIndex)).length;
+
+    if (originalStart > originalIndex) {
+      spans.add(TextSpan(
+        text: text.substring(originalIndex, originalStart),
+        style: baseStyle,
+      ));
     }
+    spans.add(TextSpan(
+      text: text.substring(originalStart, originalEnd),
+      style: highlightStyle,
+    ));
+
+    normalizedIndex = matchIndex + needle.length;
+    originalIndex = originalEnd;
+  }
+
+  if (originalIndex < text.length) {
+    spans.add(TextSpan(text: text.substring(originalIndex), style: baseStyle));
+  }
+
+  return spans.isEmpty ? [TextSpan(text: text, style: baseStyle)] : spans;
+}
+
+String _foldSearchChar(String char) {
+  final lower = char.toLowerCase();
+  if (RegExp(r'[àáâãäå]').hasMatch(lower)) return 'a';
+  if (lower == 'ç') return 'c';
+  if (RegExp(r'[èéêë]').hasMatch(lower)) return 'e';
+  if (RegExp(r'[ìíîï]').hasMatch(lower)) return 'i';
+  if (lower == 'ñ') return 'n';
+  if (RegExp(r'[òóôõö]').hasMatch(lower)) return 'o';
+  if (RegExp(r'[ùúûü]').hasMatch(lower)) return 'u';
+  if (RegExp(r'[ýÿ]').hasMatch(lower)) return 'y';
+  if (RegExp(r'\s').hasMatch(lower)) return ' ';
+  return lower;
+}
+
+bool _formationTaskMatchesSearch(FormationTask task, String query) {
+  return _matchesSearch(query, [
+    task.title,
+    task.description,
+    task.typeLabel,
+    _formationTaskSubtitle(task),
+    _formationTaskStatusLabel(task),
+    task.memberName,
+    task.currentAssigneeName,
+    task.context.operationTitle,
+    task.context.targetGroupLevel,
+  ]);
+}
+
+bool _teamChannelMatchesSearch(TeamChannel channel, String query) {
+  return _matchesSearch(query, [
+    channel.name,
+    channel.description,
+    channel.type.displayName,
+    channel.type.description,
+  ]);
+}
+
+String _formationTaskSubtitle(FormationTask task) {
+  final parts = <String>[];
+  if (task.context.targetGroupLevel != null) {
+    parts.add(task.context.targetGroupLevel!);
+  }
+  if (task.context.operationTitle != null) {
+    parts.add(task.context.operationTitle!);
+  }
+  if (task.status == FormationTaskStatus.blocked) parts.add('bloquée');
+  if (task.status == FormationTaskStatus.snoozed) parts.add('reportée');
+  return parts.join(' · ');
+}
+
+String _formationTaskStatusLabel(FormationTask task) {
+  if (task.status == FormationTaskStatus.blocked) return 'Bloquée';
+  if (task.status == FormationTaskStatus.snoozed) return 'Reportée';
+  return 'À traiter';
+}
+
+void _openFormationTask(BuildContext context, FormationTask task) {
+  switch (task.type) {
+    case FormationTaskType.poolCheckin:
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => PoolCheckinScreen(task: task),
+      ));
+      break;
+    case FormationTaskType.monitorValidation:
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => MonitorValidationScreen(task: task),
+      ));
+      break;
+    case FormationTaskType.logbookCompletion:
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => LogbookEntryScreen.auto(task: task),
+      ));
+      break;
+    case FormationTaskType.historicalValidation:
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) {
+          final batchId = task.context.historicalClaimBatchId;
+          if (batchId == null || batchId.isEmpty) {
+            return const HistoricalClaimsScreen();
+          }
+          if (task.currentAssigneeType == FormationTaskAssigneeType.monitor ||
+              task.currentAssigneeType ==
+                  FormationTaskAssigneeType.schoolResponsible) {
+            return HistoricalValidationScreen(batchId: batchId);
+          }
+          return HistoricalClaimQrScreen(batchId: batchId);
+        },
+      ));
+      break;
+    case FormationTaskType.monitorObservation:
+      _openFormationTaskOnWeb(context, task, 'observation');
+      break;
+    case FormationTaskType.externalProofReview:
+      _openFormationTaskOnWeb(context, task, 'external-proof-review');
+      break;
+    case FormationTaskType.exerciseClaim:
+      _openFormationTaskOnWeb(context, task, 'claim');
+      break;
+    case FormationTaskType.buddyConfirmation:
+      _openFormationTaskOnWeb(context, task, 'buddy-confirm');
+      break;
+    case FormationTaskType.eventPreparation:
+      _openFormationTaskOnWeb(context, task, 'event-prep');
+      break;
+    case FormationTaskType.manualReminder:
+      _openFormationTaskOnWeb(context, task, 'reminder');
+      break;
+    // ignore: unreachable_switch_default
+    default:
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Action « ${task.typeLabel} » — bientôt disponible'),
+        ),
+      );
   }
 }
 
-class _UnreadDot extends StatelessWidget {
-  const _UnreadDot();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 12,
-      height: 12,
-      decoration: BoxDecoration(
-        color: const Color(0xFFFF4D4F),
-        shape: BoxShape.circle,
-        border: Border.all(color: Colors.white, width: 2),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFFFF4D4F).withValues(alpha: 0.32),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+Future<void> _openFormationTaskOnWeb(
+  BuildContext context,
+  FormationTask task,
+  String slug,
+) async {
+  final uri = Uri.parse('https://caly.club/me/inbox/${task.id}/$slug');
+  try {
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Ouvre cette action sur caly.club — l\'écran mobile arrive bientôt.',
           ),
-        ],
-      ),
+        ),
+      );
+    }
+  } catch (e) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Impossible d\'ouvrir caly.club ($e).')),
     );
+  }
+}
+
+List<Color> _formationTaskGradient(FormationTask task) {
+  if (task.status == FormationTaskStatus.blocked) {
+    return [const Color(0xFFFAB7B9), const Color(0xFFE5484D)];
+  }
+  if (task.status == FormationTaskStatus.snoozed) {
+    return [const Color(0xFFCBD5E1), const Color(0xFF94A3B8)];
+  }
+  switch (task.type) {
+    case FormationTaskType.poolCheckin:
+    case FormationTaskType.logbookCompletion:
+      return [const Color(0xFF6BCBE8), const Color(0xFF006DB6)];
+    case FormationTaskType.exerciseClaim:
+    case FormationTaskType.monitorValidation:
+      return [const Color(0xFFB8E2BC), const Color(0xFF4CAF50)];
+    case FormationTaskType.historicalValidation:
+      return [const Color(0xFFD8B4FE), const Color(0xFF7C3AED)];
+    case FormationTaskType.externalProofReview:
+      return [const Color(0xFFFCD9A6), const Color(0xFFF6921E)];
+    default:
+      return [const Color(0xFF94A3B8), const Color(0xFF475569)];
+  }
+}
+
+Color _teamChannelAccentColor(TeamChannelType type) {
+  switch (type) {
+    case TeamChannelType.general:
+      return AppColors.middenblauw;
+    case TeamChannelType.ca:
+      return AppColors.oranje;
+    case TeamChannelType.accueil:
+      return const Color(0xFF0D9B8A);
+    case TeamChannelType.encadrants:
+      return const Color(0xFF4C6FFF);
+    case TeamChannelType.gonflage:
+      return const Color(0xFFE86B7A);
+    case TeamChannelType.bureau:
+      return const Color(0xFF7B5CE1);
+    case TeamChannelType.formation1:
+    case TeamChannelType.formation2:
+    case TeamChannelType.formation3:
+    case TeamChannelType.formation4:
+    case TeamChannelType.formationAM:
+      return const Color(0xFF0E8A75);
   }
 }

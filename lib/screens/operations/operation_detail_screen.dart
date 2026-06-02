@@ -1790,7 +1790,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                                     const SizedBox(width: 6),
                                     Flexible(
                                       child: Text(
-                                        'Responsable : $responsableNom',
+                                        'Res. : $responsableNom',
                                         style: const TextStyle(
                                             fontSize: 14, color: Colors.white),
                                       ),
@@ -1921,59 +1921,65 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   Widget _buildCompactHeader(operation) {
     final deadline = operation.effectiveDeadline as DateTime?;
     final deadlinePassed = deadline != null && DateTime.now().isAfter(deadline);
-    return Row(
-      children: [
-        // Date + uur — gebruikt formatDayMonth (zonder jaar) zodat de
-        // header op smalle schermen niet wraps. Het jaar staat sowieso
-        // ergens anders in de detail-content.
-        if (operation.dateDebut != null) ...[
-          const Icon(Icons.calendar_today, size: 18, color: Colors.white70),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Text(
-              '${DateFormatter.formatDayMonth(operation.dateDebut!)} '
-              '${DateFormatter.formatTime(operation.dateDebut!)}',
-              style: const TextStyle(fontSize: 14, color: Colors.white),
-              overflow: TextOverflow.ellipsis,
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        Widget metaItem({
+          required IconData icon,
+          required String text,
+          required TextStyle style,
+          Color iconColor = Colors.white70,
+        }) {
+          return ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 18, color: iconColor),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    text,
+                    style: style,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
+          );
+        }
 
-        // Separator
-        if (operation.dateDebut != null && deadline != null) ...[
-          const SizedBox(width: 16),
-          const Text('|', style: TextStyle(color: Colors.white54)),
-          const SizedBox(width: 16),
-        ],
-
-        // Date butoir d'inscription — toont aan het lid tot wanneer hij
-        // nog kan inschrijven / wijzigen / uitschrijven via CalyMob.
-        // Wordt rood/oranje getekend wanneer de deadline gepasseerd is.
-        if (deadline != null) ...[
-          Icon(
-            Icons.lock_clock,
-            size: 18,
-            color: deadlinePassed ? Colors.orangeAccent : Colors.white70,
-          ),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Text(
-              deadlinePassed
-                  ? 'Clôturé'
-                  : 'Inscr. avant '
-                      '${DateFormatter.formatDayMonthShort(deadline)} '
-                      '${DateFormatter.formatTime(deadline)}',
-              style: TextStyle(
-                fontSize: 13,
-                color: deadlinePassed ? Colors.orangeAccent : Colors.white,
-                fontWeight:
-                    deadlinePassed ? FontWeight.w600 : FontWeight.normal,
+        return Wrap(
+          spacing: 18,
+          runSpacing: 6,
+          children: [
+            if (operation.dateDebut != null)
+              metaItem(
+                icon: Icons.calendar_today,
+                text: '${DateFormatter.formatDayMonth(operation.dateDebut!)} '
+                    '${DateFormatter.formatTime(operation.dateDebut!)}',
+                style: const TextStyle(fontSize: 14, color: Colors.white),
               ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ],
+            if (deadline != null)
+              metaItem(
+                icon: Icons.lock_clock,
+                iconColor:
+                    deadlinePassed ? Colors.orangeAccent : Colors.white70,
+                text: deadlinePassed
+                    ? 'Clôturé'
+                    : 'Inscr. '
+                        '${DateFormatter.formatDayMonthShort(deadline)} '
+                        '${DateFormatter.formatTime(deadline)}',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: deadlinePassed ? Colors.orangeAccent : Colors.white,
+                  fontWeight:
+                      deadlinePassed ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -1983,13 +1989,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   Widget _buildPriceAndLevel(operation) {
     // Calculate the user's price based on their function
     double? userPrice;
-    String? userFunction;
     if (_userProfile != null) {
       userPrice = TariffUtils.computeRegistrationPrice(
         operation: operation,
         profile: _userProfile!,
       );
-      userFunction = TariffUtils.getFunctionLabel(_userProfile!);
     }
 
     // Display price: use calculated price if available, else legacy prixMembre
@@ -2025,26 +2029,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          // Show function if different from default
-          if (userFunction != null && userFunction != 'Membre') ...[
-            const SizedBox(width: 4),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-              decoration: BoxDecoration(
-                color: AppColors.lichtblauw.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                userFunction,
-                style: const TextStyle(
-                  fontSize: 10,
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
         ] else if (displayPrice == null || displayPrice == 0) ...[
           const Icon(Icons.check_circle_outline,
               size: 18, color: Colors.white70),

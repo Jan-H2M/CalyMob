@@ -21,9 +21,10 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   static const _lastLoginEmailKey = 'calymob_last_login_email';
+  static const _defaultLoginEmail = 'jan@andriessens.be';
 
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
+  final _emailController = TextEditingController(text: _defaultLoginEmail);
   final _passwordController = TextEditingController();
   final String _clubId = FirebaseConfig.defaultClubId;
   final BiometricService _biometricService = BiometricService();
@@ -50,9 +51,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final prefs = await SharedPreferences.getInstance();
     final lastEmail = prefs.getString(_lastLoginEmailKey);
-    if (!mounted || lastEmail == null || lastEmail.isEmpty) return;
+    if (!mounted) return;
 
-    _emailController.text = lastEmail;
+    _emailController.text =
+        lastEmail == null || lastEmail.isEmpty ? _defaultLoginEmail : lastEmail;
   }
 
   Future<void> _saveLastLoginEmail(String email) async {

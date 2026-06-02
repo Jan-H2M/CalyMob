@@ -1,10 +1,8 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import '../../config/app_assets.dart';
 import '../../models/announcement.dart';
 import '../../models/announcement_reply.dart';
 import '../../models/session_message.dart' show MessageAttachment;
@@ -12,6 +10,7 @@ import '../../widgets/message_hover_caret.dart';
 import '../../models/event_message.dart' show ReplyPreview;
 import '../../services/announcement_service.dart';
 import '../../services/local_read_tracker.dart';
+import '../../utils/search_highlight.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/unread_count_provider.dart';
 import '../../widgets/attachment_display.dart';
@@ -23,15 +22,18 @@ import '../../widgets/ocean/ocean_gradient_background.dart';
 class AnnouncementDetailScreen extends StatefulWidget {
   final Announcement announcement;
   final String clubId;
+  final String initialSearchQuery;
 
   const AnnouncementDetailScreen({
     super.key,
     required this.announcement,
     required this.clubId,
+    this.initialSearchQuery = '',
   });
 
   @override
-  State<AnnouncementDetailScreen> createState() => _AnnouncementDetailScreenState();
+  State<AnnouncementDetailScreen> createState() =>
+      _AnnouncementDetailScreenState();
 }
 
 class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
@@ -75,15 +77,14 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
     // pour pouvoir afficher le divider "Nouveaux messages"
     final tracker = LocalReadTracker();
     await tracker.init();
-    if (_lastReadBeforeOpen == null) {
-      _lastReadBeforeOpen = tracker.getLastRead('announcements')
-          ?? tracker.installBaseline
-          ?? DateTime(2024);
-    }
+    _lastReadBeforeOpen ??= tracker.getLastRead('announcements') ??
+        tracker.installBaseline ??
+        DateTime(2024);
     await tracker.markAsRead('announcements');
 
     if (mounted) {
-      final unreadProvider = Provider.of<UnreadCountProvider>(context, listen: false);
+      final unreadProvider =
+          Provider.of<UnreadCountProvider>(context, listen: false);
       await unreadProvider.refresh();
     }
   }
@@ -105,7 +106,8 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
       if (_pendingAttachments.isNotEmpty) {
         attachments = [];
         for (final pending in _pendingAttachments) {
-          final attachment = await _announcementService.uploadAnnouncementAttachment(
+          final attachment =
+              await _announcementService.uploadAnnouncementAttachment(
             clubId: widget.clubId,
             announcementId: widget.announcement.id,
             file: pending.file,
@@ -217,7 +219,8 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
                 child: Row(
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                      icon: const Icon(Icons.arrow_back,
+                          color: Colors.white, size: 28),
                       onPressed: () => Navigator.pop(context),
                     ),
                     const Expanded(
@@ -245,9 +248,11 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
                           announcementId: widget.announcement.id,
                         ),
                         builder: (context, snapshot) {
-                          debugPrint('🔵 StreamBuilder state: ${snapshot.connectionState}, hasData: ${snapshot.hasData}, hasError: ${snapshot.hasError}');
+                          debugPrint(
+                              '🔵 StreamBuilder state: ${snapshot.connectionState}, hasData: ${snapshot.hasData}, hasError: ${snapshot.hasError}');
                           if (snapshot.hasError) {
-                            debugPrint('❌ StreamBuilder error: ${snapshot.error}');
+                            debugPrint(
+                                '❌ StreamBuilder error: ${snapshot.error}');
                           }
 
                           // Use cached replies while waiting for stream data to prevent flickering
@@ -256,15 +261,18 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
                             // Detect new replies arriving while screen is open
                             // _lastKnownReplyCount > 0 prevents double-trigger on initial load
                             // (initState already calls _markAsRead)
-                            if (newReplies.length > _lastKnownReplyCount && _lastKnownReplyCount > 0) {
-                              debugPrint('🔔 New replies detected (${_lastKnownReplyCount} → ${newReplies.length}), re-marking as read');
+                            if (newReplies.length > _lastKnownReplyCount &&
+                                _lastKnownReplyCount > 0) {
+                              debugPrint(
+                                  '🔔 New replies detected ($_lastKnownReplyCount → ${newReplies.length}), re-marking as read');
                               WidgetsBinding.instance.addPostFrameCallback((_) {
                                 _markAsRead();
                               });
                             }
                             _lastKnownReplyCount = newReplies.length;
                             _cachedReplies = newReplies;
-                            debugPrint('📝 Updated cache with ${_cachedReplies.length} replies');
+                            debugPrint(
+                                '📝 Updated cache with ${_cachedReplies.length} replies');
 
                             // Premier rendu avec données : scroll vers la première
                             // communication non-lue (divider "Nouveaux messages") ;
@@ -277,13 +285,16 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
                             }
                           }
                           final replies = _cachedReplies;
-                          debugPrint('📋 Displaying ${replies.length} replies (cached: ${_cachedReplies.length})');
+                          debugPrint(
+                              '📋 Displaying ${replies.length} replies (cached: ${_cachedReplies.length})');
 
                           // Chercher l'index du premier reply non lu
                           int? newMessagesDividerIndex;
                           if (_lastReadBeforeOpen != null) {
                             for (int i = 0; i < replies.length; i++) {
-                              if (replies[i].createdAt.isAfter(_lastReadBeforeOpen!)) {
+                              if (replies[i]
+                                  .createdAt
+                                  .isAfter(_lastReadBeforeOpen!)) {
                                 newMessagesDividerIndex = i;
                                 break;
                               }
@@ -293,11 +304,13 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
                           // Calculer le nombre total d'items (header + replies + divider éventuel)
                           final hasNewDivider = newMessagesDividerIndex != null;
                           // +1 for header at index 0
-                          final totalItems = 1 + replies.length + (hasNewDivider ? 1 : 0);
+                          final totalItems =
+                              1 + replies.length + (hasNewDivider ? 1 : 0);
 
                           return ListView.builder(
                             controller: _scrollController,
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 8),
                             itemCount: totalItems,
                             itemBuilder: (context, index) {
                               // First item is the announcement header
@@ -309,18 +322,22 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
                               final replyIndex = index - 1;
 
                               // Insérer le divider "Nouveaux messages" à la bonne position
-                              if (hasNewDivider && replyIndex == newMessagesDividerIndex) {
+                              if (hasNewDivider &&
+                                  replyIndex == newMessagesDividerIndex) {
                                 return _buildNewMessagesDivider();
                               }
 
                               // Ajuster l'index pour les replies après le divider
-                              final actualReplyIndex = hasNewDivider && replyIndex > newMessagesDividerIndex!
+                              final actualReplyIndex = hasNewDivider &&
+                                      replyIndex > newMessagesDividerIndex!
                                   ? replyIndex - 1
                                   : replyIndex;
 
                               final reply = replies[actualReplyIndex];
-                              final isOwnReply = reply.senderId == currentUserId;
-                              return _buildReplyBubble(reply, isOwnReply, dateFormat);
+                              final isOwnReply =
+                                  reply.senderId == currentUserId;
+                              return _buildReplyBubble(
+                                  reply, isOwnReply, dateFormat);
                             },
                           );
                         },
@@ -340,15 +357,28 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
   }
 
   Widget _buildAnnouncementHeader(DateFormat dateFormat) {
+    final query = widget.initialSearchQuery.trim();
+    const titleStyle = TextStyle(
+      fontSize: 20,
+      fontWeight: FontWeight.bold,
+      color: Colors.black87,
+    );
+    const messageStyle = TextStyle(
+      fontSize: 15,
+      color: Colors.black87,
+      height: 1.4,
+    );
+    final footerStyle = TextStyle(fontSize: 13, color: Colors.grey[600]);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.95),
+        color: Colors.white.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -361,9 +391,10 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: _getTypeColor().withOpacity(0.1),
+                  color: _getTypeColor().withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
@@ -387,25 +418,33 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
           const SizedBox(height: 12),
 
           // Title
-          Text(
-            widget.announcement.title,
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
+          Text.rich(
+            TextSpan(
+              children: searchHighlightSpans(
+                widget.announcement.title,
+                query,
+                titleStyle,
+              ),
             ),
           ),
           const SizedBox(height: 8),
 
           // Message
-          LinkifiedMessageText(
-            text: widget.announcement.message,
-            style: const TextStyle(
-              fontSize: 15,
-              color: Colors.black87,
-              height: 1.4,
+          if (query.isEmpty)
+            LinkifiedMessageText(
+              text: widget.announcement.message,
+              style: messageStyle,
+            )
+          else
+            Text.rich(
+              TextSpan(
+                children: searchHighlightSpans(
+                  widget.announcement.message,
+                  query,
+                  messageStyle,
+                ),
+              ),
             ),
-          ),
 
           // Attachments
           if (widget.announcement.hasAttachments) ...[
@@ -421,16 +460,21 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
             children: [
               Icon(Icons.person_outline, size: 16, color: Colors.grey[600]),
               const SizedBox(width: 4),
-              Text(
-                widget.announcement.senderName,
-                style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+              Text.rich(
+                TextSpan(
+                  children: searchHighlightSpans(
+                    widget.announcement.senderName,
+                    query,
+                    footerStyle,
+                  ),
+                ),
               ),
               const SizedBox(width: 16),
               Icon(Icons.access_time, size: 16, color: Colors.grey[600]),
               const SizedBox(width: 4),
               Text(
                 dateFormat.format(widget.announcement.createdAt),
-                style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                style: footerStyle,
               ),
               const Spacer(),
             ],
@@ -495,80 +539,114 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
     }
   }
 
-  Widget _buildReplyBubble(AnnouncementReply reply, bool isOwnReply, DateFormat dateFormat) {
+  Widget _buildReplyBubble(
+      AnnouncementReply reply, bool isOwnReply, DateFormat dateFormat) {
+    final query = widget.initialSearchQuery.trim();
+    const senderStyle = TextStyle(
+      fontSize: 12,
+      fontWeight: FontWeight.bold,
+      color: Colors.black87,
+    );
+    const messageStyle = TextStyle(fontSize: 15, color: Colors.black87);
+
     return MessageHoverCaret(
       onTap: () => _showReplyOptions(reply),
       alignEnd: isOwnReply,
       child: GestureDetector(
         onLongPress: () => _showReplyOptions(reply),
         child: Align(
-        alignment: isOwnReply ? Alignment.centerRight : Alignment.centerLeft,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.75,
-          ),
-          decoration: BoxDecoration(
-            color: isOwnReply ? Colors.blue[100] : Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 5,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (!isOwnReply)
-                Text(
-                  reply.senderName,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
+          alignment: isOwnReply ? Alignment.centerRight : Alignment.centerLeft,
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.75,
+            ),
+            decoration: BoxDecoration(
+              color: isOwnReply ? Colors.blue[100] : Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 5,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (!isOwnReply)
+                  Text.rich(
+                    TextSpan(
+                      children: searchHighlightSpans(
+                        reply.senderName,
+                        query,
+                        senderStyle,
+                      ),
+                    ),
                   ),
+                if (!isOwnReply) const SizedBox(height: 4),
+
+                // Reply preview
+                if (reply.isReply && reply.replyToPreview != null)
+                  _buildReplyPreviewWidget(reply.replyToPreview!),
+
+                // Message
+                if (reply.message.isNotEmpty)
+                  if (query.isEmpty)
+                    LinkifiedMessageText(
+                      text: reply.message,
+                      style: messageStyle,
+                    )
+                  else
+                    Text.rich(
+                      TextSpan(
+                        children: searchHighlightSpans(
+                          reply.message,
+                          query,
+                          messageStyle,
+                        ),
+                      ),
+                    ),
+
+                // Attachments
+                if (reply.hasAttachments)
+                  AttachmentDisplay(
+                      attachments: reply.attachments, compact: true),
+
+                // Footer
+                const SizedBox(height: 4),
+                Text(
+                  DateFormat('HH:mm').format(reply.createdAt),
+                  style: TextStyle(fontSize: 11, color: Colors.grey[600]),
                 ),
-              if (!isOwnReply) const SizedBox(height: 4),
-
-              // Reply preview
-              if (reply.isReply && reply.replyToPreview != null)
-                _buildReplyPreviewWidget(reply.replyToPreview!),
-
-              // Message
-              if (reply.message.isNotEmpty)
-                LinkifiedMessageText(
-                  text: reply.message,
-                  style: const TextStyle(fontSize: 15, color: Colors.black87),
-                ),
-
-              // Attachments
-              if (reply.hasAttachments)
-                AttachmentDisplay(attachments: reply.attachments, compact: true),
-
-              // Footer
-              const SizedBox(height: 4),
-              Text(
-                DateFormat('HH:mm').format(reply.createdAt),
-                style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
 
   Widget _buildReplyPreviewWidget(ReplyPreview preview) {
+    final query = widget.initialSearchQuery.trim();
+    final senderStyle = TextStyle(
+      fontSize: 11,
+      fontWeight: FontWeight.bold,
+      color: Colors.blue.shade700,
+    );
+    final previewStyle = TextStyle(
+      fontSize: 12,
+      color: Colors.grey[700],
+      fontStyle: FontStyle.italic,
+    );
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.05),
+        color: Colors.black.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(8),
         border: Border(
           left: BorderSide(color: Colors.blue.shade400, width: 3),
@@ -577,21 +655,23 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            preview.senderName,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              color: Colors.blue.shade700,
+          Text.rich(
+            TextSpan(
+              children: searchHighlightSpans(
+                preview.senderName,
+                query,
+                senderStyle,
+              ),
             ),
           ),
           const SizedBox(height: 2),
-          Text(
-            preview.messagePreview,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[700],
-              fontStyle: FontStyle.italic,
+          Text.rich(
+            TextSpan(
+              children: searchHighlightSpans(
+                preview.messagePreview,
+                query,
+                previewStyle,
+              ),
             ),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
@@ -674,9 +754,8 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
         newUploaded.add(uploaded);
       }
 
-      final keptIds = result.keptAttachments
-          .map((a) => a.storagePath ?? a.url)
-          .toSet();
+      final keptIds =
+          result.keptAttachments.map((a) => a.storagePath ?? a.url).toSet();
       final removed = reply.attachments
           .where((a) => !keptIds.contains(a.storagePath ?? a.url))
           .toList();
@@ -711,7 +790,8 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
 
   void _showReplyOptions(AnnouncementReply reply) {
     final currentUserId =
-        Provider.of<AuthProvider>(context, listen: false).currentUser?.uid ?? '';
+        Provider.of<AuthProvider>(context, listen: false).currentUser?.uid ??
+            '';
     final isOwn = reply.senderId == currentUserId;
 
     showModalBottomSheet(
@@ -753,8 +833,7 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
                 ),
               if (isOwn)
                 ListTile(
-                  leading:
-                      const Icon(Icons.delete_outline, color: Colors.red),
+                  leading: const Icon(Icons.delete_outline, color: Colors.red),
                   title: const Text(
                     'Supprimer',
                     style: TextStyle(color: Colors.red),
@@ -777,7 +856,8 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
     final bottomPadding = keyboardHeight > 0 ? keyboardHeight : bottomSafeArea;
 
     return Container(
-      padding: EdgeInsets.only(left: 8, right: 8, top: 8, bottom: 8 + bottomPadding),
+      padding:
+          EdgeInsets.only(left: 8, right: 8, top: 8, bottom: 8 + bottomPadding),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(top: BorderSide(color: Colors.grey[300]!)),
@@ -795,12 +875,15 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
                   controller: _messageController,
                   textCapitalization: TextCapitalization.sentences,
                   decoration: InputDecoration(
-                    hintText: _replyingTo != null ? 'Repondre...' : 'Votre message...',
+                    hintText: _replyingTo != null
+                        ? 'Repondre...'
+                        : 'Votre message...',
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(24),
                       borderSide: BorderSide(color: Colors.grey[300]!),
                     ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
                   ),
                   maxLines: null,
                   textInputAction: TextInputAction.send,
