@@ -74,6 +74,9 @@ class FormationTaskContext {
   final String? attendeeId;
   final String? levelCourseId;
   final String? targetGroupLevel;
+  final String? groupKey;
+  final String? themeSnapshot;
+  final String? level;
   final List<String> candidateValidatorIds;
   final String? logbookEntryId;
   final String? exerciseClaimId;
@@ -88,6 +91,9 @@ class FormationTaskContext {
     this.attendeeId,
     this.levelCourseId,
     this.targetGroupLevel,
+    this.groupKey,
+    this.themeSnapshot,
+    this.level,
     this.candidateValidatorIds = const [],
     this.logbookEntryId,
     this.exerciseClaimId,
@@ -105,6 +111,9 @@ class FormationTaskContext {
       attendeeId: map['attendee_id'],
       levelCourseId: map['level_course_id'],
       targetGroupLevel: map['target_group_level'],
+      groupKey: map['group_key'],
+      themeSnapshot: map['theme_snapshot'],
+      level: map['level'],
       candidateValidatorIds:
           (map['candidate_validator_ids'] as List?)?.cast<String>() ?? const [],
       logbookEntryId: map['logbook_entry_id'],

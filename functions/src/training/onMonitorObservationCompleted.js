@@ -3,8 +3,8 @@
  *
  * Trigger : onDocumentUpdated `clubs/{clubId}/formation_tasks/{taskId}`
  *
- * When a `monitor_observation` task transitions from any non-completed
- * state to `completed`, materialise the verdict into a permanent
+ * When a `monitor_observation` task transitions from any non-done state
+ * to `done`, materialise the verdict into a permanent
  * `member_observations` record. Without this, the verdict only lives in
  * `task.completion_data` and is invisible to the student's progression
  * view — which is exactly the audit blocker #2 from 2026-05-14.
@@ -49,8 +49,8 @@ const onMonitorObservationCompleted = onDocumentUpdated(
 
     // Only react to monitor_observation completions
     if (after.type !== 'monitor_observation') return;
-    if (before.status === 'completed') return;
-    if (after.status !== 'completed') return;
+    if (before.status === 'done' || before.status === 'completed') return;
+    if (after.status !== 'done' && after.status !== 'completed') return;
 
     const completion = after.completion_data || {};
     const verdict = String(completion.verdict || '').toLowerCase();

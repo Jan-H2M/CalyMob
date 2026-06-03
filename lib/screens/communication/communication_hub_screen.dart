@@ -24,6 +24,7 @@ import '../training/logbook_dive_confirmation_screen.dart';
 import '../training/historical_claims_screen.dart';
 import '../training/historical_qr_scan_screen.dart';
 import '../training/historical_validation_screen.dart';
+import '../training/monitor_observation_screen.dart';
 
 enum _CommunicationFilter {
   all('Tout', Icons.forum_outlined),
@@ -1224,7 +1225,9 @@ void _openFormationTask(BuildContext context, FormationTask task) {
       ));
       break;
     case FormationTaskType.monitorObservation:
-      _openFormationTaskOnWeb(context, task, 'observation');
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => MonitorObservationScreen(task: task),
+      ));
       break;
     case FormationTaskType.externalProofReview:
       _openFormationTaskOnWeb(context, task, 'external-proof-review');
