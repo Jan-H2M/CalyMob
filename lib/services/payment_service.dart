@@ -79,7 +79,7 @@ class PaymentService {
       CrashlyticsService.paymentError(e, stack, 'sendPaymentQrEmail CF error ${e.code}');
       debugPrint('❌ Firebase Functions error: ${e.code} - ${e.message}');
       throw PaymentException(
-        _getFriendlyErrorMessage(e.code),
+        _getFriendlyErrorMessage(e.code, message: e.message),
         code: e.code,
         details: e.details,
       );
@@ -195,7 +195,11 @@ class PaymentService {
   }
 
   /// Converts Firebase error codes to user-friendly messages
-  String _getFriendlyErrorMessage(String code) {
+  String _getFriendlyErrorMessage(String code, {String? message}) {
+    if (message != null && message.trim().isNotEmpty) {
+      return message;
+    }
+
     switch (code) {
       case 'unauthenticated':
         return 'Vous devez etre connecte pour effectuer un paiement';

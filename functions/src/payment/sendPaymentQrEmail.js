@@ -601,6 +601,12 @@ async function sendPaymentEmailForMember(db, input) {
   if (aggregation) {
     console.log(`📧 [sendPaymentQrEmail] Aggregated amount: ${amount}€ (parent ${aggregation.parentAmount}€ + ${aggregation.guests.length} guests ${aggregation.guestSubtotal}€). Client sent ${clientAmount}€.`);
   }
+  if (typeof amount !== 'number' || amount <= 0) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Cette inscription est gratuite. Aucun paiement n’est nécessaire.'
+    );
+  }
 
   // 1. Get bank settings
   const bankSettingsDoc = await db.collection('clubs').doc(clubId)
@@ -818,14 +824,10 @@ const sendPaymentQrEmail = onCall(
     const db = admin.firestore();
 
     // Validate input
-    const { clubId, operationId, memberEmail, amount, operationTitle } = request.data;
+    const { clubId, operationId, memberEmail, operationTitle } = request.data;
 
-    if (!clubId || !operationId || !memberEmail || !amount || !operationTitle) {
+    if (!clubId || !operationId || !memberEmail || !operationTitle) {
       throw new HttpsError('invalid-argument', 'Missing required fields');
-    }
-
-    if (typeof amount !== 'number' || amount <= 0) {
-      throw new HttpsError('invalid-argument', 'Amount must be a positive number');
     }
 
     try {

@@ -13,7 +13,7 @@ import '../../providers/member_provider.dart';
 import '../../services/operation_service.dart';
 
 /// Écran d'édition d'un événement existant
-/// Accessible uniquement par le créateur de l'événement (organisateur_id)
+/// Accessible par le créateur original, le responsable actuel ou un admin.
 /// Fonctionnalités: édition titre/description/dates/capacité/statut + gestion tarifs
 class EditEventScreen extends StatefulWidget {
   final Operation operation;

@@ -98,10 +98,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     return creatorId != null && creatorId == currentUserId;
   }
 
-  /// Check if the current user can edit the responsable (and other event
-  /// settings). Admins can always edit; otherwise only the original creator.
+  /// Check if the current user can edit event settings. Admins can always edit;
+  /// otherwise the original creator or current responsable can edit.
   bool _canEditEvent(Operation operation) {
     if (_isCurrentUserCreator(operation)) return true;
+    if (_isCurrentUserResponsable(operation)) return true;
     final memberProvider = context.read<MemberProvider>();
     final role = memberProvider.appRole?.toLowerCase();
     return role == 'admin' || role == 'superadmin';
@@ -789,6 +790,31 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     required String memberFirstName,
     required String memberLastName,
   }) async {
+    if (amount <= 0) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.green, size: 28),
+              SizedBox(width: 12),
+              Expanded(child: Text('Inscription réussie !')),
+            ],
+          ),
+          content: const Text(
+            'Cette inscription est gratuite. Aucun paiement n’est nécessaire.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     final payNow = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -973,6 +999,18 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     required String memberFirstName,
     required String memberLastName,
   }) async {
+    if (amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Cette inscription est gratuite. Aucun paiement n’est nécessaire.',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+      return;
+    }
+
     // Show loading
     showDialog(
       context: context,
