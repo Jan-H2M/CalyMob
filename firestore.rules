@@ -103,7 +103,9 @@ service cloud.firestore {
     }
 
     function hasFormationTarget(clubId, targetLevel) {
-      return targetFormationLevel(clubId) == targetLevel;
+      return ('formation_active' in getUserData(clubId))
+        && getUserData(clubId).formation_active == true
+        && targetFormationLevel(clubId) == targetLevel;
     }
 
     function targetFormationLevel(clubId) {

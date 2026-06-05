@@ -49,12 +49,14 @@ class TeamChannelService {
       String clubId, List<String> userRoles,
       {bool includeAllChannels = false,
       String? plongeurCode,
-      String? targetFormationLevel}) {
+      String? targetFormationLevel,
+      bool formationActive = false}) {
     final availableTypes = ClubRoleUtils.getVisibleTeamChannelTypes(
       userRoles,
       includeAllChannels: includeAllChannels,
       plongeurCode: plongeurCode,
       targetFormationLevel: targetFormationLevel,
+      formationActive: formationActive,
     );
 
     final availableTypeValues = availableTypes.map((t) => t.value).toSet();

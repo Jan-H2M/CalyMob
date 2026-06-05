@@ -59,6 +59,7 @@ class _TeamsListScreenState extends State<TeamsListScreen> {
               userRoles,
               plongeurCode: memberProvider.plongeurCode,
               targetFormationLevel: memberProvider.targetFormationLevel,
+              formationActive: memberProvider.formationActive,
             ),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {

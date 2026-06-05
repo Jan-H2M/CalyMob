@@ -35,6 +35,7 @@ class UnreadCountProvider extends ChangeNotifier {
   bool _includeAllTeamChannels = false;
   String? _plongeurCode;
   String? _targetFormationLevel;
+  bool _formationActive = false;
 
   // === Cache keys voor SharedPreferences ===
   static const _cachePrefix = 'unread_cache_';
@@ -60,7 +61,8 @@ class UnreadCountProvider extends ChangeNotifier {
       {List<String> roles = const [],
       bool includeAllTeamChannels = false,
       String? plongeurCode,
-      String? targetFormationLevel}) async {
+      String? targetFormationLevel,
+      bool formationActive = false}) async {
     if (_isListening) {
       debugPrint('ℹ️ UnreadCountProvider: al actief');
       return;
@@ -74,6 +76,7 @@ class UnreadCountProvider extends ChangeNotifier {
     _includeAllTeamChannels = includeAllTeamChannels;
     _plongeurCode = plongeurCode;
     _targetFormationLevel = targetFormationLevel;
+    _formationActive = formationActive;
     _isListening = true;
 
     // Initialiseer LocalReadTracker
@@ -146,6 +149,7 @@ class UnreadCountProvider extends ChangeNotifier {
         includeAllTeamChannels: _includeAllTeamChannels,
         plongeurCode: _plongeurCode,
         targetFormationLevel: _targetFormationLevel,
+        formationActive: _formationActive,
       );
       final newAnnouncements = counts['announcements'] ?? 0;
       final newEventMessages = counts['event_messages'] ?? 0;
@@ -258,6 +262,7 @@ class UnreadCountProvider extends ChangeNotifier {
     _includeAllTeamChannels = false;
     _plongeurCode = null;
     _targetFormationLevel = null;
+    _formationActive = false;
     _announcements = 0;
     _eventMessages = 0;
     _teamMessages = 0;

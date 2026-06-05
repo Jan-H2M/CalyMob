@@ -92,6 +92,7 @@ class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
                   includeAllChannels: includeAllChannels,
                   plongeurCode: memberProvider.plongeurCode,
                   targetFormationLevel: memberProvider.targetFormationLevel,
+                  formationActive: memberProvider.formationActive,
                 ),
               ),
             ],
@@ -110,6 +111,7 @@ class _CommunicationInboxList extends StatelessWidget {
   final bool includeAllChannels;
   final String? plongeurCode;
   final String? targetFormationLevel;
+  final bool formationActive;
 
   const _CommunicationInboxList({
     required this.selectedFilter,
@@ -119,6 +121,7 @@ class _CommunicationInboxList extends StatelessWidget {
     required this.includeAllChannels,
     this.plongeurCode,
     this.targetFormationLevel,
+    this.formationActive = false,
   });
 
   bool _shows(_CommunicationFilter filter) {
@@ -161,6 +164,7 @@ class _CommunicationInboxList extends StatelessWidget {
             includeAllChannels: includeAllChannels,
             plongeurCode: plongeurCode,
             targetFormationLevel: targetFormationLevel,
+            formationActive: formationActive,
           ),
         const SizedBox(height: 24),
       ],
@@ -937,6 +941,7 @@ class _TeamChannelsInboxSection extends StatelessWidget {
   final bool includeAllChannels;
   final String? plongeurCode;
   final String? targetFormationLevel;
+  final bool formationActive;
   final TeamChannelService _channelService = TeamChannelService();
 
   _TeamChannelsInboxSection({
@@ -946,6 +951,7 @@ class _TeamChannelsInboxSection extends StatelessWidget {
     required this.includeAllChannels,
     this.plongeurCode,
     this.targetFormationLevel,
+    this.formationActive = false,
   });
 
   @override
@@ -959,6 +965,7 @@ class _TeamChannelsInboxSection extends StatelessWidget {
         includeAllChannels: includeAllChannels,
         plongeurCode: plongeurCode,
         targetFormationLevel: targetFormationLevel,
+        formationActive: formationActive,
       ),
       builder: (context, snapshot) {
         final channels = (snapshot.data ?? const <TeamChannel>[])

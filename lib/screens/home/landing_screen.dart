@@ -96,6 +96,7 @@ class _LandingScreenState extends State<LandingScreen> {
         includeAllTeamChannels: includeAllTeamChannels,
         plongeurCode: memberProvider.plongeurCode,
         targetFormationLevel: memberProvider.targetFormationLevel,
+        formationActive: memberProvider.formationActive,
       );
     }
   }

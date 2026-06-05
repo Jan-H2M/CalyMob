@@ -41,6 +41,7 @@ class ClubRoleUtils {
     bool includeAllChannels = false,
     String? plongeurCode,
     String? targetFormationLevel,
+    bool formationActive = false,
   }) {
     final normalized = normalizeRoles(roles);
     final hasBS = normalized.contains('bs');
@@ -76,12 +77,14 @@ class ClubRoleUtils {
       availableTypes.add(TeamChannelType.bureau);
     }
 
-    final formationType = getFormationChannelType(
-      plongeurCode: plongeurCode,
-      targetFormationLevel: targetFormationLevel,
-    );
-    if (formationType != null) {
-      availableTypes.add(formationType);
+    if (formationActive) {
+      final formationType = getFormationChannelType(
+        plongeurCode: plongeurCode,
+        targetFormationLevel: targetFormationLevel,
+      );
+      if (formationType != null) {
+        availableTypes.add(formationType);
+      }
     }
 
     return availableTypes;
@@ -162,12 +165,14 @@ class ClubRoleUtils {
     bool includeAllChannels = false,
     String? plongeurCode,
     String? targetFormationLevel,
+    bool formationActive = false,
   }) {
     return getVisibleTeamChannelTypes(
       roles,
       includeAllChannels: includeAllChannels,
       plongeurCode: plongeurCode,
       targetFormationLevel: targetFormationLevel,
+      formationActive: formationActive,
     ).map((type) => type.id).toList();
   }
 }

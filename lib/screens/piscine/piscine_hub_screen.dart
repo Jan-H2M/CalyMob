@@ -246,6 +246,7 @@ class _SeancesTab extends StatelessWidget {
               ),
               plongeurCode: memberProvider.plongeurCode,
               targetFormationLevel: memberProvider.targetFormationLevel,
+              formationActive: memberProvider.formationActive,
             ),
             builder: (context, snapshot) {
               final channels = snapshot.data ?? [];

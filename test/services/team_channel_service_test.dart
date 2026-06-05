@@ -48,11 +48,21 @@ void main() {
       expect(availableTypes, [TeamChannelType.general]);
     });
 
-    test('formation audiences map current level to target formation', () {
+    test('formation audiences require active formation', () {
+      final availableTypes = ClubRoleUtils.getVisibleTeamChannelTypes(
+        ['membre'],
+        plongeurCode: '1*',
+      );
+
+      expect(availableTypes, isNot(contains(TeamChannelType.formation2)));
+    });
+
+    test('active formation audiences map current level to target formation', () {
       expect(
         ClubRoleUtils.getVisibleTeamChannelTypes(
           ['membre'],
           plongeurCode: 'NB',
+          formationActive: true,
         ),
         contains(TeamChannelType.formation1),
       );
@@ -60,6 +70,7 @@ void main() {
         ClubRoleUtils.getVisibleTeamChannelTypes(
           ['membre'],
           plongeurCode: '1*',
+          formationActive: true,
         ),
         contains(TeamChannelType.formation2),
       );
@@ -67,6 +78,7 @@ void main() {
         ClubRoleUtils.getVisibleTeamChannelTypes(
           ['membre'],
           plongeurCode: '2*',
+          formationActive: true,
         ),
         contains(TeamChannelType.formation3),
       );
@@ -74,6 +86,7 @@ void main() {
         ClubRoleUtils.getVisibleTeamChannelTypes(
           ['membre'],
           plongeurCode: '3*',
+          formationActive: true,
         ),
         contains(TeamChannelType.formation4),
       );
@@ -81,6 +94,7 @@ void main() {
         ClubRoleUtils.getVisibleTeamChannelTypes(
           ['membre'],
           plongeurCode: '4*',
+          formationActive: true,
         ),
         contains(TeamChannelType.formationAM),
       );
@@ -91,6 +105,7 @@ void main() {
         ['membre'],
         plongeurCode: '1*',
         targetFormationLevel: 'AM',
+        formationActive: true,
       );
 
       expect(availableTypes, contains(TeamChannelType.formationAM));
@@ -171,7 +186,7 @@ void main() {
         reactions: const {
           '🎉': ['user1'],
         },
-        poll: Poll(
+        poll: const Poll(
           question: 'Option ?',
           options: [
             PollOption(id: 'a', text: 'A', votes: ['user1']),

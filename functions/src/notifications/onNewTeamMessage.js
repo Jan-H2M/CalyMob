@@ -98,6 +98,8 @@ function normalizeTargetFormationLevel(value) {
 }
 
 function getMemberFormationTargetLevel(memberData = {}) {
+  if (memberData.formation_active !== true) return null;
+
   const explicitTarget = normalizeTargetFormationLevel(memberData.target_formation_level);
   if (explicitTarget) return explicitTarget;
 
