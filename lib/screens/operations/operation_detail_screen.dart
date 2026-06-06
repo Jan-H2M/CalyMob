@@ -950,20 +950,21 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     final operationProvider = context.read<OperationProvider>();
 
     if (payNow == true && mounted) {
-      // Set status to qr_email_sent and send email
-      await _operationService.updatePaymentStatus(
-        clubId: widget.clubId,
-        operationId: widget.operationId,
-        participantId: participantId,
-        status: 'qr_email_sent',
-      );
-      await _sendPaymentEmail(
+      final emailSent = await _sendPaymentEmail(
         operation: operation,
         amount: amount,
         participantId: participantId,
         memberEmail: memberEmail,
         memberFirstName: memberFirstName,
         memberLastName: memberLastName,
+      );
+      if (!emailSent) return;
+
+      await _operationService.updatePaymentStatus(
+        clubId: widget.clubId,
+        operationId: widget.operationId,
+        participantId: participantId,
+        status: 'qr_email_sent',
       );
       // Refresh participant list to show updated payment status
       await operationProvider.reloadParticipants(
@@ -991,7 +992,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   }
 
   /// Sends the EPC QR code payment email
-  Future<void> _sendPaymentEmail({
+  Future<bool> _sendPaymentEmail({
     required dynamic operation,
     required double amount,
     required String participantId,
@@ -1008,7 +1009,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           backgroundColor: Colors.green,
         ),
       );
-      return;
+      return false;
     }
 
     // Show loading
@@ -1123,18 +1124,97 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           ),
         );
       }
+      return true;
     } catch (e) {
       if (mounted) {
         Navigator.pop(context); // Close loading dialog
+        debugPrint('❌ Error sending payment email: $e');
 
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erreur lors de l\'envoi: ${e.toString()}'),
-            backgroundColor: Colors.red,
+          const SnackBar(
+            content: Text(
+                'L’email de paiement n’a pas pu être envoyé. QR affiché ci-dessous.'),
+            backgroundColor: Colors.orange,
           ),
         );
+        await _showPaymentQrOnDevice(
+          operation: operation,
+          amount: amount,
+          memberEmail: memberEmail,
+          memberFirstName: memberFirstName,
+          memberLastName: memberLastName,
+        );
       }
+      return false;
     }
+  }
+
+  Future<void> _showPaymentQrOnDevice({
+    required dynamic operation,
+    required double amount,
+    required String memberEmail,
+    required String memberFirstName,
+    required String memberLastName,
+  }) async {
+    if (amount <= 0) return;
+
+    final bankDoc = await FirebaseFirestore.instance
+        .collection('clubs')
+        .doc(widget.clubId)
+        .collection('settings')
+        .doc('bank')
+        .get();
+
+    if (!bankDoc.exists) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Configuration bancaire non trouvée. Impossible d’afficher le QR code.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final bankData = bankDoc.data()!;
+    final iban = bankData['iban'] as String?;
+    final beneficiaryName = bankData['beneficiaryName'] as String?;
+    final bic = bankData['bic'] as String?;
+
+    if (iban == null ||
+        iban.isEmpty ||
+        beneficiaryName == null ||
+        beneficiaryName.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('IBAN ou nom du bénéficiaire non configuré.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    await showParticipantPaymentCard(
+      context: context,
+      participantFirstName: memberFirstName,
+      participantLastName: memberLastName,
+      participantEmail: memberEmail,
+      amount: amount,
+      eventTitle: operation.titre ?? 'Événement',
+      eventNumber: operation.eventNumber,
+      eventId: widget.operationId,
+      eventDate: operation.dateDebut,
+      clubIban: iban,
+      beneficiaryName: beneficiaryName,
+      bic: bic,
+      showConfirmButton: false,
+      instructionText:
+          'L’email n’a pas pu être envoyé. Scannez ce QR code avec votre app bancaire pour payer maintenant.',
+      onMarkAsPaid: () async {},
+    );
   }
 
   /// Shows the participant payment card for organizers to collect payment
@@ -1764,7 +1844,15 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               double inscriptionPrice;
               if (userInscription != null) {
                 // Use the total price stored in the inscription (includes supplements)
-                inscriptionPrice = userInscription.totalPrix;
+                final linkedGuests = operationProvider
+                    .selectedOperationParticipants
+                    .where((p) =>
+                        p.isGuest &&
+                        p.parentInscriptionId == userInscription.id)
+                    .toList();
+                inscriptionPrice = userInscription.totalPrix +
+                    linkedGuests.fold<double>(
+                        0.0, (total, guest) => total + guest.totalPrix);
               } else if (_userProfile != null) {
                 // Calculate price based on user's function
                 inscriptionPrice = TariffUtils.computeRegistrationPrice(
@@ -3578,19 +3666,21 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                   // CALYMOB-1C: must be the Firestore inscription doc id,
                   // not the auth uid. Inscriptions are created with .add()
                   // so doc.id is auto-generated and not equal to userId.
-                  await _operationService.updatePaymentStatus(
-                    clubId: widget.clubId,
-                    operationId: widget.operationId,
-                    participantId: inscription.id,
-                    status: 'qr_email_sent',
-                  );
-                  await _sendPaymentEmail(
+                  final emailSent = await _sendPaymentEmail(
                     operation: operation,
                     amount: inscriptionPrice,
                     participantId: inscription.id,
                     memberEmail: memberEmail,
                     memberFirstName: memberFirstName,
                     memberLastName: memberLastName,
+                  );
+                  if (!emailSent) return;
+
+                  await _operationService.updatePaymentStatus(
+                    clubId: widget.clubId,
+                    operationId: widget.operationId,
+                    participantId: inscription.id,
+                    status: 'qr_email_sent',
                   );
                   if (mounted) {
                     await context

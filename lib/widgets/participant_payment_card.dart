@@ -49,6 +49,12 @@ class ParticipantPaymentCard extends StatelessWidget {
   /// Callback quand le paiement est marqué comme reçu
   final VoidCallback onMarkAsPaid;
 
+  /// Afficher le bouton de confirmation réservé aux organisateurs.
+  final bool showConfirmButton;
+
+  /// Texte d'instruction affiché sous le QR code.
+  final String instructionText;
+
   /// Indique si le paiement est en cours de traitement
   final bool isProcessing;
 
@@ -66,6 +72,8 @@ class ParticipantPaymentCard extends StatelessWidget {
     required this.beneficiaryName,
     this.bic,
     required this.onMarkAsPaid,
+    this.showConfirmButton = true,
+    this.instructionText = 'Le membre scanne ce QR code avec son app bancaire',
     this.isProcessing = false,
   });
 
@@ -206,7 +214,8 @@ class ParticipantPaymentCard extends StatelessWidget {
               decoration: BoxDecoration(
                 color: AppColors.lichtblauw.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.lichtblauw.withOpacity(0.3)),
+                border:
+                    Border.all(color: AppColors.lichtblauw.withOpacity(0.3)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -253,11 +262,12 @@ class ParticipantPaymentCard extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.phone_android, size: 20, color: Colors.orange.shade700),
+                  Icon(Icons.phone_android,
+                      size: 20, color: Colors.orange.shade700),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'Le membre scanne ce QR code avec son app bancaire',
+                      instructionText,
                       style: TextStyle(
                         fontSize: 13,
                         color: Colors.orange.shade800,
@@ -272,42 +282,48 @@ class ParticipantPaymentCard extends StatelessWidget {
             const SizedBox(height: 20),
 
             // Confirm payment button — outline style, not filled green
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: isProcessing ? null : onMarkAsPaid,
-                icon: isProcessing
-                    ? SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.green.shade600),
-                        ),
-                      )
-                    : Icon(Icons.check, size: 20, color: Colors.green.shade600),
-                label: Text(
-                  isProcessing ? 'Enregistrement...' : 'Confirmer la réception du paiement',
-                  style: TextStyle(fontSize: 14),
-                ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.green.shade700,
-                  side: BorderSide(color: Colors.green.shade400, width: 1.5),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+            if (showConfirmButton) ...[
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: isProcessing ? null : onMarkAsPaid,
+                  icon: isProcessing
+                      ? SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.green.shade600),
+                          ),
+                        )
+                      : Icon(Icons.check,
+                          size: 20, color: Colors.green.shade600),
+                  label: Text(
+                    isProcessing
+                        ? 'Enregistrement...'
+                        : 'Confirmer la réception du paiement',
+                    style: TextStyle(fontSize: 14),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.green.shade700,
+                    side: BorderSide(color: Colors.green.shade400, width: 1.5),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
               ),
-            ),
-
-            const SizedBox(height: 12),
+              const SizedBox(height: 12),
+            ],
 
             // Close button — neutral, not alarming red
             SizedBox(
               width: double.infinity,
               child: TextButton(
-                onPressed: isProcessing ? null : () => Navigator.of(context).pop(),
+                onPressed:
+                    isProcessing ? null : () => Navigator.of(context).pop(),
                 style: TextButton.styleFrom(
                   foregroundColor: Colors.grey.shade600,
                   padding: const EdgeInsets.symmetric(vertical: 12),
@@ -331,7 +347,8 @@ class ParticipantPaymentCard extends StatelessWidget {
   }
 
   String _getInitials() {
-    final first = participantFirstName.isNotEmpty ? participantFirstName[0] : '';
+    final first =
+        participantFirstName.isNotEmpty ? participantFirstName[0] : '';
     final last = participantLastName.isNotEmpty ? participantLastName[0] : '';
     return '$first$last'.toUpperCase();
   }
@@ -358,6 +375,8 @@ Future<bool?> showParticipantPaymentCard({
   required String beneficiaryName,
   String? bic,
   required Future<void> Function() onMarkAsPaid,
+  bool showConfirmButton = true,
+  String instructionText = 'Le membre scanne ce QR code avec son app bancaire',
 }) {
   return showModalBottomSheet<bool>(
     context: context,
@@ -380,6 +399,8 @@ Future<bool?> showParticipantPaymentCard({
           beneficiaryName: beneficiaryName,
           bic: bic,
           isProcessing: isProcessing,
+          showConfirmButton: showConfirmButton,
+          instructionText: instructionText,
           onMarkAsPaid: () async {
             setState(() => isProcessing = true);
             try {
