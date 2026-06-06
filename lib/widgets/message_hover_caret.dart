@@ -8,8 +8,8 @@ import 'package:flutter/material.dart';
 /// Clicking the chevron invokes [onTap] (typically the same action as the
 /// long-press on mobile).
 ///
-/// On native/mobile: this widget is a pass-through — long-press on the child
-/// (wired up elsewhere) remains the canonical gesture.
+/// On native/mobile: a small always-visible action button is shown because
+/// long-press is easy to miss, especially for editing your own messages.
 class MessageHoverCaret extends StatefulWidget {
   /// The message bubble (typically a [GestureDetector] with onLongPress).
   final Widget child;
@@ -37,8 +37,40 @@ class _MessageHoverCaretState extends State<MessageHoverCaret> {
 
   @override
   Widget build(BuildContext context) {
-    // On native/mobile platforms we skip the hover UX entirely.
-    if (!kIsWeb) return widget.child;
+    if (!kIsWeb) {
+      return Stack(
+        clipBehavior: Clip.none,
+        children: [
+          widget.child,
+          Positioned(
+            top: 2,
+            right: widget.alignEnd ? 4 : null,
+            left: widget.alignEnd ? null : 4,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: widget.onTap,
+                borderRadius: BorderRadius.circular(14),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.32),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Padding(
+                    padding: EdgeInsets.all(2),
+                    child: Icon(
+                      Icons.keyboard_arrow_down,
+                      color: Colors.white,
+                      size: 18,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
 
     return MouseRegion(
       onEnter: (_) {
@@ -70,11 +102,11 @@ class _MessageHoverCaretState extends State<MessageHoverCaret> {
                     child: Container(
                       padding: const EdgeInsets.all(2),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.45),
+                        color: Colors.black.withValues(alpha: 0.45),
                         borderRadius: BorderRadius.circular(14),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.15),
+                            color: Colors.black.withValues(alpha: 0.15),
                             blurRadius: 4,
                             offset: const Offset(0, 1),
                           ),
