@@ -4,9 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
-import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
-import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../models/member_profile.dart';
@@ -21,6 +19,7 @@ import 'ocean_settings_screen.dart';
 import 'privacy_policy_screen.dart';
 import 'change_password_screen.dart';
 import 'notification_preferences_screen.dart';
+import 'calendar_feed_screen.dart';
 import '../../widgets/bug_report_widget.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 
@@ -81,8 +80,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         // SecureStorage failed - show toggle but as disabled
         // User can re-enable by logging out and back in
         FirebaseCrashlytics.instance.recordError(
-          e, stack,
-          reason: 'settings_screen: SecureStorage read failed (KeyStore issue?)',
+          e,
+          stack,
+          reason:
+              'settings_screen: SecureStorage read failed (KeyStore issue?)',
         );
       }
 
@@ -96,7 +97,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } catch (e, stack) {
       // isBiometricAvailable itself failed - update state to show diagnostic
       FirebaseCrashlytics.instance.recordError(
-        e, stack,
+        e,
+        stack,
         reason: 'settings_screen: _checkBiometricStatus completely failed',
       );
       if (mounted) {
@@ -131,7 +133,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ElevatedButton(
               onPressed: () => Navigator.pop(context, true),
               style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-              child: const Text('Désactiver', style: TextStyle(color: Colors.white)),
+              child: const Text('Désactiver',
+                  style: TextStyle(color: Colors.white)),
             ),
           ],
         ),
@@ -307,7 +310,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.info_outline, size: 16, color: Colors.blue.shade700),
+                  Icon(Icons.info_outline,
+                      size: 16, color: Colors.blue.shade700),
                   const SizedBox(width: 8),
                   const Expanded(
                     child: Text(
@@ -380,7 +384,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Veuillez autoriser les notifications dans les paramètres de votre appareil'),
+              content: Text(
+                  'Veuillez autoriser les notifications dans les paramètres de votre appareil'),
               backgroundColor: Colors.orange,
             ),
           );
@@ -483,7 +488,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         );
       }
-    } finally{
+    } finally {
       if (mounted) {
         setState(() => _isLoading = false);
       }
@@ -514,7 +519,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ElevatedButton(
               onPressed: () => Navigator.pop(context, true),
               style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-              child: const Text('Supprimer', style: TextStyle(color: Colors.white)),
+              child: const Text('Supprimer',
+                  style: TextStyle(color: Colors.white)),
             ),
           ],
         ),
@@ -588,12 +594,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             stream: _profileService.watchProfile(_clubId, userId),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator(color: Colors.white));
+                return const Center(
+                    child: CircularProgressIndicator(color: Colors.white));
               }
 
               if (!snapshot.hasData || snapshot.data == null) {
                 return const Center(
-                  child: Text('Erreur de chargement du profil', style: TextStyle(color: Colors.white)),
+                  child: Text('Erreur de chargement du profil',
+                      style: TextStyle(color: Colors.white)),
                 );
               }
 
@@ -625,6 +633,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                       const SizedBox(height: 24),
 
+                      // Agenda
+                      _buildSectionHeader('Agenda'),
+                      _buildCalendarSection(),
+
+                      const SizedBox(height: 24),
+
                       // Vie privée
                       _buildSectionHeader('Vie privée'),
                       _buildPrivacySection(profile),
@@ -651,7 +665,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _buildAccountSection(profile),
                     ],
                   ),
-
                   if (_isLoading)
                     Container(
                       color: Colors.black54,
@@ -694,7 +707,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: Text(
               profile.phoneNumber ?? 'Non défini',
               style: TextStyle(
-                color: profile.phoneNumber != null ? Colors.black87 : Colors.grey,
+                color:
+                    profile.phoneNumber != null ? Colors.black87 : Colors.grey,
               ),
             ),
             trailing: const Icon(Icons.edit, size: 20),
@@ -742,7 +756,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     : 'Activez pour vous connecter rapidement',
                 style: TextStyle(
                   fontSize: 12,
-                  color: _biometricEnabled ? Colors.green.shade700 : Colors.grey.shade600,
+                  color: _biometricEnabled
+                      ? Colors.green.shade700
+                      : Colors.grey.shade600,
                 ),
               ),
               secondary: Icon(
@@ -786,7 +802,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                     child: Text(
                       'Diagnostic: ${_biometricService.lastDiagnostic}',
-                      style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                      style:
+                          TextStyle(fontSize: 10, color: Colors.grey.shade500),
                     ),
                   ),
               ],
@@ -806,7 +823,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             value: _notificationsEnabled,
             onChanged: (value) => _toggleNotifications(value, profile),
             title: const Text('Notifications push'),
-            subtitle: const Text('Recevoir des notifications sur les événements'),
+            subtitle:
+                const Text('Recevoir des notifications sur les événements'),
             secondary: const Icon(Icons.notifications, color: Colors.orange),
           ),
           if (_notificationsEnabled) ...[
@@ -844,6 +862,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildCalendarSection() {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        leading: const Icon(Icons.calendar_month, color: AppColors.middenblauw),
+        title: const Text('Synchronisation calendrier'),
+        subtitle: const Text(
+          'Ajouter les sorties Calypso à mon agenda personnel',
+          style: TextStyle(fontSize: 12),
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const CalendarFeedScreen(),
+            ),
+          );
+        },
       ),
     );
   }
@@ -962,12 +1004,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   : 'Requis pour ajouter une photo de profil',
               style: TextStyle(
                 fontSize: 12,
-                color: profile.consentInternalPhoto ? Colors.green.shade700 : Colors.orange.shade700,
+                color: profile.consentInternalPhoto
+                    ? Colors.green.shade700
+                    : Colors.orange.shade700,
               ),
             ),
             secondary: Icon(
               Icons.people,
-              color: profile.consentInternalPhoto ? Colors.green : Colors.orange,
+              color:
+                  profile.consentInternalPhoto ? Colors.green : Colors.orange,
             ),
           ),
 
@@ -994,7 +1039,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           SwitchListTile(
             value: profile.shareEmail,
-            onChanged: (value) => _updateContactSharing(value, profile.sharePhone),
+            onChanged: (value) =>
+                _updateContactSharing(value, profile.sharePhone),
             title: const Text('Partager mon email'),
             subtitle: const Text('Visible dans "Who\'s Who"'),
             secondary: const Icon(Icons.email, color: Colors.blue),
@@ -1018,7 +1064,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const Divider(height: 1),
           ListTile(
-            leading: const Icon(Icons.privacy_tip, color: AppColors.middenblauw),
+            leading:
+                const Icon(Icons.privacy_tip, color: AppColors.middenblauw),
             title: const Text('Politique de confidentialité'),
             subtitle: const Text('RGPD et protection des données'),
             trailing: const Icon(Icons.chevron_right),
@@ -1141,7 +1188,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   : 'Vous êtes à jour',
               style: TextStyle(
                 fontSize: 12,
-                color: hasUpdate ? Colors.orange.shade700 : Colors.green.shade700,
+                color:
+                    hasUpdate ? Colors.orange.shade700 : Colors.green.shade700,
               ),
             ),
             trailing: hasUpdate
@@ -1152,7 +1200,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.orange,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
                       textStyle: const TextStyle(fontSize: 12),
                     ),
                   )
@@ -1189,7 +1238,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           subtitle: Text(
             _updateStatus != null
                 ? 'Version installée: ${_updateStatus!.currentVersion}\n'
-                  'Version publiée: ${_updateStatus!.latestVersion}'
+                    'Version publiée: ${_updateStatus!.latestVersion}'
                 : 'Chargement...',
             style: const TextStyle(fontSize: 12),
           ),
@@ -1200,7 +1249,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               backgroundColor: AppColors.middenblauw,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              textStyle:
+                  const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
             ),
             child: _publishingVersion
                 ? const SizedBox(
@@ -1380,10 +1430,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              _buildDeleteInfoItem(Icons.person, 'Vos informations personnelles'),
+              _buildDeleteInfoItem(
+                  Icons.person, 'Vos informations personnelles'),
               _buildDeleteInfoItem(Icons.photo, 'Votre photo de profil'),
-              _buildDeleteInfoItem(Icons.notifications, 'Vos préférences de notifications'),
-              _buildDeleteInfoItem(Icons.fingerprint, 'Vos données biométriques locales'),
+              _buildDeleteInfoItem(
+                  Icons.notifications, 'Vos préférences de notifications'),
+              _buildDeleteInfoItem(
+                  Icons.fingerprint, 'Vos données biométriques locales'),
               const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -1394,7 +1447,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.info_outline, size: 20, color: Colors.blue.shade700),
+                    Icon(Icons.info_outline,
+                        size: 20, color: Colors.blue.shade700),
                     const SizedBox(width: 8),
                     const Expanded(
                       child: Text(
@@ -1469,7 +1523,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
 
         // Naviguer vers l'écran de login (remplace toute la stack)
-        Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+        Navigator.of(context)
+            .pushNamedAndRemoveUntil('/login', (route) => false);
       }
     } catch (e) {
       if (mounted) {
@@ -1477,7 +1532,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('❌ Erreur: ${e.toString().replaceFirst('Exception: ', '')}'),
+            content: Text(
+                '❌ Erreur: ${e.toString().replaceFirst('Exception: ', '')}'),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 5),
           ),

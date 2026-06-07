@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -2861,8 +2862,15 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
     // Trigger batch lookup van avatar + niveau-code zodra we participants
     // hebben. addPostFrameCallback voorkomt setState-tijdens-build.
+    final hasMissingMemberInfo = participants.any(
+      (p) =>
+          !p.isGuest &&
+          p.membreId.isNotEmpty &&
+          !_memberInfoCache.containsKey(p.membreId),
+    );
     if (participants.isNotEmpty &&
-        _memberInfoLoadedForOperation != widget.operationId &&
+        (_memberInfoLoadedForOperation != widget.operationId ||
+            hasMissingMemberInfo) &&
         !_memberInfoLoading) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
@@ -3326,6 +3334,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           _memberInfoCache[doc.id] = _MemberInfo(
             photoUrl: (data['photo_url'] as String?)?.trim(),
             plongeurCode: (data['plongeur_code'] as String?)?.trim(),
+            consentInternalPhoto: data['consent_internal_photo'] == true,
           );
         }
         // Markeer ontbrekende ids zodat we niet blijven proberen
@@ -3336,6 +3345,17 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           }
         }
       }
+
+      final missingParticipants = participants
+          .where((p) =>
+              !p.isGuest &&
+              p.membreId.isNotEmpty &&
+              _memberInfoCache[p.membreId] == null)
+          .toList();
+      if (missingParticipants.isNotEmpty) {
+        await _fillMissingMemberInfoFromDirectory(missingParticipants);
+      }
+
       _memberInfoLoadedForOperation = widget.operationId;
       if (mounted) setState(() {});
     } catch (e) {
@@ -3343,6 +3363,41 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     } finally {
       _memberInfoLoading = false;
     }
+  }
+
+  Future<void> _fillMissingMemberInfoFromDirectory(
+    List<ParticipantOperation> participants,
+  ) async {
+    final profiles = await _profileService.getAllProfiles(widget.clubId);
+    if (profiles.isEmpty) return;
+
+    final profilesById = {for (final profile in profiles) profile.id: profile};
+    final profilesByName = <String, MemberProfile>{};
+    for (final profile in profiles) {
+      profilesByName[_normaliseMemberName(profile.prenom, profile.nom)] =
+          profile;
+    }
+
+    for (final participant in participants) {
+      final profile = profilesById[participant.membreId] ??
+          profilesByName[_normaliseMemberName(
+            participant.membrePrenom,
+            participant.membreNom,
+          )];
+      if (profile == null) continue;
+      _memberInfoCache[participant.membreId] = _MemberInfo(
+        photoUrl: profile.photoUrl?.trim(),
+        plongeurCode: profile.plongeurCode?.trim(),
+        consentInternalPhoto: profile.consentInternalPhoto,
+      );
+    }
+  }
+
+  String _normaliseMemberName(String? prenom, String? nom) {
+    return '${prenom ?? ''} ${nom ?? ''}'
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'\s+'), ' ');
   }
 
   /// Avatar voor een participant — toont de profielfoto wanneer
@@ -3357,8 +3412,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     required bool isCurrentUser,
   }) {
     final info = _memberInfoCache[participant.membreId];
-    final hasPhoto =
-        !isGuest && info?.photoUrl != null && info!.photoUrl!.isNotEmpty;
+    final hasPhoto = !isGuest &&
+        info?.consentInternalPhoto == true &&
+        info?.photoUrl != null &&
+        info!.photoUrl!.isNotEmpty;
     final niveau = isGuest ? null : info?.plongeurCode;
 
     final letter = prenom.isNotEmpty
@@ -3378,7 +3435,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                 : (isCurrentUser
                     ? AppColors.lichtblauw.withOpacity(0.5)
                     : AppColors.lichtblauw.withOpacity(0.3)),
-            backgroundImage: hasPhoto ? NetworkImage(info.photoUrl!) : null,
+            backgroundImage:
+                hasPhoto ? CachedNetworkImageProvider(info.photoUrl!) : null,
             onBackgroundImageError: hasPhoto ? (_, __) {} : null,
             child: hasPhoto
                 ? null
@@ -5037,6 +5095,11 @@ class _SupplementSelectionDialogState
 class _MemberInfo {
   final String? photoUrl;
   final String? plongeurCode;
+  final bool consentInternalPhoto;
 
-  const _MemberInfo({this.photoUrl, this.plongeurCode});
+  const _MemberInfo({
+    this.photoUrl,
+    this.plongeurCode,
+    this.consentInternalPhoto = false,
+  });
 }
