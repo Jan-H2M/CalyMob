@@ -43,6 +43,7 @@ import 'screens/auth/login_screen.dart';
 import 'screens/auth/reset_password_screen.dart';
 import 'screens/operations/operation_detail_screen.dart';
 import 'screens/announcements/announcement_detail_screen.dart';
+import 'screens/communication/communication_hub_screen.dart';
 import 'screens/teams/team_chat_screen.dart';
 import 'screens/piscine/session_chat_screen.dart';
 import 'screens/piscine/session_detail_screen.dart';
@@ -368,6 +369,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           break;
 
         case 'piscine_task_assigned':
+        case 'session_reminder':
           final sessionId = data['session_id'] as String?;
           if (sessionId != null) {
             final doc = await FirebaseFirestore.instance
@@ -386,6 +388,15 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               );
             }
           }
+          break;
+
+        case 'exercice_declared':
+        case 'exercice_digest':
+          _navigatorKey.currentState!.push(
+            MaterialPageRoute(
+              builder: (_) => const CommunicationHubScreen(),
+            ),
+          );
           break;
 
         // Fix #9: medical certificate status change

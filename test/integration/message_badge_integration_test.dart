@@ -563,7 +563,6 @@ void main() {
         senderName: 'Pierre',
         message: 'Test de sérialisation complète',
         createdAt: DateTime(2026, 2, 14, 15, 30),
-        readBy: [otherUser],
         replyToId: 'parent_msg',
         replyToPreview: ReplyPreview(
           senderName: 'Jan',
@@ -583,9 +582,7 @@ void main() {
       expect(restored.senderId, otherUser);
       expect(restored.senderName, 'Pierre');
       expect(restored.message, 'Test de sérialisation complète');
-      expect(restored.readBy, [otherUser]);
-      expect(restored.isReadBy(otherUser), isTrue);
-      expect(restored.isReadBy(userId), isFalse);
+      expect(restored.toFirestore().containsKey('read_by'), isFalse);
       expect(restored.replyToId, 'parent_msg');
       expect(restored.replyToPreview!.senderName, 'Jan');
       expect(restored.isReply, isTrue);
@@ -601,7 +598,6 @@ void main() {
           groupType: groupType,
           groupLevel: groupType == SessionGroupType.niveau ? 'N2' : null,
           createdAt: DateTime(2026, 2, 14, 10, 0),
-          readBy: [otherUser],
         );
 
         final docRef = await firestore

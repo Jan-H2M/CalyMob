@@ -527,9 +527,7 @@ void main() {
         expect(msg.senderId, userId);
         expect(msg.groupType, SessionGroupType.niveau);
         expect(msg.groupLevel, '3');
-        expect(msg.readBy, hasLength(2));
-        expect(msg.isReadBy(userId), isTrue);
-        expect(msg.isReadBy('unknown'), isFalse);
+        expect(msg.toFirestore().containsKey('read_by'), isFalse);
         expect(msg.attachments, hasLength(1));
         expect(msg.formattedTime, '10:45');
       });

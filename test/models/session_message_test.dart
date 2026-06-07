@@ -16,7 +16,6 @@ void main() {
           createdAt: DateTime(2026, 2, 14, 10, 0),
         );
 
-        expect(msg.readBy, isEmpty);
         expect(msg.attachments, isEmpty);
         expect(msg.groupLevel, isNull);
       });
@@ -34,34 +33,6 @@ void main() {
 
         expect(msg.groupType, SessionGroupType.niveau);
         expect(msg.groupLevel, 'N2');
-      });
-    });
-
-    group('isReadBy', () {
-      test('returns true for user in readBy', () {
-        final msg = SessionMessage(
-          id: 'msg1',
-          senderId: 'user1',
-          senderName: 'Jan',
-          message: 'Test',
-          groupType: SessionGroupType.accueil,
-          createdAt: DateTime.now(),
-          readBy: ['user1', 'user2'],
-        );
-        expect(msg.isReadBy('user1'), isTrue);
-      });
-
-      test('returns false for user not in readBy', () {
-        final msg = SessionMessage(
-          id: 'msg1',
-          senderId: 'user1',
-          senderName: 'Jan',
-          message: 'Test',
-          groupType: SessionGroupType.accueil,
-          createdAt: DateTime.now(),
-          readBy: ['user1'],
-        );
-        expect(msg.isReadBy('user2'), isFalse);
       });
     });
 
@@ -92,7 +63,7 @@ void main() {
     });
 
     group('copyWith', () {
-      test('copies with new readBy preserving other fields', () {
+      test('copies with new message preserving other fields', () {
         final original = SessionMessage(
           id: 'msg1',
           senderId: 'user1',
@@ -100,13 +71,12 @@ void main() {
           message: 'Original',
           groupType: SessionGroupType.encadrants,
           createdAt: DateTime(2026, 1, 1),
-          readBy: ['user1'],
         );
 
-        final updated = original.copyWith(readBy: ['user1', 'user2']);
-        expect(updated.readBy, hasLength(2));
-        expect(updated.message, 'Original');
+        final updated = original.copyWith(message: 'Updated');
+        expect(updated.message, 'Updated');
         expect(updated.groupType, SessionGroupType.encadrants);
+        expect(updated.senderId, original.senderId);
       });
     });
 
@@ -120,7 +90,6 @@ void main() {
           message: 'Session test',
           groupType: SessionGroupType.accueil,
           createdAt: DateTime(2026, 2, 14, 10, 0),
-          readBy: ['user1'],
         );
 
         final docRef = await firestore
@@ -133,10 +102,25 @@ void main() {
         expect(restored.senderId, 'user1');
         expect(restored.message, 'Session test');
         expect(restored.groupType, SessionGroupType.accueil);
-        expect(restored.readBy, ['user1']);
       });
 
-      test('fromFirestore handles missing read_by', () async {
+      test('toFirestore does not write legacy read_by arrays', () {
+        final msg = SessionMessage(
+          id: 'msg1',
+          senderId: 'user1',
+          senderName: 'Jan',
+          message: 'No read_by',
+          groupType: SessionGroupType.encadrants,
+          createdAt: DateTime(2026, 2, 14, 10, 0),
+        );
+
+        final map = msg.toFirestore();
+
+        expect(map.containsKey('read_by'), isFalse);
+        expect(map['group_type'], 'encadrants');
+      });
+
+      test('fromFirestore ignores legacy read_by data if present', () async {
         final firestore = FakeFirebaseFirestore();
         final docRef = await firestore
             .collection('clubs/club1/piscine_sessions/sess1/messages')
@@ -145,12 +129,14 @@ void main() {
           'sender_name': 'Jan',
           'message': 'No read_by',
           'group_type': 'encadrants',
+          'read_by': ['user1'],
           'created_at': Timestamp.now(),
         });
 
         final doc = await docRef.get();
         final msg = SessionMessage.fromFirestore(doc);
-        expect(msg.readBy, isEmpty);
+        expect(msg.message, 'No read_by');
+        expect(msg.toFirestore().containsKey('read_by'), isFalse);
       });
     });
   });

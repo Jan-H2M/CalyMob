@@ -114,7 +114,6 @@ void main() {
             senderName: 'Sender',
             message: 'Hello',
             createdAt: DateTime.now(),
-            readBy: [],
           ),
         ];
 
@@ -167,7 +166,6 @@ void main() {
             senderName: 'Sender',
             message: 'Hello',
             createdAt: DateTime.now(),
-            readBy: [],
           ),
         ]);
         provider.setLoading(operationId, true);
@@ -194,7 +192,6 @@ void main() {
             senderName: 'Sender',
             message: 'Other op',
             createdAt: DateTime.now(),
-            readBy: [],
           ),
         ]);
         provider.setMessages(operationId, [
@@ -204,7 +201,6 @@ void main() {
             senderName: 'Sender',
             message: 'This op',
             createdAt: DateTime.now(),
-            readBy: [],
           ),
         ]);
 
@@ -238,7 +234,6 @@ void main() {
             senderName: 'Sender',
             message: 'Keep',
             createdAt: DateTime.now(),
-            readBy: [],
           ),
           EventMessage(
             id: 'msg2',
@@ -246,7 +241,6 @@ void main() {
             senderName: 'Sender',
             message: 'Delete me',
             createdAt: DateTime.now(),
-            readBy: [],
           ),
         ]);
 
@@ -268,7 +262,6 @@ void main() {
             senderName: 'Sender',
             message: 'Keep',
             createdAt: DateTime.now(),
-            readBy: [],
           ),
         ]);
 

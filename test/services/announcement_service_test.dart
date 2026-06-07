@@ -758,9 +758,7 @@ void main() {
         expect(announcement.id, docRef.id);
         expect(announcement.title, 'Test');
         expect(announcement.type, AnnouncementType.warning);
-        expect(announcement.isReadBy(userId), isTrue);
-        expect(announcement.isReadBy('unknown'), isFalse);
-        expect(announcement.readCount, 2);
+        expect(announcement.toFirestore().containsKey('read_by'), isFalse);
         expect(announcement.replyCount, 5);
         expect(announcement.hasReplies, isTrue);
         expect(announcement.hasAttachments, isTrue);
@@ -827,7 +825,7 @@ void main() {
         expect(reply.id, replyRef.id);
         expect(reply.senderId, userId);
         expect(reply.message, 'A reply');
-        expect(reply.isReadBy(userId), isTrue);
+        expect(reply.toFirestore().containsKey('read_by'), isFalse);
         expect(reply.isReply, isTrue);
         expect(reply.replyToPreview!.senderName, 'PrevUser');
       });
@@ -839,7 +837,6 @@ void main() {
           senderName: 'User',
           message: 'Test message',
           createdAt: DateTime(2024, 6, 15),
-          readBy: [userId],
           replyToId: 'parent_id',
           replyToPreview: ReplyPreview(
             senderName: 'Parent',

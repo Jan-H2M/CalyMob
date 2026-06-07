@@ -15,6 +15,12 @@ import 'notification_service_io.dart' if (dart.library.html) 'notification_servi
 
 /// Service de gestion des notifications push
 class NotificationService {
+  static final NotificationService _instance = NotificationService._internal();
+
+  factory NotificationService() => _instance;
+
+  NotificationService._internal();
+
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
@@ -153,6 +159,12 @@ class NotificationService {
     } else if (type == 'piscine_task_assigned') {
       channelId = 'piscine_tasks';
       channelName = 'Tâches de piscine';
+    } else if (type == 'session_reminder') {
+      channelId = 'piscine_reminders';
+      channelName = 'Rappels piscine';
+    } else if (type == 'exercice_declared' || type == 'exercice_digest') {
+      channelId = 'exercise_declarations';
+      channelName = 'Déclarations d\'exercices';
     } else if (type == 'new_operation') {
       channelId = 'event_messages';
       channelName = 'Nouvelles sorties';
@@ -260,6 +272,28 @@ class NotificationService {
         enableVibration: true,
       );
       await androidPlugin.createNotificationChannel(piscineTasksChannel);
+
+      // Canal pour les rappels de piscine
+      const piscineRemindersChannel = AndroidNotificationChannel(
+        'piscine_reminders',
+        'Rappels piscine',
+        description: 'Notifications de rappel pour les séances de piscine',
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+      );
+      await androidPlugin.createNotificationChannel(piscineRemindersChannel);
+
+      // Canal pour les déclarations d'exercices
+      const exerciseDeclarationsChannel = AndroidNotificationChannel(
+        'exercise_declarations',
+        'Déclarations d\'exercices',
+        description: 'Notifications pour les exercices à valider',
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+      );
+      await androidPlugin.createNotificationChannel(exerciseDeclarationsChannel);
 
       debugPrint('✅ Canaux de notification Android créés');
     } catch (e, stack) {

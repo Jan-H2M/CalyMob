@@ -115,28 +115,26 @@ class MockUnreadCountProvider extends ChangeNotifier
   }
 
   @override
-  void listen(String clubId, String userId) {}
+  void listen(
+    String clubId,
+    String userId, {
+    List<String> roles = const [],
+    bool includeAllTeamChannels = false,
+    String? plongeurCode,
+    String? targetFormationLevel,
+    bool formationActive = false,
+  }) {}
+
+  @override
+  Future<void> refresh() async {}
+
   @override
   void stopListening() {}
+
   @override
   void clear() {
     setCounts();
   }
-
-  @override
-  Future<void> decrementCategory({
-    required String clubId,
-    required String userId,
-    required String category,
-    int amount = 1,
-  }) async {}
-
-  @override
-  Future<void> resetCategory({
-    required String clubId,
-    required String userId,
-    required String category,
-  }) async {}
 }
 
 void main() {
