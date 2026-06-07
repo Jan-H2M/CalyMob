@@ -3,6 +3,40 @@ import 'tariff.dart';
 import 'supplement.dart';
 import 'document_justificatif.dart';
 
+class PaymentInstallment {
+  final String id;
+  final String label;
+  final DateTime? dueDate;
+  final int displayOrder;
+
+  const PaymentInstallment({
+    required this.id,
+    required this.label,
+    this.dueDate,
+    this.displayOrder = 0,
+  });
+
+  factory PaymentInstallment.fromMap(Map<String, dynamic> data) {
+    return PaymentInstallment(
+      id: data['id']?.toString() ?? '',
+      label: data['label']?.toString() ?? '',
+      dueDate: (data['due_date'] as Timestamp?)?.toDate(),
+      displayOrder: data['display_order'] is int
+          ? data['display_order'] as int
+          : int.tryParse('${data['display_order'] ?? 0}') ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'label': label,
+      if (dueDate != null) 'due_date': Timestamp.fromDate(dueDate!),
+      'display_order': displayOrder,
+    };
+  }
+}
+
 /// Model Operation - Événements, cotisations, dons, etc.
 class Operation {
   final String id;
@@ -33,6 +67,8 @@ class Operation {
   /// Registration stays open; the payment link/QR is sent later once the
   /// organiser fills in [eventTariffs] and clears this flag in CalyCompta.
   final bool priceTbd;
+  final bool paymentPlanEnabled;
+  final List<PaymentInstallment> paymentInstallments;
 
   /// Allow members to register external guests (family / friends) for this
   /// event from CalyMob. When true, members see an "Ajouter un invité" button
@@ -96,6 +132,8 @@ class Operation {
     this.eventTariffs = const [],
     this.supplements = const [],
     this.priceTbd = false,
+    this.paymentPlanEnabled = false,
+    this.paymentInstallments = const [],
     this.allowGuests = false,
     this.organisateurId,
     this.organisateurNom,
@@ -131,6 +169,9 @@ class Operation {
       eventTariffs: _parseTariffs(data['event_tariffs']),
       supplements: _parseSupplements(data['supplements']),
       priceTbd: data['price_tbd'] == true,
+      paymentPlanEnabled: data['payment_plan_enabled'] == true,
+      paymentInstallments:
+          _parsePaymentInstallments(data['payment_installments']),
       allowGuests: data['allow_guests'] == true,
       organisateurId: data['organisateur_id'],
       organisateurNom: data['organisateur_nom'],
@@ -146,6 +187,20 @@ class Operation {
       createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (data['updated_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
+  }
+
+  static List<PaymentInstallment> _parsePaymentInstallments(
+      dynamic installmentsData) {
+    if (installmentsData == null) return [];
+    if (installmentsData is! List) return [];
+
+    final installments = installmentsData
+        .whereType<Map<String, dynamic>>()
+        .map(PaymentInstallment.fromMap)
+        .where((i) => i.id.isNotEmpty && i.label.isNotEmpty)
+        .toList();
+    installments.sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
+    return installments;
   }
 
   /// Parse tariffs from Firestore data with debug logging

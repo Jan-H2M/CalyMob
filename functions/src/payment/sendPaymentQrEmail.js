@@ -254,7 +254,7 @@ async function ensureEventNumber(db, clubId, operationId) {
  * ensureEventNumber() first so a valid code is persisted on the operation.
  * Digits in event name are replaced by French words (workaround for BNP bank bug).
  */
-function generatePaymentCommunication(eventNumber, eventId, eventTitle, eventDate, firstName, lastName) {
+function generatePaymentCommunication(eventNumber, eventId, eventTitle, eventDate, firstName, lastName, installmentLabel = '') {
   // 1. Event code — must be a valid auto-matchable format. If missing, the
   //    caller forgot to call ensureEventNumber; fail loud rather than silently
   //    generating a doc-id substring (which would NOT auto-match at bank import).
@@ -274,9 +274,12 @@ function generatePaymentCommunication(eventNumber, eventId, eventTitle, eventDat
 
   // 4. Participant name (max 30 chars)
   const participantName = `${firstName || ''} ${lastName || ''}`.trim().substring(0, 30);
+  const installmentText = installmentLabel
+    ? replaceDigitsWithFrenchWords(installmentLabel).substring(0, 24)
+    : '';
 
   // 5. Build communication (max 140 chars for EPC spec)
-  const communication = `${code} ${name} ${participantName}`.trim();
+  const communication = `${code} ${name} ${installmentText} ${participantName}`.trim();
   return communication.substring(0, 140);
 }
 
@@ -553,6 +556,41 @@ async function aggregatePaymentForInscription(db, clubId, operationId, participa
   };
 }
 
+async function resolveInstallmentPaymentForInscription(db, clubId, operationId, participantId, installmentId) {
+  if (!participantId || !installmentId) return null;
+
+  const inscriptionSnap = await db
+    .collection('clubs').doc(clubId)
+    .collection('operations').doc(operationId)
+    .collection('inscriptions').doc(participantId)
+    .get();
+
+  if (!inscriptionSnap.exists) {
+    console.log(`[resolveInstallmentPaymentForInscription] Inscription ${participantId} not found — falling back to client amount`);
+    return null;
+  }
+
+  const inscription = inscriptionSnap.data();
+  const installment = inscription.installment_payments && inscription.installment_payments[installmentId];
+  if (!installment) {
+    console.log(`[resolveInstallmentPaymentForInscription] Installment ${installmentId} not found for ${participantId} — falling back to client amount`);
+    return null;
+  }
+
+  const amountDue = Number(installment.amount_due);
+  if (!Number.isFinite(amountDue) || amountDue <= 0) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Cette tranche ne contient aucun montant à payer.'
+    );
+  }
+
+  return {
+    amountDue,
+    status: installment.status || 'unpaid',
+  };
+}
+
 /**
  * Core per-member payment email send logic, shared by the
  * `sendPaymentQrEmail` callable (invoked from CalyMob) and the
@@ -587,6 +625,8 @@ async function sendPaymentEmailForMember(db, input) {
     operationTitle,
     operationNumber,
     operationDate,
+    installmentId,
+    installmentLabel,
   } = input;
 
   console.log(`📧 [sendPaymentQrEmail] Sending payment email for operation ${operationId} to ${memberEmail}`);
@@ -594,10 +634,15 @@ async function sendPaymentEmailForMember(db, input) {
   // 0. Aggregate payment if guests are linked. Server-side aggregation
   //    wins over the client-supplied amount so a tampered or stale
   //    `amount` from CalyMob can't short-pay the QR.
-  const aggregation = await aggregatePaymentForInscription(
-    db, clubId, operationId, participantId
-  );
-  const amount = aggregation ? aggregation.totalAmount : clientAmount;
+  const installmentPayment = installmentId
+    ? await resolveInstallmentPaymentForInscription(db, clubId, operationId, participantId, installmentId)
+    : null;
+  const aggregation = installmentId
+    ? null
+    : await aggregatePaymentForInscription(
+        db, clubId, operationId, participantId
+      );
+  const amount = installmentPayment ? installmentPayment.amountDue : (aggregation ? aggregation.totalAmount : clientAmount);
   if (aggregation) {
     console.log(`📧 [sendPaymentQrEmail] Aggregated amount: ${amount}€ (parent ${aggregation.parentAmount}€ + ${aggregation.guests.length} guests ${aggregation.guestSubtotal}€). Client sent ${clientAmount}€.`);
   }
@@ -687,7 +732,8 @@ async function sendPaymentEmailForMember(db, input) {
     operationTitle,
     operationDate,
     memberFirstName,
-    memberLastName
+    memberLastName,
+    installmentLabel
   );
 
   // 6. Generate EPC payload
@@ -713,6 +759,8 @@ async function sendPaymentEmailForMember(db, input) {
     firstName: memberFirstName || '',
     lastName: memberLastName || '',
     eventTitle: operationTitle,
+    installmentLabel: installmentLabel || '',
+    hasInstallment: !!installmentId,
     eventDate: eventDateFormatted,
     amount: amount,
     amountFormatted: amountFormatted,
@@ -791,6 +839,8 @@ async function sendPaymentEmailForMember(db, input) {
       subject: renderedSubject,
       operationId,
       participantId,
+      installmentId: installmentId || null,
+      installmentLabel: installmentLabel || null,
       amount,
       resendId: result.id,
       status: 'sent',
@@ -798,6 +848,23 @@ async function sendPaymentEmailForMember(db, input) {
   } catch (logError) {
     console.warn('Warning: Failed to log email to history:', logError);
     // Don't throw - email was sent successfully
+  }
+
+  if (installmentId) {
+    try {
+      await db.collection('clubs').doc(clubId)
+        .collection('operations').doc(operationId)
+        .collection('inscriptions').doc(participantId)
+        .update({
+          [`installment_payments.${installmentId}.status`]: 'qr_sent',
+          [`installment_payments.${installmentId}.amount_due`]: amount,
+          [`installment_payments.${installmentId}.qr_sent_at`]: admin.firestore.FieldValue.serverTimestamp(),
+          [`installment_payments.${installmentId}.payment_email_id`]: result.id || null,
+          updated_at: admin.firestore.FieldValue.serverTimestamp(),
+        });
+    } catch (statusError) {
+      console.warn(`[sendPaymentQrEmail] Email sent but failed to mark installment ${installmentId} as qr_sent:`, statusError);
+    }
   }
 
   return {

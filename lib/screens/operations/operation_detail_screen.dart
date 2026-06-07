@@ -398,17 +398,30 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     final memberProvider = context.read<MemberProvider>();
     final operationProvider = context.read<OperationProvider>();
     final operation = operationProvider.selectedOperation;
+    if (operation == null) return;
 
     final userId = authProvider.currentUser?.uid ?? '';
     final userEmail = authProvider.currentUser?.email ?? '';
 
+    final selectableTariffs = operation.eventTariffs
+        .where((t) => !t.isGuestTariff && t.selfSelectable)
+        .toList()
+      ..sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
+    final selectedTariff = selectableTariffs.length > 1
+        ? await _showTariffSelectionDialog(operation, selectableTariffs)
+        : selectableTariffs.length == 1
+            ? selectableTariffs.first
+            : null;
+    if (selectableTariffs.length > 1 && selectedTariff == null) return;
+
     // Calculate base price for display
-    final basePrice = _userProfile != null
-        ? TariffUtils.computeRegistrationPrice(
-            operation: operation!,
-            profile: _userProfile!,
-          )
-        : operation!.prixMembre ?? 0.0;
+    final basePrice = selectedTariff?.price ??
+        (_userProfile != null
+            ? TariffUtils.computeRegistrationPrice(
+                operation: operation,
+                profile: _userProfile!,
+              )
+            : operation.prixMembre ?? 0.0);
 
     // ───────────────────────────────────────────────────────────────────
     // Path 0: Guests-enabled flow.
@@ -423,6 +436,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       await _handleRegisterWithGuestsFlow(
         operation: operation,
         basePrice: basePrice,
+        selectedTariff: selectedTariff,
         userId: userId,
         userEmail: userEmail,
         memberProvider: memberProvider,
@@ -455,6 +469,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             userId: userId,
             userName: userEmail,
             memberProfile: _userProfile,
+            selectedTariff: selectedTariff,
             selectedSupplements:
                 result['supplements'] as List<SelectedSupplement>,
             supplementTotal: result['supplementTotal'] as double,
@@ -472,13 +487,17 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             if (totalPrice > 0 &&
                 !operation.priceTbd &&
                 _userInscription != null) {
+              final openInstallment =
+                  _firstOpenInstallment(operation, _userInscription);
               await _showPaymentOptionsDialog(
                 operation: operation,
-                amount: totalPrice,
+                amount: openInstallment?.amount ?? totalPrice,
                 participantId: _userInscription!.id,
                 memberEmail: userEmail,
                 memberFirstName: memberProvider.prenom ?? '',
                 memberLastName: memberProvider.nom ?? '',
+                installmentId: openInstallment?.id,
+                installmentLabel: openInstallment?.label,
               );
             } else {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -541,6 +560,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             userId: userId,
             userName: userEmail,
             memberProfile: _userProfile,
+            selectedTariff: selectedTariff,
           );
 
           // Refresh participant list after registration
@@ -555,13 +575,17 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             if (basePrice > 0 &&
                 !operation.priceTbd &&
                 _userInscription != null) {
+              final openInstallment =
+                  _firstOpenInstallment(operation, _userInscription);
               await _showPaymentOptionsDialog(
                 operation: operation,
-                amount: basePrice,
+                amount: openInstallment?.amount ?? basePrice,
                 participantId: _userInscription!.id,
                 memberEmail: userEmail,
                 memberFirstName: memberProvider.prenom ?? '',
                 memberLastName: memberProvider.nom ?? '',
+                installmentId: openInstallment?.id,
+                installmentLabel: openInstallment?.label,
               );
             } else {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -638,6 +662,78 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     }
   }
 
+  Future<Tariff?> _showTariffSelectionDialog(
+    Operation operation,
+    List<Tariff> tariffs,
+  ) {
+    Tariff selected = tariffs.firstWhere(
+      (t) => t.isDefault,
+      orElse: () => tariffs.first,
+    );
+
+    return showDialog<Tariff>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Choisir votre tarif'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: tariffs.map((tariff) {
+              return RadioListTile<Tariff>(
+                value: tariff,
+                groupValue: selected,
+                onChanged: (value) {
+                  if (value != null) {
+                    setDialogState(() => selected = value);
+                  }
+                },
+                title: Text(tariff.label),
+                subtitle: Text(CurrencyFormatter.format(tariff.price)),
+                dense: true,
+              );
+            }).toList(),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Annuler'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, selected),
+              child: const Text('Continuer'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  _OpenInstallment? _firstOpenInstallment(
+    Operation operation,
+    ParticipantOperation? inscription,
+  ) {
+    if (!operation.paymentPlanEnabled ||
+        operation.paymentInstallments.isEmpty ||
+        inscription == null) {
+      return null;
+    }
+
+    for (final installment in operation.paymentInstallments) {
+      final payment = inscription.installmentPayments[installment.id];
+      final amount = payment?.amountDue ?? 0;
+      final status = payment?.status ?? 'unpaid';
+      if (amount > 0 && status != 'paid' && status != 'waived') {
+        return _OpenInstallment(
+          id: installment.id,
+          label: installment.label,
+          amount: amount,
+          status: status,
+        );
+      }
+    }
+    return null;
+  }
+
   /// Combined registration flow for events that allow guests.
   ///
   /// Shows [RegisterWithGuestsDialog] which lets the member register
@@ -653,6 +749,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   Future<void> _handleRegisterWithGuestsFlow({
     required Operation operation,
     required double basePrice,
+    Tariff? selectedTariff,
     required String userId,
     required String userEmail,
     required MemberProvider memberProvider,
@@ -701,6 +798,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         userId: userId,
         userName: userEmail,
         memberProfile: _userProfile,
+        selectedTariff: selectedTariff,
         selectedSupplements:
             selectedSupplements.isNotEmpty ? selectedSupplements : null,
         supplementTotal:
@@ -731,7 +829,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         await operationProvider.addGuestToOperation(
           clubId: widget.clubId,
           operationId: widget.operationId,
-          operationTitle: operation.titre ?? 'Événement',
+          operationTitle: operation.titre,
           guestPrenom: g['prenom'] as String,
           guestNom: g['nom'] as String,
           prix: g['prix'] as double,
@@ -751,13 +849,17 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       // 3. Payment options dialog with grand total.
       // (skip when priceTbd — organiser will bill later)
       if (totalPrice > 0 && !operation.priceTbd) {
+        final openInstallment =
+            _firstOpenInstallment(operation, _userInscription);
         await _showPaymentOptionsDialog(
           operation: operation,
-          amount: totalPrice,
+          amount: openInstallment?.amount ?? totalPrice,
           participantId: _userInscription!.id,
           memberEmail: userEmail,
           memberFirstName: prenom,
           memberLastName: nom,
+          installmentId: openInstallment?.id,
+          installmentLabel: openInstallment?.label,
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -789,6 +891,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     required String memberEmail,
     required String memberFirstName,
     required String memberLastName,
+    String? installmentId,
+    String? installmentLabel,
   }) async {
     if (amount <= 0) {
       await showDialog<void>(
@@ -840,12 +944,16 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                 children: [
                   Icon(Icons.euro, color: AppColors.middenblauw, size: 24),
                   const SizedBox(width: 12),
-                  Text(
-                    'Montant à payer: ${amount.toStringAsFixed(2)} €',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.middenblauw,
+                  Expanded(
+                    child: Text(
+                      installmentLabel == null
+                          ? 'Montant à payer: ${amount.toStringAsFixed(2)} €'
+                          : '$installmentLabel: ${amount.toStringAsFixed(2)} €',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.middenblauw,
+                      ),
                     ),
                   ),
                 ],
@@ -957,26 +1065,41 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         memberEmail: memberEmail,
         memberFirstName: memberFirstName,
         memberLastName: memberLastName,
+        installmentId: installmentId,
+        installmentLabel: installmentLabel,
       );
       if (!emailSent) return;
 
-      await _operationService.updatePaymentStatus(
-        clubId: widget.clubId,
-        operationId: widget.operationId,
-        participantId: participantId,
-        status: 'qr_email_sent',
-      );
+      if (installmentId != null) {
+        await _operationService.updateInstallmentPaymentStatus(
+          clubId: widget.clubId,
+          operationId: widget.operationId,
+          participantId: participantId,
+          installmentId: installmentId,
+          status: 'qr_sent',
+          amountDue: amount,
+        );
+      } else {
+        await _operationService.updatePaymentStatus(
+          clubId: widget.clubId,
+          operationId: widget.operationId,
+          participantId: participantId,
+          status: 'qr_email_sent',
+        );
+      }
       // Refresh participant list to show updated payment status
       await operationProvider.reloadParticipants(
           widget.clubId, widget.operationId);
     } else if (payNow == false && mounted) {
-      // Set status to qr_on_site (will pay at the event)
-      await _operationService.updatePaymentStatus(
-        clubId: widget.clubId,
-        operationId: widget.operationId,
-        participantId: participantId,
-        status: 'qr_on_site',
-      );
+      if (installmentId == null) {
+        // Set status to qr_on_site (will pay at the event)
+        await _operationService.updatePaymentStatus(
+          clubId: widget.clubId,
+          operationId: widget.operationId,
+          participantId: participantId,
+          status: 'qr_on_site',
+        );
+      }
       // Refresh participant list to show updated payment status
       await operationProvider.reloadParticipants(
           widget.clubId, widget.operationId);
@@ -999,6 +1122,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     required String memberEmail,
     required String memberFirstName,
     required String memberLastName,
+    String? installmentId,
+    String? installmentLabel,
   }) async {
     if (amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1040,6 +1165,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         operationTitle: operation.titre ?? 'Événement',
         operationNumber: operation.eventNumber,
         operationDate: operation.dateDebut,
+        installmentId: installmentId,
+        installmentLabel: installmentLabel,
       );
 
       if (mounted) {
@@ -3422,11 +3549,16 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
             // Show inscription status card (payment mode) if registered but not yet paid
             if (isRegistered && !isPaid && userInscription != null) ...[
-              _buildInscriptionStatusCard(
-                inscription: userInscription,
-                operation: operation,
-                inscriptionPrice: inscriptionPrice,
-              ),
+              operation is Operation && operation.paymentPlanEnabled
+                  ? _buildPaymentPlanStatusCard(
+                      inscription: userInscription,
+                      operation: operation,
+                    )
+                  : _buildInscriptionStatusCard(
+                      inscription: userInscription,
+                      operation: operation,
+                      inscriptionPrice: inscriptionPrice,
+                    ),
               const SizedBox(height: 12),
             ],
 
@@ -3507,6 +3639,119 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
   /// Build inscription status card: shows payment mode (on-site or email QR)
   /// for a registered but not-yet-paid participant. Tappable to open options.
+  Widget _buildPaymentPlanStatusCard({
+    required ParticipantOperation inscription,
+    required Operation operation,
+  }) {
+    final openInstallment = _firstOpenInstallment(operation, inscription);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: openInstallment == null
+            ? null
+            : () => _showPaymentOptionsSheet(
+                  inscription: inscription,
+                  operation: operation,
+                  inscriptionPrice: openInstallment.amount,
+                  installmentId: openInstallment.id,
+                  installmentLabel: openInstallment.label,
+                ),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.blue.shade50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.blue.shade200),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.payments_outlined,
+                      color: Colors.blue.shade700, size: 24),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Plan de paiement',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
+                  ),
+                  if (openInstallment != null)
+                    Text(
+                      '${openInstallment.amount.toStringAsFixed(2)} €',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              ...operation.paymentInstallments.map((installment) {
+                final payment = inscription.installmentPayments[installment.id];
+                final amount = payment?.amountDue ?? 0;
+                if (amount <= 0 && payment == null) {
+                  return const SizedBox.shrink();
+                }
+                final status = payment?.status ?? 'unpaid';
+                final label = status == 'paid'
+                    ? 'Payé'
+                    : status == 'qr_sent'
+                        ? 'QR envoyé'
+                        : status == 'waived'
+                            ? 'Dispensé'
+                            : 'À payer';
+                final color = status == 'paid'
+                    ? Colors.green.shade700
+                    : status == 'qr_sent'
+                        ? Colors.orange.shade700
+                        : status == 'waived'
+                            ? Colors.blueGrey.shade600
+                            : Colors.red.shade700;
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          installment.label,
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                      Text(
+                        '${amount.toStringAsFixed(2)} € · $label',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: color,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+              if (openInstallment != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Touchez pour recevoir le QR de ${openInstallment.label}.',
+                  style: TextStyle(fontSize: 12, color: Colors.blue.shade700),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildInscriptionStatusCard({
     required ParticipantOperation inscription,
     required dynamic operation,
@@ -3609,8 +3854,12 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     required ParticipantOperation inscription,
     required dynamic operation,
     required double inscriptionPrice,
+    String? installmentId,
+    String? installmentLabel,
   }) async {
-    final isEmail = inscription.paymentStatus == 'qr_email_sent';
+    final isEmail = installmentId == null
+        ? inscription.paymentStatus == 'qr_email_sent'
+        : inscription.installmentPayments[installmentId]?.status == 'qr_sent';
     final memberProvider = context.read<MemberProvider>();
     final authProvider = context.read<AuthProvider>();
     final memberEmail = authProvider.currentUser?.email ?? '';
@@ -3643,7 +3892,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               ),
               const SizedBox(height: 16),
               Text(
-                'Options de paiement',
+                installmentLabel == null
+                    ? 'Options de paiement'
+                    : 'Paiement - $installmentLabel',
                 style: TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.bold,
@@ -3654,7 +3905,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               Text(
                 isEmail
                     ? 'Vous avez choisi de recevoir le QR code par email.'
-                    : 'Vous avez choisi de payer sur place via QR code.',
+                    : installmentLabel == null
+                        ? 'Vous avez choisi de payer sur place via QR code.'
+                        : 'Cette tranche est encore à payer.',
                 style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
               ),
               const SizedBox(height: 20),
@@ -3673,15 +3926,28 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                     memberEmail: memberEmail,
                     memberFirstName: memberFirstName,
                     memberLastName: memberLastName,
+                    installmentId: installmentId,
+                    installmentLabel: installmentLabel,
                   );
                   if (!emailSent) return;
 
-                  await _operationService.updatePaymentStatus(
-                    clubId: widget.clubId,
-                    operationId: widget.operationId,
-                    participantId: inscription.id,
-                    status: 'qr_email_sent',
-                  );
+                  if (installmentId != null) {
+                    await _operationService.updateInstallmentPaymentStatus(
+                      clubId: widget.clubId,
+                      operationId: widget.operationId,
+                      participantId: inscription.id,
+                      installmentId: installmentId,
+                      status: 'qr_sent',
+                      amountDue: inscriptionPrice,
+                    );
+                  } else {
+                    await _operationService.updatePaymentStatus(
+                      clubId: widget.clubId,
+                      operationId: widget.operationId,
+                      participantId: inscription.id,
+                      status: 'qr_email_sent',
+                    );
+                  }
                   if (mounted) {
                     await context
                         .read<OperationProvider>()
@@ -3705,7 +3971,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               ),
 
               // Secondary action (only when currently email): switch to on-site
-              if (isEmail) ...[
+              if (isEmail && installmentId == null) ...[
                 const SizedBox(height: 10),
                 OutlinedButton.icon(
                   onPressed: () async {
@@ -3821,7 +4087,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           // since both "Modifier" and "Se désinscrire" become unavailable
           // and the member needs to know to contact the organiser.
           if (deadlinePassed) ...[
-            _buildDeadlineBanner(operation!.effectiveDeadline!),
+            _buildDeadlineBanner(operation.effectiveDeadline!),
             const SizedBox(height: 12),
           ],
 
@@ -4615,6 +4881,20 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   }
 }
 
+class _OpenInstallment {
+  final String id;
+  final String label;
+  final double amount;
+  final String status;
+
+  const _OpenInstallment({
+    required this.id,
+    required this.label,
+    required this.amount,
+    required this.status,
+  });
+}
+
 /// Dialog for selecting supplements during registration
 class _SupplementSelectionDialog extends StatefulWidget {
   final String operationTitle;
@@ -4639,7 +4919,7 @@ class _SupplementSelectionDialogState
   double get _supplementTotal {
     return widget.supplements
         .where((s) => _selectedIds.contains(s.id))
-        .fold(0.0, (sum, s) => sum + s.price);
+        .fold(0.0, (total, s) => total + s.price);
   }
 
   double get _totalPrice => widget.basePrice + _supplementTotal;

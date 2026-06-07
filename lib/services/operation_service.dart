@@ -132,6 +132,7 @@ class OperationService {
     required String userName,
     required Operation operation,
     MemberProfile? memberProfile,
+    Tariff? selectedTariff,
     List<SelectedSupplement>? selectedSupplements,
     double? supplementTotal,
   }) async {
@@ -152,16 +153,21 @@ class OperationService {
 
       // Calculer le prix basé sur la fonction du membre
       double prix;
-      if (memberProfile != null) {
+      Tariff? appliedTariff = selectedTariff;
+      if (appliedTariff != null) {
+        prix = appliedTariff.price;
+      } else if (memberProfile != null) {
         prix = TariffUtils.computeRegistrationPrice(
           operation: operation,
           profile: memberProfile,
         );
+        appliedTariff = _findTariffByPrice(operation, prix);
         debugPrint(
             '💰 Prix calculé: $prix€ pour fonction ${TariffUtils.getFunctionLabel(memberProfile)}');
       } else {
         // Fallback si pas de profil
         prix = operation.prixMembre ?? 0.0;
+        appliedTariff = _findTariffByPrice(operation, prix);
       }
 
       // Créer participant - utiliser les champs du profil si disponibles
@@ -177,6 +183,17 @@ class OperationService {
         dateInscription: DateTime.now(),
         selectedSupplements: selectedSupplements ?? [],
         supplementTotal: supplementTotal ?? 0,
+        tariffId: appliedTariff?.id,
+        tariffLabel: appliedTariff?.label,
+        tariffSelectedBy: selectedTariff != null ? 'member' : null,
+        tariffValidationStatus: selectedTariff?.requiresAdminValidation == true
+            ? 'pending'
+            : 'accepted',
+        installmentPayments: _buildInstallmentPayments(
+          operation,
+          appliedTariff,
+          extraAmountOnFirstOpenInstallment: supplementTotal ?? 0,
+        ),
       );
 
       // Sauvegarder dans Firestore (subcollection under operation)
@@ -191,6 +208,50 @@ class OperationService {
       debugPrint('❌ Erreur inscription: $e');
       rethrow;
     }
+  }
+
+  Tariff? _findTariffByPrice(Operation operation, double price) {
+    if (operation.eventTariffs.isEmpty) return null;
+    return operation.eventTariffs.cast<Tariff?>().firstWhere(
+          (t) =>
+              t != null && !t.isGuestTariff && (t.price - price).abs() < 0.01,
+          orElse: () => null,
+        );
+  }
+
+  Map<String, InstallmentPayment> _buildInstallmentPayments(
+    Operation operation,
+    Tariff? tariff, {
+    double extraAmountOnFirstOpenInstallment = 0,
+  }) {
+    if (!operation.paymentPlanEnabled ||
+        operation.paymentInstallments.isEmpty) {
+      return const {};
+    }
+
+    final result = <String, InstallmentPayment>{};
+    var extraAmountApplied = extraAmountOnFirstOpenInstallment <= 0;
+    for (final installment in operation.paymentInstallments) {
+      var amount = tariff?.installmentAmounts[installment.id] ?? 0.0;
+      if (!extraAmountApplied && amount > 0) {
+        amount += extraAmountOnFirstOpenInstallment;
+        extraAmountApplied = true;
+      }
+      result[installment.id] = InstallmentPayment(
+        status: amount > 0 ? 'unpaid' : 'waived',
+        amountDue: amount,
+      );
+    }
+    if (!extraAmountApplied && result.isNotEmpty) {
+      final firstId = operation.paymentInstallments.first.id;
+      final current = result[firstId];
+      result[firstId] = InstallmentPayment(
+        status: 'unpaid',
+        amountDue:
+            (current?.amountDue ?? 0) + extraAmountOnFirstOpenInstallment,
+      );
+    }
+    return result;
   }
 
   /// Se désinscrire d'une opération
@@ -535,7 +596,7 @@ class OperationService {
           .add(inscriptionData);
 
       debugPrint(
-          '✅ Inscription walk-in créée: ${member.fullName} → $operationTitle (${prix}€)');
+          '✅ Inscription walk-in créée: ${member.fullName} → $operationTitle ($prix€)');
     } catch (e) {
       debugPrint('❌ Erreur création inscription walk-in: $e');
       rethrow;
@@ -709,6 +770,37 @@ class OperationService {
           '✅ Payment status updated to $status for participant $participantId');
     } catch (e) {
       debugPrint('❌ Error updating payment status: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> updateInstallmentPaymentStatus({
+    required String clubId,
+    required String operationId,
+    required String participantId,
+    required String installmentId,
+    required String status,
+    double? amountDue,
+  }) async {
+    try {
+      final inscriptionRef = _firestore
+          .collection('clubs/$clubId/operations/$operationId/inscriptions')
+          .doc(participantId);
+
+      await inscriptionRef.update({
+        'installment_payments.$installmentId.status': status,
+        if (amountDue != null)
+          'installment_payments.$installmentId.amount_due': amountDue,
+        if (status == 'qr_sent')
+          'installment_payments.$installmentId.qr_sent_at':
+              FieldValue.serverTimestamp(),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      debugPrint(
+          '✅ Installment status updated: $participantId/$installmentId -> $status');
+    } catch (e) {
+      debugPrint('❌ Error updating installment status: $e');
       rethrow;
     }
   }
@@ -1051,7 +1143,7 @@ class OperationService {
   /// Compute budget prévisionnel from tariffs and capacity
   static double computeBudgetPrevu(List<Tariff> tariffs, int? capaciteMax) {
     if (tariffs.isEmpty || capaciteMax == null || capaciteMax <= 0) return 0;
-    final totalPrice = tariffs.fold<double>(0, (sum, t) => sum + t.price);
+    final totalPrice = tariffs.fold<double>(0, (total, t) => total + t.price);
     final avgPrice = totalPrice / tariffs.length;
     return (avgPrice * capaciteMax * 100).roundToDouble() / 100;
   }

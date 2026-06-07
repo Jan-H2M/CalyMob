@@ -8,7 +8,8 @@ import 'crashlytics_service.dart';
 /// Provides EPC QR code payment emails and legacy Noda Open Banking integration.
 /// Communicates with Firebase Cloud Functions.
 class PaymentService {
-  final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(region: 'europe-west1');
+  final FirebaseFunctions _functions =
+      FirebaseFunctions.instanceFor(region: 'europe-west1');
 
   // ===========================================================================
   // EPC QR CODE PAYMENT EMAIL
@@ -50,6 +51,8 @@ class PaymentService {
     required String operationTitle,
     String? operationNumber,
     DateTime? operationDate,
+    String? installmentId,
+    String? installmentLabel,
   }) async {
     try {
       debugPrint('📧 Sending EPC QR payment email to: $memberEmail');
@@ -64,7 +67,10 @@ class PaymentService {
         'amount': amount,
         'operationTitle': operationTitle,
         if (operationNumber != null) 'operationNumber': operationNumber,
-        if (operationDate != null) 'operationDate': operationDate.toIso8601String(),
+        if (operationDate != null)
+          'operationDate': operationDate.toIso8601String(),
+        if (installmentId != null) 'installmentId': installmentId,
+        if (installmentLabel != null) 'installmentLabel': installmentLabel,
       });
 
       final success = result.data['success'] == true;
@@ -76,7 +82,8 @@ class PaymentService {
 
       return success;
     } on FirebaseFunctionsException catch (e, stack) {
-      CrashlyticsService.paymentError(e, stack, 'sendPaymentQrEmail CF error ${e.code}');
+      CrashlyticsService.paymentError(
+          e, stack, 'sendPaymentQrEmail CF error ${e.code}');
       debugPrint('❌ Firebase Functions error: ${e.code} - ${e.message}');
       throw PaymentException(
         _getFriendlyErrorMessage(e.code, message: e.message),
@@ -84,7 +91,8 @@ class PaymentService {
         details: e.details,
       );
     } catch (e, stack) {
-      CrashlyticsService.paymentError(e, stack, 'sendPaymentQrEmail unexpected');
+      CrashlyticsService.paymentError(
+          e, stack, 'sendPaymentQrEmail unexpected');
       debugPrint('❌ Error sending EPC QR payment email: $e');
       throw PaymentException(
         'Erreur lors de l\'envoi de l\'email de paiement. Veuillez réessayer.',
@@ -117,7 +125,8 @@ class PaymentService {
     required String description,
   }) async {
     try {
-      debugPrint('💳 Creating Noda payment: amount=$amount, operationId=$operationId');
+      debugPrint(
+          '💳 Creating Noda payment: amount=$amount, operationId=$operationId');
 
       final result = await _functions.httpsCallable('createNodaPayment').call({
         'clubId': clubId,
@@ -131,7 +140,8 @@ class PaymentService {
 
       return PaymentResponse.fromJson(Map<String, dynamic>.from(result.data));
     } on FirebaseFunctionsException catch (e, stack) {
-      CrashlyticsService.paymentError(e, stack, 'createNodaPayment CF error ${e.code}');
+      CrashlyticsService.paymentError(
+          e, stack, 'createNodaPayment CF error ${e.code}');
       debugPrint('❌ Firebase Functions error: ${e.code} - ${e.message}');
       throw PaymentException(
         _getFriendlyErrorMessage(e.code),
@@ -164,20 +174,25 @@ class PaymentService {
     required String participantId,
   }) async {
     try {
-      debugPrint('🔍 Checking Noda payment status for participant: $participantId');
+      debugPrint(
+          '🔍 Checking Noda payment status for participant: $participantId');
 
-      final result = await _functions.httpsCallable('checkNodaPaymentStatus').call({
+      final result =
+          await _functions.httpsCallable('checkNodaPaymentStatus').call({
         'clubId': clubId,
         'operationId': operationId,
         'participantId': participantId,
       });
 
-      final status = PaymentStatus.fromJson(Map<String, dynamic>.from(result.data));
-      debugPrint('📊 Noda payment status: ${status.status}, paye: ${status.paye}');
+      final status =
+          PaymentStatus.fromJson(Map<String, dynamic>.from(result.data));
+      debugPrint(
+          '📊 Noda payment status: ${status.status}, paye: ${status.paye}');
 
       return status;
     } on FirebaseFunctionsException catch (e, stack) {
-      CrashlyticsService.paymentError(e, stack, 'checkNodaPaymentStatus CF error ${e.code}');
+      CrashlyticsService.paymentError(
+          e, stack, 'checkNodaPaymentStatus CF error ${e.code}');
       debugPrint('❌ Firebase Functions error: ${e.code} - ${e.message}');
       throw PaymentException(
         'Impossible de verifier le statut du paiement',
@@ -185,7 +200,8 @@ class PaymentService {
         details: e.details,
       );
     } catch (e, stack) {
-      CrashlyticsService.paymentError(e, stack, 'checkNodaPaymentStatus unexpected');
+      CrashlyticsService.paymentError(
+          e, stack, 'checkNodaPaymentStatus unexpected');
       debugPrint('❌ Error checking Noda payment status: $e');
       throw PaymentException(
         'Erreur lors de la verification du paiement',

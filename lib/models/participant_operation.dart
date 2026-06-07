@@ -2,6 +2,46 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'supplement.dart';
 
+class InstallmentPayment {
+  final String status;
+  final double amountDue;
+  final double? amountPaid;
+  final String? transactionId;
+  final DateTime? paidAt;
+  final DateTime? qrSentAt;
+
+  const InstallmentPayment({
+    required this.status,
+    required this.amountDue,
+    this.amountPaid,
+    this.transactionId,
+    this.paidAt,
+    this.qrSentAt,
+  });
+
+  factory InstallmentPayment.fromMap(Map<String, dynamic> map) {
+    return InstallmentPayment(
+      status: map['status']?.toString() ?? 'unpaid',
+      amountDue: (map['amount_due'] as num?)?.toDouble() ?? 0,
+      amountPaid: (map['amount_paid'] as num?)?.toDouble(),
+      transactionId: map['transaction_id'] as String?,
+      paidAt: (map['paid_at'] as Timestamp?)?.toDate(),
+      qrSentAt: (map['qr_sent_at'] as Timestamp?)?.toDate(),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'status': status,
+      'amount_due': amountDue,
+      if (amountPaid != null) 'amount_paid': amountPaid,
+      if (transactionId != null) 'transaction_id': transactionId,
+      if (paidAt != null) 'paid_at': Timestamp.fromDate(paidAt!),
+      if (qrSentAt != null) 'qr_sent_at': Timestamp.fromDate(qrSentAt!),
+    };
+  }
+}
+
 /// A single field change in an edit history entry
 class ChangeEntry {
   final String field;
@@ -86,12 +126,17 @@ class ParticipantOperation {
   final String? commentaire;
   final String? notes;
   final List<String> exercices; // IDs des exercices LIFRAS sélectionnés
-  final List<SelectedSupplement> selectedSupplements; // Suppléments sélectionnés (snapshot)
+  final List<SelectedSupplement>
+      selectedSupplements; // Suppléments sélectionnés (snapshot)
   final double supplementTotal; // Somme des prix des suppléments
-  final String? paymentStatus; // Payment status: open, pending, paid, failed, canceled, expired
-  final DateTime? paymentStatusAt; // Timestamp of last payment_status update (= last QR email sent time when status is 'qr_email_sent')
-  final bool transactionMatched; // True when bank transaction is matched in CalyCompta
-  final String? transactionId; // ID of linked bank transaction (fallback source of truth)
+  final String?
+      paymentStatus; // Payment status: open, pending, paid, failed, canceled, expired
+  final DateTime?
+      paymentStatusAt; // Timestamp of last payment_status update (= last QR email sent time when status is 'qr_email_sent')
+  final bool
+      transactionMatched; // True when bank transaction is matched in CalyCompta
+  final String?
+      transactionId; // ID of linked bank transaction (fallback source of truth)
   final String? modePaiement; // Payment mode: 'bank', 'cash', 'other'
   final bool? present; // True when member has been marked present at the event
   final DateTime? presentAt; // Timestamp when marked present
@@ -106,10 +151,15 @@ class ParticipantOperation {
   /// parent member unregisters, their guests are removed too). Stays null
   /// for guests added by admins from CalyCompta.
   final String? parentInscriptionId;
+
   /// ID of the Tariff (from operation.eventTariffs) used to compute this
   /// inscription's price. Lets us know which guest tariff was picked
   /// ("Invité adulte" vs "Invité enfant") and report on tariff usage later.
   final String? tariffId;
+  final String? tariffLabel;
+  final String? tariffSelectedBy;
+  final String? tariffValidationStatus;
+  final Map<String, InstallmentPayment> installmentPayments;
 
   /// Snapshot of the paid amount at the moment paye was set to true.
   /// Used for refund calculations and audit — freezes the amount so it
@@ -150,6 +200,10 @@ class ParticipantOperation {
     this.addedByName,
     this.parentInscriptionId,
     this.tariffId,
+    this.tariffLabel,
+    this.tariffSelectedBy,
+    this.tariffValidationStatus,
+    this.installmentPayments = const {},
     this.amountPaid,
     this.editHistory,
   });
@@ -162,13 +216,16 @@ class ParticipantOperation {
   ///   if the transaction_matched flag got out of sync from legacy code
   ///   paths that forgot to set it)
   bool get _hasMatchedBankTransaction =>
-      transactionMatched || (transactionId != null && transactionId!.isNotEmpty);
+      transactionMatched ||
+      (transactionId != null && transactionId!.isNotEmpty);
 
   /// Payment is confirmed but bank transaction not yet matched
-  bool get isPaidAwaitingBank => paye && !_hasMatchedBankTransaction && modePaiement != 'cash';
+  bool get isPaidAwaitingBank =>
+      paye && !_hasMatchedBankTransaction && modePaiement != 'cash';
 
   /// Payment is fully confirmed (bank transaction matched, or paid in cash)
-  bool get isFullyPaid => paye && (_hasMatchedBankTransaction || modePaiement == 'cash');
+  bool get isFullyPaid =>
+      paye && (_hasMatchedBankTransaction || modePaiement == 'cash');
 
   /// Total price including supplements
   double get totalPrix => prix + supplementTotal;
@@ -244,7 +301,8 @@ class ParticipantOperation {
       commentaire: data['commentaire'],
       notes: data['notes'],
       exercices: List<String>.from(data['exercices'] ?? []),
-      selectedSupplements: _parseSelectedSupplements(data['selected_supplements']),
+      selectedSupplements:
+          _parseSelectedSupplements(data['selected_supplements']),
       supplementTotal: (data['supplement_total'] ?? 0).toDouble(),
       paymentStatus: data['payment_status'],
       paymentStatusAt: (data['payment_status_at'] as Timestamp?)?.toDate(),
@@ -260,9 +318,26 @@ class ParticipantOperation {
       addedByName: data['added_by_name'] as String?,
       parentInscriptionId: data['parent_inscription_id'] as String?,
       tariffId: data['tariff_id'] as String?,
+      tariffLabel: data['tariff_label'] as String?,
+      tariffSelectedBy: data['tariff_selected_by'] as String?,
+      tariffValidationStatus: data['tariff_validation_status'] as String?,
+      installmentPayments:
+          _parseInstallmentPayments(data['installment_payments']),
       amountPaid: (data['amount_paid'] as num?)?.toDouble(),
       editHistory: _parseEditHistory(data['edit_history']),
     );
+  }
+
+  static Map<String, InstallmentPayment> _parseInstallmentPayments(
+      dynamic data) {
+    if (data is! Map) return const {};
+    final result = <String, InstallmentPayment>{};
+    data.forEach((key, value) {
+      if (value is Map<String, dynamic>) {
+        result[key.toString()] = InstallmentPayment.fromMap(value);
+      }
+    });
+    return result;
   }
 
   /// Parse edit history from Firestore data
@@ -315,12 +390,14 @@ class ParticipantOperation {
       'membre_prenom': membrePrenom,
       'prix': prix,
       'paye': paye,
-      'date_paiement': datePaiement != null ? Timestamp.fromDate(datePaiement!) : null,
+      'date_paiement':
+          datePaiement != null ? Timestamp.fromDate(datePaiement!) : null,
       'date_inscription': Timestamp.fromDate(dateInscription),
       'commentaire': commentaire,
       'notes': notes,
       'exercices': exercices,
-      'selected_supplements': selectedSupplements.map((s) => s.toMap()).toList(),
+      'selected_supplements':
+          selectedSupplements.map((s) => s.toMap()).toList(),
       'supplement_total': supplementTotal,
       'payment_status': paymentStatus,
       'transaction_matched': transactionMatched,
@@ -335,6 +412,12 @@ class ParticipantOperation {
       'added_by_name': addedByName,
       'parent_inscription_id': parentInscriptionId,
       'tariff_id': tariffId,
+      'tariff_label': tariffLabel,
+      'tariff_selected_by': tariffSelectedBy,
+      'tariff_validation_status': tariffValidationStatus,
+      'installment_payments': installmentPayments.map(
+        (key, value) => MapEntry(key, value.toMap()),
+      ),
       'amount_paid': amountPaid,
       'edit_history': editHistory?.map((e) => e.toMap()).toList(),
       'created_at': FieldValue.serverTimestamp(),
@@ -373,6 +456,10 @@ class ParticipantOperation {
     String? addedByName,
     String? parentInscriptionId,
     String? tariffId,
+    String? tariffLabel,
+    String? tariffSelectedBy,
+    String? tariffValidationStatus,
+    Map<String, InstallmentPayment>? installmentPayments,
     double? amountPaid,
     List<EditHistoryEntry>? editHistory,
   }) {
@@ -406,6 +493,11 @@ class ParticipantOperation {
       addedByName: addedByName ?? this.addedByName,
       parentInscriptionId: parentInscriptionId ?? this.parentInscriptionId,
       tariffId: tariffId ?? this.tariffId,
+      tariffLabel: tariffLabel ?? this.tariffLabel,
+      tariffSelectedBy: tariffSelectedBy ?? this.tariffSelectedBy,
+      tariffValidationStatus:
+          tariffValidationStatus ?? this.tariffValidationStatus,
+      installmentPayments: installmentPayments ?? this.installmentPayments,
       amountPaid: amountPaid ?? this.amountPaid,
       editHistory: editHistory ?? this.editHistory,
     );
