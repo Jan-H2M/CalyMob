@@ -15,6 +15,7 @@ class AppUpdateStatus {
   final String currentVersion;
   final String latestVersion;
   final String? message;
+
   /// True als het resultaat van een lokale cache komt (Firestore was niet bereikbaar)
   final bool fromLocalCache;
 
@@ -37,14 +38,15 @@ class AppUpdateStatus {
   }
 
   Map<String, dynamic> toJson() => {
-    'updateAvailable': updateAvailable,
-    'forceUpdate': forceUpdate,
-    'currentVersion': currentVersion,
-    'latestVersion': latestVersion,
-    'message': message,
-  };
+        'updateAvailable': updateAvailable,
+        'forceUpdate': forceUpdate,
+        'currentVersion': currentVersion,
+        'latestVersion': latestVersion,
+        'message': message,
+      };
 
-  factory AppUpdateStatus.fromJson(Map<String, dynamic> json, {bool fromCache = false}) {
+  factory AppUpdateStatus.fromJson(Map<String, dynamic> json,
+      {bool fromCache = false}) {
     return AppUpdateStatus(
       updateAvailable: json['updateAvailable'] as bool? ?? false,
       forceUpdate: json['forceUpdate'] as bool? ?? false,
@@ -91,13 +93,12 @@ class AppUpdateService {
   // Store URLs
   static const _playStoreUrl =
       'https://play.google.com/store/apps/details?id=club.caly.calymob';
-  static const _appStoreUrl =
-      'https://apps.apple.com/app/calymob/id6755293289';
+  static const _appStoreUrl = 'https://apps.apple.com/app/calymob/id6755293289';
 
   // iTunes Lookup API — gebruikt om te checken of een versie echt live is
   // country=be voor België (primaire markt)
   static const _iTunesLookupUrl =
-      'https://itunes.apple.com/lookup?bundleId=club.caly.calymob&country=be';
+      'https://itunes.apple.com/lookup?bundleId=be.calypsodc.calymob&country=be';
 
   // Android bundle ID voor Play Store check
   static const _androidBundleId = 'club.caly.calymob';
@@ -109,7 +110,8 @@ class AppUpdateService {
   /// Vervolgens checkt het via de store API of de versie daadwerkelijk
   /// beschikbaar is voor download (voorkomt melding bij app in review).
   /// Bij timeout/offline wordt de lokale cache gebruikt als fallback.
-  static Future<AppUpdateStatus> checkForUpdate({bool forceCheck = false}) async {
+  static Future<AppUpdateStatus> checkForUpdate(
+      {bool forceCheck = false}) async {
     // Return in-memory cache als die nog geldig is
     if (!forceCheck &&
         _cachedStatus != null &&
@@ -138,6 +140,7 @@ class AppUpdateService {
 
       final data = doc.data()!;
       final latestVersion = data['version'] as String? ?? currentVersion;
+      var effectiveLatestVersion = latestVersion;
       final minSupportedVersion = data['minSupportedVersion'] as String?;
       final forceRefresh = data['forceRefresh'] as bool? ?? false;
       final message = data['message'] as String?;
@@ -151,13 +154,22 @@ class AppUpdateService {
       if (hasUpdateInFirestore) {
         final storeVersion = await _getStoreVersion();
         if (storeVersion != null) {
+          if (_isNewer(latestVersion, storeVersion)) {
+            effectiveLatestVersion = storeVersion;
+          }
           // Alleen update tonen als de store-versie nieuwer is dan de
           // geïnstalleerde versie. Dit voorkomt dat de melding verschijnt
           // als de nieuwe build wel in Firestore staat maar nog in review is.
-          hasUpdate = _isNewer(storeVersion, currentVersion);
+          hasUpdate = _isNewer(effectiveLatestVersion, currentVersion);
           debugPrint('📱 AppUpdateService: Store versie=$storeVersion, '
               'current=$currentVersion, Firestore=$latestVersion, '
+              'effective=$effectiveLatestVersion, '
               'showUpdate=$hasUpdate');
+        } else if (Platform.isIOS) {
+          hasUpdate = false;
+          effectiveLatestVersion = currentVersion;
+          debugPrint('📱 AppUpdateService: iOS store versie niet bereikbaar, '
+              'updateprompt onderdrukt om Store-loop te vermijden');
         } else {
           // Store API niet bereikbaar — val terug op Firestore
           debugPrint('📱 AppUpdateService: Store API niet bereikbaar, '
@@ -172,7 +184,7 @@ class AppUpdateService {
         updateAvailable: hasUpdate,
         forceUpdate: mustUpdate || (forceRefresh && hasUpdate),
         currentVersion: currentVersion,
-        latestVersion: latestVersion,
+        latestVersion: effectiveLatestVersion,
         message: message,
       );
 
@@ -181,10 +193,12 @@ class AppUpdateService {
 
       return status;
     } on TimeoutException {
-      debugPrint('⚠️ AppUpdateService: Firestore timeout — falling back to local cache');
+      debugPrint(
+          '⚠️ AppUpdateService: Firestore timeout — falling back to local cache');
       return _getLocalCacheFallback();
     } catch (e) {
-      debugPrint('⚠️ AppUpdateService: Fout bij het controleren op updates: $e');
+      debugPrint(
+          '⚠️ AppUpdateService: Fout bij het controleren op updates: $e');
       return _getLocalCacheFallback();
     }
   }
@@ -209,8 +223,8 @@ class AppUpdateService {
   /// API response: { "resultCount": 1, "results": [{ "version": "1.2.4", ... }] }
   static Future<String?> _getAppStoreVersion() async {
     try {
-      final response = await http.get(Uri.parse(_iTunesLookupUrl))
-          .timeout(_storeApiTimeout);
+      final response =
+          await http.get(Uri.parse(_iTunesLookupUrl)).timeout(_storeApiTimeout);
 
       if (response.statusCode != 200) return null;
 
@@ -252,8 +266,8 @@ class AppUpdateService {
 
       // Zoek versie in de HTML — Google Play toont het in een specifiek patroon
       // Format: [[[" X.Y.Z"]]] in de page data
-      final versionMatch = RegExp(r'\[\[\["(\d+\.\d+\.\d+)"\]\]')
-          .firstMatch(response.body);
+      final versionMatch =
+          RegExp(r'\[\[\["(\d+\.\d+\.\d+)"\]\]').firstMatch(response.body);
       if (versionMatch != null) {
         return versionMatch.group(1);
       }
@@ -280,7 +294,8 @@ class AppUpdateService {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_prefKeyLastStatus, jsonEncode(status.toJson()));
-      await prefs.setInt(_prefKeyLastCheckTime, DateTime.now().millisecondsSinceEpoch);
+      await prefs.setInt(
+          _prefKeyLastCheckTime, DateTime.now().millisecondsSinceEpoch);
     } catch (e) {
       debugPrint('⚠️ AppUpdateService: Could not save to local cache: $e');
     }
@@ -299,7 +314,8 @@ class AppUpdateService {
         final packageInfo = await PackageInfo.fromPlatform();
         data['currentVersion'] = packageInfo.version;
         // Herbereken updateAvailable met de huidige versie
-        final latestVersion = data['latestVersion'] as String? ?? packageInfo.version;
+        final latestVersion =
+            data['latestVersion'] as String? ?? packageInfo.version;
         data['updateAvailable'] = _isNewer(latestVersion, packageInfo.version);
         return AppUpdateStatus.fromJson(data, fromCache: true);
       }
@@ -328,8 +344,12 @@ class AppUpdateService {
     final partsB = b.split('.').map((e) => int.tryParse(e) ?? 0).toList();
 
     // Zorg dat beide lijsten 3 elementen hebben
-    while (partsA.length < 3) partsA.add(0);
-    while (partsB.length < 3) partsB.add(0);
+    while (partsA.length < 3) {
+      partsA.add(0);
+    }
+    while (partsB.length < 3) {
+      partsB.add(0);
+    }
 
     for (int i = 0; i < 3; i++) {
       if (partsA[i] > partsB[i]) return true;
@@ -385,7 +405,8 @@ class AppUpdateService {
             ),
             if (status.message != null) ...[
               const SizedBox(height: 12),
-              Text(status.message!, style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
+              Text(status.message!,
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
             ],
           ],
         ),
@@ -411,7 +432,8 @@ class AppUpdateService {
     );
   }
 
-  static void _showForceUpdateDialog(BuildContext context, AppUpdateStatus status) {
+  static void _showForceUpdateDialog(
+      BuildContext context, AppUpdateStatus status) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -435,7 +457,9 @@ class AppUpdateService {
               ),
               if (status.message != null) ...[
                 const SizedBox(height: 12),
-                Text(status.message!, style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
+                Text(status.message!,
+                    style:
+                        TextStyle(fontSize: 13, color: Colors.grey.shade700)),
               ],
             ],
           ),
