@@ -59,8 +59,8 @@ class AppUpdateStatus {
 /// Service die controleert of er een nieuwe versie van CalyMob beschikbaar is.
 ///
 /// Vergelijkt de huidige app-versie met de versie in Firestore
-/// (settings/app_version), die automatisch wordt bijgewerkt door
-/// bump_version.sh bij elke nieuwe build.
+/// (settings/app_version), die manueel wordt gepubliceerd door een admin
+/// via "Publier la version" nadat de stores de release beschikbaar maken.
 ///
 /// Vervolgens wordt via de iTunes Lookup API (iOS) gecontroleerd of de
 /// nieuwe versie daadwerkelijk beschikbaar is op de store, zodat de
