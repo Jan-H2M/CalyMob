@@ -1,0 +1,1 @@
+Amélioration du paiement des événements: les inscriptions à l'événement École de Mer peuvent maintenant être payées en plusieurs tranches, avec une communication de paiement plus claire.
