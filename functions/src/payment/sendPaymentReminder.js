@@ -55,6 +55,27 @@ function resolveInscriptionAmount(inscription) {
   return 0;
 }
 
+function resolveReminderInstallment(entry, inscription) {
+  const installmentId = typeof entry.installment_id === 'string'
+    ? entry.installment_id.trim()
+    : '';
+  if (!installmentId) return null;
+
+  const payment = inscription.installment_payments && inscription.installment_payments[installmentId];
+  if (!payment) {
+    throw new HttpsError('failed-precondition', `Tranche ${installmentId} introuvable sur l'inscription`);
+  }
+
+  const status = payment.status || 'unpaid';
+  const amountDue = Number(payment.amount_due);
+  return {
+    installmentId,
+    installmentLabel: entry.installment_label || 'Tranche',
+    status,
+    amountDue: Number.isFinite(amountDue) ? amountDue : 0,
+  };
+}
+
 const sendPaymentReminder = onCall(
   {
     region: 'europe-west1',
@@ -191,10 +212,19 @@ const sendPaymentReminder = onCall(
         const inscription = inscriptionSnap.data();
         const member = memberSnap.data();
 
+        const installment = resolveReminderInstallment(entry, inscription);
+
         // Final guard: the refresh just before this send may have raced with
-        // a payment. Skip anyone who is now marked paid. The refresh + this
-        // check together close the window to ~ms.
-        if (inscription.paye === true) {
+        // a payment. Skip anyone who is now marked paid. For payment-plan
+        // events, guard the target tranche instead of the whole inscription.
+        if (installment && (installment.status === 'paid' || installment.status === 'waived')) {
+          return {
+            membre_id: membreId,
+            inscription_id: inscriptionId,
+            status: 'skipped-paid',
+          };
+        }
+        if (!installment && inscription.paye === true) {
           return {
             membre_id: membreId,
             inscription_id: inscriptionId,
@@ -202,13 +232,15 @@ const sendPaymentReminder = onCall(
           };
         }
 
-        const amount = resolveInscriptionAmount(inscription);
+        const amount = installment ? installment.amountDue : resolveInscriptionAmount(inscription);
         if (amount <= 0) {
           return {
             membre_id: membreId,
             inscription_id: inscriptionId,
             status: 'failed',
-            error: 'Aucun montant valide sur l\'inscription (montant/prix tous deux invalides)',
+            error: installment
+              ? `Aucun montant valide pour ${installment.installmentLabel}`
+              : 'Aucun montant valide sur l\'inscription (montant/prix tous deux invalides)',
           };
         }
 
@@ -233,6 +265,8 @@ const sendPaymentReminder = onCall(
           operationTitle,
           operationNumber,
           operationDate: operationDateIso,
+          installmentId: installment?.installmentId,
+          installmentLabel: installment?.installmentLabel,
         });
 
         return {

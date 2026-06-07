@@ -118,6 +118,36 @@ function classifyGroup(paymentStatus) {
   return 'qr_email';
 }
 
+function resolveFirstOpenInstallment(operationData, inscriptionData) {
+  if (operationData.payment_plan_enabled !== true) return null;
+  const installments = Array.isArray(operationData.payment_installments)
+    ? [...operationData.payment_installments].sort((a, b) => {
+        const left = Number(a.display_order) || 0;
+        const right = Number(b.display_order) || 0;
+        return left - right;
+      })
+    : [];
+  if (installments.length === 0) return null;
+
+  const payments = inscriptionData.installment_payments || {};
+  for (const installment of installments) {
+    const id = normalizeText(installment.id);
+    if (!id) continue;
+    const payment = payments[id] || {};
+    const amountDue = Number(payment.amount_due) || 0;
+    const status = payment.status || 'unpaid';
+    if (amountDue > 0 && status !== 'paid' && status !== 'waived') {
+      return {
+        installment_id: id,
+        installment_label: normalizeText(installment.label) || 'Tranche',
+        amount_due: amountDue,
+        status,
+      };
+    }
+  }
+  return null;
+}
+
 function sortMembersByDisplayName(members) {
   members.sort((left, right) => {
     const cmp = left.display_name.localeCompare(
@@ -133,7 +163,12 @@ function sortMembersByDisplayName(members) {
 // =============================================================================
 
 function buildNameList(members) {
-  return members.map((m) => m.display_name).join('\n');
+  return members.map((m) => {
+    if (m.installment_label && m.amount_due) {
+      return `${m.display_name} — ${m.installment_label} (${Number(m.amount_due).toFixed(2)} €)`;
+    }
+    return m.display_name;
+  }).join('\n');
 }
 
 function composeReminderText(operationData, qrEmailMembers, surPlaceMembers) {
@@ -245,7 +280,8 @@ async function recomputePaymentReminderDraft(db, clubId, operationRef, operation
       }
 
       const membreId = normalizeText(ins.membre_id) || insId;
-      const groupKey = classifyGroup(ins.payment_status);
+      const openInstallment = resolveFirstOpenInstallment(operationData, ins);
+      const groupKey = openInstallment ? 'qr_email' : classifyGroup(ins.payment_status);
 
       const memberSnap = await db.collection('clubs').doc(clubId)
         .collection('members').doc(membreId).get();
@@ -258,6 +294,7 @@ async function recomputePaymentReminderDraft(db, clubId, operationRef, operation
         membre_id: membreId,
         display_name: displayName,
         inscription_id: insId,
+        ...(openInstallment ? openInstallment : {}),
       });
     } catch (error) {
       console.error(
