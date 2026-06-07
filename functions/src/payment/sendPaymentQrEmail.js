@@ -154,6 +154,18 @@ function replaceDigitsWithFrenchWords(text) {
   });
 }
 
+function formatInstallmentForCommunication(installmentLabel = '') {
+  const label = String(installmentLabel || '').trim().replace(/\s+/g, ' ');
+  if (!label) return '';
+
+  const numberMatch = label.match(/\b(\d{1,2})\b/);
+  if (numberMatch) {
+    return `Tranche ${numberMatch[1]}`;
+  }
+
+  return label.substring(0, 24);
+}
+
 /**
  * Convert a sequential number to 4 base-26 letters (A=0, B=1, ..., Z=25).
  * Mirrors OperationService.numberToLetterCode in CalyCompta.
@@ -247,8 +259,8 @@ async function ensureEventNumber(db, clubId, operationId) {
 /**
  * Generate digit-free payment communication string
  *
- * Format: +++OP-{eventNumber}+++ {eventName} {participantName}
- * Example: +++OP-PAAAG+++ Villers-deux-Eglises Jean Dupont
+ * Format: +++OP-{eventNumber}+++ {eventName} {installmentLabel} {participantName}
+ * Example: +++OP-PAAAG+++ Gozo EDM Ecole de Mer Tranche 2 Jean Dupont
  *
  * The eventNumber MUST be in letter format — callers are expected to call
  * ensureEventNumber() first so a valid code is persisted on the operation.
@@ -274,9 +286,7 @@ function generatePaymentCommunication(eventNumber, eventId, eventTitle, eventDat
 
   // 4. Participant name (max 30 chars)
   const participantName = `${firstName || ''} ${lastName || ''}`.trim().substring(0, 30);
-  const installmentText = installmentLabel
-    ? replaceDigitsWithFrenchWords(installmentLabel).substring(0, 24)
-    : '';
+  const installmentText = formatInstallmentForCommunication(installmentLabel);
 
   // 5. Build communication (max 140 chars for EPC spec)
   const communication = `${code} ${name} ${installmentText} ${participantName}`.trim();
@@ -362,6 +372,12 @@ function getDefaultTemplateHtml() {
     <p style="font-size: 16px; margin-bottom: 20px;">
       Vous êtes inscrit(e) à l'événement <strong>{{eventTitle}}</strong>{{#if eventDate}} du <strong>{{eventDate}}</strong>{{/if}}{{#if hasGuests}} avec <strong>{{guestCountLabel}}</strong>{{/if}}.
     </p>
+
+    {{#if hasInstallment}}
+    <p style="font-size: 15px; margin: -8px 0 20px 0; color: #1E40AF;">
+      Paiement concerné : <strong>{{installmentLabel}}</strong>
+    </p>
+    {{/if}}
 
     {{#if hasGuests}}
     <!-- Breakdown for member + guests -->
