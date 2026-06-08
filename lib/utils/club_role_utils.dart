@@ -66,6 +66,7 @@ class ClubRoleUtils {
     }
     if (normalized.contains('encadrant')) {
       availableTypes.add(TeamChannelType.encadrants);
+      availableTypes.addAll(_formationChannelTypes);
     }
     if (normalized.contains('accueil')) {
       availableTypes.add(TeamChannelType.accueil);
@@ -79,7 +80,8 @@ class ClubRoleUtils {
 
     final hasExplicitFormationTarget =
         _normalizeTargetFormationLevel(targetFormationLevel) != null;
-    if (formationActive || hasExplicitFormationTarget) {
+    if (!normalized.contains('encadrant') &&
+        (formationActive || hasExplicitFormationTarget)) {
       final formationType = getFormationChannelType(
         plongeurCode: plongeurCode,
         targetFormationLevel: targetFormationLevel,
@@ -91,6 +93,14 @@ class ClubRoleUtils {
 
     return availableTypes;
   }
+
+  static const List<TeamChannelType> _formationChannelTypes = [
+    TeamChannelType.formation1,
+    TeamChannelType.formation2,
+    TeamChannelType.formation3,
+    TeamChannelType.formation4,
+    TeamChannelType.formationAM,
+  ];
 
   static TeamChannelType? getFormationChannelType({
     String? plongeurCode,

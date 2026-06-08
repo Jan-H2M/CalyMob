@@ -142,15 +142,15 @@ function memberHasChannelAccess(memberData = {}, channelType) {
     case 'gonflage':
       return normalizedRoles.has('gonflage');
     case 'formation_1_etoile':
-      return getMemberFormationTargetLevel(memberData) === '1*';
+      return normalizedRoles.has('encadrant') || getMemberFormationTargetLevel(memberData) === '1*';
     case 'formation_2_etoiles':
-      return getMemberFormationTargetLevel(memberData) === '2*';
+      return normalizedRoles.has('encadrant') || getMemberFormationTargetLevel(memberData) === '2*';
     case 'formation_3_etoiles':
-      return getMemberFormationTargetLevel(memberData) === '3*';
+      return normalizedRoles.has('encadrant') || getMemberFormationTargetLevel(memberData) === '3*';
     case 'formation_4_etoiles':
-      return getMemberFormationTargetLevel(memberData) === '4*';
+      return normalizedRoles.has('encadrant') || getMemberFormationTargetLevel(memberData) === '4*';
     case 'formation_AM':
-      return getMemberFormationTargetLevel(memberData) === 'AM';
+      return normalizedRoles.has('encadrant') || getMemberFormationTargetLevel(memberData) === 'AM';
     case 'encadrants':
     default:
       return normalizedRoles.has('encadrant');

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:path/path.dart' as path;
 import '../models/poll.dart';
@@ -50,7 +51,7 @@ class TeamChannelService {
       {bool includeAllChannels = false,
       String? plongeurCode,
       String? targetFormationLevel,
-      bool formationActive = false}) {
+      bool formationActive = false}) async* {
     final availableTypes = ClubRoleUtils.getVisibleTeamChannelTypes(
       userRoles,
       includeAllChannels: includeAllChannels,
@@ -58,6 +59,12 @@ class TeamChannelService {
       targetFormationLevel: targetFormationLevel,
       formationActive: formationActive,
     );
+    final fallbackChannels =
+        availableTypes.map(TeamChannel.defaultForType).toList();
+
+    if (fallbackChannels.isNotEmpty) {
+      yield _sortChannels(fallbackChannels);
+    }
 
     final availableTypeValues = availableTypes.map((t) => t.value).toSet();
     final query = availableTypes.length > 10
@@ -65,26 +72,37 @@ class TeamChannelService {
         : _channelsCollection(clubId)
             .where('type', whereIn: availableTypeValues.toList());
 
-    // Récupérer les canaux correspondants
-    return query.snapshots().map((snapshot) {
-      final channels = snapshot.docs
-          .map((doc) => TeamChannel.fromFirestore(doc))
-          .where((channel) => availableTypeValues.contains(channel.type.value))
-          .toList();
+    try {
+      await for (final snapshot in query.snapshots()) {
+        final channels = snapshot.docs
+            .map((doc) => TeamChannel.fromFirestore(doc))
+            .where(
+                (channel) => availableTypeValues.contains(channel.type.value))
+            .toList();
 
-      // Ajouter les canaux manquants
-      for (final type in availableTypes) {
-        if (!channels.any((c) => c.type == type)) {
-          channels.add(TeamChannel.defaultForType(type));
+        // Ajouter les canaux manquants
+        for (final type in availableTypes) {
+          if (!channels.any((c) => c.type == type)) {
+            channels.add(TeamChannel.defaultForType(type));
+          }
         }
+
+        yield _sortChannels(channels);
       }
+    } catch (error, stackTrace) {
+      debugPrint('❌ TeamChannelService.getChannelsForUser error: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (fallbackChannels.isNotEmpty) {
+        yield _sortChannels(fallbackChannels);
+      }
+    }
+  }
 
-      channels.sort((a, b) => TeamChannelType.values
-          .indexOf(a.type)
-          .compareTo(TeamChannelType.values.indexOf(b.type)));
-
-      return channels;
-    });
+  List<TeamChannel> _sortChannels(List<TeamChannel> channels) {
+    channels.sort((a, b) => TeamChannelType.values
+        .indexOf(a.type)
+        .compareTo(TeamChannelType.values.indexOf(b.type)));
+    return channels;
   }
 
   /// Stream de messages pour un canal

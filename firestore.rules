@@ -93,11 +93,11 @@ service cloud.firestore {
           (channelId == 'equipe_encadrants' && hasEncadrantRole(clubId)) ||
           (channelId == 'equipe_gonflage' && hasGonflageRole(clubId)) ||
           (channelId == 'bureau' && (hasBureauRole(clubId) || hasCARole(clubId))) ||
-          (channelId == 'formation_1_etoile' && hasFormationTarget(clubId, '1*')) ||
-          (channelId == 'formation_2_etoiles' && hasFormationTarget(clubId, '2*')) ||
-          (channelId == 'formation_3_etoiles' && hasFormationTarget(clubId, '3*')) ||
-          (channelId == 'formation_4_etoiles' && hasFormationTarget(clubId, '4*')) ||
-          (channelId == 'formation_AM' && hasFormationTarget(clubId, 'AM'))
+          (channelId == 'formation_1_etoile' && (hasEncadrantRole(clubId) || hasFormationTarget(clubId, '1*'))) ||
+          (channelId == 'formation_2_etoiles' && (hasEncadrantRole(clubId) || hasFormationTarget(clubId, '2*'))) ||
+          (channelId == 'formation_3_etoiles' && (hasEncadrantRole(clubId) || hasFormationTarget(clubId, '3*'))) ||
+          (channelId == 'formation_4_etoiles' && (hasEncadrantRole(clubId) || hasFormationTarget(clubId, '4*'))) ||
+          (channelId == 'formation_AM' && (hasEncadrantRole(clubId) || hasFormationTarget(clubId, 'AM')))
         )
       );
     }
@@ -742,8 +742,10 @@ service cloud.firestore {
 
       // Team channels (canaux d'équipe permanents)
       match /team_channels/{channelId} {
-        // Lecture: autorisée uniquement si le membre a accès à ce canal
-        allow read: if canAccessTeamChannel(clubId, channelId);
+        // Listing channel metadata must be query-friendly: the app filters by
+        // type, while access to actual messages remains protected per channel.
+        allow get: if canAccessTeamChannel(clubId, channelId);
+        allow list: if isClubMember(clubId);
         // Création: un membre autorisé peut initialiser le canal, mais le type doit correspondre à l'ID
         allow create: if canAccessTeamChannel(clubId, channelId)
           && hasValidSession(clubId)

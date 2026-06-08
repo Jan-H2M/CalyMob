@@ -31,6 +31,19 @@ void main() {
       expect(availableTypes, contains(TeamChannelType.gonflage));
     });
 
+    test('encadrants see all formation channels', () {
+      final availableTypes = ClubRoleUtils.getVisibleTeamChannelTypes(
+        ['encadrant'],
+      );
+
+      expect(availableTypes, contains(TeamChannelType.encadrants));
+      expect(availableTypes, contains(TeamChannelType.formation1));
+      expect(availableTypes, contains(TeamChannelType.formation2));
+      expect(availableTypes, contains(TeamChannelType.formation3));
+      expect(availableTypes, contains(TeamChannelType.formation4));
+      expect(availableTypes, contains(TeamChannelType.formationAM));
+    });
+
     test('includeAllChannels exposes every type for admins with BS', () {
       final availableTypes = ClubRoleUtils.getVisibleTeamChannelTypes(
         const ['BS'],
@@ -57,7 +70,8 @@ void main() {
       expect(availableTypes, isNot(contains(TeamChannelType.formation2)));
     });
 
-    test('active formation audiences map current level to target formation', () {
+    test('active formation audiences map current level to target formation',
+        () {
       expect(
         ClubRoleUtils.getVisibleTeamChannelTypes(
           ['membre'],
