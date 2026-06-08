@@ -9,6 +9,11 @@ const {
   getClubRef,
   mapErrorToHttps,
 } = require('../boutique/shared');
+const {
+  logEmailHistoryAndCommunication,
+  renderCommunicationTemplate,
+  resolveCommunicationTemplate,
+} = require('../utils/communicationTemplates');
 
 function cleanToken(value, length = 3) {
   const normalized = String(value || '')
@@ -119,63 +124,8 @@ async function resolveClubEmailSettings(clubRef) {
   };
 }
 
-function escapeHtml(value) {
-  return String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
 function formatAmount(amount) {
   return `${Number(amount || 0).toFixed(2).replace('.', ',')} €`;
-}
-
-function buildCotisationEmailHtml({
-  recipientName,
-  clubName,
-  tariffLabel,
-  periodLabel,
-  amount,
-  communication,
-  iban,
-  beneficiary,
-  logoUrl,
-}) {
-  const logoBlock = logoUrl
-    ? `<div style="text-align:center;margin:0 0 22px;"><img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(clubName)}" style="max-width:220px;max-height:90px;height:auto;"></div>`
-    : '';
-  return `
-<!doctype html>
-<html>
-<body style="margin:0;background:#f3f7fb;font-family:Arial,Helvetica,sans-serif;color:#12325c;">
-  <div style="max-width:640px;margin:0 auto;padding:28px 18px;">
-    <div style="background:#ffffff;border-radius:16px;padding:26px;border:1px solid #dfe8f2;">
-      ${logoBlock}
-      <h1 style="margin:0 0 10px;font-size:24px;color:#12325c;">Cotisation ${escapeHtml(clubName)}</h1>
-      <p style="margin:0 0 18px;font-size:16px;line-height:1.45;">
-        Bonjour ${escapeHtml(recipientName)}, voici le QR code pour payer votre cotisation.
-        Ouvrez ce mail sur ordinateur et scannez le QR avec votre application bancaire.
-      </p>
-      <div style="text-align:center;margin:24px 0;">
-        <img src="cid:qrcode" alt="QR code de paiement" style="width:260px;max-width:100%;border:1px solid #dfe8f2;border-radius:14px;padding:12px;background:#fff;">
-      </div>
-      <table style="width:100%;border-collapse:collapse;font-size:15px;">
-        <tr><td style="padding:8px 0;color:#667085;">Type</td><td style="padding:8px 0;font-weight:700;">${escapeHtml(tariffLabel)}</td></tr>
-        <tr><td style="padding:8px 0;color:#667085;">Période</td><td style="padding:8px 0;font-weight:700;">${escapeHtml(periodLabel)}</td></tr>
-        <tr><td style="padding:8px 0;color:#667085;">Montant</td><td style="padding:8px 0;font-weight:800;color:#ff8500;">${escapeHtml(formatAmount(amount))}</td></tr>
-        <tr><td style="padding:8px 0;color:#667085;">Bénéficiaire</td><td style="padding:8px 0;font-weight:700;">${escapeHtml(beneficiary)}</td></tr>
-        <tr><td style="padding:8px 0;color:#667085;">IBAN</td><td style="padding:8px 0;font-weight:700;">${escapeHtml(iban)}</td></tr>
-        <tr><td style="padding:8px 0;color:#667085;">Communication</td><td style="padding:8px 0;font-weight:800;">${escapeHtml(communication)}</td></tr>
-      </table>
-      <p style="margin:22px 0 0;font-size:14px;line-height:1.45;color:#667085;">
-        Si vous préférez faire un virement manuel, utilisez exactement l'IBAN et la communication ci-dessus.
-      </p>
-    </div>
-  </div>
-</body>
-</html>`.trim();
 }
 
 async function sendEmailViaResend(apiKey, from, to, subject, html, attachments = []) {
@@ -225,18 +175,22 @@ async function sendCotisationPaymentEmail({
   const periodLabel = period === 'sept_dec'
     ? 'Nouveau membre · Septembre à décembre année suivante'
     : 'Janvier à décembre';
-  const subject = `Cotisation ${season.label || season.start_year} - ${formatAmount(amount)}`;
-  const html = buildCotisationEmailHtml({
+  const templateType = 'membership_payment';
+  const templateData = {
     recipientName: displayName,
     clubName: emailSettings.clubName,
+    seasonLabel: season.label || season.start_year,
     tariffLabel: tariff.label,
     periodLabel,
     amount,
+    amountFormatted: formatAmount(amount),
     communication,
     iban: bankSettings.iban,
     beneficiary: bankSettings.beneficiary,
     logoUrl: emailSettings.logoUrl,
-  });
+  };
+  const resolvedTemplate = await resolveCommunicationTemplate(clubRef.firestore, clubId, templateType, 'allow_system_seed');
+  const { subject, html } = renderCommunicationTemplate(resolvedTemplate.template, templateData);
   const qrBase64 = String(qrDataUrl || '').replace(/^data:image\/png;base64,/, '');
   const result = await sendEmailViaResend(
     emailSettings.apiKey,
@@ -261,23 +215,38 @@ async function sendCotisationPaymentEmail({
       email_resend_id: result.id || null,
       updated_at: now,
     }),
-    clubRef.collection('email_history').add({
+    logEmailHistoryAndCommunication(clubRef.firestore, clubId, {
       recipientEmail,
       recipientName: displayName,
       htmlContent: html,
       sendType: 'automated',
       provider: 'resend',
-      emailType: 'cotisation_payment',
+      emailType: 'membership_payment',
+      templateId: resolvedTemplate.template.id,
+      templateName: resolvedTemplate.template.name,
+      templateType: 'membership_payment',
       createdAt: now,
       sentAt: now,
-      clubId,
       type: 'cotisation_payment',
       to: recipientEmail,
       subject,
       amount,
       paymentId: paymentRef.id,
+      entityType: 'payment',
+      entityId: paymentRef.id,
+      entityLabel: `Cotisation ${season.label || season.start_year}`,
+      messageId: result.id || null,
       resendId: result.id || null,
       status: 'sent',
+    }, {
+      entityType: 'payment',
+      entityId: paymentRef.id,
+      entityLabel: `Cotisation ${season.label || season.start_year}`,
+      templateId: resolvedTemplate.template.id,
+      templateName: resolvedTemplate.template.name,
+      templateType: 'membership_payment',
+      triggerName: 'membership_payment',
+      sendType: 'automated',
     }),
   ]);
 

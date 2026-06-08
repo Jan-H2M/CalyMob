@@ -13,6 +13,11 @@ const {
   parseMoney,
   parsePositiveInteger,
 } = require('./shared');
+const {
+  logEmailHistoryAndCommunication,
+  renderCommunicationTemplate,
+  resolveCommunicationTemplate,
+} = require('../utils/communicationTemplates');
 
 function resolveVariantUnitPrice(product, variant) {
   if (typeof variant.salePriceOverride === 'number') {
@@ -173,68 +178,8 @@ async function resolveClubEmailSettings(clubRef) {
   };
 }
 
-function escapeHtml(value) {
-  return String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
 function formatAmount(amount) {
   return `${Number(amount || 0).toFixed(2).replace('.', ',')} €`;
-}
-
-function buildOrderEmailHtml({ order, clubName, logoUrl }) {
-  const buyer = order.buyer || {};
-  const payment = order.payment || {};
-  const items = Array.isArray(order.items) ? order.items : [];
-  const logoBlock = logoUrl
-    ? `<div style="text-align:center;margin:0 0 22px;"><img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(clubName)}" style="max-width:220px;max-height:90px;height:auto;"></div>`
-    : '';
-  const itemRows = items.map((item) => {
-    const snapshot = item.productSnapshot || {};
-    return `
-      <tr>
-        <td style="padding:8px 0;border-bottom:1px solid #edf2f7;">${escapeHtml(snapshot.name || item.productId)}</td>
-        <td style="padding:8px 0;border-bottom:1px solid #edf2f7;text-align:center;">${escapeHtml(item.qty || 0)}</td>
-        <td style="padding:8px 0;border-bottom:1px solid #edf2f7;text-align:right;">${escapeHtml(formatAmount(item.lineTotal))}</td>
-      </tr>`;
-  }).join('');
-
-  return `
-<!doctype html>
-<html>
-<body style="margin:0;background:#f3f7fb;font-family:Arial,Helvetica,sans-serif;color:#12325c;">
-  <div style="max-width:640px;margin:0 auto;padding:28px 18px;">
-    <div style="background:#ffffff;border-radius:16px;padding:26px;border:1px solid #dfe8f2;">
-      ${logoBlock}
-      <h1 style="margin:0 0 10px;font-size:24px;color:#12325c;">Commande ${escapeHtml(order.orderNumber)}</h1>
-      <p style="margin:0 0 18px;font-size:16px;line-height:1.45;">
-        Bonjour ${escapeHtml(buyer.displayName)}, voici le QR code pour payer votre commande Boutique.
-        Ouvrez ce mail sur ordinateur et scannez le QR avec votre application bancaire.
-      </p>
-      <div style="text-align:center;margin:24px 0;">
-        <img src="cid:qrcode" alt="QR code de paiement" style="width:260px;max-width:100%;border:1px solid #dfe8f2;border-radius:14px;padding:12px;background:#fff;">
-      </div>
-      <table style="width:100%;border-collapse:collapse;font-size:15px;margin-bottom:18px;">
-        ${itemRows}
-      </table>
-      <table style="width:100%;border-collapse:collapse;font-size:15px;">
-        <tr><td style="padding:8px 0;color:#667085;">Total</td><td style="padding:8px 0;font-weight:800;color:#ff8500;">${escapeHtml(formatAmount(payment.amount))}</td></tr>
-        <tr><td style="padding:8px 0;color:#667085;">Bénéficiaire</td><td style="padding:8px 0;font-weight:700;">${escapeHtml(payment.beneficiary)}</td></tr>
-        <tr><td style="padding:8px 0;color:#667085;">IBAN</td><td style="padding:8px 0;font-weight:700;">${escapeHtml(payment.iban)}</td></tr>
-        <tr><td style="padding:8px 0;color:#667085;">Communication</td><td style="padding:8px 0;font-weight:800;">${escapeHtml(payment.paymentCommunication)}</td></tr>
-      </table>
-      <p style="margin:22px 0 0;font-size:14px;line-height:1.45;color:#667085;">
-        Si vous préférez faire un virement manuel, utilisez exactement l'IBAN et la communication ci-dessus.
-      </p>
-      <p style="margin:14px 0 0;font-size:14px;color:#667085;">À bientôt,<br><strong>${escapeHtml(clubName)}</strong></p>
-    </div>
-  </div>
-</body>
-</html>`.trim();
 }
 
 async function sendEmailViaResend(apiKey, from, to, subject, html, attachments = []) {
@@ -267,12 +212,24 @@ async function sendBoutiqueOrderEmail({ clubRef, clubId, orderRef, order }) {
   }
   const emailSettings = await resolveClubEmailSettings(clubRef);
   const payment = order.payment || {};
-  const html = buildOrderEmailHtml({
-    order,
+  const templateType = 'boutique_order_payment';
+  const templateData = {
+    recipientName: buyer.displayName || recipientEmail,
     clubName: emailSettings.clubName,
     logoUrl: emailSettings.logoUrl,
-  });
-  const subject = `Commande ${order.orderNumber} - ${formatAmount(payment.amount)}`;
+    orderNumber: order.orderNumber,
+    amount: payment.amount,
+    amountFormatted: formatAmount(payment.amount),
+    communication: payment.communication || `+++${order.orderNumber}+++`,
+    items: Array.isArray(order.items)
+      ? order.items.map(item => ({
+        name: item.productName || item.product_name || item.name || item.productId || 'Article',
+        quantity: item.quantity || item.quantite || 1,
+      }))
+      : [],
+  };
+  const resolvedTemplate = await resolveCommunicationTemplate(clubRef.firestore, clubId, templateType, 'allow_system_seed');
+  const { subject, html } = renderCommunicationTemplate(resolvedTemplate.template, templateData);
   const qrBase64 = String(payment.qrCodeUrl || '').replace(/^data:image\/png;base64,/, '');
   const result = await sendEmailViaResend(
     emailSettings.apiKey,
@@ -296,24 +253,39 @@ async function sendBoutiqueOrderEmail({ clubRef, clubId, orderRef, order }) {
       'payment.email_resend_id': result.id || null,
       updatedAt: now,
     }),
-    clubRef.collection('email_history').add({
+    logEmailHistoryAndCommunication(clubRef.firestore, clubId, {
       recipientEmail,
       recipientName: buyer.displayName || recipientEmail,
       htmlContent: html,
       sendType: 'automated',
       provider: 'resend',
       emailType: 'boutique_order_payment',
+      templateId: resolvedTemplate.template.id,
+      templateName: resolvedTemplate.template.name,
+      templateType: 'boutique_order_payment',
       createdAt: now,
       sentAt: now,
-      clubId,
       type: 'boutique_order_payment',
       to: recipientEmail,
       subject,
       amount: payment.amount,
       orderId: orderRef.id,
       orderNumber: order.orderNumber,
+      entityType: 'payment',
+      entityId: orderRef.id,
+      entityLabel: `Commande ${order.orderNumber}`,
+      messageId: result.id || null,
       resendId: result.id || null,
       status: 'sent',
+    }, {
+      entityType: 'payment',
+      entityId: orderRef.id,
+      entityLabel: `Commande ${order.orderNumber}`,
+      templateId: resolvedTemplate.template.id,
+      templateName: resolvedTemplate.template.name,
+      templateType: 'boutique_order_payment',
+      triggerName: 'boutique_order_payment',
+      sendType: 'automated',
     }),
   ]);
   return now;

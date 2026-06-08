@@ -23,7 +23,11 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const QRCode = require('qrcode');
-const Handlebars = require('handlebars');
+const {
+  logEmailHistoryAndCommunication,
+  renderCommunicationTemplate,
+  resolveCommunicationTemplate,
+} = require('../utils/communicationTemplates');
 
 /**
  * Generate EPC QR code payload for SEPA Credit Transfer
@@ -342,138 +346,6 @@ function formatDateDisplay(dateString) {
 }
 
 /**
- * Default template HTML (fallback if no template configured in Firestore)
- */
-function getDefaultTemplateHtml() {
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #374151; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #F3F4F6;">
-
-  <!-- Header with gradient (Marine theme) -->
-  <div style="background: linear-gradient(135deg, #1E40AF 0%, #3B82F6 100%); color: white; padding: 40px 30px; border-radius: 8px 8px 0 0; text-align: center;">
-    {{#if logoUrl}}
-      <img src="{{logoUrl}}" alt="{{clubName}}" style="max-width: 180px; height: auto; margin-bottom: 20px;">
-    {{else}}
-      <h2 style="margin: 0 0 10px 0; font-size: 24px;">{{clubName}}</h2>
-    {{/if}}
-    <h1 style="margin: 0; font-size: 26px;">Paiement de votre inscription</h1>
-    <p style="margin: 10px 0 0 0; opacity: 0.95; font-size: 16px;">{{eventTitle}}</p>
-  </div>
-
-  <!-- Body -->
-  <div style="background: white; padding: 40px 30px; border: 1px solid #E5E7EB; border-top: none;">
-    <p style="font-size: 16px; margin-bottom: 20px;">Bonjour <strong>{{recipientName}}</strong>,</p>
-
-    <p style="font-size: 16px; margin-bottom: 20px;">
-      Vous êtes inscrit(e) à l'événement <strong>{{eventTitle}}</strong>{{#if eventDate}} du <strong>{{eventDate}}</strong>{{/if}}{{#if hasGuests}} avec <strong>{{guestCountLabel}}</strong>{{/if}}.
-    </p>
-
-    {{#if hasInstallment}}
-    <p style="font-size: 15px; margin: -8px 0 20px 0; color: #1E40AF;">
-      Paiement concerné : <strong>{{installmentLabel}}</strong>
-    </p>
-    {{/if}}
-
-    {{#if hasGuests}}
-    <!-- Breakdown for member + guests -->
-    <div style="background: #FFF7ED; border-left: 4px solid #F97316; padding: 16px 20px; margin: 0 0 25px 0; border-radius: 4px;">
-      <p style="margin: 0 0 10px 0; font-size: 14px; font-weight: 600; color: #9A3412;">Détail du paiement groupé</p>
-      <table style="width: 100%; font-size: 14px; border-collapse: collapse;">
-        <tr>
-          <td style="padding: 4px 0; color: #7C2D12;">Votre place</td>
-          <td style="padding: 4px 0; text-align: right; font-weight: 500; color: #7C2D12;">{{parentAmountFormatted}}</td>
-        </tr>
-        {{#each guests}}
-        <tr>
-          <td style="padding: 4px 0; color: #7C2D12;">Invité — {{this.name}}</td>
-          <td style="padding: 4px 0; text-align: right; font-weight: 500; color: #7C2D12;">{{this.prixFormatted}}</td>
-        </tr>
-        {{/each}}
-        <tr>
-          <td style="padding: 8px 0 0 0; color: #7C2D12; border-top: 1px solid #FED7AA; font-weight: 600;">Total</td>
-          <td style="padding: 8px 0 0 0; text-align: right; font-weight: 700; color: #9A3412; border-top: 1px solid #FED7AA;">{{amountFormatted}}</td>
-        </tr>
-      </table>
-    </div>
-    {{/if}}
-
-    <p style="font-size: 16px; margin-bottom: 25px;">
-      Pour faciliter votre paiement, scannez le QR code ci-dessous avec votre application bancaire :
-    </p>
-
-    <!-- QR Code Box -->
-    <div style="text-align: center; margin: 30px 0;">
-      <div style="display: inline-block; background: #F9FAFB; border: 2px solid #E5E7EB; border-radius: 12px; padding: 25px;">
-        <img src="{{qrCodeImage}}" alt="QR Code de paiement EPC" style="width: 200px; height: 200px; display: block;">
-        <p style="margin: 15px 0 0 0; font-size: 32px; font-weight: bold; color: #1E40AF;">{{amountFormatted}}</p>
-      </div>
-    </div>
-
-    <!-- Payment Details Box -->
-    <div style="background: #EFF6FF; border-left: 4px solid #3B82F6; padding: 20px; margin: 30px 0; border-radius: 4px;">
-      <p style="margin: 0 0 15px 0; font-size: 16px; font-weight: 600; color: #1E40AF;">
-        Ou effectuez un virement manuel :
-      </p>
-      <table style="width: 100%; font-size: 14px; border-collapse: collapse;">
-        <tr>
-          <td style="padding: 8px 0; color: #6B7280; width: 120px;">Bénéficiaire :</td>
-          <td style="padding: 8px 0; font-weight: 500;">{{beneficiaryName}}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0; color: #6B7280;">IBAN :</td>
-          <td style="padding: 8px 0; font-family: 'Courier New', monospace; font-weight: 500;">{{ibanFormatted}}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0; color: #6B7280;">Montant :</td>
-          <td style="padding: 8px 0; font-weight: 600; color: #1E40AF;">{{amountFormatted}}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0; color: #6B7280; vertical-align: top;">Communication :</td>
-          <td style="padding: 8px 0; font-weight: 500; word-break: break-word;">{{paymentReference}}</td>
-        </tr>
-      </table>
-    </div>
-
-    <!-- Important Notice -->
-    <div style="background: #FEF3C7; border-left: 4px solid #F59E0B; padding: 20px; margin: 30px 0; border-radius: 4px;">
-      <p style="margin: 0 0 10px 0; font-size: 15px; font-weight: 600; color: #92400E;">
-        Important
-      </p>
-      <p style="margin: 0; font-size: 14px; color: #78350F; line-height: 1.5;">
-        Veuillez utiliser la communication exacte ci-dessus pour que votre paiement soit correctement identifié.
-      </p>
-    </div>
-
-    <!-- Footer -->
-    <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 35px 0;">
-
-    <p style="font-size: 14px; color: #6B7280; margin-bottom: 10px;">
-      Si vous avez des questions concernant votre inscription ou le paiement, n'hésitez pas à contacter l'organisateur de l'événement.
-    </p>
-
-    <p style="font-size: 14px; margin: 0;">
-      À bientôt,<br>
-      <strong>{{clubName}}</strong>
-    </p>
-  </div>
-
-  <!-- Footer -->
-  <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 0 0 8px 8px; border: 1px solid #E5E7EB; border-top: none;">
-    <p style="margin: 0; font-size: 12px; color: #9CA3AF;">
-      QR Code EPC · Virement SEPA
-    </p>
-  </div>
-</body>
-</html>
-  `.trim();
-}
-
-/**
  * Send email via Resend API with optional attachments
  */
 async function sendEmailViaResend(apiKey, from, to, subject, html, attachments = []) {
@@ -708,28 +580,11 @@ async function sendPaymentEmailForMember(db, input) {
 
   // 4. Load email template with type 'event_payment' from Firestore
   console.log(`📄 [sendPaymentQrEmail] Looking for email template with emailType='event_payment'`);
-
-  const templatesSnapshot = await db.collection('clubs').doc(clubId)
-    .collection('email_templates')
-    .where('emailType', '==', 'event_payment')
-    .where('isActive', '==', true)
-    .limit(1)
-    .get();
-
-  let templateHtml, templateSubject;
-
-  if (templatesSnapshot.empty) {
-    // Use default template (hardcoded fallback)
-    console.log('⚠️ [sendPaymentQrEmail] No active event_payment template found, using default');
-    templateHtml = getDefaultTemplateHtml();
-    templateSubject = 'Paiement pour {{eventTitle}} - {{amountFormatted}}';
-  } else {
-    // Use template from Firestore
-    const templateDoc = templatesSnapshot.docs[0].data();
-    templateHtml = templateDoc.htmlContent;
-    templateSubject = templateDoc.subject || 'Paiement pour {{eventTitle}}';
-    console.log(`✅ [sendPaymentQrEmail] Using template: ${templatesSnapshot.docs[0].id}`);
+  const resolvedTemplate = await resolveCommunicationTemplate(db, clubId, 'event_payment', 'allow_system_seed');
+  if (resolvedTemplate.warning) {
+    console.warn(`[sendPaymentQrEmail] ${resolvedTemplate.warning}`);
   }
+  console.log(`✅ [sendPaymentQrEmail] Using template: ${resolvedTemplate.template.id}`);
 
   // 5. Ensure the operation has a valid event_number, then generate
   //    the payment communication. If the caller already passed a valid
@@ -805,12 +660,11 @@ async function sendPaymentEmailForMember(db, input) {
     })) : [],
   };
 
-  // 9. Render template with Handlebars
-  const compiledHtml = Handlebars.compile(templateHtml);
-  const compiledSubject = Handlebars.compile(templateSubject);
-
-  const renderedHtml = compiledHtml(templateData);
-  const renderedSubject = compiledSubject(templateData);
+  // 9. Render template
+  const { subject: renderedSubject, html: renderedHtml } = renderCommunicationTemplate(
+    resolvedTemplate.template,
+    templateData
+  );
 
   // 10. Send email via Resend with QR code as CID embedded attachment
   const from = `${emailConfig.resend.fromName || clubName} <${emailConfig.resend.fromEmail}>`;
@@ -838,7 +692,7 @@ async function sendPaymentEmailForMember(db, input) {
   // 11. Log to email_history collection
   try {
     const serverTimestamp = admin.firestore.FieldValue.serverTimestamp();
-    await db.collection('clubs').doc(clubId).collection('email_history').add({
+    await logEmailHistoryAndCommunication(db, clubId, {
       // Canonical fields consumed by CalyCompta > Communication > Emails Sortants.
       recipientEmail: memberEmail,
       recipientName: templateData.recipientName,
@@ -846,9 +700,14 @@ async function sendPaymentEmailForMember(db, input) {
       sendType: 'automated',
       provider: 'resend',
       emailType: 'event_payment',
+      templateId: resolvedTemplate.template.id,
+      templateName: resolvedTemplate.template.name,
+      templateType: 'event_payment',
       createdAt: serverTimestamp,
       sentAt: serverTimestamp,
-      clubId,
+      entityType: 'operation',
+      entityId: operationId,
+      entityLabel: operationTitle,
       // Legacy fields kept for existing scripts and quick Firestore inspection.
       type: 'event_payment',
       to: memberEmail,
@@ -858,8 +717,18 @@ async function sendPaymentEmailForMember(db, input) {
       installmentId: installmentId || null,
       installmentLabel: installmentLabel || null,
       amount,
+      messageId: result.id,
       resendId: result.id,
       status: 'sent',
+    }, {
+      entityType: 'operation',
+      entityId: operationId,
+      entityLabel: operationTitle,
+      templateId: resolvedTemplate.template.id,
+      templateName: resolvedTemplate.template.name,
+      templateType: 'event_payment',
+      triggerName: 'event_payment',
+      sendType: 'automated',
     });
   } catch (logError) {
     console.warn('Warning: Failed to log email to history:', logError);

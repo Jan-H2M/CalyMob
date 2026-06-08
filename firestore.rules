@@ -276,6 +276,13 @@ service cloud.firestore {
         allow update, delete: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
+      // Communication entries - dossier-level communication timeline
+      match /communication_entries/{entryId} {
+        allow read: if isAuthenticated() && hasValidSession(clubId);
+        allow create: if isAuthenticated() && hasValidSession(clubId);
+        allow update, delete: if false;
+      }
+
       // Communication logs - read-only for authenticated users
       match /communication_logs/{logId} {
         allow read: if isAuthenticated() && hasValidSession(clubId);

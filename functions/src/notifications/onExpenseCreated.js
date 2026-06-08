@@ -11,6 +11,11 @@
 
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
+const {
+  logEmailHistoryAndCommunication,
+  renderCommunicationTemplate,
+  resolveCommunicationTemplate,
+} = require('../utils/communicationTemplates');
 
 /**
  * Format date to French locale string
@@ -122,101 +127,6 @@ async function ensureRemReference(db, clubId, demandeId, demande) {
   await Promise.all(writes);
 
   return paymentReference;
-}
-
-/**
- * Generate HTML email content for expense submitted notification
- */
-function generateEmailHtml(data) {
-  const {
-    recipientName,
-    description,
-    montant,
-    dateDepense,
-    fournisseur,
-    categorie,
-    clubName,
-    logoUrl,
-    appUrl,
-  } = data;
-
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #374151; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <!-- Header with logo -->
-  <div style="text-align: center; padding: 20px 0; border-bottom: 1px solid #E5E7EB;">
-    ${logoUrl
-      ? `<img src="${logoUrl}" alt="${clubName}" style="max-width: 200px; height: auto;">`
-      : `<h2 style="margin: 0; color: #374151;">${clubName}</h2>`
-    }
-  </div>
-
-  <div style="padding: 30px 0;">
-    <h1 style="margin: 0 0 20px 0; font-size: 22px; color: #111827;">Note de frais enregistrée</h1>
-
-    <p style="font-size: 16px; margin-bottom: 20px;">Bonjour ${recipientName},</p>
-
-    <p>Votre note de frais a bien été enregistrée et est en attente de validation.</p>
-
-    <div style="background: #F3F4F6; border-radius: 8px; padding: 20px; margin: 20px 0;">
-      <h3 style="margin: 0 0 15px 0; color: #374151; font-size: 16px;">Détails de votre demande</h3>
-      <table style="width: 100%;">
-        <tr>
-          <td style="padding: 8px 0; color: #6B7280;">Description:</td>
-          <td style="padding: 8px 0; font-weight: 600;">${description}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0; color: #6B7280;">Montant:</td>
-          <td style="padding: 8px 0; font-weight: 600; color: #059669;">${montant} EUR</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0; color: #6B7280;">Date de dépense:</td>
-          <td style="padding: 8px 0;">${dateDepense}</td>
-        </tr>
-        ${fournisseur ? `
-        <tr>
-          <td style="padding: 8px 0; color: #6B7280;">Fournisseur:</td>
-          <td style="padding: 8px 0;">${fournisseur}</td>
-        </tr>
-        ` : ''}
-        ${categorie ? `
-        <tr>
-          <td style="padding: 8px 0; color: #6B7280;">Catégorie:</td>
-          <td style="padding: 8px 0;">${categorie}</td>
-        </tr>
-        ` : ''}
-      </table>
-    </div>
-
-    <p style="color: #6B7280; font-size: 14px;">Vous recevrez une notification dès que votre demande sera traitée.</p>
-
-    <div style="text-align: center; margin: 30px 0;">
-      <a href="${appUrl}/depenses" style="display: inline-block; background: #F97316; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: 600;">
-        Voir mes demandes
-      </a>
-    </div>
-
-    <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 30px 0;">
-
-    <p style="font-size: 14px; margin: 0;">
-      Cordialement,<br>
-      <strong>${clubName}</strong>
-    </p>
-  </div>
-
-  <div style="background: #F9FAFB; padding: 20px; text-align: center; border-radius: 8px;">
-    <p style="margin: 0; font-size: 12px; color: #9CA3AF;">
-      CalyCompta - Gestion comptable pour clubs de plongée
-    </p>
-  </div>
-</body>
-</html>
-  `.trim();
 }
 
 /**
@@ -358,10 +268,11 @@ exports.onExpenseCreated = onDocumentCreated(
       const logoUrl = generalSettings.logoUrl || '';
       const appUrl = 'https://caly.club';
 
-      // 4. Generate email content
-      const subject = `Note de frais enregistrée - ${demande.description || 'Note de frais'}`;
-      const htmlContent = generateEmailHtml({
+      // 4. Resolve and render email content
+      const emailType = 'expense_submitted';
+      const templateData = {
         recipientName,
+        firstName: (member.prenom || recipientName.split(' ')[0] || '').trim(),
         description: demande.description || demande.titre || 'Note de frais',
         montant: formatMontant(demande.montant),
         dateDepense: formatDate(demande.date_depense),
@@ -370,7 +281,13 @@ exports.onExpenseCreated = onDocumentCreated(
         clubName,
         logoUrl,
         appUrl,
-      });
+        paymentReference: paymentReference || demande.payment_reference || '',
+      };
+      const resolvedTemplate = await resolveCommunicationTemplate(db, clubId, emailType, 'allow_system_seed');
+      if (resolvedTemplate.warning) {
+        console.warn(`[onExpenseCreated] ${resolvedTemplate.warning}`);
+      }
+      const { subject, html: htmlContent } = renderCommunicationTemplate(resolvedTemplate.template, templateData);
 
       // 5. Send email via Resend
       const fromEmail = emailConfig.resend.fromEmail || 'onboarding@resend.dev';
@@ -389,28 +306,40 @@ exports.onExpenseCreated = onDocumentCreated(
 
       console.log(`✅ [onExpenseCreated] Email sent successfully: ${result.id}`);
 
-      // 6. Log to email_history collection
-      await db
-        .collection('clubs')
-        .doc(clubId)
-        .collection('email_history')
-        .add({
-          recipientEmail,
-          recipientName,
-          recipientId: demandeurId,
-          demandeId,
-          emailType: 'expense_submitted',
-          subject,
-          htmlContent,
-          status: 'sent',
-          messageId: result.id,
-          sendType: 'expense_notification',
-          sentBy: 'system',
-          sentByName: 'Cloud Function',
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          sentAt: admin.firestore.FieldValue.serverTimestamp(),
-          clubId,
-        });
+      // 6. Log to email_history and communication_entries
+      await logEmailHistoryAndCommunication(db, clubId, {
+        recipientEmail,
+        recipientName,
+        recipientId: demandeurId,
+        demandeId,
+        entityType: 'expense_claim',
+        entityId: demandeId,
+        entityLabel: demande.description || demande.titre || 'Note de frais',
+        emailType,
+        templateId: resolvedTemplate.template.id,
+        templateName: resolvedTemplate.template.name,
+        templateType: emailType,
+        subject,
+        htmlContent,
+        status: 'sent',
+        messageId: result.id,
+        provider: 'resend',
+        sendType: 'expense_notification',
+        triggerName: emailType,
+        sentBy: 'system',
+        sentByName: 'Cloud Function',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        sentAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, {
+        entityType: 'expense_claim',
+        entityId: demandeId,
+        entityLabel: demande.description || demande.titre || 'Note de frais',
+        templateId: resolvedTemplate.template.id,
+        templateName: resolvedTemplate.template.name,
+        templateType: emailType,
+        triggerName: emailType,
+        sendType: 'automated',
+      });
 
       console.log(`✅ [onExpenseCreated] Email logged to email_history`);
 
@@ -421,26 +350,32 @@ exports.onExpenseCreated = onDocumentCreated(
 
       // Log failure to email_history
       try {
-        await db
-          .collection('clubs')
-          .doc(clubId)
-          .collection('email_history')
-          .add({
-            recipientEmail: demande.demandeur_email || 'unknown',
-            recipientName: demande.demandeur_nom || 'unknown',
-            recipientId: demande.demandeur_id,
-            demandeId,
-            emailType: 'expense_submitted',
-            subject: `Note de frais enregistrée - ${demande.description || 'Note de frais'}`,
-            htmlContent: '',
-            status: 'failed',
-            statusMessage: error.message,
-            sendType: 'expense_notification',
-            sentBy: 'system',
-            sentByName: 'Cloud Function',
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            clubId,
-          });
+        await logEmailHistoryAndCommunication(db, clubId, {
+          recipientEmail: demande.demandeur_email || 'unknown',
+          recipientName: demande.demandeur_nom || 'unknown',
+          recipientId: demande.demandeur_id,
+          demandeId,
+          entityType: 'expense_claim',
+          entityId: demandeId,
+          entityLabel: demande.description || demande.titre || 'Note de frais',
+          emailType: 'expense_submitted',
+          subject: `Note de frais enregistrée - ${demande.description || 'Note de frais'}`,
+          htmlContent: '',
+          status: 'failed',
+          statusMessage: error.message,
+          sendType: 'expense_notification',
+          triggerName: 'expense_submitted',
+          sentBy: 'system',
+          sentByName: 'Cloud Function',
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {
+          entityType: 'expense_claim',
+          entityId: demandeId,
+          entityLabel: demande.description || demande.titre || 'Note de frais',
+          templateType: 'expense_submitted',
+          triggerName: 'expense_submitted',
+          sendType: 'automated',
+        });
       } catch (logError) {
         console.error('❌ [onExpenseCreated] Error logging failure:', logError);
       }
