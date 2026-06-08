@@ -24,10 +24,12 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const QRCode = require('qrcode');
 const {
+  buildEmailRouting,
   logEmailHistoryAndCommunication,
   renderCommunicationTemplate,
   resolveCommunicationTemplate,
 } = require('../utils/communicationTemplates');
+const { sendEmailWithConfig } = require('../utils/emailDelivery');
 
 /**
  * Generate EPC QR code payload for SEPA Credit Transfer
@@ -346,39 +348,6 @@ function formatDateDisplay(dateString) {
 }
 
 /**
- * Send email via Resend API with optional attachments
- */
-async function sendEmailViaResend(apiKey, from, to, subject, html, attachments = []) {
-  const payload = {
-    from,
-    to,
-    subject,
-    html,
-  };
-
-  // Add attachments if provided (for CID embedded images)
-  if (attachments.length > 0) {
-    payload.attachments = attachments;
-  }
-
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || 'Failed to send email via Resend');
-  }
-
-  return response.json();
-}
-
-/**
  * Aggregate payment for a member's inscription including any guest
  * inscriptions linked to it via `parent_inscription_id`.
  *
@@ -556,7 +525,7 @@ async function sendPaymentEmailForMember(db, input) {
     throw new HttpsError('failed-precondition', 'IBAN or beneficiary name not configured');
   }
 
-  // 2. Get email config (Resend API)
+  // 2. Get email config
   const emailConfigDoc = await db.collection('clubs').doc(clubId)
     .collection('settings').doc('email_config').get();
 
@@ -566,8 +535,21 @@ async function sendPaymentEmailForMember(db, input) {
 
   const emailConfig = emailConfigDoc.data();
 
-  if (!emailConfig.resend?.apiKey) {
-    throw new HttpsError('failed-precondition', 'Resend API key not configured');
+  const provider = emailConfig.provider || 'resend';
+  const hasPrimaryGmail = provider === 'gmail'
+    && emailConfig.gmail?.clientId
+    && emailConfig.gmail?.clientSecret
+    && emailConfig.gmail?.refreshToken
+    && emailConfig.gmail?.fromEmail;
+  const hasPrimaryResend = provider !== 'gmail'
+    && emailConfig.resend?.apiKey
+    && emailConfig.resend?.fromEmail;
+  const hasFallback = emailConfig.deliveryFallback?.enabled === true
+    && emailConfig.deliveryFallback.provider
+    && emailConfig.deliveryFallback.provider !== provider;
+
+  if (!hasPrimaryGmail && !hasPrimaryResend && !hasFallback) {
+    throw new HttpsError('failed-precondition', 'Email provider not configured');
   }
 
   // 3. Get general settings for club name and logo
@@ -666,8 +648,15 @@ async function sendPaymentEmailForMember(db, input) {
     templateData
   );
 
-  // 10. Send email via Resend with QR code as CID embedded attachment
-  const from = `${emailConfig.resend.fromName || clubName} <${emailConfig.resend.fromEmail}>`;
+  // 10. Send email with QR code as CID embedded attachment
+  const routing = buildEmailRouting(emailConfig, {
+    clubId,
+    entityType: 'operation',
+    entityId: operationId,
+    entityLabel: operationTitle,
+    recipientEmail: memberEmail,
+    recipientName: templateData.recipientName,
+  });
 
   // Prepare QR code attachment with Content-ID for inline display
   const attachments = [
@@ -678,16 +667,21 @@ async function sendPaymentEmailForMember(db, input) {
     },
   ];
 
-  const result = await sendEmailViaResend(
-    emailConfig.resend.apiKey,
-    from,
-    memberEmail,
-    renderedSubject,
-    renderedHtml,
-    attachments
-  );
+  const configuredFromName = provider === 'gmail'
+    ? (emailConfig.gmail?.fromName || clubName)
+    : (emailConfig.resend?.fromName || clubName);
+  const result = await sendEmailWithConfig(emailConfig, {
+    to: memberEmail,
+    subject: renderedSubject,
+    html: renderedHtml,
+    attachments,
+    replyTo: routing.replyToAddress || undefined,
+    replyToName: configuredFromName,
+    headers: routing.headers,
+  });
+  const usedProviderConfig = result.provider === 'gmail' ? (emailConfig.gmail || {}) : (emailConfig.resend || {});
 
-  console.log(`✅ [sendPaymentQrEmail] Email sent successfully to ${memberEmail}, id: ${result.id}`);
+  console.log(`✅ [sendPaymentQrEmail] Email sent successfully to ${memberEmail}, id: ${result.messageId}`);
 
   // 11. Log to email_history collection
   try {
@@ -698,7 +692,17 @@ async function sendPaymentEmailForMember(db, input) {
       recipientName: templateData.recipientName,
       htmlContent: renderedHtml,
       sendType: 'automated',
-      provider: 'resend',
+      provider: result.provider,
+      providerThreadId: result.providerThreadId || null,
+      fallbackUsed: result.fallbackUsed === true,
+      attemptedProviders: result.attemptedProviders || null,
+      primaryProvider: result.primaryProvider || null,
+      fallbackProvider: result.fallbackProvider || null,
+      primaryError: result.primaryError || null,
+      replyKey: routing.replyKey,
+      replyToAddress: routing.replyToAddress,
+      fromEmail: usedProviderConfig.fromEmail || null,
+      fromName: usedProviderConfig.fromName || clubName,
       emailType: 'event_payment',
       templateId: resolvedTemplate.template.id,
       templateName: resolvedTemplate.template.name,
@@ -717,8 +721,9 @@ async function sendPaymentEmailForMember(db, input) {
       installmentId: installmentId || null,
       installmentLabel: installmentLabel || null,
       amount,
-      messageId: result.id,
-      resendId: result.id,
+      messageId: result.messageId,
+      resendId: result.provider === 'resend' ? result.messageId : null,
+      gmailMessageId: result.provider === 'gmail' ? result.messageId : null,
       status: 'sent',
     }, {
       entityType: 'operation',
@@ -744,7 +749,7 @@ async function sendPaymentEmailForMember(db, input) {
           [`installment_payments.${installmentId}.status`]: 'qr_sent',
           [`installment_payments.${installmentId}.amount_due`]: amount,
           [`installment_payments.${installmentId}.qr_sent_at`]: admin.firestore.FieldValue.serverTimestamp(),
-          [`installment_payments.${installmentId}.payment_email_id`]: result.id || null,
+          [`installment_payments.${installmentId}.payment_email_id`]: result.messageId || null,
           updated_at: admin.firestore.FieldValue.serverTimestamp(),
         });
     } catch (statusError) {
@@ -755,7 +760,7 @@ async function sendPaymentEmailForMember(db, input) {
   return {
     success: true,
     message: 'Payment email sent successfully',
-    emailId: result.id,
+    emailId: result.messageId,
   };
 }
 

@@ -15,10 +15,12 @@
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const {
+  buildEmailRouting,
   logEmailHistoryAndCommunication,
   renderCommunicationTemplate,
   resolveCommunicationTemplate,
 } = require('../utils/communicationTemplates');
+const { sendEmailWithConfig } = require('../utils/emailDelivery');
 
 /**
  * Sleep helper for rate limiting (Resend allows max 2 requests/sec)
@@ -40,32 +42,6 @@ function formatDate(date) {
 function formatMontant(amount) {
   if (typeof amount !== 'number') return '0.00';
   return amount.toFixed(2);
-}
-
-/**
- * Send email via Resend API
- */
-async function sendEmailViaResend(apiKey, from, to, subject, html) {
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from,
-      to,
-      subject,
-      html,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || 'Failed to send email via Resend');
-  }
-
-  return response.json();
 }
 
 function getExpenseEntityLabel(expenseData) {
@@ -116,17 +92,28 @@ async function sendTemplatedExpenseEmail({
   }
 
   const { subject, html: htmlContent } = renderCommunicationTemplate(resolvedTemplate.template, templateData);
-  const fromEmail = emailConfig.resend.fromEmail || 'onboarding@resend.dev';
-  const fromName = emailConfig.resend.fromName || clubName;
-  const from = `${fromName} <${fromEmail}>`;
+  const provider = emailConfig.provider || 'resend';
+  const fromEmail = provider === 'gmail' ? emailConfig.gmail?.fromEmail : emailConfig.resend?.fromEmail;
+  const fromName = provider === 'gmail'
+    ? (emailConfig.gmail?.fromName || clubName)
+    : (emailConfig.resend?.fromName || clubName);
+  const routing = buildEmailRouting(emailConfig, {
+    clubId,
+    entityType: 'expense_claim',
+    entityId: demandeId,
+    entityLabel: description,
+    recipientEmail: recipient.email,
+    recipientName,
+  });
 
-  const result = await sendEmailViaResend(
-    emailConfig.resend.apiKey,
-    from,
-    recipient.email,
+  const result = await sendEmailWithConfig(emailConfig, {
+    to: recipient.email,
     subject,
-    htmlContent
-  );
+    html: htmlContent,
+    replyTo: routing.replyToAddress || undefined,
+    replyToName: fromName,
+    headers: routing.headers,
+  });
 
   await logEmailHistoryAndCommunication(db, clubId, {
     recipientEmail: recipient.email,
@@ -143,8 +130,18 @@ async function sendTemplatedExpenseEmail({
     subject,
     htmlContent,
     status: 'sent',
-    messageId: result.id,
-    provider: 'resend',
+    messageId: result.messageId,
+    providerThreadId: result.providerThreadId || null,
+    provider: result.provider,
+    fallbackUsed: result.fallbackUsed === true,
+    attemptedProviders: result.attemptedProviders || null,
+    primaryProvider: result.primaryProvider || null,
+    fallbackProvider: result.fallbackProvider || null,
+    primaryError: result.primaryError || null,
+    replyKey: routing.replyKey,
+    replyToAddress: routing.replyToAddress,
+    fromEmail,
+    fromName,
     sendType: 'expense_notification',
     triggerName: emailType,
     sentBy: 'system',
@@ -206,7 +203,7 @@ async function sendFirstApprovalEmailToDemandeur(db, clubId, demandeId, expenseD
     },
   });
 
-  console.log(`✅ First approval email sent to demandeur: ${result.id}`);
+  console.log(`✅ First approval email sent to demandeur: ${result.messageId}`);
 
   return result;
 }
@@ -283,7 +280,7 @@ async function sendSecondApprovalNeededToValidators(db, clubId, demandeId, expen
         },
       });
 
-      console.log(`   ✅ Sent to ${validator.name} (${validator.email}): ${result.id}`);
+      console.log(`   ✅ Sent to ${validator.name} (${validator.email}): ${result.messageId}`);
 
       // Rate limiting (Resend: max 2 req/sec)
       await sleep(600);
@@ -346,7 +343,7 @@ async function sendSecondApprovalCompleteEmail(db, clubId, demandeId, expenseDat
     },
   });
 
-  console.log(`✅ Second approval complete email sent: ${result.id}`);
+  console.log(`✅ Second approval complete email sent: ${result.messageId}`);
 
   return result;
 }
@@ -394,7 +391,13 @@ exports.onExpenseStatusChange = onDocumentUpdated(
       const emailConfig = emailConfigDoc.data();
 
       // Currently only support Resend (simpler for Cloud Functions)
-      if (emailConfig.provider !== 'resend' || !emailConfig.resend?.apiKey) {
+      const provider = emailConfig.provider || 'resend';
+      if (provider === 'gmail') {
+        if (!emailConfig.gmail?.clientId || !emailConfig.gmail?.clientSecret || !emailConfig.gmail?.refreshToken || !emailConfig.gmail?.fromEmail) {
+          console.log('⚠️ [onExpenseStatusChange] Gmail not configured, skipping email');
+          return null;
+        }
+      } else if (!emailConfig.resend?.apiKey || !emailConfig.resend?.fromEmail) {
         console.log('⚠️ [onExpenseStatusChange] Resend not configured, skipping email');
         return null;
       }
@@ -487,9 +490,9 @@ exports.onExpenseStatusChange = onDocumentUpdated(
           },
         });
 
-        console.log(`✅ [onExpenseStatusChange] Email sent successfully: ${result.id}`);
+        console.log(`✅ [onExpenseStatusChange] Email sent successfully: ${result.messageId}`);
 
-        return { success: true, messageId: result.id, emailType: 'approved' };
+        return { success: true, messageId: result.messageId, emailType: 'approved' };
       }
 
       // === HANDLE REIMBURSEMENT (approuve → rembourse) ===
@@ -543,9 +546,9 @@ exports.onExpenseStatusChange = onDocumentUpdated(
           },
         });
 
-        console.log(`✅ [onExpenseStatusChange] Email sent successfully: ${result.id}`);
+        console.log(`✅ [onExpenseStatusChange] Email sent successfully: ${result.messageId}`);
 
-        return { success: true, messageId: result.id, emailType: 'reimbursed' };
+        return { success: true, messageId: result.messageId, emailType: 'reimbursed' };
       }
 
       // No email needed for this transition

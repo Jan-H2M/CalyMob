@@ -12,10 +12,12 @@
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const {
+  buildEmailRouting,
   logEmailHistoryAndCommunication,
   renderCommunicationTemplate,
   resolveCommunicationTemplate,
 } = require('../utils/communicationTemplates');
+const { sendEmailWithConfig } = require('../utils/emailDelivery');
 
 /**
  * Format date to French locale string
@@ -130,32 +132,6 @@ async function ensureRemReference(db, clubId, demandeId, demande) {
 }
 
 /**
- * Send email via Resend API
- */
-async function sendEmailViaResend(apiKey, from, to, subject, html) {
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from,
-      to,
-      subject,
-      html,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || 'Failed to send email via Resend');
-  }
-
-  return response.json();
-}
-
-/**
  * Firestore trigger for new expense requests (Gen2)
  *
  * Only sends automatic email if:
@@ -249,8 +225,13 @@ exports.onExpenseCreated = onDocumentCreated(
 
       const emailConfig = emailConfigDoc.data();
 
-      // Currently only support Resend (simpler for Cloud Functions)
-      if (emailConfig.provider !== 'resend' || !emailConfig.resend?.apiKey) {
+      const provider = emailConfig.provider || 'resend';
+      if (provider === 'gmail') {
+        if (!emailConfig.gmail?.clientId || !emailConfig.gmail?.clientSecret || !emailConfig.gmail?.refreshToken || !emailConfig.gmail?.fromEmail) {
+          console.log('⚠️ [onExpenseCreated] Gmail not configured, skipping email');
+          return null;
+        }
+      } else if (!emailConfig.resend?.apiKey || !emailConfig.resend?.fromEmail) {
         console.log('⚠️ [onExpenseCreated] Resend not configured, skipping email');
         return null;
       }
@@ -290,21 +271,30 @@ exports.onExpenseCreated = onDocumentCreated(
       const { subject, html: htmlContent } = renderCommunicationTemplate(resolvedTemplate.template, templateData);
 
       // 5. Send email via Resend
-      const fromEmail = emailConfig.resend.fromEmail || 'onboarding@resend.dev';
-      const fromName = emailConfig.resend.fromName || clubName;
-      const from = `${fromName} <${fromEmail}>`;
+      const fromEmail = provider === 'gmail' ? emailConfig.gmail.fromEmail : emailConfig.resend.fromEmail;
+      const fromName = provider === 'gmail' ? (emailConfig.gmail.fromName || clubName) : (emailConfig.resend.fromName || clubName);
+      const entityLabel = demande.description || demande.titre || 'Note de frais';
+      const routing = buildEmailRouting(emailConfig, {
+        clubId,
+        entityType: 'expense_claim',
+        entityId: demandeId,
+        entityLabel,
+        recipientEmail,
+        recipientName,
+      });
 
       console.log(`📧 [onExpenseCreated] Sending email to ${recipientEmail}...`);
 
-      const result = await sendEmailViaResend(
-        emailConfig.resend.apiKey,
-        from,
-        recipientEmail,
+      const result = await sendEmailWithConfig(emailConfig, {
+        to: recipientEmail,
         subject,
-        htmlContent
-      );
+        html: htmlContent,
+        replyTo: routing.replyToAddress || undefined,
+        replyToName: fromName,
+        headers: routing.headers,
+      });
 
-      console.log(`✅ [onExpenseCreated] Email sent successfully: ${result.id}`);
+      console.log(`✅ [onExpenseCreated] Email sent successfully: ${result.messageId}`);
 
       // 6. Log to email_history and communication_entries
       await logEmailHistoryAndCommunication(db, clubId, {
@@ -322,8 +312,18 @@ exports.onExpenseCreated = onDocumentCreated(
         subject,
         htmlContent,
         status: 'sent',
-        messageId: result.id,
-        provider: 'resend',
+        messageId: result.messageId,
+        providerThreadId: result.providerThreadId || null,
+        provider: result.provider,
+        fallbackUsed: result.fallbackUsed === true,
+        attemptedProviders: result.attemptedProviders || null,
+        primaryProvider: result.primaryProvider || null,
+        fallbackProvider: result.fallbackProvider || null,
+        primaryError: result.primaryError || null,
+        replyKey: routing.replyKey,
+        replyToAddress: routing.replyToAddress,
+        fromEmail,
+        fromName,
         sendType: 'expense_notification',
         triggerName: emailType,
         sentBy: 'system',
@@ -333,7 +333,7 @@ exports.onExpenseCreated = onDocumentCreated(
       }, {
         entityType: 'expense_claim',
         entityId: demandeId,
-        entityLabel: demande.description || demande.titre || 'Note de frais',
+        entityLabel,
         templateId: resolvedTemplate.template.id,
         templateName: resolvedTemplate.template.name,
         templateType: emailType,
@@ -343,7 +343,7 @@ exports.onExpenseCreated = onDocumentCreated(
 
       console.log(`✅ [onExpenseCreated] Email logged to email_history`);
 
-      return { success: true, messageId: result.id };
+      return { success: true, messageId: result.messageId };
 
     } catch (error) {
       console.error('❌ [onExpenseCreated] Error:', error);

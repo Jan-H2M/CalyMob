@@ -33,8 +33,9 @@ const {
   normalizeText,
   recomputePaymentReminderDraft,
 } = require('../payment/paymentReminderHelpers');
+const { sendEmailWithConfig } = require('../utils/emailDelivery');
 
-const ADMIN_NOTIFICATION_EMAIL = 'jan.andriessens@gmail.com';
+const ADMIN_NOTIFICATION_EMAIL = process.env.CALYMOB_ADMIN_NOTIFICATION_EMAIL || 'jan.andriessens@gmail.com';
 const APP_URL = 'https://caly.club';
 
 function escapeHtml(value) {
@@ -43,39 +44,51 @@ function escapeHtml(value) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 }
 
-async function sendEmailViaResend(apiKey, from, to, subject, html) {
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from, to, subject, html }),
-  });
-  if (!response.ok) {
-    let errorMessage = `Resend API failed (${response.status})`;
-    try {
-      const errorData = await response.json();
-      if (errorData && errorData.message) errorMessage = errorData.message;
-    } catch (e) { /* ignore */ }
-    throw new Error(errorMessage);
+function hasProviderConfig(emailConfig, provider) {
+  if (provider === 'gmail') {
+    return Boolean(
+      emailConfig?.gmail?.clientId
+      && emailConfig.gmail.clientSecret
+      && emailConfig.gmail.refreshToken
+      && emailConfig.gmail.fromEmail,
+    );
   }
-  return response.json();
+
+  return Boolean(
+    emailConfig?.resend?.apiKey
+    && emailConfig.resend.fromEmail
+    && emailConfig.resend.fromEmail !== 'onboarding@resend.dev',
+  );
 }
 
-async function findResendConfigForAdminEmail(db) {
+function canDeliverAdminEmail(emailConfig) {
+  const primaryProvider = emailConfig?.provider === 'gmail' ? 'gmail' : 'resend';
+  if (hasProviderConfig(emailConfig, primaryProvider)) return true;
+
+  const fallbackProvider = emailConfig?.deliveryFallback?.enabled === true
+    && emailConfig.deliveryFallback.provider
+    && emailConfig.deliveryFallback.provider !== primaryProvider
+    ? emailConfig.deliveryFallback.provider
+    : null;
+
+  return fallbackProvider ? hasProviderConfig(emailConfig, fallbackProvider) : false;
+}
+
+async function findEmailConfigForAdminEmail(db) {
   const clubsSnapshot = await db.collection('clubs').get();
   for (const clubDoc of clubsSnapshot.docs) {
     try {
       const configDoc = await db.collection('clubs').doc(clubDoc.id)
         .collection('settings').doc('email_config').get();
       if (!configDoc.exists) continue;
-      const data = configDoc.data();
-      if (data.provider !== 'resend' || !data.resend || !data.resend.apiKey) continue;
+      const emailConfig = configDoc.data() || {};
+      if (!canDeliverAdminEmail(emailConfig)) continue;
       const generalDoc = await db.collection('clubs').doc(clubDoc.id)
         .collection('settings').doc('general').get();
       const general = generalDoc.exists ? generalDoc.data() : {};
       return {
-        apiKey: data.resend.apiKey,
-        fromEmail: data.resend.fromEmail || 'onboarding@resend.dev',
-        fromName: data.resend.fromName || general.clubName || 'Calypso',
+        clubId: clubDoc.id,
+        emailConfig,
       };
     } catch (e) {
       console.warn(`[eventPaymentReminder] Failed to read email config for ${clubDoc.id}:`, e);
@@ -137,19 +150,27 @@ async function sendAdminNotificationEmail(db, preparedDrafts) {
     return;
   }
   try {
-    const config = await findResendConfigForAdminEmail(db);
+    const config = await findEmailConfigForAdminEmail(db);
     if (!config) {
-      console.warn('[eventPaymentReminder] No Resend config found — admin email skipped');
+      console.warn('[eventPaymentReminder] No deliverable email config found — admin email skipped');
       return;
     }
     const subject = preparedDrafts.length === 1
       ? `🔔 Calypso — 1 rappel de paiement prêt à envoyer`
       : `🔔 Calypso — ${preparedDrafts.length} rappels de paiement prêts à envoyer`;
     const html = buildAdminNotificationHtml(preparedDrafts);
-    const from = `${config.fromName} <${config.fromEmail}>`;
-    await sendEmailViaResend(config.apiKey, from, ADMIN_NOTIFICATION_EMAIL, subject, html);
+    const result = await sendEmailWithConfig(config.emailConfig, {
+      to: ADMIN_NOTIFICATION_EMAIL,
+      subject,
+      html,
+      headers: {
+        'X-CalyMob-Notification': 'event_payment_reminder_admin_summary',
+        'X-CalyMob-Club-Id': config.clubId,
+      },
+    });
     console.log(
-      `[eventPaymentReminder] Admin notification email sent to ${ADMIN_NOTIFICATION_EMAIL} (${preparedDrafts.length} drafts)`,
+      `[eventPaymentReminder] Admin notification email sent to ${ADMIN_NOTIFICATION_EMAIL} `
+      + `(${preparedDrafts.length} drafts, provider=${result.provider}, fallback=${result.fallbackUsed ? 'yes' : 'no'})`,
     );
   } catch (error) {
     console.error('[eventPaymentReminder] Failed to send admin notification email:', error);

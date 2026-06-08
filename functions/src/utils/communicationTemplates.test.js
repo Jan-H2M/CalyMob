@@ -7,6 +7,7 @@ jest.mock('firebase-admin', () => ({
 }));
 
 const {
+  buildEmailRouting,
   logEmailHistoryAndCommunication,
   renderCommunicationTemplate,
   resolveCommunicationTemplate,
@@ -39,6 +40,7 @@ function buildTemplateDb(docs) {
 function buildLoggingDb() {
   const emailHistoryAdd = jest.fn(async () => ({ id: 'history-1' }));
   const communicationAdd = jest.fn(async () => ({ id: 'entry-1' }));
+  const replyRouteSet = jest.fn(async () => undefined);
 
   const clubDocument = {
     collection: jest.fn((name) => {
@@ -54,11 +56,15 @@ function buildLoggingDb() {
 
   return {
     collection: jest.fn((name) => {
+      if (name === 'email_reply_routes') {
+        return { doc: jest.fn(() => ({ set: replyRouteSet })) };
+      }
       if (name !== 'clubs') throw new Error(`Unexpected root collection ${name}`);
       return clubsCollection;
     }),
     emailHistoryAdd,
     communicationAdd,
+    replyRouteSet,
   };
 }
 
@@ -110,6 +116,17 @@ describe('communicationTemplates Cloud Functions helper', () => {
 
   it('logs email history and linked communication entry', async () => {
     const db = buildLoggingDb();
+    const routing = buildEmailRouting({
+      domain: { inboundDomain: 'caly.club' },
+      inbound: { replyLocalPart: 'reply' },
+    }, {
+      clubId: 'club-1',
+      entityType: 'expense_claim',
+      entityId: 'expense-1',
+      entityLabel: 'Rochefontaine',
+      recipientEmail: 'jan@example.com',
+      recipientName: 'Jan',
+    });
 
     const historyId = await logEmailHistoryAndCommunication(db, 'club-1', {
       recipientEmail: 'jan@example.com',
@@ -125,14 +142,19 @@ describe('communicationTemplates Cloud Functions helper', () => {
       status: 'sent',
       messageId: 'resend-1',
       provider: 'resend',
+      replyKey: routing.replyKey,
+      replyToAddress: routing.replyToAddress,
       sendType: 'expense_notification',
     });
 
     expect(historyId).toBe('history-1');
+    expect(routing.replyToAddress).toMatch(/^reply\+club-1\.expense_claim\.expense-1\.[a-f0-9]+@caly\.club$/);
     expect(db.emailHistoryAdd).toHaveBeenCalledWith(expect.objectContaining({
       clubId: 'club-1',
       recipientEmail: 'jan@example.com',
       status: 'sent',
+      replyKey: routing.replyKey,
+      replyToAddress: routing.replyToAddress,
     }));
     expect(db.communicationAdd).toHaveBeenCalledWith(expect.objectContaining({
       club_id: 'club-1',
@@ -140,7 +162,18 @@ describe('communicationTemplates Cloud Functions helper', () => {
       entity_id: 'expense-1',
       source_history_id: 'history-1',
       provider_message_id: 'resend-1',
+      reply_key: routing.replyKey,
+      reply_to_address: routing.replyToAddress,
       body_preview: 'Bonjour Jan',
     }));
+    expect(db.replyRouteSet).toHaveBeenCalledWith(expect.objectContaining({
+      reply_key: routing.replyKey,
+      club_id: 'club-1',
+      entity_type: 'expense_claim',
+      entity_id: 'expense-1',
+      source_history_id: 'history-1',
+      provider_message_id: 'resend-1',
+      reply_to_address: routing.replyToAddress,
+    }), { merge: true });
   });
 });

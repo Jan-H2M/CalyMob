@@ -14,10 +14,12 @@ const {
   parsePositiveInteger,
 } = require('./shared');
 const {
+  buildEmailRouting,
   logEmailHistoryAndCommunication,
   renderCommunicationTemplate,
   resolveCommunicationTemplate,
 } = require('../utils/communicationTemplates');
+const { sendEmailWithConfig } = require('../utils/emailDelivery');
 
 function resolveVariantUnitPrice(product, variant) {
   if (typeof variant.salePriceOverride === 'number') {
@@ -165,14 +167,29 @@ async function resolveClubEmailSettings(clubRef) {
   ]);
   const emailConfig = emailSnap.exists ? emailSnap.data() : {};
   const general = generalSnap.exists ? generalSnap.data() : {};
-  if (emailConfig.provider !== 'resend' || !emailConfig.resend?.apiKey) {
+  const provider = emailConfig.provider || 'resend';
+  const hasPrimaryGmail = provider === 'gmail'
+    && emailConfig.gmail?.clientId
+    && emailConfig.gmail?.clientSecret
+    && emailConfig.gmail?.refreshToken
+    && emailConfig.gmail?.fromEmail;
+  const hasPrimaryResend = provider !== 'gmail'
+    && emailConfig.resend?.apiKey
+    && emailConfig.resend?.fromEmail;
+  const hasFallback = emailConfig.deliveryFallback?.enabled === true
+    && emailConfig.deliveryFallback.provider
+    && emailConfig.deliveryFallback.provider !== provider;
+
+  if (!hasPrimaryGmail && !hasPrimaryResend && !hasFallback) {
     throw buildDomainError('EMAIL_NOT_CONFIGURED', 'La configuration email du club est manquante.');
   }
   const clubName = general.clubName || 'Calypso';
   return {
-    apiKey: emailConfig.resend.apiKey,
-    fromEmail: emailConfig.resend.fromEmail || 'onboarding@resend.dev',
-    fromName: emailConfig.resend.fromName || clubName,
+    emailConfig,
+    provider,
+    apiKey: emailConfig.resend?.apiKey || '',
+    fromEmail: emailConfig.resend?.fromEmail || emailConfig.gmail?.fromEmail || 'onboarding@resend.dev',
+    fromName: emailConfig.resend?.fromName || emailConfig.gmail?.fromName || clubName,
     clubName,
     logoUrl: general.logoUrl || '',
   };
@@ -180,28 +197,6 @@ async function resolveClubEmailSettings(clubRef) {
 
 function formatAmount(amount) {
   return `${Number(amount || 0).toFixed(2).replace('.', ',')} €`;
-}
-
-async function sendEmailViaResend(apiKey, from, to, subject, html, attachments = []) {
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ from, to, subject, html, attachments }),
-  });
-  if (!response.ok) {
-    let message = `Resend API failed (${response.status})`;
-    try {
-      const data = await response.json();
-      message = data.message || message;
-    } catch (_) {
-      // Keep fallback.
-    }
-    throw new Error(message);
-  }
-  return response.json();
 }
 
 async function sendBoutiqueOrderEmail({ clubRef, clubId, orderRef, order }) {
@@ -231,34 +226,62 @@ async function sendBoutiqueOrderEmail({ clubRef, clubId, orderRef, order }) {
   const resolvedTemplate = await resolveCommunicationTemplate(clubRef.firestore, clubId, templateType, 'allow_system_seed');
   const { subject, html } = renderCommunicationTemplate(resolvedTemplate.template, templateData);
   const qrBase64 = String(payment.qrCodeUrl || '').replace(/^data:image\/png;base64,/, '');
-  const result = await sendEmailViaResend(
-    emailSettings.apiKey,
-    `${emailSettings.fromName} <${emailSettings.fromEmail}>`,
+  const entityLabel = `Commande ${order.orderNumber}`;
+  const recipientName = buyer.displayName || recipientEmail;
+  const routing = buildEmailRouting(emailSettings.emailConfig, {
+    clubId,
+    entityType: 'payment',
+    entityId: orderRef.id,
+    entityLabel,
     recipientEmail,
+    recipientName,
+  });
+  const configuredFromName = emailSettings.provider === 'gmail'
+    ? (emailSettings.emailConfig.gmail?.fromName || emailSettings.clubName)
+    : (emailSettings.emailConfig.resend?.fromName || emailSettings.clubName);
+  const result = await sendEmailWithConfig(emailSettings.emailConfig, {
+    to: recipientEmail,
     subject,
     html,
-    [
+    attachments: [
       {
         filename: 'boutique-qrcode.png',
         content: qrBase64,
         content_id: 'qrcode',
       },
     ],
-  );
+    replyTo: routing.replyToAddress || undefined,
+    replyToName: configuredFromName,
+    headers: routing.headers,
+  });
+  const usedProviderConfig = result.provider === 'gmail'
+    ? (emailSettings.emailConfig.gmail || {})
+    : (emailSettings.emailConfig.resend || {});
   const now = admin.firestore.Timestamp.now();
   await Promise.all([
     orderRef.update({
       'payment.email_sent_at': now,
       'payment.email_status': 'sent',
-      'payment.email_resend_id': result.id || null,
+      'payment.email_resend_id': result.provider === 'resend' ? result.messageId || null : null,
+      'payment.email_gmail_id': result.provider === 'gmail' ? result.messageId || null : null,
       updatedAt: now,
     }),
     logEmailHistoryAndCommunication(clubRef.firestore, clubId, {
       recipientEmail,
-      recipientName: buyer.displayName || recipientEmail,
+      recipientName,
       htmlContent: html,
       sendType: 'automated',
-      provider: 'resend',
+      provider: result.provider,
+      providerThreadId: result.providerThreadId || null,
+      fallbackUsed: result.fallbackUsed === true,
+      attemptedProviders: result.attemptedProviders || null,
+      primaryProvider: result.primaryProvider || null,
+      fallbackProvider: result.fallbackProvider || null,
+      primaryError: result.primaryError || null,
+      replyKey: routing.replyKey,
+      replyToAddress: routing.replyToAddress,
+      fromEmail: usedProviderConfig.fromEmail || null,
+      fromName: usedProviderConfig.fromName || emailSettings.clubName,
       emailType: 'boutique_order_payment',
       templateId: resolvedTemplate.template.id,
       templateName: resolvedTemplate.template.name,
@@ -273,14 +296,15 @@ async function sendBoutiqueOrderEmail({ clubRef, clubId, orderRef, order }) {
       orderNumber: order.orderNumber,
       entityType: 'payment',
       entityId: orderRef.id,
-      entityLabel: `Commande ${order.orderNumber}`,
-      messageId: result.id || null,
-      resendId: result.id || null,
+      entityLabel,
+      messageId: result.messageId || null,
+      resendId: result.provider === 'resend' ? result.messageId || null : null,
+      gmailMessageId: result.provider === 'gmail' ? result.messageId || null : null,
       status: 'sent',
     }, {
       entityType: 'payment',
       entityId: orderRef.id,
-      entityLabel: `Commande ${order.orderNumber}`,
+      entityLabel,
       templateId: resolvedTemplate.template.id,
       templateName: resolvedTemplate.template.name,
       templateType: 'boutique_order_payment',

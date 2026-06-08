@@ -1,5 +1,6 @@
 const Handlebars = require('handlebars');
 const admin = require('firebase-admin');
+const crypto = require('node:crypto');
 
 function stripHtml(value) {
   return String(value || '')
@@ -21,6 +22,83 @@ function buildCommunicationPreview({ bodyPreview, bodyText, bodyHtml, maxLength 
   const normalized = String(raw || '').replace(/\s+/g, ' ').trim();
   if (normalized.length <= maxLength) return normalized;
   return `${normalized.slice(0, Math.max(0, maxLength - 1)).trim()}…`;
+}
+
+function normalizeDomain(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim().toLowerCase();
+  if (!trimmed) return null;
+  return trimmed.replace(/^@/, '');
+}
+
+function getInboundReplyDomain(emailConfig) {
+  return normalizeDomain(emailConfig?.domain?.inboundDomain)
+    || normalizeDomain(emailConfig?.domain?.primaryDomain)
+    || normalizeDomain(emailConfig?.inbound?.domain)
+    || normalizeDomain(emailConfig?.replyDomain)
+    || null;
+}
+
+function getReplyLocalPart(emailConfig) {
+  const configured = emailConfig?.inbound?.replyLocalPart || emailConfig?.replyLocalPart || 'reply';
+  return String(configured || 'reply').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '') || 'reply';
+}
+
+function createReplyKey({ clubId, entityType, entityId }) {
+  const randomPart = crypto.randomBytes(10).toString('hex');
+  const readable = [clubId, entityType, entityId]
+    .filter(Boolean)
+    .map((part) => String(part).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-').slice(0, 48))
+    .join('.');
+  return `${readable}.${randomPart}`;
+}
+
+function buildAutoReplyAddress(emailConfig, replyKey) {
+  const domain = getInboundReplyDomain(emailConfig);
+  if (!domain || !replyKey) return null;
+  return `${getReplyLocalPart(emailConfig)}+${replyKey}@${domain}`;
+}
+
+function buildProviderHeaders({ clubId, replyKey, entityType, entityId, sourceHistoryId }) {
+  const headers = {
+    'X-CalyCompta-Club': clubId,
+  };
+
+  if (replyKey) headers['X-CalyCompta-Reply-Key'] = replyKey;
+  if (entityType) headers['X-CalyCompta-Entity-Type'] = entityType;
+  if (entityId) headers['X-CalyCompta-Entity-Id'] = entityId;
+  if (sourceHistoryId) headers['X-CalyCompta-Source-History-Id'] = sourceHistoryId;
+
+  return headers;
+}
+
+function buildEmailRouting(emailConfig, { clubId, entityType, entityId, entityLabel, recipientEmail, recipientName }) {
+  if (!clubId || !entityType || !entityId) {
+    return {
+      replyKey: null,
+      replyToAddress: null,
+      headers: buildProviderHeaders({ clubId }),
+    };
+  }
+
+  const replyKey = createReplyKey({ clubId, entityType, entityId });
+  const replyToAddress = buildAutoReplyAddress(emailConfig, replyKey);
+
+  return {
+    replyKey,
+    replyToAddress,
+    route: {
+      reply_key: replyKey,
+      club_id: clubId,
+      entity_type: entityType,
+      entity_id: entityId,
+      ...(entityLabel ? { entity_label: entityLabel } : {}),
+      ...(recipientEmail ? { recipient_email: recipientEmail } : {}),
+      ...(recipientName ? { recipient_name: recipientName } : {}),
+      ...(replyToAddress ? { reply_to_address: replyToAddress } : {}),
+    },
+    headers: buildProviderHeaders({ clubId, replyKey, entityType, entityId }),
+  };
 }
 
 function buildDefaultExpenseHtml(title, body, detailsRows, footer) {
@@ -313,7 +391,16 @@ async function saveCommunicationEntry(db, clubId, input) {
     ...(input.templateType ? { template_type: input.templateType } : {}),
     ...(input.sourceHistoryId ? { source_history_id: input.sourceHistoryId } : {}),
     ...(input.providerMessageId ? { provider_message_id: input.providerMessageId } : {}),
+    ...(input.providerThreadId ? { provider_thread_id: input.providerThreadId } : {}),
     ...(input.provider ? { provider: input.provider } : {}),
+    ...(input.fallbackUsed ? { fallback_used: true } : {}),
+    ...(input.attemptedProviders ? { provider_attempts: input.attemptedProviders } : {}),
+    ...(input.primaryError ? { primary_provider_error: input.primaryError } : {}),
+    ...(input.replyKey ? { reply_key: input.replyKey } : {}),
+    ...(input.replyToAddress ? { reply_to_address: input.replyToAddress } : {}),
+    ...(input.fromEmail ? { from_email: input.fromEmail } : {}),
+    ...(input.fromName ? { from_name: input.fromName } : {}),
+    ...(input.senderIdentityId ? { sender_identity_id: input.senderIdentityId } : {}),
     send_type: input.sendType || 'automated',
     ...(input.triggerName ? { trigger_name: input.triggerName } : {}),
     sent_by: input.sentBy || 'system',
@@ -349,17 +436,50 @@ async function logEmailHistoryAndCommunication(db, clubId, historyInput, communi
     templateType: communicationInput.templateType || historyInput.templateType || historyInput.emailType,
     sourceHistoryId: historyRef.id,
     providerMessageId: historyInput.messageId,
+    providerThreadId: historyInput.providerThreadId,
     provider: historyInput.provider || 'resend',
+    fallbackUsed: historyInput.fallbackUsed,
+    attemptedProviders: historyInput.attemptedProviders,
+    primaryError: historyInput.primaryError,
+    replyKey: historyInput.replyKey,
+    replyToAddress: historyInput.replyToAddress,
+    fromEmail: historyInput.fromEmail,
+    fromName: historyInput.fromName,
+    senderIdentityId: historyInput.identityId || historyInput.senderIdentityId,
     sendType: communicationInput.sendType || historyInput.sendType || 'automated',
     triggerName: communicationInput.triggerName || historyInput.triggerName || historyInput.emailType,
     sentBy: historyInput.sentBy || 'system',
     sentByName: historyInput.sentByName || 'Cloud Function',
   });
 
+  if (historyInput.replyKey && (communicationInput.entityType || historyInput.entityType) && (communicationInput.entityId || historyInput.entityId)) {
+    await db.collection('email_reply_routes').doc(historyInput.replyKey).set({
+      reply_key: historyInput.replyKey,
+      club_id: clubId,
+      entity_type: communicationInput.entityType || historyInput.entityType,
+      entity_id: communicationInput.entityId || historyInput.entityId,
+      ...(communicationInput.entityLabel || historyInput.entityLabel ? { entity_label: communicationInput.entityLabel || historyInput.entityLabel } : {}),
+      ...(historyInput.recipientEmail ? { recipient_email: historyInput.recipientEmail } : {}),
+      ...(historyInput.recipientName ? { recipient_name: historyInput.recipientName } : {}),
+      source_history_id: historyRef.id,
+      ...(historyInput.messageId ? { provider_message_id: historyInput.messageId } : {}),
+      ...(historyInput.providerThreadId ? { provider_thread_id: historyInput.providerThreadId } : {}),
+      ...(historyInput.replyToAddress ? { reply_to_address: historyInput.replyToAddress } : {}),
+      ...(historyInput.identityId || historyInput.senderIdentityId ? { sender_identity_id: historyInput.identityId || historyInput.senderIdentityId } : {}),
+      provider: historyInput.provider || 'resend',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      last_outbound_at: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  }
+
   return historyRef.id;
 }
 
 module.exports = {
+  buildEmailRouting,
+  buildProviderHeaders,
+  buildAutoReplyAddress,
+  createReplyKey,
   resolveCommunicationTemplate,
   renderCommunicationTemplate,
   saveCommunicationEntry,
