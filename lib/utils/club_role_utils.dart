@@ -77,7 +77,9 @@ class ClubRoleUtils {
       availableTypes.add(TeamChannelType.bureau);
     }
 
-    if (formationActive) {
+    final hasExplicitFormationTarget =
+        _normalizeTargetFormationLevel(targetFormationLevel) != null;
+    if (formationActive || hasExplicitFormationTarget) {
       final formationType = getFormationChannelType(
         plongeurCode: plongeurCode,
         targetFormationLevel: targetFormationLevel,
@@ -145,16 +147,28 @@ class ClubRoleUtils {
         code.contains('INITIATION')) {
       return '1*';
     }
-    if (code == 'P1' || code == '1' || code == '1*' || code.contains('PLONGEUR 1')) {
+    if (code == 'P1' ||
+        code == '1' ||
+        code == '1*' ||
+        code.contains('PLONGEUR 1')) {
       return '2*';
     }
-    if (code == 'P2' || code == '2' || code == '2*' || code.contains('PLONGEUR 2')) {
+    if (code == 'P2' ||
+        code == '2' ||
+        code == '2*' ||
+        code.contains('PLONGEUR 2')) {
       return '3*';
     }
-    if (code == 'P3' || code == '3' || code == '3*' || code.contains('PLONGEUR 3')) {
+    if (code == 'P3' ||
+        code == '3' ||
+        code == '3*' ||
+        code.contains('PLONGEUR 3')) {
       return '4*';
     }
-    if (code == 'P4' || code == '4' || code == '4*' || code.contains('PLONGEUR 4')) {
+    if (code == 'P4' ||
+        code == '4' ||
+        code == '4*' ||
+        code.contains('PLONGEUR 4')) {
       return 'AM';
     }
     return null;

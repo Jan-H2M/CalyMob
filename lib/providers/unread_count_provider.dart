@@ -64,7 +64,30 @@ class UnreadCountProvider extends ChangeNotifier {
       String? targetFormationLevel,
       bool formationActive = false}) async {
     if (_isListening) {
-      debugPrint('ℹ️ UnreadCountProvider: al actief');
+      final contextChanged = _clubId != clubId ||
+          _userId != userId ||
+          !listEquals(_roles, roles) ||
+          _includeAllTeamChannels != includeAllTeamChannels ||
+          _plongeurCode != plongeurCode ||
+          _targetFormationLevel != targetFormationLevel ||
+          _formationActive != formationActive;
+
+      if (!contextChanged) {
+        debugPrint('ℹ️ UnreadCountProvider: al actief');
+        return;
+      }
+
+      debugPrint('🔄 UnreadCountProvider: context bijgewerkt (roles: $roles)');
+      _clubId = clubId;
+      _userId = userId;
+      _roles = List<String>.from(roles);
+      _includeAllTeamChannels = includeAllTeamChannels;
+      _plongeurCode = plongeurCode;
+      _targetFormationLevel = targetFormationLevel;
+      _formationActive = formationActive;
+
+      await _tracker.init();
+      unawaited(refresh());
       return;
     }
 
@@ -72,7 +95,7 @@ class UnreadCountProvider extends ChangeNotifier {
         '🔔 UnreadCountProvider: start periodic refresh (roles: $roles)');
     _clubId = clubId;
     _userId = userId;
-    _roles = roles;
+    _roles = List<String>.from(roles);
     _includeAllTeamChannels = includeAllTeamChannels;
     _plongeurCode = plongeurCode;
     _targetFormationLevel = targetFormationLevel;

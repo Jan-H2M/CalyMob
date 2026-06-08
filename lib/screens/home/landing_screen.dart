@@ -88,17 +88,15 @@ class _LandingScreenState extends State<LandingScreen> {
 
     final unreadProvider =
         Provider.of<UnreadCountProvider>(context, listen: false);
-    if (!unreadProvider.isListening) {
-      unreadProvider.listen(
-        FirebaseConfig.defaultClubId,
-        uid,
-        roles: roles,
-        includeAllTeamChannels: includeAllTeamChannels,
-        plongeurCode: memberProvider.plongeurCode,
-        targetFormationLevel: memberProvider.targetFormationLevel,
-        formationActive: memberProvider.formationActive,
-      );
-    }
+    unreadProvider.listen(
+      FirebaseConfig.defaultClubId,
+      uid,
+      roles: roles,
+      includeAllTeamChannels: includeAllTeamChannels,
+      plongeurCode: memberProvider.plongeurCode,
+      targetFormationLevel: memberProvider.targetFormationLevel,
+      formationActive: memberProvider.formationActive,
+    );
   }
 
   // v2.2 (Phase C 2026-05-13): the Piscine + Finances tiles have moved out
@@ -275,8 +273,15 @@ class _LandingScreenState extends State<LandingScreen> {
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
+    final memberProvider = context.watch<MemberProvider>();
     final unreadProvider = context.watch<UnreadCountProvider>();
     final userName = authProvider.displayName ?? 'Utilisateur';
+
+    if (authProvider.currentUser != null && memberProvider.isLoaded) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _initFromMemberProvider();
+      });
+    }
 
     return Scaffold(
       backgroundColor: Colors.black,

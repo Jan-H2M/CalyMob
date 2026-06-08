@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -107,8 +108,10 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
     await tracker.markAsRead('team_${widget.channel.id}');
 
     if (!mounted) return;
-    final unreadProvider = context.read<UnreadCountProvider>();
-    await unreadProvider.refresh();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(context.read<UnreadCountProvider>().refresh());
+    });
   }
 
   Future<void> _sendMessage() async {
@@ -242,9 +245,8 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
       }
 
       // Bepaal welke bestaande attachments verwijderd zijn.
-      final keptIds = result.keptAttachments
-          .map((a) => a.storagePath ?? a.url)
-          .toSet();
+      final keptIds =
+          result.keptAttachments.map((a) => a.storagePath ?? a.url).toSet();
       final removed = message.attachments
           .where((a) => !keptIds.contains(a.storagePath ?? a.url))
           .toList();
@@ -569,7 +571,9 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
                             if (showDateHeader)
                               _DateHeader(date: message.createdAt),
                             FutureBuilder<String?>(
-                              future: isOwn ? Future.value(null) : _getPhotoUrl(message.senderId),
+                              future: isOwn
+                                  ? Future.value(null)
+                                  : _getPhotoUrl(message.senderId),
                               builder: (context, snapshot) {
                                 return _MessageBubble(
                                   message: message,
@@ -796,111 +800,111 @@ class _MessageBubble extends StatelessWidget {
             mainAxisAlignment:
                 isOwn ? MainAxisAlignment.end : MainAxisAlignment.start,
             crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            if (!isOwn) ...[
-              CircleAvatar(
-                radius: 16,
-                backgroundColor: teamColor,
-                backgroundImage: senderPhotoUrl != null
-                    ? CachedNetworkImageProvider(senderPhotoUrl!)
-                    : null,
-                child: senderPhotoUrl == null
-                    ? Text(
-                        message.senderName.isEmpty
-                            ? '?'
-                            : message.senderName[0].toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      )
-                    : null,
-              ),
-              const SizedBox(width: 8),
-            ],
-            Flexible(
-              child: Container(
-                constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(context).size.width * 0.78,
-                ),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: bubbleColor,
-                  borderRadius: BorderRadius.only(
-                    topLeft: const Radius.circular(16),
-                    topRight: const Radius.circular(16),
-                    bottomLeft: Radius.circular(isOwn ? 16 : 4),
-                    bottomRight: Radius.circular(isOwn ? 4 : 16),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (!isOwn)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Text(
-                          message.senderName,
-                          style: TextStyle(
-                            fontSize: 12,
+            children: [
+              if (!isOwn) ...[
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: teamColor,
+                  backgroundImage: senderPhotoUrl != null
+                      ? CachedNetworkImageProvider(senderPhotoUrl!)
+                      : null,
+                  child: senderPhotoUrl == null
+                      ? Text(
+                          message.senderName.isEmpty
+                              ? '?'
+                              : message.senderName[0].toUpperCase(),
+                          style: const TextStyle(
+                            color: Colors.white,
                             fontWeight: FontWeight.bold,
-                            color: teamColor,
+                            fontSize: 12,
+                          ),
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 8),
+              ],
+              Flexible(
+                child: Container(
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.of(context).size.width * 0.78,
+                  ),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: bubbleColor,
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(16),
+                      topRight: const Radius.circular(16),
+                      bottomLeft: Radius.circular(isOwn ? 16 : 4),
+                      bottomRight: Radius.circular(isOwn ? 4 : 16),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (!isOwn)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(
+                            message.senderName,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: teamColor,
+                            ),
                           ),
                         ),
+                      if (message.message.isNotEmpty)
+                        LinkifiedMessageText(
+                          text: message.message,
+                          style: TextStyle(color: textColor, fontSize: 15),
+                          linkColor: isOwn ? Colors.white : Colors.blue,
+                        ),
+                      if (message.hasAttachments)
+                        AttachmentDisplay(
+                          attachments: message.attachments,
+                          compact: true,
+                        ),
+                      if (message.hasPoll)
+                        ChatPollWidget(
+                          poll: message.poll!,
+                          currentUserId: currentUserId,
+                          onVote: onVote,
+                          onClose: onClosePoll,
+                          canClose: onClosePoll != null,
+                        ),
+                      if (message.reactions.isNotEmpty)
+                        MessageReactions(
+                          reactions: message.reactions,
+                          currentUserId: currentUserId,
+                          clubId: FirebaseConfig.defaultClubId,
+                          onToggleReaction: onToggleReaction,
+                          compact: true,
+                        ),
+                      const SizedBox(height: 4),
+                      Text(
+                        message.formattedTime,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: isOwn
+                              ? Colors.white.withValues(alpha: 0.72)
+                              : Colors.grey.shade500,
+                        ),
                       ),
-                    if (message.message.isNotEmpty)
-                      LinkifiedMessageText(
-                        text: message.message,
-                        style: TextStyle(color: textColor, fontSize: 15),
-                        linkColor: isOwn ? Colors.white : Colors.blue,
-                      ),
-                    if (message.hasAttachments)
-                      AttachmentDisplay(
-                        attachments: message.attachments,
-                        compact: true,
-                      ),
-                    if (message.hasPoll)
-                      ChatPollWidget(
-                        poll: message.poll!,
-                        currentUserId: currentUserId,
-                        onVote: onVote,
-                        onClose: onClosePoll,
-                        canClose: onClosePoll != null,
-                      ),
-                    if (message.reactions.isNotEmpty)
-                      MessageReactions(
-                        reactions: message.reactions,
-                        currentUserId: currentUserId,
-                        clubId: FirebaseConfig.defaultClubId,
-                        onToggleReaction: onToggleReaction,
-                        compact: true,
-                      ),
-                    const SizedBox(height: 4),
-                    Text(
-                      message.formattedTime,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: isOwn
-                            ? Colors.white.withValues(alpha: 0.72)
-                            : Colors.grey.shade500,
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
       ),
     );
   }

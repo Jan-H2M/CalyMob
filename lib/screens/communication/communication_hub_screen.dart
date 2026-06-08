@@ -49,16 +49,43 @@ class CommunicationHubScreen extends StatefulWidget {
 class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
   _CommunicationFilter _selectedFilter = _CommunicationFilter.all;
   String _searchQuery = '';
+  List<String> _stableRoles = const [];
+  bool _stableIncludeAllChannels = false;
+  String? _stablePlongeurCode;
+  String? _stableTargetFormationLevel;
+  bool _stableFormationActive = false;
+  bool _hasStableMemberContext = false;
 
   @override
   Widget build(BuildContext context) {
     final memberProvider = context.watch<MemberProvider>();
     final unreadProvider = context.watch<UnreadCountProvider>();
-    final roles = memberProvider.clubStatuten;
-    final includeAllChannels = ClubRoleUtils.hasAdminAccess(
-      roles,
+    final currentRoles = memberProvider.clubStatuten;
+    final currentIncludeAllChannels = ClubRoleUtils.hasAdminAccess(
+      currentRoles,
       appRole: memberProvider.appRole,
     );
+    if (memberProvider.isLoaded) {
+      _stableRoles = List<String>.from(currentRoles);
+      _stableIncludeAllChannels = currentIncludeAllChannels;
+      _stablePlongeurCode = memberProvider.plongeurCode;
+      _stableTargetFormationLevel = memberProvider.targetFormationLevel;
+      _stableFormationActive = memberProvider.formationActive;
+      _hasStableMemberContext = true;
+    }
+    final roles = _hasStableMemberContext ? _stableRoles : currentRoles;
+    final includeAllChannels = _hasStableMemberContext
+        ? _stableIncludeAllChannels
+        : currentIncludeAllChannels;
+    final plongeurCode = _hasStableMemberContext
+        ? _stablePlongeurCode
+        : memberProvider.plongeurCode;
+    final targetFormationLevel = _hasStableMemberContext
+        ? _stableTargetFormationLevel
+        : memberProvider.targetFormationLevel;
+    final formationActive = _hasStableMemberContext
+        ? _stableFormationActive
+        : memberProvider.formationActive;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -90,9 +117,9 @@ class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
                   announcementUnreadCount: unreadProvider.announcements,
                   roles: roles,
                   includeAllChannels: includeAllChannels,
-                  plongeurCode: memberProvider.plongeurCode,
-                  targetFormationLevel: memberProvider.targetFormationLevel,
-                  formationActive: memberProvider.formationActive,
+                  plongeurCode: plongeurCode,
+                  targetFormationLevel: targetFormationLevel,
+                  formationActive: formationActive,
                 ),
               ),
             ],
@@ -934,7 +961,7 @@ class _FormationTaskChatRow extends StatelessWidget {
   }
 }
 
-class _TeamChannelsInboxSection extends StatelessWidget {
+class _TeamChannelsInboxSection extends StatefulWidget {
   final _CommunicationFilter filter;
   final String searchQuery;
   final List<String> roles;
@@ -942,9 +969,8 @@ class _TeamChannelsInboxSection extends StatelessWidget {
   final String? plongeurCode;
   final String? targetFormationLevel;
   final bool formationActive;
-  final TeamChannelService _channelService = TeamChannelService();
 
-  _TeamChannelsInboxSection({
+  const _TeamChannelsInboxSection({
     required this.filter,
     required this.searchQuery,
     required this.roles,
@@ -955,23 +981,37 @@ class _TeamChannelsInboxSection extends StatelessWidget {
   });
 
   @override
+  State<_TeamChannelsInboxSection> createState() =>
+      _TeamChannelsInboxSectionState();
+}
+
+class _TeamChannelsInboxSectionState extends State<_TeamChannelsInboxSection> {
+  final TeamChannelService _channelService = TeamChannelService();
+  List<TeamChannel> _lastChannels = const [];
+
+  @override
   Widget build(BuildContext context) {
     const clubId = FirebaseConfig.defaultClubId;
 
     return StreamBuilder<List<TeamChannel>>(
       stream: _channelService.getChannelsForUser(
         clubId,
-        roles,
-        includeAllChannels: includeAllChannels,
-        plongeurCode: plongeurCode,
-        targetFormationLevel: targetFormationLevel,
-        formationActive: formationActive,
+        widget.roles,
+        includeAllChannels: widget.includeAllChannels,
+        plongeurCode: widget.plongeurCode,
+        targetFormationLevel: widget.targetFormationLevel,
+        formationActive: widget.formationActive,
       ),
       builder: (context, snapshot) {
-        final channels = (snapshot.data ?? const <TeamChannel>[])
+        if (snapshot.hasData && snapshot.data!.isNotEmpty) {
+          _lastChannels = snapshot.data!;
+        }
+        final sourceChannels =
+            snapshot.hasData ? snapshot.data! : _lastChannels;
+        final channels = sourceChannels
             .where((channel) => _teamChannelMatchesSearch(
                   channel,
-                  searchQuery,
+                  widget.searchQuery,
                 ))
             .toList();
         if (channels.isEmpty) return const SizedBox.shrink();
@@ -980,8 +1020,8 @@ class _TeamChannelsInboxSection extends StatelessWidget {
               .map(
                 (channel) => _TeamChannelChatRow(
                   channel: channel,
-                  hideIfRead: filter == _CommunicationFilter.unread,
-                  searchQuery: searchQuery,
+                  hideIfRead: widget.filter == _CommunicationFilter.unread,
+                  searchQuery: widget.searchQuery,
                 ),
               )
               .toList(),

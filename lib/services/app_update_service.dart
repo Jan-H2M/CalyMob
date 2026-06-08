@@ -95,10 +95,11 @@ class AppUpdateService {
       'https://play.google.com/store/apps/details?id=club.caly.calymob';
   static const _appStoreUrl = 'https://apps.apple.com/app/calymob/id6755293289';
 
-  // iTunes Lookup API — gebruikt om te checken of een versie echt live is
-  // country=be voor België (primaire markt)
+  // iTunes Lookup API — gebruikt om te checken of een versie echt live is.
+  // Lookup via Apple app-id is betrouwbaarder dan bundleId; bundleId lookup
+  // kan tijdelijk stale blijven na release propagation.
   static const _iTunesLookupUrl =
-      'https://itunes.apple.com/lookup?bundleId=be.calypsodc.calymob&country=be';
+      'https://itunes.apple.com/lookup?id=6755293289&country=be';
 
   // Android bundle ID voor Play Store check
   static const _androidBundleId = 'club.caly.calymob';
