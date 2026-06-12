@@ -39,6 +39,7 @@ class _MonitorObservationScreenState extends State<MonitorObservationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     final theme = widget.task.context.themeSnapshot ??
         widget.task.context.groupKey ??
         widget.task.context.targetGroupLevel ??
@@ -70,47 +71,53 @@ class _MonitorObservationScreenState extends State<MonitorObservationScreen> {
           ),
         ),
       ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ElevatedButton.icon(
-                onPressed:
-                    _submitting || _verdict == null ? null : _saveObservation,
-                icon: _submitting
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.check_circle),
-                label: Text(_submitting
-                    ? 'Enregistrement...'
-                    : 'Enregistrer l\'évaluation'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0EA5E9),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+      bottomNavigationBar: AnimatedPadding(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding: EdgeInsets.only(bottom: keyboardInset),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ElevatedButton.icon(
+                  onPressed:
+                      _submitting || _verdict == null ? null : _saveObservation,
+                  icon: _submitting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.check_circle),
+                  label: Text(_submitting
+                      ? 'Enregistrement...'
+                      : 'Enregistrer l\'évaluation'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0EA5E9),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    minimumSize: const Size.fromHeight(48),
                   ),
-                  minimumSize: const Size.fromHeight(48),
                 ),
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: _submitting ? null : () => Navigator.pop(context),
-                child: const Text(
-                  'Plus tard',
-                  style: TextStyle(color: Colors.white),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: _submitting ? null : () => Navigator.pop(context),
+                  child: const Text(
+                    'Plus tard',
+                    style: TextStyle(color: Colors.white),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -250,7 +257,8 @@ class _MonitorObservationScreenState extends State<MonitorObservationScreen> {
       icon: Icon(icon),
       label: Text(label),
       style: OutlinedButton.styleFrom(
-        backgroundColor: selected ? color : Colors.white.withValues(alpha: 0.96),
+        backgroundColor:
+            selected ? color : Colors.white.withValues(alpha: 0.96),
         foregroundColor: selected ? Colors.white : color,
         side: BorderSide(color: color, width: selected ? 2 : 1),
         padding: const EdgeInsets.symmetric(vertical: 14),
@@ -310,8 +318,8 @@ class _MonitorObservationScreenState extends State<MonitorObservationScreen> {
         completionData: {
           'verdict': verdict,
           'pool_session_id': widget.task.context.poolSessionId,
-          'group_key':
-              widget.task.context.groupKey ?? widget.task.context.targetGroupLevel,
+          'group_key': widget.task.context.groupKey ??
+              widget.task.context.targetGroupLevel,
           'theme_snapshot': widget.task.context.themeSnapshot,
           'member_id': widget.task.memberId,
           'observer_id': userId,

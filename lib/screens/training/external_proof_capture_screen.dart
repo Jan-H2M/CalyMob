@@ -25,17 +25,20 @@ class ExternalProofCaptureScreen extends StatefulWidget {
   const ExternalProofCaptureScreen({super.key, this.exerciseCode});
 
   @override
-  State<ExternalProofCaptureScreen> createState() => _ExternalProofCaptureScreenState();
+  State<ExternalProofCaptureScreen> createState() =>
+      _ExternalProofCaptureScreenState();
 }
 
-class _ExternalProofCaptureScreenState extends State<ExternalProofCaptureScreen> {
+class _ExternalProofCaptureScreenState
+    extends State<ExternalProofCaptureScreen> {
   final _exerciseCtrl = TextEditingController();
   final _contextCtrl = TextEditingController();
   final _monitorNameCtrl = TextEditingController();
   final _monitorClubCtrl = TextEditingController();
   final _monitorQualCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
-  bool _photoAttached = false; // stub — real implementation hooks to Firebase Storage
+  bool _photoAttached =
+      false; // stub — real implementation hooks to Firebase Storage
   bool _submitting = false;
 
   @override
@@ -57,6 +60,8 @@ class _ExternalProofCaptureScreenState extends State<ExternalProofCaptureScreen>
 
   @override
   Widget build(BuildContext context) {
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+
     return Scaffold(
       body: OceanGradientBackground(
         creatures: CreatureSet.jellyfishAndBubbles,
@@ -69,7 +74,8 @@ class _ExternalProofCaptureScreenState extends State<ExternalProofCaptureScreen>
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
                   children: [
                     _sectionTitle('EXERCICE'),
-                    _whiteCard(child: TextField(
+                    _whiteCard(
+                        child: TextField(
                       controller: _exerciseCtrl,
                       decoration: const InputDecoration(
                         hintText: 'Ex: P3.OR',
@@ -78,7 +84,8 @@ class _ExternalProofCaptureScreenState extends State<ExternalProofCaptureScreen>
                     )),
                     const SizedBox(height: 12),
                     _sectionTitle('LIEU / CONTEXTE'),
-                    _whiteCard(child: TextField(
+                    _whiteCard(
+                        child: TextField(
                       controller: _contextCtrl,
                       decoration: const InputDecoration(
                         hintText: 'Ex: Zeeland · Oosterschelde · stage 3 jours',
@@ -87,7 +94,8 @@ class _ExternalProofCaptureScreenState extends State<ExternalProofCaptureScreen>
                     )),
                     const SizedBox(height: 12),
                     _sectionTitle('MONITOR EXTERNE'),
-                    _whiteCard(child: TextField(
+                    _whiteCard(
+                        child: TextField(
                       controller: _monitorNameCtrl,
                       decoration: const InputDecoration(
                         hintText: 'Nom',
@@ -95,7 +103,8 @@ class _ExternalProofCaptureScreenState extends State<ExternalProofCaptureScreen>
                       ),
                     )),
                     const SizedBox(height: 6),
-                    _whiteCard(child: TextField(
+                    _whiteCard(
+                        child: TextField(
                       controller: _monitorClubCtrl,
                       decoration: const InputDecoration(
                         hintText: 'Club',
@@ -103,7 +112,8 @@ class _ExternalProofCaptureScreenState extends State<ExternalProofCaptureScreen>
                       ),
                     )),
                     const SizedBox(height: 6),
-                    _whiteCard(child: TextField(
+                    _whiteCard(
+                        child: TextField(
                       controller: _monitorQualCtrl,
                       decoration: const InputDecoration(
                         hintText: 'Qualification (ex: 4° encadrant Lifras)',
@@ -115,7 +125,8 @@ class _ExternalProofCaptureScreenState extends State<ExternalProofCaptureScreen>
                     _photoPicker(),
                     const SizedBox(height: 12),
                     _sectionTitle('NOTE'),
-                    _whiteCard(child: TextField(
+                    _whiteCard(
+                        child: TextField(
                       controller: _notesCtrl,
                       maxLines: 3,
                       decoration: const InputDecoration(
@@ -130,27 +141,36 @@ class _ExternalProofCaptureScreenState extends State<ExternalProofCaptureScreen>
           ),
         ),
       ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: ElevatedButton(
-            onPressed: _submitting ? null : _submit,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.oranje,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+      bottomNavigationBar: AnimatedPadding(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding: EdgeInsets.only(bottom: keyboardInset),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: ElevatedButton(
+              onPressed: _submitting ? null : _submit,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.oranje,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                minimumSize: const Size.fromHeight(48),
               ),
-              minimumSize: const Size.fromHeight(48),
+              child: _submitting
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2.4,
+                      ),
+                    )
+                  : const Text('Envoyer pour contrôle'),
             ),
-            child: _submitting
-                ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.4),
-                  )
-                : const Text('Envoyer pour contrôle'),
           ),
         ),
       ),
@@ -222,7 +242,9 @@ class _ExternalProofCaptureScreenState extends State<ExternalProofCaptureScreen>
       child: Container(
         height: 140,
         decoration: BoxDecoration(
-          color: _photoAttached ? const Color(0xFFE2F4E5) : const Color(0xFF1C2742),
+          color: _photoAttached
+              ? const Color(0xFFE2F4E5)
+              : const Color(0xFF1C2742),
           borderRadius: BorderRadius.circular(14),
           border: _photoAttached
               ? Border.all(color: const Color(0xFF4CAF50), width: 1.5)
@@ -234,7 +256,9 @@ class _ExternalProofCaptureScreenState extends State<ExternalProofCaptureScreen>
           children: [
             Icon(
               _photoAttached ? Icons.check_circle : Icons.camera_alt_outlined,
-              color: _photoAttached ? const Color(0xFF2E7D32) : const Color(0xFF9DB4D9),
+              color: _photoAttached
+                  ? const Color(0xFF2E7D32)
+                  : const Color(0xFF9DB4D9),
               size: 36,
             ),
             const SizedBox(height: 6),
@@ -257,9 +281,11 @@ class _ExternalProofCaptureScreenState extends State<ExternalProofCaptureScreen>
   }
 
   Future<void> _submit() async {
-    if (_exerciseCtrl.text.trim().isEmpty || _monitorNameCtrl.text.trim().isEmpty) {
+    if (_exerciseCtrl.text.trim().isEmpty ||
+        _monitorNameCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Exercice et monitor externe sont obligatoires')),
+        const SnackBar(
+            content: Text('Exercice et monitor externe sont obligatoires')),
       );
       return;
     }
@@ -272,7 +298,11 @@ class _ExternalProofCaptureScreenState extends State<ExternalProofCaptureScreen>
       if (userId == null) throw 'Session non identifiée';
 
       final db = FirebaseFirestore.instance;
-      await db.collection('clubs').doc(clubId).collection('exercise_claims').add({
+      await db
+          .collection('clubs')
+          .doc(clubId)
+          .collection('exercise_claims')
+          .add({
         'member_id': userId,
         'member_name': '${mp.prenom ?? ''} ${mp.nom ?? ''}'.trim(),
         'exercise_id': _exerciseCtrl.text.trim(),
@@ -283,9 +313,12 @@ class _ExternalProofCaptureScreenState extends State<ExternalProofCaptureScreen>
         'validation_mode': 'external_monitor',
         'external_monitor': {
           'name': _monitorNameCtrl.text.trim(),
-          if (_monitorClubCtrl.text.trim().isNotEmpty) 'club': _monitorClubCtrl.text.trim(),
-          if (_monitorQualCtrl.text.trim().isNotEmpty) 'qualification': _monitorQualCtrl.text.trim(),
-          if (_contextCtrl.text.trim().isNotEmpty) 'encountered_at': _contextCtrl.text.trim(),
+          if (_monitorClubCtrl.text.trim().isNotEmpty)
+            'club': _monitorClubCtrl.text.trim(),
+          if (_monitorQualCtrl.text.trim().isNotEmpty)
+            'qualification': _monitorQualCtrl.text.trim(),
+          if (_contextCtrl.text.trim().isNotEmpty)
+            'encountered_at': _contextCtrl.text.trim(),
         },
         'evidence': _photoAttached
             ? [
@@ -305,7 +338,8 @@ class _ExternalProofCaptureScreenState extends State<ExternalProofCaptureScreen>
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Preuve envoyée — le responsable contrôlera')),
+          const SnackBar(
+              content: Text('Preuve envoyée — le responsable contrôlera')),
         );
         Navigator.of(context).pop();
       }

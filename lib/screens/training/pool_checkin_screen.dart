@@ -40,8 +40,8 @@ class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
   final FormationTaskService _taskService = FormationTaskService();
 
   _Outcome? _outcome;
-  String? _level;        // 1*/2*/3*/4*/AM
-  int _groupNumber = 1;  // 1 or 2
+  String? _level; // 1*/2*/3*/4*/AM
+  int _groupNumber = 1; // 1 or 2
   final TextEditingController _notes = TextEditingController();
   bool _submitting = false;
 
@@ -158,6 +158,8 @@ class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+
     return Scaffold(
       body: OceanGradientBackground(
         creatures: CreatureSet.jellyfishAndBubbles,
@@ -182,8 +184,8 @@ class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
                         selectedGroupNumber: _groupNumber,
                         suggested: widget.task.context.targetGroupLevel,
                         onLevelChange: (l) => setState(() => _level = l),
-                        onGroupNumberChange:
-                            (n) => setState(() => _groupNumber = n),
+                        onGroupNumberChange: (n) =>
+                            setState(() => _groupNumber = n),
                       ),
                     ],
                     if (_outcome != null) ...[
@@ -197,42 +199,48 @@ class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
           ),
         ),
       ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-          child: Row(
-            children: [
-              TextButton(
-                onPressed: _submitting ? null : _dismiss,
-                child: const Text(
-                  'Pas concerné',
-                  style: TextStyle(color: Colors.white70),
-                ),
-              ),
-              const Spacer(),
-              ElevatedButton.icon(
-                onPressed: _canSubmit ? _submit : null,
-                icon: _submitting
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.send),
-                label: Text(_submitting ? 'Envoi…' : 'Confirmer ma piscine'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.middenblauw,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 12,
+      bottomNavigationBar: AnimatedPadding(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding: EdgeInsets.only(bottom: keyboardInset),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: Row(
+              children: [
+                TextButton(
+                  onPressed: _submitting ? null : _dismiss,
+                  child: const Text(
+                    'Pas concerné',
+                    style: TextStyle(color: Colors.white70),
                   ),
                 ),
-              ),
-            ],
+                const Spacer(),
+                ElevatedButton.icon(
+                  onPressed: _canSubmit ? _submit : null,
+                  icon: _submitting
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.send),
+                  label: Text(_submitting ? 'Envoi…' : 'Confirmer ma piscine'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.middenblauw,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -401,9 +409,8 @@ class _OutcomeTile extends StatelessWidget {
                 : Colors.white.withValues(alpha: 0.10),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: active
-                  ? Colors.white
-                  : Colors.white.withValues(alpha: 0.20),
+              color:
+                  active ? Colors.white : Colors.white.withValues(alpha: 0.20),
               width: active ? 1.5 : 1,
             ),
           ),
@@ -546,9 +553,7 @@ class _ChipChoice extends StatelessWidget {
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
-            color: active
-                ? Colors.white
-                : Colors.white.withValues(alpha: 0.12),
+            color: active ? Colors.white : Colors.white.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: Colors.white.withValues(alpha: active ? 1 : 0.30),

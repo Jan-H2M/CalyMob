@@ -25,7 +25,8 @@ class MonitorValidationScreen extends StatefulWidget {
   const MonitorValidationScreen({super.key, required this.task});
 
   @override
-  State<MonitorValidationScreen> createState() => _MonitorValidationScreenState();
+  State<MonitorValidationScreen> createState() =>
+      _MonitorValidationScreenState();
 }
 
 class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
@@ -68,6 +69,8 @@ class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+
     return Scaffold(
       body: OceanGradientBackground(
         creatures: CreatureSet.jellyfishAndBubbles,
@@ -77,7 +80,8 @@ class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
               _header(),
               Expanded(
                 child: _loading
-                    ? const Center(child: CircularProgressIndicator(color: Colors.white))
+                    ? const Center(
+                        child: CircularProgressIndicator(color: Colors.white))
                     : _claim == null
                         ? const Center(
                             child: Text(
@@ -93,61 +97,75 @@ class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
       ),
       bottomNavigationBar: _loading || _claim == null
           ? null
-          : SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ElevatedButton.icon(
-                      onPressed: _submitting ? null : () => _decide('accepted'),
-                      icon: const Icon(Icons.check_circle),
-                      label: const Text('Confirmer comme acquis'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF4CAF50),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+          : AnimatedPadding(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              padding: EdgeInsets.only(bottom: keyboardInset),
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed:
+                            _submitting ? null : () => _decide('accepted'),
+                        icon: const Icon(Icons.check_circle),
+                        label: const Text('Confirmer comme acquis'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF4CAF50),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          minimumSize: const Size.fromHeight(48),
                         ),
-                        minimumSize: const Size.fromHeight(48),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: _submitting ? null : () => _decide('corrected'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.white,
-                              side: const BorderSide(color: Colors.white),
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: _submitting
+                                  ? null
+                                  : () => _decide('corrected'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                side: const BorderSide(color: Colors.white),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
+                              child: const Text('En progrès'),
                             ),
-                            child: const Text('En progrès'),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: _submitting ? null : () => _decide('rejected'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFFE5484D),
-                              side: const BorderSide(color: Color(0xFFE5484D)),
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: _submitting
+                                  ? null
+                                  : () => _decide('rejected'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFFE5484D),
+                                side:
+                                    const BorderSide(color: Color(0xFFE5484D)),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
+                              child: const Text('Refuser'),
                             ),
-                            child: const Text('Refuser'),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
