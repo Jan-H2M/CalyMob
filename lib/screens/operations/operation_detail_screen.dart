@@ -3733,7 +3733,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Plan de paiement',
+                      'Mon plan de paiement',
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
@@ -4585,6 +4585,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         icon = Icons.check;
         color = Colors.orange;
         break;
+      case 'partial':
+        // Gedeeltelijk betaald (minstens één schijf) - oranje halve cirkel
+        icon = Icons.incomplete_circle;
+        color = Colors.orange.shade700;
+        break;
       case 'qr_sent':
         // QR code per email verstuurd - amber envelop
         icon = Icons.email_outlined;
@@ -4620,6 +4625,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         return {'text': 'Payé', 'color': Colors.green};
       case 'pending_bank':
         return {'text': 'En attente bancaire', 'color': Colors.orange};
+      case 'partial':
+        return {'text': 'Partiellement payé', 'color': Colors.orange.shade700};
       case 'qr_sent':
         return {'text': 'QR envoyé par email', 'color': Colors.amber.shade700};
       case 'on_site':

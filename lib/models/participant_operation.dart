@@ -230,6 +230,13 @@ class ParticipantOperation {
   /// Total price including supplements
   double get totalPrix => prix + supplementTotal;
 
+  /// True when at least one installment is paid but the inscription as a
+  /// whole is not yet fully paid (i.e. a partial / installment payment).
+  /// Used to show "Partiellement payé" instead of the misleading "Non payé"
+  /// when e.g. only the first acompte has been settled.
+  bool get hasPartialPayment =>
+      !paye && installmentPayments.values.any((p) => p.status == 'paid');
+
   /// Get display status for payment
   String get paymentDisplayStatus {
     // Fully paid with bank transaction matched
@@ -240,6 +247,9 @@ class ParticipantOperation {
 
     // Paid but awaiting bank reconciliation
     if (paye) return 'Payé via CalyMob\nEn attente banque';
+
+    // At least one installment paid, but not the full inscription yet
+    if (hasPartialPayment) return 'Partiellement payé';
 
     // Check payment_status for pending states
     switch (paymentStatus) {
@@ -259,6 +269,7 @@ class ParticipantOperation {
     if (paye && _hasMatchedBankTransaction) return 'paid';
     if (paye && modePaiement == 'cash') return 'cash';
     if (paye) return 'pending_bank';
+    if (hasPartialPayment) return 'partial';
     switch (paymentStatus) {
       case 'qr_email_sent':
         return 'qr_sent';
