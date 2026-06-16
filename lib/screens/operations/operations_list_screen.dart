@@ -156,6 +156,12 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                 _buildFilterChip('piscine', 'Piscine'),
                 const SizedBox(width: 12),
                 _buildFilterChip('sortie', 'Sorties'),
+                // Organisator/admin: toegang tot afgesloten events om
+                // betalingen van voorbije events nog te kunnen initiëren.
+                if (canCreateEvents) ...[
+                  const SizedBox(width: 12),
+                  _buildFilterChip('closed', 'Clôturés'),
+                ],
               ],
             ),
           ),
@@ -177,6 +183,10 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
     final isSelected = _selectedFilter == value;
     return GestureDetector(
       onTap: () {
+        // Lazy: abonneer pas op afgesloten events wanneer de chip wordt gekozen.
+        if (value == 'closed') {
+          context.read<ActivityProvider>().listenToClosedActivities(_clubId);
+        }
         setState(() {
           _selectedFilter = value;
         });
@@ -205,21 +215,30 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
   }
 
   Widget _buildActivityList(ActivityProvider activityProvider) {
-    final allActivities = activityProvider.activities;
+    final isClosedMode = _selectedFilter == 'closed';
+    final source = isClosedMode
+        ? activityProvider.closedActivities
+        : activityProvider.activities;
 
     // Loading initial
-    if (activityProvider.isLoading && allActivities.isEmpty) {
+    final loading = isClosedMode
+        ? activityProvider.isLoadingClosed
+        : activityProvider.isLoading;
+    if (loading && source.isEmpty) {
       return const LoadingWidget(message: 'Chargement des événements...');
     }
 
-    // Filter op categorie
-    final filtered = allActivities.where((item) {
-      if (_selectedFilter == 'all') return true;
-      return item.categorie == _selectedFilter;
-    }).toList();
+    // Filter op categorie (niet in 'clôturés'-modus: daar tonen we alle categorieën)
+    final filtered = isClosedMode
+        ? List<ActivityItem>.from(source)
+        : source.where((item) {
+            if (_selectedFilter == 'all') return true;
+            return item.categorie == _selectedFilter;
+          }).toList();
 
-    // Sort by date
-    filtered.sort((a, b) => a.date.compareTo(b.date));
+    // Sort by date — afgesloten events: meest recent eerst; anders oplopend.
+    filtered.sort((a, b) =>
+        isClosedMode ? b.date.compareTo(a.date) : a.date.compareTo(b.date));
 
     // Group by month
     final grouped = _groupByMonth(filtered);
@@ -242,7 +261,9 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              'Aucun événement trouvé',
+              _selectedFilter == 'closed'
+                  ? 'Aucun événement clôturé'
+                  : 'Aucun événement trouvé',
               style: TextStyle(
                 fontSize: 18,
                 color: Colors.white.withOpacity(0.9),

@@ -75,6 +75,35 @@ class ActivityService {
     );
   }
 
+  /// Stream van afgesloten (ferme) evenementen.
+  /// Bedoeld voor organisatoren/admins: zo blijven voorbije events bereikbaar
+  /// om betalingen te initiëren (de hoofdlijst toont enkel 'ouvert').
+  Stream<List<ActivityItem>> getClosedOperationsStream(String clubId) {
+    return _firestore
+        .collection('clubs/$clubId/operations')
+        .where('type', isEqualTo: 'evenement')
+        .where('statut', isEqualTo: 'ferme')
+        .snapshots()
+        .map((snapshot) {
+      debugPrint('📦 Closed operations stream: ${snapshot.docs.length} docs');
+      final activities = <ActivityItem>[];
+      for (var doc in snapshot.docs) {
+        try {
+          final op = Operation.fromFirestore(doc);
+          // Exclude piscine category operations (we use piscine_sessions instead)
+          if (op.categorie != 'piscine') {
+            activities.add(ActivityItem.fromOperation(op));
+          }
+        } catch (e) {
+          debugPrint('❌ Error parsing closed operation ${doc.id}: $e');
+        }
+      }
+      // Meest recente eerst (handig voor reconciliatie van voorbije events)
+      activities.sort((a, b) => b.date.compareTo(a.date));
+      return activities;
+    });
+  }
+
   /// Haal alleen open operations op (zonder piscine)
   Stream<List<ActivityItem>> getOperationsOnlyStream(String clubId) {
     return _firestore
