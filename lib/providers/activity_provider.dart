@@ -13,11 +13,15 @@ class ActivityProvider with ChangeNotifier {
   List<ActivityItem> _activities = [];
   bool _isLoading = false;
   String? _errorMessage;
+  // Inclure les activités terminées (fermées) pour pouvoir revenir sur une
+  // ancienne activité et consulter ses données de paiement.
+  bool _includePast = false;
 
   // Getters
   List<ActivityItem> get activities => _activities;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
+  bool get includePast => _includePast;
 
   /// Aantal activiteiten per categorie
   int get totalCount => _activities.length;
@@ -43,7 +47,9 @@ class ActivityProvider with ChangeNotifier {
     notifyListeners();
 
     _activitiesSubscription =
-        _activityService.getAllActivitiesStream(clubId).listen(
+        _activityService
+            .getAllActivitiesStream(clubId, includeClosed: _includePast)
+            .listen(
       (activities) {
         _activities = activities;
         _isLoading = false;
@@ -82,6 +88,14 @@ class ActivityProvider with ChangeNotifier {
 
   /// Refresh door opnieuw te subscriben
   Future<void> refresh(String clubId) async {
+    listenToActivities(clubId);
+  }
+
+  /// Activeer/deactiveer het tonen van afgelopen (gesloten) activiteiten
+  /// en herabonneer met de juiste query.
+  void setIncludePast(String clubId, bool value) {
+    if (_includePast == value) return;
+    _includePast = value;
     listenToActivities(clubId);
   }
 

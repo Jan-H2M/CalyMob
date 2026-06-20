@@ -156,6 +156,8 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                 _buildFilterChip('piscine', 'Piscine'),
                 const SizedBox(width: 12),
                 _buildFilterChip('sortie', 'Sorties'),
+                const SizedBox(width: 12),
+                _buildPastToggleChip(activityProvider),
               ],
             ),
           ),
@@ -168,6 +170,48 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
             onRefresh: _refreshActivities,
             child: _buildActivityList(activityProvider),
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Toggle om afgelopen (gesloten) activiteiten te tonen, zodat je terug kan
+  /// naar een oude activiteit voor de betaalgegevens.
+  Widget _buildPastToggleChip(ActivityProvider activityProvider) {
+    final isOn = activityProvider.includePast;
+    return GestureDetector(
+      onTap: () {
+        context.read<ActivityProvider>().setIncludePast(_clubId, !isOn);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        decoration: BoxDecoration(
+          color: isOn ? Colors.white : Colors.white.withOpacity(0.2),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: Colors.white.withOpacity(0.3),
+            width: 1,
+          ),
+        ),
+        alignment: Alignment.center,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.history,
+              size: 16,
+              color: isOn ? AppColors.donkerblauw : Colors.white,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Passés',
+              style: TextStyle(
+                color: isOn ? AppColors.donkerblauw : Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -218,8 +262,13 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
       return item.categorie == _selectedFilter;
     }).toList();
 
-    // Sort by date
-    filtered.sort((a, b) => a.date.compareTo(b.date));
+    // Sort by date: normaal komende eerst; in "Passés"-modus de meest recente
+    // eerst zodat je snel een recent afgelopen activiteit terugvindt.
+    if (activityProvider.includePast) {
+      filtered.sort((a, b) => b.date.compareTo(a.date));
+    } else {
+      filtered.sort((a, b) => a.date.compareTo(b.date));
+    }
 
     // Group by month
     final grouped = _groupByMonth(filtered);
