@@ -12,12 +12,19 @@ class ActivityService {
 
   /// Gecombineerde stream van operations + piscine sessions
   /// Retourneert alle open events en gepubliceerde piscine sessies
-  Stream<List<ActivityItem>> getAllActivitiesStream(String clubId) {
-    // Stream 1: Open evenementen (plongée, sortie, etc.)
-    final operationsStream = _firestore
+  Stream<List<ActivityItem>> getAllActivitiesStream(String clubId,
+      {bool includeClosed = false}) {
+    // Stream 1: evenementen (plongée, sortie, etc.)
+    // Par défaut : uniquement les événements ouverts.
+    // includeClosed=true : on ne filtre que sur 'type' (pour éviter un index
+    // composite Firestore) puis on garde ouvert + fermé côté client, afin que
+    // les activités terminées restent consultables (données de paiement).
+    final baseQuery = _firestore
         .collection('clubs/$clubId/operations')
-        .where('type', isEqualTo: 'evenement')
-        .where('statut', isEqualTo: 'ouvert')
+        .where('type', isEqualTo: 'evenement');
+    final operationsStream = (includeClosed
+            ? baseQuery
+            : baseQuery.where('statut', isEqualTo: 'ouvert'))
         .snapshots()
         .map((snapshot) {
       debugPrint('📅 Operations stream: ${snapshot.docs.length} docs');
@@ -47,7 +54,13 @@ class ActivityService {
             final op = Operation.fromFirestore(doc);
             // Exclude piscine category operations (we use piscine_sessions instead)
             if (op.categorie != 'piscine') {
-              activities.add(ActivityItem.fromOperation(op));
+              // En mode includeClosed on ne garde que les statuts visibles
+              // (ouvert/fermé) — jamais brouillon ni annulé.
+              if (!includeClosed ||
+                  op.statut == 'ouvert' ||
+                  op.statut == 'ferme') {
+                activities.add(ActivityItem.fromOperation(op));
+              }
             }
           } catch (e) {
             debugPrint('❌ Error parsing operation ${doc.id}: $e');
