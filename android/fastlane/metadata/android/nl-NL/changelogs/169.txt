@@ -1,0 +1,3 @@
+• Nieuwe zwembadfiche voor encadrants (groepslijst, verdict per duiker)
+• Interface: hoofdknop geharmoniseerd
+• Diverse correcties en verbeteringen
