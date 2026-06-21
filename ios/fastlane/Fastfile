@@ -4,9 +4,9 @@ platform :ios do
   desc "Upload IPA to App Store Connect (TestFlight)"
   lane :deploy do
     api_key = app_store_connect_api_key(
-      key_id: "BHUKT6FFGF",
+      key_id: "ZK62KYKA4T",
       issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"] || "280e011a-f492-43fb-b0eb-727ddaa8c6c9",
-      key_filepath: "~/.private_keys/AuthKey_BHUKT6FFGF.p8",
+      key_filepath: "~/.private_keys/AuthKey_ZK62KYKA4T.p8",
       in_house: false
     )
 
@@ -21,9 +21,9 @@ platform :ios do
   desc "Upload IPA directly to App Store for review"
   lane :release do
     api_key = app_store_connect_api_key(
-      key_id: "BHUKT6FFGF",
+      key_id: "ZK62KYKA4T",
       issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"] || "280e011a-f492-43fb-b0eb-727ddaa8c6c9",
-      key_filepath: "~/.private_keys/AuthKey_BHUKT6FFGF.p8",
+      key_filepath: "~/.private_keys/AuthKey_ZK62KYKA4T.p8",
       in_house: false
     )
 
@@ -41,9 +41,9 @@ platform :ios do
   desc "Submit uploaded build to App Store Review (uses existing build, no binary upload)"
   lane :submit do |options|
     api_key = app_store_connect_api_key(
-      key_id: "BHUKT6FFGF",
+      key_id: "ZK62KYKA4T",
       issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"] || "280e011a-f492-43fb-b0eb-727ddaa8c6c9",
-      key_filepath: "~/.private_keys/AuthKey_BHUKT6FFGF.p8",
+      key_filepath: "~/.private_keys/AuthKey_ZK62KYKA4T.p8",
       in_house: false
     )
 
@@ -56,7 +56,7 @@ platform :ios do
       build_number: build,
       skip_binary_upload: true,
       skip_screenshots: true,
-      skip_metadata: true,
+      skip_metadata: false,
       submit_for_review: true,
       automatic_release: true,
       force: true,
@@ -75,9 +75,9 @@ platform :ios do
   lane :update_notes do |options|
     require "spaceship"
     Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
-      key_id: "BHUKT6FFGF",
+      key_id: "ZK62KYKA4T",
       issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"] || "280e011a-f492-43fb-b0eb-727ddaa8c6c9",
-      filepath: File.expand_path("~/.private_keys/AuthKey_BHUKT6FFGF.p8")
+      filepath: File.expand_path("~/.private_keys/AuthKey_ZK62KYKA4T.p8")
     )
     app = Spaceship::ConnectAPI::App.find("be.calypsodc.calymob")
     UI.message("App: #{app.name} (id=#{app.id})")
@@ -105,9 +105,9 @@ platform :ios do
   lane :status do
     require "spaceship"
     Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
-      key_id: "BHUKT6FFGF",
+      key_id: "ZK62KYKA4T",
       issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"] || "280e011a-f492-43fb-b0eb-727ddaa8c6c9",
-      filepath: File.expand_path("~/.private_keys/AuthKey_BHUKT6FFGF.p8")
+      filepath: File.expand_path("~/.private_keys/AuthKey_ZK62KYKA4T.p8")
     )
     app = Spaceship::ConnectAPI::App.find("be.calypsodc.calymob")
     UI.important("App: #{app.name} (id=#{app.id})")
@@ -133,9 +133,9 @@ platform :ios do
   desc "Validate API key connection"
   lane :validate do
     api_key = app_store_connect_api_key(
-      key_id: "BHUKT6FFGF",
+      key_id: "ZK62KYKA4T",
       issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"] || "280e011a-f492-43fb-b0eb-727ddaa8c6c9",
-      key_filepath: "~/.private_keys/AuthKey_BHUKT6FFGF.p8",
+      key_filepath: "~/.private_keys/AuthKey_ZK62KYKA4T.p8",
       in_house: false
     )
 

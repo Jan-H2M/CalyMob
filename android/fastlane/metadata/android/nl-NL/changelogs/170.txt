@@ -1,1 +1,0 @@
-Nieuwe uitgebreide evenementenzoekfunctie: filter op naam, locatie, jaar, maand, type, status en samen aanwezige personen.

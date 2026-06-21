@@ -1,3 +1,1 @@
-• Nouvelle fiche piscine pour les encadrants (liste du groupe, verdict par plongeur)
-• Interface : bouton d'action principal harmonisé
-• Corrections et améliorations diverses
+Nouvelle recherche approfondie des événements : recherchez et filtrez par nom, lieu, année, mois, type, statut et personnes présentes ensemble.
