@@ -15,6 +15,7 @@ import '../../services/session_message_service.dart';
 import '../../services/unread_count_service.dart';
 import '../../providers/auth_provider.dart';
 import 'operation_detail_screen.dart';
+import 'event_search_screen.dart';
 import 'event_type_selector.dart';
 import 'create_event_wizard.dart';
 import '../piscine/session_detail_screen.dart';
@@ -133,6 +134,14 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.search, size: 26),
+            tooltip: 'Rechercher',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const EventSearchScreen()),
+            ),
+          ),
           if (canCreateEvents)
             IconButton(
               icon: const Icon(Icons.add_circle_outline, size: 28),
