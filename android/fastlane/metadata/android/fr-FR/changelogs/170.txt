@@ -1,0 +1,1 @@
+Nouvelle recherche approfondie des événements : filtrez par nom, lieu, année, mois, type, statut et personnes présentes ensemble.
