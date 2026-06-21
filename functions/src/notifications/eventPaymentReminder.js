@@ -34,9 +34,15 @@ const {
   recomputePaymentReminderDraft,
 } = require('../payment/paymentReminderHelpers');
 const { sendEmailWithConfig } = require('../utils/emailDelivery');
+const {
+  logEmailHistoryAndCommunication,
+  renderCommunicationTemplate,
+  resolveCommunicationTemplate,
+} = require('../utils/communicationTemplates');
 
 const ADMIN_NOTIFICATION_EMAIL = process.env.CALYMOB_ADMIN_NOTIFICATION_EMAIL || 'jan.andriessens@gmail.com';
 const APP_URL = 'https://caly.club';
+const ADMIN_NOTIFICATION_TEMPLATE_TYPE = 'event_payment_reminder';
 
 function escapeHtml(value) {
   return String(value == null ? '' : value)
@@ -74,27 +80,107 @@ function canDeliverAdminEmail(emailConfig) {
   return fallbackProvider ? hasProviderConfig(emailConfig, fallbackProvider) : false;
 }
 
-async function findEmailConfigForAdminEmail(db) {
-  const clubsSnapshot = await db.collection('clubs').get();
-  for (const clubDoc of clubsSnapshot.docs) {
-    try {
-      const configDoc = await db.collection('clubs').doc(clubDoc.id)
-        .collection('settings').doc('email_config').get();
-      if (!configDoc.exists) continue;
-      const emailConfig = configDoc.data() || {};
-      if (!canDeliverAdminEmail(emailConfig)) continue;
-      const generalDoc = await db.collection('clubs').doc(clubDoc.id)
-        .collection('settings').doc('general').get();
-      const general = generalDoc.exists ? generalDoc.data() : {};
-      return {
-        clubId: clubDoc.id,
-        emailConfig,
-      };
-    } catch (e) {
-      console.warn(`[eventPaymentReminder] Failed to read email config for ${clubDoc.id}:`, e);
-    }
+function normalizeProvider(value) {
+  return value === 'gmail' ? 'gmail' : 'resend';
+}
+
+function normalizeIdentity(value) {
+  if (!value || typeof value !== 'object') return null;
+  const email = typeof value.email === 'string' ? value.email.trim() : '';
+  if (!email) return null;
+  return {
+    id: typeof value.id === 'string' ? value.id.trim() : '',
+    email,
+    name: typeof value.name === 'string' && value.name.trim() ? value.name.trim() : '',
+    provider: normalizeProvider(value.provider),
+    active: value.active !== false,
+  };
+}
+
+function getProviderConfig(emailConfig, provider) {
+  return provider === 'gmail' ? (emailConfig?.gmail || {}) : (emailConfig?.resend || {});
+}
+
+function resolveAdminSenderIdentity(emailConfig, clubName) {
+  const identities = Array.isArray(emailConfig?.senderIdentities)
+    ? emailConfig.senderIdentities.map(normalizeIdentity).filter(Boolean)
+    : [];
+  const activeIdentities = identities.filter((identity) => identity.active !== false);
+  const moduleIdentityIds = emailConfig?.moduleSenderIdentityIds || {};
+  const preferredIdentityIds = [
+    moduleIdentityIds.event_payment_reminder,
+    moduleIdentityIds.payment_reminder,
+    moduleIdentityIds.operation,
+    moduleIdentityIds.event,
+    emailConfig?.defaultSenderIdentityId,
+  ].filter((value) => typeof value === 'string' && value.trim());
+  const provider = normalizeProvider(emailConfig?.provider);
+  const providerConfig = getProviderConfig(emailConfig, provider);
+  const selected = preferredIdentityIds
+    .map((id) => activeIdentities.find((identity) => identity.id && identity.id === id))
+    .find(Boolean)
+    || activeIdentities.find((identity) => identity.provider === provider)
+    || activeIdentities[0];
+
+  return {
+    id: selected?.id || `${provider}-default`,
+    email: selected?.email || providerConfig.fromEmail,
+    name: selected?.name || providerConfig.fromName || clubName || 'Calypso Diving Club',
+    provider: selected?.provider || provider,
+  };
+}
+
+function buildDeliveryConfigForIdentity(emailConfig, senderIdentity) {
+  const provider = normalizeProvider(senderIdentity.provider || emailConfig?.provider);
+  const deliveryConfig = {
+    ...(emailConfig || {}),
+    provider,
+    resend: { ...(emailConfig?.resend || {}) },
+    gmail: { ...(emailConfig?.gmail || {}) },
+  };
+
+  if (provider === 'gmail') {
+    deliveryConfig.gmail = {
+      ...deliveryConfig.gmail,
+      fromEmail: senderIdentity.email || deliveryConfig.gmail.fromEmail,
+      fromName: senderIdentity.name || deliveryConfig.gmail.fromName,
+    };
+  } else {
+    deliveryConfig.resend = {
+      ...deliveryConfig.resend,
+      fromEmail: senderIdentity.email || deliveryConfig.resend.fromEmail,
+      fromName: senderIdentity.name || deliveryConfig.resend.fromName,
+    };
   }
-  return null;
+
+  return deliveryConfig;
+}
+
+async function getAdminEmailContext(db, clubId) {
+  try {
+    const [configDoc, generalDoc] = await Promise.all([
+      db.collection('clubs').doc(clubId).collection('settings').doc('email_config').get(),
+      db.collection('clubs').doc(clubId).collection('settings').doc('general').get(),
+    ]);
+    if (!configDoc.exists) return null;
+    const emailConfig = configDoc.data() || {};
+    const general = generalDoc.exists ? (generalDoc.data() || {}) : {};
+    const clubName = general.clubName || general.nom || 'Calypso Diving Club';
+    const senderIdentity = resolveAdminSenderIdentity(emailConfig, clubName);
+    const deliveryConfig = buildDeliveryConfigForIdentity(emailConfig, senderIdentity);
+    if (!canDeliverAdminEmail(deliveryConfig)) return null;
+    return {
+      clubId,
+      clubName,
+      logoUrl: general.logoUrl || general.logo_url || '',
+      emailConfig,
+      deliveryConfig,
+      senderIdentity,
+    };
+  } catch (e) {
+    console.warn(`[eventPaymentReminder] Failed to read email context for ${clubId}:`, e);
+    return null;
+  }
 }
 
 function buildAdminNotificationHtml(preparedDrafts) {
@@ -150,23 +236,100 @@ async function sendAdminNotificationEmail(db, preparedDrafts) {
     return;
   }
   try {
-    const config = await findEmailConfigForAdminEmail(db);
-    if (!config) {
-      console.warn('[eventPaymentReminder] No deliverable email config found — admin email skipped');
+    const clubId = preparedDrafts[0].clubId;
+    const context = await getAdminEmailContext(db, clubId);
+    if (!context) {
+      console.warn(`[eventPaymentReminder] No deliverable email config found for ${clubId} — admin email skipped`);
       return;
     }
-    const subject = preparedDrafts.length === 1
+    const defaultSubject = preparedDrafts.length === 1
       ? `🔔 Calypso — 1 rappel de paiement prêt à envoyer`
       : `🔔 Calypso — ${preparedDrafts.length} rappels de paiement prêts à envoyer`;
-    const html = buildAdminNotificationHtml(preparedDrafts);
-    const result = await sendEmailWithConfig(config.emailConfig, {
+    const templateData = {
+      recipientName: 'Administrateur',
+      clubName: context.clubName,
+      logoUrl: context.logoUrl,
+      appUrl: APP_URL,
+      draftsCount: preparedDrafts.length,
+      drafts: preparedDrafts.map((draft) => ({
+        ...draft,
+        url: `${APP_URL}/operations?selectedId=${encodeURIComponent(draft.operationId)}`,
+      })),
+    };
+    let templateMeta = {
+      templateId: null,
+      templateName: null,
+      templateSource: 'fallback',
+      templateWarning: null,
+    };
+    let subject = defaultSubject;
+    let html = buildAdminNotificationHtml(preparedDrafts);
+
+    try {
+      const resolved = await resolveCommunicationTemplate(db, clubId, ADMIN_NOTIFICATION_TEMPLATE_TYPE);
+      const rendered = renderCommunicationTemplate(resolved.template, templateData);
+      subject = rendered.subject || defaultSubject;
+      html = rendered.html || html;
+      templateMeta = {
+        templateId: resolved.template.id || null,
+        templateName: resolved.template.name || resolved.template.id || null,
+        templateSource: resolved.source,
+        templateWarning: resolved.warning || null,
+      };
+    } catch (templateError) {
+      templateMeta.templateWarning = templateError.message || String(templateError);
+      console.warn(`[eventPaymentReminder] Template resolution failed for ${clubId}:`, templateError);
+    }
+
+    const result = await sendEmailWithConfig(context.deliveryConfig, {
       to: ADMIN_NOTIFICATION_EMAIL,
       subject,
       html,
       headers: {
         'X-CalyMob-Notification': 'event_payment_reminder_admin_summary',
-        'X-CalyMob-Club-Id': config.clubId,
+        'X-CalyMob-Club-Id': clubId,
+        'X-CalyCompta-Template-Type': ADMIN_NOTIFICATION_TEMPLATE_TYPE,
       },
+    });
+    const usedProviderConfig = result.provider === 'gmail'
+      ? (context.deliveryConfig.gmail || {})
+      : (context.deliveryConfig.resend || {});
+    await logEmailHistoryAndCommunication(db, clubId, {
+      recipientEmail: ADMIN_NOTIFICATION_EMAIL,
+      recipientName: 'Administrateur',
+      emailType: ADMIN_NOTIFICATION_TEMPLATE_TYPE,
+      templateType: ADMIN_NOTIFICATION_TEMPLATE_TYPE,
+      templateId: templateMeta.templateId,
+      templateName: templateMeta.templateName,
+      templateSource: templateMeta.templateSource,
+      templateWarning: templateMeta.templateWarning,
+      subject,
+      htmlContent: html,
+      textContent: normalizeText(html.replace(/<[^>]*>/g, ' ')),
+      status: 'sent',
+      messageId: result.messageId || null,
+      provider: result.provider,
+      providerThreadId: result.providerThreadId || null,
+      fallbackUsed: result.fallbackUsed || false,
+      attemptedProviders: result.attemptedProviders || [],
+      primaryError: result.primaryError || null,
+      identityId: context.senderIdentity.id,
+      fromEmail: usedProviderConfig.fromEmail || context.senderIdentity.email || null,
+      fromName: usedProviderConfig.fromName || context.senderIdentity.name || null,
+      sendType: 'automated',
+      triggerName: 'eventPaymentReminder',
+      entityType: 'system',
+      entityId: `event_payment_reminder:${new Date().toISOString().slice(0, 10)}`,
+      entityLabel: `${preparedDrafts.length} rappel(s) de paiement`,
+    }, {
+      entityType: 'system',
+      entityId: `event_payment_reminder:${new Date().toISOString().slice(0, 10)}`,
+      entityLabel: `${preparedDrafts.length} rappel(s) de paiement`,
+      templateType: ADMIN_NOTIFICATION_TEMPLATE_TYPE,
+      templateId: templateMeta.templateId,
+      templateName: templateMeta.templateName,
+      sendType: 'automated',
+      triggerName: 'eventPaymentReminder',
     });
     console.log(
       `[eventPaymentReminder] Admin notification email sent to ${ADMIN_NOTIFICATION_EMAIL} `
@@ -249,7 +412,15 @@ exports.eventPaymentReminder = onSchedule(
 
       // Sort drafts chronologically before sending the summary email.
       preparedDrafts.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-      await sendAdminNotificationEmail(db, preparedDrafts);
+      const draftsByClub = new Map();
+      for (const draft of preparedDrafts) {
+        const clubDrafts = draftsByClub.get(draft.clubId) || [];
+        clubDrafts.push(draft);
+        draftsByClub.set(draft.clubId, clubDrafts);
+      }
+      for (const clubDrafts of draftsByClub.values()) {
+        await sendAdminNotificationEmail(db, clubDrafts);
+      }
     } catch (error) {
       console.error('[eventPaymentReminder] Unrecoverable error:', error);
       throw error;

@@ -296,6 +296,51 @@ const SYSTEM_SEED_TEMPLATES = {
 </body>
 </html>`.trim(),
   },
+  event_payment_reminder: {
+    name: 'System seed event payment reminder',
+    subject: 'Rappels de paiement prêts - {{draftsCount}}',
+    htmlContent: `
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #374151; max-width: 680px; margin: 0 auto; padding: 20px;">
+  <div style="text-align: center; padding: 20px 0; border-bottom: 1px solid #E5E7EB;">
+    {{#if logoUrl}}<img src="{{logoUrl}}" alt="{{clubName}}" style="max-width: 200px; height: auto;">{{else}}<h2 style="margin: 0; color: #374151;">{{clubName}}</h2>{{/if}}
+  </div>
+  <h1 style="font-size: 22px; color: #111827;">Rappels de paiement prêts à envoyer</h1>
+  <p>Bonjour {{recipientName}},</p>
+  <p>{{draftsCount}} rappel(s) de paiement sont prêts pour les événements des prochains jours.</p>
+  <table style="width:100%;border-collapse:collapse;font-size:14px;">
+    <thead><tr style="background:#F9FAFB;">
+      <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #E5E7EB;">Événement</th>
+      <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #E5E7EB;">Impayé</th>
+      <th style="text-align:left;padding:10px 12px;border-bottom:2px solid #E5E7EB;">Action</th>
+    </tr></thead>
+    <tbody>
+      {{#each drafts}}
+      <tr>
+        <td style="padding:12px;border-bottom:1px solid #E5E7EB;vertical-align:top;">
+          <strong>{{title}}</strong><br>
+          <span style="color:#6B7280;font-size:13px;">{{date}}</span>
+        </td>
+        <td style="padding:12px;border-bottom:1px solid #E5E7EB;vertical-align:top;">
+          {{qrCount}} via email QR<br>
+          {{surPlaceCount}} sur place
+        </td>
+        <td style="padding:12px;border-bottom:1px solid #E5E7EB;vertical-align:top;">
+          <a href="{{url}}" style="background:#D97706;color:#fff;padding:8px 14px;border-radius:6px;text-decoration:none;display:inline-block;font-weight:600;font-size:13px;">Ouvrir dans CalyCompta</a>
+        </td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+  <p style="color:#6B7280;font-size:13px;margin-top:20px;">
+    Ouvrez l'événement dans CalyCompta, onglet Inscriptions, puis utilisez la prévisualisation pour envoyer le rappel.
+  </p>
+  <p>Cordialement,<br><strong>{{clubName}}</strong></p>
+</body>
+</html>`.trim(),
+  },
 };
 
 async function resolveCommunicationTemplate(db, clubId, emailType, fallbackPolicy = 'allow_system_seed') {

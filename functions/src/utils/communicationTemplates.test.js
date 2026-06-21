@@ -114,6 +114,29 @@ describe('communicationTemplates Cloud Functions helper', () => {
     expect(rendered.html).toContain('Jan');
   });
 
+  it('renders the event payment reminder system seed', async () => {
+    const db = buildTemplateDb([]);
+
+    const result = await resolveCommunicationTemplate(db, 'club-1', 'event_payment_reminder');
+    const rendered = renderCommunicationTemplate(result.template, {
+      recipientName: 'Administrateur',
+      clubName: 'Calypso',
+      draftsCount: 1,
+      drafts: [{
+        title: 'Rochefontaine',
+        date: '07/06/2026',
+        qrCount: 4,
+        surPlaceCount: 1,
+        url: 'https://caly.club/operations?selectedId=op-1',
+      }],
+    });
+
+    expect(result.source).toBe('system_seed');
+    expect(rendered.subject).toContain('1');
+    expect(rendered.html).toContain('Rochefontaine');
+    expect(rendered.html).toContain('https://caly.club/operations?selectedId&#x3D;op-1');
+  });
+
   it('logs email history and linked communication entry', async () => {
     const db = buildLoggingDb();
     const routing = buildEmailRouting({

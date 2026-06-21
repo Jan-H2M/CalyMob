@@ -60,7 +60,10 @@ const onPoolCheckinCompleted = onDocumentUpdated(
 
     const completion = after.completion_data || {};
     const rawOutcome = completion.outcome || null;
-    const VALID_OUTCOMES = ['training', 'service_only', 'nage_libre'];
+    // 'encadrant' is the formateur variant — it carries an encadrantReport
+    // instead of a student groupAssignment and must NOT spawn a logbook entry
+    // at session close (onPoolSessionClosed filters on outcome=='training').
+    const VALID_OUTCOMES = ['training', 'service_only', 'nage_libre', 'encadrant'];
     const outcome = VALID_OUTCOMES.includes(rawOutcome) ? rawOutcome : null;
     if (!outcome) {
       console.warn(
@@ -69,6 +72,16 @@ const onPoolCheckinCompleted = onDocumentUpdated(
     }
 
     const db = admin.firestore();
+
+    // Encadrant check-in : snapshot what the monitor supervised onto the
+    // attendee doc so CalyCompta can surface it. No validator / logbook.
+    let encadrantReport = null;
+    if (outcome === 'encadrant') {
+      encadrantReport = {
+        groups: Array.isArray(completion.groups) ? completion.groups : [],
+        workedOn: completion.workedOn || null,
+      };
+    }
 
     let groupAssignment = null;
     if (outcome === 'training') {
@@ -102,6 +115,7 @@ const onPoolCheckinCompleted = onDocumentUpdated(
     await attendeeRef.set(
       {
         groupAssignment,
+        encadrantReport,
         personalNotes: completion.personalNotes || null,
         outcome,
         checkinCompletedAt: FieldValue.serverTimestamp(),
@@ -111,7 +125,8 @@ const onPoolCheckinCompleted = onDocumentUpdated(
 
     console.log(
       `[${FUNCTION_NAME}] task ${taskId} → attendee ${userId} ` +
-        `(outcome=${outcome || 'n/a'}, group=${(groupAssignment && groupAssignment.groupKey) || 'n/a'})`
+        `(outcome=${outcome || 'n/a'}, group=${(groupAssignment && groupAssignment.groupKey) || 'n/a'}` +
+        `${encadrantReport ? `, encadrant_groups=${encadrantReport.groups.length}` : ''})`
     );
   }
 );

@@ -3097,11 +3097,6 @@ export function OperationDetailView({
                                     <span className="text-sm font-semibold text-gray-900 dark:text-dark-text-primary whitespace-nowrap">
                                       {formatMontant(inscription.transaction_montant || 0)}
                                     </span>
-                                    {inscription.transaction_montant && Math.abs(inscription.transaction_montant - (inscription.prix + (inscription.supplement_total || 0))) > 0.01 && (
-                                      <span className="text-xs text-orange-600 dark:text-orange-400 whitespace-nowrap">
-                                        (⚠️ {formatMontant(Math.abs((inscription.prix + (inscription.supplement_total || 0)) - inscription.transaction_montant))})
-                                      </span>
-                                    )}
                                   </div>
                                 )}
 
@@ -3117,11 +3112,6 @@ export function OperationDetailView({
                                       className="w-16 px-1.5 py-0.5 text-xs text-right border border-gray-300 dark:border-dark-border rounded focus:ring-1 focus:ring-blue-500 bg-white dark:bg-dark-bg-tertiary [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                     />
                                     <span className="text-xs text-gray-500 dark:text-dark-text-muted">€</span>
-                                    {inscription.montant_paye_especes && Math.abs(inscription.montant_paye_especes - (inscription.prix + (inscription.supplement_total || 0))) > 0.01 && (
-                                      <span className="text-xs text-orange-600 dark:text-orange-400 whitespace-nowrap">
-                                        (⚠️ {formatMontant(Math.abs((inscription.prix + (inscription.supplement_total || 0)) - inscription.montant_paye_especes))})
-                                      </span>
-                                    )}
                                   </div>
                                 )}
                               </div>

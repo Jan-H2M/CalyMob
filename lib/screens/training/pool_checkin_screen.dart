@@ -17,6 +17,8 @@
 /// `onPoolCheckinCompleted` Cloud Function can propagate the chosen group
 /// onto the attendee doc.
 
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
@@ -28,7 +30,17 @@ import '../../widgets/ocean/ocean_gradient_background.dart';
 
 class PoolCheckinScreen extends StatefulWidget {
   final FormationTask task;
-  const PoolCheckinScreen({super.key, required this.task});
+
+  /// Dev preview: when true the screen never touches Firestore. Submit shows
+  /// the `completion_data` that *would* be written, then pops. Used by the
+  /// scenario gallery to validate every fiche without a real event.
+  final bool previewMode;
+
+  const PoolCheckinScreen({
+    super.key,
+    required this.task,
+    this.previewMode = false,
+  });
 
   @override
   State<PoolCheckinScreen> createState() => _PoolCheckinScreenState();
@@ -45,10 +57,22 @@ class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
   final TextEditingController _notes = TextEditingController();
   bool _submitting = false;
 
+  // ---- Encadrant variant state ----
+  /// True when this check-in is the formateur fiche (context.role=='encadrant').
+  bool get _isEncadrant => widget.task.context.isEncadrant;
+
+  /// Groups pre-filled from the planning; an encadrant confirms which he
+  /// actually supervised (he might have been reassigned on the spot).
+  late final List<FormationTaskEncadrantGroup> _encadrantGroups;
+  late final List<bool> _groupConfirmed;
+  final TextEditingController _workedOn = TextEditingController();
+
   @override
   void initState() {
     super.initState();
     _level = _parseLevelFromTarget(widget.task.context.targetGroupLevel);
+    _encadrantGroups = widget.task.context.encadrantGroups;
+    _groupConfirmed = List<bool>.filled(_encadrantGroups.length, true);
   }
 
   String? _parseLevelFromTarget(String? raw) {
@@ -61,6 +85,7 @@ class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
   @override
   void dispose() {
     _notes.dispose();
+    _workedOn.dispose();
     super.dispose();
   }
 
@@ -71,6 +96,10 @@ class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
 
   bool get _canSubmit {
     if (_submitting) return false;
+    if (_isEncadrant) {
+      // At least one supervised group must remain confirmed.
+      return _groupConfirmed.contains(true);
+    }
     if (_outcome == null) return false;
     if (_outcome == _Outcome.training && (_level == null || _level!.isEmpty)) {
       return false;
@@ -78,19 +107,13 @@ class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
     return true;
   }
 
-  Future<void> _submit() async {
-    if (!_canSubmit) return;
-    final userId = context.read<AuthProvider>().currentUser?.uid;
-    if (userId == null) return;
-    setState(() => _submitting = true);
-
+  Map<String, dynamic> _buildStudentCompletionData() {
     final outcome = switch (_outcome!) {
       _Outcome.training => 'training',
       _Outcome.serviceOnly => 'service_only',
       _Outcome.nageLibre => 'nage_libre',
     };
-
-    final completionData = <String, dynamic>{
+    return <String, dynamic>{
       'outcome': outcome,
       if (outcome == 'training') ...{
         'level': _level,
@@ -99,6 +122,39 @@ class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
       },
       if (_notes.text.trim().isNotEmpty) 'personalNotes': _notes.text.trim(),
     };
+  }
+
+  Map<String, dynamic> _buildCompletionData() {
+    return _isEncadrant
+        ? <String, dynamic>{
+            'outcome': 'encadrant',
+            'groups': [
+              for (var i = 0; i < _encadrantGroups.length; i++)
+                if (_groupConfirmed[i]) _encadrantGroups[i].toMap(),
+            ],
+            if (_workedOn.text.trim().isNotEmpty)
+              'workedOn': _workedOn.text.trim(),
+            if (_notes.text.trim().isNotEmpty)
+              'personalNotes': _notes.text.trim(),
+          }
+        : _buildStudentCompletionData();
+  }
+
+  Future<void> _submit() async {
+    if (!_canSubmit) return;
+
+    final completionData = _buildCompletionData();
+
+    // Dev preview: show what would be saved, don't touch Firestore.
+    if (widget.previewMode) {
+      await _showPreviewResult(completionData);
+      if (mounted) Navigator.pop(context);
+      return;
+    }
+
+    final userId = context.read<AuthProvider>().currentUser?.uid;
+    if (userId == null) return;
+    setState(() => _submitting = true);
 
     try {
       await _taskService.markDone(
@@ -137,7 +193,40 @@ class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
     }
   }
 
+  /// Dev preview: render the completion_data that would be persisted.
+  Future<void> _showPreviewResult(Map<String, dynamic> data) async {
+    const encoder = JsonEncoder.withIndent('  ');
+    String pretty;
+    try {
+      pretty = encoder.convert(data);
+    } catch (_) {
+      pretty = data.toString();
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Aperçu — completion_data'),
+        content: SingleChildScrollView(
+          child: Text(
+            pretty,
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 12.5),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _dismiss() async {
+    if (widget.previewMode) {
+      Navigator.pop(context);
+      return;
+    }
     final userId = context.read<AuthProvider>().currentUser?.uid;
     if (userId == null) return;
     setState(() => _submitting = true);
@@ -156,6 +245,53 @@ class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
     }
   }
 
+  List<Widget> _buildStudentBody() {
+    return [
+      _ContextCard(task: widget.task),
+      const SizedBox(height: 18),
+      _OutcomeSection(
+        selected: _outcome,
+        onSelect: (o) => setState(() => _outcome = o),
+      ),
+      if (_outcome == _Outcome.training) ...[
+        const SizedBox(height: 18),
+        _GroupSection(
+          selectedLevel: _level,
+          selectedGroupNumber: _groupNumber,
+          suggested: widget.task.context.targetGroupLevel,
+          onLevelChange: (l) => setState(() => _level = l),
+          onGroupNumberChange: (n) => setState(() => _groupNumber = n),
+        ),
+      ],
+      if (_outcome != null) ...[
+        const SizedBox(height: 18),
+        _NotesSection(controller: _notes),
+      ],
+    ];
+  }
+
+  List<Widget> _buildEncadrantBody() {
+    return [
+      const _EncadrantHeaderCard(),
+      const SizedBox(height: 18),
+      _EncadrantGroupsSection(
+        groups: _encadrantGroups,
+        confirmed: _groupConfirmed,
+        onToggle: (i, v) => setState(() => _groupConfirmed[i] = v),
+      ),
+      const SizedBox(height: 18),
+      _WorkedOnSection(controller: _workedOn),
+      const SizedBox(height: 18),
+      _NotesSection(
+        controller: _notes,
+        title: '3. Remarques (facultatif)',
+        helper:
+            'Remarques sur les plongeurs de ton groupe, points à revoir, etc.',
+        hint: 'Ce que tu veux retenir pour la prochaine fois…',
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
@@ -170,29 +306,9 @@ class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
               Expanded(
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-                  children: [
-                    _ContextCard(task: widget.task),
-                    const SizedBox(height: 18),
-                    _OutcomeSection(
-                      selected: _outcome,
-                      onSelect: (o) => setState(() => _outcome = o),
-                    ),
-                    if (_outcome == _Outcome.training) ...[
-                      const SizedBox(height: 18),
-                      _GroupSection(
-                        selectedLevel: _level,
-                        selectedGroupNumber: _groupNumber,
-                        suggested: widget.task.context.targetGroupLevel,
-                        onLevelChange: (l) => setState(() => _level = l),
-                        onGroupNumberChange: (n) =>
-                            setState(() => _groupNumber = n),
-                      ),
-                    ],
-                    if (_outcome != null) ...[
-                      const SizedBox(height: 18),
-                      _NotesSection(controller: _notes),
-                    ],
-                  ],
+                  children: _isEncadrant
+                      ? _buildEncadrantBody()
+                      : _buildStudentBody(),
                 ),
               ),
             ],
@@ -207,36 +323,51 @@ class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
           top: false,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            child: Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _canSubmit ? _submit : null,
+                    icon: _submitting
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.donkerblauw,
+                            ),
+                          )
+                        : const Icon(Icons.send),
+                    label: Text(
+                      _submitting ? 'Envoi…' : 'Confirmer ma piscine',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.lichtblauw,
+                      foregroundColor: AppColors.donkerblauw,
+                      disabledBackgroundColor:
+                          AppColors.lichtblauw.withValues(alpha: 0.40),
+                      disabledForegroundColor:
+                          AppColors.donkerblauw.withValues(alpha: 0.45),
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
                 TextButton(
                   onPressed: _submitting ? null : _dismiss,
                   child: const Text(
                     'Pas concerné',
-                    style: TextStyle(color: Colors.white70),
-                  ),
-                ),
-                const Spacer(),
-                ElevatedButton.icon(
-                  onPressed: _canSubmit ? _submit : null,
-                  icon: _submitting
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.send),
-                  label: Text(_submitting ? 'Envoi…' : 'Confirmer ma piscine'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.middenblauw,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 12,
-                    ),
+                    style: TextStyle(color: Colors.white70, fontSize: 13),
                   ),
                 ),
               ],
@@ -579,7 +710,15 @@ class _ChipChoice extends StatelessWidget {
 
 class _NotesSection extends StatelessWidget {
   final TextEditingController controller;
-  const _NotesSection({required this.controller});
+  final String title;
+  final String helper;
+  final String hint;
+  const _NotesSection({
+    required this.controller,
+    this.title = '3. Notes perso (facultatif)',
+    this.helper = 'Ressenti, exercices que tu veux signaler à ton encadrant, etc.',
+    this.hint = 'Ce que tu veux retenir de ce soir…',
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -587,10 +726,10 @@ class _NotesSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _SectionTitle('3. Notes perso (facultatif)'),
+          _SectionTitle(title),
           const SizedBox(height: 8),
           Text(
-            'Ressenti, exercices que tu veux signaler à ton encadrant, etc.',
+            helper,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.8),
               fontSize: 12.5,
@@ -604,7 +743,217 @@ class _NotesSection extends StatelessWidget {
             style: const TextStyle(color: Colors.white),
             cursorColor: Colors.white,
             decoration: InputDecoration(
-              hintText: 'Ce que tu veux retenir de ce soir…',
+              hintText: hint,
+              hintStyle: TextStyle(
+                color: Colors.white.withValues(alpha: 0.55),
+                fontSize: 13,
+              ),
+              filled: true,
+              fillColor: Colors.white.withValues(alpha: 0.10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.25),
+                ),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.25),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Colors.white, width: 1.5),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Encadrant variant sections
+// ---------------------------------------------------------------------------
+
+class _EncadrantHeaderCard extends StatelessWidget {
+  const _EncadrantHeaderCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return _Card(
+      child: Row(
+        children: [
+          const Icon(Icons.school, color: Colors.white, size: 36),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Tu étais encadrant ce soir',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Confirme ton groupe et note ce que vous avez travaillé.',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.8),
+                    fontSize: 12.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EncadrantGroupsSection extends StatelessWidget {
+  final List<FormationTaskEncadrantGroup> groups;
+  final List<bool> confirmed;
+  final void Function(int index, bool value) onToggle;
+
+  const _EncadrantGroupsSection({
+    required this.groups,
+    required this.confirmed,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SectionTitle('1. Ton groupe ce soir'),
+          const SizedBox(height: 4),
+          Text(
+            groups.length > 1
+                ? 'Décoche un groupe si tu ne l\'as finalement pas encadré.'
+                : 'Pré-rempli depuis le planning.',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.75),
+              fontSize: 12.5,
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (groups.isEmpty)
+            Text(
+              'Aucun groupe trouvé dans le planning. Ajoute une remarque ci-dessous.',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.85),
+                fontSize: 13,
+              ),
+            )
+          else
+            for (var i = 0; i < groups.length; i++) ...[
+              if (i > 0) const SizedBox(height: 8),
+              _GroupConfirmTile(
+                label: groups[i].displayLabel,
+                active: confirmed[i],
+                onTap: () => onToggle(i, !confirmed[i]),
+              ),
+            ],
+        ],
+      ),
+    );
+  }
+}
+
+class _GroupConfirmTile extends StatelessWidget {
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  const _GroupConfirmTile({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: active
+                ? AppColors.middenblauw.withValues(alpha: 0.55)
+                : Colors.white.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: active ? Colors.white : Colors.white.withValues(alpha: 0.20),
+              width: active ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                active ? Icons.check_circle : Icons.radio_button_unchecked,
+                color: Colors.white,
+                size: 22,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkedOnSection extends StatelessWidget {
+  final TextEditingController controller;
+  const _WorkedOnSection({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SectionTitle('2. Qu\'avez-vous travaillé ce soir ?'),
+          const SizedBox(height: 8),
+          Text(
+            'Exercices, thème abordé, déroulé de la séance…',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.8),
+              fontSize: 12.5,
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: controller,
+            minLines: 2,
+            maxLines: 5,
+            style: const TextStyle(color: Colors.white),
+            cursorColor: Colors.white,
+            decoration: InputDecoration(
+              hintText: 'Ex. répétition brevet 2★ : remontée assistée, vidage de masque…',
               hintStyle: TextStyle(
                 color: Colors.white.withValues(alpha: 0.55),
                 fontSize: 13,

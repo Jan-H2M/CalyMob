@@ -90,6 +90,35 @@ void main() async {
       // Ne pas envoyer d'événements en debug mode (sécurité supplémentaire)
       options.beforeSend = (event, hint) {
         if (kDebugMode) return null; // drop l'événement
+
+        // Filtrer le bruit réseau : pertes de connexion transitoires côté
+        // appareil (pas d'internet, DNS qui échoue, captive portal…). Ces
+        // erreurs ne sont pas des bugs de l'app et polluent Sentry.
+        // On matche sur la string de l'exception pour rester compatible web
+        // (dart:io / SocketException n'est pas dispo sur le web).
+        final throwable = event.throwable?.toString() ??
+            event.exceptions
+                ?.map((e) => '${e.type} ${e.value}')
+                .join(' ') ??
+            '';
+        const offlineSignatures = <String>[
+          'Failed host lookup',
+          'No address associated with hostname',
+          'errno = 7',
+          'SocketException',
+          'HandshakeException',
+          'Connection closed before full header was received',
+          'Connection reset by peer',
+          'Connection refused',
+          'Network is unreachable',
+          'Software caused connection abort',
+          'Connection timed out',
+          'Operation timed out',
+        ];
+        if (offlineSignatures.any(throwable.contains)) {
+          return null; // drop : perte de connexion transitoire, pas un bug
+        }
+
         return event;
       };
 
@@ -610,8 +639,28 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             elevatedButtonTheme: ElevatedButtonThemeData(
               style: ElevatedButton.styleFrom(
                 elevation: 0,
-                backgroundColor: AppColors.middenblauw,
-                foregroundColor: Colors.white,
+                backgroundColor: AppColors.lichtblauw,
+                foregroundColor: AppColors.donkerblauw,
+                disabledBackgroundColor:
+                    AppColors.lichtblauw.withValues(alpha: 0.40),
+                disabledForegroundColor:
+                    AppColors.donkerblauw.withValues(alpha: 0.45),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+            filledButtonTheme: FilledButtonThemeData(
+              style: FilledButton.styleFrom(
+                elevation: 0,
+                backgroundColor: AppColors.lichtblauw,
+                foregroundColor: AppColors.donkerblauw,
+                disabledBackgroundColor:
+                    AppColors.lichtblauw.withValues(alpha: 0.40),
+                disabledForegroundColor:
+                    AppColors.donkerblauw.withValues(alpha: 0.45),
                 padding:
                     const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                 shape: RoundedRectangleBorder(

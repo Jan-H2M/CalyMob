@@ -1,6 +1,7 @@
 const {
   buildGmailMimeMessage,
   buildReplyToHeader,
+  normalizeEmailAttachments,
   normalizeHeaders,
   sendEmailWithConfig,
 } = require('./emailDelivery');
@@ -78,5 +79,92 @@ describe('emailDelivery helper', () => {
     expect(message).toContain('Content-Disposition: inline; filename="qrcode.png"');
     expect(message).toContain('\r\n\r\n<p>Scan <img src="cid:qrcode"></p>');
     expect(message).toContain('\r\nQUJD');
+  });
+
+  it('normalizes inline and Storage-backed attachments before sending', async () => {
+    const storage = {
+      bucket: jest.fn(() => ({
+        file: jest.fn(() => ({
+          download: jest.fn(async () => [Buffer.from('PDF')]),
+        })),
+      })),
+    };
+
+    const attachments = await normalizeEmailAttachments([
+      {
+        filename: 'qr.png',
+        content: 'data:image/png;base64,QUJD',
+        content_id: 'qrcode',
+      },
+      {
+        filename: 'contract.pdf',
+        storagePath: 'clubs/club-1/documents/contract.pdf',
+        contentType: 'application/pdf',
+      },
+    ], { storage });
+
+    expect(attachments).toEqual([
+      expect.objectContaining({
+        filename: 'qr.png',
+        content: 'QUJD',
+        content_type: 'image/png',
+        content_id: 'qrcode',
+      }),
+      expect.objectContaining({
+        filename: 'contract.pdf',
+        content: Buffer.from('PDF').toString('base64'),
+        content_type: 'application/pdf',
+        storagePath: 'clubs/club-1/documents/contract.pdf',
+      }),
+    ]);
+  });
+
+  it('rejects URL-only attachments instead of trusting provider URLs', async () => {
+    await expect(normalizeEmailAttachments([
+      {
+        filename: 'remote.pdf',
+        url: 'https://example.com/remote.pdf',
+      },
+    ])).rejects.toThrow('Use a Firebase Storage path or inline content');
+  });
+
+  it('passes normalized attachments to provider attempts', async () => {
+    const sendEmailWithProvider = jest.fn(async (_config, provider, input) => ({
+      provider,
+      messageId: 'msg-1',
+      message: 'sent',
+      input,
+    }));
+
+    await sendEmailWithConfig({
+      provider: 'resend',
+      resend: {
+        apiKey: 'rk_test',
+        fromEmail: 'compta@caly.club',
+      },
+    }, {
+      to: 'jan@example.com',
+      subject: 'Attachment test',
+      html: '<p>Hello</p>',
+      attachments: [{
+        filename: 'qr.png',
+        content: 'data:image/png;base64,QUJD',
+        content_id: 'qrcode',
+      }],
+    }, { sendEmailWithProvider });
+
+    expect(sendEmailWithProvider).toHaveBeenCalledWith(
+      expect.any(Object),
+      'resend',
+      expect.objectContaining({
+        attachments: [
+          expect.objectContaining({
+            filename: 'qr.png',
+            content: 'QUJD',
+            content_id: 'qrcode',
+          }),
+        ],
+      }),
+    );
   });
 });

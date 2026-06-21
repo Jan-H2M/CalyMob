@@ -67,6 +67,54 @@ class FormationTaskAction {
   }
 }
 
+/// One group an encadrant supervised during a pool session.
+///
+/// Snapshotted from the planning (`piscine_sessions/{id}.niveaux[level]
+/// .courses_by_hour[heure][i]`) by `onPiscineAttendeeCreated` when the
+/// attendee is found in a course's `encadrants[]`. Used to pre-fill the
+/// encadrant variant of the pool check-in screen.
+class FormationTaskEncadrantGroup {
+  final String? level; // '1*'/'2*'/...
+  final int? groupNumber; // 1-based position of the course within the hour
+  final String? theme;
+  final String? courseId;
+  final String? heure; // '1ere_heure' | '2eme_heure'
+
+  const FormationTaskEncadrantGroup({
+    this.level,
+    this.groupNumber,
+    this.theme,
+    this.courseId,
+    this.heure,
+  });
+
+  factory FormationTaskEncadrantGroup.fromMap(Map<String, dynamic> map) {
+    return FormationTaskEncadrantGroup(
+      level: map['level'],
+      groupNumber: (map['group_number'] as num?)?.toInt(),
+      theme: map['theme'],
+      courseId: map['course_id'],
+      heure: map['heure'],
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+        if (level != null) 'level': level,
+        if (groupNumber != null) 'group_number': groupNumber,
+        if (theme != null) 'theme': theme,
+        if (courseId != null) 'course_id': courseId,
+        if (heure != null) 'heure': heure,
+      };
+
+  /// e.g. "2★ · Groupe 1 — répétition brevet 2★"
+  String get displayLabel {
+    final lvl = level ?? '';
+    final grp = groupNumber != null ? ' · Groupe $groupNumber' : '';
+    final th = (theme != null && theme!.trim().isNotEmpty) ? ' — ${theme!.trim()}' : '';
+    return '$lvl$grp$th'.trim();
+  }
+}
+
 class FormationTaskContext {
   final String? operationId;
   final String? operationTitle;
@@ -84,6 +132,13 @@ class FormationTaskContext {
   final String? palanqueeId;
   final String? locationId;
 
+  /// Role of the assignee for a pool_checkin task. `'encadrant'` switches the
+  /// check-in screen to the formateur variant; null/absent ⇒ student variant.
+  final String? role;
+
+  /// Groups the encadrant supervised tonight (only set when role == 'encadrant').
+  final List<FormationTaskEncadrantGroup> encadrantGroups;
+
   const FormationTaskContext({
     this.operationId,
     this.operationTitle,
@@ -100,7 +155,11 @@ class FormationTaskContext {
     this.historicalClaimBatchId,
     this.palanqueeId,
     this.locationId,
+    this.role,
+    this.encadrantGroups = const [],
   });
+
+  bool get isEncadrant => role == 'encadrant';
 
   factory FormationTaskContext.fromMap(Map<String, dynamic>? map) {
     if (map == null) return const FormationTaskContext();
@@ -121,6 +180,12 @@ class FormationTaskContext {
       historicalClaimBatchId: map['historical_claim_batch_id'],
       palanqueeId: map['palanquee_id'],
       locationId: map['location_id'],
+      role: map['role'],
+      encadrantGroups: (map['encadrant_groups'] as List?)
+              ?.whereType<Map<String, dynamic>>()
+              .map(FormationTaskEncadrantGroup.fromMap)
+              .toList() ??
+          const [],
     );
   }
 }

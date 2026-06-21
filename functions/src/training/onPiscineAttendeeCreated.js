@@ -157,6 +157,70 @@ function findLevelCourse(sessionData, targetLevel) {
   return null;
 }
 
+/**
+ * Find every Formation course tonight where `memberId` is listed as an
+ * encadrant. Scans niveaux[*].courses_by_hour[*][i].encadrants[] (new shape)
+ * and niveaux[*].encadrants[] (legacy). The 1-based position of the course
+ * within its hour becomes the group number shown in the UI (mirrors the
+ * "GROUPE 1 / GROUPE 2" labelling of the CalyCompta planning board).
+ *
+ * Returns an array of { level, group_number, theme, course_id, heure }.
+ * Empty array ⇒ the member did not supervise any course (normal attendee).
+ */
+function findEncadrantGroups(sessionData, memberId) {
+  const groups = [];
+  const niveaux = sessionData.niveaux || {};
+
+  const isMatch = (enc) =>
+    enc && (enc.membre_id === memberId || enc.membreId === memberId);
+
+  for (const level of Object.keys(niveaux)) {
+    const levelAssignment = niveaux[level] || {};
+
+    const coursesByHour =
+      levelAssignment.courses_by_hour || levelAssignment.coursesByHour;
+    if (coursesByHour && typeof coursesByHour === 'object') {
+      for (const hourKey of Object.keys(coursesByHour)) {
+        const courses = coursesByHour[hourKey];
+        if (!Array.isArray(courses)) continue;
+        courses.forEach((course, index) => {
+          const encadrants = Array.isArray(course.encadrants)
+            ? course.encadrants
+            : [];
+          if (encadrants.some(isMatch)) {
+            groups.push({
+              level,
+              group_number: typeof course.order === 'number' ? course.order + 1 : index + 1,
+              theme: course.theme || null,
+              course_id: course.id || `${level}_${hourKey}_${index}`,
+              heure: hourKey,
+            });
+          }
+        });
+      }
+    }
+
+    // Legacy fallback: encadrants directly on the level assignment.
+    const legacyEncadrants = Array.isArray(levelAssignment.encadrants)
+      ? levelAssignment.encadrants
+      : [];
+    if (
+      !(coursesByHour && typeof coursesByHour === 'object') &&
+      legacyEncadrants.some(isMatch)
+    ) {
+      groups.push({
+        level,
+        group_number: 1,
+        theme: levelAssignment.theme || null,
+        course_id: `${level}_legacy`,
+        heure: null,
+      });
+    }
+  }
+
+  return groups;
+}
+
 const onPiscineAttendeeCreated = onDocumentCreated(
   {
     region: FUNCTION_REGION,
@@ -193,21 +257,9 @@ const onPiscineAttendeeCreated = onDocumentCreated(
     }
     const member = memberSnap.data();
 
-    // v2.2 (2026-05-13): canonically the formation_active filter is removed
-    // and every attendee gets a pool_checkin task with outcome chooser.
-    // PRODUCTION DEPLOY 2026-05-14: filter temporarily reinstated until the
-    // CalyMob mobile release with the outcome chooser ships — otherwise
-    // non-formation members would see a stale pool_checkin task with the
-    // legacy LIFRAS chip UI in their installed app. Remove this guard once
-    // the new PoolCheckinScreen is in production on iOS + Android.
-    if (member.formation_active !== true) {
-      console.log(
-        `[${FUNCTION_NAME}] member ${memberId} formation_active=false, skipping (TODO: lift after CalyMob v2.2 release)`
-      );
-      return;
-    }
-
     // ---- 2. Idempotency check ----
+    // Covers both variants — student and encadrant pool_checkin tasks share
+    // type=pool_checkin and are keyed on the same attendee_id.
     const existingTasks = await db
       .collection('clubs')
       .doc(clubId)
@@ -223,7 +275,46 @@ const onPiscineAttendeeCreated = onDocumentCreated(
       return;
     }
 
-    // ---- 3. Determine target Formation group ----
+    // ---- 3. Load the session planning ----
+    const sessionSnap = await db
+      .collection('clubs')
+      .doc(clubId)
+      .collection('piscine_sessions')
+      .doc(sessionId)
+      .get();
+    const session = sessionSnap.exists ? sessionSnap.data() : null;
+
+    // ---- 4. Encadrant branch ----
+    // If the member supervises a Formation course tonight, give them the
+    // ENCADRANT check-in (a different fiche), not the student one. Moniteurs
+    // usually have formation_active=false, so this must run BEFORE the
+    // formation_active guard below.
+    if (session) {
+      const encadrantGroups = findEncadrantGroups(session, memberId);
+      if (encadrantGroups.length > 0) {
+        await createEncadrantTask(
+          db, clubId, attendeeId, member, memberId, sessionId, session, encadrantGroups
+        );
+        return;
+      }
+    }
+
+    // ---- 5. Student branch — formation_active guard ----
+    // v2.2 (2026-05-13): canonically the formation_active filter is removed
+    // and every attendee gets a pool_checkin task with outcome chooser.
+    // PRODUCTION DEPLOY 2026-05-14: filter temporarily reinstated until the
+    // CalyMob mobile release with the outcome chooser ships — otherwise
+    // non-formation members would see a stale pool_checkin task with the
+    // legacy LIFRAS chip UI in their installed app. Remove this guard once
+    // the new PoolCheckinScreen is in production on iOS + Android.
+    if (member.formation_active !== true) {
+      console.log(
+        `[${FUNCTION_NAME}] member ${memberId} formation_active=false, skipping (TODO: lift after CalyMob v2.2 release)`
+      );
+      return;
+    }
+
+    // ---- 6. Determine target Formation group ----
     // Pass the full member object so the override `target_formation_level`
     // is respected (useful for moniteurs in pilot/refresh mode).
     const targetLevel = computeTargetLevel(member);
@@ -235,20 +326,12 @@ const onPiscineAttendeeCreated = onDocumentCreated(
       return;
     }
 
-    // ---- 4. Look up the level_course planning ----
-    const sessionSnap = await db
-      .collection('clubs')
-      .doc(clubId)
-      .collection('piscine_sessions')
-      .doc(sessionId)
-      .get();
-
-    if (!sessionSnap.exists) {
+    // ---- 7. Look up the level_course planning ----
+    if (!session) {
       console.log(`[${FUNCTION_NAME}] session ${sessionId} not found, creating blocked task`);
       await createBlockedTask(db, clubId, attendeeId, member, memberId, sessionId, targetLevel);
       return;
     }
-    const session = sessionSnap.data();
 
     const levelCourse = findLevelCourse(session, targetLevel);
 
@@ -309,6 +392,50 @@ const onPiscineAttendeeCreated = onDocumentCreated(
     );
   }
 );
+
+async function createEncadrantTask(
+  db, clubId, attendeeId, member, memberId, sessionId, session, encadrantGroups
+) {
+  const memberName = composeMemberName(member);
+  const taskRef = db
+    .collection('clubs')
+    .doc(clubId)
+    .collection('formation_tasks')
+    .doc();
+
+  await taskRef.set({
+    type: 'pool_checkin',
+    title: 'Piscine encadrant à compléter',
+    status: 'open',
+    priority: 'normal',
+    member_id: memberId,
+    member_name: memberName,
+    current_assignee_id: memberId,
+    current_assignee_type: 'monitor',
+    context: {
+      pool_session_id: sessionId,
+      attendee_id: attendeeId,
+      role: 'encadrant',
+      encadrant_groups: encadrantGroups,
+      location_id: session.lieu_id || session.location_id || null,
+    },
+    available_actions: [
+      { key: 'complete_now', label: 'Faire maintenant', target_screen: 'pool_checkin' },
+      { key: 'snooze', label: 'Plus tard' },
+      { key: 'dismiss', label: 'Pas concerné' },
+    ],
+    notification_state: { reminder_count: 0 },
+    created_by: 'system',
+    created_by_name: FUNCTION_NAME,
+    created_at: FieldValue.serverTimestamp(),
+    updated_at: FieldValue.serverTimestamp(),
+  });
+
+  console.log(
+    `[${FUNCTION_NAME}] created ENCADRANT task ${taskRef.id} for member ${memberId} ` +
+      `(${encadrantGroups.length} group(s))`
+  );
+}
 
 async function createBlockedTask(db, clubId, attendeeId, member, memberId, sessionId, targetLevel) {
   // Find a school responsible to route the blocked task to. For now, route to
@@ -382,4 +509,5 @@ module.exports = {
   // Exported for unit tests
   computeTargetLevel,
   findLevelCourse,
+  findEncadrantGroups,
 };

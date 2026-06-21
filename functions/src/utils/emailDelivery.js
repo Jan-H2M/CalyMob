@@ -1,3 +1,7 @@
+const admin = require('firebase-admin');
+
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
 function htmlToText(html) {
   return String(html || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
@@ -21,6 +25,9 @@ function wrapBase64(value) {
 }
 
 function normalizeAttachmentContent(content) {
+  if (Buffer.isBuffer(content)) {
+    return content.toString('base64');
+  }
   const value = String(content || '');
   const dataUrlMatch = value.match(/^data:([^;]+);base64,(.*)$/);
   return dataUrlMatch ? dataUrlMatch[2] : value;
@@ -38,6 +45,80 @@ function inferContentType(attachment) {
   if (filename.endsWith('.jpg') || filename.endsWith('.jpeg')) return 'image/jpeg';
   if (filename.endsWith('.pdf')) return 'application/pdf';
   return 'application/octet-stream';
+}
+
+function sanitizeFilename(value) {
+  return String(value || 'attachment')
+    .trim()
+    .replace(/[\\/:*?"<>|\r\n]+/g, '_')
+    .slice(0, 180) || 'attachment';
+}
+
+function normalizeContentId(value) {
+  return typeof value === 'string' && value.trim()
+    ? value.trim().replace(/[<>\r\n]/g, '')
+    : null;
+}
+
+function getAttachmentStoragePath(attachment) {
+  return attachment.storagePath
+    || attachment.storage_path
+    || attachment.firebaseStoragePath;
+}
+
+async function loadStorageAttachmentContent(attachment, options = {}) {
+  const storagePath = getAttachmentStoragePath(attachment);
+  if (!storagePath || typeof storagePath !== 'string') return null;
+  const cleanPath = storagePath.trim().replace(/^\/+/, '');
+  if (!cleanPath) return null;
+
+  const storage = options.storage || admin.storage();
+  const bucket = options.bucketName ? storage.bucket(options.bucketName) : storage.bucket();
+  const [buffer] = await bucket.file(cleanPath).download();
+  return buffer;
+}
+
+async function normalizeEmailAttachment(attachment, options = {}) {
+  if (!attachment || typeof attachment !== 'object') return null;
+  const filename = sanitizeFilename(attachment.filename || attachment.name);
+  const contentType = inferContentType(attachment);
+  const contentId = normalizeContentId(attachment.content_id || attachment.contentId);
+  const rawContent = attachment.content !== undefined && attachment.content !== null
+    ? attachment.content
+    : await loadStorageAttachmentContent(attachment, options);
+
+  if (rawContent === undefined || rawContent === null) {
+    if (attachment.url || attachment.downloadUrl || attachment.downloadURL) {
+      throw new Error(`Attachment ${filename} has only a URL. Use a Firebase Storage path or inline content.`);
+    }
+    throw new Error(`Attachment ${filename} has no content or storage path.`);
+  }
+
+  const size = Buffer.isBuffer(rawContent)
+    ? rawContent.length
+    : Buffer.byteLength(String(rawContent));
+  if (size > (options.maxAttachmentBytes || MAX_ATTACHMENT_BYTES)) {
+    throw new Error(`Attachment ${filename} exceeds the ${Math.round((options.maxAttachmentBytes || MAX_ATTACHMENT_BYTES) / 1024 / 1024)} MB limit.`);
+  }
+
+  return {
+    filename,
+    content: normalizeAttachmentContent(rawContent),
+    content_type: contentType,
+    contentType,
+    ...(contentId ? { content_id: contentId, contentId } : {}),
+    ...(getAttachmentStoragePath(attachment) ? { storagePath: getAttachmentStoragePath(attachment) } : {}),
+  };
+}
+
+async function normalizeEmailAttachments(attachments = [], options = {}) {
+  if (!Array.isArray(attachments) || attachments.length === 0) return [];
+  const normalized = [];
+  for (const attachment of attachments) {
+    const item = await normalizeEmailAttachment(attachment, options);
+    if (item) normalized.push(item);
+  }
+  return normalized;
 }
 
 function buildGmailMimeMessage({
@@ -132,7 +213,12 @@ function buildResendPayload({ emailConfig, to, subject, html, text, attachments,
   };
 
   if (Array.isArray(attachments) && attachments.length > 0) {
-    payload.attachments = attachments;
+    payload.attachments = attachments.map((attachment) => ({
+      filename: attachment.filename || attachment.name || 'attachment',
+      content: normalizeAttachmentContent(attachment.content),
+      content_type: attachment.content_type || attachment.contentType || inferContentType(attachment),
+      ...(attachment.content_id || attachment.contentId ? { content_id: attachment.content_id || attachment.contentId } : {}),
+    }));
   }
   if (replyToHeader) {
     payload.reply_to = replyToHeader;
@@ -233,6 +319,7 @@ async function sendEmailWithConfig(emailConfig, {
 }, options = {}) {
   const replyToHeader = buildReplyToHeader(replyTo, replyToName);
   const normalizedHeaders = normalizeHeaders(headers);
+  const normalizedAttachments = await normalizeEmailAttachments(attachments, options);
   const primaryProvider = emailConfig?.provider || 'resend';
   const fallbackProvider = emailConfig?.deliveryFallback?.enabled === true
     && emailConfig.deliveryFallback.provider
@@ -246,7 +333,7 @@ async function sendEmailWithConfig(emailConfig, {
     subject,
     html,
     text,
-    attachments,
+    attachments: normalizedAttachments,
     replyToHeader,
     normalizedHeaders,
   };
@@ -293,6 +380,8 @@ async function sendEmailWithConfig(emailConfig, {
 module.exports = {
   buildGmailMimeMessage,
   buildReplyToHeader,
+  normalizeEmailAttachment,
+  normalizeEmailAttachments,
   normalizeHeaders,
   sendEmailWithConfig,
   sendEmailWithProvider,

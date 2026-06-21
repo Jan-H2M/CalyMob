@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
@@ -20,6 +21,7 @@ import 'privacy_policy_screen.dart';
 import 'change_password_screen.dart';
 import 'notification_preferences_screen.dart';
 import 'calendar_feed_screen.dart';
+import '../training/carnet_preview_gallery_screen.dart';
 import '../../widgets/bug_report_widget.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 
@@ -658,6 +660,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       // Admin: Version publishing (alleen zichtbaar voor admin/superadmin)
                       _buildVersionPublishSection(),
 
+                      // Admin/dev: Carnet fiches preview gallery
+                      _buildCarnetPreviewSection(),
+
                       const SizedBox(height: 24),
 
                       // Mon compte
@@ -1219,6 +1224,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// Admin-only: Knop om de huidige app-versie te publiceren in Firestore.
   /// Dit activeert de update-melding voor alle gebruikers.
   /// Gebruik: na goedkeuring door Apple/Google.
+  /// Dev/admin: open the Carnet de Formation scenario preview gallery.
+  /// Lets you view every fiche in every role with synthetic data — no Firestore
+  /// writes. See CARNET_SCENARIOS_CATALOGUE.md.
+  Widget _buildCarnetPreviewSection() {
+    final memberProvider = context.watch<MemberProvider>();
+    final appRole = memberProvider.appRole?.toLowerCase() ?? '';
+    final isAdmin = appRole == 'admin' || appRole == 'superadmin';
+
+    if (!isAdmin && !kDebugMode) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Card(
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: ListTile(
+          leading: const Icon(Icons.preview, color: AppColors.middenblauw),
+          title: const Text('Aperçu Carnet (dev)'),
+          subtitle: const Text(
+            'Voir chaque fiche dans chaque rôle, sans vrai événement',
+            style: TextStyle(fontSize: 12),
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const CarnetPreviewGalleryScreen(),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   Widget _buildVersionPublishSection() {
     final memberProvider = context.watch<MemberProvider>();
     final appRole = memberProvider.appRole?.toLowerCase() ?? '';
