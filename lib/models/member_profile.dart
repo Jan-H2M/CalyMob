@@ -57,6 +57,8 @@ class MemberProfile {
   final String? membershipPeriod;
   final String? membershipSeasonId;
   final String? lifrasId;
+  final DateTime? assuranceValidite; // Validité de l'assurance (autre fédération = manuel ; LIFRAS = suit la cotisation)
+  final bool hasLifras; // Affilié à la LIFRAS
 
   // Métadonnées
   final DateTime? createdAt;
@@ -97,6 +99,8 @@ class MemberProfile {
     this.membershipPeriod,
     this.membershipSeasonId,
     this.lifrasId,
+    this.assuranceValidite,
+    this.hasLifras = false,
     this.createdAt,
     this.updatedAt,
   });
@@ -146,6 +150,8 @@ class MemberProfile {
       membershipPeriod: data['membership_period'],
       membershipSeasonId: data['membership_season_id'],
       lifrasId: data['lifras_id'] ?? data['licence_lifras'],
+      assuranceValidite: (data['assurance_validite'] as Timestamp?)?.toDate(),
+      hasLifras: data['has_lifras'] ?? false,
       createdAt: (data['created_at'] as Timestamp?)?.toDate(),
       updatedAt: (data['updated_at'] as Timestamp?)?.toDate(),
     );
@@ -252,6 +258,8 @@ class MemberProfile {
       membershipPeriod: membershipPeriod,
       membershipSeasonId: membershipSeasonId,
       lifrasId: lifrasId,
+      assuranceValidite: assuranceValidite,
+      hasLifras: hasLifras,
       createdAt: createdAt,
       updatedAt: DateTime.now(),
     );
@@ -334,6 +342,23 @@ class MemberProfile {
     if (certificatMedicalValidite == null) return ValidationStatus.missing;
     final now = DateTime.now();
     final daysUntilExpiry = certificatMedicalValidite!.difference(now).inDays;
+
+    if (daysUntilExpiry < 0) return ValidationStatus.expired;
+    if (daysUntilExpiry <= 30) return ValidationStatus.warning;
+    return ValidationStatus.valid;
+  }
+
+  /// Validité d'assurance effective : valeur explicite, sinon (membre LIFRAS)
+  /// on retombe sur la validité de la cotisation.
+  DateTime? get assuranceValiditeEffective =>
+      assuranceValidite ?? (hasLifras ? cotisationValidite : null);
+
+  /// Statut de validation de l'assurance
+  ValidationStatus get assuranceStatus {
+    final validite = assuranceValiditeEffective;
+    if (validite == null) return ValidationStatus.missing;
+    final now = DateTime.now();
+    final daysUntilExpiry = validite.difference(now).inDays;
 
     if (daysUntilExpiry < 0) return ValidationStatus.expired;
     if (daysUntilExpiry <= 30) return ValidationStatus.warning;

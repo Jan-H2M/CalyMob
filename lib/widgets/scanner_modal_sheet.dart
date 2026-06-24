@@ -168,7 +168,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
       return;
     }
 
-    // 3. VALIDATE: Check cotisation AND certificat médical
+    // 3. VALIDATE: Check cotisation, certificat médical AND assurance
     //
     // Blocking states (red alarm, entry refused): expired or missing.
     // Warning state (orange overlay, operator confirms): expires within 30 days.
@@ -178,11 +178,14 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
 
     final cotisationStatus = member.cotisationStatus;
     final certificatStatus = member.certificatStatus;
+    final assuranceStatus = member.assuranceStatus;
 
-    final hasBlocking =
-        isBlocking(cotisationStatus) || isBlocking(certificatStatus);
-    final hasWarning =
-        isWarning(cotisationStatus) || isWarning(certificatStatus);
+    final hasBlocking = isBlocking(cotisationStatus) ||
+        isBlocking(certificatStatus) ||
+        isBlocking(assuranceStatus);
+    final hasWarning = isWarning(cotisationStatus) ||
+        isWarning(certificatStatus) ||
+        isWarning(assuranceStatus);
 
     if (hasBlocking) {
       // Red ACCÈS REFUSÉ overlay — blocks entry.
@@ -840,6 +843,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
                           final member = _searchResults[index];
                           final cotisationOk = member.cotisationStatus == ValidationStatus.valid;
                           final certificatOk = member.certificatStatus == ValidationStatus.valid;
+                          final assuranceOk = member.assuranceStatus == ValidationStatus.valid;
                           return ListTile(
                             dense: true,
                             leading: CircleAvatar(
@@ -877,6 +881,14 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
                                 ),
                                 const SizedBox(width: 4),
                                 Text('Certificat', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                                const SizedBox(width: 10),
+                                Icon(
+                                  assuranceOk ? Icons.check_circle : Icons.cancel,
+                                  size: 14,
+                                  color: assuranceOk ? AppColors.success : Colors.red,
+                                ),
+                                const SizedBox(width: 4),
+                                Text('Assurance', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
                               ],
                             ),
                             onTap: () => _selectMember(member),

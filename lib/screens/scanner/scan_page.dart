@@ -133,14 +133,15 @@ class _ScanPageState extends State<ScanPage> {
 
       debugPrint('📋 alreadyPresent: $alreadyPresent, inscription: ${inscription != null}');
 
-      // Check if both cotisation and certificat are valid for auto-registration
+      // Check if cotisation, certificat AND assurance are valid for auto-registration
       final cotisationValid = member.cotisationStatus == ValidationStatus.valid;
       final certificatValid = member.certificatStatus == ValidationStatus.valid;
-      final bothValid = cotisationValid && certificatValid;
+      final assuranceValid = member.assuranceStatus == ValidationStatus.valid;
+      final allValid = cotisationValid && certificatValid && assuranceValid;
 
-      debugPrint('🟢 Auto-register check: cotisation=$cotisationValid, certificat=$certificatValid, bothValid=$bothValid, alreadyPresent=$alreadyPresent');
+      debugPrint('🟢 Auto-register check: cotisation=$cotisationValid, certificat=$certificatValid, assurance=$assuranceValid, allValid=$allValid, alreadyPresent=$alreadyPresent');
 
-      if (bothValid) {
+      if (allValid) {
         if (alreadyPresent) {
           // Already registered - show toast and go back to scanner
           if (mounted) {

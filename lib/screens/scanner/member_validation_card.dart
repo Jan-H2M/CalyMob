@@ -54,6 +54,15 @@ class MemberValidationCard extends StatelessWidget {
                     Icons.medical_services,
                   ),
                 ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildStatusCard(
+                    'Assurance',
+                    member.assuranceStatus,
+                    member.assuranceValiditeEffective,
+                    Icons.shield,
+                  ),
+                ),
               ],
             ),
 

@@ -133,6 +133,7 @@ class _AlarmOverlayState extends State<AlarmOverlay>
   Widget build(BuildContext context) {
     final cotisationStatus = widget.member.cotisationStatus;
     final certificatStatus = widget.member.certificatStatus;
+    final assuranceStatus = widget.member.assuranceStatus;
     final dateFormat = DateFormat('dd/MM/yyyy');
 
     final isWarning = widget.severity == AlarmSeverity.warning;
@@ -242,6 +243,22 @@ class _AlarmOverlayState extends State<AlarmOverlay>
                           message: _getCotisationMessage(
                             cotisationStatus,
                             widget.member.cotisationValidite,
+                            dateFormat,
+                          ),
+                        ),
+
+                      if (assuranceStatus != ValidationStatus.valid &&
+                          (cotisationStatus != ValidationStatus.valid ||
+                              certificatStatus != ValidationStatus.valid))
+                        const SizedBox(height: 16),
+
+                      // Assurance status
+                      if (assuranceStatus != ValidationStatus.valid)
+                        _buildErrorRow(
+                          icon: Icons.shield,
+                          message: _getAssuranceMessage(
+                            assuranceStatus,
+                            widget.member.assuranceValiditeEffective,
                             dateFormat,
                           ),
                         ),
@@ -402,6 +419,25 @@ class _AlarmOverlayState extends State<AlarmOverlay>
         return 'Cotisation non payée';
       default:
         return 'Cotisation non valide';
+    }
+  }
+
+  String _getAssuranceMessage(
+    ValidationStatus status,
+    DateTime? validite,
+    DateFormat dateFormat,
+  ) {
+    switch (status) {
+      case ValidationStatus.expired:
+        final dateStr = validite != null ? dateFormat.format(validite) : '';
+        return 'Assurance expirée ($dateStr)';
+      case ValidationStatus.warning:
+        final dateStr = validite != null ? dateFormat.format(validite) : '';
+        return 'Assurance expire bientôt ($dateStr)';
+      case ValidationStatus.missing:
+        return 'Assurance manquante';
+      default:
+        return 'Assurance non valide';
     }
   }
 }
