@@ -121,6 +121,30 @@ class MedicalCertificationService {
     }
   }
 
+  /// Détecte le type réel du document à partir de ses octets d'en-tête.
+  /// Retourne 'pdf' si le fichier commence par la signature `%PDF-`,
+  /// sinon 'image'. En cas d'erreur de lecture, on retombe sur le type
+  /// annoncé par l'appelant (normalisé à 'image' si inconnu).
+  Future<String> _detectDocumentType(File file, String fallbackType) async {
+    try {
+      final raf = await file.open();
+      final header = await raf.read(5);
+      await raf.close();
+      final isPdf = header.length >= 5 &&
+          header[0] == 0x25 && // %
+          header[1] == 0x50 && // P
+          header[2] == 0x44 && // D
+          header[3] == 0x46 && // F
+          header[4] == 0x2D; // -
+      if (isPdf) return 'pdf';
+      // Le contenu n'est pas un PDF : c'est forcément une image.
+      return 'image';
+    } catch (e) {
+      debugPrint('⚠️ Détection type fichier échouée, fallback "$fallbackType": $e');
+      return fallbackType == 'pdf' ? 'pdf' : 'image';
+    }
+  }
+
   /// Uploader un nouveau certificat médical
   Future<MedicalCertification> uploadCertification({
     required String clubId,
@@ -132,9 +156,15 @@ class MedicalCertificationService {
     try {
       debugPrint('📤 Upload certificat médical pour $userId...');
 
+      // 0. Sécurité: déterminer le VRAI type via les octets d'en-tête.
+      // L'extension transmise par l'appelant (file_picker / scanner) n'est pas
+      // fiable — notamment nulle sur iOS — ce qui faisait jadis téléverser des
+      // PDF étiquetés image/jpeg, affichés cassés dans CalyCompta.
+      final effectiveType = await _detectDocumentType(file, documentType);
+
       // 1. Générer un nom de fichier unique
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final extension = documentType == 'pdf' ? 'pdf' : 'jpg';
+      final extension = effectiveType == 'pdf' ? 'pdf' : 'jpg';
       final storageName = 'certificat_$timestamp.$extension';
 
       // 2. Chemin dans Storage
@@ -143,7 +173,8 @@ class MedicalCertificationService {
           .child('clubs/$clubId/members/$userId/medical_certificates/$storageName');
 
       // 3. Upload avec metadata
-      final contentType = documentType == 'pdf' ? 'application/pdf' : 'image/jpeg';
+      final contentType =
+          effectiveType == 'pdf' ? 'application/pdf' : 'image/jpeg';
       final uploadTask = await ref.putFile(
         file,
         SettableMetadata(
@@ -170,7 +201,7 @@ class MedicalCertificationService {
         id: docRef.id,
         memberId: userId,
         documentUrl: downloadUrl,
-        documentType: documentType,
+        documentType: effectiveType,
         fileName: fileName,
         uploadedAt: now,
         status: CertificateStatus.pending,

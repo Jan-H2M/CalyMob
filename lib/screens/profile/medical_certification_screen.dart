@@ -431,6 +431,25 @@ class _MedicalCertificationScreenState
     );
   }
 
+  /// Détecte un PDF à partir de la signature `%PDF-` en tête de fichier,
+  /// indépendamment de l'extension (souvent absente/incorrecte sur iOS).
+  Future<bool> _isPdfFile(File file) async {
+    try {
+      final raf = await file.open();
+      final header = await raf.read(5);
+      await raf.close();
+      return header.length >= 5 &&
+          header[0] == 0x25 && // %
+          header[1] == 0x50 && // P
+          header[2] == 0x44 && // D
+          header[3] == 0x46 && // F
+          header[4] == 0x2D; // -
+    } catch (e) {
+      debugPrint('Erreur détection type fichier: $e');
+      return false;
+    }
+  }
+
   /// Compresse une image pour réduire sa taille
   Future<File?> _compressImage(File file) async {
     try {
@@ -477,12 +496,18 @@ class _MedicalCertificationScreenState
         final originalFile = File(path);
 
         if (await originalFile.exists()) {
-          final compressedFile = await _compressImage(originalFile);
-          if (compressedFile != null) {
+          // Use current year for the certificate name (matching CalyCompta convention)
+          final year = DateTime.now().year;
+          if (await _isPdfFile(originalFile)) {
+            // Le scanner a produit un PDF : on l'envoie tel quel, jamais via
+            // la compression image (qui le corromprait / le mal-étiquetterait).
+            debugPrint('🔍 Scanner: PDF détecté, upload sans compression');
+            await _uploadFile(originalFile, 'pdf', 'Certificat médical $year');
+          } else {
+            final compressedFile =
+                await _compressImage(originalFile) ?? originalFile;
             debugPrint(
                 '🔍 Scanner: Uploading compressed file: ${compressedFile.path}');
-            // Use current year for the certificate name (matching CalyCompta convention)
-            final year = DateTime.now().year;
             await _uploadFile(
                 compressedFile, 'image', 'Certificat médical $year');
           }
@@ -525,7 +550,10 @@ class _MedicalCertificationScreenState
       if (result != null && result.files.single.path != null) {
         final file = File(result.files.single.path!);
         final extension = result.files.single.extension?.toLowerCase();
-        final isPdf = extension == 'pdf';
+        // On se fie aux octets d'en-tête, pas à l'extension : file_picker
+        // renvoie souvent une extension nulle/incorrecte sur iOS, ce qui
+        // faisait passer des PDF dans la compression image (→ certificat cassé).
+        final isPdf = await _isPdfFile(file) || extension == 'pdf';
         final uploadFile = isPdf ? file : (await _compressImage(file) ?? file);
         final year = DateTime.now().year;
 
