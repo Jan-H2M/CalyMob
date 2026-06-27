@@ -416,11 +416,12 @@ async function aggregatePaymentForInscription(db, clubId, operationId, participa
 async function resolveInstallmentPaymentForInscription(db, clubId, operationId, participantId, installmentId) {
   if (!participantId || !installmentId) return null;
 
-  const inscriptionSnap = await db
+  const inscriptionsRef = db
     .collection('clubs').doc(clubId)
     .collection('operations').doc(operationId)
-    .collection('inscriptions').doc(participantId)
-    .get();
+    .collection('inscriptions');
+
+  const inscriptionSnap = await inscriptionsRef.doc(participantId).get();
 
   if (!inscriptionSnap.exists) {
     console.log(`[resolveInstallmentPaymentForInscription] Inscription ${participantId} not found — falling back to client amount`);
@@ -434,16 +435,47 @@ async function resolveInstallmentPaymentForInscription(db, clubId, operationId, 
     return null;
   }
 
-  const amountDue = Number(installment.amount_due);
-  if (!Number.isFinite(amountDue) || amountDue <= 0) {
+  const ownDue = Number(installment.amount_due);
+  if (!Number.isFinite(ownDue) || ownDue <= 0) {
     throw new HttpsError(
       'failed-precondition',
       'Cette tranche ne contient aucun montant à payer.'
     );
   }
 
+  // Paiement groupé: le membre paie SA tranche + la MÊME tranche (encore
+  // ouverte) de chaque invité rattaché (is_guest + parent_inscription_id).
+  // Ex.: Acompte 2 = 500 € (membre) + 250 € (invité) = 750 € sur le QR.
+  const guestsSnap = await inscriptionsRef
+    .where('parent_inscription_id', '==', participantId)
+    .where('is_guest', '==', true)
+    .get();
+
+  let guestSubtotal = 0;
+  const guests = [];
+  guestsSnap.forEach((doc) => {
+    const g = doc.data();
+    const gp = g.installment_payments && g.installment_payments[installmentId];
+    if (gp && gp.status !== 'paid' && gp.status !== 'waived') {
+      const gd = Number(gp.amount_due) || 0;
+      if (gd > 0) {
+        guestSubtotal += gd;
+        const name = `${g.membre_prenom || ''} ${g.membre_nom || ''}`.trim() || 'Invité';
+        guests.push({ name, prix: gd });
+      }
+    }
+  });
+
+  const aggregatedDue = ownDue + guestSubtotal;
+  if (guests.length > 0) {
+    console.log(`[resolveInstallmentPaymentForInscription] tranche agrégée: ${aggregatedDue}€ (membre ${ownDue}€ + ${guests.length} invité(s) ${guestSubtotal}€)`);
+  }
+
   return {
-    amountDue,
+    amountDue: ownDue,        // montant PROPRE du membre (pour estamper sa tranche)
+    aggregatedDue,            // membre + invités (montant du QR)
+    guestSubtotal,
+    guests,
     status: installment.status || 'unpaid',
   };
 }
@@ -499,10 +531,20 @@ async function sendPaymentEmailForMember(db, input) {
     : await aggregatePaymentForInscription(
         db, clubId, operationId, participantId
       );
-  const amount = installmentPayment ? installmentPayment.amountDue : (aggregation ? aggregation.totalAmount : clientAmount);
+  const amount = installmentPayment ? installmentPayment.aggregatedDue : (aggregation ? aggregation.totalAmount : clientAmount);
   if (aggregation) {
     console.log(`📧 [sendPaymentQrEmail] Aggregated amount: ${amount}€ (parent ${aggregation.parentAmount}€ + ${aggregation.guests.length} guests ${aggregation.guestSubtotal}€). Client sent ${clientAmount}€.`);
   }
+  if (installmentPayment && installmentPayment.guests.length > 0) {
+    console.log(`📧 [sendPaymentQrEmail] Tranche agrégée: ${amount}€ (membre ${installmentPayment.amountDue}€ + ${installmentPayment.guests.length} invité(s) ${installmentPayment.guestSubtotal}€). Client sent ${clientAmount}€.`);
+  }
+
+  // Contexte invités unifié (flat ou par tranche) pour le rendu de l'email.
+  const guestContext = aggregation
+    ? { count: aggregation.guests.length, subtotal: aggregation.guestSubtotal, parentAmount: aggregation.parentAmount, guests: aggregation.guests }
+    : (installmentPayment && installmentPayment.guests.length > 0
+        ? { count: installmentPayment.guests.length, subtotal: installmentPayment.guestSubtotal, parentAmount: installmentPayment.amountDue, guests: installmentPayment.guests }
+        : null);
   if (typeof amount !== 'number' || amount <= 0) {
     throw new HttpsError(
       'failed-precondition',
@@ -627,16 +669,16 @@ async function sendPaymentEmailForMember(db, input) {
     appUrl: 'https://caly.club',
     // Guest aggregation context for templates that opt-in to display it.
     // When `hasGuests` is false the template should render its normal layout.
-    hasGuests: !!aggregation,
-    guestCount: aggregation ? aggregation.guests.length : 0,
+    hasGuests: !!guestContext,
+    guestCount: guestContext ? guestContext.count : 0,
     // Pre-formatted French label so templates don't need a custom Handlebars
     // helper to pluralise (e.g. "1 invité" / "3 invités").
-    guestCountLabel: aggregation
-      ? `${aggregation.guests.length} invité${aggregation.guests.length > 1 ? 's' : ''}`
+    guestCountLabel: guestContext
+      ? `${guestContext.count} invité${guestContext.count > 1 ? 's' : ''}`
       : '',
-    parentAmountFormatted: aggregation ? formatAmount(aggregation.parentAmount) : amountFormatted,
-    guestSubtotalFormatted: aggregation ? formatAmount(aggregation.guestSubtotal) : '',
-    guests: aggregation ? aggregation.guests.map(g => ({
+    parentAmountFormatted: guestContext ? formatAmount(guestContext.parentAmount) : amountFormatted,
+    guestSubtotalFormatted: guestContext ? formatAmount(guestContext.subtotal) : '',
+    guests: guestContext ? guestContext.guests.map(g => ({
       name: g.name,
       prixFormatted: formatAmount(g.prix),
     })) : [],
@@ -747,7 +789,7 @@ async function sendPaymentEmailForMember(db, input) {
         .collection('inscriptions').doc(participantId)
         .update({
           [`installment_payments.${installmentId}.status`]: 'qr_sent',
-          [`installment_payments.${installmentId}.amount_due`]: amount,
+          [`installment_payments.${installmentId}.amount_due`]: installmentPayment ? installmentPayment.amountDue : amount,
           [`installment_payments.${installmentId}.qr_sent_at`]: admin.firestore.FieldValue.serverTimestamp(),
           [`installment_payments.${installmentId}.payment_email_id`]: result.messageId || null,
           updated_at: admin.firestore.FieldValue.serverTimestamp(),
