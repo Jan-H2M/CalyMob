@@ -3703,6 +3703,25 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   }) {
     final openInstallment = _firstOpenInstallment(operation, inscription);
 
+    // Invités rattachés à ce membre (parent_inscription_id). Le membre paie
+    // pour lui-même ET pour ses invités: on agrège, pour la tranche courante,
+    // sa propre échéance avec celle (même rang) de chaque invité encore ouverte.
+    final guests = context
+        .read<OperationProvider>()
+        .selectedOperationParticipants
+        .where((p) => p.isGuest && p.parentInscriptionId == inscription.id)
+        .toList();
+
+    double aggregatedNext = openInstallment?.amount ?? 0;
+    if (openInstallment != null) {
+      for (final g in guests) {
+        final gp = g.installmentPayments[openInstallment.id];
+        if (gp != null && gp.status != 'paid' && gp.status != 'waived') {
+          aggregatedNext += gp.amountDue;
+        }
+      }
+    }
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -3711,7 +3730,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             : () => _showPaymentOptionsSheet(
                   inscription: inscription,
                   operation: operation,
-                  inscriptionPrice: openInstallment.amount,
+                  inscriptionPrice: aggregatedNext,
                   installmentId: openInstallment.id,
                   installmentLabel: openInstallment.label,
                 ),
@@ -3743,7 +3762,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                   ),
                   if (openInstallment != null)
                     Text(
-                      '${openInstallment.amount.toStringAsFixed(2)} €',
+                      '${aggregatedNext.toStringAsFixed(2)} €',
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
@@ -3796,10 +3815,70 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                   ),
                 );
               }),
+              if (guests.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                const Divider(height: 1),
+                const SizedBox(height: 6),
+                Text(
+                  'Inclus pour mes invités',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue.shade700,
+                  ),
+                ),
+                ...guests.expand((g) {
+                  final name =
+                      '${g.membrePrenom ?? ''} ${g.membreNom ?? ''}'.trim();
+                  return operation.paymentInstallments.map((installment) {
+                    final gp = g.installmentPayments[installment.id];
+                    final amount = gp?.amountDue ?? 0;
+                    if (amount <= 0 && gp == null) return const SizedBox.shrink();
+                    final status = gp?.status ?? 'unpaid';
+                    final statusLabel = status == 'paid'
+                        ? 'Payé'
+                        : status == 'qr_sent'
+                            ? 'QR envoyé'
+                            : status == 'waived'
+                                ? 'Dispensé'
+                                : 'À payer';
+                    final statusColor = status == 'paid'
+                        ? Colors.green.shade700
+                        : status == 'qr_sent'
+                            ? Colors.orange.shade700
+                            : status == 'waived'
+                                ? Colors.blueGrey.shade600
+                                : Colors.red.shade700;
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 4, left: 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '$name · ${installment.label}',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                          Text(
+                            '${amount.toStringAsFixed(2)} € · $statusLabel',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: statusColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  });
+                }),
+              ],
               if (openInstallment != null) ...[
                 const SizedBox(height: 8),
                 Text(
-                  'Touchez pour recevoir le QR de ${openInstallment.label}.',
+                  guests.isEmpty
+                      ? 'Touchez pour recevoir le QR de ${openInstallment.label}.'
+                      : 'Touchez pour recevoir le QR de ${openInstallment.label} — ${aggregatedNext.toStringAsFixed(2)} € (moi + invités).',
                   style: TextStyle(fontSize: 12, color: Colors.blue.shade700),
                 ),
               ],
