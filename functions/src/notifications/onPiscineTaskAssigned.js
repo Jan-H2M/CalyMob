@@ -99,8 +99,19 @@ exports.onPiscineTaskAssigned = onDocumentUpdated(
         }
       }
 
-      if (newlyAssigned.size === 0) {
-        // No new assignments — could be theme change, removal, or other update
+      // 2b. Find removed assignments (tâche présente avant mais plus après).
+      // Geo veut que les membres soient aussi notifiés quand on les RETIRE.
+      const removedAssigned = new Map();
+      for (const [memberId, tasks] of beforeMembers) {
+        const newTasks = afterMembers.get(memberId) || new Set();
+        const gone = new Set([...tasks].filter(t => !newTasks.has(t)));
+        if (gone.size > 0) {
+          removedAssigned.set(memberId, gone);
+        }
+      }
+
+      if (newlyAssigned.size === 0 && removedAssigned.size === 0) {
+        // No assignment change — could be theme change or other update
         return null;
       }
 
@@ -118,7 +129,7 @@ exports.onPiscineTaskAssigned = onDocumentUpdated(
       }
 
       // 4. Get member documents for FCM tokens
-      const newMemberIds = [...newlyAssigned.keys()];
+      const newMemberIds = [...new Set([...newlyAssigned.keys(), ...removedAssigned.keys()])];
 
       const membersSnapshot = await admin.firestore()
         .collection('clubs')
@@ -165,14 +176,25 @@ exports.onPiscineTaskAssigned = onDocumentUpdated(
 
         if (memberTokens.length === 0) continue;
 
-        // Build personalized message with their specific tasks
-        const tasks = newlyAssigned.get(memberId);
-        const taskList = [...tasks].join(', ');
+        // Build personalized message: tâches ajoutées et/ou retirées.
+        const addedTasks = newlyAssigned.get(memberId);
+        const removedTasks = removedAssigned.get(memberId);
+        const dateSuffix = formattedDate ? ` — ${formattedDate}` : '';
 
-        const notificationTitle = '🏊 Piscine — Nouvelle tâche';
-        const notificationBody = formattedDate
-          ? `Tu es assigné(e) : ${taskList} — ${formattedDate}`
-          : `Tu es assigné(e) : ${taskList}`;
+        const lines = [];
+        if (addedTasks && addedTasks.size > 0) {
+          lines.push(`Tu es assigné(e) : ${[...addedTasks].join(', ')}`);
+        }
+        if (removedTasks && removedTasks.size > 0) {
+          lines.push(`Tu n'es plus assigné(e) : ${[...removedTasks].join(', ')}`);
+        }
+        if (lines.length === 0) continue;
+
+        const onlyRemoved = (!addedTasks || addedTasks.size === 0);
+        const notificationTitle = onlyRemoved
+          ? '🏊 Piscine — Tâche retirée'
+          : '🏊 Piscine — Mise à jour des tâches';
+        const notificationBody = `${lines.join(' · ')}${dateSuffix}`;
 
         const payload = {
           notification: {
