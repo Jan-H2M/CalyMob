@@ -30,16 +30,10 @@
 const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 
-const LEGACY_TO_CANONICAL_STATUS = {
-  brouillon: 'draft',
-  soumis: 'submitted',
-  en_attente_validation: 'pending_approval',
-  approuve: 'approved',
-  cree_banque_attente_validation: 'payment_created_pending_validation',
-  paiement_effectue: 'payment_sent',
-  rembourse: 'reimbursed',
-  refuse: 'rejected',
-};
+// Single source of truth for the status vocabulary (incl. a_verifier_paiement).
+// Vendored copy of CalyCompta/src/contracts/expenseClaimContract.json — keep in sync.
+const expenseClaimContract = require('./expenseClaimContract.json');
+const LEGACY_TO_CANONICAL_STATUS = expenseClaimContract.statusLegacyToCanonical;
 
 function getPreferredValue(data, fieldNames) {
   for (const fieldName of fieldNames) {
