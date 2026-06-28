@@ -81,6 +81,11 @@ exports.onExpenseCreated = onExpenseCreated;
 const { onExpenseStatusChange } = require('./src/notifications/onExpenseStatusChange');
 exports.onExpenseStatusChange = onExpenseStatusChange;
 
+// Keep canonical `expense_claims` in sync with legacy `demandes_remboursement`
+// (auto-mirror so reimbursement requests are always visible in the web app)
+const { mirrorLegacyExpenseClaim } = require('./src/expenses/mirrorLegacyExpenseClaim');
+exports.mirrorLegacyExpenseClaim = mirrorLegacyExpenseClaim;
+
 // =============================================================================
 // PISCINE SESSION NOTIFICATIONS (Gen2)
 // =============================================================================
