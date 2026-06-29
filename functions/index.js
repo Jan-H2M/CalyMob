@@ -91,6 +91,11 @@ exports.mirrorLegacyExpenseClaim = mirrorLegacyExpenseClaim;
 const { mirrorCanonicalToLegacy } = require('./src/expenses/mirrorCanonicalToLegacy');
 exports.mirrorCanonicalToLegacy = mirrorCanonicalToLegacy;
 
+// Audit trail: logt elke tranche-betaalstatuswijziging van een inschrijving
+// (over-afsluit-regressies meteen zichtbaar)
+const { onInscriptionPaymentAudit } = require('./src/audit/onInscriptionPaymentAudit');
+exports.onInscriptionPaymentAudit = onInscriptionPaymentAudit;
+
 // =============================================================================
 // PISCINE SESSION NOTIFICATIONS (Gen2)
 // =============================================================================
