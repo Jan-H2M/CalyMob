@@ -492,7 +492,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                   _firstOpenInstallment(operation, _userInscription);
               await _showPaymentOptionsDialog(
                 operation: operation,
-                amount: openInstallment?.amount ?? totalPrice,
+                amount: openInstallment?.aggregatedAmount ?? totalPrice,
                 participantId: _userInscription!.id,
                 memberEmail: userEmail,
                 memberFirstName: memberProvider.prenom ?? '',
@@ -580,7 +580,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                   _firstOpenInstallment(operation, _userInscription);
               await _showPaymentOptionsDialog(
                 operation: operation,
-                amount: openInstallment?.amount ?? basePrice,
+                amount: openInstallment?.aggregatedAmount ?? basePrice,
                 participantId: _userInscription!.id,
                 memberEmail: userEmail,
                 memberFirstName: memberProvider.prenom ?? '',
@@ -719,16 +719,42 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       return null;
     }
 
+    // Sélection au niveau du GROUPE: première tranche où le MEMBRE OU un de ses
+    // invités rattachés est encore ouvert. Évite de sauter la tranche en retard
+    // d'un invité quand le membre est déjà en règle sur cette tranche
+    // (ex. acompte 2 de l'invité alors que le membre a payé le sien).
+    final guests = context
+        .read<OperationProvider>()
+        .selectedOperationParticipants
+        .where((p) => p.isGuest && p.parentInscriptionId == inscription.id)
+        .toList();
+
     for (final installment in operation.paymentInstallments) {
       final payment = inscription.installmentPayments[installment.id];
-      final amount = payment?.amountDue ?? 0;
-      final status = payment?.status ?? 'unpaid';
-      if (amount > 0 && status != 'paid' && status != 'waived') {
+      final ownAmount = payment?.amountDue ?? 0;
+      final ownStatus = payment?.status ?? 'unpaid';
+      final ownOpen =
+          ownAmount > 0 && ownStatus != 'paid' && ownStatus != 'waived';
+
+      double guestOpenTotal = 0;
+      for (final g in guests) {
+        final gp = g.installmentPayments[installment.id];
+        if (gp != null &&
+            gp.amountDue > 0 &&
+            gp.status != 'paid' &&
+            gp.status != 'waived') {
+          guestOpenTotal += gp.amountDue;
+        }
+      }
+
+      if (ownOpen || guestOpenTotal > 0) {
+        final double ownOpenAmount = ownOpen ? ownAmount : 0.0;
         return _OpenInstallment(
           id: installment.id,
           label: installment.label,
-          amount: amount,
-          status: status,
+          amount: ownOpenAmount,
+          aggregatedAmount: ownOpenAmount + guestOpenTotal,
+          status: ownOpen ? ownStatus : 'paid',
         );
       }
     }
@@ -854,7 +880,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             _firstOpenInstallment(operation, _userInscription);
         await _showPaymentOptionsDialog(
           operation: operation,
-          amount: openInstallment?.amount ?? totalPrice,
+          amount: openInstallment?.aggregatedAmount ?? totalPrice,
           participantId: _userInscription!.id,
           memberEmail: userEmail,
           memberFirstName: prenom,
@@ -3712,15 +3738,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         .where((p) => p.isGuest && p.parentInscriptionId == inscription.id)
         .toList();
 
-    double aggregatedNext = openInstallment?.amount ?? 0;
-    if (openInstallment != null) {
-      for (final g in guests) {
-        final gp = g.installmentPayments[openInstallment.id];
-        if (gp != null && gp.status != 'paid' && gp.status != 'waived') {
-          aggregatedNext += gp.amountDue;
-        }
-      }
-    }
+    // Montant agrégé (membre + invités) calculé au niveau du groupe dans
+    // _firstOpenInstallment — évite tout double comptage.
+    final double aggregatedNext = openInstallment?.aggregatedAmount ?? 0;
 
     return Material(
       color: Colors.transparent,
@@ -5028,13 +5048,15 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 class _OpenInstallment {
   final String id;
   final String label;
-  final double amount;
+  final double amount;            // part PROPRE du membre pour cette tranche (0 si déjà payée)
+  final double aggregatedAmount;  // membre + invités encore ouverts (montant du QR)
   final String status;
 
   const _OpenInstallment({
     required this.id,
     required this.label,
     required this.amount,
+    required this.aggregatedAmount,
     required this.status,
   });
 }
