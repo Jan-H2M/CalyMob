@@ -14,7 +14,7 @@
 
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
-const { isSyncMirrorWrite } = require('../expenses/expenseSync');
+const { isLegacyMirrorWrite } = require('../expenses/expenseSync');
 const {
   buildEmailRouting,
   logEmailHistoryAndCommunication,
@@ -362,8 +362,9 @@ exports.onExpenseStatusChange = onDocumentUpdated(
     const beforeData = event.data.before.data();
     const afterData = event.data.after.data();
 
-    // E-mail-guard: statuswijzigingen door een sync-mirror sturen nooit e-mail.
-    if (isSyncMirrorWrite(afterData)) {
+    // E-mail-guard: enkel forward-mirror-echo's overslaan; web-wijzigingen
+    // (canonical-mirror) MOETEN nog mailen.
+    if (isLegacyMirrorWrite(afterData)) {
       return null;
     }
 

@@ -18,7 +18,7 @@ const {
   resolveCommunicationTemplate,
 } = require('../utils/communicationTemplates');
 const { sendEmailWithConfig } = require('../utils/emailDelivery');
-const { isSyncMirrorWrite } = require('../expenses/expenseSync');
+const { isLegacyMirrorWrite } = require('../expenses/expenseSync');
 
 /**
  * Format date to French locale string
@@ -152,10 +152,10 @@ exports.onExpenseCreated = onDocumentCreated(
     const { clubId, demandeId } = event.params;
     const demande = event.data.data();
 
-    // E-mail-guard: writes afkomstig van een sync-mirror sturen nooit e-mail
-    // (voorkomt dubbele/onterechte mails zodra de canonical->legacy mirror aanstaat).
-    if (isSyncMirrorWrite(demande)) {
-      console.log('📧 [onExpenseCreated] mirror-write — e-mail overgeslagen');
+    // E-mail-guard: enkel forward-mirror-echo's (legacy->canonical) overslaan.
+    // Web-wijzigingen komen als canonical-mirror binnen en MOETEN nog mailen.
+    if (isLegacyMirrorWrite(demande)) {
+      console.log('📧 [onExpenseCreated] forward-mirror-echo — e-mail overgeslagen');
       return null;
     }
 

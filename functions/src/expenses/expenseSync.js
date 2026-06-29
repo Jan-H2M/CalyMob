@@ -171,10 +171,30 @@ function tagSync(payload, { origin, version, sourceId }) {
   };
 }
 
-/** True als dit document door een mirror geschreven werd (→ geen e-mail sturen). */
+/** True als dit document door een mirror geschreven werd. */
 function isSyncMirrorWrite(doc) {
   const origin = doc && doc._sync && doc._sync.origin;
   return MIRROR_ORIGINS.has(origin);
+}
+
+/**
+ * True als dit een forward-mirror-write is (legacy→canonical-echo).
+ * E-mail-triggers op de LEGACY-collectie slaan ENKEL deze over: web-wijzigingen
+ * komen als 'canonical-mirror' binnen en MOETEN nog mailen.
+ */
+function isLegacyMirrorWrite(doc) {
+  return !!(doc && doc._sync && doc._sync.origin === 'legacy-mirror');
+}
+
+/**
+ * True als dit een ECHTE canonical-primary write is (origin 'web'/'app'), dus
+ * géén legacy-primary dubbel-write (geen _sync) en géén forward-mirror-echo
+ * ('legacy-mirror'). De reverse-mirror (canonical→legacy) mag enkel hierop
+ * reageren — zo geen dubbele legacy-writes/mails in een tussenfase.
+ */
+function isGenuineCanonicalWrite(doc) {
+  const origin = doc && doc._sync && doc._sync.origin;
+  return !!origin && origin !== 'legacy-mirror';
 }
 
 /**
@@ -252,6 +272,8 @@ module.exports = {
   statusToLegacy,
   tagSync,
   isSyncMirrorWrite,
+  isLegacyMirrorWrite,
+  isGenuineCanonicalWrite,
   shouldSkipAsLoop,
   deepNormalize,
   changedFields,

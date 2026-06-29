@@ -17,7 +17,7 @@
 const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const { getMigrationFlags } = require('./migrationFlags');
-const { buildLegacyFromCanonical, tagSync, changedFields } = require('./expenseSync');
+const { buildLegacyFromCanonical, tagSync, changedFields, isGenuineCanonicalWrite } = require('./expenseSync');
 
 exports.mirrorCanonicalToLegacy = onDocumentWritten(
   {
@@ -50,8 +50,10 @@ exports.mirrorCanonicalToLegacy = onDocumentWritten(
 
     const canonData = afterSnap.data() || {};
 
-    // Loop-guard: negeer canonical-writes die door de voorwaartse mirror kwamen.
-    if (canonData._sync && canonData._sync.origin === 'legacy-mirror') {
+    // Spiegel enkel ECHTE canonical-primary writes (origin web/app). Negeer
+    // legacy-primary dubbel-writes (geen _sync) en forward-mirror-echo's
+    // (origin legacy-mirror) → géén dubbele legacy-writes/mails in een tussenfase.
+    if (!isGenuineCanonicalWrite(canonData)) {
       return null;
     }
 
