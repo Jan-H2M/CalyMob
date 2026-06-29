@@ -86,6 +86,11 @@ exports.onExpenseStatusChange = onExpenseStatusChange;
 const { mirrorLegacyExpenseClaim } = require('./src/expenses/mirrorLegacyExpenseClaim');
 exports.mirrorLegacyExpenseClaim = mirrorLegacyExpenseClaim;
 
+// Reverse mirror canonical -> legacy (DORMANT: standaard uit via feature-flag,
+// pas actief bij de gecoördineerde flip Stap 5b)
+const { mirrorCanonicalToLegacy } = require('./src/expenses/mirrorCanonicalToLegacy');
+exports.mirrorCanonicalToLegacy = mirrorCanonicalToLegacy;
+
 // =============================================================================
 // PISCINE SESSION NOTIFICATIONS (Gen2)
 // =============================================================================

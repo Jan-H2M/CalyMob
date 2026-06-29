@@ -18,6 +18,7 @@ const {
   resolveCommunicationTemplate,
 } = require('../utils/communicationTemplates');
 const { sendEmailWithConfig } = require('../utils/emailDelivery');
+const { isSyncMirrorWrite } = require('../expenses/expenseSync');
 
 /**
  * Format date to French locale string
@@ -150,6 +151,13 @@ exports.onExpenseCreated = onDocumentCreated(
   async (event) => {
     const { clubId, demandeId } = event.params;
     const demande = event.data.data();
+
+    // E-mail-guard: writes afkomstig van een sync-mirror sturen nooit e-mail
+    // (voorkomt dubbele/onterechte mails zodra de canonical->legacy mirror aanstaat).
+    if (isSyncMirrorWrite(demande)) {
+      console.log('📧 [onExpenseCreated] mirror-write — e-mail overgeslagen');
+      return null;
+    }
 
     console.log(`📧 [onExpenseCreated] New expense in club/${clubId}/demandes_remboursement/${demandeId}`);
     console.log('📧 [onExpenseCreated] Expense data:', JSON.stringify({

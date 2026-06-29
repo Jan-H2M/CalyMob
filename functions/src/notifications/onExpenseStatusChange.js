@@ -14,6 +14,7 @@
 
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
+const { isSyncMirrorWrite } = require('../expenses/expenseSync');
 const {
   buildEmailRouting,
   logEmailHistoryAndCommunication,
@@ -360,6 +361,11 @@ exports.onExpenseStatusChange = onDocumentUpdated(
     const { clubId, demandeId } = event.params;
     const beforeData = event.data.before.data();
     const afterData = event.data.after.data();
+
+    // E-mail-guard: statuswijzigingen door een sync-mirror sturen nooit e-mail.
+    if (isSyncMirrorWrite(afterData)) {
+      return null;
+    }
 
     const oldStatus = beforeData.statut;
     const newStatus = afterData.statut;
