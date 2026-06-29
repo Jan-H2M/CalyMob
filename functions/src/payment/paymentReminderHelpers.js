@@ -118,7 +118,20 @@ function classifyGroup(paymentStatus) {
   return 'qr_email';
 }
 
-function resolveFirstOpenInstallment(operationData, inscriptionData) {
+function isOpenInstallmentPayment(payment) {
+  const amountDue = Number(payment && payment.amount_due) || 0;
+  const status = (payment && payment.status) || 'unpaid';
+  return amountDue > 0 && status !== 'paid' && status !== 'waived';
+}
+
+// Sélection GROUPE: première tranche (par ordre) où le membre OU un de ses
+// invités rattachés a encore un montant ouvert. `guestInscriptions` = les
+// inscriptions invité (is_guest + parent_inscription_id) liées à ce membre.
+// Le montant renvoyé est le montant OUVERT du groupe pour cette tranche
+// (part du membre si ouverte + parts des invités ouvertes), de sorte qu'un
+// invité en retard (p.ex. acompte 2 de Marie) ne soit jamais sauté quand le
+// membre est déjà en règle sur cette tranche.
+function resolveFirstOpenInstallment(operationData, inscriptionData, guestInscriptions = []) {
   if (operationData.payment_plan_enabled !== true) return null;
   const installments = Array.isArray(operationData.payment_installments)
     ? [...operationData.payment_installments].sort((a, b) => {
@@ -133,15 +146,25 @@ function resolveFirstOpenInstallment(operationData, inscriptionData) {
   for (const installment of installments) {
     const id = normalizeText(installment.id);
     if (!id) continue;
-    const payment = payments[id] || {};
-    const amountDue = Number(payment.amount_due) || 0;
-    const status = payment.status || 'unpaid';
-    if (amountDue > 0 && status !== 'paid' && status !== 'waived') {
+    const ownPayment = payments[id] || {};
+    const ownOpen = isOpenInstallmentPayment(ownPayment);
+    const ownOpenAmount = ownOpen ? (Number(ownPayment.amount_due) || 0) : 0;
+
+    let guestOpenAmount = 0;
+    for (const guest of guestInscriptions) {
+      const gp = (guest.installment_payments || {})[id];
+      if (isOpenInstallmentPayment(gp)) {
+        guestOpenAmount += Number(gp.amount_due) || 0;
+      }
+    }
+
+    const groupOpenAmount = ownOpenAmount + guestOpenAmount;
+    if (groupOpenAmount > 0) {
       return {
         installment_id: id,
         installment_label: normalizeText(installment.label) || 'Tranche',
-        amount_due: amountDue,
-        status,
+        amount_due: groupOpenAmount,
+        status: ownOpen ? (ownPayment.status || 'unpaid') : 'paid',
       };
     }
   }
@@ -264,6 +287,18 @@ async function recomputePaymentReminderDraft(db, clubId, operationRef, operation
     return { written: false, reason: 'no-unpaid' };
   }
 
+  // Map parent inscription id -> guest inscriptions (les invités "roulent"
+  // sur le rappel agrégé du parent). Permet une sélection de tranche au
+  // niveau du GROUPE (membre + invités).
+  const guestsByParent = {};
+  for (const d of inscriptionsSnap.docs) {
+    const x = d.data();
+    if (x.is_guest === true && x.parent_inscription_id) {
+      if (!guestsByParent[x.parent_inscription_id]) guestsByParent[x.parent_inscription_id] = [];
+      guestsByParent[x.parent_inscription_id].push(x);
+    }
+  }
+
   // Build groups (qr_email vs sur_place) with display names.
   const groups = { qr_email: [], sur_place: [] };
   for (const insDoc of inscriptionsSnap.docs) {
@@ -280,7 +315,7 @@ async function recomputePaymentReminderDraft(db, clubId, operationRef, operation
       }
 
       const membreId = normalizeText(ins.membre_id) || insId;
-      const openInstallment = resolveFirstOpenInstallment(operationData, ins);
+      const openInstallment = resolveFirstOpenInstallment(operationData, ins, guestsByParent[insId] || []);
       const groupKey = openInstallment ? 'qr_email' : classifyGroup(ins.payment_status);
 
       const memberSnap = await db.collection('clubs').doc(clubId)

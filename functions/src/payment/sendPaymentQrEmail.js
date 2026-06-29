@@ -435,16 +435,17 @@ async function resolveInstallmentPaymentForInscription(db, clubId, operationId, 
     return null;
   }
 
-  const ownDue = Number(installment.amount_due);
-  if (!Number.isFinite(ownDue) || ownDue <= 0) {
-    throw new HttpsError(
-      'failed-precondition',
-      'Cette tranche ne contient aucun montant à payer.'
-    );
-  }
+  // Montant PROPRE du membre pour CETTE tranche: 0 si sa tranche est déjà
+  // payée/dispensée (sinon on re-facturerait une tranche déjà réglée — cas
+  // d'un membre en avance sur son invité, p.ex. Patrick a payé son acompte 2
+  // mais l'acompte 2 de son invité Marie reste ouvert).
+  const ownStatus = installment.status || 'unpaid';
+  const ownOpen = ownStatus !== 'paid' && ownStatus !== 'waived';
+  const rawOwnDue = Number(installment.amount_due) || 0;
+  const ownDue = ownOpen ? rawOwnDue : 0;
 
-  // Paiement groupé: le membre paie SA tranche + la MÊME tranche (encore
-  // ouverte) de chaque invité rattaché (is_guest + parent_inscription_id).
+  // Paiement groupé: le membre paie SA tranche (si ouverte) + la MÊME tranche
+  // (encore ouverte) de chaque invité rattaché (is_guest + parent_inscription_id).
   // Ex.: Acompte 2 = 500 € (membre) + 250 € (invité) = 750 € sur le QR.
   const guestsSnap = await inscriptionsRef
     .where('parent_inscription_id', '==', participantId)
@@ -467,6 +468,12 @@ async function resolveInstallmentPaymentForInscription(db, clubId, operationId, 
   });
 
   const aggregatedDue = ownDue + guestSubtotal;
+  if (!(aggregatedDue > 0)) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Cette tranche ne contient aucun montant à payer.'
+    );
+  }
   if (guests.length > 0) {
     console.log(`[resolveInstallmentPaymentForInscription] tranche agrégée: ${aggregatedDue}€ (membre ${ownDue}€ + ${guests.length} invité(s) ${guestSubtotal}€)`);
   }
