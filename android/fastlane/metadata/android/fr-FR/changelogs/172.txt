@@ -1,0 +1,1 @@
+Plan de paiement : meilleure gestion des invités. Le montant d'un invité en retard sur une échéance est désormais correctement inclus dans le QR de paiement du membre. Corrections et améliorations diverses.
