@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../contracts/expense_claim_contract.dart';
 
 /// Model ExpenseClaim - Demande de remboursement
 class ExpenseClaim {
@@ -76,65 +77,74 @@ class ExpenseClaim {
     return null;
   }
 
-  /// Convertir depuis Firestore
+  /// Eerste niet-null waarde uit een lijst sleutels (legacy + canonical namen).
+  static dynamic _pick(Map<String, dynamic> data, List<String> keys) {
+    for (final k in keys) {
+      if (data[k] != null) return data[k];
+    }
+    return null;
+  }
+
+  /// Convertir depuis Firestore — leest ZOWEL legacy (demandes_remboursement)
+  /// ALS canonical (expense_claims) veldnamen, zodat de app robuust is tijdens
+  /// de migratie. Statussen worden naar de interne (legacy-vorm) gemapt zodat
+  /// de bestaande UI (statusLabel/statusColor) ongewijzigd blijft.
   factory ExpenseClaim.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
 
-    // Handle date fields that can be Timestamp, String, or null
-    final dateDepense = _parseDate(data['date_depense']);
-    final dateDemande = _parseDate(data['date_demande']);
-    final dateApprobation = _parseDate(data['date_approbation']);
-    final dateApprobation2 = _parseDate(data['date_approbation_2']);
-    final dateRefus = _parseDate(data['date_refus']);
+    final dateDepense = _parseDate(_pick(data, ['date_depense', 'expense_date']));
+    final dateDemande = _parseDate(_pick(data, ['date_demande', 'requested_at']));
+    final dateApprobation = _parseDate(_pick(data, ['date_approbation', 'approved_at']));
+    final dateApprobation2 = _parseDate(_pick(data, ['date_approbation_2', 'second_approved_at']));
+    final dateRefus = _parseDate(_pick(data, ['date_refus', 'rejected_at']));
 
-    // Read documents - support both old and new formats
+    // Documenten: objet-array, simpele URL-array (legacy of canonical)
     List<String> documents = [];
-    if (data['documents_justificatifs'] != null) {
-      // New format: array of objects with {url, nom, type, etc}
+    final docsObj = _pick(data, ['documents_justificatifs', 'supporting_documents']);
+    final urls = _pick(data, ['urls_justificatifs', 'supporting_document_urls']);
+    if (docsObj != null) {
       try {
-        documents = (data['documents_justificatifs'] as List)
-            .map((doc) => doc['url'] as String)
-            .toList();
+        documents = (docsObj as List).map((d) => d['url'] as String).toList();
       } catch (e) {
-        // If parsing fails, try as simple string array (fallback)
         try {
-          documents = List<String>.from(data['documents_justificatifs']);
+          documents = List<String>.from(docsObj);
         } catch (e2) {
-          // If both fail, leave empty
           documents = [];
         }
       }
-    } else if (data['urls_justificatifs'] != null) {
-      // Old format: simple array of URLs
-      documents = List<String>.from(data['urls_justificatifs'] ?? []);
+    } else if (urls != null) {
+      documents = List<String>.from(urls);
     }
+
+    final rawStatus = _pick(data, ['statut', 'status'])?.toString() ?? 'soumis';
 
     return ExpenseClaim(
       id: doc.id,
       clubId: data['club_id'] ?? '',
-      demandeurId: data['demandeur_id'] ?? '',
-      demandeurNom: data['demandeur_nom'],
-      montant: (data['montant'] ?? 0).toDouble(),
-      description: data['description'] ?? '',
-      categorie: data['categorie'],
-      codeComptable: data['code_comptable'],
+      demandeurId: _pick(data, ['demandeur_id', 'requester_id']) ?? '',
+      demandeurNom: _pick(data, ['demandeur_nom', 'requester_name']),
+      montant: (_pick(data, ['montant', 'amount']) ?? 0).toDouble(),
+      description: _pick(data, ['description', 'title', 'titre']) ?? '',
+      categorie: _pick(data, ['categorie', 'category']),
+      codeComptable: _pick(data, ['code_comptable', 'account_code']),
       codeComptableLabel: data['code_comptable_label'],
-      statut: data['statut'] ?? 'soumis',
+      // canonical->legacy zodat statusLabel/statusColor ongewijzigd werken
+      statut: canonicalToLegacyStatus(rawStatus),
       dateDepense: dateDepense ?? DateTime.now(),
       dateDemande: dateDemande ?? DateTime.now(),
       urlsJustificatifs: documents,
-      operationId: data['operation_id'],
+      operationId: _pick(data, ['operation_id', 'evenement_id']),
       dateApprobation: dateApprobation,
-      approuvePar: data['approuve_par'],
-      appouveParNom: data['approuve_par_nom'],
+      approuvePar: _pick(data, ['approuve_par', 'approved_by']),
+      appouveParNom: _pick(data, ['approuve_par_nom', 'approved_by_name']),
       dateApprobation2: dateApprobation2,
-      approuvePar2: data['approuve_par_2'],
-      approuvePar2Nom: data['approuve_par_2_nom'],
+      approuvePar2: _pick(data, ['approuve_par_2', 'second_approved_by']),
+      approuvePar2Nom: _pick(data, ['approuve_par_2_nom', 'second_approved_by_name']),
       requiresDoubleApproval: data['requires_double_approval'] ?? false,
       dateRefus: dateRefus,
-      refusePar: data['refuse_par'],
-      refuseParNom: data['refuse_par_nom'],
-      motifRefus: data['motif_refus'],
+      refusePar: _pick(data, ['refuse_par', 'rejected_by']),
+      refuseParNom: _pick(data, ['refuse_par_nom', 'rejected_by_name']),
+      motifRefus: _pick(data, ['motif_refus', 'rejection_reason']),
     );
   }
 

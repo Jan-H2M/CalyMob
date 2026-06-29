@@ -57,9 +57,9 @@ const { DEFAULT_FLAGS, notificationsOwner } = require('../migrationFlags.js');
   assert.ok(!s.isLegacyMirrorWrite({}), 'app-write (geen _sync) moet mailen');
 
   // reverse-mirror reageert enkel op ECHTE canonical-primary writes
-  assert.ok(s.isGenuineCanonicalWrite({ _sync: { origin: 'web' } }));
-  assert.ok(!s.isGenuineCanonicalWrite({ _sync: { origin: 'legacy-mirror' } }), 'forward-echo niet terugspiegelen');
-  assert.ok(!s.isGenuineCanonicalWrite({}), 'legacy-primary dubbel-write (geen _sync) niet terugspiegelen');
+  assert.ok(s.isGenuineCanonicalWrite({ _sync: { origin: 'web' } }), 'web-write terugspiegelen');
+  assert.ok(s.isGenuineCanonicalWrite({}), 'app-write (geen _sync) WEL terugspiegelen');
+  assert.ok(!s.isGenuineCanonicalWrite({ _sync: { origin: 'legacy-mirror' } }), 'forward-echo NIET terugspiegelen (anti-loop)');
 }
 
 // 4. ownership-matrix per fase

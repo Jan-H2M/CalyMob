@@ -94,6 +94,7 @@ function buildCanonicalFromLegacy(legacy, id) {
     payment_reference: legacy.payment_reference ?? null,
     payment_reference_key: legacy.payment_reference_key ?? null,
     fiscal_year_id: legacy.fiscal_year_id ?? null,
+    source: legacy.source ?? null,
   });
 }
 
@@ -150,6 +151,7 @@ function buildLegacyFromCanonical(canon, id) {
     payment_reference: canon.payment_reference ?? null,
     payment_reference_key: canon.payment_reference_key ?? null,
     fiscal_year_id: canon.fiscal_year_id ?? null,
+    source: canon.source ?? null,
   });
 }
 
@@ -193,8 +195,11 @@ function isLegacyMirrorWrite(doc) {
  * reageren — zo geen dubbele legacy-writes/mails in een tussenfase.
  */
 function isGenuineCanonicalWrite(doc) {
+  // Een echte canonical-primary write komt van de web ('web') of van de app
+  // (die schrijft geen _sync). Enkel de forward-mirror-echo ('legacy-mirror')
+  // mag NIET teruggespiegeld worden (anti-loop).
   const origin = doc && doc._sync && doc._sync.origin;
-  return !!origin && origin !== 'legacy-mirror';
+  return origin !== 'legacy-mirror';
 }
 
 /**
