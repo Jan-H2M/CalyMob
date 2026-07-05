@@ -283,6 +283,21 @@ String replaceDigitsWithFrenchWords(String text) {
 ///
 /// Le event_number est déjà en lettres (généré par CalyCompta).
 /// Les chiffres dans le titre sont remplacés par des mots français (workaround bug BNP).
+/// Formatte le label de tranche pour la communication — MÊME format que la
+/// Cloud Function (`formatInstallmentForCommunication` dans
+/// sendPaymentQrEmail.js): "Acompte 2" → "Tranche 2", sinon label tronqué à
+/// 24 caractères. Parité obligatoire pour le matching bancaire.
+String formatInstallmentForCommunication(String? installmentLabel) {
+  final label =
+      (installmentLabel ?? '').trim().replaceAll(RegExp(r'\s+'), ' ');
+  if (label.isEmpty) return '';
+  final numberMatch = RegExp(r'\b(\d{1,2})\b').firstMatch(label);
+  if (numberMatch != null) {
+    return 'Tranche ${numberMatch.group(1)}';
+  }
+  return label.length > 24 ? label.substring(0, 24) : label;
+}
+
 String generatePaymentCommunication({
   required String? eventNumber,
   required String? eventId,
@@ -290,6 +305,10 @@ String generatePaymentCommunication({
   required DateTime? eventDate,
   required String participantFirstName,
   required String participantLastName,
+
+  /// Label de la tranche (plan de paiement). Sans ce label, l'import
+  /// bancaire ne peut pas attribuer le virement à la bonne tranche.
+  String? installmentLabel,
 }) {
   // 1. Code événement (déjà en lettres depuis CalyCompta, ex: PAAAG).
   //    On N'UTILISE PAS le doc-id en fallback: un code comme "M2EPVK"
@@ -318,8 +337,12 @@ String generatePaymentCommunication({
   final truncatedName =
       participantName.length > 30 ? participantName.substring(0, 30) : participantName;
 
-  // 5. Construire la communication
-  final communication = '$code $name $truncatedName'.trim();
+  // 5. Tranche éventuelle (même format que la Cloud Function)
+  final installmentText = formatInstallmentForCommunication(installmentLabel);
+
+  // 6. Construire la communication
+  final communication =
+      '$code $name $installmentText $truncatedName'.replaceAll(RegExp(r'\s+'), ' ').trim();
 
   // Max 140 caractères (limite EPC spec)
   return communication.length > 140 ? communication.substring(0, 140) : communication;

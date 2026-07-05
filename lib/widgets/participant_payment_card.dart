@@ -58,6 +58,11 @@ class ParticipantPaymentCard extends StatelessWidget {
   /// Indique si le paiement est en cours de traitement
   final bool isProcessing;
 
+  /// Label de la tranche payée via ce QR (plan de paiement). Indispensable
+  /// dans la communication pour que l'import bancaire attribue le virement
+  /// à la bonne tranche.
+  final String? installmentLabel;
+
   const ParticipantPaymentCard({
     super.key,
     required this.participantFirstName,
@@ -75,6 +80,7 @@ class ParticipantPaymentCard extends StatelessWidget {
     this.showConfirmButton = true,
     this.instructionText = 'Le membre scanne ce QR code avec son app bancaire',
     this.isProcessing = false,
+    this.installmentLabel,
   });
 
   String get _participantFullName =>
@@ -90,6 +96,7 @@ class ParticipantPaymentCard extends StatelessWidget {
       eventDate: eventDate,
       participantFirstName: participantFirstName,
       participantLastName: participantLastName,
+      installmentLabel: installmentLabel,
     );
 
     return Container(
@@ -377,6 +384,7 @@ Future<bool?> showParticipantPaymentCard({
   required Future<void> Function() onMarkAsPaid,
   bool showConfirmButton = true,
   String instructionText = 'Le membre scanne ce QR code avec son app bancaire',
+  String? installmentLabel,
 }) {
   return showModalBottomSheet<bool>(
     context: context,
@@ -401,6 +409,7 @@ Future<bool?> showParticipantPaymentCard({
           isProcessing: isProcessing,
           showConfirmButton: showConfirmButton,
           instructionText: instructionText,
+          installmentLabel: installmentLabel,
           onMarkAsPaid: () async {
             setState(() => isProcessing = true);
             try {

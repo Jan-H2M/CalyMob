@@ -1297,6 +1297,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           memberEmail: memberEmail,
           memberFirstName: memberFirstName,
           memberLastName: memberLastName,
+          installmentLabel: installmentLabel,
         );
       }
       return false;
@@ -1309,6 +1310,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     required String memberEmail,
     required String memberFirstName,
     required String memberLastName,
+    String? installmentLabel,
   }) async {
     if (amount <= 0) return;
 
@@ -1368,6 +1370,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       instructionText:
           'L’email n’a pas pu être envoyé. Scannez ce QR code avec votre app bancaire pour payer maintenant.',
       onMarkAsPaid: () async {},
+      installmentLabel: installmentLabel,
     );
   }
 
@@ -1422,14 +1425,54 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
       final operationProvider = context.read<OperationProvider>();
 
-      // Aggregate amount: if this participant has linked guests, sum their
-      // totalPrix into the parent's QR (single grouped payment).
       final allP = operationProvider.selectedOperationParticipants;
       final linkedGuests = allP
           .where((p) => p.isGuest && p.parentInscriptionId == participant.id)
           .toList();
-      final aggregatedAmount = participant.totalPrix +
-          linkedGuests.fold<double>(0.0, (sum, g) => sum + g.totalPrix);
+
+      // Montant TRANCHE-BEWUST (fix bug "QR plein tarif"):
+      //  - plan de paiement → même résolution de groupe que la carte du
+      //    membre: 1re tranche encore ouverte (membre OU invité), montant =
+      //    part ouverte du membre + parts ouvertes des invités pour CETTE
+      //    tranche. Jamais le plein tarif, jamais ce qui est déjà payé.
+      //  - sans plan → total des personnes NON payées uniquement.
+      final bool hasPlan = operation is Operation &&
+          operation.paymentPlanEnabled &&
+          operation.paymentInstallments.isNotEmpty;
+      _OpenInstallment? openInstallment;
+      double aggregatedAmount;
+      if (hasPlan) {
+        openInstallment = _firstOpenInstallment(operation, participant);
+        if (openInstallment == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                    'Toutes les tranches de ce participant (et de ses invités) sont réglées.'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+          return;
+        }
+        aggregatedAmount = openInstallment.aggregatedAmount;
+      } else {
+        aggregatedAmount = (participant.paye ? 0 : participant.totalPrix) +
+            linkedGuests
+                .where((g) => !g.paye)
+                .fold<double>(0.0, (sum, g) => sum + g.totalPrix);
+        if (aggregatedAmount <= 0) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Ce participant a déjà tout payé.'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+          return;
+        }
+      }
 
       final result = await showParticipantPaymentCard(
         context: context,
@@ -1445,20 +1488,52 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         clubIban: iban,
         beneficiaryName: beneficiaryName,
         bic: bic,
+        installmentLabel: openInstallment?.label,
         onMarkAsPaid: () async {
-          // Mark participant as paid in Firestore
-          await _operationService.markParticipantAsPaid(
-            clubId: widget.clubId,
-            operationId: widget.operationId,
-            participantId: participant.id,
-          );
-          // Also mark linked guests as paid — they ride on this QR.
-          for (final g in linkedGuests) {
-            await _operationService.markParticipantAsPaid(
-              clubId: widget.clubId,
-              operationId: widget.operationId,
-              participantId: g.id,
-            );
+          final inst = openInstallment;
+          if (hasPlan && inst != null) {
+            // Installment-bewust: ferme UNIQUEMENT la tranche du QR, pour le
+            // membre (si sa part était ouverte) et ses invités (parts
+            // ouvertes). `paye` global ne bascule que si tout est clos.
+            if (inst.amount > 0) {
+              await _operationService.markInstallmentAsPaid(
+                clubId: widget.clubId,
+                operationId: widget.operationId,
+                participantId: participant.id,
+                installmentId: inst.id,
+              );
+            }
+            for (final g in linkedGuests) {
+              final gp = g.installmentPayments[inst.id];
+              if (gp != null &&
+                  gp.amountDue > 0 &&
+                  gp.status != 'paid' &&
+                  gp.status != 'waived') {
+                await _operationService.markInstallmentAsPaid(
+                  clubId: widget.clubId,
+                  operationId: widget.operationId,
+                  participantId: g.id,
+                  installmentId: inst.id,
+                );
+              }
+            }
+          } else {
+            // Sans plan: comportement existant, mais uniquement pour les
+            // personnes encore non payées.
+            if (!participant.paye) {
+              await _operationService.markParticipantAsPaid(
+                clubId: widget.clubId,
+                operationId: widget.operationId,
+                participantId: participant.id,
+              );
+            }
+            for (final g in linkedGuests.where((g) => !g.paye)) {
+              await _operationService.markParticipantAsPaid(
+                clubId: widget.clubId,
+                operationId: widget.operationId,
+                participantId: g.id,
+              );
+            }
           }
           // Refresh participant list
           await operationProvider.reloadParticipants(

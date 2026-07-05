@@ -390,15 +390,32 @@ async function aggregatePaymentForInscription(db, clubId, operationId, participa
 
   if (childrenSnap.empty) return null;
 
-  const parentAmount = (Number(parent.prix) || 0) + (Number(parent.supplement_total) || 0);
+  // Montant OUVERT d'une inscription (fix "flat aggregation ignore le déjà
+  // payé"): avec plan → somme des tranches encore ouvertes; sans plan →
+  // 0 si paye, sinon prix + suppléments. On ne re-facture jamais ce qui
+  // est déjà réglé.
+  const openAmountFor = (i) => {
+    const ip = i.installment_payments;
+    if (ip && Object.keys(ip).length > 0) {
+      return Object.values(ip).reduce((sum, p) => {
+        if (!p || p.status === 'paid' || p.status === 'waived') return sum;
+        return sum + (Number(p.amount_due) || 0);
+      }, 0);
+    }
+    if (i.paye === true) return 0;
+    return (Number(i.prix) || 0) + (Number(i.supplement_total) || 0);
+  };
+
+  const parentAmount = openAmountFor(parent);
   let guestSubtotal = 0;
   const guests = [];
   childrenSnap.forEach((doc) => {
     const g = doc.data();
-    const guestPrix = Number(g.prix) || 0;
-    guestSubtotal += guestPrix;
+    const guestOpen = openAmountFor(g);
+    if (guestOpen <= 0) return; // invité déjà en règle — pas dans le QR
+    guestSubtotal += guestOpen;
     const fullName = `${g.membre_prenom || ''} ${g.membre_nom || ''}`.trim() || 'Invité';
-    guests.push({ name: fullName, prix: guestPrix });
+    guests.push({ name: fullName, prix: guestOpen });
   });
 
   const totalAmount = parentAmount + guestSubtotal;
@@ -556,7 +573,7 @@ async function sendPaymentEmailForMember(db, input) {
   if (typeof amount !== 'number' || amount <= 0) {
     throw new HttpsError(
       'failed-precondition',
-      'Cette inscription est gratuite. Aucun paiement n’est nécessaire.'
+      'Aucun montant à payer pour cette inscription (déjà réglée ou gratuite).'
     );
   }
 

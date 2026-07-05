@@ -748,6 +748,66 @@ class OperationService {
     }
   }
 
+  /// Marque UNE tranche comme payée (encaissement sur place par
+  /// l'organisateur). Installment-bewust alternatief voor
+  /// [markParticipantAsPaid]: zet `paye` pas op true als ALLE tranches
+  /// gesloten zijn (paid/waived), zodat een QR voor Acompte 2 nooit het
+  /// Solde mee afsluit (cf. over-afsluit-bug 2026-06-24).
+  Future<void> markInstallmentAsPaid({
+    required String clubId,
+    required String operationId,
+    required String participantId,
+    required String installmentId,
+  }) async {
+    final ref = _firestore
+        .collection('clubs/$clubId/operations/$operationId/inscriptions')
+        .doc(participantId);
+
+    await _firestore.runTransaction((tx) async {
+      final snap = await tx.get(ref);
+      if (!snap.exists) {
+        throw Exception('Inscription introuvable');
+      }
+      final data = snap.data() as Map<String, dynamic>;
+      final payments = Map<String, dynamic>.from(
+          (data['installment_payments'] as Map<String, dynamic>?) ?? {});
+      final cur =
+          Map<String, dynamic>.from(payments[installmentId] as Map? ?? {});
+      if (cur['status'] == 'paid' || cur['status'] == 'waived') {
+        return; // déjà réglée — idempotent
+      }
+
+      cur['status'] = 'paid';
+      cur['amount_paid'] = (cur['amount_due'] as num?) ?? 0;
+      cur['paid_at'] = Timestamp.now();
+      payments[installmentId] = cur;
+
+      final allClosed = payments.isNotEmpty &&
+          payments.values.every((p) =>
+              p is Map &&
+              (p['status'] == 'paid' || p['status'] == 'waived'));
+
+      tx.update(ref, {
+        'installment_payments.$installmentId.status': 'paid',
+        'installment_payments.$installmentId.amount_paid':
+            (cur['amount_due'] as num?) ?? 0,
+        'installment_payments.$installmentId.paid_at':
+            FieldValue.serverTimestamp(),
+        if (allClosed) ...{
+          'paye': true,
+          'paye_at': FieldValue.serverTimestamp(),
+          'paye_method': 'epc_qr_onsite',
+          'payment_status': 'paid',
+          'date_paiement': FieldValue.serverTimestamp(),
+        },
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+    });
+
+    debugPrint(
+        '✅ Tranche $installmentId payée pour $participantId (installment-aware)');
+  }
+
   /// Update payment status for a participant
   /// Used to track payment flow: qr_email_sent, qr_on_site, paid, etc.
   Future<void> updatePaymentStatus({
@@ -845,6 +905,51 @@ class OperationService {
               .padLeft(6, '0');
       final guestId = 'guest_${DateTime.now().millisecondsSinceEpoch}_$random';
 
+      // Plan de paiement: un invité DOIT avoir ses installment_payments,
+      // sinon il est invisible pour les QR de tranche et ne sera jamais
+      // facturé (cas Louis Longrée, Gozo). Si le tarif invité est connu on
+      // reprend ses montants; sinon tout le prix va sur la 1re tranche.
+      Map<String, InstallmentPayment> installments = const {};
+      final opSnap = await _firestore
+          .collection('clubs/$clubId/operations')
+          .doc(operationId)
+          .get();
+      if (opSnap.exists) {
+        final operation = Operation.fromFirestore(opSnap);
+        if (operation.paymentPlanEnabled &&
+            operation.paymentInstallments.isNotEmpty) {
+          Tariff? guestTariff;
+          if (tariffId != null) {
+            guestTariff = operation.eventTariffs
+                .cast<Tariff?>()
+                .firstWhere((t) => t?.id == tariffId, orElse: () => null);
+          }
+          final tariffSum = guestTariff?.installmentAmounts.values
+                  .fold<double>(0, (s, v) => s + v) ??
+              0;
+          if (guestTariff != null && (tariffSum - prix).abs() < 0.01) {
+            installments = _buildInstallmentPayments(
+              operation,
+              guestTariff,
+              extraAmountOnFirstOpenInstallment: supplementTotal ?? 0,
+            );
+          } else {
+            // Prix custom (pas de tarif ou montant divergent): tout sur la
+            // première tranche, les autres 'waived' à 0.
+            final total = prix + (supplementTotal ?? 0);
+            installments = {
+              for (var i = 0;
+                  i < operation.paymentInstallments.length;
+                  i++)
+                operation.paymentInstallments[i].id: InstallmentPayment(
+                  status: i == 0 ? 'unpaid' : 'waived',
+                  amountDue: i == 0 ? total : 0,
+                ),
+            };
+          }
+        }
+      }
+
       final inscriptionData = {
         'operation_id': operationId,
         'operation_titre': operationTitle,
@@ -877,6 +982,10 @@ class OperationService {
               .toList(),
         if (supplementTotal != null && supplementTotal > 0)
           'supplement_total': supplementTotal,
+        if (installments.isNotEmpty)
+          'installment_payments': installments.map(
+            (key, value) => MapEntry(key, value.toMap()),
+          ),
         'created_at': FieldValue.serverTimestamp(),
         'updated_at': FieldValue.serverTimestamp(),
       };
