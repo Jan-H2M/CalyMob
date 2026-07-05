@@ -6,6 +6,36 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function hasClubClaim(clubId) {
+      return isAuthenticated() &&
+        ('clubId' in request.auth.token) &&
+        request.auth.token.clubId == clubId;
+    }
+
+    function hasValidAdminSessionForClubId(clubId) {
+      return isAuthenticated()
+        && clubId is string
+        && isAdmin(clubId)
+        && hasValidSession(clubId);
+    }
+
+    function tokenAppRole() {
+      return ('app_role' in request.auth.token)
+        ? request.auth.token.app_role
+        : (('role' in request.auth.token) ? request.auth.token.role : '');
+    }
+
+    // Check if user is a member of the club (minimum access bar)
+    // This is the baseline check for club-scoped data — ensures the user
+    // is not just any Firebase Auth user, but actually a member of THIS club
+    function isMember(clubId) {
+      return isAuthenticated() &&
+        (
+          exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)) ||
+          hasClubClaim(clubId)
+        );
+    }
+
     // Get user data from club-specific members collection
     function getUserData(clubId) {
       return get(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)).data;
@@ -13,38 +43,66 @@ service cloud.firestore {
 
     // Check if user has admin or superadmin role for a specific club
     function isAdmin(clubId) {
-      return isAuthenticated()
-        && exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid))
-        && getUserData(clubId).app_role in ['admin', 'superadmin'];
+      return isAuthenticated() && (
+        (
+          exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)) &&
+          getUserData(clubId).app_role in ['admin', 'superadmin']
+        ) ||
+        (hasClubClaim(clubId) && tokenAppRole() in ['admin', 'superadmin'])
+      );
     }
 
     // Check if user is superadmin for a specific club
     function isSuperAdmin(clubId) {
-      return isAuthenticated()
-        && exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid))
-        && getUserData(clubId).app_role == 'superadmin';
+      return isAuthenticated() && (
+        (
+          exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)) &&
+          getUserData(clubId).app_role == 'superadmin'
+        ) ||
+        (hasClubClaim(clubId) && tokenAppRole() == 'superadmin')
+      );
     }
 
-    function isOperationOrganizer(clubId, operationId) {
-      return isAuthenticated()
-        && exists(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId))
-        && get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)).data.organisateur_id == request.auth.uid;
+    // Encadrants, piscine-editors, and admins can manage piscine planning,
+    // session themes, session plannings and attendee reassignments.
+    // Accepts both the E-badge (Encadrant) and the P-badge (Piscine).
+    function isPiscineFormationEditor(clubId) {
+      let userData = getUserData(clubId);
+      return isAdmin(clubId) || (
+        isMember(clubId) &&
+        ('clubStatuten' in userData) &&
+        userData.clubStatuten.hasAny([
+          'encadrant', 'Encadrant', 'encadrants', 'Encadrants', 'E',
+          'piscine', 'Piscine', 'P'
+        ])
+      );
     }
 
-    function isClubMember(clubId) {
-      return isAuthenticated()
-        && exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+    // Encadrants (E-badge) and admins can validate LIFRAS exercises,
+    // build palanquées, and record member observations on dive operations.
+    function isEncadrantForClub(clubId) {
+      let userData = getUserData(clubId);
+      return isAdmin(clubId) || (
+        isMember(clubId) &&
+        ('clubStatuten' in userData) &&
+        userData.clubStatuten.hasAny(['encadrant', 'Encadrant', 'encadrants', 'Encadrants', 'E'])
+      );
+    }
+
+    function hasCARole(clubId) {
+      let userData = getUserData(clubId);
+      return isAdmin(clubId) || (
+        isMember(clubId) &&
+        ('clubStatuten' in userData) &&
+        userData.clubStatuten.hasAny(['ca', 'CA', 'comite', 'Comite', 'comité', 'Comité'])
+      );
     }
 
     function hasClubStatut(clubId, statuten) {
       let userData = getUserData(clubId);
-      return isClubMember(clubId)
+      return isMember(clubId)
         && ('clubStatuten' in userData)
         && userData.clubStatuten.hasAny(statuten);
-    }
-
-    function hasEncadrantRole(clubId) {
-      return hasClubStatut(clubId, ['encadrant', 'Encadrant', 'encadrants', 'Encadrants', 'E']);
     }
 
     function hasAccueilRole(clubId) {
@@ -53,28 +111,6 @@ service cloud.firestore {
 
     function hasGonflageRole(clubId) {
       return hasClubStatut(clubId, ['gonflage', 'Gonflage', 'G']);
-    }
-
-    function hasCARole(clubId) {
-      return hasClubStatut(clubId, ['ca', 'CA', 'comite', 'Comite', 'comité', 'Comité']);
-    }
-
-    function canManageExpenses(clubId) {
-      return isAdmin(clubId) || hasCARole(clubId) || (
-        isClubMember(clubId) &&
-        getUserData(clubId).app_role == 'validateur'
-      );
-    }
-
-    function canValidateMaterialReturns(clubId) {
-      return isAdmin(clubId)
-        || hasCARole(clubId)
-        || hasGonflageRole(clubId)
-        || hasEncadrantRole(clubId)
-        || (
-          isClubMember(clubId) &&
-          getUserData(clubId).app_role == 'validateur'
-        );
     }
 
     function hasBureauRole(clubId) {
@@ -86,18 +122,18 @@ service cloud.firestore {
 
     function canAccessTeamChannel(clubId, channelId) {
       return isAdmin(clubId) || (
-        isClubMember(clubId) && (
+        isMember(clubId) && (
           channelId == 'general' ||
           (channelId == 'equipe_ca' && hasCARole(clubId)) ||
           (channelId == 'equipe_accueil' && hasAccueilRole(clubId)) ||
-          (channelId == 'equipe_encadrants' && hasEncadrantRole(clubId)) ||
+          (channelId == 'equipe_encadrants' && isEncadrantForClub(clubId)) ||
           (channelId == 'equipe_gonflage' && hasGonflageRole(clubId)) ||
           (channelId == 'bureau' && (hasBureauRole(clubId) || hasCARole(clubId))) ||
-          (channelId == 'formation_1_etoile' && (hasEncadrantRole(clubId) || hasFormationTarget(clubId, '1*'))) ||
-          (channelId == 'formation_2_etoiles' && (hasEncadrantRole(clubId) || hasFormationTarget(clubId, '2*'))) ||
-          (channelId == 'formation_3_etoiles' && (hasEncadrantRole(clubId) || hasFormationTarget(clubId, '3*'))) ||
-          (channelId == 'formation_4_etoiles' && (hasEncadrantRole(clubId) || hasFormationTarget(clubId, '4*'))) ||
-          (channelId == 'formation_AM' && (hasEncadrantRole(clubId) || hasFormationTarget(clubId, 'AM')))
+          (channelId == 'formation_1_etoile' && hasFormationTarget(clubId, '1*')) ||
+          (channelId == 'formation_2_etoiles' && hasFormationTarget(clubId, '2*')) ||
+          (channelId == 'formation_3_etoiles' && hasFormationTarget(clubId, '3*')) ||
+          (channelId == 'formation_4_etoiles' && hasFormationTarget(clubId, '4*')) ||
+          (channelId == 'formation_AM' && hasFormationTarget(clubId, 'AM'))
         )
       );
     }
@@ -136,15 +172,42 @@ service cloud.firestore {
         || (channelId == 'formation_AM' && type == 'formation_AM');
     }
 
-    // Encadrants and admins can manage attendee reassignments for piscine
-    function isPiscineFormationEditor(clubId) {
+    function canManageExpenses(clubId) {
+      let userData = getUserData(clubId);
+      return isAdmin(clubId) || hasCARole(clubId) || (
+        isMember(clubId) &&
+        userData.app_role == 'validateur'
+      );
+    }
+
+    // Organisateurs (O-badge) and admins can manage event logistics —
+    // palanquée assignments and attendance records — for events they organize.
+    // Separate from encadrant status (which is tariff/pedagogical only).
+    function isOrganisateurForClub(clubId) {
       let userData = getUserData(clubId);
       return isAdmin(clubId) || (
-        isAuthenticated()
-        && exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid))
-        && ('clubStatuten' in userData)
-        && userData.clubStatuten.hasAny(['encadrant', 'Encadrant', 'encadrants', 'Encadrants'])
+        isMember(clubId) &&
+        ('clubStatuten' in userData) &&
+        userData.clubStatuten.hasAny(['organisateur', 'Organisateur', 'ORGANISATEUR', 'o', 'O'])
       );
+    }
+
+    // LIFRAS Moniteur — plongeur_code in MC / MF / MN. AM (Assistant Moniteur)
+    // is bewust uitgesloten: per LIFRAS valideert AM enkel onder supervisie
+    // van een MC+, en die supervisor-flow is nog niet gemodelleerd in de app.
+    // Gebruikt door canValidateLifras() — zie volgende helper.
+    function isMoniteurForClub(clubId) {
+      let userData = getUserData(clubId);
+      return isMember(clubId) &&
+        ('plongeur_code' in userData) &&
+        userData.plongeur_code in ['MC', 'MF', 'MN'];
+    }
+
+    // LIFRAS-validatie-gate — voor het valideren van oefeningen, examens en
+    // het aanpassen van pedagogische thèmes/plannings. Vereist Encadrant-fonctie
+    // EN Moniteur-niveau, of admin. Mirrors canValidateLifras() in fieldMapper.ts.
+    function canValidateLifras(clubId) {
+      return isAdmin(clubId) || (isEncadrantForClub(clubId) && isMoniteurForClub(clubId));
     }
 
     // Check if user has a valid session (timeout enforcement)
@@ -177,6 +240,20 @@ service cloud.firestore {
         );
     }
 
+    // Calculate effective deadline for an operation's inscription period.
+    // Uses the explicit registration_deadline if set on the operation,
+    // otherwise falls back to date_debut - 24 hours.
+    // Use .get('registration_deadline', null) instead of bare access:
+    // the field is optional in the data model (legacy operations and
+    // bulk-creators in OperationsPage.tsx don't set it). A bare
+    // `opData.registration_deadline` access can trip the same rules-engine
+    // missing-field denial we hit with the `categorie` regression.
+    function effectiveDeadline(opData) {
+      return opData.get('registration_deadline', null) != null
+        ? opData.registration_deadline
+        : opData.date_debut - duration.value(24, 'h');
+    }
+
     // Check if user can view/modify a document based on role and ownership
     // USER ISOLATION: 'user' role can only access their own documents
     function canAccessDocument(clubId, ownerId) {
@@ -193,7 +270,7 @@ service cloud.firestore {
       let userData = getUserData(clubId);
       let flags = get(/databases/$(database)/documents/clubs/$(clubId)/settings/feature_flags).data;
 
-      return isClubMember(clubId)
+      return isMember(clubId)
         && (flags.boutiqueEnabled == true || flags.boutiqueMobileEnabled == true)
         && (
           userData.app_role in ['admin', 'superadmin'] ||
@@ -201,26 +278,26 @@ service cloud.firestore {
         );
     }
 
-    // Check if user can scan/mark attendance (encadrants, CA, accueil)
-    // Uses clubStatuten array which contains club functions
-    // Note: Firestore rules are case-sensitive, so we list all variations
-    function canScanAttendance(clubId) {
-      let userData = getUserData(clubId);
-      // Admin roles can always scan
-      // Or user has a club function that allows scanning
-      return userData.app_role in ['superadmin', 'admin', 'validateur'] ||
-             ('clubStatuten' in userData &&
-              userData.clubStatuten.hasAny([
-                // Encadrants variations
-                'encadrant', 'Encadrant', 'encadrants', 'Encadrants',
-                // CA variations
-                'ca', 'CA', 'comite', 'Comite', 'comité', 'Comité',
-                // Accueil variations
-                'accueil', 'Accueil',
-                // Board/admin roles that should also be able to scan
-                'admin', 'administrateur', 'president', 'président',
-                'secretaire', 'secrétaire', 'tresorier', 'trésorier', 'board'
-              ]));
+    // CRITICAL: Validate approval metadata when setting status to 'approuve' (legacy)
+    // or 'approved' (canonical). Two separate functions so each rule only touches the
+    // fields of its own schema — sharing one dual-language function caused permission
+    // regressions when the absent-language field was accessed on a single-language doc.
+    function hasValidApprovalMetadata(data) {
+      // Legacy schema (demandes_remboursement)
+      return data.statut != 'approuve' || (
+        data.approuve_par != null &&
+        data.approuve_par_nom != null &&
+        data.date_approbation != null
+      );
+    }
+
+    function hasCanonicalApprovalMetadata(data) {
+      // Canonical schema (expense_claims) — see normalizeCanonicalExpenseClaimPayload()
+      return data.status != 'approved' || (
+        data.approved_by != null &&
+        data.approved_by_name != null &&
+        data.approved_at != null
+      );
     }
 
     // For development/emulator - simplified rules for most data
@@ -252,12 +329,20 @@ service cloud.firestore {
         // - security: needed for session validation itself
         // - permissions: needed to determine user capabilities during auth
         // - ai_api_keys: loaded during auth context initialization
+        // - compatibility: needed for browser/device compatibility checks during login
         // Other API Keys - RESTRICTED to admin/superadmin with valid session
-        allow read: if settingId in ['security', 'permissions', 'ai_api_keys']
-          ? (settingId == 'security' || settingId == 'permissions' ? isAuthenticated() : isAdmin(clubId))
-          : settingId == 'google_mail'
+        // automated_jobs - admin/superadmin only
+        // Security, permissions, compatibility: needed during login (member check, no session)
+        // AI API keys: admin only
+        // Google Mail, email config, automated jobs: admin + session
+        // Other settings (bilan_codes, app_version, etc.): member check required
+        allow read: if settingId in ['security', 'permissions', 'ai_api_keys', 'compatibility']
+          ? (settingId == 'security' || settingId == 'permissions' || settingId == 'compatibility' ? isMember(clubId) : isAdmin(clubId))
+          : settingId in ['google_mail', 'email_config']
             ? (isAdmin(clubId) && hasValidSession(clubId))
-            : isAuthenticated();
+            : settingId == 'automated_jobs'
+              ? (isAdmin(clubId) && hasValidSession(clubId))
+              : isMember(clubId);
 
         // Only admins can write, and they need a valid session
         allow write: if isAdmin(clubId) && hasValidSession(clubId);
@@ -265,48 +350,154 @@ service cloud.firestore {
 
       // Email templates - admin management only
       match /email_templates/{templateId} {
-        allow read: if isAuthenticated() && hasValidSession(clubId);
+        allow read: if isMember(clubId) && hasValidSession(clubId);
         allow write: if isAdmin(clubId) && hasValidSession(clubId);
+      }
+
+      // Branding presets - reusable email branding styles (LEGACY)
+      match /brandings/{brandingId} {
+        allow read: if isMember(clubId) && hasValidSession(clubId);
+        allow write: if isAdmin(clubId) && hasValidSession(clubId);
+      }
+
+      // ========== BRANDING LIBRARY (New architecture) ==========
+      // Main branding library document
+      match /branding/library {
+        allow read: if isMember(clubId);
+        allow write: if isAdmin(clubId) && hasValidSession(clubId);
+
+        // Logos subcollection
+        match /logos/{logoId} {
+          allow read: if isMember(clubId);
+          allow write: if isAdmin(clubId) && hasValidSession(clubId);
+        }
+
+        // Color palettes subcollection
+        match /palettes/{paletteId} {
+          allow read: if isMember(clubId);
+          allow write: if isAdmin(clubId) && hasValidSession(clubId);
+        }
+
+        // Images/assets subcollection
+        match /images/{imageId} {
+          allow read: if isMember(clubId);
+          allow write: if isAdmin(clubId) && hasValidSession(clubId);
+        }
+
+        // HTML templates subcollection
+        match /templates/{templateId} {
+          allow read: if isMember(clubId);
+          allow write: if isAdmin(clubId) && hasValidSession(clubId);
+        }
       }
 
       // Email history - track sent emails
       match /email_history/{historyId} {
-        allow read: if isAuthenticated() && hasValidSession(clubId);
-        allow create: if isAuthenticated() && hasValidSession(clubId);
-        allow update, delete: if isAdmin(clubId) && hasValidSession(clubId);
+        allow read: if isAuthenticated()
+          && hasValidSession(clubId)
+          && getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'];
+        allow create, update, delete: if false;
       }
 
       // Communication entries - dossier-level communication timeline
       match /communication_entries/{entryId} {
-        allow read: if isAuthenticated() && hasValidSession(clubId);
-        allow create: if isAuthenticated() && hasValidSession(clubId);
-        allow update, delete: if false;
+        allow read: if isMember(clubId) && canManageExpenses(clubId);
+        allow create: if isMember(clubId)
+          && hasValidSession(clubId)
+          && canManageExpenses(clubId);
+        allow update: if isMember(clubId)
+          && hasValidSession(clubId)
+          && canManageExpenses(clubId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by']);
+        allow delete: if false;
       }
 
-      // Communication logs - read-only for authenticated users
+      // Email drafts - saved email drafts for manual sending (admin only)
+      match /email_drafts/{draftId} {
+        allow read: if isAdmin(clubId) && hasValidSession(clubId);
+        allow create, update: if isAdmin(clubId) && hasValidSession(clubId);
+        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
+      }
+
+      // Communication logs - read-only for admin/validateur
       match /communication_logs/{logId} {
-        allow read: if isAuthenticated() && hasValidSession(clubId);
+        allow read: if isMember(clubId) && hasValidSession(clubId)
+          && getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'];
         allow create: if false; // Only Cloud Functions can create logs
         allow update, delete: if false; // Logs are immutable
       }
 
-      // Dive locations (event settings) - admin management only
+      // Automated jobs logs - read-only for authenticated members
+      match /automated_jobs_logs/{logId} {
+        allow read: if isAuthenticated()
+          && exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+        allow create: if false; // Only Cloud Functions/Vercel API can create logs
+        allow update, delete: if false; // Logs are immutable
+      }
+
+      // Dive locations (event settings) - readable by members (mobile app), writable by admins
       match /dive_locations/{locationId} {
-        allow read: if isAuthenticated() && hasValidSession(clubId);
+        allow read: if isMember(clubId);
         allow write: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
-      // Categories - can be read by all, written by admins only
+      // LIFRAS exercises - can be read by club members (mobile + web), written by admins only
+      match /exercices_lifras/{exerciceId} {
+        allow read: if isMember(clubId);
+        allow write: if isAdmin(clubId) && hasValidSession(clubId);
+      }
+
+      // Categories - can be read by club members, written by admins only
       match /categories/{categoryId} {
-        allow read: if isAuthenticated();
+        allow read: if isMember(clubId);
         allow write: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
       // Categorization patterns (smart categorization learning)
       match /categorization_patterns/{patternId} {
-        allow read: if isAuthenticated();
-        allow create, update: if isAuthenticated() && hasValidSession(clubId);
+        allow read: if isMember(clubId);
+        allow create, update: if isMember(clubId) && hasValidSession(clubId);
         allow delete: if isAdmin(clubId) && hasValidSession(clubId);
+      }
+
+      // Anti-patterns (corrections tracking for categorization)
+      match /anti_patterns/{patternId} {
+        allow read: if isMember(clubId);
+        allow create, update: if isMember(clubId) && hasValidSession(clubId);
+        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
+      }
+
+      // Known IBANs (pre-configured IBANs for auto-categorization)
+      match /known_ibans/{ibanId} {
+        allow read: if isMember(clubId);
+        allow create, update: if isAdmin(clubId) && hasValidSession(clubId);
+        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
+      }
+
+      // Facturation - carnet de clients externes (admin only)
+      match /facturation_clients/{clientId} {
+        allow read: if isAdmin(clubId) && hasValidSession(clubId);
+        allow create, update: if isAdmin(clubId) && hasValidSession(clubId);
+        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
+      }
+
+      // Facturation - factures sortantes (admin only)
+      match /factures/{factureId} {
+        allow read: if isAdmin(clubId) && hasValidSession(clubId);
+        allow create, update: if isAdmin(clubId) && hasValidSession(clubId);
+        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
+      }
+
+      // OGM / communications structurées - références de paiement.
+      // Indexe un OGM -> contexte (facture, cotisation, boutique, remboursement)
+      // pour la réconciliation bancaire automatique. Mêmes rôles que les
+      // transactions bancaires (lecture + écriture par le moteur de matching).
+      match /payment_references/{ogm} {
+        allow read: if isAuthenticated()
+          && getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'];
+        allow create, update: if isAuthenticated()
+          && hasValidSession(clubId)
+          && getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'];
       }
 
       // Transactions bancaires - USER ISOLATION: only admin/validateur/superadmin
@@ -316,8 +507,21 @@ service cloud.firestore {
         allow create, update: if isAuthenticated()
           && hasValidSession(clubId)
           && getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur']
-          && canModifyFiscalYearData(clubId, request.resource.data.fiscal_year_id);
-        allow delete: if isSuperAdmin(clubId) && hasValidSession(clubId);
+          && canModifyFiscalYearData(clubId, request.resource.data.get('fiscal_year_id', null));
+        // Delete: Superadmin can delete any transaction
+        // Admin can delete child transactions (splits) or non-reconciled transactions
+        allow delete: if hasValidSession(clubId) && (
+          isSuperAdmin(clubId) ||
+          (
+            isAdmin(clubId) &&
+            canModifyFiscalYearData(clubId, resource.data.fiscal_year_id) &&
+            (
+              resource.data.parent_transaction_id != null ||
+              resource.data.reconcilie == false ||
+              !('reconcilie' in resource.data)
+            )
+          )
+        );
       }
 
       // Bank transactions (English collection name) - USER ISOLATION: only admin/validateur/superadmin
@@ -327,36 +531,50 @@ service cloud.firestore {
         allow create, update: if isAuthenticated()
           && hasValidSession(clubId)
           && getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur']
-          && canModifyFiscalYearData(clubId, request.resource.data.fiscal_year_id);
-        allow delete: if isSuperAdmin(clubId) && hasValidSession(clubId);
+          && canModifyFiscalYearData(clubId, request.resource.data.get('fiscal_year_id', null));
+        // Delete: Superadmin can delete any transaction
+        // Admin can delete child transactions (splits) or non-reconciled transactions
+        allow delete: if hasValidSession(clubId) && (
+          isSuperAdmin(clubId) ||
+          (
+            isAdmin(clubId) &&
+            canModifyFiscalYearData(clubId, resource.data.fiscal_year_id) &&
+            (
+              resource.data.parent_transaction_id != null ||
+              resource.data.reconcilie == false ||
+              !('reconcilie' in resource.data)
+            )
+          )
+        );
       }
 
       // Demandes de remboursement - USER ISOLATION: user can only see their own
       match /demandes_remboursement/{claimId} {
         // Read: User role can only see their own demands (via demandeur_id)
-        allow read: if isAuthenticated() && (
+        allow read: if isMember(clubId) && (
           canManageExpenses(clubId) ||
           (getUserData(clubId).app_role == 'user' && resource.data.demandeur_id == request.auth.uid)
         );
 
-        // Create: User can create their own demands
-        // Mobile app: session check enabled - app creates session on login
-        allow create: if isAuthenticated()
-          && hasValidSession(clubId)
+        // Create: Club members can create their own demands — EXCEPT for
+        // 'remboursement_inscription' which is reserved for the callable
+        // Cloud Function (createInscriptionRefund) that validates the
+        // actual price delta matches a real inscription change.
+        // NOTE: use .get('categorie', '') because most client payloads
+        // (TransactionsPage, DemandesPage.handleNewExpense) don't set the
+        // field at all; a bare `data.categorie != ...` on a missing field
+        // denies the write instead of coercing to null.
+        allow create: if isMember(clubId)
+          && request.resource.data.get('categorie', '') != 'remboursement_inscription'
           && (
             canManageExpenses(clubId) ||
-            (
-              canValidateMaterialReturns(clubId) &&
-              request.resource.data.source == 'loan_caution_return' &&
-              request.resource.data.linked_entity_type == 'loan_caution_refund'
-            ) ||
             request.resource.data.demandeur_id == request.auth.uid
           );
 
         // Update: User can update their own demands (if not yet approved), admin+ can update all
-        // Mobile app: session check enabled
-        allow update: if isAuthenticated()
-          && hasValidSession(clubId)
+        // CRITICAL: Validate approval metadata when status is set to 'approuve'
+        allow update: if isMember(clubId)
+          && hasValidApprovalMetadata(request.resource.data)
           && (
             canManageExpenses(clubId) ||
             (
@@ -372,37 +590,45 @@ service cloud.firestore {
           && canModifyFiscalYearData(clubId, resource.data.fiscal_year_id);
       }
 
-      // Expense claims (English collection name) - same rules as demandes_remboursement
+      // Expense claims (canonical English collection) - mirrors demandes_remboursement
+      // CANONICAL FIELDS: requester_id (not demandeur_id), status (not statut),
+      // approved_by/approved_by_name/approved_at (not approuve_par/...).
+      // See normalizeCanonicalExpenseClaimPayload() in expenseClaimGateway.ts for full mapping.
       match /expense_claims/{claimId} {
-        // Read: User can only see their own, admin+ can see all
-        allow read: if isAuthenticated() && (
+        // Read: User role can only see their own claims (via canonical requester_id)
+        allow read: if isMember(clubId) && (
           canManageExpenses(clubId) ||
-          (getUserData(clubId).app_role == 'user' && resource.data.demandeur_id == request.auth.uid)
+          (getUserData(clubId).app_role == 'user' && resource.data.requester_id == request.auth.uid)
         );
-        // Create: User can create their own claims with valid session
-        allow create: if isAuthenticated()
-          && hasValidSession(clubId)
-          && (
-            canManageExpenses(clubId) ||
-            (
-              canValidateMaterialReturns(clubId) &&
-              request.resource.data.accounting_context == 'loan_caution_refunded' &&
-              request.resource.data.source_loan_id is string
-            ) ||
-            request.resource.data.demandeur_id == request.auth.uid
-          );
-        // Update: User can update own (if draft/submitted), admin+ can update all
-        allow update: if isAuthenticated()
-          && hasValidSession(clubId)
+
+        // Create: User can create own claims; admin/validateur can mirror-create on
+        // behalf of any requester. 'remboursement_inscription' is reserved for
+        // the callable Cloud Function and cannot be created directly by clients.
+        // NOTE: canonical doc uses English field name `category` (mapped from
+        // legacy `categorie` in normalizeCanonicalExpenseClaimPayload).
+        // Use .get(field, default) so a missing field doesn't deny the write.
+        allow create: if isMember(clubId) && (
+          canManageExpenses(clubId) ||
+          (
+            request.resource.data.requester_id == request.auth.uid
+            && request.resource.data.get('category', '') != 'remboursement_inscription'
+          )
+        );
+
+        // Update: User can update own claims (if not yet approved), admin+ can update all.
+        // Status check uses canonical 'draft' / 'submitted' (mapped from legacy brouillon/soumis).
+        allow update: if isMember(clubId)
+          && hasCanonicalApprovalMetadata(request.resource.data)
           && (
             canManageExpenses(clubId) ||
             (
               getUserData(clubId).app_role == 'user' &&
-              resource.data.demandeur_id == request.auth.uid &&
-              resource.data.statut in ['brouillon', 'soumis']
+              resource.data.requester_id == request.auth.uid &&
+              resource.data.status in ['draft', 'submitted']
             )
           );
-        // Delete: Admin only with fiscal year check
+
+        // Delete: Admin only
         allow delete: if isAdmin(clubId)
           && hasValidSession(clubId)
           && canModifyFiscalYearData(clubId, resource.data.fiscal_year_id);
@@ -410,21 +636,29 @@ service cloud.firestore {
 
       // Operations (événements, cotisations, dons, ventes, subventions)
       match /operations/{operationId} {
-        // Read: Tous les membres authentifiés peuvent voir les événements
-        // (nécessaire pour s'inscrire aux événements créés par d'autres)
-        allow read: if isAuthenticated();
+        // Read: Club members can read operations
+        // (needed for event discussions, inscriptions, and operation details in mobile app)
+        allow read: if isMember(clubId);
 
-        // Create: User can create their own operations (only type 'evenement')
+        // Create: app_role 'user' OR clubStatuten 'O' (Organisateur badge) can create their
+        //   own events (type 'evenement'). Validateur+ can create any operation type.
+        //   The Organisateur clause lets 'membre'-tier users (no CalyCompta admin access)
+        //   still organize events when their clubStatuten includes the O-badge.
+        // Note: uses .get() for fiscal_year_id to handle mobile app creating events without it
         allow create: if isAuthenticated()
           && hasValidSession(clubId)
           && request.resource.data.organisateur_id == request.auth.uid
           && (
             getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
-            (getUserData(clubId).app_role == 'user' && request.resource.data.type == 'evenement')
+            (getUserData(clubId).app_role == 'user' && request.resource.data.type == 'evenement') ||
+            (isOrganisateurForClub(clubId) && request.resource.data.type == 'evenement')
           )
-          && canModifyFiscalYearData(clubId, request.resource.data.fiscal_year_id);
+          && canModifyFiscalYearData(clubId, request.resource.data.get('fiscal_year_id', null));
 
-        // Update: User can update their own operations (only type 'evenement')
+        // Update: same access tiers as create — owner-only for non-admin tiers.
+        // NOTE: .get('type', '') instead of bare access — legacy operations
+        // could in theory be missing the `type` field, which would deny
+        // owner-updates otherwise.
         allow update: if isAuthenticated()
           && hasValidSession(clubId)
           && (
@@ -432,130 +666,224 @@ service cloud.firestore {
             (
               getUserData(clubId).app_role == 'user' &&
               resource.data.organisateur_id == request.auth.uid &&
-              request.resource.data.type == 'evenement'
+              request.resource.data.get('type', '') == 'evenement'
+            ) ||
+            (
+              isOrganisateurForClub(clubId) &&
+              resource.data.organisateur_id == request.auth.uid &&
+              request.resource.data.get('type', '') == 'evenement'
             )
           )
-          && canModifyFiscalYearData(clubId, request.resource.data.fiscal_year_id);
+          && canModifyFiscalYearData(clubId, request.resource.data.get('fiscal_year_id', null));
 
-        // Delete: User can delete their own operations, admin+ can delete all
+        // Delete: owner-only for non-admin tiers, admin+ can delete any.
         allow delete: if isAuthenticated()
           && hasValidSession(clubId)
           && (
             getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
-            (getUserData(clubId).app_role == 'user' && resource.data.organisateur_id == request.auth.uid)
+            (getUserData(clubId).app_role == 'user' && resource.data.organisateur_id == request.auth.uid) ||
+            (isOrganisateurForClub(clubId) && resource.data.organisateur_id == request.auth.uid)
           );
 
-        // Inscriptions subcollection (pour s'inscrire aux événements)
+        // Inscriptions subcollection (web + mobile app)
         match /inscriptions/{inscriptionId} {
-          // Tous les membres authentifiés peuvent lire les inscriptions
-          allow read: if isAuthenticated();
-          // Membres authentifiés avec session peuvent créer/modifier/supprimer leur propre inscription
-          allow create: if isAuthenticated() && hasValidSession(clubId);
-          allow update, delete: if isAuthenticated()
-            && hasValidSession(clubId)
-            && (
-              // L'utilisateur peut modifier/supprimer sa propre inscription
-              resource.data.membre_id == request.auth.uid ||
-              // Ou être admin
-              getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
-              // Ou être l'organisateur de l'événement
-              isOperationOrganizer(clubId, operationId) ||
-              // Ou avoir le droit de scanner (encadrant, CA, accueil)
-              canScanAttendance(clubId)
-            );
-        }
+          allow read: if isMember(clubId);
 
-        // Messages subcollection (discussion entre participants)
-        match /messages/{messageId} {
-          // Tous les membres authentifiés peuvent lire les messages
-          allow read: if isAuthenticated();
-          // Membres authentifiés avec session peuvent créer des messages
-          allow create: if isAuthenticated() && hasValidSession(clubId);
-          // Seul l'auteur ou un admin peut supprimer un message
-          allow delete: if isAuthenticated()
-            && hasValidSession(clubId)
+          // Create: three legitimate paths
+          //   1. Member registers themselves (membre_id == own uid).
+          //      Blocked after the effective deadline — only admins via
+          //      valid session can still register late.
+          //   2. Admin with valid session registers anyone (incl. externals)
+          //      — bypasses the deadline (admin override).
+          //   3. Member adds a guest to THEIR OWN inscription from CalyMob,
+          //      provided the event opted-in via allow_guests=true. Also
+          //      blocked after the effective deadline.
+          allow create: if isMember(clubId)
             && (
-              resource.data.sender_id == request.auth.uid ||
-              isOperationOrganizer(clubId, operationId) ||
-              getUserData(clubId).app_role in ['superadmin', 'admin']
-            );
-          // Modification: read/reactions/poll for everyone, own message edits for the author.
-          allow update: if isAuthenticated()
-            && hasValidSession(clubId)
-            && (
-              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by', 'reactions', 'poll'])
-              || (
-                resource.data.sender_id == request.auth.uid
-                && request.resource.data.diff(resource.data).affectedKeys()
-                     .hasOnly(['message', 'attachments', 'edited_at'])
+              (
+                request.resource.data.membre_id == request.auth.uid
+                && request.time <= effectiveDeadline(
+                  get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)).data
+                )
+              ) ||
+              (hasValidSession(clubId) && isAdmin(clubId)) ||
+              (
+                // Use .get(field, default) on guest-only fields so the rule
+                // matches the delete rule's style and doesn't trip the same
+                // missing-field denial we hit on `categorie`.
+                request.resource.data.get('is_guest', false) == true
+                && request.resource.data.get('added_by', '') == request.auth.uid
+                && request.resource.data.get('parent_inscription_id', null) != null
+                && get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId))
+                     .data.get('allow_guests', false) == true
+                && get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)/inscriptions/$(request.resource.data.parent_inscription_id))
+                     .data.membre_id == request.auth.uid
+                && request.time <= effectiveDeadline(
+                  get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)).data
+                )
               )
             );
+
+          // Delete: members unregister themselves OR delete their own guests
+          // — both gated by the effective deadline so members can't bail
+          // late and force a refund. Admins (any path) always pass.
+          allow delete: if isMember(clubId)
+            && (
+              isAdmin(clubId)
+              || (
+                resource.data.membre_id == request.auth.uid
+                && request.time <= effectiveDeadline(
+                  get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)).data
+                )
+              )
+              || (
+                resource.data.get('is_guest', false) == true
+                && resource.data.get('added_by', '') == request.auth.uid
+                && request.time <= effectiveDeadline(
+                  get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)).data
+                )
+              )
+            );
+
+          // Update: own inscription (mobile), session (web), or own guest.
+          // Deadline check: members (not admins) cannot update after the effective deadline.
+          // Admins with valid session bypass the deadline check.
+          allow update: if isMember(clubId)
+            && (
+              request.auth.uid == resource.data.membre_id
+              && request.time <= effectiveDeadline(
+                get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)).data
+              )
+              || hasValidSession(clubId)
+              || (
+                resource.data.get('is_guest', false) == true
+                && resource.data.get('added_by', '') == request.auth.uid
+                && request.time <= effectiveDeadline(
+                  get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)).data
+                )
+              )
+            );
+
+          // Edit history — append-only audit log van wijzigingen op een
+          // inscription (supplements, gasten toegevoegd/verwijderd, ...).
+          // Alleen de inscription-owner en admins met valid session mogen
+          // lezen of schrijven. Geen update/delete: log is immutable.
+          match /edit_history/{historyId} {
+            allow read: if isMember(clubId) && (
+              get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)/inscriptions/$(inscriptionId)).data.membre_id == request.auth.uid
+              || hasValidSession(clubId)
+            );
+            allow create: if isMember(clubId) && (
+              get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)/inscriptions/$(inscriptionId)).data.membre_id == request.auth.uid
+              || hasValidSession(clubId)
+            );
+          }
         }
 
-        // Palanquées / préparation pédagogique d'une opération.
-        // CalyCompta et CalyMob écrivent ici le plan d'exercices préparé par
-        // le moniteur; une Cloud Function transforme ensuite les exercices
-        // prévus en exercise_claims brouillons.
-        match /palanquees/{palanqueeId} {
-          allow read: if isAuthenticated();
-          allow create, update: if isAuthenticated()
-            && hasValidSession(clubId)
-            && (
-              getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
-              canScanAttendance(clubId)
-            );
-          allow delete: if isAuthenticated()
-            && hasValidSession(clubId)
-            && (
-              getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
-              isOperationOrganizer(clubId, operationId)
-            );
+        // Palanquées subcollection (drag & drop palanquée assignments)
+        match /palanquees/{docId} {
+          // Read: Club members can see palanquée assignments
+          allow read: if isMember(clubId);
+
+          // Write: Admin OR Encadrant (E-badge) OR Organisateur (O-badge) with valid session.
+          // Both roles can build/adjust palanquées during dive operations.
+          allow create, update:
+            if (isEncadrantForClub(clubId) || isOrganisateurForClub(clubId))
+            && hasValidSession(clubId);
+
+          // Delete: Admin OR Encadrant (E-badge) OR Organisateur (O-badge).
+          allow delete: if isEncadrantForClub(clubId) || isOrganisateurForClub(clubId);
+        }
+
+        // Messages subcollection (event discussion - mobile app)
+        match /messages/{messageId} {
+          // Read: Club members can read messages
+          allow read: if isMember(clubId);
+
+          // Create: Club members can send messages (sender_id must match auth uid)
+          allow create: if isMember(clubId)
+            && request.resource.data.sender_id == request.auth.uid;
+
+          // Delete: Author can delete own messages, admins can delete any
+          allow delete: if isMember(clubId)
+            && (resource.data.sender_id == request.auth.uid || isAdmin(clubId));
+
+          // Update:
+          //  - Alle members mogen read_by, reactions of poll updaten (bestaand gedrag voor reacties/polls).
+          //  - De auteur mag zijn eigen bericht editen (message/attachments/edited_at).
+          allow update: if isMember(clubId) && (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by'])
+            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['poll'])
+            || (
+              resource.data.sender_id == request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(['message', 'attachments', 'edited_at'])
+            )
+          );
         }
       }
 
-      // Operation participants (inscriptions, cotisations payées, etc.) - LEGACY
+      // Operation participants (inscriptions, cotisations payées, etc.)
       match /operation_participants/{participantId} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated()
-          && hasValidSession(clubId)
+        allow read: if isMember(clubId);
+
+        // Create: Club members can register themselves (mobile app - no session required)
+        // OR an admin with a valid session creates the projection on behalf of
+        // someone else — notably for guests (membre_id = guest_xxx), whose
+        // projection can never match the admin's uid. Mirrors the update rule.
+        allow create: if isMember(clubId)
           && (
-            // Check fiscal year via parent operation
-            !('operation_id' in request.resource.data) ||
-            canModifyFiscalYearData(
-              clubId,
-              get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(request.resource.data.operation_id)).data.fiscal_year_id
+            request.resource.data.membre_id == request.auth.uid
+            || (isAdmin(clubId) && hasValidSession(clubId))
+          );
+
+        // Delete: Club members can unregister themselves (mobile app)
+        allow delete: if isMember(clubId)
+          && resource.data.membre_id == request.auth.uid;
+
+        // Update: Requires session (web app) OR user owns the document (mobile app)
+        allow update: if isMember(clubId)
+          && (
+            request.auth.uid == resource.data.membre_id
+            || (
+              hasValidSession(clubId)
+              && (
+                // Check fiscal year via parent operation
+                !('operation_id' in request.resource.data) ||
+                canModifyFiscalYearData(
+                  clubId,
+                  get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(request.resource.data.operation_id)).data.fiscal_year_id
+                )
+              )
             )
           );
       }
 
       // LEGACY: Events - Gardé pour compatibilité migration
       match /events/{eventId} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated() && hasValidSession(clubId);
+        allow read: if isMember(clubId);
+        allow write: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
       // LEGACY: Event registrations - Gardé pour compatibilité migration
       match /event_registrations/{registrationId} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated() && hasValidSession(clubId);
+        allow read: if isMember(clubId);
+        allow write: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
       // Inscriptions événements (pour stats dashboard)
       match /inscriptions_evenements/{inscriptionId} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated() && hasValidSession(clubId);
+        allow read: if isMember(clubId);
+        allow write: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
-      // Members - allow reading own member document without session check (needed for login)
+      // Members - club membership required to read member list
+      // During login: user reads own doc (isMember checks exists() which is true if doc exists)
+      // Mobile app: member reads all members for member list
+      // Web app: admin reads all members for user management
       match /members/{memberId} {
-        // Allow reading own member document during login (no session check)
-        // Allow reading all members if authenticated (for mobile app compatibility)
-        allow read: if isAuthenticated();
-
-        // Allow users to update their own lastLogin timestamp (needed during login, before session exists)
-        allow update: if isAuthenticated()
-          && request.auth.uid == memberId
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastLogin', 'updatedAt']);
+        allow read: if isMember(clubId) || (isAuthenticated() && request.auth.uid == memberId);
 
         // Allow users to update their own profile fields (needed during login/app usage, before session exists)
         // Includes: login timestamp, FCM tokens for push notifications, app installation tracking,
@@ -577,18 +905,24 @@ service cloud.firestore {
             'fcm_token', 'fcm_tokens', 'fcm_token_updated_at', 'notifications_enabled',
             // Notification preferences (CalyMob) - granular per-type toggle
             'notification_preferences',
-            // App installation tracking (written by CalyMob on login)
+            // App installation tracking (CalyMob)
             'app_installed', 'app_platform', 'app_version', 'app_build_number',
             'device_model', 'device_os_version', 'app_last_opened', 'app_first_installed',
-            // Device debug info (written by CalyMob notification_service)
-            'device_brand', 'device_is_physical', 'device_locale', 'device_timezone',
-            'device_screen_width', 'device_screen_height', 'device_pixel_ratio',
+            // Device telemetry (CalyMob notification_service)
+            'device_brand', 'device_is_physical',
             // Diagnostics (CalyMob) - biometric status, error logs, health checks
             'diag_biometric', 'diag_errors', 'diag_last_error_at', 'diag_health',
             // Badge management (CalyMob) - unread message counters
             'unread_counts',
             // Medical certificate flag (CalyMob) - set when member uploads a new certificate
-            'has_pending_medical'
+            'has_pending_medical',
+            // Carnet de plongée — équipement personnel (CalyMob combi/tank pickers)
+            'dive_combis', 'dive_tanks',
+            // Web device info (CalyCompta) — fields written by saveDeviceInfoToMember
+            'device_platform', 'device_type', 'browser_name', 'browser_version',
+            'device_locale', 'device_timezone',
+            'device_screen_width', 'device_screen_height', 'device_pixel_ratio',
+            'web_last_login'
           ]);
 
         // Admins can create new members (for user management UI)
@@ -598,15 +932,38 @@ service cloud.firestore {
         allow update, delete: if isAdmin(clubId) && hasValidSession(clubId);
 
         // Exercices validés par membre (suivi des formations LIFRAS)
+        //
+        // Workflow (per 2026-04-21):
+        // - Le membre peut auto-déclarer un exercice via CalyMob ("Je l'ai fait"),
+        //   status='pending' + declared_by_member=true.
+        // - Un encadrant/admin valide ou refuse (status='validated'|'refused').
+        // - Un encadrant/admin peut aussi créer directement un exercice déjà validé
+        //   (workflow legacy : booking par moniteur dans CalyCompta).
         match /exercices_valides/{exerciceValideId} {
-          // Lecture : le membre lui-même, ou admin/superadmin
+          // Lecture : le membre lui-même, admin/superadmin, ou encadrant
+          // (encadrants doivent pouvoir voir la progression des membres qu'ils forment)
           allow read: if isAuthenticated() && (
             request.auth.uid == memberId ||
-            isAdmin(clubId)
+            isEncadrantForClub(clubId)
           );
 
-          // Écriture : admin/superadmin (mobile app: pas de session requise)
-          allow create, update, delete: if isAdmin(clubId);
+          // Create :
+          //  - Moniteur+Encadrant of admin : toute valeur de status (validation directe)
+          //  - membre lui-même : uniquement self-declaration
+          //    (status='pending' + declared_by_member=true)
+          // Validatie is enkel voor Moniteurs (MC/MF/MN) — een Encadrant zonder
+          // Moniteur-niveau kan dus enkel niet-validerende self-declarations zien.
+          allow create: if canValidateLifras(clubId)
+            || (
+              isAuthenticated()
+              && request.auth.uid == memberId
+              && request.resource.data.status == 'pending'
+              && request.resource.data.declared_by_member == true
+            );
+
+          // Update / delete : enkel Moniteur+Encadrant of admin (transitions
+          // pending → validated / refused).
+          allow update, delete: if canValidateLifras(clubId);
         }
 
         // ========== MEDICAL CERTIFICATES (Certificats médicaux - CalyMob) ==========
@@ -625,6 +982,7 @@ service cloud.firestore {
             && request.resource.data.status == 'pending';
 
           // Update: Admin only - for approving/rejecting certificates
+          // Admins set valid_until date and status
           allow update: if isAdmin(clubId);
 
           // Delete: Admin only - for removing old/invalid certificates
@@ -639,12 +997,12 @@ service cloud.firestore {
             (
               infoId == 'emergency' &&
               resource.data.gdpr_share_emergency_with_staff == true &&
-              (hasEncadrantRole(clubId) || hasCARole(clubId))
+              (isEncadrantForClub(clubId) || hasCARole(clubId))
             ) ||
             (
               infoId == 'medical' &&
               resource.data.gdpr_share_medical_with_staff == true &&
-              (hasEncadrantRole(clubId) || hasCARole(clubId))
+              (isEncadrantForClub(clubId) || hasCARole(clubId))
             )
           );
 
@@ -654,213 +1012,39 @@ service cloud.firestore {
         }
       }
 
-      // Fiscal years - can be read without session check (needed for reports page load)
+      // Fiscal years - club members can read (needed for reports page load)
       match /fiscal_years/{fiscalYearId} {
-        allow read: if isAuthenticated();
+        allow read: if isMember(clubId);
         allow write: if isAdmin(clubId) && hasValidSession(clubId);
+
+        // Bilan values subcollection - stores balance sheet values per fiscal year
+        match /data/{dataId} {
+          // Read: Admin/Validateur with valid session
+          allow read: if isAuthenticated()
+            && hasValidSession(clubId)
+            && getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'];
+          // Write: Admin with valid session
+          allow create, update: if isAdmin(clubId) && hasValidSession(clubId);
+          // Delete: Superadmin only
+          allow delete: if isSuperAdmin(clubId) && hasValidSession(clubId);
+        }
       }
 
-      // Audit logs - can be created/read with authentication only
+      // Audit logs - admin can read, members can create
       match /audit_logs/{auditId} {
-        allow read: if isAuthenticated();
-        allow create: if isAuthenticated();
+        allow read: if isAdmin(clubId) && hasValidSession(clubId);
+        allow create: if isMember(clubId);
         allow update, delete: if false; // Audit logs are immutable
-      }
-
-      // ========== PISCINE PLANNING MODULE ==========
-
-      // Piscine availabilities (disponibilités des accueil/encadrants)
-      match /availabilities/{availabilityId} {
-        // Lecture: tous les membres authentifiés (nécessaire pour l'admin grid)
-        allow read: if isAuthenticated();
-        // Création/Modification: membre peut gérer sa propre disponibilité
-        allow create: if isAuthenticated()
-          && hasValidSession(clubId)
-          && request.resource.data.membre_id == request.auth.uid;
-        allow update: if isAuthenticated()
-          && hasValidSession(clubId)
-          && resource.data.membre_id == request.auth.uid;
-        // Suppression: uniquement sa propre disponibilité ou admin
-        allow delete: if isAuthenticated()
-          && hasValidSession(clubId)
-          && (resource.data.membre_id == request.auth.uid || isAdmin(clubId));
-      }
-
-      // Piscine sessions (séances piscine configurées)
-      match /piscine_sessions/{sessionId} {
-        // Lecture: tous les membres authentifiés
-        allow read: if isAuthenticated();
-        // Création/Modification/Suppression: admin uniquement
-        allow create, update, delete: if isAdmin(clubId) && hasValidSession(clubId);
-
-        // Attendees subcollection - scanner adds attendees here
-        match /attendees/{attendeeId} {
-          // Read: all authenticated club members
-          allow read: if isAuthenticated() &&
-            exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
-          // Create: any authenticated club member can scan (mobile app scanner)
-          allow create: if isAuthenticated() &&
-            exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
-          // Delete: admin only
-          allow delete: if isAdmin(clubId);
-          // Update: encadrants/admins can reassign a scanned member
-          allow update: if isPiscineFormationEditor(clubId) &&
-            request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['assignedLevel', 'assignedCourseId', 'assignedToMemberId', 'remarks']);
-        }
-
-        // ── Participants tab: gescande/manueel toegevoegde deelnemers ──
-        match /session_participants/{participantId} {
-          allow read: if isAuthenticated();
-          allow create: if isAuthenticated() && hasValidSession(clubId);
-          allow update: if isAuthenticated() && hasValidSession(clubId);
-          allow delete: if isAdmin(clubId) && hasValidSession(clubId);
-        }
-
-        // ── Participants tab: formation-configuratie (groepen per niveau) ──
-        match /session_formations/{formationId} {
-          allow read: if isAuthenticated();
-          allow write: if isAuthenticated() && hasValidSession(clubId);
-        }
-
-        // Messages subcollection (discussions entre participants)
-        match /messages/{messageId} {
-          // Lecture: tous les membres authentifiés
-          allow read: if isAuthenticated();
-          // Création: membres avec session valide
-          allow create: if isAuthenticated() && hasValidSession(clubId);
-          // Suppression: auteur ou admin
-          allow delete: if isAuthenticated()
-            && hasValidSession(clubId)
-            && (resource.data.sender_id == request.auth.uid || isAdmin(clubId));
-          // Modification: read/reactions/poll for everyone, own message edits for the author.
-          allow update: if isAuthenticated()
-            && hasValidSession(clubId)
-            && (
-              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by', 'reactions', 'poll'])
-              || (
-                resource.data.sender_id == request.auth.uid
-                && request.resource.data.diff(resource.data).affectedKeys()
-                     .hasOnly(['message', 'attachments', 'edited_at'])
-              )
-            );
-        }
-      }
-
-      // Team channels (canaux d'équipe permanents)
-      match /team_channels/{channelId} {
-        // Listing channel metadata must be query-friendly: the app filters by
-        // type, while access to actual messages remains protected per channel.
-        allow get: if canAccessTeamChannel(clubId, channelId);
-        allow list: if isClubMember(clubId);
-        // Création: un membre autorisé peut initialiser le canal, mais le type doit correspondre à l'ID
-        allow create: if canAccessTeamChannel(clubId, channelId)
-          && hasValidSession(clubId)
-          && teamChannelTypeMatches(channelId, request.resource.data.type);
-        // Modification metadata: admin uniquement
-        allow update: if isAdmin(clubId) && hasValidSession(clubId);
-        // Suppression: admin uniquement
-        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
-
-        // Messages subcollection - team chat messages
-        match /messages/{messageId} {
-          // Lecture: seuls les membres autorisés au canal
-          allow read: if canAccessTeamChannel(clubId, channelId);
-          // Création: membres authentifiés peuvent envoyer des messages
-          allow create: if canAccessTeamChannel(clubId, channelId) &&
-            hasValidSession(clubId) &&
-            request.resource.data.sender_id == request.auth.uid;
-          // Modification: read/reactions/poll for everyone, own message edits for the author.
-          allow update: if canAccessTeamChannel(clubId, channelId) &&
-            hasValidSession(clubId) &&
-            (
-              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by', 'reactions', 'poll'])
-              || (
-                resource.data.sender_id == request.auth.uid
-                && request.resource.data.diff(resource.data).affectedKeys()
-                     .hasOnly(['message', 'attachments', 'edited_at'])
-              )
-            );
-          // Suppression: auteur ou admin
-          allow delete: if isAuthenticated() &&
-            hasValidSession(clubId) &&
-            (resource.data.sender_id == request.auth.uid || isAdmin(clubId));
-        }
-      }
-
-      // ========== COMMUNICATION MODULE ==========
-
-      // Announcements (annonces du club) - tous les membres peuvent lire, admin peut écrire
-      match /announcements/{announcementId} {
-        // Lecture: tous les membres authentifiés
-        allow read: if isAuthenticated();
-        // Création: admins uniquement
-        allow create: if isAdmin(clubId) && hasValidSession(clubId);
-        // Modification: admins peuvent tout modifier, membres peuvent:
-        // - ajouter leur ID à read_by (marquer comme lu)
-        // - incrémenter/décrémenter reply_count (quand ils ajoutent/suppriment une réponse)
-        allow update: if isAuthenticated()
-          && hasValidSession(clubId)
-          && (
-            isAdmin(clubId)
-            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by'])
-            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reply_count'])
-            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by', 'reply_count'])
-          );
-        // Suppression: admins uniquement
-        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
-
-        // Replies to announcements
-        match /replies/{replyId} {
-          // Lecture: tous les membres authentifiés
-          allow read: if isAuthenticated();
-          // Création: tous les membres peuvent répondre
-          allow create: if isAuthenticated()
-            && hasValidSession(clubId)
-            && request.resource.data.sender_id == request.auth.uid;
-          // Modification: read markers for everyone, own reply edits for the author.
-          allow update: if isAuthenticated()
-            && hasValidSession(clubId)
-            && (
-              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by'])
-              || (
-                resource.data.sender_id == request.auth.uid
-                && request.resource.data.diff(resource.data).affectedKeys()
-                     .hasOnly(['message', 'attachments', 'edited_at'])
-              )
-            );
-          // Suppression: auteur ou admin
-          allow delete: if isAuthenticated()
-            && hasValidSession(clubId)
-            && (resource.data.sender_id == request.auth.uid || isAdmin(clubId));
-        }
-      }
-
-      // ========== ATTENDANCE MODULE (Check-in Scanner) ==========
-
-      // Attendance records (présences aux événements)
-      match /attendance/{attendanceId} {
-        // Lecture: tous les membres authentifiés
-        allow read: if isAuthenticated();
-        // Création: encadrants, CA, accueil peuvent scanner (+ admins)
-        allow create: if isAuthenticated()
-          && hasValidSession(clubId)
-          && request.resource.data.checked_in_by == request.auth.uid
-          && canScanAttendance(clubId);
-        // Modification/Suppression: admins uniquement
-        allow update, delete: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
       // ========== INVENTAIRE MODULE (ADMIN+ ACCESS - PHASE DÉVELOPPEMENT) ==========
 
       // Inventory configuration - nested structure (used by services)
       match /inventory_config/settings/{subcollection}/{docId} {
-        // PHASE DÉVELOPPEMENT: Admin et Superadmin
+        // Read: tous les membres — CalyMob a besoin de item_types pour
+        // résoudre les noms de matériel sur l'écran Prêts matériel.
         // Subcollections: item_types, checklists, caution_rules, locations, email_templates
-        allow read: if hasValidSession(clubId) && (
-          isAdmin(clubId) ||
-          (isClubMember(clubId) && subcollection == 'item_types')
-        );
+        allow read: if isMember(clubId);
         allow write: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
@@ -877,21 +1061,16 @@ service cloud.firestore {
       }
 
       // Inventory items (matériel unitaire)
+      // Read: tous les membres (CalyMob — choix du matériel à emprunter).
+      // Write: admin (gestion inventaire web + validation retour CalyMob qui
+      // repasse l'item en 'disponible').
       match /inventory_items/{itemId} {
-        allow read: if (
-          isSuperAdmin(clubId) ||
-          canValidateMaterialReturns(clubId) ||
-          (isClubMember(clubId) && resource.data.statut == 'disponible')
-        ) && hasValidSession(clubId);
+        allow read: if isMember(clubId);
         // Write requires fiscal year check if fiscal_year_id is present
-        allow create, update: if isSuperAdmin(clubId)
+        allow create, update: if isAdmin(clubId)
           && hasValidSession(clubId)
           && (!('fiscal_year_id' in request.resource.data) || canModifyFiscalYearData(clubId, request.resource.data.fiscal_year_id));
-        allow update: if canValidateMaterialReturns(clubId)
-          && hasValidSession(clubId)
-          && request.resource.data.diff(resource.data).changedKeys().hasOnly(['statut', 'updatedAt'])
-          && request.resource.data.statut == 'disponible';
-        allow delete: if isSuperAdmin(clubId) && hasValidSession(clubId);
+        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
       // ⚠️ REMOVED: inventory_members collection (2025-10-31)
@@ -899,116 +1078,346 @@ service cloud.firestore {
       // Collection inventory_members was empty and has been migrated
 
       // Inventory loans (prêts de matériel) - full name used by services
+      // Read: tous les membres (écran Prêts matériel dans CalyMob).
+      // Write: admin (le responsable valide les retours et déclenche le
+      // remboursement de caution). Prêts gratuits → pas de fiscal_year_id.
       match /inventory_loans/{loanId} {
-        // Prêts n'ont pas d'impact comptable direct (gratuit), pas de fiscal_year_id
-        allow read: if (isSuperAdmin(clubId) || canValidateMaterialReturns(clubId)) && hasValidSession(clubId);
-        allow create, delete: if isSuperAdmin(clubId) && hasValidSession(clubId);
-        allow update: if isSuperAdmin(clubId) && hasValidSession(clubId);
-        allow update: if canValidateMaterialReturns(clubId)
-          && hasValidSession(clubId)
-          && request.resource.data.diff(resource.data).changedKeys().hasOnly([
-            'statut',
-            'date_retour_reel',
-            'return_validated_at',
-            'return_validated_by',
-            'return_validated_by_name',
-            'return_decision',
-            'return_notes',
-            'notes_retour',
-            'caution_retournee',
-            'caution_non_rendue',
-            'caution_payment_status',
-            'caution_refund_demand_id',
-            'updatedAt'
-          ])
-          && request.resource.data.statut == 'rendu'
-          && request.resource.data.return_validated_by == request.auth.uid;
-      }
-
-      match /inventory_loan_requests/{requestId} {
-        allow read: if hasValidSession(clubId) && (
-          canValidateMaterialReturns(clubId) ||
-          resource.data.memberId == request.auth.uid
-        );
-        allow create: if isClubMember(clubId)
-          && hasValidSession(clubId)
-          && request.resource.data.memberId == request.auth.uid
-          && request.resource.data.createdBy == request.auth.uid
-          && request.resource.data.status == 'submitted'
-          && request.resource.data.source == 'calymob';
-        allow update: if hasValidSession(clubId) && (
-          canValidateMaterialReturns(clubId) ||
-          (
-            resource.data.memberId == request.auth.uid &&
-            resource.data.status == 'submitted' &&
-            request.resource.data.status == 'cancelled' &&
-            request.resource.data.diff(resource.data).changedKeys().hasOnly([
-              'status',
-              'updatedAt',
-              'cancelledAt'
-            ])
-          )
-        );
-        allow delete: if isSuperAdmin(clubId) && hasValidSession(clubId);
+        allow read: if isMember(clubId);
+        allow write: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
       // Loans - simplified name (used by test scripts, alternative to inventory_loans)
       match /loans/{loanId} {
-        // PHASE DÉVELOPPEMENT: Superadmin uniquement
-        allow read, write: if isSuperAdmin(clubId) && hasValidSession(clubId);
+        allow read: if isMember(clubId);
+        allow write: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
-      // Stock products (produits consommables) - used by services
-      match /stock_products/{productId} {
-        // PHASE DÉVELOPPEMENT: Superadmin uniquement
-        // Produits eux-mêmes n'ont pas de fiscal_year_id (les ventes/achats oui)
-        allow read, write: if isSuperAdmin(clubId) && hasValidSession(clubId);
+      // Inventory loan requests (demandes de prêt envoyées depuis CalyMob)
+      // Le membre crée et consulte SES PROPRES demandes ("Demander du
+      // matériel"). L'admin gère tout : approbation → création du prêt
+      // correspondant dans inventory_loans.
+      match /inventory_loan_requests/{requestId} {
+        allow read: if isMember(clubId)
+          && (resource.data.memberId == request.auth.uid || isAdmin(clubId));
+        allow create: if isMember(clubId)
+          && request.resource.data.memberId == request.auth.uid
+          && request.resource.data.status == 'submitted';
+        allow update, delete: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
-      // Stock sales (ventes de produits) - REQUIRE fiscal_year_id - used by services
-      match /stock_sales/{saleId} {
-        // PHASE DÉVELOPPEMENT: Superadmin uniquement
-        allow read: if isSuperAdmin(clubId) && hasValidSession(clubId);
-        // Write requires fiscal year check (OBLIGATOIRE - revenu comptable)
-        allow create, update: if isSuperAdmin(clubId)
-          && hasValidSession(clubId)
-          && canModifyFiscalYearData(clubId, request.resource.data.fiscal_year_id);
+      // ========== INVENTORY AUDITS (Contrôle annuel) ==========
+      // Audit d'inventaire annuel - permet de contrôler physiquement le matériel
+      match /inventory_audits/{auditId} {
+        // Admin+ can manage audits (annual inventory control)
+        allow read, write: if isAdmin(clubId) && hasValidSession(clubId);
+
+        // Sous-collection: items à contrôler dans cet audit
+        match /items/{itemId} {
+          allow read, write: if isAdmin(clubId) && hasValidSession(clubId);
+        }
+      }
+
+      // ========== BOUTIQUE SNAPSHOTS (Clôtures stock boutique) ==========
+      // Snapshots de la valeur stock boutique pour le Bilan comptable
+      // Codes Bilan: 02.01.01 (Boutique Club) et 02.01.02 (Boutique LIFRAS)
+      match /boutique_snapshots/{snapshotId} {
+        // Admin+ can read and create/update snapshots
+        allow read: if isAdmin(clubId) && hasValidSession(clubId);
+        allow create, update: if isAdmin(clubId) && hasValidSession(clubId);
+        // Delete: Superadmin only (verrouillée snapshots zijn belangrijk)
+        allow delete: if isSuperAdmin(clubId) && hasValidSession(clubId);
+
+        // Sous-collection: items in de snapshot
+        match /items/{itemId} {
+          allow read, write: if isAdmin(clubId) && hasValidSession(clubId);
+        }
+      }
+
+      // ========== NODA PAYMENTS (OPEN BANKING) ==========
+      // Noda payment records - admin access for payment management
+      match /noda_payments/{paymentId} {
+        // Read: Admin/Superadmin with valid session
+        allow read: if isAdmin(clubId) && hasValidSession(clubId);
+        // Create/Update: Admin/Superadmin with valid session
+        allow create, update: if isAdmin(clubId) && hasValidSession(clubId);
+        // Delete: Superadmin only
         allow delete: if isSuperAdmin(clubId) && hasValidSession(clubId);
       }
 
-      // Sales - simplified name (used by test scripts, alternative to stock_sales)
-      match /sales/{saleId} {
-        // PHASE DÉVELOPPEMENT: Superadmin uniquement
-        allow read: if isSuperAdmin(clubId) && hasValidSession(clubId);
-        // Write requires fiscal year check if fiscal_year_id is present
-        allow create, update: if isSuperAdmin(clubId)
-          && hasValidSession(clubId)
-          && (!('fiscal_year_id' in request.resource.data) || canModifyFiscalYearData(clubId, request.resource.data.fiscal_year_id));
+      // ========== MOLLIE PAYMENTS (BANCONTACT) ==========
+      // Mollie payment records - admin access for payment testing/management
+      match /mollie_payments/{paymentId} {
+        // Read: Admin/Superadmin with valid session
+        allow read: if isAdmin(clubId) && hasValidSession(clubId);
+        // Create/Update: Admin/Superadmin with valid session
+        allow create, update: if isAdmin(clubId) && hasValidSession(clubId);
+        // Delete: Superadmin only
         allow delete: if isSuperAdmin(clubId) && hasValidSession(clubId);
       }
 
-      // Stock orders (commandes fournisseurs) - REQUIRE fiscal_year_id - used by services
-      match /stock_orders/{orderId} {
-        // PHASE DÉVELOPPEMENT: Superadmin uniquement
-        allow read: if isSuperAdmin(clubId) && hasValidSession(clubId);
-        // Write requires fiscal year check (OBLIGATOIRE - charge comptable)
-        allow create, update: if isSuperAdmin(clubId)
+      // Mollie API logs - admin access for debugging
+      match /mollie_logs/{logId} {
+        // Read: Admin/Superadmin with valid session
+        allow read: if isAdmin(clubId) && hasValidSession(clubId);
+        // Create: Admin/Superadmin with valid session (logs are created by the demo page)
+        allow create: if isAdmin(clubId) && hasValidSession(clubId);
+        // Update/Delete: Not allowed (logs are immutable)
+        allow update, delete: if false;
+      }
+
+      // ========== CLUB ANNOUNCEMENTS (Annonces du club) ==========
+      // Club announcements - visible in mobile app, managed by admins
+      // Collection name: 'announcements' (matches Flutter app)
+      match /announcements/{announcementId} {
+        // Read: All authenticated club members
+        allow read: if isAuthenticated() &&
+          exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+        // Create: Admin/Superadmin with valid session
+        allow create: if isAdmin(clubId) && hasValidSession(clubId);
+        // Update: Members can only update read_by and reply_count, admins can update all
+        allow update: if isMember(clubId) && (
+          isAdmin(clubId) ||
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by', 'reply_count'])
+        );
+        // Delete: Admin/Superadmin with valid session
+        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
+
+        // Replies subcollection - members can reply to announcements
+        match /replies/{replyId} {
+          // Read: Club members
+          allow read: if isMember(clubId);
+          // Create: Club members can send replies (sender_id must match)
+          allow create: if isMember(clubId) &&
+            request.resource.data.sender_id == request.auth.uid;
+          // Update:
+          //  - Alle members mogen read_by updaten (bestaand gedrag).
+          //  - De auteur mag zijn eigen reply editen (message/attachments/edited_at).
+          allow update: if isMember(clubId) && (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by'])
+            || (
+              resource.data.sender_id == request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(['message', 'attachments', 'edited_at'])
+            )
+          );
+          // Delete: Author or admin
+          allow delete: if isMember(clubId) &&
+            (resource.data.sender_id == request.auth.uid || isAdmin(clubId));
+        }
+      }
+
+      // ========== AVAILABILITIES (Beschikbaarheden voor piscine) ==========
+      // Members can manage their own availability for pool sessions
+      // Fields: membre_id, date, role ('accueil'|'encadrant'|'gonflage'), available (bool),
+      //         time_slots (optional array: encadrant=['1ere_heure','2eme_heure'], gonflage=['19h45','20h15','21h30'])
+      match /availabilities/{availabilityId} {
+        // Read: All authenticated club members
+        allow read: if isAuthenticated() &&
+          exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+        // Create: Members can create their own availability
+        // Validate: time_slots must be a list when present
+        allow create: if isAuthenticated() &&
+          exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)) &&
+          request.resource.data.membre_id == request.auth.uid &&
+          (!('time_slots' in request.resource.data) ||
+           request.resource.data.time_slots == null ||
+           request.resource.data.time_slots is list);
+        // Update: Members can update their own availability
+        // Validate: time_slots must be a list when present
+        allow update: if isAuthenticated() &&
+          exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)) &&
+          resource.data.membre_id == request.auth.uid &&
+          (!('time_slots' in request.resource.data) ||
+           request.resource.data.time_slots == null ||
+           request.resource.data.time_slots is list);
+        // Delete: Members can delete their own availability
+        allow delete: if isAuthenticated() &&
+          exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)) &&
+          resource.data.membre_id == request.auth.uid;
+      }
+
+      // ========== TEAM CHANNELS (Chat équipes: Accueil, Encadrants, Gonflage) ==========
+      // Team channels - permanent chat for team coordination (mobile app)
+      match /team_channels/{channelId} {
+        // Read: only members with access to this channel.
+        allow read: if canAccessTeamChannel(clubId, channelId);
+        // Create: the app may initialize a channel, but the type must match the id.
+        allow create: if canAccessTeamChannel(clubId, channelId)
+          && teamChannelTypeMatches(channelId, request.resource.data.type);
+        // Update metadata: admin only.
+        allow update: if isAdmin(clubId);
+        // Delete: Admin only
+        allow delete: if isAdmin(clubId);
+
+        // Messages subcollection - team chat messages
+        match /messages/{messageId} {
+          // Read: only members with access to this channel.
+          allow read: if canAccessTeamChannel(clubId, channelId);
+          // Create: Club members can send messages (sender_id must match)
+          allow create: if canAccessTeamChannel(clubId, channelId) &&
+            request.resource.data.sender_id == request.auth.uid;
+          // Update:
+          //  - Alle members mogen read_by, reactions of poll updaten.
+          //  - De auteur mag zijn eigen bericht editen (message/attachments/edited_at).
+          allow update: if canAccessTeamChannel(clubId, channelId) && (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by'])
+            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['poll'])
+            || (
+              resource.data.sender_id == request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(['message', 'attachments', 'edited_at'])
+            )
+          );
+          // Delete: Author or admin
+          allow delete: if canAccessTeamChannel(clubId, channelId) &&
+            (resource.data.sender_id == request.auth.uid || isAdmin(clubId));
+        }
+      }
+
+      // ========== PISCINE SESSIONS (Pool training sessions) ==========
+      // Piscine sessions - managed by admins, visible to members
+      // Fields: date, statut, lieu, horaire, niveaux (map), accueil (array), baptemes (array),
+      //         gonflage (map: {19h45, 20h15, 21h30} → array), type ('piscine'|'theorie'),
+      //         theorie (optional map: {19h30, 21h45} → {encadrants, theme})
+      match /piscine_sessions/{sessionId} {
+        // Read: All authenticated club members (mobile app - no session required)
+        allow read: if isAuthenticated() &&
+          exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+        // Write: Admin OR Piscine-editor (E or P badge) with valid session for web.
+        // Validate: type must be 'piscine' or 'theorie' when present.
+        allow create, update: if isPiscineFormationEditor(clubId) &&
+          (!('type' in request.resource.data) || request.resource.data.type in ['piscine', 'theorie']);
+        allow delete: if isPiscineFormationEditor(clubId);
+
+        // Attendees subcollection - scanner adds attendees here
+        match /attendees/{attendeeId} {
+          // Read: All authenticated club members
+          allow read: if isMember(clubId) || isAdmin(clubId);
+          // Create: Any authenticated club member can scan (mobile app scanner)
+          allow create: if isMember(clubId)
+            && request.resource.data.scannedAt is timestamp
+            && request.resource.data.scannedBy is string
+            && request.resource.data.scannedBy.size() > 0
+            && request.resource.data.memberName is string
+            && request.resource.data.memberName.size() > 0
+            && (
+              (request.resource.data.memberId is string
+                && request.resource.data.memberId.size() > 0)
+              || request.resource.data.isGuest == true
+            );
+          // Delete: Admin only (to remove wrongly scanned attendees)
+          allow delete: if isAdmin(clubId);
+          // Update: niveau-toewijzing en pedagogische remarks per attendee zijn
+          // pedagogische beslissingen — enkel Moniteur+Encadrant of admin.
+          // Velden buiten deze whitelist (memberId, memberName, scannedAt,
+          // scannedBy, isGuest, ...) blijven immutable.
+          allow update: if canValidateLifras(clubId) &&
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['assignedLevel', 'assignedCourseId', 'assignedToMemberId', 'remarks', 'sentToReserve']);
+        }
+
+        // Messages subcollection - discussion for piscine sessions (mobile app)
+        match /messages/{messageId} {
+          // Read: Club members
+          allow read: if isMember(clubId);
+          // Create: Club members can send messages (sender_id must match)
+          allow create: if isMember(clubId) &&
+            request.resource.data.sender_id == request.auth.uid;
+          // Update:
+          //  - Alle members mogen read_by, reactions of poll updaten.
+          //  - De auteur mag zijn eigen bericht editen (message/attachments/edited_at).
+          allow update: if isMember(clubId) && (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_by'])
+            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['poll'])
+            || (
+              resource.data.sender_id == request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(['message', 'attachments', 'edited_at'])
+            )
+          );
+          // Delete: Author or admin
+          allow delete: if isMember(clubId) &&
+            (resource.data.sender_id == request.auth.uid || isAdmin(clubId));
+        }
+      }
+
+      // ========== ATTENDANCE (Aanwezigheidsregistratie - CalyMob) ==========
+      // Attendance records - used by CalyMob for tracking member attendance
+      match /attendance/{attendanceId} {
+        // Read: All club members can view attendance
+        allow read: if isMember(clubId);
+        // Create: Members can record attendance (mobile app scanner) —
+        //   includes admins, encadrants, and regular members marking themselves/others.
+        allow create: if isMember(clubId);
+        // Update / Delete: Admin OR Encadrant (E-badge) OR Organisateur (O-badge).
+        //   Encadrants and organisateurs both need to toggle presence on the event
+        //   detail view (mark present/absent), so the delete path is just as important
+        //   as create.
+        allow update, delete:
+          if isAdmin(clubId) || isEncadrantForClub(clubId) || isOrganisateurForClub(clubId);
+      }
+
+      // ========== BOUTIQUE STOCK (Stockbeheer voor boutique) ==========
+      // Boutique stock management - used for Bilan codes 02.01.01 (Boutique) and 02.01.02 (Boutique LIFRAS)
+      match /boutique_stock/{itemId} {
+        // Read: Admin/Validateur with valid session
+        allow read: if isAuthenticated()
           && hasValidSession(clubId)
-          && canModifyFiscalYearData(clubId, request.resource.data.fiscal_year_id);
+          && getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'];
+        // Create/Update: Admin with valid session
+        allow create, update: if isAdmin(clubId) && hasValidSession(clubId);
+        // Delete: Superadmin only
         allow delete: if isSuperAdmin(clubId) && hasValidSession(clubId);
       }
 
-      // Orders - simplified name (used by test scripts, alternative to stock_orders)
-      match /orders/{orderId} {
-        // PHASE DÉVELOPPEMENT: Superadmin uniquement
-        allow read: if isSuperAdmin(clubId) && hasValidSession(clubId);
-        // Write requires fiscal year check if fiscal_year_id is present
-        allow create, update: if isSuperAdmin(clubId)
-          && hasValidSession(clubId)
-          && (!('fiscal_year_id' in request.resource.data) || canModifyFiscalYearData(clubId, request.resource.data.fiscal_year_id));
+      // ========== FOURNISSEURS (Leveranciers voor terugbetalingen) ==========
+      // Fournisseurs - used for expense reimbursements to third parties (non-members)
+      match /fournisseurs/{fournisseurId} {
+        // Read/Create/Update: expense managers need suppliers in the expense workflow.
+        allow read: if isMember(clubId) && canManageExpenses(clubId);
+        allow create, update: if canManageExpenses(clubId) && hasValidSession(clubId);
+        // Delete: Superadmin only (soft delete via 'actif' field is preferred)
         allow delete: if isSuperAdmin(clubId) && hasValidSession(clubId);
       }
 
+      // ========== SMS MODULE (Twilio Integration) ==========
+      // SMS history - track sent SMS messages
+      match /sms_history/{historyId} {
+        // Read: Admin/Superadmin with valid session
+        allow read: if isAdmin(clubId) && hasValidSession(clubId);
+        // Create: Admin with valid session (Vercel API uses Admin SDK which bypasses rules)
+        allow create: if isAdmin(clubId) && hasValidSession(clubId);
+        // Update/Delete: Admin only (for marking delivered status updates)
+        allow update, delete: if isAdmin(clubId) && hasValidSession(clubId);
+      }
+
+      // SMS logs - execution logs for scheduled SMS jobs
+      match /sms_logs/{logId} {
+        // Read: Admin/Superadmin with valid session
+        allow read: if isAdmin(clubId) && hasValidSession(clubId);
+        // Create: Only Cloud Functions/Vercel API can create logs
+        allow create: if false;
+        // Update/Delete: Logs are immutable
+        allow update, delete: if false;
+      }
+
+      // SMS templates - reusable message templates
+      match /sms_templates/{templateId} {
+        // Read: Admin/Superadmin with valid session
+        allow read: if isAdmin(clubId) && hasValidSession(clubId);
+        // Write: Admin/Superadmin with valid session
+        allow create, update, delete: if isAdmin(clubId) && hasValidSession(clubId);
+      }
+
+      // Member SMS preferences subcollection
+      // Note: This is a subcollection under /members/{memberId}/preferences/sms
+      // Rules are inherited from the members match block above
+
+      // ========== MEMBERSHIP SEASONS (COTISATIONS) ==========
+
+      // Boutique catalogue products — CalyMob reads published products directly.
       match /products/{productId} {
         allow read: if isAdmin(clubId) || (
           canAccessBoutique(clubId) &&
@@ -1017,127 +1426,12 @@ service cloud.firestore {
         allow create, update, delete: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
+      // Membership tariff seasons — cotisations par saison
       match /membership_seasons/{seasonId} {
-        allow read: if isClubMember(clubId);
-        allow write: if isAdmin(clubId) && hasValidSession(clubId);
-      }
-
-      match /cotisation_payments/{paymentId} {
-        allow read: if isAdmin(clubId) || (
-          isClubMember(clubId) && resource.data.memberId == request.auth.uid
-        );
-        allow write: if isAdmin(clubId) && hasValidSession(clubId);
-      }
-
-      // Fournisseurs - used by the expense reimbursement workflow.
-      match /fournisseurs/{fournisseurId} {
-        allow read: if isClubMember(clubId) && canManageExpenses(clubId);
-        allow create, update: if canManageExpenses(clubId) && hasValidSession(clubId);
-        allow delete: if isSuperAdmin(clubId) && hasValidSession(clubId);
-      }
-
-      // ========== LIFRAS EXERCISES (Formation module) ==========
-      // Historical paper-card reprise: students submit what is already signed
-      // on paper; encadrants validate in person.
-      match /historical_exercise_claim_batches/{batchId} {
-        allow read: if isClubMember(clubId) && (
-          resource.data.member_id == request.auth.uid ||
-          isPiscineFormationEditor(clubId)
-        );
-        allow create: if isClubMember(clubId)
-          && request.resource.data.member_id == request.auth.uid
-          && request.resource.data.submitted_by == request.auth.uid
-          && request.resource.data.status == 'submitted'
-          && request.resource.data.source == 'student_historical_claim'
-          && request.resource.data.evidence_required == 'paper_progress_card';
-        allow update: if isClubMember(clubId) && isPiscineFormationEditor(clubId);
-        allow delete: if isAdmin(clubId);
-      }
-
-      match /exercise_claims/{claimId} {
-        allow read: if isClubMember(clubId) && (
-          resource.data.member_id == request.auth.uid ||
-          isPiscineFormationEditor(clubId)
-        );
-        allow create: if isClubMember(clubId)
-          && request.resource.data.member_id == request.auth.uid
-          && request.resource.data.declared_by == request.auth.uid
-          && request.resource.data.source == 'student_historical_claim'
-          && request.resource.data.context_type == 'historical_paper_card'
-          && request.resource.data.status == 'submitted';
-        allow update: if isClubMember(clubId) && isPiscineFormationEditor(clubId);
-        allow delete: if isAdmin(clubId);
-      }
-
-      match /formation_tasks/{taskId} {
-        allow read: if isClubMember(clubId) && (
-          resource.data.member_id == request.auth.uid ||
-          resource.data.current_assignee_id == request.auth.uid ||
-          isPiscineFormationEditor(clubId)
-        );
-        allow create: if isClubMember(clubId)
-          && request.resource.data.type == 'historical_validation'
-          && request.resource.data.status == 'waiting_for_other'
-          && request.resource.data.member_id == request.auth.uid
-          && request.resource.data.current_assignee_id == request.auth.uid
-          && request.resource.data.current_assignee_type == 'student'
-          && request.resource.data.created_by == request.auth.uid;
-        allow update: if isClubMember(clubId) && (
-          resource.data.current_assignee_id == request.auth.uid ||
-          isPiscineFormationEditor(clubId)
-        );
-        allow delete: if isAdmin(clubId);
-      }
-
-      // exercices_lifras: LIFRAS exercise definitions, read by all members
-      match /exercices_lifras/{exerciceId} {
-        allow read: if isAuthenticated();
-        allow write: if isAdmin(clubId) && hasValidSession(clubId);
-      }
-
-      // student_logbook_entries: personal Mon carnet entries.
-      // Students can manage their own dives; encadrants/admins can read for
-      // formation support. System-created pool entries are written by Cloud
-      // Functions with admin privileges and then editable by the owning member.
-      match /student_logbook_entries/{entryId} {
-        allow read: if isAuthenticated() && hasValidSession(clubId) && (
-          resource.data.member_id == request.auth.uid ||
-          isPiscineFormationEditor(clubId)
-        );
-        allow create: if isAuthenticated()
-          && hasValidSession(clubId)
-          && request.resource.data.member_id == request.auth.uid;
-        allow update: if isAuthenticated()
-          && hasValidSession(clubId)
-          && resource.data.member_id == request.auth.uid
-          && request.resource.data.member_id == resource.data.member_id;
-        allow delete: if isAuthenticated()
-          && hasValidSession(clubId)
-          && resource.data.member_id == request.auth.uid;
-      }
-
-      // Buddy confirmations for Mon Carnet. Creation and status mutation are
-      // handled by Cloud Functions; members can read requests concerning them.
-      match /logbook_dive_confirmations/{confirmationId} {
-        allow read: if isClubMember(clubId)
-          && (
-            resource.data.target_member_id == request.auth.uid ||
-            resource.data.source_member_id == request.auth.uid ||
-            isPiscineFormationEditor(clubId)
-          );
-        allow create, update, delete: if false;
-      }
-
-      // ========== MEMBER OBSERVATIONS (Formation module) ==========
-      // member_observations: training observations per member, read by admins/encadrants
-      match /member_observations/{observationId} {
-        allow read: if isAuthenticated() && (
-          isAdmin(clubId) || isPiscineFormationEditor(clubId)
-        );
-        allow create: if isAuthenticated()
-          && hasValidSession(clubId)
-          && isPiscineFormationEditor(clubId);
-        allow update, delete: if isAdmin(clubId) && hasValidSession(clubId);
+        // Read: all members, including CalyMob where no CalyCompta session exists.
+        allow read: if isMember(clubId);
+        // Write: admin only
+        allow create, update, delete: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
       // ========== BUG REPORTING MODULE ==========
@@ -1147,27 +1441,46 @@ service cloud.firestore {
         // Lecture: admin uniquement (pour voir tous les signalements)
         allow read: if isAdmin(clubId) && hasValidSession(clubId);
         // Création: tout membre authentifié peut signaler un bug
-        allow create: if isAuthenticated()
+        // Guard 'reporter' presence before chained access — a missing
+        // `reporter` map would throw and deny the write otherwise.
+        allow create: if isMember(clubId)
+          && 'reporter' in request.resource.data
           && request.resource.data.reporter.uid == request.auth.uid;
         // Modification: admin uniquement (pour mettre à jour le statut, linearIssueId)
         allow update: if isAdmin(clubId) && hasValidSession(clubId);
         // Suppression: admin uniquement
         allow delete: if isAdmin(clubId) && hasValidSession(clubId);
+
+        // Commentaires sur les bug reports
+        match /comments/{commentId} {
+          allow read: if isAdmin(clubId) && hasValidSession(clubId);
+          allow create: if isAdmin(clubId) && hasValidSession(clubId);
+          allow delete: if isAdmin(clubId) && hasValidSession(clubId);
+        }
       }
     }
 
     // User profiles (global, not club-specific)
     match /users/{userId} {
-      allow read: if isAuthenticated();
+      allow read: if isAuthenticated() && request.auth.uid == userId;
       allow create: if isAuthenticated() && request.auth.uid == userId;
       allow update: if isAuthenticated() && request.auth.uid == userId;
       allow delete: if false; // Never allow deletion
     }
 
+    // Global settings (not club-specific) - used for app version control
+    match /settings/{settingId} {
+      // app_version: All authenticated users can read (for version check on app load)
+      allow read: if isAuthenticated() && settingId == 'app_version';
+      // Write: Only admins from any club can update (typically superadmin)
+      // For now, only allow authenticated users with admin claim in their token
+      allow write: if isAuthenticated() && request.auth.token.app_role in ['admin', 'superadmin'];
+    }
+
     // Value Lists - Waardelijsten
     match /clubs/{clubId}/value_lists/{listId} {
-      // Read: authenticated users with valid session
-      allow read: if isAuthenticated() && hasValidSession(clubId);
+      // Read: club members with valid session
+      allow read: if isMember(clubId) && hasValidSession(clubId);
 
       // Create: admin/validateur only, club lists only (prevent creating system lists)
       allow create: if isAuthenticated()
@@ -1182,28 +1495,282 @@ service cloud.firestore {
         && resource.data.type == 'club';
     }
 
-    // Top-level settings (used by CalyCompta dashboard for app_version, version publishing etc.)
-    match /settings/{settingId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated(); // Written by CalyCompta admin UI (version publishing)
+    // ========== CARNET DE FORMATION — Session Themes ==========
+    // Pedagogische thema-catalogus — alleen Moniteur+Encadrant of admin.
+    // P-badge alleen volstaat niet meer (P is operationeel zwembad-management,
+    // niet pedagogisch).
+    match /clubs/{clubId}/session_themes/{themeId} {
+      // Lecture: tous les membres authentifiés
+      allow read: if isAuthenticated() &&
+        exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+      allow create, update, delete: if canValidateLifras(clubId);
     }
 
-    // ========== COLLECTION GROUP: attendees ==========
-    // Required for collectionGroup('attendees') queries in attendanceService.ts
-    // (used by Formation > MemberProgressionFiche to show "Présences cette saison")
-    // Without this wildcard rule, the collectionGroup query silently returns []
-    // even though the single-field index on memberId exists in firestore.indexes.json.
+    // ========== CARNET DE FORMATION — Member Observations ==========
+    // Pedagogische observaties op leden — alleen Moniteur+Encadrant of admin.
+    // Vóór 2026-04-29 stond hier enkel een observerId-check, wat elke
+    // geauthenticeerde clublid liet schrijven via direct API-call. Nu strikt
+    // afgestemd op de CARNET_DE_FORMATION_TECH.md intent ("encadrants et admins")
+    // én op de LIFRAS-realiteit (alleen Moniteurs valideren).
+    match /clubs/{clubId}/member_observations/{observationId} {
+      // Lecture: tous les membres authentifiés
+      allow read: if isAuthenticated() &&
+        exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+      // Création: Moniteur+Encadrant of admin, en moet zelf de observer zijn
+      allow create: if canValidateLifras(clubId) &&
+        request.resource.data.observerId == request.auth.uid;
+      // Modification: oorspronkelijke auteur (mits nog steeds Moniteur+Encadrant), of admin
+      allow update: if isAdmin(clubId) || (
+        canValidateLifras(clubId) &&
+        resource.data.observerId == request.auth.uid
+      );
+      // Suppression: admin uniquement
+      allow delete: if isAdmin(clubId);
+    }
+
+    // ===== Collection-group read for operation inscriptions =====
+    // Used by CalyMob's OperationService.getUserRegistrationsStream() and
+    // MessagesScreen._loadUserEvents() to query across all
+    // operations/*/inscriptions subcollections in one go.
+    // Path when matched: clubs/{clubId}/operations/{opId}/inscriptions/{inscId}
+    //
+    // Same single-tenant pattern as the attendees CG rule below:
+    // hardcode clubs/calypso so the rule is evaluable at query-authorization
+    // time (path[...] indexing doesn't work for CG queries).
+    match /{path=**}/inscriptions/{inscriptionId} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/clubs/calypso/members/$(request.auth.uid));
+    }
+
+    // ===== Collection-group read for piscine attendees =====
+    // Used by formation/progression ("Présences cette saison") to query
+    // across all piscine_sessions/*/attendees subcollections in one go.
+    // Path when matched: clubs/{clubId}/piscine_sessions/{sid}/attendees/{aid}
+    //
+    // IMPORTANT: for collection-GROUP queries Firestore evaluates rules at
+    // query-authorization time BEFORE fetching any docs, so `path[...]`
+    // indexing and `exists(/databases/.../clubs/$(path[1])/members/...)`
+    // cannot be resolved and the query is denied (permission-denied). This
+    // is why the earlier path[1]-based rule silently broke "Présences cette
+    // saison" — the CG query returned 0 docs via attendanceService's
+    // silent `.catch()` fallback, even though every single attendee doc
+    // existed and was readable one-by-one.
+    //
+    // Fix: use a field-based / hardcoded-club check that doesn't depend on
+    // the wildcard path. Calypso is single-tenant (clubs/calypso) so the
+    // check is equivalent and equally secure. The nested rule under
+    // /clubs/{clubId}/piscine_sessions/{sid}/attendees still handles direct
+    // reads/writes and creation within a single session.
     match /{path=**}/attendees/{attendeeId} {
-      // Read: any authenticated user
-      // (club membership is verified via the specific path rules above)
-      allow read: if request.auth != null;
-      // Write is NOT allowed here — writes go through the specific
-      // clubs/{clubId}/piscine_sessions/{sessionId}/attendees path above
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/clubs/calypso/members/$(request.auth.uid));
+    }
+
+    // ========================================================================
+    // CARNET DE FORMATION (Training Logbook) — phase 1
+    //
+    // Three new collections introduced by the Carnet de Formation feature.
+    // See `CARNET_DE_FORMATION_TECH.md` §10 for the spec. Cloud Functions
+    // running with the Admin SDK BYPASS these rules (that's how task
+    // creation is done programmatically); the rules below govern what
+    // clients are allowed to read/write.
+    // ========================================================================
+
+    // --- historical_exercise_claim_batches --------------------------------
+    // Mobile "Reprendre ma carte papier" flow. A member submits the exercises
+    // already signed on paper; a LIFRAS monitor validates them in person.
+    match /clubs/{clubId}/historical_exercise_claim_batches/{batchId} {
+      allow read: if isMember(clubId) && (
+           resource.data.member_id == request.auth.uid
+        || canValidateLifras(clubId)
+      );
+
+      allow create: if isMember(clubId)
+        && request.resource.data.member_id == request.auth.uid
+        && request.resource.data.submitted_by == request.auth.uid
+        && request.resource.data.status == 'submitted'
+        && request.resource.data.source == 'student_historical_claim'
+        && request.resource.data.evidence_required == 'paper_progress_card';
+
+      allow update: if canValidateLifras(clubId);
+      allow delete: if isAdmin(clubId);
+    }
+
+    // --- formation_tasks ---------------------------------------------------
+    // The persistent inbox. Clients can READ their own tasks and tasks where
+    // they're the current assignee; admins/encadrants can read all.
+    // Clients CANNOT create tasks directly — only Cloud Functions do that
+    // via the Admin SDK (which bypasses rules anyway), except for the
+    // student-facing "historical_validation" task created atomically by the
+    // mobile paper-card reprise flow.
+    // Clients can UPDATE only a narrow set of fields on tasks where they're
+    // the current assignee (status transitions + snooze + completion stamps).
+    match /clubs/{clubId}/formation_tasks/{taskId} {
+      allow read: if isMember(clubId) && (
+           resource.data.member_id == request.auth.uid
+        || resource.data.current_assignee_id == request.auth.uid
+        || isAdmin(clubId)
+        || isEncadrantForClub(clubId)
+      );
+
+      // Clients never create directly — Cloud Functions only (Admin SDK).
+      // Admins/encadrants may create manual_reminder tasks via the cockpit.
+      // Mobile members may create their own historical_validation task so the
+      // pending reprise remains visible in their inbox/QR flow.
+      allow create: if isAdmin(clubId)
+        || isEncadrantForClub(clubId)
+        || (
+          isMember(clubId)
+          && request.resource.data.type == 'historical_validation'
+          && request.resource.data.status == 'waiting_for_other'
+          && request.resource.data.member_id == request.auth.uid
+          && request.resource.data.current_assignee_id == request.auth.uid
+          && request.resource.data.current_assignee_type == 'student'
+          && request.resource.data.created_by == request.auth.uid
+        );
+
+      allow update: if isMember(clubId) && (
+           resource.data.current_assignee_id == request.auth.uid
+        || isAdmin(clubId)
+        || isEncadrantForClub(clubId)
+      ) && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly([
+              'status',
+              'snoozed_until',
+              'completed_at',
+              'completed_by',
+              'completion_data',
+              'notification_state',
+              'updated_at',
+            ]);
+
+      allow delete: if isAdmin(clubId);
+    }
+
+    // --- exercise_claims ---------------------------------------------------
+    // Student declares; assigned monitor (or encadrant/admin) decides.
+    // Student can create their own claim and edit it while draft/submitted.
+    // The assigned monitor can update the claim once it routes to them.
+    // The official record (member_observations) is written by Cloud Function
+    // onClaimAccepted — never directly by the client.
+    match /clubs/{clubId}/exercise_claims/{claimId} {
+      allow read: if isMember(clubId) && (
+           resource.data.member_id == request.auth.uid
+        || resource.data.monitor_id == request.auth.uid
+        || isAdmin(clubId)
+        || isEncadrantForClub(clubId)
+      );
+
+      allow create: if isMember(clubId)
+        && request.resource.data.member_id == request.auth.uid
+        && request.resource.data.declared_by == request.auth.uid;
+
+      allow update: if isMember(clubId) && (
+           (resource.data.member_id == request.auth.uid
+            && resource.data.status in ['draft', 'submitted'])
+        || resource.data.monitor_id == request.auth.uid
+        || isAdmin(clubId)
+        || isEncadrantForClub(clubId)
+      );
+
+      allow delete: if isAdmin(clubId);
+    }
+
+    // --- student_logbook_entries -------------------------------------------
+    // Personal dive log. Member owns their entries. Admins/encadrants can
+    // read for support purposes; buddies do NOT have implicit read access
+    // (a future buddy_confirmation flow grants per-entry read on request).
+    match /clubs/{clubId}/student_logbook_entries/{entryId} {
+      allow read: if isMember(clubId) && (
+           resource.data.member_id == request.auth.uid
+        || isAdmin(clubId)
+        || isEncadrantForClub(clubId)
+      );
+
+      allow create: if isMember(clubId)
+        && request.resource.data.member_id == request.auth.uid;
+
+      allow update, delete: if isMember(clubId)
+        && resource.data.member_id == request.auth.uid;
+    }
+
+    // --- member_observations write-protection note --------------------------
+    // The existing `member_observations` collection rules live elsewhere
+    // in this file (see canValidateLifras-gated section). With the Carnet
+    // de Formation feature the writes MUST flow exclusively through the
+    // Cloud Function `onClaimAccepted` (Admin SDK, bypasses these rules).
+    // Phase 2 will tighten the existing client-side write rule to disallow
+    // direct member_observations creates from the web admin (encadrants
+    // will then have to go through the claim → accept flow). Until phase 2
+    // ships the current write rule stays as-is to avoid breaking the
+    // CalyCompta exercise-validation UI.
+
+    // --- phase 6 note (member self-service web view) ------------------------
+    // Phase 6 introduces /me/* member-tier routes. The rules above are
+    // already member-scoped via `member_id == request.auth.uid`, so member
+    // tokens calling the web client behave identically to mobile clients.
+    // No rule changes are required for phase 6 — only a client-side
+    // router guard to block member-tier tokens from admin routes.
+
+    // ========================================================================
+    // BOUTIQUE — web preparation surface
+    //
+    // Admins can prepare the product catalogue, inspect orders and configure
+    // accounting/stock plumbing from CalyCompta. Member-facing order creation
+    // will later move through Cloud Functions; direct client writes stay tight.
+    // ========================================================================
+
+    match /clubs/{clubId}/products/{productId} {
+      allow read: if (isAdmin(clubId) && hasValidSession(clubId)) || (
+        isMember(clubId) && hasValidSession(clubId) && resource.data.visibility == 'published'
+      );
+      allow create, update, delete: if isAdmin(clubId) && hasValidSession(clubId);
+    }
+
+    match /clubs/{clubId}/orders/{orderId} {
+      allow read: if (isAdmin(clubId) && hasValidSession(clubId)) || (
+        isMember(clubId) && hasValidSession(clubId) && resource.data.buyer.userId == request.auth.uid
+      );
+      allow create: if isMember(clubId)
+        && hasValidSession(clubId)
+        && request.resource.data.buyer.userId == request.auth.uid;
+      allow update, delete: if isAdmin(clubId) && hasValidSession(clubId);
+    }
+
+    match /clubs/{clubId}/supplier_order_batches/{batchId} {
+      allow read, write: if isAdmin(clubId) && hasValidSession(clubId);
+    }
+
+    match /clubs/{clubId}/delivery_notes/{noteId} {
+      allow read, write: if isAdmin(clubId) && hasValidSession(clubId);
+    }
+
+    match /clubs/{clubId}/cotisation_payments/{paymentId} {
+      allow read: if (isAdmin(clubId) && hasValidSession(clubId)) || (
+        isMember(clubId) && hasValidSession(clubId) && resource.data.memberId == request.auth.uid
+      );
+      allow write: if isAdmin(clubId) && hasValidSession(clubId);
+    }
+
+    match /clubs/{clubId}/inventoryMutations/{mutationId} {
+      allow read, write: if isAdmin(clubId) && hasValidSession(clubId);
+    }
+
+    match /clubs/{clubId}/settings/contextAccountMapping {
+      allow read: if isMember(clubId);
+      allow write: if isAdmin(clubId);
     }
 
     // Default deny for everything else
     match /{document=**} {
       allow read, write: if false;
+    }
+
+    // Top-level inbound email provider audit.
+    // Writes are performed by trusted server routes only.
+    match /email_inbound_events/{eventId} {
+      allow read: if hasValidAdminSessionForClubId(resource.data.club_id);
+      allow create, update, delete: if false;
     }
   }
 }
