@@ -3817,6 +3817,27 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     // _firstOpenInstallment — évite tout double comptage.
     final double aggregatedNext = openInstallment?.aggregatedAmount ?? 0;
 
+    // Totaux du groupe pour le bloc récapitulatif (variante "par tranche"
+    // validée: chaque tranche = un bloc avec les lignes par personne, puis
+    // les totaux et le montant du prochain QR clairement séparés).
+    double dejaPaye = 0;
+    double resteAPayer = 0;
+    void tally(ParticipantOperation p) {
+      p.installmentPayments.forEach((_, ip) {
+        if (ip.status == 'paid') {
+          dejaPaye += ip.amountPaid ?? ip.amountDue;
+        } else if (ip.status != 'waived') {
+          resteAPayer += ip.amountDue;
+        }
+      });
+    }
+
+    tally(inscription);
+    for (final g in guests) {
+      tally(g);
+    }
+    final String groupSuffix = guests.isEmpty ? '' : ' (groupe)';
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -3855,131 +3876,279 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                       ),
                     ),
                   ),
-                  if (openInstallment != null)
+                  if (guests.isNotEmpty)
                     Text(
-                      '${aggregatedNext.toStringAsFixed(2)} €',
+                      'moi + ${guests.length} invité${guests.length > 1 ? 's' : ''}',
                       style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue.shade700,
+                        fontSize: 12,
+                        color: Colors.blueGrey.shade600,
                       ),
                     ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
+              // Un bloc par tranche: lignes par personne (Moi + invités),
+              // sous-total ouvert de la tranche, highlight sur la prochaine.
               ...operation.paymentInstallments.map((installment) {
-                final payment = inscription.installmentPayments[installment.id];
-                final amount = payment?.amountDue ?? 0;
-                if (amount <= 0 && payment == null) {
-                  return const SizedBox.shrink();
+                final own = inscription.installmentPayments[installment.id];
+
+                bool isVisible(InstallmentPayment? p) =>
+                    p != null && !(p.status == 'waived' && p.amountDue <= 0);
+                bool isOpenP(InstallmentPayment? p) =>
+                    p != null &&
+                    p.amountDue > 0 &&
+                    p.status != 'paid' &&
+                    p.status != 'waived';
+
+                double openSum = 0;
+                double trancheTotal = 0;
+                bool anyEntry = false;
+                final guestLines = <Widget>[];
+
+                if (isVisible(own)) {
+                  anyEntry = true;
+                  trancheTotal += own!.amountDue;
+                  if (isOpenP(own)) openSum += own.amountDue;
                 }
-                final status = payment?.status ?? 'unpaid';
-                final label = status == 'paid'
-                    ? 'Payé'
-                    : status == 'qr_sent'
-                        ? 'QR envoyé'
-                        : status == 'waived'
-                            ? 'Dispensé'
-                            : 'À payer';
-                final color = status == 'paid'
-                    ? Colors.green.shade700
-                    : status == 'qr_sent'
-                        ? Colors.orange.shade700
-                        : status == 'waived'
-                            ? Colors.blueGrey.shade600
-                            : Colors.red.shade700;
-                return Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Row(
+                for (final g in guests) {
+                  final gp = g.installmentPayments[installment.id];
+                  if (!isVisible(gp)) continue;
+                  anyEntry = true;
+                  trancheTotal += gp!.amountDue;
+                  if (isOpenP(gp)) openSum += gp.amountDue;
+                  final name =
+                      '${g.membrePrenom ?? ''} ${g.membreNom ?? ''}'.trim();
+                  guestLines.add(_planPersonLine(name, gp));
+                }
+                if (!anyEntry) return const SizedBox.shrink();
+
+                final allSettled = openSum <= 0;
+                final isNext = openInstallment?.id == installment.id;
+
+                return Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color:
+                          isNext ? Colors.blue.shade600 : Colors.blue.shade100,
+                      width: isNext ? 2 : 1,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Expanded(
-                        child: Text(
-                          installment.label,
-                          style: const TextStyle(fontSize: 13),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: allSettled
+                              ? Colors.green.shade50
+                              : isNext
+                                  ? Colors.blue.shade50
+                                  : Colors.transparent,
+                          borderRadius: const BorderRadius.vertical(
+                              top: Radius.circular(9)),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Wrap(
+                                spacing: 6,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  Text(
+                                    installment.label,
+                                    style: TextStyle(
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blueGrey.shade900,
+                                    ),
+                                  ),
+                                  if (isNext)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 7, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.blue.shade600,
+                                        borderRadius:
+                                            BorderRadius.circular(20),
+                                      ),
+                                      child: const Text(
+                                        'À PAYER MAINTENANT',
+                                        style: TextStyle(
+                                          fontSize: 9.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            Text(
+                              allSettled
+                                  ? '${trancheTotal.toStringAsFixed(2)} € · Payé ✓'
+                                  : '${openSum.toStringAsFixed(2)} €',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w800,
+                                color: allSettled
+                                    ? Colors.green.shade700
+                                    : isNext
+                                        ? Colors.blue.shade700
+                                        : Colors.red.shade700,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      Text(
-                        '${amount.toStringAsFixed(2)} € · $label',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: color,
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
+                        child: Column(
+                          children: [
+                            if (isVisible(own)) _planPersonLine('Moi', own!),
+                            ...guestLines,
+                          ],
                         ),
                       ),
                     ],
                   ),
                 );
               }),
-              if (guests.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                const Divider(height: 1),
-                const SizedBox(height: 6),
-                Text(
-                  'Inclus pour mes invités',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blue.shade700,
-                  ),
+              // Bloc récapitulatif: totaux clairement séparés des tranches.
+              const SizedBox(height: 10),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.blue.shade100),
                 ),
-                ...guests.expand((g) {
-                  final name =
-                      '${g.membrePrenom ?? ''} ${g.membreNom ?? ''}'.trim();
-                  return operation.paymentInstallments.map((installment) {
-                    final gp = g.installmentPayments[installment.id];
-                    final amount = gp?.amountDue ?? 0;
-                    if (amount <= 0 && gp == null) return const SizedBox.shrink();
-                    final status = gp?.status ?? 'unpaid';
-                    final statusLabel = status == 'paid'
-                        ? 'Payé'
-                        : status == 'qr_sent'
-                            ? 'QR envoyé'
-                            : status == 'waived'
-                                ? 'Dispensé'
-                                : 'À payer';
-                    final statusColor = status == 'paid'
-                        ? Colors.green.shade700
-                        : status == 'qr_sent'
-                            ? Colors.orange.shade700
-                            : status == 'waived'
-                                ? Colors.blueGrey.shade600
-                                : Colors.red.shade700;
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 4, left: 8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              '$name · ${installment.label}',
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                          ),
-                          Text(
-                            '${amount.toStringAsFixed(2)} € · $statusLabel',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: statusColor,
-                            ),
-                          ),
-                        ],
+                child: Column(
+                  children: [
+                    _planTotalLine('Déjà payé$groupSuffix', dejaPaye,
+                        Colors.green.shade700),
+                    _planTotalLine('Reste à payer$groupSuffix', resteAPayer,
+                        Colors.red.shade700),
+                    if (openInstallment != null)
+                      _planTotalLine(
+                        'À payer maintenant — ${openInstallment.label}',
+                        aggregatedNext,
+                        Colors.blue.shade700,
+                        bold: true,
                       ),
-                    );
-                  });
-                }),
-              ],
+                  ],
+                ),
+              ),
               if (openInstallment != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  guests.isEmpty
-                      ? 'Touchez pour recevoir le QR de ${openInstallment.label}.'
-                      : 'Touchez pour recevoir le QR de ${openInstallment.label} — ${aggregatedNext.toStringAsFixed(2)} € (moi + invités).',
-                  style: TextStyle(fontSize: 12, color: Colors.blue.shade700),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade600,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.qr_code_2,
+                          color: Colors.white, size: 18),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          'Recevoir le QR de ${openInstallment.label} — ${aggregatedNext.toStringAsFixed(2)} €',
+                          style: const TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// Ligne "personne" (Moi / invité) dans un bloc tranche du plan de paiement.
+  Widget _planPersonLine(String name, InstallmentPayment p) {
+    final String label;
+    final Color color;
+    switch (p.status) {
+      case 'paid':
+        label = 'Payé ✓';
+        color = Colors.green.shade700;
+        break;
+      case 'qr_sent':
+        label = 'QR envoyé';
+        color = Colors.orange.shade700;
+        break;
+      case 'waived':
+        label = 'Dispensé';
+        color = Colors.blueGrey.shade600;
+        break;
+      default:
+        label = 'À payer';
+        color = Colors.red.shade700;
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 3),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              name.isEmpty ? 'Invité' : name,
+              style:
+                  TextStyle(fontSize: 12.5, color: Colors.blueGrey.shade700),
+            ),
+          ),
+          Text(
+            '${p.amountDue.toStringAsFixed(2)} € · $label',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Ligne de total dans le bloc récapitulatif du plan de paiement.
+  Widget _planTotalLine(String label, double amount, Color color,
+      {bool bold = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1.5),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: bold ? 13 : 12.5,
+                fontWeight: bold ? FontWeight.bold : FontWeight.w500,
+                color: bold ? color : Colors.blueGrey.shade700,
+              ),
+            ),
+          ),
+          Text(
+            '${amount.toStringAsFixed(2)} €',
+            style: TextStyle(
+              fontSize: bold ? 14 : 12.5,
+              fontWeight: FontWeight.w800,
+              color: color,
+            ),
+          ),
+        ],
       ),
     );
   }
