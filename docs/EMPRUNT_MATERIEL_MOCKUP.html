@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CalyMob — Emprunter du matériel (formulaire)</title>
+<style>
+  :root{
+    --deep:#0a2a43; --deep2:#0e3a5c; --teal:#1f8a9c; --teal2:#38b2c4;
+    --ink:#0d2438; --ink-soft:#5b7186; --line:#e3ebf1; --bg:#eef3f7;
+    --amber:#e08a1e; --amber-dark:#b46a08; --success:#1f9d6b; --danger:#c0392b;
+    --card:#ffffff; --pill:#eaf5f8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:#dfe7ee;color:var(--ink);padding:28px 16px 60px;line-height:1.4}
+  h1.page{text-align:center;font-size:20px;color:var(--deep);margin-bottom:4px}
+  p.sub{text-align:center;color:var(--ink-soft);font-size:13px;margin-bottom:24px}
+  .stage{display:flex;flex-wrap:wrap;gap:26px;justify-content:center;align-items:flex-start}
+
+  .phone{width:340px;background:var(--bg);border-radius:34px;box-shadow:0 18px 44px rgba(10,42,67,.22);overflow:hidden;border:1px solid #cdd8e2;display:flex;flex-direction:column;height:690px;position:relative}
+  .caption{width:340px;text-align:center;font-size:12px;color:var(--ink-soft);margin-top:8px}
+  .num{display:inline-block;background:var(--deep);color:#fff;border-radius:20px;padding:1px 9px;font-size:11px;font-weight:700;margin-right:6px}
+
+  .hdr{background:linear-gradient(135deg,var(--deep) 0%,var(--deep2) 55%,var(--teal) 140%);color:#fff;padding:16px 18px 18px;position:relative}
+  .hdr .bar{height:4px;width:120px;background:rgba(255,255,255,.35);border-radius:4px;margin:0 auto 12px}
+  .hdr .back{position:absolute;left:14px;top:44px;font-size:18px;color:#fff;opacity:.9;cursor:pointer}
+  .hdr h2{font-size:17px;font-weight:700;text-align:center}
+  .hdr .h-sub{text-align:center;font-size:11px;opacity:.8;margin-top:2px}
+
+  .body{flex:1;overflow-y:auto;padding:14px 14px 96px}
+  .body::-webkit-scrollbar{width:0}
+
+  .info{background:#eaf5f8;border:1px solid #cfe6ec;border-radius:12px;padding:10px 12px;font-size:11.5px;color:#255c6b;margin-bottom:14px}
+
+  /* form category block */
+  .fcat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px 14px;margin-bottom:11px;transition:.12s}
+  .fcat.active{border-color:var(--teal2);box-shadow:0 0 0 3px rgba(56,178,196,.13)}
+  .fcat .top{display:flex;justify-content:space-between;align-items:center}
+  .fcat .lead{display:flex;align-items:center;gap:12px}
+  .cbx{width:24px;height:24px;border:2px solid #c3d2dd;border-radius:7px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:#fff;font-size:15px;font-weight:800;color:#fff;transition:.1s}
+  .cbx.on{background:var(--teal);border-color:var(--teal)}
+  .fcat .name{font-weight:700;font-size:15px;color:var(--deep)}
+  .fcat .name small{display:block;font-weight:500;font-size:10.5px;color:var(--ink-soft);margin-top:1px}
+  .opts{margin-top:11px;display:none}
+  .fcat.active .opts{display:block}
+  .orow{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+  .orow .olab{font-size:11px;font-weight:700;color:var(--ink-soft);width:64px;flex-shrink:0}
+  .chips{display:flex;gap:7px;flex-wrap:wrap}
+  .chip{padding:8px 13px;border:1.5px solid var(--line);border-radius:11px;background:#fff;cursor:pointer;font-weight:600;font-size:13px;color:var(--ink);transition:.1s}
+  .chip small{font-weight:500;font-size:9.5px;color:var(--ink-soft);margin-left:3px}
+  .chip.on{border-color:var(--teal);background:var(--pill);color:var(--deep)}
+
+  /* stepper */
+  .stepper{display:flex;align-items:center;border:1.5px solid var(--line);border-radius:11px;overflow:hidden;background:#fff}
+  .stepper button{width:38px;height:38px;border:0;background:#f3f8fa;font-size:20px;color:var(--deep);cursor:pointer}
+  .stepper .val{min-width:56px;text-align:center;font-weight:700;font-size:15px}
+  .stepper.small button{width:34px;height:34px;font-size:18px}
+  .stepper.small .val{min-width:48px;font-size:14px}
+
+  .field{margin-top:14px}
+  .field label{display:block;font-size:12px;font-weight:700;color:var(--ink-soft);margin-bottom:6px}
+  .field input,.field textarea{width:100%;border:1.5px solid var(--line);border-radius:12px;padding:11px;font-size:14px;font-family:inherit;color:var(--ink)}
+  .field textarea{resize:none;height:60px}
+
+  .btn{display:block;width:100%;text-align:center;padding:15px;border-radius:14px;border:0;font-size:15px;font-weight:700;cursor:pointer}
+  .btn-primary{background:linear-gradient(135deg,var(--teal) 0%,var(--teal2) 100%);color:#fff;box-shadow:0 8px 18px rgba(31,138,156,.3)}
+  .btn-ghost{background:#fff;color:var(--deep);border:1.5px solid var(--line)}
+  .btn-block{position:absolute;left:14px;right:14px;bottom:14px;width:auto}
+
+  .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
+  .b-wait{background:#fff4e2;color:var(--amber-dark)}
+  .b-ok{background:#e4f6ee;color:var(--success)}
+  .b-ready{background:#e6f3fb;color:#1f6fa8}
+  .b-no{background:#fbe9e7;color:var(--danger)}
+
+  .demande{background:#fff;border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px}
+  .demande .dh{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .demande .dh b{font-size:14px;color:var(--deep)}
+  .demande ul{list-style:none;font-size:12.5px;color:var(--ink-soft)}
+  .demande li{padding:2px 0}
+  .demande .foot{font-size:11px;color:var(--ink-soft);margin-top:8px;border-top:1px dashed var(--line);padding-top:8px}
+
+  .confirm-wrap{text-align:center;padding:36px 20px}
+  .confirm-wrap .big{width:84px;height:84px;border-radius:50%;background:var(--pill);display:flex;align-items:center;justify-content:center;font-size:42px;margin:0 auto 18px;color:var(--success)}
+  .confirm-wrap h3{font-size:20px;color:var(--deep);margin-bottom:10px}
+  .confirm-wrap p{font-size:13.5px;color:var(--ink-soft);margin-bottom:6px}
+  .steps{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;margin:20px 0;text-align:left}
+  .steps .st{display:flex;gap:10px;align-items:flex-start;font-size:12.5px;padding:5px 0;color:var(--ink-soft)}
+  .steps .st .d{width:20px;height:20px;border-radius:50%;background:var(--pill);color:var(--teal);font-weight:700;font-size:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+
+  .admin .hdr{background:linear-gradient(135deg,#2a2f45,#3a4260)}
+  .row-req{background:#fff;border:1px solid var(--line);border-radius:14px;padding:13px;margin-bottom:11px}
+  .row-req .rr-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  .row-req .rr-top b{font-size:13.5px;color:var(--deep)}
+  .row-req ul{list-style:none;font-size:12px;color:var(--ink-soft)}
+  .row-req .assign{margin-top:9px;background:#f6faf7;border:1px dashed #bfe3cf;border-radius:10px;padding:9px;font-size:11.5px;color:#1c7a52}
+
+  .json{width:360px;background:#0d2033;border-radius:18px;overflow:hidden;box-shadow:0 18px 44px rgba(10,42,67,.22);max-height:690px;display:flex;flex-direction:column}
+  .json .jh{background:#0a1a2b;color:#8fd4e0;font-size:12px;font-weight:700;padding:12px 16px;letter-spacing:.4px;border-bottom:1px solid #16304a}
+  .json pre{color:#cfe8ef;font-family:"SF Mono",Menlo,Consolas,monospace;font-size:11.5px;line-height:1.55;padding:16px;overflow:auto;flex:1;white-space:pre-wrap;word-break:break-word}
+  .json .k{color:#7fb2ff}.json .s{color:#8fe0b0}.json .n{color:#ffcf8f}.json .c{color:#5f7a92;font-style:italic}
+  .legend{width:360px;font-size:12px;color:var(--ink-soft);background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+  .legend h4{color:var(--deep);font-size:13px;margin-bottom:8px}
+  .legend p{margin-bottom:7px}
+  .legend code{background:#eef3f7;padding:1px 5px;border-radius:5px;font-size:11px}
+</style>
+</head>
+<body>
+  <h1 class="page">CalyMob — « Emprunter du matériel »</h1>
+  <p class="sub">Un seul formulaire · toutes les catégories visibles · options par catégorie</p>
+
+  <div class="stage">
+
+    <div>
+      <div class="phone" id="phone">
+        <div class="hdr">
+          <div class="bar"></div>
+          <div class="back" id="backBtn" onclick="goBack()" style="display:none">‹</div>
+          <h2 id="hTitle">Emprunter du matériel</h2>
+          <div class="h-sub" id="hSub">Cochez et réglez ce dont vous avez besoin</div>
+        </div>
+        <div class="body" id="body"></div>
+      </div>
+      <div class="caption"><span class="num" id="capNum">1</span><span id="capTxt">Formulaire</span></div>
+    </div>
+
+    <div class="json">
+      <div class="jh">Document enregistré — <code style="color:#8fd4e0">inventory_loan_requests/{id}</code></div>
+      <pre id="jsonOut"></pre>
+    </div>
+
+    <div class="legend">
+      <h4>Le principe</h4>
+      <p>Un <b>formulaire unique</b>. Le membre choisit le <b>type + option</b> (volume, raccord, taille, pointure, kg) et une quantité. Pas de n° de série, pas de stock.</p>
+      <p>La demande enregistre des <code>lines</code> (catégorie + attributs + quantité). Le responsable attribue le matériel réel à la validation.</p>
+      <h4 style="margin-top:14px">Chaîne à fermer</h4>
+      <p>Membre demande → responsable reçoit → valide & attribue → prêt + caution. <b style="color:#b46a08">Aujourd'hui cassée</b> : personne ne lit <code>inventory_loan_requests</code> (voir écran « côté responsable »).</p>
+    </div>
+
+  </div>
+
+<script>
+/* ---------- catalog config ---------- */
+const CATALOG = [
+  {key:'bouteille', label:'Bouteille', sub:'Volume & raccord',
+    options:[
+      {field:'volume',  lab:'Volume',  type:'chips', def:'12 L', choices:[{v:'10 L'},{v:'12 L'},{v:'15 L'}]},
+      {field:'raccord', lab:'Raccord', type:'chips', def:'DIN',  choices:[{v:'Étrier'},{v:'DIN'}]},
+    ], countUnit:'qty'},
+  {key:'gilet', label:'Gilet (stab)', sub:'Taille',
+    options:[{field:'taille', lab:'Taille', type:'chips', def:'M', choices:[{v:'S'},{v:'M'},{v:'L'},{v:'XL'}]}],
+    countUnit:'qty'},
+  {key:'palmes', label:'Palmes', sub:'Pointure',
+    options:[{field:'pointure', lab:'Pointure', type:'chips', def:'M (40/46)', choices:[{v:'S (36/40)',t:'S',s:'36/40'},{v:'M (40/46)',t:'M',s:'40/46'}]}],
+    countUnit:'qty'},
+  {key:'ceinture', label:'Ceinture de plomb', sub:'Poids en kg',
+    options:[], countUnit:'kg'},
+  {key:'parachute', label:'Parachute (DSMB)', sub:'', options:[], countUnit:'qty'},
+  {key:'detendeur', label:'Détendeur', sub:'', options:[], countUnit:'qty'},
+  {key:'lampe', label:'Lampe', sub:'', options:[], countUnit:'qty'},
+  {key:'ordinateur', label:'Ordinateur', sub:'3 disponibles', options:[], countUnit:'qty'},
+];
+
+/* ---------- state ---------- */
+let form = {};
+CATALOG.forEach(c=>{
+  const attrs={};
+  c.options.forEach(o=>{ if(o.def) attrs[o.field]=o.def; });
+  form[c.key]={attrs, count:0};
+});
+let request = { date_retour_prevue:'2026-07-12', notes:'' };
+let history = ['form'];
+
+/* ---------- lines / json ---------- */
+function buildLines(){
+  const lines=[];
+  CATALOG.forEach(c=>{
+    const st=form[c.key];
+    if(st.count>0){
+      const attrs={...st.attrs};
+      if(c.countUnit==='kg'){ attrs.poids_kg=st.count; lines.push({category:c.key,attrs,qty:1}); }
+      else { lines.push({category:c.key,attrs,qty:st.count}); }
+    }
+  });
+  return lines;
+}
+function lineText(l){
+  const c=CATALOG.find(x=>x.key===l.category);
+  const a=l.attrs; let ex=[];
+  if(a.volume)ex.push(a.volume); if(a.raccord)ex.push(a.raccord);
+  if(a.taille)ex.push('Taille '+a.taille); if(a.pointure)ex.push(a.pointure);
+  if(a.poids_kg)ex.push(a.poids_kg+' kg');
+  const detail = ex.join(' · ');
+  const qtyTxt = c.countUnit==='kg' ? '' : (l.qty+'× ');
+  return qtyTxt + c.label + (detail? ' — '+detail : '');
+}
+function renderJson(){
+  const doc={ memberId:'m_4821', memberName:'Membre Test', status:'submitted',
+    lines: buildLines(), assignedItemIds:[], date_retour_prevue:request.date_retour_prevue,
+    notes:request.notes||null, source:'calymob' };
+  let s=JSON.stringify(doc,null,2)
+    .replace(/"([^"]+)":/g,'<span class="k">"$1"</span>:')
+    .replace(/: "([^"]*)"/g,': <span class="s">"$1"</span>')
+    .replace(/: (\d+)/g,': <span class="n">$1</span>')
+    .replace(/: null/g,': <span class="c">null</span>');
+  const note = buildLines().length? '' : '<span class="c">// rien de sélectionné</span>\n\n';
+  document.getElementById('jsonOut').innerHTML=note+s;
+}
+
+/* ---------- nav ---------- */
+const CAPS={form:['1','Formulaire'],confirm:['2','Confirmation'],mes:['2b','Mes demandes'],admin:['3','Côté responsable matériel']};
+function setHeader(t,s,b){document.getElementById('hTitle').textContent=t;document.getElementById('hSub').textContent=s;document.getElementById('backBtn').style.display=b?'block':'none';}
+function go(s){history.push(s);paint();}
+function goBack(){if(history.length>1){history.pop();paint();}}
+function paint(){
+  const s=history[history.length-1];
+  document.getElementById('capNum').textContent=CAPS[s][0];
+  document.getElementById('capTxt').textContent=CAPS[s][1];
+  document.getElementById('phone').classList.toggle('admin',s==='admin');
+  ({form:screenForm,confirm:screenConfirm,mes:screenMes,admin:screenAdmin}[s])();
+  renderJson();
+}
+
+/* ---------- form actions ---------- */
+function setChip(key,field,val){ form[key].attrs[field]=val; if(form[key].count===0)form[key].count=(CATALOG.find(c=>c.key===key).countUnit==='kg'?6:1); paint(); }
+function step(key,d){ const st=form[key]; st.count=Math.max(1,st.count+d); paint(); }
+function toggleCat(key){ const c=CATALOG.find(x=>x.key===key); const st=form[key];
+  st.count = st.count>0 ? 0 : (c.countUnit==='kg'?6:1); paint(); }
+
+function catBlock(c){
+  const st=form[c.key];
+  const active = st.count>0;
+  const unit = c.countUnit==='kg' ? 'kg' : '';
+  let opts='';
+  c.options.forEach(o=>{
+    const chips=o.choices.map(ch=>{
+      const on=st.attrs[o.field]===ch.v?'on':'';
+      const label=(ch.t||ch.v)+(ch.s?`<small>${ch.s}</small>`:'');
+      return `<div class="chip ${on}" onclick="setChip('${c.key}','${o.field}','${ch.v}')">${label}</div>`;
+    }).join('');
+    opts+=`<div class="orow"><div class="olab">${o.lab}</div><div class="chips">${chips}</div></div>`;
+  });
+  opts+=`<div class="orow"><div class="olab">${c.countUnit==='kg'?'Poids':'Quantité'}</div>
+      <div class="stepper small"><button onclick="step('${c.key}',-1)">–</button><div class="val">${st.count}${unit?' '+unit:''}</div><button onclick="step('${c.key}',1)">+</button></div></div>`;
+  const subline = c.sub? `<small>${c.sub}</small>`:'';
+  return `<div class="fcat ${active?'active':''}">
+      <div class="top">
+        <div class="lead">
+          <div class="cbx ${active?'on':''}" onclick="toggleCat('${c.key}')">${active?'✓':''}</div>
+          <div class="name">${c.label}${subline}</div>
+        </div>
+        ${active?`<div style="font-size:12px;font-weight:700;color:var(--teal)">${st.count}${unit?' '+unit:''}</div>`:''}
+      </div>
+      <div class="opts">${opts}</div>
+    </div>`;
+}
+
+function screenForm(){
+  setHeader('Emprunter du matériel','Réglez ce dont vous avez besoin',false);
+  const blocks=CATALOG.map(catBlock).join('');
+  const lines=buildLines();
+  const count=lines.reduce((n,l)=>n + (CATALOG.find(x=>x.key===l.category).countUnit==='kg'?1:l.qty),0);
+  document.getElementById('body').innerHTML=`
+    <div class="info">Cochez chaque matériel voulu, puis choisissez l'option et la quantité. Le n° de série est attribué par le responsable.</div>
+    ${blocks}
+    <div class="field"><label>Date de retour prévue</label><input type="date" value="${request.date_retour_prevue}" onchange="request.date_retour_prevue=this.value;renderJson()"></div>
+    <div class="field"><label>Note pour le responsable (optionnel)</label><textarea placeholder="Ex. sortie fosse samedi…" oninput="request.notes=this.value;renderJson()">${request.notes}</textarea></div>
+    <div style="height:8px"></div>
+    <button class="btn btn-ghost" onclick="go('mes')">Mes demandes</button>
+    <button class="btn btn-primary btn-block" style="opacity:${count?1:.45};pointer-events:${count?'auto':'none'}" onclick="go('confirm')">Envoyer la demande${count?` · ${count} article(s)`:''}</button>`;
+}
+
+function screenConfirm(){
+  setHeader('Demande envoyée','',false);
+  document.getElementById('body').innerHTML=`
+    <div class="confirm-wrap">
+      <div class="big">✓</div>
+      <h3>Demande envoyée</h3>
+      <p>Le responsable matériel a été prévenu.</p>
+      <div class="steps">
+        <div class="st"><div class="d">1</div><div><b>Validation</b> par le responsable (il attribue le matériel réel).</div></div>
+        <div class="st"><div class="d">2</div><div><b>Caution</b> à payer si nécessaire (QR / virement).</div></div>
+        <div class="st"><div class="d">3</div><div><b>Retrait</b> : « Prêt à retirer » dès que tout est OK.</div></div>
+      </div>
+      <button class="btn btn-primary" onclick="go('mes')">Voir mes demandes</button>
+      <div style="height:10px"></div>
+      <button class="btn btn-ghost" onclick="go('admin')">Voir le côté responsable →</button>
+    </div>`;
+}
+
+function screenMes(){
+  setHeader('Mes demandes','Suivi de vos emprunts',true);
+  const mine=buildLines().map(l=>`<li>${lineText(l)}</li>`).join('')||'<li>—</li>';
+  document.getElementById('body').innerHTML=`
+    <div class="demande">
+      <div class="dh"><b>Demande du 02/07</b><span class="badge b-wait">En attente de validation</span></div>
+      <ul>${mine}</ul>
+      <div class="foot">Retour prévu : ${fmt(request.date_retour_prevue)} · envoyé à l'instant</div>
+    </div>
+    <div class="demande">
+      <div class="dh"><b>PRÊT-2026-0007</b><span class="badge b-ready">Prêt à retirer</span></div>
+      <ul><li>1× Bouteille — 12 L · DIN</li><li>1× Gilet — Taille L</li></ul>
+      <div class="foot">Caution 100 € · payée · retour prévu 15/07</div>
+    </div>
+    <div class="demande">
+      <div class="dh"><b>Demande du 28/06</b><span class="badge b-no">Refusée</span></div>
+      <ul><li>1× Ordinateur</li></ul>
+      <div class="foot">Motif : aucun ordinateur disponible cette semaine</div>
+    </div>`;
+}
+
+function screenAdmin(){
+  setHeader('Demandes de prêt','Responsable matériel · CalyCompta',true);
+  const mine=buildLines().map(l=>`<li>${lineText(l)}</li>`).join('')||'<li>—</li>';
+  document.getElementById('body').innerHTML=`
+    <div class="info" style="background:#fdf3e3;border-color:#f0d9a8;color:#8a5a12">Écran à construire : cette boîte de réception n'existe pas encore. C'est le maillon manquant qui fait « disparaître » les demandes.</div>
+    <div class="row-req">
+      <div class="rr-top"><b>Membre Test</b><span class="badge b-wait">Nouveau</span></div>
+      <ul>${mine}</ul>
+      <div class="assign">→ Attribuer le matériel réel (n° série) puis <b>Valider</b> = crée le prêt <code>PRET-2026-00xx</code> + caution.</div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn btn-primary" style="padding:11px" onclick="alert('→ crée inventory_loans + caution')">Valider & attribuer</button>
+        <button class="btn btn-ghost" style="padding:11px" onclick="alert('→ status = refused + motif')">Refuser</button>
+      </div>
+    </div>`;
+}
+
+function fmt(d){const p=d.split('-');return p[2]+'/'+p[1]+'/'+p[0];}
+paint();
+</script>
+</body>
+</html>

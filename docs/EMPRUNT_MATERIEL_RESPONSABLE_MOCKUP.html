@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CalyCompta — Demandes de prêt (côté responsable)</title>
+<style>
+  :root{
+    --deep:#0a2a43; --teal:#1f8a9c; --teal2:#38b2c4; --ink:#16283a; --ink-soft:#66788b;
+    --line:#e5ecf2; --bg:#f4f7fa; --card:#fff; --pill:#eaf5f8;
+    --amber:#e08a1e; --amber-dark:#b46a08; --success:#1f9d6b; --danger:#c0392b;
+    --sidebar:#0e2438;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:#dde5ec;color:var(--ink);padding:26px 16px 60px;line-height:1.45}
+  h1.page{text-align:center;font-size:19px;color:var(--deep);margin-bottom:4px}
+  p.sub{text-align:center;color:var(--ink-soft);font-size:13px;margin-bottom:22px}
+
+  .app{max-width:1120px;margin:0 auto;background:var(--card);border-radius:16px;overflow:hidden;box-shadow:0 18px 44px rgba(10,42,67,.18);display:flex;min-height:640px;border:1px solid #cdd8e2}
+  .side{width:210px;background:var(--sidebar);color:#cdd9e6;padding:18px 12px;flex-shrink:0}
+  .side .logo{color:#fff;font-weight:800;font-size:16px;padding:6px 10px 16px;letter-spacing:.3px}
+  .side .grp{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:#63809a;margin:14px 10px 6px}
+  .side .item{display:flex;justify-content:space-between;align-items:center;padding:9px 11px;border-radius:9px;font-size:13.5px;cursor:pointer;margin-bottom:2px;color:#b9c9d8}
+  .side .item:hover{background:rgba(255,255,255,.06)}
+  .side .item.active{background:linear-gradient(90deg,var(--teal),var(--teal2));color:#fff;font-weight:600}
+  .side .sub{padding-left:22px;font-size:12.5px}
+  .side .badge-num{background:var(--amber);color:#fff;font-size:10px;font-weight:700;border-radius:20px;padding:1px 7px}
+
+  .main{flex:1;display:flex;flex-direction:column;background:var(--bg)}
+  .top{background:#fff;border-bottom:1px solid var(--line);padding:14px 22px;display:flex;justify-content:space-between;align-items:center}
+  .crumb{font-size:12.5px;color:var(--ink-soft)}
+  .crumb .cur{color:var(--deep);font-weight:600}
+  .top .who{font-size:12px;color:var(--ink-soft)}
+  .content{padding:22px;overflow-y:auto;flex:1}
+
+  .tabs{display:flex;gap:4px;margin-bottom:18px;border-bottom:1px solid var(--line)}
+  .tab{padding:9px 15px;font-size:13px;font-weight:600;color:var(--ink-soft);cursor:pointer;border-bottom:2px solid transparent}
+  .tab.on{color:var(--deep);border-bottom-color:var(--teal)}
+  .tab .n{background:var(--amber);color:#fff;font-size:10px;border-radius:20px;padding:0 6px;margin-left:5px}
+
+  h2.h{font-size:17px;color:var(--deep);margin-bottom:3px}
+  p.desc{font-size:12.5px;color:var(--ink-soft);margin-bottom:18px}
+
+  table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  thead th{background:#f0f5f9;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--ink-soft);padding:11px 14px;font-weight:700}
+  tbody td{padding:13px 14px;border-top:1px solid var(--line);font-size:13px;vertical-align:top}
+  tbody tr:hover{background:#fafcfe}
+  .mat-list{font-size:12px;color:var(--ink-soft);line-height:1.5}
+  .mat-list b{color:var(--ink)}
+  .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
+  .b-new{background:#fff4e2;color:var(--amber-dark)}
+  .b-ok{background:#e4f6ee;color:var(--success)}
+  .btn{display:inline-block;padding:8px 14px;border-radius:9px;border:0;font-size:12.5px;font-weight:700;cursor:pointer}
+  .btn-primary{background:linear-gradient(135deg,var(--teal),var(--teal2));color:#fff}
+  .btn-ghost{background:#fff;color:var(--deep);border:1.5px solid var(--line)}
+  .btn-danger{background:#fff;color:var(--danger);border:1.5px solid #f0c9c3}
+  .btn-sm{padding:6px 11px;font-size:12px}
+
+  /* detail */
+  .detail{display:grid;grid-template-columns:1.5fr 1fr;gap:18px}
+  .panel{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .panel h3{font-size:13px;text-transform:uppercase;letter-spacing:.4px;color:var(--ink-soft);margin-bottom:14px}
+  .member-row{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+  .ava{width:42px;height:42px;border-radius:50%;background:var(--pill);color:var(--teal);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px}
+  .member-row b{font-size:15px;color:var(--deep);display:block}
+  .member-row span{font-size:12px;color:var(--ink-soft)}
+
+  .assign-line{border:1px solid var(--line);border-radius:11px;padding:12px 14px;margin-bottom:11px}
+  .assign-line .req{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px}
+  .assign-line .req b{font-size:14px;color:var(--deep)}
+  .assign-line .req .want{font-size:11.5px;color:var(--ink-soft)}
+  .assign-line select{width:100%;border:1.5px solid var(--line);border-radius:9px;padding:9px 10px;font-size:12.5px;font-family:inherit;color:var(--ink);background:#fff}
+  .assign-line select.done{border-color:#bfe3cf;background:#f6faf7}
+  .assign-line .hint{font-size:10.5px;color:var(--success);margin-top:5px;font-weight:600}
+  .assign-line .hint.todo{color:var(--amber-dark)}
+
+  .krow{display:flex;justify-content:space-between;font-size:13px;padding:7px 0;border-bottom:1px dashed var(--line)}
+  .krow:last-child{border-bottom:0}
+  .krow .v{font-weight:700;color:var(--deep)}
+  .caution-box{background:var(--pill);border:1px solid #cfe6ec;border-radius:10px;padding:12px 14px;margin:12px 0;font-size:12.5px;color:#255c6b}
+  .caution-box .big{font-size:22px;font-weight:800;color:var(--deep)}
+  .sign{border:1.5px dashed var(--line);border-radius:10px;height:70px;display:flex;align-items:center;justify-content:center;color:var(--ink-soft);font-size:12px;margin:10px 0}
+  .actions{display:flex;gap:10px;margin-top:16px}
+
+  .flash{background:#e4f6ee;border:1px solid #b6e2cd;border-radius:12px;padding:16px 18px;color:#136b47;margin-bottom:18px;display:none}
+  .flash.show{display:block}
+  .flash b{color:#0e5537}
+
+  .legend{max-width:1120px;margin:16px auto 0;font-size:12px;color:var(--ink-soft);background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 18px}
+  .legend b{color:var(--deep)}
+  .legend code{background:#eef3f7;padding:1px 5px;border-radius:5px;font-size:11px}
+</style>
+</head>
+<body>
+  <h1 class="page">CalyCompta — « Demandes de prêt » (côté responsable matériel)</h1>
+  <p class="sub">Le maillon manquant : la demande du membre arrive ici, est validée et devient un vrai prêt</p>
+
+  <div class="app">
+    <div class="side">
+      <div class="logo">CalyCompta</div>
+      <div class="item">Tableau de bord</div>
+      <div class="item">Membres</div>
+      <div class="item">Finances</div>
+      <div class="item active">Stock</div>
+      <div class="item sub">Inventaire</div>
+      <div class="item sub active" style="background:rgba(255,255,255,.1);color:#fff">Prêts <span class="badge-num">3</span></div>
+      <div class="item sub">Boutique</div>
+      <div class="item">Communication</div>
+      <div class="item">Paramètres</div>
+    </div>
+
+    <div class="main">
+      <div class="top">
+        <div class="crumb" id="crumb">Stock <span style="color:#c3ced8">›</span> Prêts <span style="color:#c3ced8">›</span> <span class="cur">Demandes</span></div>
+        <div class="who">Responsable matériel · Jan A.</div>
+      </div>
+      <div class="content" id="content"></div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <b>Ce qui change côté code :</b> un nouvel onglet <b>Demandes</b> lit la collection <code>inventory_loan_requests</code> (aujourd'hui lue par personne). « Traiter » ouvre la demande ; <b>Valider</b> réutilise <code>LoanService.createLoan()</code> → crée <code>inventory_loans</code> (PRÊT + caution) et passe la demande en <code>status: validated</code>. « Refuser » → <code>status: refused</code> + motif + notification membre. <b>L'attribution d'un exemplaire précis (n° de série)</b> est reportée à une phase ultérieure — le prêt référence pour l'instant les catégories demandées.
+  </div>
+
+<script>
+const REQUESTS = [
+  {id:'r1', member:'Membre Test', initials:'MT', date:'02/07', retour:'12/07',
+   lines:[
+     {label:'Bouteille', want:'12 L · DIN', options:['BT-014 · Aqualung · #A2231','BT-021 · Beuchat · #B0087']},
+     {label:'Gilet (stab)', want:'Taille L', options:['GIL-006 · Mares · #M4410','GIL-009 · Cressi · #C2231']},
+     {label:'Ceinture de plomb', want:'8 kg', options:['CEINT-03 · sangle + 8 kg']},
+   ]},
+  {id:'r2', member:'Marc Simons', initials:'MS', date:'01/07', retour:'20/07',
+   lines:[{label:'Parachute (DSMB)', want:'1×', options:['DSMB-02 · orange']},
+          {label:'Détendeur', want:'1×', options:['DET-011 · Apeks · #AP771']}]},
+  {id:'r3', member:'Sophie Laurent', initials:'SL', date:'30/06', retour:'—',
+   lines:[{label:'Ordinateur', want:'1×', options:['ORD-004 · Suunto Zoop','ORD-007 · Mares Puck']}]},
+];
+
+let currentReq=null;
+let assigned={};
+
+function screenInbox(){
+  document.getElementById('crumb').innerHTML='Stock <span style="color:#c3ced8">›</span> Prêts <span style="color:#c3ced8">›</span> <span class="cur">Demandes</span>';
+  let rows=REQUESTS.map(r=>{
+    const mats=r.lines.map(l=>`<b>${l.label}</b> — ${l.want}`).join('<br>');
+    return `<tr>
+      <td><b>${r.member}</b></td>
+      <td class="mat-list">${mats}</td>
+      <td>${r.date}</td>
+      <td>${r.retour}</td>
+      <td><span class="badge b-new">Nouveau</span></td>
+      <td style="text-align:right"><button class="btn btn-primary btn-sm" onclick="openReq('${r.id}')">Traiter</button></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('content').innerHTML=`
+    <div class="tabs">
+      <div class="tab on">Demandes <span class="n">3</span></div>
+      <div class="tab">Prêts actifs</div>
+      <div class="tab">Retours</div>
+      <div class="tab">Remboursements</div>
+    </div>
+    <h2 class="h">Demandes de prêt</h2>
+    <p class="desc">Demandes envoyées par les membres depuis CalyMob, en attente de validation.</p>
+    <table>
+      <thead><tr><th>Membre</th><th>Matériel demandé</th><th>Demandé</th><th>Retour prévu</th><th>Statut</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function openReq(id){
+  currentReq=REQUESTS.find(r=>r.id===id);
+  screenDetail();
+}
+
+function screenDetail(){
+  const r=currentReq;
+  document.getElementById('crumb').innerHTML=`Stock <span style="color:#c3ced8">›</span> Prêts <span style="color:#c3ced8">›</span> Demandes <span style="color:#c3ced8">›</span> <span class="cur">${r.member}</span>`;
+
+  const lines=r.lines.map(l=>`<div class="assign-line">
+      <div class="req"><b>${l.label}</b><span class="want">${l.want}</span></div>
+    </div>`).join('');
+
+  const caution = (r.id==='r1'?100:(r.id==='r2'?40:60));
+  const flash = `<div class="flash" id="flash"></div>`;
+
+  document.getElementById('content').innerHTML=`
+    ${flash}
+    <button class="btn btn-ghost btn-sm" onclick="screenInbox()">‹ Retour aux demandes</button>
+    <h2 class="h" style="margin-top:12px">Traiter la demande</h2>
+    <p class="desc">Vérifiez le matériel demandé, ajustez la caution si besoin, puis validez.</p>
+    <div class="detail">
+      <div class="panel">
+        <h3>Matériel demandé</h3>
+        <div class="member-row"><div class="ava">${r.initials}</div><div><b>${r.member}</b><span>Demande du ${r.date} · retour prévu ${r.retour}</span></div></div>
+        ${lines}
+        <div class="hint" style="font-size:11px;color:var(--ink-soft);margin-top:4px">L'attribution d'un exemplaire précis (n° de série) se fera plus tard, à la remise.</div>
+      </div>
+      <div class="panel">
+        <h3>Prêt à créer</h3>
+        <div class="krow"><span>Date de prêt</span><span class="v">Aujourd'hui</span></div>
+        <div class="krow"><span>Retour prévu</span><span class="v">${r.retour}</span></div>
+        <div class="caution-box">Caution
+          <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+            <input type="number" value="${caution}" style="width:90px;border:1.5px solid #cfe6ec;border-radius:8px;padding:8px;font-size:16px;font-weight:800;color:var(--deep)"> €
+          </div>
+          <div style="font-size:10.5px;margin-top:5px">Montant suggéré — modifiable</div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" onclick="validate()">Valider &amp; créer le prêt</button>
+          <button class="btn btn-danger" onclick="refuse()">Refuser</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function validate(){
+  const num='PRET-2026-00'+(11+REQUESTS.indexOf(currentReq)+1);
+  const f=document.getElementById('flash');
+  f.classList.add('show');
+  f.innerHTML=`<b>✓ Prêt ${num} créé.</b> Écrit dans <code>inventory_loans</code> · caution « à payer » (QR envoyé au membre) · demande passée en <code>validated</code>. Le membre voit « Validée » dans CalyMob. <span style="color:#0e5537">(Exemplaire précis à attribuer plus tard, à la remise.)</span>`;
+  f.scrollIntoView({behavior:'smooth'});
+  setTimeout(()=>{document.querySelectorAll('.actions .btn').forEach(b=>{b.style.pointerEvents='none';b.style.opacity=.4});},10);
+}
+function refuse(){
+  const f=document.getElementById('flash');
+  f.classList.add('show');
+  f.style.background='#fbe9e7';f.style.borderColor='#f0c9c3';f.style.color='#8a2b20';
+  f.innerHTML=`<b>Demande refusée.</b> <code>status: refused</code> + motif enregistré. Notification envoyée au membre (« Refusée » dans CalyMob).`;
+  f.scrollIntoView({behavior:'smooth'});
+}
+
+screenInbox();
+</script>
+</body>
+</html>
