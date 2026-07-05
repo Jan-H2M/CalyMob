@@ -479,7 +479,8 @@ async function resolveInstallmentPaymentForInscription(db, clubId, operationId, 
   }
 
   return {
-    amountDue: ownDue,        // montant PROPRE du membre (pour estamper sa tranche)
+    amountDue: ownDue,        // montant PROPRE du membre (0 si sa tranche est réglée)
+    ownOpen,                  // true si la tranche PROPRE du membre est encore ouverte
     aggregatedDue,            // membre + invités (montant du QR)
     guestSubtotal,
     guests,
@@ -789,14 +790,23 @@ async function sendPaymentEmailForMember(db, input) {
     // Don't throw - email was sent successfully
   }
 
-  if (installmentId) {
+  // Estampe UNIQUEMENT la tranche PROPRE du membre, et seulement si elle est
+  // encore ouverte. On n'écrit JAMAIS amount_due ici: le montant dû vient du
+  // tarif/plan, pas de l'envoi d'un QR. (Bug historique 29/06/2026: le montant
+  // AGRÉGÉ membre+invités a été persisté dans amount_due de Maxime → double
+  // comptage de la part invité au QR suivant, 500 → 750 → 1000 €.)
+  // Deux garde-fous:
+  //  - installmentPayment null (tranche introuvable) → aucune écriture, sinon
+  //    on persisterait le montant client/agrégé dans une nouvelle entrée.
+  //  - ownOpen false (tranche du membre déjà payée/dispensée, QR envoyé pour
+  //    un invité en retard) → aucune écriture, sinon on écraserait 'paid'.
+  if (installmentId && installmentPayment && installmentPayment.ownOpen) {
     try {
       await db.collection('clubs').doc(clubId)
         .collection('operations').doc(operationId)
         .collection('inscriptions').doc(participantId)
         .update({
           [`installment_payments.${installmentId}.status`]: 'qr_sent',
-          [`installment_payments.${installmentId}.amount_due`]: installmentPayment ? installmentPayment.amountDue : amount,
           [`installment_payments.${installmentId}.qr_sent_at`]: admin.firestore.FieldValue.serverTimestamp(),
           [`installment_payments.${installmentId}.payment_email_id`]: result.messageId || null,
           updated_at: admin.firestore.FieldValue.serverTimestamp(),
@@ -804,6 +814,8 @@ async function sendPaymentEmailForMember(db, input) {
     } catch (statusError) {
       console.warn(`[sendPaymentQrEmail] Email sent but failed to mark installment ${installmentId} as qr_sent:`, statusError);
     }
+  } else if (installmentId) {
+    console.log(`[sendPaymentQrEmail] Skip stamping installment ${installmentId} for ${participantId} (ownOpen=${installmentPayment ? installmentPayment.ownOpen : 'n/a'}, resolved=${!!installmentPayment})`);
   }
 
   return {
