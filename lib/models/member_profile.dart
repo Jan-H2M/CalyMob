@@ -57,7 +57,8 @@ class MemberProfile {
   final String? membershipPeriod;
   final String? membershipSeasonId;
   final String? lifrasId;
-  final DateTime? assuranceValidite; // Validité de l'assurance (autre fédération = manuel ; LIFRAS = suit la cotisation)
+  final DateTime?
+      assuranceValidite; // Validité de l'assurance utilisée pour l'accès piscine/activités
   final bool hasLifras; // Affilié à la LIFRAS
 
   // Métadonnées
@@ -108,6 +109,8 @@ class MemberProfile {
   /// Convertir depuis Firestore
   factory MemberProfile.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
+    final lifrasId = _stringOrNull(data['lifras_id']) ??
+        _stringOrNull(data['licence_lifras']);
 
     return MemberProfile(
       id: doc.id,
@@ -121,18 +124,16 @@ class MemberProfile {
       clubStatuten:
           (data['clubStatuten'] as List<dynamic>?)?.cast<String>() ?? [],
       photoUrl: data['photo_url'],
-      photoUploadedAt: (data['photo_uploaded_at'] as Timestamp?)?.toDate(),
+      photoUploadedAt: _parseDate(data['photo_uploaded_at']),
       consentInternalPhoto: data['consent_internal_photo'] ?? false,
       consentExternalPhoto: data['consent_external_photo'] ?? false,
-      consentInternalPhotoDate:
-          (data['consent_internal_photo_date'] as Timestamp?)?.toDate(),
-      consentExternalPhotoDate:
-          (data['consent_external_photo_date'] as Timestamp?)?.toDate(),
+      consentInternalPhotoDate: _parseDate(data['consent_internal_photo_date']),
+      consentExternalPhotoDate: _parseDate(data['consent_external_photo_date']),
       shareEmail: data['share_email'] ?? true,
       sharePhone: data['share_phone'] ?? true,
       phoneNumber: data['phone_number'],
-      birthDate: (data['birth_date'] as Timestamp?)?.toDate() ??
-          (data['date_naissance'] as Timestamp?)?.toDate(),
+      birthDate:
+          _parseDate(data['birth_date']) ?? _parseDate(data['date_naissance']),
       addressStreet: data['address_street'],
       addressPostcode: data['address_postcode'] ?? data['code_postal'],
       addressCity: data['address_city'] ?? data['localite'],
@@ -143,18 +144,46 @@ class MemberProfile {
       notificationsEnabled: data['notifications_enabled'] ?? true,
       fcmToken: data['fcm_token'],
       memberStatus: resolveMemberStatus(data),
-      cotisationValidite: (data['cotisation_validite'] as Timestamp?)?.toDate(),
+      cotisationValidite: _parseDate(data['cotisation_validite']),
       certificatMedicalValidite:
-          (data['certificat_medical_validite'] as Timestamp?)?.toDate(),
+          _parseDate(data['certificat_medical_validite']),
       membershipCategoryCode: data['membership_category_code'],
       membershipPeriod: data['membership_period'],
       membershipSeasonId: data['membership_season_id'],
-      lifrasId: data['lifras_id'] ?? data['licence_lifras'],
-      assuranceValidite: (data['assurance_validite'] as Timestamp?)?.toDate(),
-      hasLifras: data['has_lifras'] ?? false,
-      createdAt: (data['created_at'] as Timestamp?)?.toDate(),
-      updatedAt: (data['updated_at'] as Timestamp?)?.toDate(),
+      lifrasId: lifrasId,
+      assuranceValidite: _parseDate(data['assurance_validite']),
+      hasLifras: lifrasId != null,
+      createdAt: _parseDate(data['created_at']),
+      updatedAt: _parseDate(data['updated_at']),
     );
+  }
+
+  static String? _stringOrNull(dynamic value) {
+    if (value is String && value.trim().isNotEmpty) return value.trim();
+    return null;
+  }
+
+  static DateTime? _parseDate(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String && value.trim().isNotEmpty) {
+      final trimmed = value.trim();
+      final parsed = DateTime.tryParse(trimmed);
+      if (parsed != null) return parsed;
+
+      final match =
+          RegExp(r'^(\d{1,2})/(\d{1,2})/(\d{4})$').firstMatch(trimmed);
+      if (match != null) {
+        final day = int.tryParse(match.group(1)!);
+        final month = int.tryParse(match.group(2)!);
+        final year = int.tryParse(match.group(3)!);
+        if (day != null && month != null && year != null) {
+          return DateTime(year, month, day);
+        }
+      }
+    }
+    return null;
   }
 
   /// Convertir vers Firestore
@@ -348,10 +377,9 @@ class MemberProfile {
     return ValidationStatus.valid;
   }
 
-  /// Validité d'assurance effective : valeur explicite, sinon (membre LIFRAS)
-  /// on retombe sur la validité de la cotisation.
-  DateTime? get assuranceValiditeEffective =>
-      assuranceValidite ?? (hasLifras ? cotisationValidite : null);
+  /// Validité d'assurance effective pour l'accès.
+  /// L'accès piscine/activités ne dépend que du champ visible dans CalyCompta.
+  DateTime? get assuranceValiditeEffective => assuranceValidite;
 
   /// Statut de validation de l'assurance
   ValidationStatus get assuranceStatus {

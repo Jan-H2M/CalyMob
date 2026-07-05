@@ -77,6 +77,16 @@ class UserQRCard extends StatelessWidget {
               validityDate: profile.certificatMedicalValidite,
             ),
 
+            const SizedBox(height: 8),
+
+            // Statut de validation - Assurance
+            _buildValidationStatus(
+              icon: Icons.shield,
+              label: 'Assurance',
+              status: profile.assuranceStatus,
+              validityDate: profile.assuranceValiditeEffective,
+            ),
+
             const SizedBox(height: 16),
 
             // Bouton plein écran — opens dedicated screen with auto-brightness
@@ -144,9 +154,9 @@ class UserQRCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: statusColor.withOpacity(0.1),
+        color: statusColor.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: statusColor.withOpacity(0.3)),
+        border: Border.all(color: statusColor.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [
