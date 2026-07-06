@@ -1694,6 +1694,23 @@ service cloud.firestore {
         && resource.data.member_id == request.auth.uid;
     }
 
+    // --- logbook_dive_confirmations ------------------------------------------
+    // Demandes de confirmation de plongée entre binômes. Tous les writes
+    // passent exclusivement par les Cloud Functions (Admin SDK):
+    // sendLogbookDiveConfirmations / respondToLogbookDiveConfirmation.
+    // Les clients lisent uniquement: le destinataire voit ses demandes,
+    // l'expéditeur suit le statut de ce qu'il a envoyé.
+    // NB: les queries clients DOIVENT filtrer sur target_member_id ou
+    // source_member_id == uid, sinon la rule n'est pas prouvable (deny).
+    match /clubs/{clubId}/logbook_dive_confirmations/{confirmationId} {
+      allow read: if isMember(clubId) && (
+           resource.data.target_member_id == request.auth.uid
+        || resource.data.source_member_id == request.auth.uid
+        || isAdmin(clubId)
+      );
+      allow write: if false; // Cloud Functions uniquement
+    }
+
     // --- member_observations write-protection note --------------------------
     // The existing `member_observations` collection rules live elsewhere
     // in this file (see canValidateLifras-gated section). With the Carnet

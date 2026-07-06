@@ -1154,6 +1154,10 @@ class _BinomesCard extends StatelessWidget {
                 .doc(clubId)
                 .collection('logbook_dive_confirmations')
                 .where('source_entry_id', isEqualTo: entryId)
+                // Requis par les rules Firestore: la query doit prouver que
+                // le lecteur est l'expéditeur (source_member_id == uid).
+                .where('source_member_id',
+                    isEqualTo: FirebaseAuth.instance.currentUser?.uid)
                 .snapshots(),
             builder: (context, snap) {
               final confirmations = <String, Map<String, dynamic>>{};
