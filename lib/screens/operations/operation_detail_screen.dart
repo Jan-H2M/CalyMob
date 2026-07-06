@@ -79,6 +79,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   bool _isLoadingExercices = false;
   ParticipantOperation? _userInscription;
 
+  /// Plan de paiement affiché en accordéon dans la barre du bas. Ouvert par
+  /// défaut tant qu'une tranche reste à payer (l'utilisateur peut replier
+  /// pour laisser respirer les autres sections de l'événement).
+  bool _planExpanded = true;
+
   /// Cache van basis-info (avatar URL + niveau-code) per Membre-id voor
   /// alle deelnemers van het huidige event. Wordt in 1 batch opgehaald
   /// (whereIn op chunks van 30) zodra de participants-lijst geladen is,
@@ -3838,30 +3843,26 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     }
     final String groupSuffix = guests.isEmpty ? '' : ' (groupe)';
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: openInstallment == null
-            ? null
-            : () => _showPaymentOptionsSheet(
-                  inscription: inscription,
-                  operation: operation,
-                  inscriptionPrice: aggregatedNext,
-                  installmentId: openInstallment.id,
-                  installmentLabel: openInstallment.label,
-                ),
+    final bool fullyPaid = openInstallment == null;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
         borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.blue.shade50,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.blue.shade200),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
+        border: Border.all(color: Colors.blue.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // En-tête repliable (accordéon) — tap pour ouvrir/fermer le détail
+          // du plan, comme les autres sections de l'événement.
+          InkWell(
+            onTap: () => setState(() => _planExpanded = !_planExpanded),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
                 children: [
                   Icon(Icons.payments_outlined,
                       color: Colors.blue.shade700, size: 24),
@@ -3876,7 +3877,32 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                       ),
                     ),
                   ),
-                  if (guests.isNotEmpty)
+                  // Replié: badge résumé (montant dû ou payé). Déplié: nombre
+                  // d'invités, le détail donnant déjà les montants.
+                  if (!_planExpanded)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 9, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: fullyPaid
+                            ? Colors.green.shade100
+                            : Colors.orange.shade100,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        fullyPaid
+                            ? 'Payé ✓'
+                            : 'À payer · ${aggregatedNext.toStringAsFixed(2)} €',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: fullyPaid
+                              ? Colors.green.shade800
+                              : Colors.orange.shade900,
+                        ),
+                      ),
+                    ),
+                  if (_planExpanded && guests.isNotEmpty)
                     Text(
                       'moi + ${guests.length} invité${guests.length > 1 ? 's' : ''}',
                       style: TextStyle(
@@ -3884,8 +3910,19 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                         color: Colors.blueGrey.shade600,
                       ),
                     ),
+                  const SizedBox(width: 6),
+                  Icon(
+                    _planExpanded
+                        ? Icons.keyboard_arrow_up
+                        : Icons.keyboard_arrow_down,
+                    color: Colors.blue.shade700,
+                    size: 22,
+                  ),
                 ],
               ),
+            ),
+          ),
+          if (_planExpanded) ...[
               const SizedBox(height: 4),
               // Un bloc par tranche: lignes par personne (Moi + invités),
               // sous-total ouvert de la tranche, highlight sur la prochaine.
@@ -4043,9 +4080,21 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                   ],
                 ),
               ),
-              if (openInstallment != null) ...[
+          ],
+          // Bouton QR toujours visible (hors accordéon), comme le CTA
+          // principal de la section, juste sous le plan.
+          if (openInstallment != null) ...[
                 const SizedBox(height: 10),
-                Container(
+                InkWell(
+                  onTap: () => _showPaymentOptionsSheet(
+                    inscription: inscription,
+                    operation: operation,
+                    inscriptionPrice: aggregatedNext,
+                    installmentId: openInstallment.id,
+                    installmentLabel: openInstallment.label,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   decoration: BoxDecoration(
                     color: Colors.blue.shade600,
@@ -4069,12 +4118,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                       ),
                     ],
                   ),
+                  ),
                 ),
               ],
             ],
           ),
-        ),
-      ),
     );
   }
 
@@ -4527,8 +4575,12 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                   child: ElevatedButton.icon(
                     onPressed: deadlinePassed ? null : _handleUnregister,
                     icon: const Icon(Icons.cancel, color: Colors.white),
-                    label: const Text('Se désinscrire',
-                        style: TextStyle(fontSize: 16, color: Colors.white)),
+                    label: const FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text('Annuler',
+                          style:
+                              TextStyle(fontSize: 16, color: Colors.white)),
+                    ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.red,
                       disabledBackgroundColor: Colors.grey.shade400,
