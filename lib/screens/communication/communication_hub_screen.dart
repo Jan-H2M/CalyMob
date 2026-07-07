@@ -20,6 +20,7 @@ import '../teams/team_chat_screen.dart';
 import '../training/pool_checkin_screen.dart';
 import '../training/monitor_validation_screen.dart';
 import '../training/exercise_claim_retry_screen.dart';
+import '../training/exercise_claim_screen.dart';
 import '../training/logbook_entry_screen.dart';
 import '../training/logbook_dive_confirmation_screen.dart';
 import '../training/historical_claims_screen.dart';
@@ -1281,7 +1282,16 @@ void _openFormationTask(BuildContext context, FormationTask task) {
       _openFormationTaskOnWeb(context, task, 'external-proof-review');
       break;
     case FormationTaskType.exerciseClaim:
-      _openFormationTaskOnWeb(context, task, 'claim');
+      // WP-04 : écran natif si l'opération est connue ; sinon repli web
+      // (anciennes tâches sans context.operation_id).
+      if (task.context.operationId != null &&
+          task.context.operationId!.isNotEmpty) {
+        Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => ExerciseClaimScreen(task: task),
+        ));
+      } else {
+        _openFormationTaskOnWeb(context, task, 'claim');
+      }
       break;
     case FormationTaskType.claimRejected:
       Navigator.of(context).push(MaterialPageRoute(
