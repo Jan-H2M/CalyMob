@@ -7,6 +7,7 @@ import '../../providers/auth_provider.dart';
 import '../../models/formation_snapshot_doc.dart';
 import '../../services/formation_snapshot_reader.dart';
 import '../../services/member_observation_service.dart';
+import 'my_declarations_screen.dart';
 import 'my_goals_screen.dart';
 
 /// Read-only progressie-overzicht voor het ingelogde lid.
@@ -59,6 +60,13 @@ class _MyProgressionScreenState extends State<MyProgressionScreen> {
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.receipt_long_outlined),
+            tooltip: 'Mes déclarations',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const MyDeclarationsScreen()),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.flag_outlined),
             tooltip: 'Mes objectifs',

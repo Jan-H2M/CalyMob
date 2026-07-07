@@ -82,6 +82,17 @@ class ExerciseClaimService {
     await batch.commit();
   }
 
+  /// WP-16 — « Mes déclarations » : tous les claims du membre (hors inbox),
+  /// pour affichage groupé par statut (en attente / validés / refusés).
+  Future<List<Map<String, dynamic>>> fetchMyClaims(
+    String clubId,
+    String memberId,
+  ) async {
+    final snap =
+        await _col(clubId).where('member_id', isEqualTo: memberId).get();
+    return snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+  }
+
   /// WP-13 — déclaration spontanée (« Je l'ai fait ») : crée un exercise_claim
   /// `submitted` directement (pas de draft préalable). La CF onClaimSubmitted
   /// crée ensuite la tâche de validation moniteur. Remplace l'ancienne écriture
