@@ -5,6 +5,7 @@ import '../../config/firebase_config.dart';
 import '../../models/member_observation.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/member_observation_service.dart';
+import 'my_goals_screen.dart';
 
 /// Read-only progressie-overzicht voor het ingelogde lid.
 /// Toont alle observaties gegroepeerd per categorie.
@@ -49,6 +50,15 @@ class _MyProgressionScreenState extends State<MyProgressionScreen> {
         title: const Text('Ma Progression'),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.flag_outlined),
+            tooltip: 'Mes objectifs',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const MyGoalsScreen()),
+            ),
+          ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())

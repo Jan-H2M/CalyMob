@@ -190,6 +190,10 @@ exports.onExercicesValidesWriteSnapshot = snapshotFns.onExercicesValidesWriteSna
 exports.onFormationGoalsWriteSnapshot = snapshotFns.onFormationGoalsWriteSnapshot;
 exports.rebuildStaleSnapshots = snapshotFns.rebuildStaleSnapshots;
 
+// WP-11 — notifie le chef d'école quand un élève change son brevet visé (D12).
+const { onTargetLevelChanged } = require('./src/progression/onTargetLevelChanged');
+exports.onTargetLevelChanged = onTargetLevelChanged;
+
 // =============================================================================
 // INSCRIPTION REFUND (Gen2)
 // =============================================================================

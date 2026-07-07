@@ -446,22 +446,30 @@ async function readLogbookEntries(db, clubId, memberId) {
 }
 
 async function readFormationGoals(db, clubId, memberId) {
+  const ref = clubRef(db, clubId)
+    .collection('members').doc(memberId)
+    .collection('formation_goals').doc('current');
+  const empty = {
+    codes: [], difficult_codes: [], redo_codes: [], note: '',
+    availability: {}, _ref: ref, _exists: false,
+  };
   try {
-    const snap = await clubRef(db, clubId)
-      .collection('members').doc(memberId)
-      .collection('formation_goals').get();
-    const codes = [];
-    const redoCodes = [];
-    let note = '';
-    snap.forEach((doc) => {
-      const d = doc.data();
-      if (Array.isArray(d.codes)) codes.push(...d.codes);
-      if (Array.isArray(d.redo_codes)) redoCodes.push(...d.redo_codes);
-      if (typeof d.note === 'string' && d.note) note = d.note;
-    });
-    return { codes, redo_codes: redoCodes, note };
+    const doc = await ref.get();
+    if (!doc.exists) return empty;
+    const d = doc.data() || {};
+    const arr = (v) => (Array.isArray(v) ? v.map(String) : []);
+    return {
+      codes: arr(d.codes),
+      difficult_codes: arr(d.difficult_codes),
+      redo_codes: arr(d.redo_codes),
+      note: typeof d.note === 'string' ? d.note : '',
+      availability:
+        d.availability && typeof d.availability === 'object' ? d.availability : {},
+      _ref: ref,
+      _exists: true,
+    };
   } catch (e) {
-    return { codes: [], redo_codes: [], note: '' };
+    return empty;
   }
 }
 
@@ -564,6 +572,28 @@ async function rebuildSnapshot(clubId, memberId, firestore) {
   const recentDives = computeRecentDives(logbookEntries);
   const milExperience = computeMilExperience(logbookEntries, milRequirements, milColumn);
 
+  // D7 — auto-nettoyage : retirer les codes devenus validés des objectifs, et
+  // écrire le résultat dans formation_goals/current (write-back Admin SDK).
+  // Convergent : le write ne se produit que s'il y a un changement, donc le
+  // rebuild déclenché en cascade ne réécrit rien (pas de boucle).
+  const cleanedGoalCodes = goals.codes.filter((c) => !validatedCodes.has(c));
+  const cleanedRedoCodes = goals.redo_codes.filter((c) => !validatedCodes.has(c));
+  if (
+    goals._exists &&
+    goals._ref &&
+    (cleanedGoalCodes.length !== goals.codes.length ||
+      cleanedRedoCodes.length !== goals.redo_codes.length)
+  ) {
+    try {
+      await goals._ref.set(
+        { codes: cleanedGoalCodes, redo_codes: cleanedRedoCodes },
+        { merge: true },
+      );
+    } catch (e) {
+      logger.warn(`[rebuildSnapshot] auto-nettoyage objectifs échoué ${memberId}`, e);
+    }
+  }
+
   // % : pondéré par nombre d'exercices (D9).
   const totalRequired = exercises.length;
   const validatedCount = validated.length;
@@ -597,7 +627,13 @@ async function rebuildSnapshot(clubId, memberId, firestore) {
     mil_experience: milExperience, // null si pas de MIL / niveau MN
     brevet_pct: brevetPct,
     formation_pct: exercisePct,
-    goals,
+    goals: {
+      codes: cleanedGoalCodes,
+      difficult_codes: goals.difficult_codes,
+      redo_codes: cleanedRedoCodes,
+      note: goals.note,
+      availability: goals.availability,
+    },
   };
 
   await clubRef(db, clubId)

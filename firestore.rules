@@ -999,6 +999,19 @@ service cloud.firestore {
           allow write: if false;
         }
 
+        // WP-11 — objectifs de l'élève (« Mes objectifs »). Saisie self-service
+        // par le membre lui-même uniquement (lecture seule pour le moniteur,
+        // D7). La CF WP-09 auto-nettoie les codes validés via l'Admin SDK
+        // (bypass rules). Lecture : le membre + tout encadrant + admin (D14).
+        match /formation_goals/{goalId} {
+          allow read: if isAuthenticated() && (
+            request.auth.uid == memberId ||
+            isEncadrantForClub(clubId) ||
+            isAdmin(clubId)
+          );
+          allow write: if isAuthenticated() && request.auth.uid == memberId;
+        }
+
         // ========== MEDICAL CERTIFICATES (Certificats médicaux - CalyMob) ==========
         // Members upload their medical certificates, admins validate them
         match /medical_certificates/{certId} {
