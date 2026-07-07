@@ -12,7 +12,10 @@ import '../../models/member_profile.dart';
 import '../../services/profile_service.dart';
 import '../../services/member_service.dart';
 import '../../utils/permission_helper.dart';
+import '../../models/formation_snapshot_doc.dart';
+import '../../services/formation_snapshot_reader.dart';
 import '../exercises/member_exercises_screen.dart';
+import '../formation/student_360_screen.dart';
 
 /// Écran "Who's Who" - Annuaire des membres
 class WhoIsWhoScreen extends StatefulWidget {
@@ -34,6 +37,7 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
   bool _onlyWithPhotos = false;
   String _sortBy = 'prenom'; // 'prenom' (first name) or 'nom' (last name)
   bool _canManageExercises = false; // Monitor, admin, or super admin
+  bool _showFormation = false; // WP-10 : segment « Membres | Formation »
 
   // Bubbles animation
   late AnimationController _bubblesController;
@@ -210,6 +214,9 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
         child: SafeArea(
             child: Column(
         children: [
+          // WP-10 — segment « Membres | Formation » (encadrants uniquement).
+          if (_canManageExercises) _buildFormationSegment(),
+
           // Barre de recherche - glass effect
           ClipRRect(
             child: BackdropFilter(
@@ -321,9 +328,15 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
               ),
             ),
 
-          // Grille des membres (2 colonnes)
+          // Grille des membres (2 colonnes) OU liste Formation (WP-10)
           Expanded(
-            child: FutureBuilder<List<MemberProfile>>(
+            child: (_showFormation && _canManageExercises)
+                ? FormationListView(
+                    clubId: _clubId,
+                    searchQuery: _searchQuery,
+                    filterLevel: _filterLevel,
+                  )
+                : FutureBuilder<List<MemberProfile>>(
               future: _profileService.getAllProfiles(_clubId),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
@@ -382,6 +395,54 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
           ),
         ],
       ),
+        ),
+      ),
+    );
+  }
+
+  // WP-10 — bascule Membres / Formation.
+  Widget _buildFormationSegment() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(30),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+        ),
+        child: Row(
+          children: [
+            _segmentButton('Membres', !_showFormation,
+                () => setState(() => _showFormation = false)),
+            _segmentButton('Formation', _showFormation,
+                () => setState(() => _showFormation = true)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _segmentButton(String label, bool active, VoidCallback onTap) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: active
+                ? Colors.white.withValues(alpha: 0.92)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(30),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: active ? AppColors.donkerblauw : Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ),
       ),
     );
@@ -950,5 +1011,273 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
       return upperCode.substring(1);
     }
     return upperCode;
+  }
+}
+
+
+/// WP-10 — Liste « Formation » de Who's who (encadrants uniquement).
+/// Lit les snapshots matérialisés (collectionGroup) + joint les profils.
+/// Triée « attention d'abord ». Tap → fiche 360°.
+class FormationListView extends StatefulWidget {
+  final String clubId;
+  final String searchQuery;
+  final String? filterLevel;
+
+  const FormationListView({
+    super.key,
+    required this.clubId,
+    required this.searchQuery,
+    this.filterLevel,
+  });
+
+  @override
+  State<FormationListView> createState() => _FormationListViewState();
+}
+
+class _FormationRow {
+  final MemberProfile profile;
+  final FormationSnapshotDoc snapshot;
+  const _FormationRow({required this.profile, required this.snapshot});
+}
+
+class _FormationListViewState extends State<FormationListView> {
+  final ProfileService _profileService = ProfileService();
+  final FormationSnapshotReader _reader = FormationSnapshotReader();
+  late final Future<List<_FormationRow>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  Future<List<_FormationRow>> _load() async {
+    final results = await Future.wait<dynamic>([
+      _profileService.getAllProfiles(widget.clubId),
+      _reader.getAllSnapshots(widget.clubId),
+    ]);
+    final profiles = (results[0] as List<MemberProfile>);
+    final snaps = (results[1] as List<FormationSnapshotDoc>);
+    final byId = {for (final p in profiles) p.id: p};
+    final rows = <_FormationRow>[];
+    for (final s in snaps) {
+      final p = byId[s.memberId];
+      if (p == null) continue;
+      rows.add(_FormationRow(profile: p, snapshot: s));
+    }
+    rows.sort((a, b) =>
+        b.snapshot.attentionScore.compareTo(a.snapshot.attentionScore));
+    return rows;
+  }
+
+  List<_FormationRow> _filter(List<_FormationRow> rows) {
+    var out = rows;
+    final q = widget.searchQuery.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      out = out
+          .where((r) =>
+              r.profile.fullName.toLowerCase().contains(q) ||
+              r.profile.nom.toLowerCase().contains(q) ||
+              r.profile.prenom.toLowerCase().contains(q))
+          .toList();
+    }
+    if (widget.filterLevel != null) {
+      out = out
+          .where((r) =>
+              (r.profile.plongeurCode ?? '').toUpperCase() == widget.filterLevel)
+          .toList();
+    }
+    return out;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<_FormationRow>>(
+      future: _future,
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Center(
+              child: CircularProgressIndicator(color: Colors.white));
+        }
+        final rows = _filter(snap.data ?? const []);
+        if (rows.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                widget.searchQuery.isNotEmpty || widget.filterLevel != null
+                    ? 'Aucun élève ne correspond aux filtres.'
+                    : 'Aucun élève en formation pour le moment.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
+              ),
+            ),
+          );
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 16),
+          itemCount: rows.length,
+          itemBuilder: (context, i) => _buildRow(context, rows[i]),
+        );
+      },
+    );
+  }
+
+  Widget _buildRow(BuildContext context, _FormationRow row) {
+    final m = row.profile;
+    final s = row.snapshot;
+    final trajet = s.targetLevel != null && s.targetLevel!.isNotEmpty
+        ? '${s.currentCode.isEmpty ? '—' : s.currentCode} → ${s.targetLevel}'
+        : (s.currentCode.isEmpty ? '' : s.currentCode);
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => Student360Screen(clubId: widget.clubId, member: m),
+        ));
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _photo(m, 48),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          m.fullName,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15),
+                        ),
+                      ),
+                      if (s.attentionCount > 0) _badge('⚠ ${s.attentionCount}', Colors.redAccent),
+                      if (s.pendingCount > 0) _badge('⏳ ${s.pendingCount}', Colors.amberAccent),
+                      if (s.goalCount > 0) _badge('🎯 ${s.goalCount}', Colors.tealAccent),
+                    ],
+                  ),
+                  if (trajet.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: Text(trajet,
+                          style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.75),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                  const SizedBox(height: 6),
+                  _miniBar('Exercices', s.exercisePct, AppColors.lichtblauw),
+                  if (s.hasMil) ...[
+                    const SizedBox(height: 4),
+                    _miniBar('Exp. MIL', s.milPct, Colors.amberAccent),
+                  ],
+                  const SizedBox(height: 6),
+                  Text(
+                    s.pedagogicalLine,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _badge(String text, Color color) {
+    return Container(
+      margin: const EdgeInsets.only(left: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.22),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(text,
+          style: TextStyle(
+              color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+    );
+  }
+
+  Widget _miniBar(String label, int pct, Color color) {
+    final p = (pct.clamp(0, 100)) / 100.0;
+    return Row(
+      children: [
+        SizedBox(
+          width: 64,
+          child: Text(label,
+              style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.75), fontSize: 11)),
+        ),
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(5),
+            child: LinearProgressIndicator(
+              value: p,
+              minHeight: 6,
+              backgroundColor: Colors.white.withValues(alpha: 0.16),
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text('$pct %',
+            style: const TextStyle(
+                color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+      ],
+    );
+  }
+
+  Widget _photo(MemberProfile m, double size) {
+    final hasPhoto = m.hasPhoto && m.consentInternalPhoto && m.photoUrl != null;
+    if (hasPhoto) {
+      return ClipOval(
+        child: CachedNetworkImage(
+          imageUrl: m.photoUrl!,
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorWidget: (_, __, ___) => _initials(m, size),
+        ),
+      );
+    }
+    return _initials(m, size);
+  }
+
+  Widget _initials(MemberProfile m, double size) {
+    final initials =
+        '${m.prenom.isNotEmpty ? m.prenom[0] : ''}${m.nom.isNotEmpty ? m.nom[0] : ''}'
+            .toUpperCase();
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white.withValues(alpha: 0.2),
+      ),
+      alignment: Alignment.center,
+      child: Text(initials,
+          style: TextStyle(
+              color: Colors.white,
+              fontSize: size * 0.36,
+              fontWeight: FontWeight.bold)),
+    );
   }
 }
