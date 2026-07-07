@@ -22,6 +22,7 @@ import '../../services/profile_service.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/photo_consent_dialog.dart';
 import 'face_camera_screen.dart' if (dart.library.html) 'face_camera_screen_stub.dart';
+import 'mes_brevets_screen.dart';
 
 enum _PhotoSource { camera, gallery }
 
@@ -84,6 +85,8 @@ class _IdentiteScreenState extends State<IdentiteScreen> {
                         const SizedBox(height: 16),
                         _infoCard(profile),
                         const SizedBox(height: 16),
+                        _mesBrevetsCard(),
+                        const SizedBox(height: 16),
                         if (profile.hasPhoto) _consentCard(profile),
                       ],
                     ),
@@ -99,6 +102,23 @@ class _IdentiteScreenState extends State<IdentiteScreen> {
               );
             },
           ),
+        ),
+      ),
+    );
+  }
+
+  // ---------- Mes brevets (WP-08) ----------
+  Widget _mesBrevetsCard() {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: ListTile(
+        leading: const Icon(Icons.workspace_premium, color: AppColors.middenblauw),
+        title: const Text('Mes brevets'),
+        subtitle: const Text('Historique et dates d\'homologation'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const MesBrevetsScreen()),
         ),
       ),
     );
