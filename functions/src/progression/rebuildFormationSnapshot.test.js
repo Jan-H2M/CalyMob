@@ -194,6 +194,29 @@ describe('observations → per_code + attention_points', () => {
     ];
     expect(computeAttentionPoints(groupObservationsByCode(obs))).not.toContain('P2.OR');
   });
+
+  // WP-12 — critères d'acceptation dédiés.
+  test('WP-12 : 2 en_progres sur P2.VM → attention chez moniteur ET élève', () => {
+    const obs = [
+      { category: 'exercice_lifras', exerciceCode: 'P2.VM', result: 'en_progres', contextDate: '2026-01-01' },
+      { category: 'exercice_lifras', exerciceCode: 'P2.VM', result: 'en_progres', contextDate: '2026-02-01' },
+    ];
+    const grouped = groupObservationsByCode(obs);
+    expect(grouped.perCode['P2.VM'].attempts).toBe(2); // « ×2 pratiqué »
+    expect(computeAttentionPoints(grouped)).toEqual(['P2.VM']);
+  });
+
+  test('WP-12 : un acquis ultérieur retire le point d\'attention', () => {
+    const before = [
+      { category: 'exercice_lifras', exerciceCode: 'P2.VM', result: 'a_revoir', contextDate: '2026-01-01' },
+    ];
+    expect(computeAttentionPoints(groupObservationsByCode(before))).toContain('P2.VM');
+    const after = [
+      ...before,
+      { category: 'exercice_lifras', exerciceCode: 'P2.VM', result: 'acquis', contextDate: '2026-03-01' },
+    ];
+    expect(computeAttentionPoints(groupObservationsByCode(after))).not.toContain('P2.VM');
+  });
 });
 
 describe('membre sans aucune donnée', () => {

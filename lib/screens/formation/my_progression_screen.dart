@@ -4,6 +4,8 @@ import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../models/member_observation.dart';
 import '../../providers/auth_provider.dart';
+import '../../models/formation_snapshot_doc.dart';
+import '../../services/formation_snapshot_reader.dart';
 import '../../services/member_observation_service.dart';
 import 'my_goals_screen.dart';
 
@@ -18,8 +20,10 @@ class MyProgressionScreen extends StatefulWidget {
 
 class _MyProgressionScreenState extends State<MyProgressionScreen> {
   final MemberObservationService _service = MemberObservationService();
+  final FormationSnapshotReader _snapshotReader = FormationSnapshotReader();
   final String _clubId = FirebaseConfig.defaultClubId;
   List<MemberObservation> _observations = [];
+  FormationSnapshotDoc? _snapshot; // WP-12 : points d'attention (formulation positive)
   bool _loading = true;
 
   @override
@@ -32,6 +36,10 @@ class _MyProgressionScreenState extends State<MyProgressionScreen> {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final memberId = authProvider.currentUser?.uid;
     if (memberId == null) return;
+
+    _snapshotReader.getSnapshot(_clubId, memberId).then((snap) {
+      if (mounted) setState(() => _snapshot = snap);
+    });
 
     _service.getObservationsForMember(_clubId, memberId).listen((obs) {
       if (mounted) {
@@ -87,6 +95,17 @@ class _MyProgressionScreenState extends State<MyProgressionScreen> {
     );
   }
 
+  String _describeGoalCode(String code) {
+    final snap = _snapshot;
+    if (snap == null) return code;
+    for (final ex in [...snap.remaining, ...snap.pending, ...snap.validated]) {
+      if (ex.code == code && ex.description.isNotEmpty) {
+        return '$code — ${ex.description}';
+      }
+    }
+    return code;
+  }
+
   Widget _buildContent() {
     // Group by category
     final grouped = <String, List<MemberObservation>>{};
@@ -112,6 +131,45 @@ class _MyProgressionScreenState extends State<MyProgressionScreen> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        // WP-12 — « Encore à travailler » (formulation positive, D8).
+        if (_snapshot != null && _snapshot!.attentionPoints.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.oranje.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.oranje.withValues(alpha: 0.4)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: const [
+                    Icon(Icons.fitness_center, color: AppColors.oranje, size: 18),
+                    SizedBox(width: 6),
+                    Text('Encore à travailler',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.donkerblauw)),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                ..._snapshot!.attentionPoints.map((code) {
+                  final pc = _snapshot!.perCode[code];
+                  final attempts = pc?.attempts ?? 0;
+                  final detail =
+                      attempts > 0 ? ' · déjà pratiqué ×$attempts' : '';
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Text('• ${_describeGoalCode(code)}$detail',
+                        style: TextStyle(color: AppColors.donkerblauw)),
+                  );
+                }),
+              ],
+            ),
+          ),
+
         // Summary card
         Container(
           padding: const EdgeInsets.all(16),

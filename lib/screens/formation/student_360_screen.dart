@@ -129,6 +129,7 @@ class _Student360ScreenState extends State<Student360Screen> {
     return Column(
       children: [
         _buildHeader(s),
+        if (s.attentionPoints.isNotEmpty) _buildAttentionBanner(s),
         Container(
           color: Colors.white.withValues(alpha: 0.08),
           child: const TabBar(
@@ -321,6 +322,55 @@ class _Student360ScreenState extends State<Student360Screen> {
         ),
       ),
     );
+  }
+
+  // WP-12 — bandeau « Points d'attention » (vue moniteur).
+  Widget _buildAttentionBanner(FormationSnapshotDoc s) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.redAccent.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.warning_amber_rounded,
+                  color: Colors.redAccent, size: 18),
+              const SizedBox(width: 6),
+              Text('Points d\'attention (${s.attentionPoints.length})',
+                  style: const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.w800)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ...s.attentionPoints.map((code) {
+            final pc = s.perCode[code];
+            final attempts = pc?.attempts ?? 0;
+            final detail = attempts > 0 ? ' · ×$attempts pratiqué' : '';
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Text('• ${_describeCode(s, code)}$detail',
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.92), fontSize: 13)),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  String _describeCode(FormationSnapshotDoc s, String code) {
+    for (final ex in [...s.remaining, ...s.pending, ...s.validated]) {
+      if (ex.code == code && ex.description.isNotEmpty) {
+        return '$code — ${ex.description}';
+      }
+    }
+    return code;
   }
 
   // ---- Onglet Exercices ----------------------------------------------------
