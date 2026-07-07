@@ -21,6 +21,7 @@
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const admin = require('firebase-admin');
 const { FieldValue, Timestamp } = require('firebase-admin/firestore');
+const { resolveChefEcole } = require('../utils/resolveChefEcole');
 
 const FUNCTION_NAME = 'processFormationTaskReminders';
 const FUNCTION_REGION = 'europe-west1';
@@ -32,6 +33,18 @@ const MIN_REMINDER_INTERVAL_MS = HOURS(24); // per-task interval
 const MIN_PUSH_PER_MEMBER_MS = HOURS(24); // per-member daily cap
 const ESCALATION_AGE_MS = DAYS(7);
 const ESCALATION_MIN_REMINDERS = 3;
+
+// WP-17 (SLA 14 jours, D17) — plan de rappel par TYPE de tâche, en jours
+// depuis `created_at`. Une tâche dont le type figure ici suit ce calendrier
+// précis ; les autres types gardent la cadence générique (24h + 3 rappels).
+const REMINDER_PLANS = {
+  monitor_validation: { reminders: [3, 8, 12], escalate: 14 },
+};
+
+function daysSinceCreated(task, nowMs) {
+  const created = task.created_at?.toMillis?.() || nowMs;
+  return Math.floor((nowMs - created) / DAYS(1));
+}
 
 // Per v2.2 §8.4 : a pool_checkin task gets at most ONE reminder per pool
 // evening, irrespective of the global 24h per-task interval. This constant
@@ -168,7 +181,13 @@ const processFormationTaskReminders = onSchedule(
 
       const ancient = ancientSnap.docs
         .map((d) => ({ id: d.id, ref: d.ref, ...d.data() }))
-        .filter((t) => (t.notification_state?.reminder_count || 0) >= ESCALATION_MIN_REMINDERS);
+        .filter((t) => {
+          // WP-17 — un type avec plan escalade à `plan.escalate` jours (D17) ;
+          // les autres gardent le seuil générique (≥ 3 rappels).
+          const plan = REMINDER_PLANS[t.type];
+          if (plan) return daysSinceCreated(t, now) >= plan.escalate;
+          return (t.notification_state?.reminder_count || 0) >= ESCALATION_MIN_REMINDERS;
+        });
 
       if (ancient.length > 0) {
         await sendEscalationDigest(db, clubId, ancient);
@@ -194,11 +213,22 @@ const processFormationTaskReminders = onSchedule(
 function isDueForReminder(task, nowMs) {
   const state = task.notification_state || {};
   const reminderCount = state.reminder_count || 0;
+  const lastAt = state.last_reminder_at?.toMillis?.() || 0;
+
+  // WP-17 — plan par type (jours depuis création). Le rappel n°(reminderCount)
+  // est dû dès que l'âge atteint le jalon correspondant ; jamais deux le même
+  // jour (garde 24h). Au-delà du dernier jalon → escalade (pass 2).
+  const plan = REMINDER_PLANS[task.type];
+  if (plan) {
+    if (reminderCount >= plan.reminders.length) return false;
+    if (daysSinceCreated(task, nowMs) < plan.reminders[reminderCount]) return false;
+    return nowMs - lastAt >= MIN_REMINDER_INTERVAL_MS;
+  }
+
+  // Cadence générique (types sans plan) — inchangée.
   if (reminderCount >= ESCALATION_MIN_REMINDERS + 1) {
-    // Beyond escalation threshold — handled by digest pass instead of push.
     return false;
   }
-  const lastAt = state.last_reminder_at?.toMillis?.() || 0;
   if (lastAt === 0) return true; // never reminded
   return nowMs - lastAt >= MIN_REMINDER_INTERVAL_MS;
 }
@@ -245,13 +275,16 @@ async function sendEscalationDigest(db, clubId, ancientTasks) {
   // step that reuses CalyCompta's Resend integration once the cockpit ships
   // (phase 5). Until then the school responsible sees these directly in the
   // CalyCompta Inbox view (admin route) under the "Bloqué" filter.
+  // WP-18 — l'escalade vise le chef d'école (settings/general, sinon admin).
+  const chefEcoleId = await resolveChefEcole(db, clubId);
   const lines = ancientTasks.map(
     (t) => `  - ${t.title} (member=${t.member_id}, age=${Math.floor((Date.now() - (t.created_at?.toMillis?.() || 0)) / DAYS(1))}d)`
   );
   console.log(
-    `[${FUNCTION_NAME}] escalation digest for club ${clubId} (${ancientTasks.length} tasks):\n${lines.join(
-      '\n'
-    )}`
+    `[${FUNCTION_NAME}] escalation digest for club ${clubId} → chef d'école ` +
+      `${chefEcoleId || '(non défini, fallback admin)'} (${ancientTasks.length} tasks):\n${lines.join(
+        '\n'
+      )}`
   );
 }
 
