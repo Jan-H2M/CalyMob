@@ -180,6 +180,16 @@ exports.onObservationAcquis = onObservationAcquis;
 const { onPlongeurCodeChanged } = require('./src/progression/onPlongeurCodeChanged');
 exports.onPlongeurCodeChanged = onPlongeurCodeChanged;
 
+// WP-09 — snapshot de formation matérialisé (members/{id}/formation_snapshot/current).
+// 5 triggers minces + cron de rattrapage 04:00 → rebuildSnapshot.
+const snapshotFns = require('./src/progression/rebuildFormationSnapshot');
+exports.onLogbookEntryWriteSnapshot = snapshotFns.onLogbookEntryWriteSnapshot;
+exports.onExerciseClaimWriteSnapshot = snapshotFns.onExerciseClaimWriteSnapshot;
+exports.onMemberObservationWriteSnapshot = snapshotFns.onMemberObservationWriteSnapshot;
+exports.onExercicesValidesWriteSnapshot = snapshotFns.onExercicesValidesWriteSnapshot;
+exports.onFormationGoalsWriteSnapshot = snapshotFns.onFormationGoalsWriteSnapshot;
+exports.rebuildStaleSnapshots = snapshotFns.rebuildStaleSnapshots;
+
 // =============================================================================
 // INSCRIPTION REFUND (Gen2)
 // =============================================================================

@@ -147,7 +147,148 @@ class FormationSnapshotService {
     return Map.fromEntries(entries);
   }
 
+  /// WP-09 — lit d'abord le snapshot matérialisé
+  /// `members/{id}/formation_snapshot/current`. Fallback sur le calcul local
+  /// (déprécié) si le doc est absent (membre pas encore reconstruit).
   Future<FormationSnapshot> getFormationSnapshot(
+    String clubId,
+    FormationMemberInput member,
+  ) async {
+    if (member.memberId.isNotEmpty) {
+      try {
+        final doc = await _firestore
+            .collection('clubs')
+            .doc(clubId)
+            .collection('members')
+            .doc(member.memberId)
+            .collection('formation_snapshot')
+            .doc('current')
+            .get();
+        final data = doc.data();
+        if (doc.exists && data != null) {
+          return _snapshotFromDoc(member, data);
+        }
+      } catch (e) {
+        debugPrint('⚠️ Snapshot matérialisé illisible, fallback calcul local: $e');
+      }
+    }
+    return _computeSnapshotLocally(clubId, member);
+  }
+
+  /// Construit un [FormationSnapshot] à partir du document matérialisé (WP-09).
+  FormationSnapshot _snapshotFromDoc(
+    FormationMemberInput member,
+    Map<String, dynamic> data,
+  ) {
+    final targetLevel = _targetFromExplicit(data['target_level']?.toString()) ??
+        _targetFromExplicit(member.targetFormationLevel) ??
+        _targetFromCurrentCode(member.currentCode);
+
+    final exercises =
+        (data['exercises'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final counts =
+        (exercises['counts'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final diveStats =
+        (data['dive_stats'] as Map?)?.cast<String, dynamic>() ?? const {};
+
+    List<Map<String, dynamic>> listOf(dynamic v) =>
+        (v as List?)?.map((e) => (e as Map).cast<String, dynamic>()).toList() ??
+        <Map<String, dynamic>>[];
+
+    final validated = listOf(exercises['validated'])
+        .map((e) =>
+            _exerciceValideFromDoc(e, targetLevel, ExerciceValideStatus.validated))
+        .toList();
+    final pending = listOf(exercises['pending'])
+        .map((e) =>
+            _exerciceValideFromDoc(e, targetLevel, ExerciceValideStatus.pending))
+        .toList();
+    final remaining = listOf(exercises['remaining'])
+        .map((e) => ExerciceLIFRAS(
+              id: '',
+              code: e['code']?.toString() ?? '',
+              niveau: targetLevel ?? NiveauLIFRAS.nb,
+              description: e['description']?.toString() ?? '',
+            ))
+        .toList();
+    final pendingClaims = listOf(exercises['pending_claims'])
+        .map((e) => FormationPendingClaim(
+              id: e['id']?.toString() ?? '',
+              exerciseCode: e['code']?.toString() ?? '',
+              exerciseLabel: e['label']?.toString(),
+              status: e['status']?.toString() ?? '',
+              monitorId: e['monitor_id']?.toString(),
+              operationId: e['operation_id']?.toString(),
+              palanqueeId: e['palanquee_id']?.toString(),
+            ))
+        .toList();
+    final recentDives = listOf(data['recent_dives'])
+        .map((e) => FormationRecentDive(
+              id: e['id']?.toString() ?? '',
+              date: _toDate(e['date']),
+              locationName: e['location_name']?.toString() ?? 'Lieu inconnu',
+              depthMaxMeters: _toDouble(e['depth_max_meters']),
+              durationMinutes: _toInt(e['duration_minutes']),
+              counters:
+                  (e['counters'] as Map?)?.cast<String, dynamic>() ?? const {},
+            ))
+        .toList();
+
+    return FormationSnapshot(
+      memberId: member.memberId,
+      currentCode: data['current_code']?.toString() ?? member.currentCode ?? '',
+      targetLevel: targetLevel,
+      targetLabel:
+          targetLevel?.label ?? data['target_level']?.toString() ?? '',
+      diveStats: FormationDiveStats(
+        totalDives: _toInt(diveStats['total']) ?? 0,
+        outdoorDives: _toInt(diveStats['total']) ?? 0,
+        seaDives: _toInt(diveStats['mer']) ?? 0,
+        exerciseDives: _toInt(diveStats['exo']) ?? 0,
+        maxDepthMeters: _toDouble(diveStats['max_depth_meters']),
+        totalMinutes: _toInt(diveStats['total_minutes']) ?? 0,
+        lastDiveDate: _toDate(diveStats['last_dive_date']),
+      ),
+      validatedExercises: validated,
+      pendingExercises: pending,
+      pendingClaims: pendingClaims,
+      remainingExercises: remaining,
+      recentDives: recentDives,
+      counts: FormationSnapshotCounts(
+        totalRequired: _toInt(counts['total_required']) ?? 0,
+        validated: _toInt(counts['validated']) ?? 0,
+        pending: _toInt(counts['pending']) ?? 0,
+        pendingClaims: _toInt(counts['pending_claims']) ?? 0,
+        remaining: _toInt(counts['remaining']) ?? 0,
+      ),
+    );
+  }
+
+  ExerciceValide _exerciceValideFromDoc(
+    Map<String, dynamic> e,
+    NiveauLIFRAS? targetLevel,
+    ExerciceValideStatus status,
+  ) {
+    return ExerciceValide(
+      id: '',
+      exerciceId: '',
+      exerciceCode: e['code']?.toString() ?? '',
+      exerciceDescription: e['description']?.toString() ?? '',
+      exerciceNiveau: NiveauLIFRASExtension.fromCode(e['niveau']?.toString()) ??
+          targetLevel ??
+          NiveauLIFRAS.nb,
+      status: status,
+      dateValidation: _toDate(e['date']) ?? DateTime.now(),
+      moniteurNom: e['validator']?.toString() ?? '',
+      createdBy: '',
+    );
+  }
+
+  /// @deprecated Calcul client historique (requêtes N+1). Conservé comme
+  /// fallback tant que le snapshot matérialisé (WP-09) n'existe pas encore
+  /// pour ce membre.
+  @Deprecated('WP-09 : lire le snapshot matérialisé ; fallback uniquement')
+  Future<FormationSnapshot> _computeSnapshotLocally(
     String clubId,
     FormationMemberInput member,
   ) async {

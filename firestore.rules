@@ -986,6 +986,19 @@ service cloud.firestore {
           allow update, delete: if isAdmin(clubId);
         }
 
+        // WP-09 — snapshot de formation matérialisé. Document dérivé, écrit
+        // UNIQUEMENT par les Cloud Functions (Admin SDK, bypass rules). Lecture :
+        // le membre lui-même + tout encadrant (fiche 360° / Who's who — D14).
+        // Jamais écrit côté client (le snapshot est un dérivé jetable).
+        match /formation_snapshot/{snapshotId} {
+          allow read: if isAuthenticated() && (
+            request.auth.uid == memberId ||
+            isEncadrantForClub(clubId) ||
+            isAdmin(clubId)
+          );
+          allow write: if false;
+        }
+
         // ========== MEDICAL CERTIFICATES (Certificats médicaux - CalyMob) ==========
         // Members upload their medical certificates, admins validate them
         match /medical_certificates/{certId} {
