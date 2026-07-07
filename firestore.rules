@@ -1741,6 +1741,22 @@ service cloud.firestore {
     // Personal dive log. Member owns their entries. Admins/encadrants can
     // read for support purposes; buddies do NOT have implicit read access
     // (a future buddy_confirmation flow grants per-entry read on request).
+    // WP-19 (D5) — aucun champ de `source_locked_fields` ne change à l'édition.
+    function logbookLockedFieldsUnchanged() {
+      return !('source_locked_fields' in resource.data)
+        || !(resource.data.source_locked_fields is list)
+        || (
+          (!('date' in resource.data.source_locked_fields) || request.resource.data.get('date', null) == resource.data.get('date', null))
+          && (!('depth_max_meters' in resource.data.source_locked_fields) || request.resource.data.get('depth_max_meters', null) == resource.data.get('depth_max_meters', null))
+          && (!('duration_minutes' in resource.data.source_locked_fields) || request.resource.data.get('duration_minutes', null) == resource.data.get('duration_minutes', null))
+          && (!('location_name' in resource.data.source_locked_fields) || request.resource.data.get('location_name', null) == resource.data.get('location_name', null))
+          && (!('water_type' in resource.data.source_locked_fields) || request.resource.data.get('water_type', null) == resource.data.get('water_type', null))
+          && (!('counters' in resource.data.source_locked_fields) || request.resource.data.get('counters', {}) == resource.data.get('counters', {}))
+          && (!('binomes' in resource.data.source_locked_fields) || request.resource.data.get('binomes', []) == resource.data.get('binomes', []))
+          && (!('group_key' in resource.data.source_locked_fields) || request.resource.data.get('group_key', null) == resource.data.get('group_key', null))
+        );
+    }
+
     match /clubs/{clubId}/student_logbook_entries/{entryId} {
       allow read: if isMember(clubId) && (
            resource.data.member_id == request.auth.uid
@@ -1751,7 +1767,16 @@ service cloud.firestore {
       allow create: if isMember(clubId)
         && request.resource.data.member_id == request.auth.uid;
 
-      allow update, delete: if isMember(clubId)
+      // WP-19 (D5) — édition élargie : le propriétaire modifie ses champs libres
+      // sans limite, mais aucun champ de `source_locked_fields` ne change.
+      allow update: if isMember(clubId)
+        && resource.data.member_id == request.auth.uid
+        && request.resource.data.member_id == resource.data.member_id
+        && request.resource.data.source == resource.data.source
+        && request.resource.data.get('edited_by', request.auth.uid) == request.auth.uid
+        && logbookLockedFieldsUnchanged();
+
+      allow delete: if isMember(clubId)
         && resource.data.member_id == request.auth.uid;
     }
 

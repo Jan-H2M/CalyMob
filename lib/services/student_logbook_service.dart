@@ -39,10 +39,14 @@ class StudentLogbookService {
     required String entryId,
     required StudentLogbookEntry entry,
     Map<String, dynamic>? extras,
+    String? editedBy,
   }) async {
     final payload = <String, dynamic>{
       ...entry.toMap(),
       'updated_at': FieldValue.serverTimestamp(),
+      // WP-19 (D5) — piste d'audit d'édition.
+      'edited_at': FieldValue.serverTimestamp(),
+      if (editedBy != null) 'edited_by': editedBy,
     };
     if (extras != null) {
       payload.addAll(extras);

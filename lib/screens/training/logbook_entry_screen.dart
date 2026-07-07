@@ -4458,6 +4458,9 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           'group_level': _poolLevel,
           'group_number': _poolGroupNumber,
           'updated_at': FieldValue.serverTimestamp(),
+          // WP-19 (D5) — piste d'audit d'édition.
+          'edited_at': FieldValue.serverTimestamp(),
+          'edited_by': userId,
         });
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -4561,6 +4564,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           entryId: widget.entryId!,
           entry: entry,
           extras: extras,
+          editedBy: userId,
         );
       } else {
         savedEntryId =
