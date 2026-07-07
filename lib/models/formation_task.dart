@@ -27,6 +27,11 @@ enum FormationTaskType {
   /// v2.2 — holistic evaluation by the group validator after a pool
   /// session is closed. Created by Cloud Function `onPoolSessionClosed`.
   monitorObservation,
+
+  /// WP-02 — a monitor rejected the student's exercise_claim. The student
+  /// sees the reason and can correct + re-submit (unlimited) or abandon.
+  /// Created by Cloud Function `onClaimRejected`.
+  claimRejected,
 }
 
 enum FormationTaskStatus {
@@ -132,6 +137,10 @@ class FormationTaskContext {
   final String? palanqueeId;
   final String? locationId;
 
+  /// WP-02 — reason given by the monitor when a claim is rejected. Set on
+  /// `claim_rejected` tasks so the student sees it directly on the card.
+  final String? rejectedReason;
+
   /// Role of the assignee for a pool_checkin task. `'encadrant'` switches the
   /// check-in screen to the formateur variant; null/absent ⇒ student variant.
   final String? role;
@@ -155,6 +164,7 @@ class FormationTaskContext {
     this.historicalClaimBatchId,
     this.palanqueeId,
     this.locationId,
+    this.rejectedReason,
     this.role,
     this.encadrantGroups = const [],
   });
@@ -180,6 +190,7 @@ class FormationTaskContext {
       historicalClaimBatchId: map['historical_claim_batch_id'],
       palanqueeId: map['palanquee_id'],
       locationId: map['location_id'],
+      rejectedReason: map['rejected_reason'],
       role: map['role'],
       encadrantGroups: (map['encadrant_groups'] as List?)
               ?.whereType<Map<String, dynamic>>()
@@ -317,6 +328,8 @@ class FormationTask {
         return FormationTaskType.historicalValidation;
       case 'monitor_observation':
         return FormationTaskType.monitorObservation;
+      case 'claim_rejected':
+        return FormationTaskType.claimRejected;
       default:
         return FormationTaskType.manualReminder;
     }
@@ -379,6 +392,8 @@ class FormationTask {
         return 'Carte papier';
       case FormationTaskType.monitorObservation:
         return 'Évaluation';
+      case FormationTaskType.claimRejected:
+        return 'Exercice refusé';
     }
   }
 
@@ -405,6 +420,8 @@ class FormationTask {
         return 'H';
       case FormationTaskType.monitorObservation:
         return 'O';
+      case FormationTaskType.claimRejected:
+        return 'R';
     }
   }
 }

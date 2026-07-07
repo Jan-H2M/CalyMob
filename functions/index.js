@@ -239,6 +239,16 @@ exports.onClaimAccepted = onClaimAccepted;
 const { onClaimSubmitted } = require('./src/training/onClaimSubmitted');
 exports.onClaimSubmitted = onClaimSubmitted;
 
+// WP-02 (chaîne de refus S1) — un refus n'est plus silencieux : onClaimRejected
+// crée une tâche 'claim_rejected' chez l'élève (raison + push immédiat) et
+// résout la tâche de validation parente ; onClaimResubmitted recrée une tâche
+// de validation quand l'élève re-soumet (rejected → submitted), car
+// onClaimSubmitted est create-only.
+const { onClaimRejected } = require('./src/training/onClaimRejected');
+exports.onClaimRejected = onClaimRejected;
+const { onClaimResubmitted } = require('./src/training/onClaimResubmitted');
+exports.onClaimResubmitted = onClaimResubmitted;
+
 // 2026-05-14 — Audit blocker #2: materialise the verdict written by
 // MonitorObservationForm into a permanent member_observations doc. Today
 // this captures a theme-level verdict (acquis/en_progres/a_revoir); the

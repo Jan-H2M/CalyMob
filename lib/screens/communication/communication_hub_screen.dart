@@ -19,6 +19,7 @@ import '../announcements/announcements_screen.dart';
 import '../teams/team_chat_screen.dart';
 import '../training/pool_checkin_screen.dart';
 import '../training/monitor_validation_screen.dart';
+import '../training/exercise_claim_retry_screen.dart';
 import '../training/logbook_entry_screen.dart';
 import '../training/logbook_dive_confirmation_screen.dart';
 import '../training/historical_claims_screen.dart';
@@ -1281,6 +1282,11 @@ void _openFormationTask(BuildContext context, FormationTask task) {
       break;
     case FormationTaskType.exerciseClaim:
       _openFormationTaskOnWeb(context, task, 'claim');
+      break;
+    case FormationTaskType.claimRejected:
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => ExerciseClaimRetryScreen(task: task),
+      ));
       break;
     case FormationTaskType.buddyConfirmation:
       _openFormationTaskOnWeb(context, task, 'buddy-confirm');

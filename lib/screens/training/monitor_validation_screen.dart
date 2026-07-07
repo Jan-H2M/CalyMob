@@ -146,9 +146,7 @@ class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: OutlinedButton(
-                              onPressed: _submitting
-                                  ? null
-                                  : () => _decide('rejected'),
+                              onPressed: _submitting ? null : _promptReject,
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: const Color(0xFFE5484D),
                                 side:
@@ -324,7 +322,105 @@ class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
     return c['operation_id'] ?? c['pool_session_id'] ?? '—';
   }
 
-  Future<void> _decide(String newStatus) async {
+  static const List<String> _rejectSuggestions = [
+    'Technique à retravailler',
+    'Conditions insuffisantes',
+    'Exercice incomplet',
+  ];
+
+  /// Ouvre le dialogue de refus : raison obligatoire (min 10 caractères) +
+  /// chips de suggestion. Le bouton reste désactivé tant que la raison est
+  /// trop courte (WP-02, décision D2).
+  Future<void> _promptReject() async {
+    final controller = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final text = controller.text.trim();
+            final valid = text.length >= 10;
+            return AlertDialog(
+              title: const Text('Refuser l\'exercice'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Explique à l\'élève ce qu\'il doit corriger. '
+                    'Cette raison lui sera envoyée immédiatement.',
+                    style: TextStyle(fontSize: 13),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    maxLines: 3,
+                    onChanged: (_) => setDialogState(() {}),
+                    decoration: InputDecoration(
+                      hintText: 'Raison du refus (min. 10 caractères)',
+                      border: const OutlineInputBorder(),
+                      errorText: text.isNotEmpty && !valid
+                          ? 'Encore un peu de détail (min. 10 caractères)'
+                          : null,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: _rejectSuggestions.map((s) {
+                      return ActionChip(
+                        label: Text(s, style: const TextStyle(fontSize: 12)),
+                        onPressed: () {
+                          controller.text = s;
+                          controller.selection = TextSelection.fromPosition(
+                            TextPosition(offset: controller.text.length),
+                          );
+                          setDialogState(() {});
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Annuler'),
+                ),
+                ElevatedButton(
+                  onPressed: valid
+                      ? () => Navigator.of(dialogContext).pop(text)
+                      : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFE5484D),
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Confirmer le refus'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    controller.dispose();
+
+    if (reason == null || reason.trim().length < 10) return;
+    if (!mounted) return;
+    final userId = context.read<AuthProvider>().currentUser?.uid;
+    await _decide('rejected', extraDecision: {
+      'rejected_reason': reason.trim(),
+      'rejected_by': userId,
+      'rejected_at': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> _decide(
+    String newStatus, {
+    Map<String, dynamic>? extraDecision,
+  }) async {
     if (_claim == null) return;
     setState(() => _submitting = true);
     try {
@@ -339,6 +435,14 @@ class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
       final decidedByName =
           '${memberProvider.prenom ?? ''} ${memberProvider.nom ?? ''}'.trim();
 
+      final decision = <String, dynamic>{
+        'decided_by': userId,
+        'decided_by_name': decidedByName,
+        'decided_at': FieldValue.serverTimestamp(),
+        'comment': _comment.text.isEmpty ? null : _comment.text,
+        if (extraDecision != null) ...extraDecision,
+      };
+
       await FirebaseFirestore.instance
           .collection('clubs')
           .doc(clubId)
@@ -346,12 +450,7 @@ class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
           .doc(claimId)
           .update({
         'status': newStatus,
-        'decision': {
-          'decided_by': userId,
-          'decided_by_name': decidedByName,
-          'decided_at': FieldValue.serverTimestamp(),
-          'comment': _comment.text.isEmpty ? null : _comment.text,
-        },
+        'decision': decision,
         'updated_at': FieldValue.serverTimestamp(),
       });
 

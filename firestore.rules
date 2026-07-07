@@ -1665,9 +1665,26 @@ service cloud.firestore {
         && request.resource.data.member_id == request.auth.uid
         && request.resource.data.declared_by == request.auth.uid;
 
+      // WP-02 — la raison de refus (decision.*) n'est modifiable que par le
+      // validateur assigné (monitor_id) ou un admin/encadrant. L'élève ne peut
+      // que : éditer son claim tant qu'il est draft/submitted, OU faire une des
+      // deux transitions autorisées après un refus (re-soumettre / abandonner),
+      // sans toucher à la décision du moniteur.
       allow update: if isMember(clubId) && (
            (resource.data.member_id == request.auth.uid
             && resource.data.status in ['draft', 'submitted'])
+        // Re-soumission : rejected → submitted, retry_count +1 exact, decision inchangée.
+        || (resource.data.member_id == request.auth.uid
+            && resource.data.status == 'rejected'
+            && request.resource.data.status == 'submitted'
+            && request.resource.data.retry_count ==
+                 (resource.data.retry_count is int ? resource.data.retry_count : 0) + 1
+            && request.resource.data.decision == resource.data.decision)
+        // Abandon : rejected → abandoned, decision inchangée.
+        || (resource.data.member_id == request.auth.uid
+            && resource.data.status == 'rejected'
+            && request.resource.data.status == 'abandoned'
+            && request.resource.data.decision == resource.data.decision)
         || resource.data.monitor_id == request.auth.uid
         || isAdmin(clubId)
         || isEncadrantForClub(clubId)
