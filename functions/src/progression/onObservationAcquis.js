@@ -64,10 +64,32 @@ exports.onObservationAcquis = onDocumentCreated(
       .limit(1)
       .get();
 
+    // WP-13 — chemin d'écriture unique. Un doc peut déjà exister :
+    //  - status 'validated'  → rien à faire (idempotent).
+    //  - status 'refused'/'pending' (legacy) → on le promeut à 'validated'
+    //    (l'observation « acquis » fait foi ; l'Admin SDK contourne les rules).
     if (!existing.empty) {
+      const doc = existing.docs[0];
+      const status = doc.data().status || 'validated';
+      if (status === 'validated') {
+        logger.info(
+          `[onObservationAcquis] ${exerciceCode} déjà validé pour ${memberId} — skip`
+        );
+        return null;
+      }
+      await doc.ref.update({
+        status: 'validated',
+        declared_by_member: false,
+        refused_reason: FieldValue.delete(),
+        date_validation: data.contextDate || FieldValue.serverTimestamp(),
+        moniteur_nom: data.observerName || '',
+        moniteur_id: data.observerId || '',
+        observation_id: event.params.observationId,
+        source: 'carnet_formation',
+        updated_at: FieldValue.serverTimestamp(),
+      });
       logger.info(
-        `[onObservationAcquis] Exercise ${exerciceCode} already ` +
-        `validated for member ${memberId} — skipping`
+        `[onObservationAcquis] ${exerciceCode} promu ${status}→validated pour ${memberId}`
       );
       return null;
     }

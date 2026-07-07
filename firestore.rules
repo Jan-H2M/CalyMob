@@ -953,17 +953,15 @@ service cloud.firestore {
           //    (status='pending' + declared_by_member=true)
           // Validatie is enkel voor Moniteurs (MC/MF/MN) — een Encadrant zonder
           // Moniteur-niveau kan dus enkel niet-validerende self-declarations zien.
-          allow create: if canValidateLifras(clubId)
-            || (
-              isAuthenticated()
-              && request.auth.uid == memberId
-              && request.resource.data.status == 'pending'
-              && request.resource.data.declared_by_member == true
-            );
-
-          // Update / delete : enkel Moniteur+Encadrant of admin (transitions
-          // pending → validated / refused).
-          allow update, delete: if canValidateLifras(clubId);
+          // WP-13 — chemin d'écriture unique. exercices_valides est écrit
+          // UNIQUEMENT par les Cloud Functions (onObservationAcquis /
+          // onClaimAccepted, via l'Admin SDK qui contourne les rules). Le
+          // membre déclare via `exercise_claims` (« Je l'ai fait ») ; le
+          // moniteur valide via une `member_observation` (acquis). Aucune
+          // écriture directe client. Suppression réservée admin (correction
+          // d'erreur, D9/Q-SP6) ; validés historiques sans observation tolérés.
+          allow create, update: if false;
+          allow delete: if isAdmin(clubId);
         }
 
         // WP-08 — historique de brevets (PP-H). La CF onPlongeurCodeChanged

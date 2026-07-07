@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../config/firebase_config.dart';
 import '../../models/exercice_lifras.dart';
 import '../../models/operation.dart';
 import '../../models/piscine_session.dart';
-import '../../providers/exercice_valide_provider.dart';
+import '../../services/exercise_claim_service.dart';
 import '../../services/operation_service.dart';
 import '../../services/piscine_session_service.dart';
 import '../../utils/date_formatter.dart';
@@ -171,15 +171,20 @@ class _SelfDeclareExerciseSheetState extends State<SelfDeclareExerciseSheet> {
     });
 
     try {
-      final provider = context.read<ExerciceValideProvider>();
+      // WP-13 — la déclaration spontanée crée un exercise_claim (le membre
+      // « envoie », le moniteur validera). Plus d'écriture directe dans
+      // exercices_valides (désormais CF-only).
       final sel = _selectedSession;
-      await provider.declareByMember(
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? widget.memberId;
+      await ExerciseClaimService().createSelfDeclarationClaim(
         clubId: _clubId,
         memberId: widget.memberId,
-        exercice: widget.exercice,
-        dateDeclaration: sel?.date ?? DateTime.now(),
+        declaredBy: uid,
+        exerciseCode: widget.exercice.code,
+        exerciseLabel: widget.exercice.description,
+        exerciseId: widget.exercice.id,
         sessionId: sel?.id,
-        themaId: null,
+        contextDate: sel?.date ?? DateTime.now(),
         notes: _noteController.text.trim().isEmpty
             ? null
             : _noteController.text.trim(),

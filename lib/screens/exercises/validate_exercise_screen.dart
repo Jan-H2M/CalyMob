@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/firebase_config.dart';
-import '../../config/app_assets.dart';
 import '../../models/exercice_lifras.dart';
+import '../../models/member_observation.dart';
 import '../../providers/auth_provider.dart';
-import '../../services/exercice_valide_service.dart';
+import '../../services/member_observation_service.dart';
 import '../../services/lifras_service.dart';
 import '../../services/member_service.dart';
 import '../../utils/date_formatter.dart';
@@ -31,7 +31,7 @@ class _ValidateExerciseScreenState extends State<ValidateExerciseScreen> {
   final _formKey = GlobalKey<FormState>();
   final LifrasService _lifrasService = LifrasService();
   final MemberService _memberService = MemberService();
-  final ExerciceValideService _exerciceValideService = ExerciceValideService();
+  final MemberObservationService _observationService = MemberObservationService();
   final String _clubId = FirebaseConfig.defaultClubId;
 
   final _moniteurController = TextEditingController();
@@ -171,22 +171,37 @@ class _ValidateExerciseScreenState extends State<ValidateExerciseScreen> {
       final authProvider = context.read<AuthProvider>();
       final createdBy = authProvider.currentUser?.uid ?? '';
 
-      await _exerciceValideService.validateExercise(
-        clubId: _clubId,
-        memberId: widget.memberId,
-        exercice: _selectedExercice!,
-        dateValidation: _selectedDate,
-        moniteurNom: _moniteurController.text.trim(),
-        createdBy: createdBy,
-        moniteurId: _selectedMoniteurId,
-        lieu: _lieuController.text.trim().isNotEmpty ? _lieuController.text.trim() : null,
-        notes: _notesController.text.trim().isNotEmpty ? _notesController.text.trim() : null,
+      // WP-13 — chemin d'écriture unique : le moniteur crée une observation
+      // « acquis » ; la Cloud Function onObservationAcquis matérialise ensuite
+      // l'entrée exercices_valides (plus d'écriture directe côté client).
+      final lieu = _lieuController.text.trim();
+      await _observationService.addObservation(
+        _clubId,
+        MemberObservation(
+          id: '',
+          memberId: widget.memberId,
+          memberName: widget.memberName,
+          memberNiveau: '',
+          contextType: 'plongee',
+          contextId: '',
+          contextDate: _selectedDate,
+          contextTitle: lieu,
+          category: 'exercice_lifras',
+          exerciceCode: _selectedExercice!.code,
+          exerciceDescription: _selectedExercice!.description,
+          result: 'acquis',
+          note: _notesController.text.trim(),
+          observerId: createdBy,
+          observerName: _moniteurController.text.trim(),
+          createdAt: DateTime.now(),
+        ),
       );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Exercice "${_selectedExercice!.code}" validé'),
+            content: Text(
+                'Validation de "${_selectedExercice!.code}" enregistrée (visible d\'ici quelques secondes)'),
             backgroundColor: Colors.green,
           ),
         );

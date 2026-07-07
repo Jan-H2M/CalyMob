@@ -81,4 +81,42 @@ class ExerciseClaimService {
     }
     await batch.commit();
   }
+
+  /// WP-13 — déclaration spontanée (« Je l'ai fait ») : crée un exercise_claim
+  /// `submitted` directement (pas de draft préalable). La CF onClaimSubmitted
+  /// crée ensuite la tâche de validation moniteur. Remplace l'ancienne écriture
+  /// directe dans exercices_valides (désormais CF-only).
+  Future<String> createSelfDeclarationClaim({
+    required String clubId,
+    required String memberId,
+    required String declaredBy,
+    required String exerciseCode,
+    String? exerciseLabel,
+    String? exerciseId,
+    String? memberName,
+    String? sessionId,
+    DateTime? contextDate,
+    String? notes,
+  }) async {
+    final ref = await _col(clubId).add({
+      'member_id': memberId,
+      'declared_by': declaredBy,
+      'declared_by_member': true,
+      'exercise_code': exerciseCode,
+      if (exerciseLabel != null && exerciseLabel.isNotEmpty)
+        'exercise_label': exerciseLabel,
+      if (exerciseId != null && exerciseId.isNotEmpty) 'exercise_id': exerciseId,
+      if (memberName != null && memberName.isNotEmpty) 'member_name': memberName,
+      'status': 'submitted',
+      'validation_mode': 'calypso_monitor',
+      'context_type': 'manual',
+      if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
+      if (contextDate != null) 'context_date': Timestamp.fromDate(contextDate),
+      if (notes != null && notes.trim().isNotEmpty)
+        'declaration_notes': notes.trim(),
+      'created_at': FieldValue.serverTimestamp(),
+      'updated_at': FieldValue.serverTimestamp(),
+    });
+    return ref.id;
+  }
 }
