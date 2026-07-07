@@ -942,6 +942,32 @@ class _FormationTaskChatRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // WP-05 : pour une tâche de confirmation binôme, le badge reflète le nombre
+    // de plongées réellement en attente de confirmation (pas un simple « 1 »).
+    if (task.type == FormationTaskType.buddyConfirmation) {
+      final userId = context.watch<AuthProvider>().currentUser?.uid;
+      if (userId != null) {
+        const clubId = FirebaseConfig.defaultClubId;
+        final stream = FirebaseFirestore.instance
+            .collection('clubs')
+            .doc(clubId)
+            .collection('logbook_dive_confirmations')
+            .where('target_member_id', isEqualTo: userId)
+            .where('status', isEqualTo: 'pending')
+            .snapshots();
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: stream,
+          builder: (context, snap) {
+            final count = snap.data?.docs.length ?? 0;
+            return _row(context, unreadCount: count > 0 ? count : 1);
+          },
+        );
+      }
+    }
+    return _row(context, unreadCount: 1);
+  }
+
+  Widget _row(BuildContext context, {required int unreadCount}) {
     return _CommunicationChatRow(
       avatar: _CommunicationAvatar(
         text: task.glyph,
@@ -954,7 +980,7 @@ class _FormationTaskChatRow extends StatelessWidget {
           ? _formationTaskStatusLabel(task)
           : _formationTaskSubtitle(task),
       timeLabel: _formatShortTime(task.updatedAt ?? task.createdAt),
-      unreadCount: 1,
+      unreadCount: unreadCount,
       searchQuery: searchQuery,
       tag: 'Action',
       tagColor: const Color(0xFF0F6D36),
@@ -1299,7 +1325,10 @@ void _openFormationTask(BuildContext context, FormationTask task) {
       ));
       break;
     case FormationTaskType.buddyConfirmation:
-      _openFormationTaskOnWeb(context, task, 'buddy-confirm');
+      // WP-05 : écran natif « Plongées à confirmer » au lieu du navigateur.
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => const LogbookDiveConfirmationsInboxScreen(),
+      ));
       break;
     case FormationTaskType.eventPreparation:
       _openFormationTaskOnWeb(context, task, 'event-prep');
