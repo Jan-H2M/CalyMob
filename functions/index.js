@@ -249,6 +249,11 @@ exports.onClaimRejected = onClaimRejected;
 const { onClaimResubmitted } = require('./src/training/onClaimResubmitted');
 exports.onClaimResubmitted = onClaimResubmitted;
 
+// WP-05 complément — maintient une tâche buddy_confirmation agrégée par membre
+// (ouverte tant qu'il reste des logbook_dive_confirmations pending, done à 0).
+const { onBuddyConfirmationTask } = require('./src/training/onBuddyConfirmationTask');
+exports.onBuddyConfirmationTask = onBuddyConfirmationTask;
+
 // 2026-05-14 — Audit blocker #2: materialise the verdict written by
 // MonitorObservationForm into a permanent member_observations doc. Today
 // this captures a theme-level verdict (acquis/en_progres/a_revoir); the
