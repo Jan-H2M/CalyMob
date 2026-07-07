@@ -31,6 +31,7 @@
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const { FieldValue, Timestamp } = require('firebase-admin/firestore');
+const { normalizeGroupKey } = require('../utils/groupKey');
 
 const FUNCTION_NAME = 'onPoolCheckinCompleted';
 const FUNCTION_REGION = 'europe-west1';
@@ -387,8 +388,13 @@ async function reconcileEncadrantGroups(db, clubId, sessionId, memberId, rawGrou
  *
  * Returns null if nothing resolves (caller logs a warning).
  */
-async function resolveValidator(db, clubId, sessionId, groupKey, level, moniteurIds) {
+async function resolveValidator(db, clubId, sessionId, rawGroupKey, level, moniteurIds) {
+  // WP-03 (D1) — tolère l'ancien format web ("2*-1") en le convertissant vers
+  // le canonique ("2star_groupe1") avant toute comparaison.
+  const groupKey = normalizeGroupKey(rawGroupKey);
   if (groupKey) {
+    // NOTE: groups/ est vide en prod (audit 2026-07-07) — chemin dormant.
+    // On le garde pour le jour où des docs groups/{groupKey} existeront.
     try {
       const groupSnap = await db
         .collection('clubs')
