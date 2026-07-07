@@ -409,8 +409,8 @@ const onLogbookDiveBuddiesChanged = onDocumentWritten(
         clubId,
         target.memberId,
         sourceMemberId,
-        `${sourceMemberName} vraagt je duik te bevestigen`,
-        `${confirmationBody(snapshot)}. Bevestig of jullie deze duik samen maakten.`,
+        `${sourceMemberName} te demande de confirmer ta plongée`,
+        `${confirmationBody(snapshot)}. Confirme si vous avez fait cette plongée ensemble.`,
         {
           type: 'logbook_dive_confirmation',
           club_id: clubId,
@@ -561,18 +561,18 @@ const respondToLogbookDiveConfirmation = onCall(
     });
 
     const labels = {
-      confirmed_copied: 'bevestigd en gekopieerd',
-      confirmed_existing_identical: 'bevestigd: identieke duik stond al in het logboek',
-      confirmed_existing_different: 'bevestigd: bestaande duik had verschillen',
-      confirmed_no_import: 'bevestigd zonder te importeren',
-      declined: 'geweigerd',
+      confirmed_copied: 'confirmée et copiée dans son carnet',
+      confirmed_existing_identical: 'confirmée : une plongée identique existait déjà',
+      confirmed_existing_different: 'confirmée : la plongée existante diffère',
+      confirmed_no_import: 'confirmée sans import',
+      declined: 'refusée',
     };
     await sendMemberNotification(
       clubId,
       confirmation.source_member_id,
       uid,
-      `${targetName || 'Een lid'} heeft je duik beantwoord`,
-      `${targetName || 'Een lid'} heeft de duik ${labels[status] || status}.`,
+      `${targetName || 'Un membre'} a répondu à ta plongée`,
+      `${targetName || 'Un membre'} a ${labels[status] || status} la plongée.`,
       {
         type: 'logbook_dive_confirmation_result',
         club_id: clubId,
