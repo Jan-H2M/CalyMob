@@ -121,7 +121,11 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
         ],
         if (binomes.isNotEmpty) ...[
           const SizedBox(height: 12),
-          _BinomesCard(entryId: entryId, binomes: binomes),
+          _BinomesCard(
+            entryId: entryId,
+            binomes: binomes,
+            onCorrect: _canEdit ? _openEditSheet : null,
+          ),
         ],
         if (notes != null && notes.isNotEmpty) ...[
           const SizedBox(height: 12),
@@ -1146,9 +1150,11 @@ class _EquipmentCard extends StatelessWidget {
 class _BinomesCard extends StatelessWidget {
   final String entryId;
   final List<_ParsedBinome> binomes;
+  final VoidCallback? onCorrect; // WP-21 — corriger un binôme refusé
   const _BinomesCard({
     required this.entryId,
     required this.binomes,
+    this.onCorrect,
   });
 
   @override
@@ -1179,7 +1185,10 @@ class _BinomesCard extends StatelessWidget {
                 if (memberId != null) confirmations[memberId] = data;
               }
 
+              final hasDeclined = confirmations.values
+                  .any((c) => c['status'] == 'declined');
               return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   for (final b in binomes)
                     _BinomeStatusRow(
@@ -1187,6 +1196,22 @@ class _BinomesCard extends StatelessWidget {
                       confirmation: b.memberId == null
                           ? null
                           : confirmations[b.memberId!],
+                    ),
+                  // WP-21 (C7) — un binôme a refusé : proposer de le corriger.
+                  // Le nouveau binôme déclenche une nouvelle demande (trigger
+                  // existant) ; l'ancien refus reste en historique.
+                  if (hasDeclined && onCorrect != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: OutlinedButton.icon(
+                        onPressed: onCorrect,
+                        icon: const Icon(Icons.edit, size: 16),
+                        label: const Text('Corriger le binôme'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red.shade700,
+                          side: BorderSide(color: Colors.red.shade200),
+                        ),
+                      ),
                     ),
                 ],
               );
