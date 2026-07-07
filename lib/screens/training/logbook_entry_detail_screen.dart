@@ -111,9 +111,9 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
         ),
         const SizedBox(height: 12),
         _ParamsCard(depth: depth, duration: duration),
-        if (counters.isNotEmpty) ...[
+        if (counters.isNotEmpty || data['zone'] != null) ...[
           const SizedBox(height: 12),
-          _CountersCard(counters: counters),
+          _CountersCard(counters: counters, zone: data['zone'] as String?),
         ],
         if (_hasEquipment(data)) ...[
           const SizedBox(height: 12),
@@ -949,7 +949,8 @@ class _Stat extends StatelessWidget {
 
 class _CountersCard extends StatelessWidget {
   final Map<String, dynamic> counters;
-  const _CountersCard({required this.counters});
+  final String? zone;
+  const _CountersCard({required this.counters, this.zone});
 
   static const _labels = <String, String>{
     'exo': 'Exo',
@@ -959,6 +960,14 @@ class _CountersCard extends StatelessWidget {
     'sf': 'SF',
     'nuit': 'Nuit',
     'mer': 'Mer',
+    'maree': 'Marée',
+    'surveillance': 'Surveillance',
+  };
+
+  static const _zoneLabels = <String, String>{
+    'zelande': 'Zélande',
+    'glace': 'Sous glace',
+    'epave': 'Épave',
   };
 
   @override
@@ -966,6 +975,9 @@ class _CountersCard extends StatelessWidget {
     final on = <String>[];
     for (final entry in _labels.entries) {
       if (counters[entry.key] == true) on.add(entry.value);
+    }
+    if (zone != null && _zoneLabels.containsKey(zone)) {
+      on.add(_zoneLabels[zone]!);
     }
     if (on.isEmpty) {
       return const SizedBox.shrink();

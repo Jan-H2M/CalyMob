@@ -16,6 +16,9 @@ class LogbookCounters {
   final bool? sf;
   final bool? nuit;
   final bool? mer;
+  // WP-07 — marée (mer à marée) + surveillance d'exercice (type CIEL).
+  final bool? maree;
+  final bool? surveillance;
 
   const LogbookCounters({
     this.exo,
@@ -25,6 +28,8 @@ class LogbookCounters {
     this.sf,
     this.nuit,
     this.mer,
+    this.maree,
+    this.surveillance,
   });
 
   factory LogbookCounters.fromMap(Map<String, dynamic>? map) {
@@ -37,6 +42,8 @@ class LogbookCounters {
       sf: map['sf'] as bool?,
       nuit: map['nuit'] as bool?,
       mer: map['mer'] as bool?,
+      maree: map['maree'] as bool?,
+      surveillance: map['surveillance'] as bool?,
     );
   }
 
@@ -49,6 +56,8 @@ class LogbookCounters {
     if (sf == true) map['sf'] = true;
     if (nuit == true) map['nuit'] = true;
     if (mer == true) map['mer'] = true;
+    if (maree == true) map['maree'] = true;
+    if (surveillance == true) map['surveillance'] = true;
     return map;
   }
 
@@ -60,6 +69,8 @@ class LogbookCounters {
     bool? sf,
     bool? nuit,
     bool? mer,
+    bool? maree,
+    bool? surveillance,
   }) {
     return LogbookCounters(
       exo: exo ?? this.exo,
@@ -69,6 +80,8 @@ class LogbookCounters {
       sf: sf ?? this.sf,
       nuit: nuit ?? this.nuit,
       mer: mer ?? this.mer,
+      maree: maree ?? this.maree,
+      surveillance: surveillance ?? this.surveillance,
     );
   }
 
@@ -81,6 +94,8 @@ class LogbookCounters {
       case 'sf': return sf == true;
       case 'nuit': return nuit == true;
       case 'mer': return mer == true;
+      case 'maree': return maree == true;
+      case 'surveillance': return surveillance == true;
       default: return false;
     }
   }
@@ -95,6 +110,8 @@ class LogbookCounters {
       case 'sf': return copyWith(sf: !on);
       case 'nuit': return copyWith(nuit: !on);
       case 'mer': return copyWith(mer: !on);
+      case 'maree': return copyWith(maree: !on);
+      case 'surveillance': return copyWith(surveillance: !on);
       default: return this;
     }
   }
@@ -151,6 +168,8 @@ class StudentLogbookEntry {
   final String? notes;
   final List<String> exerciseClaimIds;
   final String validationStatus;
+  // WP-07 — zone particulière : 'zelande' | 'glace' | 'epave' | null.
+  final String? zone;
 
   const StudentLogbookEntry({
     required this.id,
@@ -171,6 +190,7 @@ class StudentLogbookEntry {
     this.notes,
     this.exerciseClaimIds = const [],
     this.validationStatus = 'personal',
+    this.zone,
   });
 
   Map<String, dynamic> toMap() {
@@ -192,6 +212,7 @@ class StudentLogbookEntry {
       if (notes != null && notes!.isNotEmpty) 'notes': notes,
       'exercise_claim_ids': exerciseClaimIds,
       'validation_status': validationStatus,
+      if (zone != null) 'zone': zone,
     };
   }
 }

@@ -132,6 +132,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
   List<_DictationMember> _dictationMembers = const [];
   List<_DictationLocation> _dictationLocations = const [];
   LogbookCounters _counters = const LogbookCounters();
+  String? _zone; // WP-07 — 'zelande' | 'glace' | 'epave' | null
   CombiSelection? _combi;
   TankSelection? _tank;
   final Set<String> _manualFieldOverrides = <String>{};
@@ -395,7 +396,10 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
       sf: counters['sf'] == true ? true : null,
       nuit: counters['nuit'] == true ? true : null,
       mer: counters['mer'] == true ? true : null,
+      maree: counters['maree'] == true ? true : null,
+      surveillance: counters['surveillance'] == true ? true : null,
     );
+    _zone = map['zone'] as String?;
 
     final combiMap = map['combi'];
     if (combiMap is Map) {
@@ -1132,6 +1136,10 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
             if (selection.isSea) {
               _counters = _counters.copyWith(mer: true);
             }
+            // WP-07 — pré-remplissage Zélande depuis le lieu.
+            if (_zone == null && _looksLikeZelande(selection.name)) {
+              _zone = 'zelande';
+            }
           }),
         ),
       ),
@@ -1177,6 +1185,9 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
       const SizedBox(height: 12),
       _sectionTitle('COMPTEUR — TAPE TOUT CE QUI COMPTE'),
       _whiteCard(child: _counterChips()),
+      const SizedBox(height: 12),
+      _sectionTitle('ZONE PARTICULIÈRE (optionnel)'),
+      _whiteCard(child: _zoneChips()),
       const SizedBox(height: 12),
       _sectionTitle('ÉQUIPEMENT'),
       _whiteCard(child: _equipmentSection(userId)),
@@ -3261,6 +3272,16 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         'label': 'Mer',
         'tip': 'Plongée en mer / eau salée.',
       },
+      {
+        'key': 'maree',
+        'label': 'Marée',
+        'tip': 'Plongée en mer à marée (nécessaire pour le tableau MIL).',
+      },
+      {
+        'key': 'surveillance',
+        'label': 'Surveillance',
+        'tip': "Surveillance d'exercice (type CIEL).",
+      },
     ];
     return Wrap(
       spacing: 8,
@@ -3291,6 +3312,55 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           message: item['tip']!,
           waitDuration: const Duration(milliseconds: 250),
           child: chip,
+        );
+      }).toList(),
+    );
+  }
+
+  static const List<String> _zelandeKeywords = [
+    'oosterschelde',
+    'grevelingen',
+    'zeeland',
+    'zélande',
+    'zelande',
+  ];
+
+  bool _looksLikeZelande(String? locationName) {
+    if (locationName == null || locationName.isEmpty) return false;
+    final n = locationName.toLowerCase();
+    return _zelandeKeywords.any((k) => n.contains(k));
+  }
+
+  Widget _zoneChips() {
+    const zones = <Map<String, String>>[
+      {'key': 'zelande', 'label': 'Zélande'},
+      {'key': 'glace', 'label': 'Sous glace'},
+      {'key': 'epave', 'label': 'Épave'},
+    ];
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: zones.map((z) {
+        final on = _zone == z['key'];
+        return ChoiceChip(
+          label: Text(z['label']!),
+          selected: on,
+          onSelected: (_) {
+            setState(() => _zone = on ? null : z['key']);
+          },
+          labelStyle: TextStyle(
+            color: on ? Colors.white : AppColors.donkerblauw,
+            fontWeight: FontWeight.w700,
+            fontSize: 12.5,
+          ),
+          selectedColor: AppColors.middenblauw,
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(
+              color: on ? AppColors.middenblauw : const Color(0xFFE2E8F0),
+            ),
+          ),
         );
       }).toList(),
     );
@@ -4450,6 +4520,9 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           'dive_number': explicitDiveNumber,
         if (widget.mode == LogbookEntryMode.edit && explicitDiveNumber == null)
           'dive_number': FieldValue.delete(),
+        // WP-07 — supprimer la zone si l'élève l'a désélectionnée en édition.
+        if (widget.mode == LogbookEntryMode.edit && _zone == null)
+          'zone': FieldValue.delete(),
       };
 
       final source = widget.mode == LogbookEntryMode.auto
@@ -4478,6 +4551,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         counters: _counters,
         buddies: legacyBuddies,
         notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
+        zone: _zone,
       );
 
       String savedEntryId = widget.entryId ?? '';
