@@ -59,12 +59,18 @@ const onPoolSessionClosed = onDocumentUpdated(
       .collection('piscine_sessions')
       .doc(sessionId);
 
-    const attendeesSnap = await sessionRef
-      .collection('attendees')
-      .where('outcome', '==', 'training')
-      .get();
+    // v4 (2026-07-07) : an encadrant can have supervised one hour and
+    // trained (suivi) the other — outcome=='encadrant' but with a
+    // groupAssignment that must still produce a logbook entry. So select on
+    // groupAssignment presence instead of outcome=='training' only.
+    const attendeesSnap = await sessionRef.collection('attendees').get();
+    const trainingDocs = attendeesSnap.docs.filter((d) => {
+      const a = d.data();
+      if (!a.groupAssignment) return false;
+      return a.outcome === 'training' || a.outcome === 'encadrant';
+    });
 
-    if (attendeesSnap.empty) {
+    if (trainingDocs.length === 0) {
       console.log(`[${FUNCTION_NAME}] session ${sessionId} closed — no training attendees`);
       return;
     }
@@ -89,7 +95,7 @@ const onPoolSessionClosed = onDocumentUpdated(
     const groupPeers = new Map();
     const peerKey = (level, groupNumber) =>
       `${level || ''}#${groupNumber == null ? '' : groupNumber}`;
-    for (const attDoc of attendeesSnap.docs) {
+    for (const attDoc of trainingDocs) {
       const att = attDoc.data();
       const ga = att.groupAssignment || null;
       if (!ga) continue;
@@ -107,7 +113,7 @@ const onPoolSessionClosed = onDocumentUpdated(
     // has since left the club. Names are resolved once per CF run rather
     // than per-attendee to avoid quadratic Firestore reads on busy sessions.
     const monitorIdSet = new Set();
-    for (const attDoc of attendeesSnap.docs) {
+    for (const attDoc of trainingDocs) {
       const ga = attDoc.data().groupAssignment || null;
       if (!ga) continue;
       if (ga.validatorId) monitorIdSet.add(ga.validatorId);
@@ -137,7 +143,7 @@ const onPoolSessionClosed = onDocumentUpdated(
     let batch = db.batch();
     let batchOps = 0;
 
-    for (const attDoc of attendeesSnap.docs) {
+    for (const attDoc of trainingDocs) {
       const att = attDoc.data();
       const memberId = att.memberId || att.membre_id || attDoc.id;
       const memberName = att.memberName || att.member_name || 'Membre';
