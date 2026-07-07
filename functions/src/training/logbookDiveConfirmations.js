@@ -358,7 +358,10 @@ const onLogbookDiveBuddiesChanged = onDocumentWritten(
   async (event) => {
     const { clubId, entryId } = event.params;
     const after = event.data?.after?.exists ? event.data.after.data() : null;
-    if (!after || after.source === 'piscine' || after.source === 'shared_logbook') return;
+    // WP-24 (D4) — un import OCR ne déclenche JAMAIS de demandes de
+    // confirmation binôme (les binômes viennent d'une vieille page papier).
+    if (!after || after.source === 'piscine' || after.source === 'shared_logbook'
+        || after.source === 'ocr_import' || after.import_origin === 'ocr') return;
 
     const sourceMemberId = after.member_id;
     if (!sourceMemberId) return;

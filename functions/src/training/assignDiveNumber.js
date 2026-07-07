@@ -162,6 +162,8 @@ const backfillMyDiveNumbers = onCall(
     const pending = []; // entries that need a number assigned now
     for (const doc of snap.docs) {
       const d = doc.data();
+      // WP-22 (D3) — les entrées piscine ne consomment PAS de n° de plongée.
+      if (d.source === 'piscine') continue;
       if (typeof d.dive_number === 'number' && d.dive_number > 0) {
         if (d.dive_number > highest) highest = d.dive_number;
       } else {
