@@ -966,6 +966,26 @@ service cloud.firestore {
           allow update, delete: if canValidateLifras(clubId);
         }
 
+        // WP-08 — historique de brevets (PP-H). La CF onPlongeurCodeChanged
+        // écrit les 'plongeur_code_change' via l'Admin SDK (bypass rules). Le
+        // membre peut ajouter ses propres dates d'homologation passées
+        // (from='self_service') mais jamais modifier/supprimer ; admin corrige.
+        match /brevet_history/{historyId} {
+          allow read: if isAuthenticated() && (
+            request.auth.uid == memberId ||
+            isEncadrantForClub(clubId) ||
+            isAdmin(clubId)
+          );
+          allow create: if isAdmin(clubId)
+            || (
+              isAuthenticated()
+              && request.auth.uid == memberId
+              && request.resource.data.from == 'self_service'
+              && request.resource.data.recorded_by == request.auth.uid
+            );
+          allow update, delete: if isAdmin(clubId);
+        }
+
         // ========== MEDICAL CERTIFICATES (Certificats médicaux - CalyMob) ==========
         // Members upload their medical certificates, admins validate them
         match /medical_certificates/{certId} {

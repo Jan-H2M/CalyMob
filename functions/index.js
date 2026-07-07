@@ -176,6 +176,10 @@ exports.onNewBugReport = onNewBugReport;
 const { onObservationAcquis } = require('./src/progression/onObservationAcquis');
 exports.onObservationAcquis = onObservationAcquis;
 
+// WP-08 — journalise chaque changement de plongeur_code dans brevet_history.
+const { onPlongeurCodeChanged } = require('./src/progression/onPlongeurCodeChanged');
+exports.onPlongeurCodeChanged = onPlongeurCodeChanged;
+
 // =============================================================================
 // INSCRIPTION REFUND (Gen2)
 // =============================================================================
