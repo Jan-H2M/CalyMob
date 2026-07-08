@@ -198,6 +198,7 @@ exports.onTargetLevelChanged = onTargetLevelChanged;
 const milSync = require('./src/mil_sync/milSync');
 exports.milSyncWeekly = milSync.milSyncWeekly;
 exports.runMilSyncNow = milSync.runMilSyncNow;
+exports.reviewMilProposal = milSync.reviewMilProposal;
 
 // =============================================================================
 // INSCRIPTION REFUND (Gen2)
