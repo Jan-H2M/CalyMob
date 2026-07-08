@@ -67,38 +67,32 @@ async function migrateMember(memberId) {
     }
   }
 
-  // 2) Renuméroter les plongées par date ASC.
-  let n = 1;
-  for (const d of dives) {
-    if (d.data.dive_number !== n) {
-      changes.push(`  plongée ${d.id} (${new Date(toMillis(d.data.date)).toISOString().slice(0, 10)}) : N°${d.data.dive_number ?? '—'} → N°${n}`);
-      if (APPLY) {
-        batch.update(d.ref, {
-          dive_number: n,
-          updated_at: admin.firestore.FieldValue.serverTimestamp(),
-        });
-      }
-    }
-    n++;
-  }
+  // 2) (WP-22 révisé — choix Jan 2026-07-08) : NE PAS renuméroter. On préserve
+  // tous les numéros de plongée existants (dont les historiques importés, ex.
+  // N°413). On retire uniquement le dive_number des entrées piscine (étape 1).
 
-  // 3) Recaler le compteur.
+  // 3) Recaler le compteur sur le plus grand numéro conservé (évite toute
+  // collision à la prochaine plongée créée).
+  let maxNum = 0;
+  for (const d of dives) {
+    const nn = d.data.dive_number;
+    if (typeof nn === 'number' && nn > maxNum) maxNum = nn;
+  }
   const counterRef = db
     .collection('clubs').doc(CLUB_ID)
     .collection('members').doc(memberId)
     .collection('settings').doc('logbook_counter');
-  if (APPLY) {
+  if (APPLY && poolCleared > 0) {
     batch.set(counterRef, {
-      next: n,
+      next: maxNum + 1,
       updated_at: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
     await batch.commit();
   }
 
-  // 4) Vérification : séquence 1..(n-1) continue, sans doublon.
-  const finalNumbers = dives.map((_, i) => i + 1);
-  const control = finalNumbers.length === new Set(finalNumbers).size &&
-    finalNumbers.every((v, i) => v === i + 1);
+  // 4) Contrôle : aucun doublon de numéro parmi les plongées conservées.
+  const nums = dives.map((d) => d.data.dive_number).filter((x) => typeof x === 'number');
+  const control = nums.length === new Set(nums).size;
 
   return { memberId, dives: dives.length, poolCleared, changes, control };
 }
@@ -134,10 +128,11 @@ async function main() {
   }
 
   console.log('--- résumé ---');
-  console.log(`membres traités       : ${memberIds.length}`);
-  console.log(`plongées renumérotées : ${totalDives} (changements : ${totalChanges})`);
-  console.log(`piscine nettoyées     : ${totalPoolCleared}`);
-  console.log(`contrôles séquence KO : ${controlFailures}`);
+  console.log(`membres traités            : ${memberIds.length}`);
+  console.log(`entrées piscine nettoyées  : ${totalPoolCleared} (numéro retiré)`);
+  console.log(`numéros de plongée modifiés: 0 (préservés — pas de renumérotation)`);
+  console.log(`membres avec doublon N°    : ${controlFailures}`);
+  void totalDives; void totalChanges;
   console.log(APPLY ? '\n✅ Écritures appliquées.' : '\n🔍 Dry-run : aucune écriture. Relancer avec --apply APRÈS backup Firestore.');
   process.exit(0);
 }
