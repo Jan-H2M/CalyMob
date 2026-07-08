@@ -212,6 +212,17 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
     return result;
   }
 
+  // WP-19 — badge « modifié le … » si l'entrée a été éditée (edited_at).
+  String? get _editedLabel {
+    final v = data['edited_at'];
+    DateTime? d;
+    if (v is Timestamp) d = v.toDate();
+    else if (v is String) d = DateTime.tryParse(v);
+    if (d == null) return null;
+    return '✎ modifié le ${d.day.toString().padLeft(2, '0')}/'
+        '${d.month.toString().padLeft(2, '0')}/${d.year}';
+  }
+
   Widget _header(BuildContext context, String dateLabel) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
@@ -237,9 +248,9 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                const Text(
-                  'détail',
-                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                Text(
+                  _editedLabel ?? 'détail',
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
                 ),
               ],
             ),

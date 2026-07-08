@@ -852,6 +852,15 @@ class _EntryCard extends StatelessWidget {
                 ),
               ),
             _SourceBadge(source: entry.source),
+            // WP-23 — badge « en attente de synchronisation » (offline).
+            if (entry.raw['_pending'] == true) ...[
+              const SizedBox(width: 5),
+              Tooltip(
+                message: 'En attente de synchronisation',
+                child: Icon(Icons.cloud_upload_outlined,
+                    size: 14, color: Colors.orange.shade200),
+              ),
+            ],
             const SizedBox(width: 6),
             Text(
               dateLabel,
