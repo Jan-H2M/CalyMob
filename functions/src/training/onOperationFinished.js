@@ -207,6 +207,9 @@ async function processParticipants(db, clubId, operationId, operationTitle, loca
         operation_title: operationTitle,
         palanquee_id: palanqueeId,
         location_id: locationId,
+        // WP-14 (S3) — la fiche carnet embarque les claims draft de l'opération
+        // (une seule étape élève) ; pas de tâche exercise_claim séparée.
+        claims_embedded: true,
       },
       available_actions: [
         { key: 'complete_now', label: 'Compléter mon carnet', target_screen: 'logbook_entry' },

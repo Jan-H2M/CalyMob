@@ -34,6 +34,7 @@ import '../../providers/member_provider.dart';
 import '../../services/formation_task_service.dart';
 import '../../services/student_logbook_service.dart';
 import '../../widgets/binome_typeahead_field.dart';
+import '../../services/exercise_claim_service.dart';
 import '../../widgets/combi_picker_field.dart';
 import '../../widgets/dive_location_picker.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
@@ -4571,6 +4572,27 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
             await _service.create(clubId: clubId, entry: entry, extras: extras);
         if (widget.task != null) {
           await _taskService.markCompleted(clubId, widget.task!.id, userId);
+        }
+        // WP-14 (S3) — parcours unique : la fiche carnet embarque les claims
+        // de la palanquée. On soumet les déclarations draft de l'opération en
+        // même temps que l'entrée (pré-cochées) — plus de « seconde étape »
+        // oubliée. (Décocher individuellement = finition UI.)
+        final opId = widget.task?.context.operationId ??
+            (widget.initialData?['operation_id'] as String?);
+        if (opId != null && opId.isNotEmpty) {
+          try {
+            final claimSvc = ExerciseClaimService();
+            final drafts =
+                await claimSvc.fetchDraftsForOperation(clubId, userId, opId);
+            if (drafts.isNotEmpty) {
+              await claimSvc.submitClaims(
+                clubId,
+                drafts.map((d) => d.id).toList(),
+              );
+            }
+          } catch (e) {
+            debugPrint('⚠️ WP-14 soumission claims embarqués échouée: $e');
+          }
         }
       }
 
