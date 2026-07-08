@@ -26,7 +26,7 @@ const { sendEmailWithConfig } = require('../utils/emailDelivery');
 const REGION = 'europe-west1';
 const CLUB_ID = 'calypso';
 const MIL_URL = 'https://mil.amb-lifras.be/';
-const DEFAULT_RECIPIENTS = ['jan@h2m.ai'];
+const DEFAULT_RECIPIENTS = ['jan.andriessens@gmail.com'];
 const MIN_SIZE = 10 * 1024; // 10 KB : plus petit = anomalie
 // La page réelle fait ~5 Mo (contenu + assets inline), pas ~92 Ko : borne large.
 const MAX_SIZE = 20 * 1024 * 1024; // 20 MB : plus grand = anomalie
@@ -56,19 +56,20 @@ async function sendReport(db, clubId, recipients, subject, html) {
   const emailConfig = await loadEmailConfig(db, clubId);
   if (!emailConfig) {
     console.warn('[milSync] pas d\'email_config — rapport loggé seulement:', subject);
-    return false;
+    return { sent: false, error: 'email_config manquant', to: recipients };
   }
   try {
-    await sendEmailWithConfig(emailConfig, {
+    const res = await sendEmailWithConfig(emailConfig, {
       to: recipients.join(','),
       subject,
       html,
       text: html.replace(/<[^>]+>/g, ' '),
     });
-    return true;
+    console.log(`[milSync] e-mail envoyé à ${recipients.join(',')} (id ${res.messageId || '?'})`);
+    return { sent: true, messageId: res.messageId || null, to: recipients };
   } catch (e) {
     console.error('[milSync] envoi e-mail échoué:', e.message);
-    return false;
+    return { sent: false, error: e.message, to: recipients };
   }
 }
 
@@ -155,8 +156,9 @@ async function runMilSync(db, opts = {}) {
   await runsRef.add(runDoc);
 
   // ---- Notification ------------------------------------------------------
+  let emailResult = null;
   if (runDoc.changed) {
-    await sendReport(db, CLUB_ID, recipients,
+    emailResult = await sendReport(db, CLUB_ID, recipients,
       `[MIL sync] changement detecte (${runDoc.version || 'version ?'})`,
       `<p>Un changement du MIL a ete detecte le ${nowIso}.</p>
        <ul>
@@ -167,7 +169,7 @@ async function runMilSync(db, opts = {}) {
        <p>Rien n'a ete applique automatiquement (D15). Le diff par section et l'ecran d'approbation arrivent (MS-B/C).</p>`);
   } else if (opts.trigger === 'manual') {
     // Run manuel : toujours envoyer un accusé (permet de tester la chaîne).
-    await sendReport(db, CLUB_ID, recipients,
+    emailResult = await sendReport(db, CLUB_ID, recipients,
       '[MIL sync] run manuel - aucun changement',
       `<p>Run manuel du ${nowIso}. Aucun changement detecte.</p>
        <ul>
@@ -188,7 +190,14 @@ async function runMilSync(db, opts = {}) {
     }
   }
 
-  return { ok: true, changed: runDoc.changed, version: runDoc.version, size: runDoc.size };
+  return {
+    ok: true,
+    changed: runDoc.changed,
+    version: runDoc.version,
+    size: runDoc.size,
+    email: emailResult,
+    recipients,
+  };
 }
 
 // ---- Scheduled (hebdomadaire) --------------------------------------------
