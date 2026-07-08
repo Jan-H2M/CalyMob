@@ -111,6 +111,14 @@ class PermissionHelper {
     return moniteurCodes.contains(plongeurCode.trim().toUpperCase());
   }
 
+  /// Fonction Encadrant (sans exiger le niveau Moniteur). Sert à VOIR la
+  /// formation (onglet Formation de Who's who), pas à valider — la validation
+  /// reste sous canValidateLifras().
+  static bool isEncadrant(List<String> clubStatuten) {
+    final normalized = clubStatuten.map((s) => s.toLowerCase().trim()).toList();
+    return normalized.contains('encadrant') || normalized.contains('encadrants');
+  }
+
   /// LIFRAS-validatie-gate: pedagogische beslissingen (oefeningen valideren,
   /// observaties, niveau-toewijzingen) vereisen Encadrant-fonctie ÉN
   /// Moniteur-niveau, of admin.

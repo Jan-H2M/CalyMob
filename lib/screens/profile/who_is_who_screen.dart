@@ -37,6 +37,7 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
   bool _onlyWithPhotos = false;
   String _sortBy = 'prenom'; // 'prenom' (first name) or 'nom' (last name)
   bool _canManageExercises = false; // Monitor, admin, or super admin
+  bool _canSeeFormation = false; // WP-10 : voir l'onglet Formation (tout encadrant)
   bool _showFormation = false; // WP-10 : segment « Membres | Formation »
 
   // Bubbles animation
@@ -78,8 +79,16 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
       plongeurCode: profile.plongeurCode,
     );
 
+    // Voir la formation = tout encadrant (ou admin/moniteur). La validation
+    // pédagogique reste, elle, sous canValidateLifras (_canManageExercises).
+    final canSeeFormation =
+        canValidate || PermissionHelper.isEncadrant(profile.clubStatuten);
+
     if (mounted) {
-      setState(() => _canManageExercises = canValidate);
+      setState(() {
+        _canManageExercises = canValidate;
+        _canSeeFormation = canSeeFormation;
+      });
     }
   }
 
@@ -214,8 +223,8 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
         child: SafeArea(
             child: Column(
         children: [
-          // WP-10 — segment « Membres | Formation » (encadrants uniquement).
-          if (_canManageExercises) _buildFormationSegment(),
+          // WP-10 — segment « Membres | Formation » (tout encadrant).
+          if (_canSeeFormation) _buildFormationSegment(),
 
           // Barre de recherche - glass effect
           ClipRRect(
@@ -330,7 +339,7 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
 
           // Grille des membres (2 colonnes) OU liste Formation (WP-10)
           Expanded(
-            child: (_showFormation && _canManageExercises)
+            child: (_showFormation && _canSeeFormation)
                 ? FormationListView(
                     clubId: _clubId,
                     searchQuery: _searchQuery,
