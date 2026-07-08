@@ -28,7 +28,8 @@ const CLUB_ID = 'calypso';
 const MIL_URL = 'https://mil.amb-lifras.be/';
 const DEFAULT_RECIPIENTS = ['jan@h2m.ai'];
 const MIN_SIZE = 10 * 1024; // 10 KB : plus petit = anomalie
-const MAX_SIZE = 1024 * 1024; // 1 MB : plus grand = anomalie
+// La page réelle fait ~5 Mo (contenu + assets inline), pas ~92 Ko : borne large.
+const MAX_SIZE = 20 * 1024 * 1024; // 20 MB : plus grand = anomalie
 const HEARTBEAT_DAYS = 90;
 
 function sha256(text) {
@@ -164,6 +165,15 @@ async function runMilSync(db, opts = {}) {
          <li>Taille : ${runDoc.size} octets - Snapshot : ${runDoc.snapshot_path || '-'}</li>
        </ul>
        <p>Rien n'a ete applique automatiquement (D15). Le diff par section et l'ecran d'approbation arrivent (MS-B/C).</p>`);
+  } else if (opts.trigger === 'manual') {
+    // Run manuel : toujours envoyer un accusé (permet de tester la chaîne).
+    await sendReport(db, CLUB_ID, recipients,
+      '[MIL sync] run manuel - aucun changement',
+      `<p>Run manuel du ${nowIso}. Aucun changement detecte.</p>
+       <ul>
+         <li>Version : ${runDoc.version || '-'}</li>
+         <li>Taille : ${runDoc.size} octets - Snapshot : ${runDoc.snapshot_path || '-'}</li>
+       </ul>`);
   } else {
     // Heartbeat trimestriel « rien a signaler ».
     const lastHeartbeat = config.last_heartbeat_at && config.last_heartbeat_at.toMillis
