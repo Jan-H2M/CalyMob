@@ -1741,6 +1741,12 @@ service cloud.firestore {
     // Personal dive log. Member owns their entries. Admins/encadrants can
     // read for support purposes; buddies do NOT have implicit read access
     // (a future buddy_confirmation flow grants per-entry read on request).
+    // WP-26 MS-A — surveillance MIL : lecture admin, écriture CF uniquement.
+    match /clubs/{clubId}/mil_sync/{document=**} {
+      allow read: if isAdmin(clubId);
+      allow write: if false;
+    }
+
     // WP-19 (D5) — aucun champ de `source_locked_fields` ne change à l'édition.
     function logbookLockedFieldsUnchanged() {
       return !('source_locked_fields' in resource.data)

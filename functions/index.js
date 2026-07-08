@@ -194,6 +194,11 @@ exports.rebuildStaleSnapshots = snapshotFns.rebuildStaleSnapshots;
 const { onTargetLevelChanged } = require('./src/progression/onTargetLevelChanged');
 exports.onTargetLevelChanged = onTargetLevelChanged;
 
+// WP-26 MS-A — surveillance hebdomadaire du MIL (mil.amb-lifras.be) + run manuel.
+const milSync = require('./src/mil_sync/milSync');
+exports.milSyncWeekly = milSync.milSyncWeekly;
+exports.runMilSyncNow = milSync.runMilSyncNow;
+
 // =============================================================================
 // INSCRIPTION REFUND (Gen2)
 // =============================================================================
