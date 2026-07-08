@@ -199,6 +199,7 @@ const milSync = require('./src/mil_sync/milSync');
 exports.milSyncWeekly = milSync.milSyncWeekly;
 exports.runMilSyncNow = milSync.runMilSyncNow;
 exports.reviewMilProposal = milSync.reviewMilProposal;
+exports.milImpactPreview = milSync.milImpactPreview;
 
 // =============================================================================
 // INSCRIPTION REFUND (Gen2)

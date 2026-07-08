@@ -421,10 +421,58 @@ const reviewMilProposal = onCall(
   }
 );
 
+// ---- MS-D : impactanalyse (lecture seule) --------------------------------
+// « X membres passeraient de conforme à non-conforme sur la ligne Y » si
+// l'exigence `key` du brevet `brevet` passait à `newNeed`. Recalcul simulé
+// sur les snapshots matérialisés (WP-09).
+const STAR_TO_BREVET = { '1*': '1', '2*': '2', '3*': '3', '4*': '4', AM: 'AM', MC: 'MC', MF: 'MF' };
+
+const milImpactPreview = onCall(
+  { region: REGION, timeoutSeconds: 120, memory: '256MiB' },
+  async (request) => {
+    const uid = request.auth && request.auth.uid;
+    if (!uid) throw new HttpsError('unauthenticated', 'Authentification requise');
+    const db = admin.firestore();
+    const memberSnap = await db.collection('clubs').doc(CLUB_ID)
+      .collection('members').doc(uid).get();
+    const role = memberSnap.exists ? memberSnap.data().app_role : null;
+    if (role !== 'admin' && role !== 'superadmin') {
+      throw new HttpsError('permission-denied', 'Reserve aux administrateurs');
+    }
+    const { brevet, key } = request.data || {};
+    const newNeed = Number(request.data && request.data.newNeed);
+    if (!brevet || !key || !Number.isFinite(newNeed)) {
+      throw new HttpsError('invalid-argument', 'brevet + key + newNeed requis');
+    }
+
+    const snap = await db.collectionGroup('formation_snapshot').get();
+    let targeting = 0;
+    let flipsToNonCompliant = 0;
+    let flipsToCompliant = 0;
+    let wouldBeNonCompliant = 0;
+    for (const d of snap.docs) {
+      if (!d.ref.path.startsWith(`clubs/${CLUB_ID}/`)) continue;
+      const data = d.data();
+      if (STAR_TO_BREVET[data.target_level] !== brevet) continue;
+      const per = data.mil_experience && data.mil_experience.per_requirement;
+      if (!per || !per[key]) continue;
+      targeting += 1;
+      const have = per[key].have || 0;
+      const okOld = have >= (per[key].need || 0);
+      const okNew = have >= newNeed;
+      if (okOld && !okNew) flipsToNonCompliant += 1;
+      if (!okOld && okNew) flipsToCompliant += 1;
+      if (!okNew) wouldBeNonCompliant += 1;
+    }
+    return { brevet, key, newNeed, targeting, flipsToNonCompliant, flipsToCompliant, wouldBeNonCompliant };
+  }
+);
+
 module.exports = {
   milSyncWeekly,
   runMilSyncNow,
   reviewMilProposal,
+  milImpactPreview,
   // exportes pour tests
   sha256,
   extractVersion,
