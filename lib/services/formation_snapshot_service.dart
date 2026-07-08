@@ -104,6 +104,8 @@ class FormationSnapshot {
   final List<ExerciceLIFRAS> remainingExercises;
   final List<FormationRecentDive> recentDives;
   final FormationSnapshotCounts counts;
+  final List<String> attentionPoints; // WP-12
+  final List<String> goalCodes; // WP-11
 
   const FormationSnapshot({
     required this.memberId,
@@ -117,6 +119,8 @@ class FormationSnapshot {
     required this.remainingExercises,
     required this.recentDives,
     required this.counts,
+    this.attentionPoints = const [],
+    this.goalCodes = const [],
   });
 }
 
@@ -261,6 +265,13 @@ class FormationSnapshotService {
         pendingClaims: _toInt(counts['pending_claims']) ?? 0,
         remaining: _toInt(counts['remaining']) ?? 0,
       ),
+      attentionPoints:
+          (data['attention_points'] as List?)?.map((e) => e.toString()).toList() ??
+              const [],
+      goalCodes: ((data['goals'] as Map?)?['codes'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
     );
   }
 

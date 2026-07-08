@@ -757,12 +757,23 @@ class _ParticipantTile extends StatelessWidget {
       byCode[code] = _ExerciseChoice(code: code, label: label, badge: badge);
     }
 
+    // WP-11/WP-12 — marqueurs ⚠ (point d'attention) et 🎯 (objectif de l'élève).
+    final attentionCodes = snapshot?.attentionPoints.toSet() ?? const <String>{};
+    final goalCodes = snapshot?.goalCodes.toSet() ?? const <String>{};
+    String withMarks(String code, String base) {
+      final marks = [
+        if (attentionCodes.contains(code)) '⚠',
+        if (goalCodes.contains(code)) '🎯',
+      ].join(' ');
+      return marks.isNotEmpty ? '$marks $base' : base;
+    }
+
     for (final ex in snapshot?.remainingExercises ?? const []) {
-      add(ex.code, label: ex.description, badge: 'à faire');
+      add(ex.code, label: ex.description, badge: withMarks(ex.code, 'à faire'));
     }
     for (final claim in snapshot?.pendingClaims ?? const []) {
       add(claim.exerciseCode,
-          label: claim.exerciseLabel ?? '', badge: 'en attente');
+          label: claim.exerciseLabel ?? '', badge: withMarks(claim.exerciseCode, 'en attente'));
     }
     for (final code in requested) {
       add(code, badge: 'souhait');
