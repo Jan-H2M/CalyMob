@@ -99,6 +99,7 @@ class _Student360ScreenState extends State<Student360Screen> {
         ),
         body: OceanBackground(
           child: SafeArea(
+            top: false,
             child: _loading
                 ? const Center(
                     child: CircularProgressIndicator(color: Colors.white))
@@ -131,11 +132,11 @@ class _Student360ScreenState extends State<Student360Screen> {
         _buildHeader(s),
         if (s.attentionPoints.isNotEmpty) _buildAttentionBanner(s),
         Container(
-          color: AppColors.donkerblauw.withValues(alpha: 0.55),
+          color: AppColors.donkerblauw.withValues(alpha: 0.82),
           child: const TabBar(
             isScrollable: true,
             labelColor: Colors.white,
-            unselectedLabelColor: Color(0xFFAEC6DA),
+            unselectedLabelColor: Color(0xFFD3E2EF),
             indicatorColor: AppColors.lichtblauw,
             indicatorWeight: 3,
             labelStyle: TextStyle(fontWeight: FontWeight.w600),
@@ -165,6 +166,9 @@ class _Student360ScreenState extends State<Student360Screen> {
 
   Widget _buildHeader(FormationSnapshotDoc s) {
     final m = widget.member;
+    // Le panneau foncé remonte derrière l'AppBar transparente + la status bar
+    // (SafeArea top:false) → titre « Alison » et stats toujours sur fond foncé.
+    final topInset = MediaQuery.of(context).padding.top + kToolbarHeight;
     final trajet = s.targetLevel != null && s.targetLevel!.isNotEmpty
         ? '${s.currentCode.isEmpty ? '—' : s.currentCode} → ${s.targetLevel}'
         : (s.currentCode.isEmpty ? '' : s.currentCode);
@@ -176,13 +180,13 @@ class _Student360ScreenState extends State<Student360Screen> {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            AppColors.donkerblauw.withValues(alpha: 0.68),
-            AppColors.donkerblauw.withValues(alpha: 0.52),
+            AppColors.donkerblauw.withValues(alpha: 0.94),
+            AppColors.donkerblauw.withValues(alpha: 0.80),
           ],
         ),
         borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
       ),
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      padding: EdgeInsets.fromLTRB(16, topInset, 16, 14),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
