@@ -1610,6 +1610,18 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/clubs/calypso/members/$(request.auth.uid));
     }
 
+    // ===== Collection-group read for formation snapshots (WP-10) =====
+    // Who's who → onglet Formation (mobile) fait un collectionGroup
+    // 'formation_snapshot' (FormationSnapshotReader.getAllSnapshots). Même
+    // contrainte CG que ci-dessus : les règles imbriquées ne s'appliquent PAS
+    // aux collection-group queries, il faut une règle {path=**} dédiée avec un
+    // club codé en dur (calypso, single-tenant). Restreint aux encadrants/admin
+    // (la liste est réservée aux encadrants ; un membre lit son propre snapshot
+    // via la règle imbriquée sous /members/{memberId}/formation_snapshot).
+    match /{path=**}/formation_snapshot/{snapshotId} {
+      allow read: if request.auth != null && isEncadrantForClub('calypso');
+    }
+
     // ========================================================================
     // CARNET DE FORMATION (Training Logbook) — phase 1
     //
