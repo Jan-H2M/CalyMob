@@ -181,12 +181,11 @@ class _Student360ScreenState extends State<Student360Screen> {
           end: Alignment.bottomCenter,
           colors: [
             AppColors.donkerblauw.withValues(alpha: 0.94),
-            AppColors.donkerblauw.withValues(alpha: 0.80),
+            AppColors.donkerblauw.withValues(alpha: 0.82),
           ],
         ),
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
       ),
-      padding: EdgeInsets.fromLTRB(16, topInset, 16, 14),
+      padding: EdgeInsets.fromLTRB(16, topInset, 16, 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
