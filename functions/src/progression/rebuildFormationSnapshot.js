@@ -722,6 +722,35 @@ const onFormationGoalsWriteSnapshot = onDocumentWritten(
   },
 );
 
+// Trigger sur le document membre : reconstruit le snapshot dès qu'un champ
+// pertinent pour la formation change (formation_active / target_formation_level /
+// plongeur_code). Ainsi, activer « formation active » côté web fait apparaître
+// l'élève dans Who's who (mobile) en < 1 min, sans attendre le cron de 04:00.
+// Guard : on ne reconstruit PAS pour les autres éditions de profil.
+const MEMBER_FORMATION_FIELDS = [
+  'formation_active',
+  'target_formation_level',
+  'plongeur_code',
+];
+const onMemberFormationFieldsWriteSnapshot = onDocumentWritten(
+  { document: 'clubs/{clubId}/members/{memberId}', region: REGION },
+  async (event) => {
+    const before = event.data && event.data.before && event.data.before.data
+      ? event.data.before.data()
+      : null;
+    const after = event.data && event.data.after && event.data.after.data
+      ? event.data.after.data()
+      : null;
+    if (!after) return null; // suppression : rien à reconstruire
+    const changed = MEMBER_FORMATION_FIELDS.some(
+      (f) => (before ? before[f] : undefined) !== after[f],
+    );
+    if (!changed) return null;
+    await safeRebuild(event.params.clubId, event.params.memberId, 'member_fields');
+    return null;
+  },
+);
+
 // ===========================================================================
 // Cron de rattrapage (D9) — 04:00 Europe/Brussels
 // ===========================================================================
@@ -780,6 +809,7 @@ module.exports = {
   onMemberObservationWriteSnapshot,
   onExercicesValidesWriteSnapshot,
   onFormationGoalsWriteSnapshot,
+  onMemberFormationFieldsWriteSnapshot,
   // cron
   rebuildStaleSnapshots,
   // fonctions pures (tests unitaires)

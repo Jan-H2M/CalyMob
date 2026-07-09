@@ -188,6 +188,7 @@ exports.onExerciseClaimWriteSnapshot = snapshotFns.onExerciseClaimWriteSnapshot;
 exports.onMemberObservationWriteSnapshot = snapshotFns.onMemberObservationWriteSnapshot;
 exports.onExercicesValidesWriteSnapshot = snapshotFns.onExercicesValidesWriteSnapshot;
 exports.onFormationGoalsWriteSnapshot = snapshotFns.onFormationGoalsWriteSnapshot;
+exports.onMemberFormationFieldsWriteSnapshot = snapshotFns.onMemberFormationFieldsWriteSnapshot;
 exports.rebuildStaleSnapshots = snapshotFns.rebuildStaleSnapshots;
 
 // WP-11 — notifie le chef d'école quand un élève change son brevet visé (D12).
