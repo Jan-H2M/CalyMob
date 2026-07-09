@@ -165,7 +165,20 @@ class _Student360ScreenState extends State<Student360Screen> {
     final trajet = s.targetLevel != null && s.targetLevel!.isNotEmpty
         ? '${s.currentCode.isEmpty ? '—' : s.currentCode} → ${s.targetLevel}'
         : (s.currentCode.isEmpty ? '' : s.currentCode);
-    return Padding(
+    return Container(
+      decoration: BoxDecoration(
+        // Scrim dégradé : garantit la lisibilité du texte blanc au-dessus des
+        // zones claires du fond océan (halo de surface).
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            AppColors.donkerblauw.withValues(alpha: 0.60),
+            AppColors.donkerblauw.withValues(alpha: 0.22),
+          ],
+        ),
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+      ),
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
