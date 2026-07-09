@@ -1074,8 +1074,14 @@ class _FormationListViewState extends State<FormationListView> {
       if (p == null) continue;
       rows.add(_FormationRow(profile: p, snapshot: s));
     }
-    rows.sort((a, b) =>
-        b.snapshot.attentionScore.compareTo(a.snapshot.attentionScore));
+    // Tri par défaut : prénom (puis nom) — ordre alphabétique.
+    rows.sort((a, b) {
+      final byFirst = a.profile.prenom
+          .toLowerCase()
+          .compareTo(b.profile.prenom.toLowerCase());
+      if (byFirst != 0) return byFirst;
+      return a.profile.nom.toLowerCase().compareTo(b.profile.nom.toLowerCase());
+    });
     return rows;
   }
 
