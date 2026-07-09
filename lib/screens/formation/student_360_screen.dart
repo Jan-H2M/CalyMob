@@ -131,12 +131,15 @@ class _Student360ScreenState extends State<Student360Screen> {
         _buildHeader(s),
         if (s.attentionPoints.isNotEmpty) _buildAttentionBanner(s),
         Container(
-          color: Colors.white.withValues(alpha: 0.08),
+          color: AppColors.donkerblauw.withValues(alpha: 0.55),
           child: const TabBar(
             isScrollable: true,
             labelColor: Colors.white,
-            unselectedLabelColor: Colors.white70,
-            indicatorColor: Colors.white,
+            unselectedLabelColor: Color(0xFFAEC6DA),
+            indicatorColor: AppColors.lichtblauw,
+            indicatorWeight: 3,
+            labelStyle: TextStyle(fontWeight: FontWeight.w600),
+            unselectedLabelStyle: TextStyle(fontWeight: FontWeight.w500),
             tabs: [
               Tab(text: 'Exercices'),
               Tab(text: 'Expérience'),
@@ -151,7 +154,7 @@ class _Student360ScreenState extends State<Student360Screen> {
               _buildExercisesTab(s),
               _buildMilTab(s),
               _buildGoalsTab(s),
-              _buildObservationsTab(),
+              _buildObservationsTab(s),
             ],
           ),
         ),
@@ -173,8 +176,8 @@ class _Student360ScreenState extends State<Student360Screen> {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            AppColors.donkerblauw.withValues(alpha: 0.60),
-            AppColors.donkerblauw.withValues(alpha: 0.22),
+            AppColors.donkerblauw.withValues(alpha: 0.68),
+            AppColors.donkerblauw.withValues(alpha: 0.52),
           ],
         ),
         borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
@@ -384,6 +387,16 @@ class _Student360ScreenState extends State<Student360Screen> {
       }
     }
     return code;
+  }
+
+  /// Description seule d'un code d'exercice (pour l'onglet Observations, où
+  /// seul le code est stocké — « ET.PL1 » ne parle à personne).
+  String _lookupDesc(FormationSnapshotDoc s, String code) {
+    if (code.isEmpty) return '';
+    for (final ex in [...s.validated, ...s.pending, ...s.remaining]) {
+      if (ex.code == code && ex.description.isNotEmpty) return ex.description;
+    }
+    return '';
   }
 
   // ---- Onglet Exercices ----------------------------------------------------
@@ -597,7 +610,7 @@ class _Student360ScreenState extends State<Student360Screen> {
   }
 
   // ---- Onglet Observations -------------------------------------------------
-  Widget _buildObservationsTab() {
+  Widget _buildObservationsTab(FormationSnapshotDoc s) {
     if (_observations.isEmpty) {
       return Center(
         child: Padding(
@@ -616,6 +629,7 @@ class _Student360ScreenState extends State<Student360Screen> {
         final o = _observations[i];
         final result = o['result']?.toString() ?? '';
         final code = o['exerciceCode']?.toString() ?? o['themeTitle']?.toString() ?? '';
+        final desc = _lookupDesc(s, o['exerciceCode']?.toString() ?? '');
         final note = o['note']?.toString() ?? '';
         final date = _obsDate(o);
         final color = result == 'acquis'
@@ -627,8 +641,9 @@ class _Student360ScreenState extends State<Student360Screen> {
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.1),
+            color: AppColors.donkerblauw.withValues(alpha: 0.62),
             borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -645,9 +660,19 @@ class _Student360ScreenState extends State<Student360Screen> {
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(code,
-                        style: const TextStyle(
-                            color: Colors.white, fontWeight: FontWeight.w700)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(code,
+                            style: const TextStyle(
+                                color: Colors.white, fontWeight: FontWeight.w700)),
+                        if (desc.isNotEmpty)
+                          Text(desc,
+                              style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.75),
+                                  fontSize: 12)),
+                      ],
+                    ),
                   ),
                   if (date != null)
                     Text(_shortDate(date),
@@ -690,9 +715,9 @@ class _Student360ScreenState extends State<Student360Screen> {
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.1),
+        color: AppColors.donkerblauw.withValues(alpha: 0.62),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
