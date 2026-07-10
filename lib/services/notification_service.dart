@@ -11,7 +11,8 @@ import 'package:app_badge_plus/app_badge_plus.dart';
 import 'crashlytics_service.dart';
 
 // Import dart:io only on non-web platforms
-import 'notification_service_io.dart' if (dart.library.html) 'notification_service_web.dart' as platform_helper;
+import 'notification_service_io.dart'
+    if (dart.library.html) 'notification_service_web.dart' as platform_helper;
 
 /// Service de gestion des notifications push
 class NotificationService {
@@ -23,7 +24,8 @@ class NotificationService {
 
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _localNotifications =
+      FlutterLocalNotificationsPlugin();
 
   /// Subscription pour FCM token refresh events
   StreamSubscription<String>? _tokenRefreshSubscription;
@@ -32,7 +34,8 @@ class NotificationService {
   void Function(String? payload)? onLocalNotificationTap;
 
   /// Initialiser les notifications
-  Future<void> initialize({void Function(String? payload)? onNotificationTap}) async {
+  Future<void> initialize(
+      {void Function(String? payload)? onNotificationTap}) async {
     onLocalNotificationTap = onNotificationTap;
     // Skip initialization on web - not supported
     if (kIsWeb) {
@@ -47,13 +50,16 @@ class NotificationService {
       }
 
       // Initialiser flutter_local_notifications pour afficher les notifications en foreground
-      const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const androidSettings =
+          AndroidInitializationSettings('@mipmap/ic_launcher');
       const iosSettings = DarwinInitializationSettings();
-      const initSettings = InitializationSettings(android: androidSettings, iOS: iosSettings);
+      const initSettings =
+          InitializationSettings(android: androidSettings, iOS: iosSettings);
       await _localNotifications.initialize(
         initSettings,
         onDidReceiveNotificationResponse: (NotificationResponse response) {
-          debugPrint('🔔 Local notification tapped, payload: ${response.payload}');
+          debugPrint(
+              '🔔 Local notification tapped, payload: ${response.payload}');
           if (onLocalNotificationTap != null && response.payload != null) {
             onLocalNotificationTap!(response.payload);
           }
@@ -106,10 +112,12 @@ class NotificationService {
     // Annuler l'ancienne subscription si elle existe
     _tokenRefreshSubscription?.cancel();
 
-    _tokenRefreshSubscription = _messaging.onTokenRefresh.listen((newToken) async {
+    _tokenRefreshSubscription =
+        _messaging.onTokenRefresh.listen((newToken) async {
       debugPrint('🔄 FCM Token refreshed, saving to Firestore...');
       try {
-        final memberRef = _firestore.collection('clubs/$clubId/members').doc(userId);
+        final memberRef =
+            _firestore.collection('clubs/$clubId/members').doc(userId);
         await memberRef.update({
           'fcm_tokens': FieldValue.arrayUnion([newToken]),
           'fcm_token': newToken,
@@ -118,7 +126,8 @@ class NotificationService {
         debugPrint('✅ Refreshed FCM token saved to Firestore');
       } catch (e, stack) {
         debugPrint('❌ Error saving refreshed FCM token: $e');
-        CrashlyticsService.notificationError(e, stack, 'onTokenRefresh save failed');
+        CrashlyticsService.notificationError(
+            e, stack, 'onTokenRefresh save failed');
       }
     });
 
@@ -202,8 +211,9 @@ class NotificationService {
   /// Créer les canaux de notification pour Android 8+ (API 26+)
   Future<void> _createNotificationChannel() async {
     try {
-      final androidPlugin = _localNotifications
-          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      final androidPlugin =
+          _localNotifications.resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
 
       if (androidPlugin == null) return;
 
@@ -222,7 +232,8 @@ class NotificationService {
       const eventMessagesChannel = AndroidNotificationChannel(
         'event_messages',
         'Messages d\'événements',
-        description: 'Notifications pour les nouveaux messages dans les événements',
+        description:
+            'Notifications pour les nouveaux messages dans les événements',
         importance: Importance.high,
         playSound: true,
         enableVibration: true,
@@ -233,7 +244,8 @@ class NotificationService {
       const medicalCertificatesChannel = AndroidNotificationChannel(
         'medical_certificates',
         'Certificats médicaux',
-        description: 'Notifications pour les mises à jour de certificats médicaux',
+        description:
+            'Notifications pour les mises à jour de certificats médicaux',
         importance: Importance.high,
         playSound: true,
         enableVibration: true,
@@ -244,7 +256,8 @@ class NotificationService {
       const teamMessagesChannel = AndroidNotificationChannel(
         'team_messages',
         'Messages d\'équipe',
-        description: 'Notifications pour les nouveaux messages dans les canaux d\'équipe',
+        description:
+            'Notifications pour les nouveaux messages dans les canaux d\'équipe',
         importance: Importance.high,
         playSound: true,
         enableVibration: true,
@@ -255,7 +268,8 @@ class NotificationService {
       const piscineMessagesChannel = AndroidNotificationChannel(
         'piscine_messages',
         'Messages de piscine',
-        description: 'Notifications pour les nouveaux messages dans les sessions de piscine',
+        description:
+            'Notifications pour les nouveaux messages dans les sessions de piscine',
         importance: Importance.high,
         playSound: true,
         enableVibration: true,
@@ -266,7 +280,8 @@ class NotificationService {
       const piscineTasksChannel = AndroidNotificationChannel(
         'piscine_tasks',
         'Tâches de piscine',
-        description: 'Notifications quand tu es assigné(e) à une tâche de piscine',
+        description:
+            'Notifications quand tu es assigné(e) à une tâche de piscine',
         importance: Importance.high,
         playSound: true,
         enableVibration: true,
@@ -293,12 +308,14 @@ class NotificationService {
         playSound: true,
         enableVibration: true,
       );
-      await androidPlugin.createNotificationChannel(exerciseDeclarationsChannel);
+      await androidPlugin
+          .createNotificationChannel(exerciseDeclarationsChannel);
 
       debugPrint('✅ Canaux de notification Android créés');
     } catch (e, stack) {
       debugPrint('❌ Erreur création canaux notification: $e');
-      CrashlyticsService.notificationError(e, stack, 'createNotificationChannel failed');
+      CrashlyticsService.notificationError(
+          e, stack, 'createNotificationChannel failed');
     }
   }
 
@@ -326,7 +343,8 @@ class NotificationService {
       final deviceInfo = await _getDeviceInfo();
       final appInfo = await _getAppInfo();
 
-      final memberRef = _firestore.collection('clubs/$clubId/members').doc(userId);
+      final memberRef =
+          _firestore.collection('clubs/$clubId/members').doc(userId);
 
       // Vérifier si c'est la première installation (app_first_installed n'existe pas)
       final doc = await memberRef.get();
@@ -401,21 +419,29 @@ class NotificationService {
       }
 
       // FCM token: alleen toevoegen als beschikbaar
-      final token = await getToken();
+      // Firebase Messaging for web is intentionally not configured in
+      // CalyMob. Calling getToken() here can wait indefinitely for a missing
+      // service worker/VAPID setup and keeps the login button spinning even
+      // though Firebase Auth and the Firestore session already succeeded.
+      final token = kIsWeb ? null : await getToken();
       if (token != null) {
         updateData['fcm_tokens'] = FieldValue.arrayUnion([token]);
         updateData['fcm_token'] = token; // Garder pour compatibilité
         updateData['fcm_token_updated_at'] = FieldValue.serverTimestamp();
         updateData['notifications_enabled'] = true;
       } else {
-        debugPrint('⚠️  Aucun token FCM disponible — app_installed quand même mis à jour');
+        debugPrint(
+            '⚠️  Aucun token FCM disponible — app_installed quand même mis à jour');
       }
 
       await memberRef.update(updateData);
 
-      debugPrint('OK saveTokenToFirestore (${updateData.keys.length} fields)${token != null ? " + FCM token" : ""}');
-      debugPrint('   Platform: ${deviceInfo['platform']}, Model: ${deviceInfo['model']}');
-      debugPrint('   App version: ${appInfo['version']} (${appInfo['buildNumber']})');
+      debugPrint(
+          'OK saveTokenToFirestore (${updateData.keys.length} fields)${token != null ? " + FCM token" : ""}');
+      debugPrint(
+          '   Platform: ${deviceInfo['platform']}, Model: ${deviceInfo['model']}');
+      debugPrint(
+          '   App version: ${appInfo['version']} (${appInfo['buildNumber']})');
     } catch (e, stack) {
       // LOUD failure: typically Firestore rules whitelist drift — a field in
       // updateData is not in the members whitelist, so the rule's hasOnly()
@@ -426,11 +452,15 @@ class NotificationService {
       final fields = updateData.keys.join(', ');
       debugPrint('CRITICAL saveTokenToFirestore FAILED: $e');
       debugPrint('         Fields attempted: $fields');
-      debugPrint('         Likely Firestore rules whitelist drift: one of these');
-      debugPrint('         fields is not in the /clubs/{clubId}/members/{memberId}');
+      debugPrint(
+          '         Likely Firestore rules whitelist drift: one of these');
+      debugPrint(
+          '         fields is not in the /clubs/{clubId}/members/{memberId}');
       debugPrint('         whitelist, so hasOnly() rejects the whole write.');
-      debugPrint('         => app_installed NOT set. App-adoption dashboard will');
-      debugPrint('            show stale data for this user until rules are fixed');
+      debugPrint(
+          '         => app_installed NOT set. App-adoption dashboard will');
+      debugPrint(
+          '            show stale data for this user until rules are fixed');
       debugPrint('            and the user reopens the app.');
       CrashlyticsService.notificationError(
         e,
@@ -472,7 +502,9 @@ class NotificationService {
     } catch (e, stack) {
       debugPrint('❌ Erreur récupération device info: $e');
       CrashlyticsService.notificationError(e, stack, 'getDeviceInfo failed');
-      platform = platform_helper.isIOS ? 'ios' : (platform_helper.isAndroid ? 'android' : 'unknown');
+      platform = platform_helper.isIOS
+          ? 'ios'
+          : (platform_helper.isAndroid ? 'android' : 'unknown');
       model = 'unknown';
       osVersion = 'unknown';
     }
@@ -529,6 +561,13 @@ class NotificationService {
 
   /// Supprimer le token FCM de Firestore
   Future<void> removeTokenFromFirestore(String clubId, String userId) async {
+    // A browser session has no CalyMob FCM token. It must not wait for web
+    // messaging, nor delete the token fields that belong to the member's
+    // iOS/Android installation.
+    if (kIsWeb) {
+      debugPrint('ℹ️ Suppression FCM ignorée sur web');
+      return;
+    }
     try {
       final token = await getToken();
 
@@ -542,14 +581,23 @@ class NotificationService {
         updates['fcm_tokens'] = FieldValue.arrayRemove([token]);
       }
 
-      await _firestore.collection('clubs/$clubId/members').doc(userId).update(updates);
+      await _firestore
+          .collection('clubs/$clubId/members')
+          .doc(userId)
+          .update(updates);
 
       // Vérifier si c'était le dernier token
-      final doc = await _firestore.collection('clubs/$clubId/members').doc(userId).get();
+      final doc = await _firestore
+          .collection('clubs/$clubId/members')
+          .doc(userId)
+          .get();
       final data = doc.data();
       final tokens = data?['fcm_tokens'] as List<dynamic>?;
       if (tokens == null || tokens.isEmpty) {
-        await _firestore.collection('clubs/$clubId/members').doc(userId).update({
+        await _firestore
+            .collection('clubs/$clubId/members')
+            .doc(userId)
+            .update({
           'notifications_enabled': false,
         });
       }
@@ -557,7 +605,8 @@ class NotificationService {
       debugPrint('✅ Token FCM supprimé de Firestore');
     } catch (e, stack) {
       debugPrint('❌ Erreur suppression token FCM: $e');
-      CrashlyticsService.notificationError(e, stack, 'removeTokenFromFirestore failed');
+      CrashlyticsService.notificationError(
+          e, stack, 'removeTokenFromFirestore failed');
     }
   }
 
@@ -598,7 +647,8 @@ class NotificationService {
       debugPrint('✅ Désabonné du topic: $topic');
     } catch (e, stack) {
       debugPrint('❌ Erreur désabonnement topic: $e');
-      CrashlyticsService.notificationError(e, stack, 'unsubscribeFromTopic $topic');
+      CrashlyticsService.notificationError(
+          e, stack, 'unsubscribeFromTopic $topic');
     }
   }
 
@@ -609,7 +659,8 @@ class NotificationService {
       return settings.authorizationStatus == AuthorizationStatus.authorized;
     } catch (e, stack) {
       debugPrint('❌ Erreur vérification permissions: $e');
-      CrashlyticsService.notificationError(e, stack, 'areNotificationsEnabled check failed');
+      CrashlyticsService.notificationError(
+          e, stack, 'areNotificationsEnabled check failed');
       return false;
     }
   }
@@ -630,7 +681,8 @@ class NotificationService {
       return settings.authorizationStatus == AuthorizationStatus.authorized;
     } catch (e, stack) {
       debugPrint('❌ Erreur demande permission: $e');
-      CrashlyticsService.notificationError(e, stack, 'requestPermission failed');
+      CrashlyticsService.notificationError(
+          e, stack, 'requestPermission failed');
       return false;
     }
   }

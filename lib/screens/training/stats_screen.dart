@@ -106,7 +106,8 @@ class _StatsScreenState extends State<StatsScreen> {
               _header(),
               Expanded(
                 child: _loading
-                    ? const Center(child: CircularProgressIndicator(color: Colors.white))
+                    ? const Center(
+                        child: CircularProgressIndicator(color: Colors.white))
                     : ListView(
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                         children: [
@@ -121,8 +122,6 @@ class _StatsScreenState extends State<StatsScreen> {
                           _countersCard(stats),
                           const SizedBox(height: 12),
                           _locationsCard(stats),
-                          const SizedBox(height: 18),
-                          _webEspaceFooter(),
                         ],
                       ),
               ),
@@ -216,8 +215,7 @@ class _StatsScreenState extends State<StatsScreen> {
         _kpi('${s.totalHours} h', 'temps total'),
         _kpi('${s.seaDives}', 'en mer', highlight: true),
         _kpi('${s.maxDepth.toStringAsFixed(0)} m', 'profondeur max'),
-        if (s.poolSessions > 0)
-          _kpi('${s.poolSessions}', 'séances piscine'),
+        if (s.poolSessions > 0) _kpi('${s.poolSessions}', 'séances piscine'),
       ],
     );
   }
@@ -327,7 +325,10 @@ class _StatsScreenState extends State<StatsScreen> {
                                   end: Alignment.bottomCenter,
                                 )
                               : const LinearGradient(
-                                  colors: [Color(0xFF6BCBE8), AppColors.middenblauw],
+                                  colors: [
+                                    Color(0xFF6BCBE8),
+                                    AppColors.middenblauw
+                                  ],
                                   begin: Alignment.topCenter,
                                   end: Alignment.bottomCenter,
                                 ),
@@ -343,9 +344,9 @@ class _StatsScreenState extends State<StatsScreen> {
             ),
           ),
           const SizedBox(height: 4),
-          Row(
-            children: const [
-              Expanded(child: Center(child: Text('5',  style: _axisStyle))),
+          const Row(
+            children: [
+              Expanded(child: Center(child: Text('5', style: _axisStyle))),
               Expanded(child: Center(child: Text('10', style: _axisStyle))),
               Expanded(child: Center(child: Text('15', style: _axisStyle))),
               Expanded(child: Center(child: Text('20', style: _axisStyle))),
@@ -399,7 +400,10 @@ class _StatsScreenState extends State<StatsScreen> {
                         decoration: BoxDecoration(
                           gradient: isHighSeason
                               ? const LinearGradient(
-                                  colors: [Color(0xFF6BCBE8), AppColors.middenblauw],
+                                  colors: [
+                                    Color(0xFF6BCBE8),
+                                    AppColors.middenblauw
+                                  ],
                                   begin: Alignment.topCenter,
                                   end: Alignment.bottomCenter,
                                 )
@@ -467,7 +471,8 @@ class _StatsScreenState extends State<StatsScreen> {
             runSpacing: 6,
             children: chips
                 .map((c) => Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
                         color: const Color(0xFFEEF4F9),
                         borderRadius: BorderRadius.circular(18),
@@ -524,7 +529,8 @@ class _StatsScreenState extends State<StatsScreen> {
                         child: Text(
                           loc['name'],
                           style: TextStyle(
-                            color: AppColors.donkerblauw.withValues(alpha: 0.85),
+                            color:
+                                AppColors.donkerblauw.withValues(alpha: 0.85),
                             fontSize: 12.5,
                           ),
                         ),
@@ -546,7 +552,8 @@ class _StatsScreenState extends State<StatsScreen> {
                       value: ratio,
                       minHeight: 6,
                       backgroundColor: const Color(0xFFE2EBF3),
-                      valueColor: const AlwaysStoppedAnimation<Color>(AppColors.middenblauw),
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                          AppColors.middenblauw),
                     ),
                   ),
                 ],
@@ -554,43 +561,6 @@ class _StatsScreenState extends State<StatsScreen> {
             );
           }),
         ],
-      ),
-    );
-  }
-
-  /// Discreet footer hint — also surfaces `caly.club/me/carnet` for the
-  /// web equivalent. Same data, bigger screen.
-  Widget _webEspaceFooter() {
-    return Padding(
-      padding: const EdgeInsets.only(top: 4, bottom: 4),
-      child: Center(
-        child: Column(
-          children: [
-            Icon(
-              Icons.open_in_new,
-              size: 13,
-              color: Colors.white.withValues(alpha: 0.55),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Aussi disponible sur caly.club',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.65),
-                fontSize: 11.5,
-                fontStyle: FontStyle.italic,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              'Calypso · Mon espace',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.45),
-                fontSize: 10,
-                letterSpacing: 0.4,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

@@ -1,6 +1,416 @@
 {
   "indexes": [
     {
+      "collectionGroup": "medical_certificates",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "uploaded_at",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "bank_transactions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "fiscal_year_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date_execution",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "bank_transactions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "fiscal_year_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date_execution",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "categorization_patterns",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "primary_keyword",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "montant_arrondi",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "use_count",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "operation_participants",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "membre_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date_inscription",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "fiscal_years",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "start_date",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "member_observations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "memberNiveau",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "contextDate",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "demandes_remboursement",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "fiscal_year_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "demandeur_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "transactions_bancaires",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "fiscal_year_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date_execution",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "messages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "group_type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "demandes_remboursement",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "fiscal_year_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "demandeur_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date_demande",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "piscine_sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "statut",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "piscine_sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "statut",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "categorization_patterns",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "primary_keyword",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "use_count",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "bank_transactions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "jobcode_comptable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date_execution",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "categorization_patterns",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "contrepartie_normalized",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "usage_count",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "email_history",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "jobId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "recipientEmail",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sentAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "demandes_remboursement",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "fiscal_year_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date_depense",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "member_observations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "memberId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "contextDate",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "formation_tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "notification_state.last_reminder_at",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "operations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "fiscal_year_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date_debut",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "operations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "organisateur_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date_debut",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "exercise_claims",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "monitor_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "declared_at",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "fournisseurs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "actif",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "nom",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "exercices_lifras",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "niveau",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "code",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "member_observations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "contextId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "memberName",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "operations",
       "queryScope": "COLLECTION",
       "fields": [
@@ -10,6 +420,310 @@
         },
         {
           "fieldPath": "statut",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date_debut",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "members",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "nom",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "prenom",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "products",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "supplierId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "name",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "operations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "fiscal_year_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "organisateur_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date_debut",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "operations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "organisateur_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date_debut",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "session_plannings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "niveau",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "season",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "inventory_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "typeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "numero_serie",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "medical_certificates",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "valid_until",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "formation_tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "operations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "fiscal_year_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date_debut",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "bank_transactions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "jobcode_comptable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date_execution",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "transactions_bancaires",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "code_comptable",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date_execution",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "boutique_stock",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "nom",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "categorization_patterns",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "contrepartie_normalized",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "use_count",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "operation_participants",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "operation_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date_inscription",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "member_observations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "memberId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "category",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "contextDate",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "operations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date_debut",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "formation_tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "current_assignee_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "products",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "visibility",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "name",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "messages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "group_type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "group_level",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "operations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "fiscal_year_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "organisateur_id",
           "order": "ASCENDING"
         },
         {
@@ -29,6 +743,98 @@
         {
           "fieldPath": "date",
           "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "formation_tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "member_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "exercise_claims",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "validation_mode",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "expense_claims",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "fiscal_year_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "expense_date",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "session_themes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "targetNiveaux",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "title",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "operations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "statut",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date_debut",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "buyer.userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -55,21 +861,49 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "statut",
+          "fieldPath": "date",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "date",
+          "fieldPath": "statut",
           "order": "ASCENDING"
         }
       ]
     },
     {
-      "collectionGroup": "piscine_sessions",
+      "collectionGroup": "products",
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "statut",
+          "fieldPath": "category",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "name",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "operations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date_debut",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "student_logbook_entries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "member_id",
           "order": "ASCENDING"
         },
         {
@@ -79,89 +913,33 @@
       ]
     },
     {
-      "collectionGroup": "piscine_sessions",
+      "collectionGroup": "exercise_claims",
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "date",
+          "fieldPath": "status",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "statut",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "messages",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "group_type",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "created_at",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "messages",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "group_type",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "group_level",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "created_at",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "exercices_lifras",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "niveau",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "code",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "member_observations",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "memberNiveau",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "contextDate",
+          "fieldPath": "declared_at",
           "order": "DESCENDING"
         }
       ]
     },
     {
-      "collectionGroup": "member_observations",
+      "collectionGroup": "communication_entries",
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "memberNiveau",
+          "fieldPath": "entity_type",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "contextDate",
+          "fieldPath": "entity_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
           "order": "DESCENDING"
         }
       ]
@@ -169,12 +947,31 @@
   ],
   "fieldOverrides": [
     {
+      "collectionGroup": "attendees",
+      "fieldPath": "memberId",
+      "indexes": [
+        {
+          "queryScope": "COLLECTION_GROUP",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "inscriptions",
       "fieldPath": "membre_id",
       "indexes": [
-        { "order": "ASCENDING", "queryScope": "COLLECTION" },
-        { "order": "DESCENDING", "queryScope": "COLLECTION" },
-        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
       ]
     }
   ]

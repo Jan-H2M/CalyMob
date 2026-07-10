@@ -10,6 +10,7 @@
 /// Spec : `CARNET_DE_FORMATION_TECH.md` v2.1 §11 (mockup 04 monitor pane).
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
@@ -35,6 +36,10 @@ class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
   bool _loading = true;
   bool _submitting = false;
   final TextEditingController _comment = TextEditingController();
+  final Map<String, Future<String>> _evidenceUrls = {};
+
+  bool get _isExternalProof =>
+      widget.task.type == FormationTaskType.externalProofReview;
 
   @override
   void initState() {
@@ -112,7 +117,9 @@ class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
                         onPressed:
                             _submitting ? null : () => _decide('accepted'),
                         icon: const Icon(Icons.check_circle),
-                        label: const Text('Confirmer comme acquis'),
+                        label: Text(_isExternalProof
+                            ? 'Accepter la preuve'
+                            : 'Confirmer comme acquis'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF4CAF50),
                           foregroundColor: Colors.white,
@@ -130,7 +137,9 @@ class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
                             child: OutlinedButton(
                               onPressed: _submitting
                                   ? null
-                                  : () => _decide('corrected'),
+                                  : _isExternalProof
+                                      ? _promptAskInfo
+                                      : () => _decide('corrected'),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: Colors.white,
                                 side: const BorderSide(color: Colors.white),
@@ -140,7 +149,9 @@ class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
-                              child: const Text('En progrès'),
+                              child: Text(_isExternalProof
+                                  ? 'Demander des infos'
+                                  : 'En progrès'),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -179,21 +190,25 @@ class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
             icon: const Icon(Icons.arrow_back, color: Colors.white, size: 26),
             onPressed: () => Navigator.pop(context),
           ),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Validation à confirmer',
-                  style: TextStyle(
+                  _isExternalProof
+                      ? 'Contrôle de preuve'
+                      : 'Validation à confirmer',
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 Text(
-                  'Tu es désigné·e comme validateur',
-                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                  _isExternalProof
+                      ? 'Vérifie la pièce jointe avant de décider'
+                      : 'Tu es désigné·e comme validateur',
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
                 ),
               ],
             ),
@@ -210,6 +225,9 @@ class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
     final exerciseLabel = c['exercise_label'] ?? '';
     final context = c['context_type'] == 'pool' ? 'Piscine' : 'Sortie';
     final notes = c['declaration_notes'] ?? '';
+    final evidence =
+        (c['evidence'] as List?)?.whereType<Map<String, dynamic>>().toList() ??
+            const <Map<String, dynamic>>[];
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
@@ -284,6 +302,17 @@ class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
             ),
           ),
         ],
+        if (_isExternalProof) ...[
+          const SizedBox(height: 14),
+          _sectionTitle('PREUVE TRANSMISE'),
+          if (evidence.isEmpty)
+            _infoCard(
+              icon: Icons.image_not_supported_outlined,
+              text: 'Aucune photo exploitable n’est jointe à cette demande.',
+            )
+          else
+            ...evidence.map(_evidenceCard),
+        ],
         const SizedBox(height: 14),
         _sectionTitle('TON COMMENTAIRE (optionnel)'),
         Container(
@@ -318,6 +347,125 @@ class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
         ),
       );
 
+  Widget _infoCard({required IconData icon, required String text}) => Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.96),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: const Color(0xFFE08A00)),
+            const SizedBox(width: 10),
+            Expanded(child: Text(text)),
+          ],
+        ),
+      );
+
+  Widget _evidenceCard(Map<String, dynamic> evidence) {
+    final storagePath = evidence['storage_path']?.toString();
+    final directUrl = evidence['download_url']?.toString();
+    if ((storagePath == null || storagePath.isEmpty) &&
+        (directUrl == null || directUrl.isEmpty)) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: _infoCard(
+          icon: Icons.broken_image_outlined,
+          text: 'Une preuve est enregistrée, mais son fichier est introuvable.',
+        ),
+      );
+    }
+
+    final key = directUrl?.isNotEmpty == true ? directUrl! : storagePath!;
+    final future = _evidenceUrls.putIfAbsent(
+      key,
+      () => directUrl?.isNotEmpty == true
+          ? Future.value(directUrl!)
+          : FirebaseStorage.instance.ref(storagePath!).getDownloadURL(),
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: FutureBuilder<String>(
+        future: future,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return _infoCard(
+              icon: Icons.broken_image_outlined,
+              text: 'La photo n’a pas pu être chargée.',
+            );
+          }
+          if (!snapshot.hasData) {
+            return const SizedBox(
+              height: 160,
+              child: Center(
+                child: CircularProgressIndicator(color: Colors.white),
+              ),
+            );
+          }
+          final url = snapshot.data!;
+          return GestureDetector(
+            onTap: () => _showEvidence(url),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Stack(
+                alignment: Alignment.bottomRight,
+                children: [
+                  Image.network(
+                    url,
+                    width: double.infinity,
+                    height: 220,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _infoCard(
+                      icon: Icons.broken_image_outlined,
+                      text: 'La photo n’a pas pu être affichée.',
+                    ),
+                  ),
+                  Container(
+                    margin: const EdgeInsets.all(10),
+                    padding: const EdgeInsets.all(7),
+                    decoration: const BoxDecoration(
+                      color: Colors.black54,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.zoom_in, color: Colors.white),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _showEvidence(String url) => showDialog<void>(
+        context: context,
+        builder: (dialogContext) => Dialog.fullscreen(
+          backgroundColor: Colors.black,
+          child: SafeArea(
+            child: Stack(
+              children: [
+                Center(
+                  child: InteractiveViewer(
+                    minScale: 0.7,
+                    maxScale: 5,
+                    child: Image.network(url),
+                  ),
+                ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: IconButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    icon: const Icon(Icons.close, color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
   String _formatContextRef(Map<String, dynamic> c) {
     return c['operation_id'] ?? c['pool_session_id'] ?? '—';
   }
@@ -327,6 +475,42 @@ class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
     'Conditions insuffisantes',
     'Exercice incomplet',
   ];
+
+  Future<void> _promptAskInfo() async {
+    final controller = TextEditingController(text: _comment.text);
+    final question = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Demander plus d’informations'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            hintText: 'Quelle information ou nouvelle photo faut-il fournir ?',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final text = controller.text.trim();
+              if (text.isNotEmpty) Navigator.of(dialogContext).pop(text);
+            },
+            child: const Text('Envoyer'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (question == null || question.isEmpty || !mounted) return;
+    _comment.text = question;
+    await _decide('draft', decisionKey: 'ask_info');
+  }
 
   /// Ouvre le dialogue de refus : raison obligatoire (min 10 caractères) +
   /// chips de suggestion. Le bouton reste désactivé tant que la raison est
@@ -420,6 +604,7 @@ class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
   Future<void> _decide(
     String newStatus, {
     Map<String, dynamic>? extraDecision,
+    String? decisionKey,
   }) async {
     if (_claim == null) return;
     setState(() => _submitting = true);
@@ -457,16 +642,31 @@ class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
       // The Cloud Function onClaimAccepted handles the rest if accepted.
       // We still want to resolve the validation task locally for non-accepted
       // outcomes (no CF picks them up).
-      if (newStatus != 'accepted') {
-        await _taskService.markCompleted(clubId, widget.task.id, userId);
+      if (_isExternalProof || newStatus != 'accepted') {
+        await _taskService.markDone(
+          clubId,
+          widget.task.id,
+          userId,
+          completionData: _isExternalProof
+              ? {
+                  'decision': decisionKey ??
+                      (newStatus == 'accepted' ? 'accept' : 'reject'),
+                  'claim_id': claimId,
+                  if (_comment.text.trim().isNotEmpty)
+                    'comment': _comment.text.trim(),
+                }
+              : null,
+        );
       }
 
       if (mounted) {
         final label = newStatus == 'accepted'
             ? 'Acquis ✓'
-            : newStatus == 'corrected'
-                ? 'En progrès'
-                : 'Refusé';
+            : newStatus == 'draft'
+                ? 'Informations demandées'
+                : newStatus == 'corrected'
+                    ? 'En progrès'
+                    : 'Refusé';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(label)),
         );

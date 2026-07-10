@@ -140,6 +140,9 @@ async function handleClaimResubmitted(event) {
     try {
       await event.data.after.ref.update({
         review_task_id: taskRef.id,
+        ...(isExternal && assignee && assignee.id
+          ? { external_reviewer_id: assignee.id }
+          : {}),
         updated_at: FieldValue.serverTimestamp(),
       });
     } catch (err) {

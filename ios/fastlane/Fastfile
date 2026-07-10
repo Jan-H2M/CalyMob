@@ -47,8 +47,8 @@ platform :ios do
       in_house: false
     )
 
-    version = options[:version] || "1.5.4"
-    build = options[:build] || "130"
+    version = options[:version] || "1.12.2"
+    build = options[:build] || "184"
 
     deliver(
       api_key: api_key,

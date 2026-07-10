@@ -93,6 +93,29 @@ class ExerciseClaimService {
     return snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
   }
 
+  /// Re-submit a rejected claim from CalyMob.
+  ///
+  /// The current retry value is read by the screen together with the claim and
+  /// written back as an exact +1. This mirrors the Firestore rule and keeps the
+  /// operation testable outside the widget.
+  Future<void> resubmitRejectedClaim(
+    String clubId,
+    String claimId, {
+    required int currentRetry,
+    String? note,
+  }) async {
+    final update = <String, dynamic>{
+      'status': 'submitted',
+      'retry_count': currentRetry + 1,
+      'updated_at': FieldValue.serverTimestamp(),
+    };
+    final trimmedNote = note?.trim();
+    if (trimmedNote != null && trimmedNote.isNotEmpty) {
+      update['declaration_notes'] = trimmedNote;
+    }
+    await _col(clubId).doc(claimId).update(update);
+  }
+
   /// WP-13 — déclaration spontanée (« Je l'ai fait ») : crée un exercise_claim
   /// `submitted` directement (pas de draft préalable). La CF onClaimSubmitted
   /// crée ensuite la tâche de validation moniteur. Remplace l'ancienne écriture
@@ -116,8 +139,10 @@ class ExerciseClaimService {
       'exercise_code': exerciseCode,
       if (exerciseLabel != null && exerciseLabel.isNotEmpty)
         'exercise_label': exerciseLabel,
-      if (exerciseId != null && exerciseId.isNotEmpty) 'exercise_id': exerciseId,
-      if (memberName != null && memberName.isNotEmpty) 'member_name': memberName,
+      if (exerciseId != null && exerciseId.isNotEmpty)
+        'exercise_id': exerciseId,
+      if (memberName != null && memberName.isNotEmpty)
+        'member_name': memberName,
       'status': 'submitted',
       'validation_mode': 'calypso_monitor',
       'context_type': 'manual',
