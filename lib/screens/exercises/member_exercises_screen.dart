@@ -12,6 +12,7 @@ import '../../utils/date_formatter.dart';
 import '../../utils/plongeur_utils.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../training/historical_claims_screen.dart';
+import '../training/external_proof_capture_screen.dart';
 import 'validate_exercise_screen.dart';
 
 /// Écran affichant les exercices LIFRAS d'un membre.
@@ -243,6 +244,16 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                 }
               },
               tooltip: 'Valider un exercice',
+            ),
+          if (widget.isOwnProfile)
+            IconButton(
+              icon: const Icon(Icons.add_a_photo_outlined),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const ExternalProofCaptureScreen(),
+                ),
+              ),
+              tooltip: 'Preuve externe',
             ),
           if (widget.isOwnProfile)
             IconButton(
@@ -676,10 +687,9 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
               width: 28,
               height: 28,
               decoration: BoxDecoration(
-                color:
-                    isValidated
-                        ? Colors.green
-                        : niveauColor.withValues(alpha: 0.18),
+                color: isValidated
+                    ? Colors.green
+                    : niveauColor.withValues(alpha: 0.18),
                 borderRadius: BorderRadius.circular(6),
                 border: isValidated
                     ? null

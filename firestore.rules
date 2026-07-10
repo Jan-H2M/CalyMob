@@ -1734,13 +1734,17 @@ service cloud.firestore {
             && resource.data.status == 'rejected'
             && request.resource.data.status == 'submitted'
             && request.resource.data.retry_count ==
-                 (resource.data.retry_count is int ? resource.data.retry_count : 0) + 1
-            && request.resource.data.decision == resource.data.decision)
+                 resource.data.get('retry_count', 0) + 1
+            && request.resource.data.decision == resource.data.decision
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'retry_count', 'declaration_notes', 'updated_at']))
         // Abandon : rejected → abandoned, decision inchangée.
         || (resource.data.member_id == request.auth.uid
             && resource.data.status == 'rejected'
             && request.resource.data.status == 'abandoned'
-            && request.resource.data.decision == resource.data.decision)
+            && request.resource.data.decision == resource.data.decision
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'updated_at']))
         || resource.data.monitor_id == request.auth.uid
         || isAdmin(clubId)
         || isEncadrantForClub(clubId)
@@ -1753,13 +1757,16 @@ service cloud.firestore {
     // Personal dive log. Member owns their entries. Admins/encadrants can
     // read for support purposes; buddies do NOT have implicit read access
     // (a future buddy_confirmation flow grants per-entry read on request).
-    // WP-26 MS-A — surveillance MIL : lecture admin, écriture CF uniquement.
+    // WP-26 MS-A — surveillance MIL : lecture admin (écran d'approbation à
+    // venir), écriture par les Cloud Functions uniquement (Admin SDK).
     match /clubs/{clubId}/mil_sync/{document=**} {
       allow read: if isAdmin(clubId);
       allow write: if false;
     }
 
-    // WP-19 (D5) — aucun champ de `source_locked_fields` ne change à l'édition.
+    // WP-19 (D5) — aucun champ listé dans `source_locked_fields` ne change à
+    // l'édition. Firestore ne permet pas d'indexer un champ par nom dynamique,
+    // on énumère donc l'ensemble fixe des champs potentiellement verrouillés.
     function logbookLockedFieldsUnchanged() {
       return !('source_locked_fields' in resource.data)
         || !(resource.data.source_locked_fields is list)
@@ -1785,8 +1792,11 @@ service cloud.firestore {
       allow create: if isMember(clubId)
         && request.resource.data.member_id == request.auth.uid;
 
-      // WP-19 (D5) — édition élargie : le propriétaire modifie ses champs libres
-      // sans limite, mais aucun champ de `source_locked_fields` ne change.
+      // WP-19 (D5) — édition élargie : le propriétaire peut modifier ses champs
+      // libres sans limite de temps, MAIS aucun champ listé dans
+      // `source_locked_fields` ne peut changer (les champs verrouillés viennent
+      // d'une source officielle : sortie, piscine). member_id et source restent
+      // immuables ; si `edited_by` est fourni, il doit être l'auteur (audit).
       allow update: if isMember(clubId)
         && resource.data.member_id == request.auth.uid
         && request.resource.data.member_id == resource.data.member_id

@@ -8,16 +8,53 @@ service firebase.storage {
 
     function isClubMember(clubId) {
       return isAuthenticated() &&
-        firestore.exists(/databases/(default)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+        (
+          firestore.exists(/databases/(default)/documents/clubs/$(clubId)/members/$(request.auth.uid)) ||
+          hasClubClaim(clubId)
+        );
+    }
+
+    function hasClubClaim(clubId) {
+      return isAuthenticated() &&
+        ('clubId' in request.auth.token) &&
+        request.auth.token.clubId == clubId;
+    }
+
+    function tokenAppRole() {
+      return ('app_role' in request.auth.token)
+        ? request.auth.token.app_role
+        : (('role' in request.auth.token) ? request.auth.token.role : '');
     }
 
     function hasRole(clubId, roles) {
-      return isClubMember(clubId) &&
-        firestore.get(/databases/(default)/documents/clubs/$(clubId)/members/$(request.auth.uid)).data.app_role in roles;
+      return (
+        isAuthenticated() &&
+        firestore.exists(/databases/(default)/documents/clubs/$(clubId)/members/$(request.auth.uid)) &&
+        firestore.get(/databases/(default)/documents/clubs/$(clubId)/members/$(request.auth.uid)).data.app_role in roles
+      ) || (
+        hasClubClaim(clubId) &&
+        tokenAppRole() in roles
+      );
     }
 
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isFormationReviewer(clubId) {
+      return hasRole(clubId, ['admin', 'superadmin']) || (
+        isAuthenticated() &&
+        firestore.exists(/databases/(default)/documents/clubs/$(clubId)/members/$(request.auth.uid)) &&
+        firestore.get(/databases/(default)/documents/clubs/$(clubId)/members/$(request.auth.uid)).data
+          .get('clubStatuten', []).hasAny(['E', 'Encadrant', 'Encadrants', 'encadrant', 'encadrants'])
+      );
+    }
+
+    function isAssignedExternalReviewer(clubId, claimId) {
+      return isAuthenticated() &&
+        firestore.exists(/databases/(default)/documents/clubs/$(clubId)/exercise_claims/$(claimId)) &&
+        firestore.get(/databases/(default)/documents/clubs/$(clubId)/exercise_claims/$(claimId)).data
+          .get('external_reviewer_id', '') == request.auth.uid;
     }
 
     // File size limits
@@ -47,6 +84,46 @@ service firebase.storage {
                      isValidFileType('image/.*');
     }
 
+    // ============================================
+    // Club branding assets (logo, etc.) - legacy single branding
+    // ============================================
+    match /clubs/{clubId}/branding/{fileName} {
+      allow read: if true;  // Public read access for email display
+      allow write: if hasRole(clubId, ['admin', 'superadmin']) &&
+                     isValidImageSize() &&
+                     isValidFileType('image/.*');
+    }
+
+    // ============================================
+    // Branding presets (multiple branding styles per club) - LEGACY
+    // Path: clubs/{clubId}/brandings/{presetId}/{imageType}_{timestamp}.{ext}
+    // ============================================
+    match /clubs/{clubId}/brandings/{presetId}/{fileName} {
+      allow read: if true;  // Public read access for email display
+      allow write: if hasRole(clubId, ['admin', 'superadmin']) &&
+                     isValidImageSize() &&
+                     isValidFileType('image/.*');
+    }
+
+    // ============================================
+    // Branding Library (new architecture)
+    // Logos: clubs/{clubId}/branding/logos/{logoId}_{timestamp}.{ext}
+    // Images: clubs/{clubId}/branding/images/{imageId}_{timestamp}.{ext}
+    // ============================================
+    match /clubs/{clubId}/branding/logos/{fileName} {
+      allow read: if true;  // Public read access for email display
+      allow write: if hasRole(clubId, ['admin', 'superadmin']) &&
+                     isValidImageSize() &&
+                     isValidFileType('image/.*');
+    }
+
+    match /clubs/{clubId}/branding/images/{fileName} {
+      allow read: if true;  // Public read access for email display
+      allow write: if hasRole(clubId, ['admin', 'superadmin']) &&
+                     isValidImageSize() &&
+                     isValidFileType('image/.*');
+    }
+
     // Club documents and receipts
     match /clubs/{clubId}/documents/{allPaths=**} {
       allow read: if isClubMember(clubId);
@@ -57,40 +134,38 @@ service firebase.storage {
       allow delete: if hasRole(clubId, ['admin']);
     }
 
-    // Justificatifs (receipts/invoices) - with ownership metadata
-    // Files should include uploader_uid in custom metadata for ownership tracking
-    match /clubs/{clubId}/justificatifs/{document} {
+    // Inbound email attachments stored server-side from Resend/Gmail replies
+    match /clubs/{clubId}/communications/{allPaths=**} {
       allow read: if isClubMember(clubId);
-      allow create: if isClubMember(clubId) &&
-                      isValidDocumentSize() &&
-                      isValidFileType('(application/pdf|image/.*)');
-      // Update/delete: owner or admin/validateur
-      allow update: if isClubMember(clubId) &&
-                      (hasRole(clubId, ['admin', 'validateur']) ||
-                       resource.metadata['uploader_uid'] == request.auth.uid);
-      allow delete: if hasRole(clubId, ['admin', 'validateur']) ||
-                      resource.metadata['uploader_uid'] == request.auth.uid;
+      allow write: if false;
     }
 
-    // Expense claim documents (legacy path) - with ownership
-    match /clubs/{clubId}/demandes/{demandeId}/{document} {
-      allow read: if isClubMember(clubId);
-      allow create: if isClubMember(clubId) &&
+    // Justificatifs (receipts/invoices) - simplified for emulators
+    match /clubs/{clubId}/justificatifs/{document} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() &&
                       isValidDocumentSize() &&
                       isValidFileType('(application/pdf|image/.*)');
-      allow update, delete: if hasRole(clubId, ['admin', 'validateur']) ||
-                              resource.metadata['uploader_uid'] == request.auth.uid;
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated();
+    }
+
+    // Expense claim documents (legacy path)
+    match /clubs/{clubId}/demandes/{demandeId}/{document} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+                      isValidDocumentSize() &&
+                      isValidFileType('(application/pdf|image/.*)');
+      allow update, delete: if isAuthenticated();
     }
 
     // Expense documents (new simplified path for all expense-related documents)
     match /clubs/{clubId}/expense_documents/{document} {
-      allow read: if isClubMember(clubId);
-      allow create: if isClubMember(clubId) &&
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() &&
                       isValidDocumentSize() &&
                       isValidFileType('(application/pdf|image/.*)');
-      // Owner can update/delete their own, admin/validateur can manage all
-      allow update, delete: if hasRole(clubId, ['admin', 'validateur']) ||
-                              resource.metadata['uploader_uid'] == request.auth.uid;
+      allow update, delete: if hasRole(clubId, ['admin', 'validateur']);
     }
 
     // Operation documents (événements, cotisations, dons, ventes, subventions)
@@ -101,13 +176,34 @@ service firebase.storage {
       allow delete: if hasRole(clubId, ['superadmin', 'admin', 'validateur']);
     }
 
-    // Operation message attachments (images, PDFs in event discussions)
+    // Event discussion attachments (CalyMob — images/PDFs in operation messages)
+    // Path: clubs/{clubId}/operations/{operationId}/attachments/{timestamp}_{filename}
     match /clubs/{clubId}/operations/{operationId}/attachments/{fileName} {
       allow read: if isClubMember(clubId);
       allow create: if isClubMember(clubId) &&
                       isValidDocumentSize() &&
                       isValidFileType('(application/pdf|image/.*)');
-      allow delete: if hasRole(clubId, ['superadmin', 'admin']);
+      allow delete: if isClubMember(clubId);
+    }
+
+    // Pool session message attachments (CalyMob — piscine sessions discussion)
+    // Path: clubs/{clubId}/piscine_sessions/{sessionId}/attachments/{timestamp}_{filename}
+    match /clubs/{clubId}/piscine_sessions/{sessionId}/attachments/{fileName} {
+      allow read: if isClubMember(clubId);
+      allow create: if isClubMember(clubId) &&
+                      isValidDocumentSize() &&
+                      isValidFileType('(application/pdf|image/.*)');
+      allow delete: if isClubMember(clubId);
+    }
+
+    // Team channel message attachments (CalyMob — team channels discussion)
+    // Path: clubs/{clubId}/team_channels/{channelId}/attachments/{timestamp}_{filename}
+    match /clubs/{clubId}/team_channels/{channelId}/attachments/{fileName} {
+      allow read: if isClubMember(clubId);
+      allow create: if isClubMember(clubId) &&
+                      isValidDocumentSize() &&
+                      isValidFileType('(application/pdf|image/.*)');
+      allow delete: if isClubMember(clubId);
     }
 
     // Announcement attachments (images, PDFs in club announcements)
@@ -119,6 +215,56 @@ service firebase.storage {
       allow delete: if hasRole(clubId, ['superadmin', 'admin']);
     }
 
+    // Member documents (medical certificates, general documents)
+    // Path: clubs/{clubId}/members/{memberId}/medical/{fileName}
+    // Path: clubs/{clubId}/members/{memberId}/documents/{fileName}
+    match /clubs/{clubId}/members/{memberId}/medical/{fileName} {
+      allow read: if isClubMember(clubId);
+      allow create: if hasRole(clubId, ['superadmin', 'admin']) &&
+                      isValidDocumentSize() &&
+                      isValidFileType('(application/pdf|image/.*)');
+      allow delete: if hasRole(clubId, ['superadmin', 'admin']);
+    }
+
+    match /clubs/{clubId}/members/{memberId}/documents/{fileName} {
+      allow read: if isClubMember(clubId);
+      allow create: if hasRole(clubId, ['superadmin', 'admin']) &&
+                      isValidDocumentSize() &&
+                      isValidFileType('(application/pdf|image/.*|application/vnd.*)');
+      allow delete: if hasRole(clubId, ['superadmin', 'admin']);
+    }
+
+    // Insurance documents (attestations d'assurance)
+    // Path: clubs/{clubId}/members/{memberId}/insurance/{fileName}
+    match /clubs/{clubId}/members/{memberId}/insurance/{fileName} {
+      allow read: if isClubMember(clubId);
+      allow create: if hasRole(clubId, ['superadmin', 'admin']) &&
+                      isValidDocumentSize() &&
+                      isValidFileType('(application/pdf|image/.*)');
+      allow delete: if hasRole(clubId, ['superadmin', 'admin']);
+    }
+
+    // Mobile app medical certificates (CalyMob)
+    // Members can upload their own certificates, admins can read/delete
+    // Path: clubs/{clubId}/members/{memberId}/medical_certificates/{fileName}
+    match /clubs/{clubId}/members/{memberId}/medical_certificates/{fileName} {
+      allow read: if isClubMember(clubId);
+      allow create: if isOwner(memberId) &&
+                      isValidDocumentSize() &&
+                      isValidFileType('(application/pdf|image/.*)');
+      allow delete: if hasRole(clubId, ['superadmin', 'admin']);
+    }
+
+    // Member profile pictures (CalyMob)
+    // Path: clubs/{clubId}/members/{memberId}/profile.jpg
+    match /clubs/{clubId}/members/{memberId}/profile.jpg {
+      allow read: if isClubMember(clubId);
+      allow create, update: if isOwner(memberId) &&
+                              isValidImageSize() &&
+                              isValidFileType('image/.*');
+      allow delete: if isOwner(memberId) || hasRole(clubId, ['superadmin', 'admin']);
+    }
+
     // LEGACY: Event documents - Gardé pour compatibilité migration
     match /clubs/{clubId}/evenements/{eventId}/{document} {
       allow read: if isClubMember(clubId);
@@ -127,23 +273,13 @@ service firebase.storage {
       allow delete: if hasRole(clubId, ['admin']);
     }
 
-    // User profile pictures (global path)
+    // User profile pictures
     match /users/{userId}/profile/{fileName} {
       allow read: if isAuthenticated();
       allow create, update: if isOwner(userId) &&
                               isValidImageSize() &&
                               isValidFileType('image/.*');
       allow delete: if isOwner(userId) || request.auth.token.admin == true;
-    }
-
-    // Member profile pictures (club-specific path used by CalyMob)
-    match /clubs/{clubId}/members/{userId}/profile.jpg {
-      allow read: if isClubMember(clubId);
-      allow create, update: if isOwner(userId) &&
-                              isClubMember(clubId) &&
-                              isValidImageSize() &&
-                              isValidFileType('image/.*');
-      allow delete: if isOwner(userId) || hasRole(clubId, ['admin', 'superadmin']);
     }
 
     // VP Dive imports (Excel files)
@@ -167,14 +303,28 @@ service firebase.storage {
                       isValidFileType('image/.*');
     }
 
+    // Signed card/logbook photos for external formation proof. The member
+    // uploads their own file; only that member and Formation reviewers may
+    // read it.
+    match /clubs/{clubId}/formation_evidence/{userId}/{claimId}/{fileName} {
+      allow read: if isClubMember(clubId) && (
+        isOwner(userId) || isFormationReviewer(clubId) || isAssignedExternalReviewer(clubId, claimId)
+      );
+      allow create, update: if isOwner(userId) &&
+                              isClubMember(clubId) &&
+                              isValidImageSize() &&
+                              isValidFileType('image/.*');
+      allow delete: if isOwner(userId) || hasRole(clubId, ['admin', 'superadmin']);
+    }
+
     // ============================================
     // Bug report screenshots (uploaded by any member)
-    // Path: clubs/{clubId}/bug_reports/{reportId}/screenshot.png
+    // Path: clubs/{clubId}/bug_reports/{reportId}/screenshot.jpg
     // ============================================
     match /clubs/{clubId}/bug_reports/{reportId}/{fileName} {
       allow read: if hasRole(clubId, ['admin', 'superadmin']);
       allow create: if isClubMember(clubId) &&
-                      isValidImageSize() &&
+                      request.resource.size < 10 * 1024 * 1024 && // 10MB for screenshots
                       isValidFileType('image/.*');
       allow delete: if hasRole(clubId, ['admin', 'superadmin']);
     }

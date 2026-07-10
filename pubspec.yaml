@@ -1,7 +1,7 @@
 name: calymob
 description: Calypso DC Mobile Application
 publish_to: 'none'
-version: 1.12.1+183
+version: 1.12.2+184
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -103,6 +103,8 @@ dependencies:
 
   # Markdown rendering for chat messages (bold, etc.)
   flutter_markdown: ^0.7.4
+  archive: 4.0.7
+  xml: 6.6.1
 
   # Payments (if needed)
   # stripe_payment: ^1.1.1

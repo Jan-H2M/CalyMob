@@ -11,7 +11,9 @@
 /// Spec : `CARNET_DE_FORMATION_TECH.md` v2.1 §11 (mockup 09).
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
@@ -37,8 +39,9 @@ class _ExternalProofCaptureScreenState
   final _monitorClubCtrl = TextEditingController();
   final _monitorQualCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
-  bool _photoAttached =
-      false; // stub — real implementation hooks to Firebase Storage
+  final ImagePicker _imagePicker = ImagePicker();
+  XFile? _photo;
+  double? _uploadProgress;
   bool _submitting = false;
 
   @override
@@ -234,19 +237,16 @@ class _ExternalProofCaptureScreenState
 
   Widget _photoPicker() {
     return InkWell(
-      onTap: () {
-        // TODO phase 5+: integrate image_picker + Firebase Storage upload.
-        setState(() => _photoAttached = !_photoAttached);
-      },
+      onTap: _submitting ? null : _choosePhotoSource,
       borderRadius: BorderRadius.circular(14),
       child: Container(
         height: 140,
         decoration: BoxDecoration(
-          color: _photoAttached
+          color: _photo != null
               ? const Color(0xFFE2F4E5)
               : const Color(0xFF1C2742),
           borderRadius: BorderRadius.circular(14),
-          border: _photoAttached
+          border: _photo != null
               ? Border.all(color: const Color(0xFF4CAF50), width: 1.5)
               : null,
         ),
@@ -255,37 +255,87 @@ class _ExternalProofCaptureScreenState
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              _photoAttached ? Icons.check_circle : Icons.camera_alt_outlined,
-              color: _photoAttached
+              _photo != null ? Icons.check_circle : Icons.camera_alt_outlined,
+              color: _photo != null
                   ? const Color(0xFF2E7D32)
                   : const Color(0xFF9DB4D9),
               size: 36,
             ),
             const SizedBox(height: 6),
             Text(
-              _photoAttached
-                  ? 'Photo attachée'
-                  : 'Touchez pour ajouter une photo',
+              _photo != null ? _photo!.name : 'Touchez pour ajouter une photo',
               style: TextStyle(
-                color: _photoAttached
+                color: _photo != null
                     ? const Color(0xFF2E7D32)
                     : const Color(0xFF9DB4D9),
                 fontSize: 12.5,
                 fontWeight: FontWeight.w600,
               ),
             ),
+            if (_uploadProgress != null) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: 180,
+                child: LinearProgressIndicator(value: _uploadProgress),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
+  Future<void> _choosePhotoSource() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Prendre une photo'),
+              onTap: () => Navigator.of(sheetContext).pop(ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Choisir dans la galerie'),
+              onTap: () => Navigator.of(sheetContext).pop(ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+    try {
+      final photo = await _imagePicker.pickImage(
+        source: source,
+        imageQuality: 85,
+        maxWidth: 2000,
+      );
+      if (photo == null || !mounted) return;
+      final size = await photo.length();
+      if (size >= 5 * 1024 * 1024) {
+        throw 'La photo dépasse 5 Mo. Recadre-la ou choisis une image plus légère.';
+      }
+      setState(() => _photo = photo);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Photo non ajoutée : $error')),
+      );
+    }
+  }
+
   Future<void> _submit() async {
     if (_exerciseCtrl.text.trim().isEmpty ||
-        _monitorNameCtrl.text.trim().isEmpty) {
+        _monitorNameCtrl.text.trim().isEmpty ||
+        _photo == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Exercice et monitor externe sont obligatoires')),
+          content: Text(
+            'Exercice, moniteur externe et photo signée sont obligatoires',
+          ),
+        ),
       );
       return;
     }
@@ -298,43 +348,77 @@ class _ExternalProofCaptureScreenState
       if (userId == null) throw 'Session non identifiée';
 
       final db = FirebaseFirestore.instance;
-      await db
+      final claimRef = db
           .collection('clubs')
           .doc(clubId)
           .collection('exercise_claims')
-          .add({
-        'member_id': userId,
-        'member_name': '${mp.prenom ?? ''} ${mp.nom ?? ''}'.trim(),
-        'exercise_id': _exerciseCtrl.text.trim(),
-        'exercise_code': _exerciseCtrl.text.trim(),
-        'context_type': 'manual',
-        'declared_by': userId,
-        'declared_at': FieldValue.serverTimestamp(),
-        'validation_mode': 'external_monitor',
-        'external_monitor': {
-          'name': _monitorNameCtrl.text.trim(),
-          if (_monitorClubCtrl.text.trim().isNotEmpty)
-            'club': _monitorClubCtrl.text.trim(),
-          if (_monitorQualCtrl.text.trim().isNotEmpty)
-            'qualification': _monitorQualCtrl.text.trim(),
-          if (_contextCtrl.text.trim().isNotEmpty)
-            'encountered_at': _contextCtrl.text.trim(),
-        },
-        'evidence': _photoAttached
-            ? [
-                {
-                  'id': 'evidence_1',
-                  'type': 'signed_card_photo',
-                  'status': 'uploaded',
-                  // storage_path / download_url to be filled by real picker integration
-                }
-              ]
-            : [],
-        'declaration_notes': _notesCtrl.text.trim(),
-        'status': 'waiting_external_review',
-        'created_at': FieldValue.serverTimestamp(),
-        'updated_at': FieldValue.serverTimestamp(),
+          .doc();
+      final photo = _photo!;
+      final bytes = await photo.readAsBytes();
+      final contentType = photo.mimeType ?? _contentTypeForName(photo.name);
+      final extension = contentType == 'image/png'
+          ? 'png'
+          : contentType == 'image/webp'
+              ? 'webp'
+              : 'jpg';
+      final storagePath =
+          'clubs/$clubId/formation_evidence/$userId/${claimRef.id}/evidence_1.$extension';
+      final evidenceRef = FirebaseStorage.instance.ref(storagePath);
+      final upload = evidenceRef.putData(
+        bytes,
+        SettableMetadata(
+          contentType: contentType,
+          customMetadata: {'uploader_uid': userId},
+        ),
+      );
+      upload.snapshotEvents.listen((snapshot) {
+        if (!mounted || snapshot.totalBytes == 0) return;
+        setState(() {
+          _uploadProgress = snapshot.bytesTransferred / snapshot.totalBytes;
+        });
       });
+      await upload;
+
+      try {
+        await claimRef.set({
+          'member_id': userId,
+          'member_name': '${mp.prenom ?? ''} ${mp.nom ?? ''}'.trim(),
+          'exercise_id': _exerciseCtrl.text.trim(),
+          'exercise_code': _exerciseCtrl.text.trim(),
+          'context_type': 'manual',
+          'declared_by': userId,
+          'declared_at': FieldValue.serverTimestamp(),
+          'validation_mode': 'external_monitor',
+          'external_monitor': {
+            'name': _monitorNameCtrl.text.trim(),
+            if (_monitorClubCtrl.text.trim().isNotEmpty)
+              'club': _monitorClubCtrl.text.trim(),
+            if (_monitorQualCtrl.text.trim().isNotEmpty)
+              'qualification': _monitorQualCtrl.text.trim(),
+            if (_contextCtrl.text.trim().isNotEmpty)
+              'encountered_at': _contextCtrl.text.trim(),
+          },
+          'evidence': [
+            {
+              'id': 'evidence_1',
+              'type': 'signed_card_photo',
+              'status': 'uploaded',
+              'storage_path': storagePath,
+              'original_name': photo.name,
+              'content_type': contentType,
+              'size_bytes': bytes.length,
+              'uploaded_at': FieldValue.serverTimestamp(),
+            }
+          ],
+          'declaration_notes': _notesCtrl.text.trim(),
+          'status': 'waiting_external_review',
+          'created_at': FieldValue.serverTimestamp(),
+          'updated_at': FieldValue.serverTimestamp(),
+        });
+      } catch (_) {
+        await evidenceRef.delete().catchError((_) {});
+        rethrow;
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -350,7 +434,19 @@ class _ExternalProofCaptureScreenState
         );
       }
     } finally {
-      if (mounted) setState(() => _submitting = false);
+      if (mounted) {
+        setState(() {
+          _submitting = false;
+          _uploadProgress = null;
+        });
+      }
     }
+  }
+
+  String _contentTypeForName(String name) {
+    final lower = name.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    return 'image/jpeg';
   }
 }

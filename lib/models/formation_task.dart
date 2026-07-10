@@ -70,6 +70,16 @@ class FormationTaskAction {
       targetScreen: map['target_screen'],
     );
   }
+
+  /// Accept the canonical map shape and tolerate legacy string keys. One
+  /// malformed task must never make the complete CalyMob Actions stream fail.
+  factory FormationTaskAction.fromValue(Object? value) {
+    if (value is Map<String, dynamic>) {
+      return FormationTaskAction.fromMap(value);
+    }
+    final key = value?.toString() ?? '';
+    return FormationTaskAction(key: key, label: key);
+  }
 }
 
 /// One group an encadrant supervised during a pool session.
@@ -115,7 +125,9 @@ class FormationTaskEncadrantGroup {
   String get displayLabel {
     final lvl = level ?? '';
     final grp = groupNumber != null ? ' · Groupe $groupNumber' : '';
-    final th = (theme != null && theme!.trim().isNotEmpty) ? ' — ${theme!.trim()}' : '';
+    final th = (theme != null && theme!.trim().isNotEmpty)
+        ? ' — ${theme!.trim()}'
+        : '';
     return '$lvl$grp$th'.trim();
   }
 }
@@ -295,8 +307,7 @@ class FormationTask {
       completedAt: (data['completed_at'] as Timestamp?)?.toDate(),
       completedBy: data['completed_by'],
       availableActions: (data['available_actions'] as List?)
-              ?.map(
-                  (e) => FormationTaskAction.fromMap(e as Map<String, dynamic>))
+              ?.map(FormationTaskAction.fromValue)
               .toList() ??
           const [],
       notificationState: FormationTaskNotificationState.fromMap(

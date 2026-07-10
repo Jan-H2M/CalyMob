@@ -289,6 +289,19 @@ describe('handleClaimResubmitted', () => {
     expect(tasksOfType('monitor_validation')).toHaveLength(1);
   });
 
+  it('assigns an external reviewer on the claim for Storage access', async () => {
+    const external = { ...base, validation_mode: 'external_monitor' };
+    const before = { ...external, status: 'rejected', retry_count: 0 };
+    const after = { ...external, status: 'submitted', retry_count: 1 };
+    await seedClaim(after);
+
+    await handleClaimResubmitted(eventFor(before, after));
+
+    expect(tasksOfType('external_proof_review')).toHaveLength(1);
+    expect(claimNow().external_reviewer_id).toBe('monitor-1');
+    expect(claimNow().review_task_id).toBeTruthy();
+  });
+
   it('does nothing on abandon (rejected → abandoned): no new task', async () => {
     const before = { ...base, status: 'rejected' };
     const after = { ...base, status: 'abandoned' };

@@ -17,6 +17,7 @@ import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../models/formation_task.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/exercise_claim_service.dart';
 import '../../services/formation_task_service.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 
@@ -31,6 +32,7 @@ class ExerciseClaimRetryScreen extends StatefulWidget {
 
 class _ExerciseClaimRetryScreenState extends State<ExerciseClaimRetryScreen> {
   final FormationTaskService _taskService = FormationTaskService();
+  final ExerciseClaimService _claimService = ExerciseClaimService();
   Map<String, dynamic>? _claim;
   bool _loading = true;
   bool _submitting = false;
@@ -301,21 +303,12 @@ class _ExerciseClaimRetryScreenState extends State<ExerciseClaimRetryScreen> {
       final claimId = widget.task.context.exerciseClaimId!;
       final currentRetry = (_claim!['retry_count'] as num?)?.toInt() ?? 0;
 
-      final update = <String, dynamic>{
-        'status': 'submitted',
-        'retry_count': currentRetry + 1,
-        'updated_at': FieldValue.serverTimestamp(),
-      };
-      if (_note.text.trim().isNotEmpty) {
-        update['declaration_notes'] = _note.text.trim();
-      }
-
-      await FirebaseFirestore.instance
-          .collection('clubs')
-          .doc(clubId)
-          .collection('exercise_claims')
-          .doc(claimId)
-          .update(update);
+      await _claimService.resubmitRejectedClaim(
+        clubId,
+        claimId,
+        currentRetry: currentRetry,
+        note: _note.text,
+      );
 
       // Close the claim_rejected task (the CF also does this as a safety net).
       await _taskService.markDone(clubId, widget.task.id, userId);

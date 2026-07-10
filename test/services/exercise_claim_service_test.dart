@@ -37,19 +37,22 @@ void main() {
 
   group('fetchDraftsForOperation', () {
     test('returns empty when the member has no drafts', () async {
-      final drafts = await service.fetchDraftsForOperation(clubId, userId, opId);
+      final drafts =
+          await service.fetchDraftsForOperation(clubId, userId, opId);
       expect(drafts, isEmpty);
     });
 
     test('returns the single draft for the operation', () async {
       await seedClaim('c1', draft());
-      final drafts = await service.fetchDraftsForOperation(clubId, userId, opId);
+      final drafts =
+          await service.fetchDraftsForOperation(clubId, userId, opId);
       expect(drafts, hasLength(1));
       expect(drafts.first.exerciseCode, 'P2.DP');
       expect(drafts.first.monitorName, 'Bob');
     });
 
-    test('returns N drafts and filters out other operations / statuses / members',
+    test(
+        'returns N drafts and filters out other operations / statuses / members',
         () async {
       await seedClaim('c1', draft(code: 'P2.DP'));
       await seedClaim('c2', draft(code: 'P2.RA'));
@@ -57,7 +60,8 @@ void main() {
       await seedClaim('c4', draft(status: 'submitted')); // not a draft
       await seedClaim('c5', draft(member: 'bob')); // other member
 
-      final drafts = await service.fetchDraftsForOperation(clubId, userId, opId);
+      final drafts =
+          await service.fetchDraftsForOperation(clubId, userId, opId);
       final codes = drafts.map((d) => d.id).toSet();
       expect(drafts, hasLength(2));
       expect(codes, containsAll(<String>['c1', 'c2']));
@@ -84,6 +88,49 @@ void main() {
       await service.submitClaims(clubId, []);
       final c1 = await firestore.collection(claimsPath).doc('c1').get();
       expect(c1.data()!['status'], 'draft');
+    });
+  });
+
+  group('resubmitRejectedClaim', () {
+    test('increments a missing retry counter from zero and trims the note',
+        () async {
+      await seedClaim('rejected-1', {
+        ...draft(status: 'rejected'),
+        'decision': {'rejected_reason': 'À retravailler'},
+      });
+
+      await service.resubmitRejectedClaim(
+        clubId,
+        'rejected-1',
+        currentRetry: 0,
+        note: '  correction effectuée  ',
+      );
+
+      final claim =
+          await firestore.collection(claimsPath).doc('rejected-1').get();
+      expect(claim.data()!['status'], 'submitted');
+      expect(claim.data()!['retry_count'], 1);
+      expect(claim.data()!['declaration_notes'], 'correction effectuée');
+      expect(claim.data()!['decision']['rejected_reason'], 'À retravailler');
+    });
+
+    test('increments an existing retry counter exactly once', () async {
+      await seedClaim('rejected-2', {
+        ...draft(status: 'rejected'),
+        'retry_count': 3,
+        'decision': {'rejected_reason': 'Encore à retravailler'},
+      });
+
+      await service.resubmitRejectedClaim(
+        clubId,
+        'rejected-2',
+        currentRetry: 3,
+      );
+
+      final claim =
+          await firestore.collection(claimsPath).doc('rejected-2').get();
+      expect(claim.data()!['retry_count'], 4);
+      expect(claim.data()!.containsKey('declaration_notes'), isFalse);
     });
   });
 }

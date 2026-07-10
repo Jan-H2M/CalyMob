@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../../config/app_colors.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'logbook_entry_screen.dart';
 import 'logbook_ocr_capture_screen.dart';
+import 'logbook_xlsx_import_screen.dart';
 
 class LogbookAddChoiceScreen extends StatelessWidget {
   const LogbookAddChoiceScreen({super.key});
@@ -93,60 +93,22 @@ class LogbookAddChoiceScreen extends StatelessWidget {
               _ChoiceButton(
                 icon: Icons.table_chart_outlined,
                 title: 'Importer depuis Excel',
-                subtitle: 'Ouvrir Mon espace pour téléverser un fichier .xlsx.',
-                onTap: () => _showExcelImportUrl(context),
+                subtitle: 'Choisir et vérifier un fichier .xlsx dans CalyMob.',
+                onTap: () async {
+                  final imported = await Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const LogbookXlsxImportScreen(),
+                    ),
+                  );
+                  if (context.mounted && imported == true) {
+                    Navigator.pop(context);
+                  }
+                },
               ),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Future<void> _showExcelImportUrl(BuildContext context) async {
-    const url = 'https://caly.club/me/carnet';
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Import Excel sur PC'),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Pour importer un fichier Excel, ouvre cette adresse sur ton PC :',
-            ),
-            SizedBox(height: 14),
-            SelectableText(
-              url,
-              style: TextStyle(
-                color: AppColors.middenblauw,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            SizedBox(height: 14),
-            Text(
-              'Connecte-toi à Mon espace, puis clique sur “Importer” pour téléverser le fichier .xlsx.',
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              await Clipboard.setData(const ClipboardData(text: url));
-              if (ctx.mounted) {
-                ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(content: Text('URL copiée')),
-                );
-              }
-            },
-            child: const Text('Copier'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('OK'),
-          ),
-        ],
       ),
     );
   }

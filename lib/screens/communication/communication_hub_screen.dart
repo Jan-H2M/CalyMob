@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../models/formation_task.dart';
@@ -27,6 +26,9 @@ import '../training/historical_claims_screen.dart';
 import '../training/historical_qr_scan_screen.dart';
 import '../training/historical_validation_screen.dart';
 import '../training/monitor_observation_screen.dart';
+import '../training/manual_exercise_claim_screen.dart';
+import '../training/formation_task_detail_screen.dart';
+import '../training/monitor_planning_screen.dart';
 
 enum _CommunicationFilter {
   all('Tout', Icons.forum_outlined),
@@ -867,6 +869,9 @@ class _ActionsCalypsoInboxSectionState
     return StreamBuilder<List<FormationTask>>(
       stream: _service.streamUserInbox(clubId, userId),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _FormationTaskStreamError(error: snapshot.error);
+        }
         final tasks = snapshot.data ?? const <FormationTask>[];
         final rows = <Widget>[];
 
@@ -899,6 +904,33 @@ class _ActionsCalypsoInboxSectionState
 
         return Column(children: rows);
       },
+    );
+  }
+}
+
+class _FormationTaskStreamError extends StatelessWidget {
+  final Object? error;
+
+  const _FormationTaskStreamError({required this.error});
+
+  @override
+  Widget build(BuildContext context) {
+    return _CommunicationChatRow(
+      avatar: const _CommunicationAvatar(
+        icon: Icons.sync_problem,
+        colors: [Color(0xFFFAB7B9), Color(0xFFE5484D)],
+      ),
+      title: 'Actions temporairement indisponibles',
+      sender: 'Synchronisation',
+      preview: 'La liste n’a pas pu être chargée. Réessaie dans un instant.',
+      timeLabel: '',
+      unreadCount: 0,
+      searchQuery: '',
+      tag: 'Erreur',
+      tagColor: const Color(0xFFE5484D),
+      onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur de synchronisation : $error')),
+      ),
     );
   }
 }
@@ -1305,18 +1337,23 @@ void _openFormationTask(BuildContext context, FormationTask task) {
       ));
       break;
     case FormationTaskType.externalProofReview:
-      _openFormationTaskOnWeb(context, task, 'external-proof-review');
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => MonitorValidationScreen(task: task),
+      ));
       break;
     case FormationTaskType.exerciseClaim:
-      // WP-04 : écran natif si l'opération est connue ; sinon repli web
-      // (anciennes tâches sans context.operation_id).
+      // WP-04 : les tâches liées à une opération confirment les claims déjà
+      // planifiés. Les anciennes tâches restent entièrement natives grâce au
+      // formulaire de déclaration manuelle.
       if (task.context.operationId != null &&
           task.context.operationId!.isNotEmpty) {
         Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => ExerciseClaimScreen(task: task),
         ));
       } else {
-        _openFormationTaskOnWeb(context, task, 'claim');
+        Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => ManualExerciseClaimScreen(task: task),
+        ));
       }
       break;
     case FormationTaskType.claimRejected:
@@ -1331,10 +1368,12 @@ void _openFormationTask(BuildContext context, FormationTask task) {
       ));
       break;
     case FormationTaskType.eventPreparation:
-      _openFormationTaskOnWeb(context, task, 'event-prep');
+      _openEventPreparationTask(context, task);
       break;
     case FormationTaskType.manualReminder:
-      _openFormationTaskOnWeb(context, task, 'reminder');
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => FormationTaskDetailScreen(task: task),
+      ));
       break;
     // ignore: unreachable_switch_default
     default:
@@ -1346,27 +1385,50 @@ void _openFormationTask(BuildContext context, FormationTask task) {
   }
 }
 
-Future<void> _openFormationTaskOnWeb(
+Future<void> _openEventPreparationTask(
   BuildContext context,
   FormationTask task,
-  String slug,
 ) async {
-  final uri = Uri.parse('https://caly.club/me/inbox/${task.id}/$slug');
+  final operationId = task.context.operationId;
+  if (operationId == null || operationId.isEmpty) {
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => FormationTaskDetailScreen(
+        task: task,
+        missingContextMessage:
+            'Cette préparation ne contient pas encore de sortie associée.',
+      ),
+    ));
+    return;
+  }
+
+  final saved = await Navigator.of(context).push<bool>(MaterialPageRoute(
+    builder: (_) => MonitorPlanningScreen(
+      operationId: operationId,
+      palanqueeId: task.context.palanqueeId,
+    ),
+  ));
+  if (saved != true || !context.mounted) return;
+
+  final userId = context.read<AuthProvider>().currentUser?.uid;
+  if (userId == null) return;
   try {
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Ouvre cette action sur caly.club — l\'écran mobile arrive bientôt.',
-          ),
-        ),
-      );
-    }
-  } catch (e) {
+    await FormationTaskService().markDone(
+      FirebaseConfig.defaultClubId,
+      task.id,
+      userId,
+      completionData: {
+        'operation_id': operationId,
+        if (task.context.palanqueeId != null)
+          'palanquee_id': task.context.palanqueeId,
+      },
+    );
+  } catch (error) {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Impossible d\'ouvrir caly.club ($e).')),
+      SnackBar(
+        content: Text(
+            'Le planning est sauvé, mais l\'action reste ouverte : $error'),
+      ),
     );
   }
 }
