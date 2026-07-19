@@ -8,6 +8,7 @@ import '../../models/boutique/boutique_product.dart';
 import '../../providers/boutique_cart_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../services/boutique/boutique_service.dart';
+import '../../services/feature_flag_service.dart';
 import '../../utils/club_role_utils.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'boutique_cart_screen.dart';
@@ -24,10 +25,35 @@ class BoutiqueScreen extends StatefulWidget {
 }
 
 class _BoutiqueScreenState extends State<BoutiqueScreen> {
+  final FeatureFlagService _flagService = FeatureFlagService();
+
+  bool _isTesterOrAdmin(MemberProvider memberProvider) {
+    final role = memberProvider.appRole?.toLowerCase();
+    if (role == 'admin' || role == 'superadmin') return true;
+    final access = memberProvider.memberData?['feature_access'];
+    return access is Map && access['boutique'] == true;
+  }
+
+  bool _sectionVisible(
+    Map<String, String> visibility,
+    String key,
+    bool canSeeTesteurs,
+  ) {
+    switch (visibility[key]) {
+      case FeatureFlagService.modeTous:
+        return true;
+      case FeatureFlagService.modeTesteurs:
+        return canSeeTesteurs;
+      default:
+        return false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final memberProvider = context.watch<MemberProvider>();
-    final showMaterialReturns = _canOpenMaterialReturns(memberProvider);
+    final canOpenReturns = _canOpenMaterialReturns(memberProvider);
+    final canSeeTesteurs = _isTesterOrAdmin(memberProvider);
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -43,7 +69,17 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
       body: OceanGradientBackground(
         creatures: CreatureSet.fishAndBubbles,
         child: SafeArea(
-          child: ListView(
+          child: StreamBuilder<Map<String, String>>(
+            stream: _flagService.boutiqueVisibility(FirebaseConfig.defaultClubId),
+            initialData: FeatureFlagService.parseBoutiqueVisibility(null),
+            builder: (context, snapshot) {
+              final visibility = snapshot.data ??
+                  FeatureFlagService.parseBoutiqueVisibility(null);
+              bool showSection(String key) =>
+                  _sectionVisible(visibility, key, canSeeTesteurs);
+              final showMaterialReturns =
+                  showSection('pretsMateriel') && canOpenReturns;
+              return ListView(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
             children: [
               Text(
@@ -55,19 +91,22 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                 ),
               ),
               const SizedBox(height: 22),
-              _BoutiqueHomeCard(
-                icon: Icons.receipt_long_outlined,
-                title: 'Mes commandes',
-                subtitle: 'Suivre les commandes et retrouver les paiements.',
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const MesCommandesScreen(),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 12),
+              if (showSection('commandes')) ...[
+                _BoutiqueHomeCard(
+                  icon: Icons.receipt_long_outlined,
+                  title: 'Mes commandes',
+                  subtitle: 'Suivre les commandes et retrouver les paiements.',
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const MesCommandesScreen(),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (showSection('panier'))
               Consumer<BoutiqueCartProvider>(
                 builder: (context, cart, _) {
                   final subtitle = cart.isEmpty
@@ -88,20 +127,21 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                   );
                 },
               ),
-              const SizedBox(height: 12),
-              _BoutiqueHomeCard(
-                icon: Icons.storefront_outlined,
-                title: 'Produits',
-                subtitle: 'Parcourir le catalogue Boutique.',
-                emphasized: true,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const BoutiqueProductsScreen(),
-                    ),
-                  );
-                },
-              ),
+              if (showSection('panier')) const SizedBox(height: 12),
+              if (showSection('produits'))
+                _BoutiqueHomeCard(
+                  icon: Icons.storefront_outlined,
+                  title: 'Produits',
+                  subtitle: 'Parcourir le catalogue Boutique.',
+                  emphasized: true,
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const BoutiqueProductsScreen(),
+                      ),
+                    );
+                  },
+                ),
               const SizedBox(height: 26),
               Container(
                 height: 1,
@@ -109,19 +149,20 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                 color: Colors.white.withValues(alpha: 0.42),
               ),
               const SizedBox(height: 22),
-              _BoutiqueHomeCard(
-                icon: Icons.card_membership_outlined,
-                title: 'Ma cotisation',
-                subtitle: 'Consulter et payer votre cotisation membre.',
-                emphasized: true,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const MaCotisationScreen(),
-                    ),
-                  );
-                },
-              ),
+              if (showSection('cotisation'))
+                _BoutiqueHomeCard(
+                  icon: Icons.card_membership_outlined,
+                  title: 'Ma cotisation',
+                  subtitle: 'Consulter et payer votre cotisation membre.',
+                  emphasized: true,
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const MaCotisationScreen(),
+                      ),
+                    );
+                  },
+                ),
               if (showMaterialReturns) ...[
                 const SizedBox(height: 12),
                 _BoutiqueHomeCard(
@@ -140,6 +181,8 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                 ),
               ],
             ],
+          );
+            },
           ),
         ),
       ),

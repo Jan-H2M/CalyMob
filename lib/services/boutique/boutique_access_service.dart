@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:rxdart/rxdart.dart';
 
+import '../feature_flag_service.dart';
+
 class BoutiqueAccessService {
   final FirebaseFirestore _firestore;
 
@@ -46,7 +48,15 @@ class BoutiqueAccessService {
     final hasMemberAccess = access is Map && access['boutique'] == true;
 
     if (!enabled) return false;
-    if (isAdmin || hasMemberAccess) return true;
-    return false;
+
+    final mode = FeatureFlagService.parseBoutiqueVisibility(flags)['access'];
+    switch (mode) {
+      case FeatureFlagService.modeMasque:
+        return false;
+      case FeatureFlagService.modeTous:
+        return true;
+      default:
+        return isAdmin || hasMemberAccess;
+    }
   }
 }
