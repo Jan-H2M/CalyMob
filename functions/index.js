@@ -225,6 +225,9 @@ exports.listBoutiqueOrders = listBoutiqueOrders;
 const { cancelBoutiqueOrder } = require('./src/boutique/cancelOrder');
 exports.cancelBoutiqueOrder = cancelBoutiqueOrder;
 
+const { expireBoutiqueOrders } = require('./src/boutique/expireOrders');
+exports.expireBoutiqueOrders = expireBoutiqueOrders;
+
 const { createCotisationPayment } = require('./src/cotisations/createPayment');
 exports.createCotisationPayment = createCotisationPayment;
 

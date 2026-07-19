@@ -266,6 +266,12 @@ class _BoutiqueCheckoutScreenState extends State<BoutiqueCheckoutScreen> {
 
     if (!_validateBeforeSubmit(context, orderPayload)) return;
 
+    // Fix audit 2026-07-19 (K5): idempotency-key per mandje; een retry na
+    // timeout/app-kill hergebruikt dezelfde key → server geeft de bestaande
+    // order terug i.p.v. een dubbele te maken.
+    orderPayload['idempotencyKey'] = await cart.checkoutIdempotencyKey();
+
+    if (!context.mounted) return;
     setState(() => _submitting = true);
     try {
       final callable = FirebaseFunctions.instanceFor(region: 'europe-west1')

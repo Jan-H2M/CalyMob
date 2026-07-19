@@ -4,6 +4,18 @@ function getClubRef(db, clubId) {
   return db.collection('clubs').doc(clubId);
 }
 
+const BOUTIQUE_ACCESS_MODES = ['tous', 'testeurs', 'masque'];
+
+// Zichtbaarheidsstand van de Boutique-module (CalyCompta > Boutique > Réglages).
+// 'tous' = elk lid, 'testeurs' = admins + feature_access.boutique (historisch
+// gedrag, tevens default), 'masque' = niemand. Zelfde semantiek als de Dart-
+// client (FeatureFlagService.parseBoutiqueVisibility) en firestore.rules
+// canAccessBoutique — bij wijziging alle drie aanpassen!
+function resolveBoutiqueAccessMode(flags) {
+  const raw = flags && flags.boutiqueAccess;
+  return BOUTIQUE_ACCESS_MODES.includes(raw) ? raw : 'testeurs';
+}
+
 async function assertBoutiqueAccess({ clubRef, authUid, HttpsError }) {
   const [flagsSnap, memberSnap] = await Promise.all([
     clubRef.collection('settings').doc('feature_flags').get(),
@@ -17,8 +29,17 @@ async function assertBoutiqueAccess({ clubRef, authUid, HttpsError }) {
   const isAdmin = appRole === 'admin' || appRole === 'superadmin';
   const access = member.feature_access;
   const hasMemberAccess = access && typeof access === 'object' && access.boutique === true;
+  const isMember = memberSnap.exists;
 
-  if (!enabled || (!isAdmin && !hasMemberAccess)) {
+  const accessMode = resolveBoutiqueAccessMode(flags);
+  const modeAllows =
+    accessMode === 'tous'
+      ? isMember
+      : accessMode === 'testeurs'
+        ? isAdmin || hasMemberAccess
+        : false; // 'masque' — niemand, ook admins niet (zelfde als de client)
+
+  if (!enabled || !modeAllows) {
     throw new HttpsError('permission-denied', 'Accès Boutique non autorisé');
   }
 
@@ -149,6 +170,7 @@ function buildEpcQrPayload({ iban, beneficiary, amount, ogm, communication }) {
 module.exports = {
   REGION,
   assertBoutiqueAccess,
+  resolveBoutiqueAccessMode,
   buildDomainError,
   buildEpcQrPayload,
   buildInvalidInputError,

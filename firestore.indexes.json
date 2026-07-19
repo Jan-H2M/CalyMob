@@ -333,6 +333,34 @@
       ]
     },
     {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "expiresAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "idempotencyKey",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "buyer.userId",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "supplier_order_batches",
       "queryScope": "COLLECTION",
       "fields": [

@@ -266,13 +266,21 @@ service cloud.firestore {
              (userRole == 'user' && request.auth.uid == ownerId);
     }
 
+    // Zichtbaarheidsstand Boutique (CalyCompta > Boutique > Réglages):
+    // 'tous' = elk lid, 'testeurs' = admins + feature_access.boutique (default,
+    // historisch gedrag), 'masque' = niemand. Zelfde semantiek als de Dart-client
+    // (FeatureFlagService) en functions/src/boutique/shared.js — bij wijziging
+    // alle drie aanpassen! (Fix audit 2026-07-19, BL2)
     function canAccessBoutique(clubId) {
       let userData = getUserData(clubId);
       let flags = get(/databases/$(database)/documents/clubs/$(clubId)/settings/feature_flags).data;
+      let accessMode = flags.get('boutiqueAccess', 'testeurs');
 
       return isMember(clubId)
         && (flags.boutiqueEnabled == true || flags.boutiqueMobileEnabled == true)
+        && accessMode != 'masque'
         && (
+          accessMode == 'tous' ||
           userData.app_role in ['admin', 'superadmin'] ||
           (('feature_access' in userData) && userData.feature_access.boutique == true)
         );

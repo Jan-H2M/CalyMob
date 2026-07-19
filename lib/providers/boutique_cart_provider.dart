@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -153,6 +154,7 @@ class BoutiqueCartItem {
 
 class BoutiqueCartProvider extends ChangeNotifier {
   static const String _storageKey = 'boutique_cart_items_v1';
+  static const String _idempotencyStorageKey = 'boutique_checkout_key_v1';
 
   final List<BoutiqueCartItem> _items = [];
   bool _loaded = false;
@@ -216,7 +218,26 @@ class BoutiqueCartProvider extends ChangeNotifier {
   Future<void> clear() async {
     _items.clear();
     await _persist();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_idempotencyStorageKey);
     notifyListeners();
+  }
+
+  /// Idempotency-key voor de checkout (fix audit 2026-07-19, K5).
+  /// Eén key per winkelmandje, gepersisteerd zodat een retry na timeout of
+  /// app-kill dezelfde key hergebruikt en de server geen tweede order maakt.
+  /// Wordt gewist samen met het mandje (na een geslaagde bestelling).
+  Future<String> checkoutIdempotencyKey() async {
+    final prefs = await SharedPreferences.getInstance();
+    final existing = prefs.getString(_idempotencyStorageKey);
+    if (existing != null && existing.length >= 16) {
+      return existing;
+    }
+    final random = Random.secure();
+    final bytes = List<int>.generate(20, (_) => random.nextInt(256));
+    final key = 'chk-${bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join()}';
+    await prefs.setString(_idempotencyStorageKey, key);
+    return key;
   }
 
   Future<void> _load() async {

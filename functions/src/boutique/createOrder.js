@@ -111,14 +111,99 @@ function sanitizeBuyer(inputBuyer, authUid) {
   };
 }
 
-function sanitizeCustomizations(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {};
+// Fix audit 2026-07-19 (K4): de personalisatie-toeslag wordt server-side
+// herrekend uit product.embroidery (zelfde logica als de Dart-client,
+// BoutiquePersonalizationSelection.surcharge). De door de client meegestuurde
+// surcharge wordt volledig genegeerd — die was manipuleerbaar en gleed door de
+// exacte-bedrag-match heen. Ongeldige zones/waarden → INVALID_INPUT.
+function computeCustomizations(product, rawValue) {
+  if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) {
+    return { customizations: null, surcharge: 0 };
   }
-  const customizations = JSON.parse(JSON.stringify(value));
-  const surcharge = parseMoney(customizations.surcharge);
-  customizations.surcharge = Math.max(0, surcharge);
-  return customizations;
+
+  const raw = JSON.parse(JSON.stringify(rawValue));
+  const config = product && typeof product.embroidery === 'object' && product.embroidery !== null
+    ? product.embroidery
+    : null;
+  if (!config || config.enabled !== true) {
+    // Product kent geen personalisatie → client-aanvraag defensief negeren.
+    return { customizations: null, surcharge: 0 };
+  }
+
+  const asNumber = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0);
+  const zonesOf = (option) => (option && Array.isArray(option.zones) ? option.zones.map(String) : []);
+
+  const result = {
+    technique: config.technique === 'print' ? 'print' : 'embroidery',
+    baseType: typeof config.baseType === 'string' ? config.baseType : 'other',
+  };
+  let surcharge = 0;
+
+  const logoOption = config.clubLogo;
+  const rawLogo = raw.clubLogo;
+  if (rawLogo && rawLogo.enabled === true && logoOption && logoOption.enabled === true) {
+    const zone = typeof rawLogo.zone === 'string' ? rawLogo.zone : '';
+    if (!zonesOf(logoOption).includes(zone)) {
+      throw buildInvalidInputError('INVALID_INPUT', { customization: 'clubLogo.zone', zone });
+    }
+    const logoSurcharge = asNumber(logoOption.surcharge);
+    surcharge += logoSurcharge;
+    result.clubLogo = { enabled: true, zone, surcharge: logoSurcharge };
+  }
+
+  const nameOption = config.name;
+  const rawName = raw.name;
+  const nameText = rawName && typeof rawName.text === 'string' ? rawName.text.trim() : '';
+  if (nameText && nameOption && nameOption.enabled === true) {
+    const zone = typeof rawName.zone === 'string' ? rawName.zone : '';
+    if (!zonesOf(nameOption).includes(zone)) {
+      throw buildInvalidInputError('INVALID_INPUT', { customization: 'name.zone', zone });
+    }
+    const maxLengthRaw = Number(nameOption.maxLength);
+    const maxLength = Number.isInteger(maxLengthRaw) && maxLengthRaw > 0 ? maxLengthRaw : null;
+    if (maxLength && nameText.length > maxLength) {
+      throw buildInvalidInputError('INVALID_INPUT', {
+        customization: 'name.maxLength',
+        maxLength,
+        length: nameText.length,
+      });
+    }
+    const pricePerCharacter = asNumber(
+      nameOption.pricePerCharacter !== undefined ? nameOption.pricePerCharacter : nameOption.surcharge
+    );
+    const nameSurcharge = asNumber(nameOption.surcharge) + nameText.length * pricePerCharacter;
+    surcharge += nameSurcharge;
+    result.name = { text: nameText, zone, pricePerCharacter, surcharge: nameSurcharge };
+  }
+
+  const certOption = config.certification;
+  const rawCert = raw.certification;
+  const certValue = rawCert && typeof rawCert.value === 'string' ? rawCert.value.trim() : '';
+  if (certValue && certOption && certOption.enabled === true) {
+    const zone = typeof rawCert.zone === 'string' ? rawCert.zone : '';
+    if (!zonesOf(certOption).includes(zone)) {
+      throw buildInvalidInputError('INVALID_INPUT', { customization: 'certification.zone', zone });
+    }
+    const allowedValues = Array.isArray(certOption.allowedValues)
+      ? certOption.allowedValues.map(String)
+      : [];
+    if (allowedValues.length > 0 && !allowedValues.includes(certValue)) {
+      throw buildInvalidInputError('INVALID_INPUT', {
+        customization: 'certification.value',
+        value: certValue,
+      });
+    }
+    const certSurcharge = asNumber(certOption.surcharge);
+    surcharge += certSurcharge;
+    result.certification = { value: certValue, zone, surcharge: certSurcharge };
+  }
+
+  if (!result.clubLogo && !result.name && !result.certification) {
+    return { customizations: null, surcharge: 0 };
+  }
+
+  result.surcharge = surcharge;
+  return { customizations: result, surcharge };
 }
 
 function extractOrderCounter(orderNumber, year) {
@@ -347,6 +432,18 @@ exports.createBoutiqueOrder = onCall(
     const clubRef = getClubRef(db, clubId);
     await assertBoutiqueAccess({ clubRef, authUid: request.auth.uid, HttpsError });
 
+    // Fix audit 2026-07-19 (K5): idempotency-key tegen dubbele orders bij
+    // retry, timeout of app-kill tussen server-commit en client-response.
+    // De client stuurt een per-checkout gepersisteerde UUID mee; bestaat er al
+    // een order met dezelfde key voor deze koper, dan geven we die terug in
+    // plaats van een tweede order (met tweede voorraadreservering) te maken.
+    const rawIdempotencyKey = typeof request.data?.idempotencyKey === 'string'
+      ? request.data.idempotencyKey.trim()
+      : '';
+    const idempotencyKey = /^[A-Za-z0-9-]{16,64}$/.test(rawIdempotencyKey)
+      ? rawIdempotencyKey
+      : null;
+
     const orderRef = clubRef.collection('orders').doc();
     const inventoryMutationsRef = clubRef.collection('inventoryMutations');
     const now = admin.firestore.Timestamp.now();
@@ -357,6 +454,23 @@ exports.createBoutiqueOrder = onCall(
 
     try {
       const result = await db.runTransaction(async (transaction) => {
+        if (idempotencyKey) {
+          const existingSnap = await transaction.get(
+            clubRef.collection('orders')
+              .where('idempotencyKey', '==', idempotencyKey)
+              .where('buyer.userId', '==', request.auth.uid)
+              .limit(1),
+          );
+          if (!existingSnap.empty) {
+            const existing = existingSnap.docs[0];
+            return {
+              duplicate: true,
+              orderId: existing.id,
+              order: existing.data(),
+            };
+          }
+        }
+
         const counterSnap = await transaction.get(orderCounterRef);
         const prefix = `BTQ-${currentYear}-`;
         const existingNumbersSnap = await transaction.get(
@@ -461,8 +575,10 @@ exports.createBoutiqueOrder = onCall(
             fulfillmentStatus = 'awaiting_restock';
           }
 
-          const customizations = sanitizeCustomizations(item.customizations || item.personalization);
-          const customizationSurcharge = parseMoney(customizations.surcharge);
+          const { customizations, surcharge: customizationSurcharge } = computeCustomizations(
+            product,
+            item.customizations || item.personalization
+          );
           const deliveryMode = resolveDeliveryMode(item, product);
           const deliveryAddress = sanitizeDeliveryAddress(deliveryMode, item.deliveryAddress);
           const unitPrice = resolveVariantUnitPrice(product, variant) + customizationSurcharge;
@@ -483,7 +599,7 @@ exports.createBoutiqueOrder = onCall(
             deliveryMode,
             deliveryAddress,
             fulfillmentStatus,
-            customizations: Object.keys(customizations).length > 0 ? customizations : null,
+            customizations,
             productSnapshot: {
               name: product.name || '',
               variantLabel: variant.label || '',
@@ -492,7 +608,7 @@ exports.createBoutiqueOrder = onCall(
               allowBackorder,
               reservedQty,
               image: Array.isArray(product.images) ? (product.images[0] || '') : '',
-              customizations: Object.keys(customizations).length > 0 ? customizations : null,
+              customizations,
             },
             backorderInfo: fulfillmentStatus === 'awaiting_restock'
               ? { reservedAt: now }
@@ -557,6 +673,7 @@ exports.createBoutiqueOrder = onCall(
           },
           status: 'awaiting_payment',
           deliveryPreferences: request.data?.deliveryPreferences || null,
+          idempotencyKey: idempotencyKey || null,
           expiresAt,
           migration_source: null,
           _backfill: false,
@@ -592,6 +709,35 @@ exports.createBoutiqueOrder = onCall(
           orderData,
         };
       });
+
+      if (result.duplicate) {
+        // Idempotente retry: bestaande order teruggeven, geen nieuwe mail.
+        const existingOrder = result.order || {};
+        const existingPayment = existingOrder.payment || {};
+        console.log(`[createBoutiqueOrder] Idempotent replay voor ${clubId}/${result.orderId} (key match)`);
+        return {
+          success: true,
+          duplicate: true,
+          orderId: result.orderId,
+          orderNumber: existingOrder.orderNumber || '',
+          ogm: null,
+          ogm_display: existingOrder.paymentCommunication || '',
+          paymentCommunication: existingOrder.paymentCommunication || '',
+          total: existingOrder.pricing ? existingOrder.pricing.total : 0,
+          expiresAt: existingOrder.expiresAt && existingOrder.expiresAt.toDate
+            ? existingOrder.expiresAt.toDate().toISOString()
+            : null,
+          payment: {
+            ogm: null,
+            ogm_display: existingOrder.paymentCommunication || '',
+            paymentCommunication: existingOrder.paymentCommunication || '',
+            iban: existingPayment.iban || bankSettings.iban,
+            beneficiary: existingPayment.beneficiary || bankSettings.beneficiary,
+            epcPayload: existingPayment.epcPayload || '',
+            qrCodeUrl: existingPayment.qrCodeUrl || '',
+          },
+        };
+      }
 
       let emailSentAt = null;
       let emailStatus = 'failed';
