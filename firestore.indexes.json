@@ -333,6 +333,20 @@
       ]
     },
     {
+      "collectionGroup": "supplier_order_batches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "operations",
       "queryScope": "COLLECTION",
       "fields": [

@@ -1851,20 +1851,21 @@ service cloud.firestore {
     // will later move through Cloud Functions; direct client writes stay tight.
     // ========================================================================
 
-    match /clubs/{clubId}/products/{productId} {
-      allow read: if (isAdmin(clubId) && hasValidSession(clubId)) || (
-        isMember(clubId) && hasValidSession(clubId) && resource.data.visibility == 'published'
-      );
-      allow create, update, delete: if isAdmin(clubId) && hasValidSession(clubId);
-    }
+    // Fix audit 2026-07-19 (H5): het dubbele products-blok is verwijderd.
+    // De canonieke products-rule staat genest onder /clubs/{clubId} (rond r.1464)
+    // en vereist canAccessBoutique voor leden — het blok hier OR'de daaroverheen
+    // en gaf élk web-lid met sessie leestoegang, wat de standen testeurs/masqué
+    // uitholde.
 
     match /clubs/{clubId}/orders/{orderId} {
       allow read: if (isAdmin(clubId) && hasValidSession(clubId)) || (
         isMember(clubId) && hasValidSession(clubId) && resource.data.buyer.userId == request.auth.uid
       );
-      allow create: if isMember(clubId)
-        && hasValidSession(clubId)
-        && request.resource.data.buyer.userId == request.auth.uid;
+      // Fix audit 2026-07-19 (K1): order-creatie verloopt UITSLUITEND via de
+      // Cloud Function createBoutiqueOrder (Admin SDK, bypasst rules). De oude
+      // regel liet een lid direct een order met status 'paid' en willekeurige
+      // pricing schrijven.
+      allow create: if false;
       allow update, delete: if isAdmin(clubId) && hasValidSession(clubId);
     }
 

@@ -85,6 +85,20 @@ service firebase.storage {
     }
 
     // ============================================
+    // BOUTIQUE: product photos
+    // Path: clubs/{clubId}/boutique/products/{productId|'drafts'}/{imageId}-{fileName}
+    // Upload: CalyCompta admin (boutiqueImageService). Read: club members (app + web).
+    // Fix audit 2026-07-19 (BL1): pad had geen enkele rule -> default deny.
+    // ============================================
+    match /clubs/{clubId}/boutique/products/{productId}/{fileName} {
+      allow read: if isClubMember(clubId);
+      allow create, update: if hasRole(clubId, ['admin', 'superadmin']) &&
+                     isValidImageSize() &&
+                     isValidFileType('image/.*');
+      allow delete: if hasRole(clubId, ['admin', 'superadmin']);
+    }
+
+    // ============================================
     // Club branding assets (logo, etc.) - legacy single branding
     // ============================================
     match /clubs/{clubId}/branding/{fileName} {
