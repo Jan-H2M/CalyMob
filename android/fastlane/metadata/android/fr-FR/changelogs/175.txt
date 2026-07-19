@@ -1,0 +1,7 @@
+Version 1.11.0 – Carnet & piscine
+
+- Nouveau : fiche piscine repensée, heure par heure
+- Exercices refusés : tu reçois la raison et tu peux corriger puis renvoyer
+- Confirme tes exercices planifiés directement dans l'app
+- Confirmations de plongée entre binômes intégrées dans l'app
+- Corrections et améliorations de stabilité

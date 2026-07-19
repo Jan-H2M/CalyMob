@@ -26,6 +26,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../../config/app_colors.dart';
+import '../../utils/member_name.dart';
 import '../../config/firebase_config.dart';
 import '../../models/formation_task.dart';
 import '../../models/student_logbook_entry.dart';
@@ -462,23 +463,9 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
       final members = memberSnap.docs
           .map((doc) {
             final data = doc.data();
-            final prenom = ((data['prenom'] ??
-                        data['firstName'] ??
-                        data['first_name'] ??
-                        data['membre_prenom'] ??
-                        data['member_first_name']) as String? ??
-                    '')
-                .trim();
-            final nom = ((data['nom'] ??
-                        data['lastName'] ??
-                        data['last_name'] ??
-                        data['membre_nom'] ??
-                        data['member_last_name']) as String? ??
-                    '')
-                .trim();
-            final display = ('$prenom $nom').trim().isNotEmpty
-                ? '$prenom $nom'.trim()
-                : doc.id;
+            final prenom = memberFirstName(data) ?? '';
+            final nom = memberLastName(data) ?? '';
+            final display = memberDisplayName(data, fallback: doc.id);
             return _DictationMember(
               id: doc.id,
               prenom: prenom,
@@ -4883,9 +4870,7 @@ class _PoolMemberNameList extends StatelessWidget {
           continue;
         }
         final v = s.data() ?? {};
-        final prenom = (v['prenom'] as String?) ?? '';
-        final nom = (v['nom'] as String?) ?? '';
-        final display = ('$prenom $nom').trim();
+        final display = memberDisplayName(v, fallback: '');
         out.add(display.isEmpty ? id : display);
       } catch (_) {
         out.add(id);

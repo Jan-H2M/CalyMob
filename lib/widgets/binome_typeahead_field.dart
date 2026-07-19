@@ -21,6 +21,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../config/firebase_config.dart';
+import '../utils/member_name.dart';
 
 /// A snapshotted binôme — see _carnet_plan §11 Q17 / Q18 + tech doc §6.3.
 class BinomeSelection {
@@ -90,22 +91,24 @@ class _MemberRow {
   final String id;
   final String prenom;
   final String nom;
+  final String displayName;
+  final List<String> searchValues;
   final String? brevet;
 
   const _MemberRow({
     required this.id,
     required this.prenom,
     required this.nom,
+    required this.displayName,
+    required this.searchValues,
     this.brevet,
   });
-
-  String get displayName => '$prenom $nom'.trim();
-  String get searchKey => _normalizeBinomeSearch('$prenom $nom');
 }
 
 class BinomeTypeaheadField extends StatefulWidget {
   final List<BinomeSelection> binomes;
   final ValueChanged<List<BinomeSelection>> onChanged;
+  final FirebaseFirestore? firestore;
 
   /// User id to exclude from search results (don't suggest yourself).
   final String? currentUserId;
@@ -115,6 +118,7 @@ class BinomeTypeaheadField extends StatefulWidget {
     required this.binomes,
     required this.onChanged,
     this.currentUserId,
+    this.firestore,
   });
 
   @override
@@ -137,28 +141,29 @@ class _BinomeTypeaheadFieldState extends State<BinomeTypeaheadField> {
   Future<void> _loadMembers() async {
     try {
       const clubId = FirebaseConfig.defaultClubId;
-      final snap = await FirebaseFirestore.instance
+      final snap = await (widget.firestore ?? FirebaseFirestore.instance)
           .collection('clubs')
           .doc(clubId)
           .collection('members')
-          .orderBy('nom')
           .get();
       final rows = snap.docs
           .map((d) {
             final data = d.data();
+            if (data['is_test_account'] == true) return null;
             return _MemberRow(
               id: d.id,
-              prenom: (data['prenom'] as String?)?.trim() ??
-                  (data['first_name'] as String?)?.trim() ??
-                  '',
-              nom: (data['nom'] as String?)?.trim() ??
-                  (data['last_name'] as String?)?.trim() ??
-                  '',
+              prenom: memberFirstName(data) ?? '',
+              nom: memberLastName(data) ?? '',
+              displayName: memberDisplayName(data, fallback: ''),
+              searchValues: memberNameSearchValues(data),
               brevet: (data['plongeur_code'] as String?)?.trim(),
             );
           })
+          .whereType<_MemberRow>()
           .where((r) => r.displayName.isNotEmpty)
-          .toList();
+          .toList()
+        ..sort((a, b) =>
+            a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
       if (!mounted) return;
       setState(() {
         _members = rows;
@@ -189,11 +194,11 @@ class _BinomeTypeaheadFieldState extends State<BinomeTypeaheadField> {
       if (widget.currentUserId != null && m.id == widget.currentUserId) {
         return false;
       }
-      return _memberSearchScore(q, m.searchKey) < 999;
+      return _memberRowSearchScore(q, m) < 999;
     }).toList()
       ..sort((a, b) {
-        final scoreCmp = _memberSearchScore(q, a.searchKey)
-            .compareTo(_memberSearchScore(q, b.searchKey));
+        final scoreCmp =
+            _memberRowSearchScore(q, a).compareTo(_memberRowSearchScore(q, b));
         if (scoreCmp != 0) return scoreCmp;
         return a.displayName.compareTo(b.displayName);
       });
@@ -615,4 +620,11 @@ int _memberSearchScore(String query, String target) {
     }
   }
   return score + targetParts.length;
+}
+
+int _memberRowSearchScore(String query, _MemberRow member) {
+  return member.searchValues
+      .map(_normalizeBinomeSearch)
+      .map((target) => _memberSearchScore(query, target))
+      .fold(999, (best, score) => score < best ? score : best);
 }

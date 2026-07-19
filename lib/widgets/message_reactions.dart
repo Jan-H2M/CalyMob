@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../config/firebase_config.dart';
+import '../utils/member_name.dart';
 
 class MessageReactions extends StatelessWidget {
   static const List<String> quickReactions = ['👍', '❤️', '😂', '🎉', '🙏'];
@@ -217,16 +218,7 @@ class _ReactionNameCache {
         final data = doc.data();
         if (data == null) return 'Membre inconnu';
 
-        final firstName =
-            (data['prenom'] ?? data['firstName'] ?? '').toString().trim();
-        final lastName =
-            (data['nom'] ?? data['lastName'] ?? '').toString().trim();
-        final email = (data['email'] ?? '').toString().trim();
-        final fullName = '$firstName $lastName'.trim();
-
-        if (fullName.isNotEmpty) return fullName;
-        if (email.isNotEmpty) return email;
-        return 'Membre inconnu';
+        return memberDisplayName(data, fallback: 'Membre inconnu');
       } catch (_) {
         return 'Membre inconnu';
       }

@@ -16,6 +16,7 @@ const {
   filterByPreference,
   sendNotificationsWithBadge,
 } = require('../utils/badge-helper');
+const { memberDisplayName: resolveMemberDisplayName } = require('../utils/memberName');
 
 const FUNCTION_REGION = 'europe-west1';
 const CONFIRMATIONS = 'logbook_dive_confirmations';
@@ -53,8 +54,7 @@ function normalizeText(value) {
 }
 
 function memberDisplayName(data = {}) {
-  const name = `${data.prenom || data.first_name || ''} ${data.nom || data.last_name || ''}`.trim();
-  return name || data.displayName || data.display_name || 'Membre';
+  return resolveMemberDisplayName(data, 'Membre');
 }
 
 function binomeDisplayName(item) {

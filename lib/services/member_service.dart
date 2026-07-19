@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../models/exercice_lifras.dart';
 import '../models/member_profile.dart';
+import '../utils/member_name.dart';
 
 /// Service de gestion des membres
 class MemberService {
@@ -103,9 +104,9 @@ class MemberService {
         final data = doc.data();
         return {
           'id': doc.id,
-          'nom': data['nom'] ?? '',
-          'prenom': data['prenom'] ?? '',
-          'displayName': '${data['prenom'] ?? ''} ${data['nom'] ?? ''}'.trim(),
+          'nom': memberLastName(data) ?? '',
+          'prenom': memberFirstName(data) ?? '',
+          'displayName': memberDisplayName(data),
           'plongeur_code': data['plongeur_code'] ?? '',
         };
       }).toList();
@@ -132,9 +133,9 @@ class MemberService {
         final data = doc.data();
         return {
           'id': doc.id,
-          'nom': data['nom'] ?? '',
-          'prenom': data['prenom'] ?? '',
-          'displayName': '${data['prenom'] ?? ''} ${data['nom'] ?? ''}'.trim(),
+          'nom': memberLastName(data) ?? '',
+          'prenom': memberFirstName(data) ?? '',
+          'displayName': memberDisplayName(data),
           'plongeur_code': data['plongeur_code'] ?? '',
           'email': data['email'] ?? '',
           'member_status': MemberProfile.resolveMemberStatus(data),

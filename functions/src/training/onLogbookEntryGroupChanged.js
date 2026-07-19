@@ -24,6 +24,7 @@
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
+const { memberDisplayName } = require('../utils/memberName');
 
 const FUNCTION_NAME = 'onLogbookEntryGroupChanged';
 const FUNCTION_REGION = 'europe-west1';
@@ -115,7 +116,7 @@ const onLogbookEntryGroupChanged = onDocumentUpdated(
           .collection('members').doc(newValidatorId).get();
         if (m.exists) {
           const v = m.data() || {};
-          const display = `${v.prenom || ''} ${v.nom || ''}`.trim();
+          const display = memberDisplayName(v, '');
           if (display) newValidatorName = display;
         }
       } catch {

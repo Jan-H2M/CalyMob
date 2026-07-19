@@ -1,0 +1,6 @@
+Version 1.12.3 – Membres et binômes
+
+- Les membres sont désormais toujours trouvés dans la recherche de binômes
+- Compatibilité renforcée avec les noms de membres existants et migrés
+- Noms cohérents dans le carnet, les formations, événements et notifications
+- Corrections de stabilité autour des profils et sélections de membres

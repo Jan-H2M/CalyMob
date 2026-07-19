@@ -1,0 +1,6 @@
+Version 1.10.3 – Améliorations et corrections
+
+- Nouveau : carte de plan de paiement par tranche
+- Statut d'assurance affiché sur la carte QR du profil
+- Corrections des QR de paiement par tranche (montants et regroupement membre + invités)
+- Améliorations de stabilité

@@ -18,6 +18,7 @@
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
+const { memberDisplayName } = require('../utils/memberName');
 
 const FUNCTION_NAME = 'onTargetLevelChanged';
 const FUNCTION_REGION = 'europe-west1';
@@ -67,9 +68,7 @@ async function handleTargetLevelChanged(event) {
     return;
   }
 
-  const memberName =
-    `${after.prenom || after.firstName || ''} ${after.nom || after.lastName || ''}`.trim() ||
-    'Membre';
+  const memberName = memberDisplayName(after, 'Membre');
   const assigneeId = await findChefEcoleId(clubRef);
 
   const taskRef = clubRef.collection('formation_tasks').doc();

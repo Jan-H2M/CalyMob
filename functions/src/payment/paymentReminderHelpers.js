@@ -13,6 +13,7 @@
  */
 
 const admin = require('firebase-admin');
+const { memberFirstName, memberLastName } = require('../utils/memberName');
 
 const TIME_ZONE = 'Europe/Brussels';
 const DAYS_BEFORE_EVENT = 3;
@@ -103,8 +104,8 @@ function extractEmailLocalPart(email) {
 }
 
 function resolveDisplayName(memberData, memberId) {
-  const firstName = normalizeText(memberData.prenom);
-  const lastName = normalizeText(memberData.nom);
+  const firstName = normalizeText(memberFirstName(memberData));
+  const lastName = normalizeText(memberLastName(memberData));
   if (firstName && lastName) {
     return `${firstName} ${lastName.toLocaleUpperCase('fr-BE')}`;
   }

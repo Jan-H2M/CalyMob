@@ -28,6 +28,7 @@
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const { FieldValue, Timestamp } = require('firebase-admin/firestore');
+const { memberDisplayName } = require('../utils/memberName');
 
 const FUNCTION_NAME = 'onPoolSessionClosed';
 const FUNCTION_REGION = 'europe-west1';
@@ -130,7 +131,7 @@ const onPoolSessionClosed = onDocumentUpdated(
           .collection('members').doc(id).get();
         if (m.exists) {
           const v = m.data() || {};
-          const display = `${v.prenom || ''} ${v.nom || ''}`.trim();
+          const display = memberDisplayName(v, '');
           if (display) monitorNames.set(id, display);
         }
       } catch (err) {

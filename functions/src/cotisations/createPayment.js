@@ -16,6 +16,7 @@ const {
   resolveCommunicationTemplate,
 } = require('../utils/communicationTemplates');
 const { sendEmailWithConfig } = require('../utils/emailDelivery');
+const { memberFirstName, memberLastName } = require('../utils/memberName');
 
 function cleanToken(value, length = 3) {
   const normalized = String(value || '')
@@ -27,8 +28,8 @@ function cleanToken(value, length = 3) {
 }
 
 function resolveMemberName(member) {
-  const first = String(member.prenom || member.firstName || '').trim();
-  const last = String(member.nom || member.lastName || '').trim();
+  const first = memberFirstName(member);
+  const last = memberLastName(member);
   const display = String(member.displayName || member.display_name || '').trim();
   return {
     first,

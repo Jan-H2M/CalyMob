@@ -24,6 +24,7 @@ import 'package:flutter/material.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import '../../utils/member_name.dart';
 import 'logbook_entry_screen.dart';
 
 class LogbookEntryDetailScreen extends StatefulWidget {
@@ -216,7 +217,8 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
   String? get _editedLabel {
     final v = data['edited_at'];
     DateTime? d;
-    if (v is Timestamp) d = v.toDate();
+    if (v is Timestamp)
+      d = v.toDate();
     else if (v is String) d = DateTime.tryParse(v);
     if (d == null) return null;
     return '✎ modifié le ${d.day.toString().padLeft(2, '0')}/'
@@ -577,9 +579,7 @@ class _MonitorLine extends StatelessWidget {
             .get();
         if (!s.exists) continue;
         final v = s.data() ?? {};
-        final prenom = (v['prenom'] as String?) ?? '';
-        final nom = (v['nom'] as String?) ?? '';
-        final display = ('$prenom $nom').trim();
+        final display = memberDisplayName(v, fallback: '');
         if (display.isNotEmpty) out[id] = display;
       } catch (_) {
         // best-effort
@@ -1196,8 +1196,8 @@ class _BinomesCard extends StatelessWidget {
                 if (memberId != null) confirmations[memberId] = data;
               }
 
-              final hasDeclined = confirmations.values
-                  .any((c) => c['status'] == 'declined');
+              final hasDeclined =
+                  confirmations.values.any((c) => c['status'] == 'declined');
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

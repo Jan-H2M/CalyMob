@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import '../utils/member_name.dart';
 
 /// Provider voor member data caching
 /// Laadt en cached member data na login voor snelle toegang
@@ -22,8 +23,9 @@ class MemberProvider with ChangeNotifier {
   String? get odooId => _memberData?['odooId'] as String?;
   String? get odooIdLid => _memberData?['odooIdLid'] as String?;
   String? get appRole => _memberData?['app_role'] as String?;
-  String? get nom => _memberData?['nom'] as String?;
-  String? get prenom => _memberData?['prenom'] as String?;
+  String? get nom => _memberData == null ? null : memberLastName(_memberData!);
+  String? get prenom =>
+      _memberData == null ? null : memberFirstName(_memberData!);
   String? get email => _memberData?['email'] as String?;
   String? get phoneNumber => _memberData?['phone_number'] as String?;
   String? get photoUrl => _memberData?['photo_url'] as String?;
@@ -77,10 +79,12 @@ class MemberProvider with ChangeNotifier {
   bool get canCreateEvents => isOrganisateur;
 
   /// Check if user is accueil
-  bool get isAccueil => hasClubFunction('accueil') || hasClubFunction('Accueil');
+  bool get isAccueil =>
+      hasClubFunction('accueil') || hasClubFunction('Accueil');
 
   /// Check if user is gonflage
-  bool get isGonflage => hasClubFunction('gonflage') || hasClubFunction('Gonflage');
+  bool get isGonflage =>
+      hasClubFunction('gonflage') || hasClubFunction('Gonflage');
 
   /// Check if user can approve expenses (validateur, admin, or superadmin)
   bool get canApproveExpenses {
@@ -105,10 +109,9 @@ class MemberProvider with ChangeNotifier {
 
   /// Full display name
   String get displayName {
-    final p = prenom ?? '';
-    final n = nom ?? '';
-    final fullName = '$p $n'.trim();
-    return fullName.isNotEmpty ? fullName : email ?? 'Utilisateur';
+    return _memberData == null
+        ? 'Utilisateur'
+        : memberDisplayName(_memberData!, fallback: 'Utilisateur');
   }
 
   /// Laad member data van Firestore

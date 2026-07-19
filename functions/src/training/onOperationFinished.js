@@ -20,6 +20,7 @@
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const { FieldValue, Timestamp } = require('firebase-admin/firestore');
+const { memberDisplayName } = require('../utils/memberName');
 
 const FUNCTION_NAME = 'onOperationFinished';
 const FUNCTION_REGION = 'europe-west1';
@@ -256,9 +257,7 @@ function extractPalanqueeMemberIds(palanquee) {
 }
 
 function composeMemberName(member) {
-  const prenom = member.prenom || member.first_name || '';
-  const nom = member.nom || member.last_name || '';
-  return `${prenom} ${nom}`.trim() || member.email || 'Membre';
+  return memberDisplayName(member, 'Membre');
 }
 
 module.exports = {

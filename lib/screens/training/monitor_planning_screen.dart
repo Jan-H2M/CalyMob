@@ -22,6 +22,7 @@ import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/formation_snapshot_service.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import '../../utils/member_name.dart';
 
 class MonitorPlanningScreen extends StatefulWidget {
   final String operationId;
@@ -102,8 +103,8 @@ class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
         final member = m.data() ?? {};
         participants.add({
           'member_id': memberId,
-          'prenom': member['prenom'] ?? p['membre_prenom'] ?? '',
-          'nom': member['nom'] ?? p['membre_nom'] ?? '',
+          'prenom': memberFirstName(member) ?? p['membre_prenom'] ?? '',
+          'nom': memberLastName(member) ?? p['membre_nom'] ?? '',
           'plongeur_code': member['plongeur_code'] ?? '',
           'target_formation_level': member['target_formation_level'],
           'formation_active': member['formation_active'] == true,
@@ -608,7 +609,6 @@ class _ParticipantTile extends StatelessWidget {
                 ),
             ],
           ),
-
           if (snapshot != null) ...[
             const SizedBox(height: 10),
             _SnapshotStrip(
@@ -617,128 +617,127 @@ class _ParticipantTile extends StatelessWidget {
               level: level,
             ),
           ],
-
           if (formationActive) ...[
-          // Wishlist from inscription
-          if (wishlist.isNotEmpty) ...[
-            const SizedBox(height: 8),
+            // Wishlist from inscription
+            if (wishlist.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: wishlist
+                    .map((c) => Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEEF4F9),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            'souhait $c',
+                            style: const TextStyle(
+                              color: Color(0xFF006DB6),
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ))
+                    .toList(),
+              ),
+            ],
+
+            const SizedBox(height: 10),
+            // Role chips
+            Text(
+              'RÔLE PRÉVU',
+              style: TextStyle(
+                color: AppColors.donkerblauw.withValues(alpha: 0.6),
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.0,
+              ),
+            ),
+            const SizedBox(height: 4),
             Wrap(
               spacing: 6,
               runSpacing: 4,
-              children: wishlist
-                  .map((c) => Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEEF4F9),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          'souhait $c',
-                          style: const TextStyle(
-                            color: Color(0xFF006DB6),
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ))
-                  .toList(),
-            ),
-          ],
-
-          const SizedBox(height: 10),
-          // Role chips
-          Text(
-            'RÔLE PRÉVU',
-            style: TextStyle(
-              color: AppColors.donkerblauw.withValues(alpha: 0.6),
-              fontSize: 10,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.0,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Wrap(
-            spacing: 6,
-            runSpacing: 4,
-            children: _roles.map((r) {
-              final on = selectedRole == r;
-              return ChoiceChip(
-                label: Text(_roleLabel(r)),
-                selected: on,
-                onSelected: (sel) {
-                  final next = Map<String, dynamic>.from(assignment);
-                  next['role'] = sel ? r : '';
-                  onChange(next);
-                },
-                labelStyle: TextStyle(
-                  color: on ? Colors.white : AppColors.donkerblauw,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 11.5,
-                ),
-                selectedColor: AppColors.middenblauw,
-                backgroundColor: const Color(0xFFEEF4F9),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                  side: BorderSide(
-                    color: on ? AppColors.middenblauw : Colors.transparent,
+              children: _roles.map((r) {
+                final on = selectedRole == r;
+                return ChoiceChip(
+                  label: Text(_roleLabel(r)),
+                  selected: on,
+                  onSelected: (sel) {
+                    final next = Map<String, dynamic>.from(assignment);
+                    next['role'] = sel ? r : '';
+                    onChange(next);
+                  },
+                  labelStyle: TextStyle(
+                    color: on ? Colors.white : AppColors.donkerblauw,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11.5,
                   ),
-                ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 10),
-
-          // Exercise chips
-          Text(
-            'EXERCICES PRÉVUS',
-            style: TextStyle(
-              color: AppColors.donkerblauw.withValues(alpha: 0.6),
-              fontSize: 10,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.0,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Wrap(
-            spacing: 6,
-            runSpacing: 4,
-            children: exerciseOptions.map((option) {
-              final on = selectedExs.contains(option.code);
-              return ChoiceChip(
-                label: Text(
-                  option.badge.isEmpty
-                      ? option.code
-                      : '${option.code} ${option.badge}',
-                ),
-                selected: on,
-                onSelected: (sel) {
-                  final next = Map<String, dynamic>.from(assignment);
-                  final exs = List<String>.from(selectedExs);
-                  if (sel) {
-                    if (!exs.contains(option.code)) exs.add(option.code);
-                  } else {
-                    exs.remove(option.code);
-                  }
-                  next['exercises'] = exs;
-                  onChange(next);
-                },
-                labelStyle: TextStyle(
-                  color: on ? Colors.white : AppColors.donkerblauw,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 11,
-                ),
-                selectedColor: const Color(0xFF4CAF50),
-                backgroundColor: const Color(0xFFEEF4F9),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                  side: BorderSide(
-                    color: on ? const Color(0xFF4CAF50) : Colors.transparent,
+                  selectedColor: AppColors.middenblauw,
+                  backgroundColor: const Color(0xFFEEF4F9),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    side: BorderSide(
+                      color: on ? AppColors.middenblauw : Colors.transparent,
+                    ),
                   ),
-                ),
-              );
-            }).toList(),
-          ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 10),
+
+            // Exercise chips
+            Text(
+              'EXERCICES PRÉVUS',
+              style: TextStyle(
+                color: AppColors.donkerblauw.withValues(alpha: 0.6),
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.0,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: exerciseOptions.map((option) {
+                final on = selectedExs.contains(option.code);
+                return ChoiceChip(
+                  label: Text(
+                    option.badge.isEmpty
+                        ? option.code
+                        : '${option.code} ${option.badge}',
+                  ),
+                  selected: on,
+                  onSelected: (sel) {
+                    final next = Map<String, dynamic>.from(assignment);
+                    final exs = List<String>.from(selectedExs);
+                    if (sel) {
+                      if (!exs.contains(option.code)) exs.add(option.code);
+                    } else {
+                      exs.remove(option.code);
+                    }
+                    next['exercises'] = exs;
+                    onChange(next);
+                  },
+                  labelStyle: TextStyle(
+                    color: on ? Colors.white : AppColors.donkerblauw,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                  ),
+                  selectedColor: const Color(0xFF4CAF50),
+                  backgroundColor: const Color(0xFFEEF4F9),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    side: BorderSide(
+                      color: on ? const Color(0xFF4CAF50) : Colors.transparent,
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
           ],
         ],
       ),
@@ -758,7 +757,8 @@ class _ParticipantTile extends StatelessWidget {
     }
 
     // WP-11/WP-12 — marqueurs ⚠ (point d'attention) et 🎯 (objectif de l'élève).
-    final attentionCodes = snapshot?.attentionPoints.toSet() ?? const <String>{};
+    final attentionCodes =
+        snapshot?.attentionPoints.toSet() ?? const <String>{};
     final goalCodes = snapshot?.goalCodes.toSet() ?? const <String>{};
     String withMarks(String code, String base) {
       final marks = [
@@ -773,7 +773,8 @@ class _ParticipantTile extends StatelessWidget {
     }
     for (final claim in snapshot?.pendingClaims ?? const []) {
       add(claim.exerciseCode,
-          label: claim.exerciseLabel ?? '', badge: withMarks(claim.exerciseCode, 'en attente'));
+          label: claim.exerciseLabel ?? '',
+          badge: withMarks(claim.exerciseCode, 'en attente'));
     }
     for (final code in requested) {
       add(code, badge: 'souhait');

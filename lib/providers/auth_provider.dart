@@ -11,6 +11,7 @@ import '../services/biometric_service.dart';
 import '../services/crashlytics_service.dart';
 import '../services/local_read_tracker.dart';
 import '../config/firebase_config.dart';
+import '../utils/member_name.dart';
 
 /// Provider pour l'état d'authentification
 class AuthProvider with ChangeNotifier {
@@ -65,9 +66,9 @@ class AuthProvider with ChangeNotifier {
         unawaited(
           _sessionService
               .createSession(
-                userId: user.uid,
-                clubId: FirebaseConfig.defaultClubId,
-              )
+            userId: user.uid,
+            clubId: FirebaseConfig.defaultClubId,
+          )
               .catchError((Object e) {
             debugPrint('⚠️ Session create failed at auth-state init: $e');
             return ''; // satisfy Future<String> return type
@@ -163,10 +164,9 @@ class AuthProvider with ChangeNotifier {
           .get();
 
       if (doc.exists) {
-        // Essayer displayName d'abord, puis construire depuis nom/prenom
         final data = doc.data();
-        _displayName = data?['displayName'] as String? ??
-            '${data?['prenom'] ?? ''} ${data?['nom'] ?? ''}'.trim();
+        _displayName =
+            data == null ? null : memberDisplayName(data, fallback: '');
 
         if (_displayName?.isEmpty ?? true) {
           _displayName = null;
@@ -223,7 +223,8 @@ class AuthProvider with ChangeNotifier {
       _errorMessage = e.toString().replaceFirst('Exception: ', '');
       notifyListeners();
 
-      CrashlyticsService.authError(e, StackTrace.current, 'login failed for $email');
+      CrashlyticsService.authError(
+          e, StackTrace.current, 'login failed for $email');
       debugPrint('❌ Erreur AuthProvider.login: $e');
       rethrow;
     }
@@ -357,7 +358,8 @@ class AuthProvider with ChangeNotifier {
         debugPrint('✅ Compte Firebase Auth supprimé');
       } on FirebaseAuthException catch (e) {
         if (e.code == 'requires-recent-login') {
-          debugPrint('⚠️ Ré-authentification requise pour supprimer le compte Auth');
+          debugPrint(
+              '⚠️ Ré-authentification requise pour supprimer le compte Auth');
           // Les données sont déjà anonymisées, le compte sera marqué comme supprimé
           // L'utilisateur peut contacter le support pour finaliser la suppression
         } else {
@@ -378,7 +380,8 @@ class AuthProvider with ChangeNotifier {
       _errorMessage = e.toString().replaceFirst('Exception: ', '');
       notifyListeners();
 
-      CrashlyticsService.authError(e, StackTrace.current, 'deleteAccount failed');
+      CrashlyticsService.authError(
+          e, StackTrace.current, 'deleteAccount failed');
       debugPrint('❌ Erreur suppression compte: $e');
       rethrow;
     }

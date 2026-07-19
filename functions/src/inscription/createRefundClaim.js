@@ -12,6 +12,7 @@
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
+const { memberFirstName, memberLastName } = require('../utils/memberName');
 
 const REGION = 'europe-west1';
 
@@ -201,8 +202,8 @@ exports.createInscriptionRefund = onCall(
     let demandeurPrenom = '';
     if (memberDoc.exists) {
       const member = memberDoc.data();
-      demandeurNom = member.nom || '';
-      demandeurPrenom = member.prenom || '';
+      demandeurNom = memberLastName(member);
+      demandeurPrenom = memberFirstName(member);
     }
 
     // === 6. Batch write: create demande + update inscription ===

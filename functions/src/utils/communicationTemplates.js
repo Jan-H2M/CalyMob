@@ -2,6 +2,8 @@ const Handlebars = require('handlebars');
 const admin = require('firebase-admin');
 const crypto = require('node:crypto');
 
+const MAX_EMAIL_LOCAL_PART_LENGTH = 64;
+
 function stripHtml(value) {
   return String(value || '')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
@@ -41,7 +43,8 @@ function getInboundReplyDomain(emailConfig) {
 
 function getReplyLocalPart(emailConfig) {
   const configured = emailConfig?.inbound?.replyLocalPart || emailConfig?.replyLocalPart || 'reply';
-  return String(configured || 'reply').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '') || 'reply';
+  return (String(configured || 'reply').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '') || 'reply')
+    .slice(0, 32);
 }
 
 function createReplyKey({ clubId, entityType, entityId }) {
@@ -53,10 +56,39 @@ function createReplyKey({ clubId, entityType, entityId }) {
   return `${readable}.${randomPart}`;
 }
 
+/**
+ * Keep the complete email local-part within RFC 5321's 64-character limit.
+ *
+ * The random suffix is the uniqueness guarantee for the reply route, so only
+ * the human-readable prefix is shortened. Previously a normal Calypso event
+ * key produced `reply+<key>` with 65 characters and Resend rejected the whole
+ * message as an invalid reply_to address.
+ */
+function fitReplyKeyToLocalPart(replyKey, replyLocalPart) {
+  const maxReplyKeyLength = MAX_EMAIL_LOCAL_PART_LENGTH - replyLocalPart.length - 1; // `+`
+  if (replyKey.length <= maxReplyKeyLength) return replyKey;
+
+  const separatorIndex = replyKey.lastIndexOf('.');
+  const randomPart = separatorIndex >= 0
+    ? replyKey.slice(separatorIndex + 1)
+    : replyKey.slice(-20);
+  const readablePart = separatorIndex >= 0
+    ? replyKey.slice(0, separatorIndex)
+    : replyKey.slice(0, Math.max(0, replyKey.length - randomPart.length));
+  const readableLength = maxReplyKeyLength - randomPart.length - 1; // `.`
+
+  if (readableLength <= 0) {
+    return randomPart.slice(-maxReplyKeyLength);
+  }
+  return `${readablePart.slice(0, readableLength)}.${randomPart}`;
+}
+
 function buildAutoReplyAddress(emailConfig, replyKey) {
   const domain = getInboundReplyDomain(emailConfig);
   if (!domain || !replyKey) return null;
-  return `${getReplyLocalPart(emailConfig)}+${replyKey}@${domain}`;
+  const replyLocalPart = getReplyLocalPart(emailConfig);
+  const fittedReplyKey = fitReplyKeyToLocalPart(replyKey, replyLocalPart);
+  return `${replyLocalPart}+${fittedReplyKey}@${domain}`;
 }
 
 function buildProviderHeaders({ clubId, replyKey, entityType, entityId, sourceHistoryId }) {
@@ -81,8 +113,11 @@ function buildEmailRouting(emailConfig, { clubId, entityType, entityId, entityLa
     };
   }
 
-  const replyKey = createReplyKey({ clubId, entityType, entityId });
-  const replyToAddress = buildAutoReplyAddress(emailConfig, replyKey);
+  const generatedReplyKey = createReplyKey({ clubId, entityType, entityId });
+  const replyToAddress = buildAutoReplyAddress(emailConfig, generatedReplyKey);
+  const replyKey = replyToAddress
+    ? replyToAddress.slice(replyToAddress.indexOf('+') + 1, replyToAddress.lastIndexOf('@'))
+    : generatedReplyKey;
 
   return {
     replyKey,
@@ -291,7 +326,10 @@ const SYSTEM_SEED_TEMPLATES = {
     <p><strong>IBAN:</strong> {{ibanFormatted}}</p>
     <p><strong>Bénéficiaire:</strong> {{beneficiaryName}}</p>
   </div>
-  <p>Le QR code de paiement est joint à cet email.</p>
+  <div style="text-align: center; margin: 28px 0;">
+    <p style="margin: 0 0 14px; font-weight: 600; color: #111827;">Scannez ce QR code avec votre application bancaire</p>
+    <img src="{{qrCodeImage}}" alt="QR code de paiement" width="280" height="280" style="display: inline-block; width: 280px; max-width: 100%; height: auto; border: 1px solid #E5E7EB; border-radius: 8px;" />
+  </div>
   <p>Cordialement,<br><strong>{{clubName}}</strong></p>
 </body>
 </html>`.trim(),

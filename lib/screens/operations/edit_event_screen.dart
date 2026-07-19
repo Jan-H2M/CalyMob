@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../config/app_colors.dart';
-import '../../config/firebase_config.dart';
 import '../../models/operation.dart';
 import '../../models/supplement.dart';
 import '../../models/tariff.dart';
@@ -11,6 +10,7 @@ import '../../providers/activity_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../services/operation_service.dart';
+import '../../utils/member_name.dart';
 
 /// Écran d'édition d'un événement existant
 /// Accessible par le créateur original, le responsable actuel ou un admin.
@@ -84,10 +84,12 @@ class _EditEventScreenState extends State<EditEventScreen> {
     _allowGuests = op.allowGuests;
 
     // Copier les tarifs existants en version éditable
-    _tariffs = op.eventTariffs.map((t) => _EditableTariff.fromTariff(t)).toList();
+    _tariffs =
+        op.eventTariffs.map((t) => _EditableTariff.fromTariff(t)).toList();
     // Copier les suppléments existants en version éditable
-    _supplements =
-        op.supplements.map((s) => _EditableSupplement.fromSupplement(s)).toList();
+    _supplements = op.supplements
+        .map((s) => _EditableSupplement.fromSupplement(s))
+        .toList();
 
     // Listeners pour détecter les changements
     _titreController.addListener(_markChanged);
@@ -142,12 +144,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
             });
         if (!isEncadrant) continue;
 
-        final prenom = (data['prenom'] ?? '').toString().trim();
-        final nom = (data['nom'] ?? '').toString().trim();
-        final displayName = [prenom, nom]
-            .where((p) => p.isNotEmpty)
-            .join(' ')
-            .trim();
+        final displayName = memberDisplayName(data, fallback: '');
         if (displayName.isEmpty) continue;
 
         options.add(_EncadrantOption(
@@ -340,7 +337,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
     if (normalized.contains('encadrant')) return 'encadrant';
     if (normalized.contains('ca') || normalized.contains('comité')) return 'ca';
     if (normalized.contains('junior')) return 'junior';
-    if (normalized.contains('non-membre') || normalized.contains('non membre')) return 'non_membre';
+    if (normalized.contains('non-membre') || normalized.contains('non membre'))
+      return 'non_membre';
     if (normalized.contains('membre')) return 'membre';
     return normalized;
   }
@@ -406,7 +404,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
                 displayOrder: t.displayOrder,
               ))
           .toList();
-      final budget = OperationService.computeBudgetPrevu(tariffObjects, capacity);
+      final budget =
+          OperationService.computeBudgetPrevu(tariffObjects, capacity);
 
       final data = <String, dynamic>{
         'titre': _titreController.text.trim(),
@@ -569,8 +568,9 @@ class _EditEventScreenState extends State<EditEventScreen> {
                   TextFormField(
                     controller: _titreController,
                     decoration: _inputDecoration('Titre de l\'événement'),
-                    validator: (v) =>
-                        v == null || v.trim().isEmpty ? 'Le titre est requis' : null,
+                    validator: (v) => v == null || v.trim().isEmpty
+                        ? 'Le titre est requis'
+                        : null,
                   ),
                 ]),
                 const SizedBox(height: 16),
@@ -589,7 +589,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
 
                 // Dates
                 _buildSectionCard(children: [
-                  _buildLabel('Date de début', required: true, icon: Icons.calendar_today),
+                  _buildLabel('Date de début',
+                      required: true, icon: Icons.calendar_today),
                   const SizedBox(height: 8),
                   _buildDateTimeRow(
                     date: _dateDebut,
@@ -658,7 +659,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
                   const SizedBox(height: 8),
                   TextFormField(
                     controller: _communicationController,
-                    decoration: _inputDecoration('Communication pour les inscrits...'),
+                    decoration:
+                        _inputDecoration('Communication pour les inscrits...'),
                     maxLines: 4,
                   ),
                 ]),
@@ -732,11 +734,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
                   label,
                   style: TextStyle(
                     fontSize: 14,
-                    color: hasId
-                        ? AppColors.donkerblauw
-                        : Colors.grey[500],
-                    fontWeight:
-                        hasId ? FontWeight.w500 : FontWeight.normal,
+                    color: hasId ? AppColors.donkerblauw : Colors.grey[500],
+                    fontWeight: hasId ? FontWeight.w500 : FontWeight.normal,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -749,8 +748,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
                   color: Colors.grey[600],
                 )
               else
-                Icon(Icons.lock_outline,
-                    size: 16, color: Colors.grey[400]),
+                Icon(Icons.lock_outline, size: 16, color: Colors.grey[400]),
             ],
           ),
         ),
@@ -844,8 +842,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
                 filled: true,
                 fillColor: Colors.white,
                 isDense: true,
-                contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 10),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide(color: Colors.grey[300]!),
@@ -865,7 +863,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
           Expanded(
             flex: 2,
             child: TextFormField(
-              initialValue: tariff.price > 0 ? tariff.price.toStringAsFixed(2) : '',
+              initialValue:
+                  tariff.price > 0 ? tariff.price.toStringAsFixed(2) : '',
               decoration: InputDecoration(
                 hintText: '0.00',
                 hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
@@ -877,8 +876,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
                 filled: true,
                 fillColor: Colors.white,
                 isDense: true,
-                contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 10),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide(color: Colors.grey[300]!),
@@ -963,7 +962,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
   }
 
   void _updateSupplementPrice(int index, String priceStr) {
-    _supplements[index].price = double.tryParse(priceStr.replaceAll(',', '.')) ?? 0;
+    _supplements[index].price =
+        double.tryParse(priceStr.replaceAll(',', '.')) ?? 0;
     _markChanged();
   }
 
@@ -996,7 +996,6 @@ class _EditEventScreenState extends State<EditEventScreen> {
         ),
       ),
       const SizedBox(height: 4),
-
       if (_supplements.isEmpty)
         Container(
           padding: const EdgeInsets.all(16),
@@ -1017,7 +1016,6 @@ class _EditEventScreenState extends State<EditEventScreen> {
             ),
           ),
         ),
-
       ...List.generate(_supplements.length, (index) {
         final s = _supplements[index];
         return Container(
@@ -1059,8 +1057,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
               Expanded(
                 flex: 2,
                 child: TextFormField(
-                  initialValue:
-                      s.price > 0 ? s.price.toStringAsFixed(2) : '',
+                  initialValue: s.price > 0 ? s.price.toStringAsFixed(2) : '',
                   decoration: InputDecoration(
                     hintText: '0.00',
                     hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
@@ -1094,8 +1091,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
                 icon: Icon(Icons.close, size: 20, color: Colors.red[400]),
                 onPressed: () => _removeSupplement(index),
                 padding: EdgeInsets.zero,
-                constraints:
-                    const BoxConstraints(minWidth: 32, minHeight: 32),
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
               ),
             ],
           ),
@@ -1133,8 +1129,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
             child: InkWell(
               onTap: _pickDeadlineDate,
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
                   color: Colors.grey[50],
                   borderRadius: BorderRadius.circular(12),
@@ -1169,8 +1165,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
             child: InkWell(
               onTap: _registrationDeadline != null ? _pickDeadlineTime : null,
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
                   color: _registrationDeadline != null
                       ? Colors.grey[50]
@@ -1188,8 +1184,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
                     const SizedBox(width: 8),
                     Text(
                       _registrationDeadline != null
-                          ? DateFormat('HH:mm')
-                              .format(_registrationDeadline!)
+                          ? DateFormat('HH:mm').format(_registrationDeadline!)
                           : '--:--',
                       style: TextStyle(
                         fontSize: 14,
@@ -1214,8 +1209,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
                       _hasChanges = true;
                     });
                   },
-            tooltip:
-                'Effacer la date butoir (revient à la valeur par défaut)',
+            tooltip: 'Effacer la date butoir (revient à la valeur par défaut)',
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
           ),
@@ -1225,8 +1219,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
   }
 
   Future<void> _pickDeadlineDate() async {
-    final initial = _registrationDeadline ??
-        _dateDebut.subtract(const Duration(hours: 24));
+    final initial =
+        _registrationDeadline ?? _dateDebut.subtract(const Duration(hours: 24));
     final picked = await showDatePicker(
       context: context,
       initialDate: initial,
@@ -1421,12 +1415,9 @@ class _EditEventScreenState extends State<EditEventScreen> {
     bool allowClear = false,
     VoidCallback? onClear,
   }) {
-    final dateText = date != null
-        ? DateFormat('dd/MM/yyyy').format(date)
-        : 'Sélectionner';
-    final timeText = date != null
-        ? DateFormat('HH:mm').format(date)
-        : '--:--';
+    final dateText =
+        date != null ? DateFormat('dd/MM/yyyy').format(date) : 'Sélectionner';
+    final timeText = date != null ? DateFormat('HH:mm').format(date) : '--:--';
 
     return Row(
       children: [
@@ -1490,16 +1481,14 @@ class _EditEventScreenState extends State<EditEventScreen> {
             ),
             child: Row(
               children: [
-                Icon(Icons.access_time,
-                    size: 16, color: AppColors.middenblauw),
+                Icon(Icons.access_time, size: 16, color: AppColors.middenblauw),
                 const SizedBox(width: 8),
                 Text(
                   timeText,
                   style: TextStyle(
                     fontSize: 14,
-                    color: date != null
-                        ? AppColors.donkerblauw
-                        : Colors.grey[400],
+                    color:
+                        date != null ? AppColors.donkerblauw : Colors.grey[400],
                   ),
                 ),
               ],
@@ -1575,8 +1564,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide(color: AppColors.middenblauw, width: 2),
       ),
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
     );
   }
 }

@@ -9,6 +9,7 @@
 
 const admin = require('firebase-admin');
 const { FIRESTORE_BATCH_LIMIT } = require('./constants');
+const { memberDisplayName } = require('./memberName');
 
 /**
  * Increment de unread counter voor een lijst van ontvangers
@@ -146,7 +147,7 @@ function collectTokensAndMembers(memberDocs, senderId) {
       : memberData.fcm_token_updated_at;
     if (tokenUpdatedAt && tokenUpdatedAt.getTime() < staleThreshold) {
       const daysSince = Math.floor((Date.now() - tokenUpdatedAt.getTime()) / (1000 * 60 * 60 * 24));
-      staleTokenMembers.push({ id: doc.id, name: `${memberData.prenom || ''} ${memberData.nom || ''}`.trim(), daysSince });
+      staleTokenMembers.push({ id: doc.id, name: memberDisplayName(memberData, doc.id), daysSince });
     }
 
     const memberTokens = [];

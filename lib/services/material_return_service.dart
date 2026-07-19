@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/material_loan.dart';
+import '../utils/member_name.dart';
 
 enum MaterialReturnDecision {
   fullRefund,
@@ -324,7 +325,7 @@ class MaterialReturnService {
           'club_id': clubId,
           'demandeur_id': loan.memberId,
           'demandeur_nom': memberName,
-          'demandeur_prenom': memberData['prenom']?.toString() ?? '',
+          'demandeur_prenom': memberFirstName(memberData) ?? '',
           'demandeur_email': memberData['email']?.toString() ?? '',
           'titre': 'Remboursement caution materiel ${loan.loanNumber}',
           'description': description,
@@ -396,17 +397,7 @@ class MaterialReturnService {
   }
 
   String _memberName(Map<String, dynamic> data, {required String fallback}) {
-    final displayName = data['displayName']?.toString();
-    if (displayName != null && displayName.trim().isNotEmpty) {
-      return displayName.trim();
-    }
-
-    final name = [
-      data['prenom']?.toString(),
-      data['nom']?.toString(),
-    ].where((part) => part != null && part.trim().isNotEmpty).join(' ');
-
-    return name.trim().isNotEmpty ? name.trim() : fallback;
+    return memberDisplayName(data, fallback: fallback);
   }
 
   Map<String, dynamic> _canonicalPayload(

@@ -24,6 +24,7 @@ const {
   sendNotificationsWithBadge,
   filterByPreference,
 } = require('../utils/badge-helper');
+const { memberDisplayName } = require('../utils/memberName');
 
 /**
  * Normalize LIFRAS roles (mirror of onNewTeamMessage.js normalizeRoles).
@@ -139,7 +140,7 @@ exports.onExerciceDeclared = onDocumentCreated(
       let memberName = 'Un membre';
       if (declaringMemberSnap.exists) {
         const md = declaringMemberSnap.data() || {};
-        const fullName = `${md.prenom || ''} ${md.nom || ''}`.trim();
+        const fullName = memberDisplayName(md, 'Membre');
         memberName = fullName || md.displayName || 'Un membre';
       }
 

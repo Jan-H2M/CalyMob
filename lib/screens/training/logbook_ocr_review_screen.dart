@@ -11,6 +11,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../services/logbook_ocr_import_service.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import '../../utils/member_name.dart';
 import 'logbook_entry_screen.dart';
 
 class LogbookOcrReviewScreen extends StatefulWidget {
@@ -153,9 +154,7 @@ class _LogbookOcrReviewScreenState extends State<LogbookOcrReviewScreen> {
       final clubMembers = <String>{};
       for (final d in memSnap.docs) {
         final v = d.data();
-        final p = (v['prenom'] ?? '').toString().trim();
-        final n = (v['nom'] ?? '').toString().trim();
-        final display = '$p $n'.trim();
+        final display = memberDisplayName(v, fallback: '');
         if (display.isNotEmpty) clubMembers.add(display);
       }
 

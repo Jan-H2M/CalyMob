@@ -5,6 +5,24 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('MemberProfile', () {
+    test('maps canonical snake_case member names', () async {
+      final firestore = FakeFirebaseFirestore();
+      final docRef =
+          firestore.collection('clubs/club1/members').doc('canonical');
+      await docRef.set({
+        'first_name': 'Raffaele',
+        'last_name': 'Gradini',
+        'email': 'member@example.com',
+      });
+
+      final profile = MemberProfile.fromFirestore(await docRef.get());
+
+      expect(profile.prenom, 'Raffaele');
+      expect(profile.nom, 'Gradini');
+      expect(profile.toFirestore(), containsPair('first_name', 'Raffaele'));
+      expect(profile.toFirestore(), containsPair('last_name', 'Gradini'));
+    });
+
     test('uses visible insurance validity for LIFRAS members', () async {
       final firestore = FakeFirebaseFirestore();
       final cotisationValidite = DateTime(2099, 1, 30);

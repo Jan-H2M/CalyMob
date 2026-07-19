@@ -22,6 +22,7 @@ const {
   resolveCommunicationTemplate,
 } = require('../utils/communicationTemplates');
 const { sendEmailWithConfig } = require('../utils/emailDelivery');
+const { memberDisplayName } = require('../utils/memberName');
 
 /**
  * Sleep helper for rate limiting (Resend allows max 2 requests/sec)
@@ -186,7 +187,7 @@ async function sendFirstApprovalEmailToDemandeur(db, clubId, demandeId, expenseD
     return;
   }
 
-  const recipientName = `${demandeur.prenom || ''} ${demandeur.nom || ''}`.trim() || recipientEmail;
+  const recipientName = memberDisplayName(demandeur, recipientEmail);
   console.log(`📧 Sending first approval email to demandeur: ${recipientEmail}...`);
 
   const result = await sendTemplatedExpenseEmail({
@@ -230,7 +231,7 @@ async function sendSecondApprovalNeededToValidators(db, clubId, demandeId, expen
 
       // Skip first approver (they already approved)
       if (doc.id === approuve_par) {
-        console.log(`   ⏭️ Skipping first approver: ${member.prenom} ${member.nom}`);
+        console.log(`   ⏭️ Skipping first approver: ${memberDisplayName(member)}`);
         return;
       }
 
@@ -248,7 +249,7 @@ async function sendSecondApprovalNeededToValidators(db, clubId, demandeId, expen
       if (member.email && !validatorEmails.some(v => v.email === member.email)) {
         validatorEmails.push({
           email: member.email,
-          name: `${member.prenom} ${member.nom}`,
+          name: memberDisplayName(member),
           id: doc.id
         });
       }
@@ -324,7 +325,7 @@ async function sendSecondApprovalCompleteEmail(db, clubId, demandeId, expenseDat
     return;
   }
 
-  const recipientName = `${demandeur.prenom || ''} ${demandeur.nom || ''}`.trim() || recipientEmail;
+  const recipientName = memberDisplayName(demandeur, recipientEmail);
   console.log(`📧 Sending second approval complete email to demandeur: ${recipientEmail}...`);
 
   const result = await sendTemplatedExpenseEmail({
@@ -476,9 +477,7 @@ exports.onExpenseStatusChange = onDocumentUpdated(
           return null;
         }
 
-        const recipientName = `${member.prenom || ''} ${member.nom || ''}`.trim()
-          || member.displayName
-          || recipientEmail;
+        const recipientName = memberDisplayName(member, recipientEmail);
 
         console.log(`📧 [onExpenseStatusChange] Sending approved email to ${recipientEmail}...`);
 
@@ -533,9 +532,7 @@ exports.onExpenseStatusChange = onDocumentUpdated(
           return null;
         }
 
-        const recipientName = `${member.prenom || ''} ${member.nom || ''}`.trim()
-          || member.displayName
-          || recipientEmail;
+        const recipientName = memberDisplayName(member, recipientEmail);
 
         console.log(`📧 [onExpenseStatusChange] Sending reimbursed email to ${recipientEmail}...`);
 

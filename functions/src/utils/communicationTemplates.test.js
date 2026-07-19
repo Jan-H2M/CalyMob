@@ -199,4 +199,42 @@ describe('communicationTemplates Cloud Functions helper', () => {
       reply_to_address: routing.replyToAddress,
     }), { merge: true });
   });
+
+  it('keeps an event reply-to local-part within the email limit', () => {
+    const routing = buildEmailRouting({
+      domain: { inboundDomain: 'reply.caly.club' },
+      inbound: { replyLocalPart: 'reply' },
+    }, {
+      clubId: 'calypso',
+      entityType: 'operation',
+      entityId: 'pqENrsTXS5vVzjcLjNAa',
+      entityLabel: 'Rochefontaine',
+      recipientEmail: 'member@example.com',
+      recipientName: 'Membre',
+    });
+
+    const [localPart] = routing.replyToAddress.split('@');
+    expect(localPart.length).toBeLessThanOrEqual(64);
+    expect(routing.replyToAddress).toBe(`reply+${routing.replyKey}@reply.caly.club`);
+    expect(routing.replyKey).toMatch(/\.[a-f0-9]{20}$/);
+  });
+
+  it('renders the event payment QR code inline in the email body', async () => {
+    const db = buildTemplateDb([]);
+    const result = await resolveCommunicationTemplate(db, 'club-1', 'event_payment', 'allow_system_seed');
+    const rendered = renderCommunicationTemplate(result.template, {
+      recipientName: 'Jan',
+      eventTitle: 'Rochefontaine',
+      amountFormatted: '10,00 €',
+      paymentReference: '+++OP-PAAGC+++ Rochefontaine Jan ANDRIESSENS',
+      ibanFormatted: 'BE26 2100 1607 0629',
+      beneficiaryName: 'Calypso Diving Club ASBL',
+      qrCodeImage: 'cid:qrcode',
+      clubName: 'Calypso Diving Club',
+    });
+
+    expect(rendered.html).toContain('src="cid:qrcode"');
+    expect(rendered.html).toContain('alt="QR code de paiement"');
+    expect(rendered.html).not.toContain('est joint à cet email');
+  });
 });

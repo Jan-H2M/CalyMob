@@ -25,6 +25,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const { sendPaymentEmailForMember } = require('./sendPaymentQrEmail');
 const { recomputePaymentReminderDraft } = require('./paymentReminderHelpers');
+const { memberFirstName, memberLastName } = require('../utils/memberName');
 
 /**
  * Resolve a human-friendly sender name for the reminder message.
@@ -259,8 +260,8 @@ const sendPaymentReminder = onCall(
           operationId,
           participantId: inscriptionId,
           memberEmail,
-          memberFirstName: member.prenom || '',
-          memberLastName: member.nom || '',
+          memberFirstName: memberFirstName(member),
+          memberLastName: memberLastName(member),
           amount,
           operationTitle,
           operationNumber,

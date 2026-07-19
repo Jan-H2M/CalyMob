@@ -13,6 +13,7 @@ import '../../services/dive_location_service.dart';
 import '../../services/fiscal_year_service.dart';
 import '../../services/operation_service.dart';
 import '../../services/session_service.dart';
+import '../../utils/member_name.dart';
 
 /// Wizard de création d'événement en 2 étapes
 /// Identique fonctionnellement à CreateEventWizard de CalyCompta
@@ -137,10 +138,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
             });
         if (!isEncadrant) continue;
 
-        final prenom = (data['prenom'] ?? '').toString().trim();
-        final nom = (data['nom'] ?? '').toString().trim();
-        final displayName =
-            [prenom, nom].where((p) => p.isNotEmpty).join(' ').trim();
+        final displayName = memberDisplayName(data, fallback: '');
         if (displayName.isEmpty) continue;
 
         options.add(_EncadrantOption(

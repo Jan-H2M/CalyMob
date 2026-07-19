@@ -19,6 +19,7 @@ const {
 } = require('../utils/communicationTemplates');
 const { sendEmailWithConfig } = require('../utils/emailDelivery');
 const { isLegacyMirrorWrite } = require('../expenses/expenseSync');
+const { memberDisplayName, memberFirstName } = require('../utils/memberName');
 
 /**
  * Format date to French locale string
@@ -214,9 +215,7 @@ exports.onExpenseCreated = onDocumentCreated(
         return null;
       }
 
-      const recipientName = `${member.prenom || ''} ${member.nom || ''}`.trim()
-        || member.displayName
-        || recipientEmail;
+      const recipientName = memberDisplayName(member, recipientEmail);
 
       // 2. Get email configuration from club settings
       const emailConfigDoc = await db
@@ -261,7 +260,7 @@ exports.onExpenseCreated = onDocumentCreated(
       const emailType = 'expense_submitted';
       const templateData = {
         recipientName,
-        firstName: (member.prenom || recipientName.split(' ')[0] || '').trim(),
+        firstName: memberFirstName(member) || recipientName.split(' ')[0] || '',
         description: demande.description || demande.titre || 'Note de frais',
         montant: formatMontant(demande.montant),
         dateDepense: formatDate(demande.date_depense),

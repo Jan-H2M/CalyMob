@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../utils/member_name.dart';
 
 /// Statut de validation pour cotisation et certificat médical
 enum ValidationStatus { valid, warning, expired, missing }
@@ -114,9 +115,8 @@ class MemberProfile {
 
     return MemberProfile(
       id: doc.id,
-      // Support both French (nom/prenom) and English (lastName/firstName) field names
-      nom: data['nom'] ?? data['lastName'] ?? '',
-      prenom: data['prenom'] ?? data['firstName'] ?? '',
+      nom: memberLastName(data) ?? '',
+      prenom: memberFirstName(data) ?? '',
       email: data['email'] ?? '',
       plongeurCode: data['plongeur_code'],
       plongeurNiveau: data['plongeur_niveau'],
@@ -189,8 +189,13 @@ class MemberProfile {
   /// Convertir vers Firestore
   Map<String, dynamic> toFirestore() {
     return {
+      'first_name': prenom,
+      'last_name': nom,
+      'display_name': fullName,
+      // Temporary dual-write for clients that have not cut over yet.
       'nom': nom,
       'prenom': prenom,
+      'displayName': fullName,
       'email': email,
       'plongeur_code': plongeurCode,
       'plongeur_niveau': plongeurNiveau,
