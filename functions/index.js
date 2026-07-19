@@ -257,6 +257,10 @@ exports.onOperationFinished = onOperationFinished;
 const { processFormationTaskReminders } = require('./src/training/processFormationTaskReminders');
 exports.processFormationTaskReminders = processFormationTaskReminders;
 
+// WP-14 filet 7 jours : tâche exercise_claim classique pour les drafts oubliés
+const { processStaleDraftClaims } = require('./src/training/processStaleDraftClaims');
+exports.processStaleDraftClaims = processStaleDraftClaims;
+
 // Phase 2 — Claim → official observation promotion
 const { onClaimAccepted } = require('./src/training/onClaimAccepted');
 exports.onClaimAccepted = onClaimAccepted;
