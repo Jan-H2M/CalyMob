@@ -163,6 +163,10 @@ class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
       }
     }
 
+    // Fix Sentry CALYMOB-1Q (2026-07-19): het scherm kan gesloten zijn tijdens
+    // de vele awaits hierboven — setState op een defunct State gooit dan een
+    // null-check TypeError.
+    if (!mounted) return;
     setState(() {
       _operation = op.data();
       _participants = participants;

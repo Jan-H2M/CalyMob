@@ -600,6 +600,10 @@ class OceanCoralReef {
   final List<_Seaweed> seaweeds = [];
 
   OceanCoralReef(double w, double h, Random rng) {
+    // Fix Sentry CALYMOB-18 (2026-07-19): tijdens het eerste layout-frame kan
+    // het canvas (bijna) 0 breed zijn — x.clamp(10.0, w - 10.0) gooit dan
+    // ArgumentError: Invalid argument(s): 10.0 (ondergrens > bovengrens).
+    if (w < 40 || h < 40) return;
     final groundY = h - 15;
     final coralTypes = ['branch', 'brain', 'fan', 'tube', 'mushroom', 'anemone'];
     final coralColors = [

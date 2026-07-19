@@ -193,6 +193,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           userId,
         );
 
+    // Fix Sentry CALYMOB-1S/19/Q (2026-07-19): na de await kan het scherm al
+    // gesloten zijn — State.context gooit dan een null-check TypeError.
+    if (!mounted) return;
+
     // Load organiser profile (for phone number display)
     _loadOrganisateurProfile();
 
@@ -204,6 +208,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   }
 
   Future<void> _loadDiveLocation() async {
+    if (!mounted) return;
     final operation = context.read<OperationProvider>().selectedOperation;
     final locationId = operation?.lieuId;
     final locationName = operation?.lieu?.trim();
@@ -249,6 +254,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   }
 
   Future<void> _loadOrganisateurProfile() async {
+    if (!mounted) return;
     final operation = context.read<OperationProvider>().selectedOperation;
     final orgId = operation?.organisateurId;
     if (orgId == null || orgId.isEmpty) return;
@@ -262,6 +268,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   }
 
   Future<void> _loadUserProfile() async {
+    if (!mounted) return;
     final authProvider = context.read<AuthProvider>();
     final userId = authProvider.currentUser?.uid ?? '';
 
@@ -280,6 +287,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   }
 
   Future<void> _loadUserInscription() async {
+    if (!mounted) return;
     final authProvider = context.read<AuthProvider>();
     final userId = authProvider.currentUser?.uid ?? '';
 
