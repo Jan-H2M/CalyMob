@@ -30,6 +30,10 @@ const {
   resolveCommunicationTemplate,
 } = require('../utils/communicationTemplates');
 const { sendEmailWithConfig } = require('../utils/emailDelivery');
+const {
+  markEventPaymentIntentIssued,
+  prepareEventPaymentIntent,
+} = require('./eventPaymentIntent');
 
 /**
  * Generate EPC QR code payload for SEPA Credit Transfer
@@ -479,7 +483,7 @@ async function resolveInstallmentPaymentForInscription(db, clubId, operationId, 
       if (gd > 0) {
         guestSubtotal += gd;
         const name = `${g.membre_prenom || ''} ${g.membre_nom || ''}`.trim() || 'Invité';
-        guests.push({ name, prix: gd });
+        guests.push({ inscriptionId: doc.id, name, prix: gd });
       }
     }
   });
@@ -656,6 +660,23 @@ async function sendPaymentEmailForMember(db, input) {
     installmentLabel
   );
 
+  // Snapshot immutable de ce que la carte vient de calculer. Ponto règlera
+  // cette intention exacte au lieu de reconstruire plus tard le groupe depuis
+  // des inscriptions qui peuvent avoir changé entre-temps.
+  const paymentIntent = await prepareEventPaymentIntent(db, {
+    clubId,
+    operationId,
+    participantId,
+    memberFirstName,
+    memberLastName,
+    installmentId,
+    installmentLabel,
+    installmentPayment,
+    amount,
+    eventNumber: effectiveEventNumber,
+    communication: paymentReference,
+  });
+
   // 6. Generate EPC payload
   const epcPayload = generateEpcPayload({
     beneficiaryName,
@@ -750,6 +771,11 @@ async function sendPaymentEmailForMember(db, input) {
 
   console.log(`✅ [sendPaymentQrEmail] Email sent successfully to ${memberEmail}, id: ${result.messageId}`);
 
+  // L'intention existe déjà en status=prepared avant l'envoi. Le passage à
+  // issued confirme l'envoi; prepared reste volontairement matchable si cette
+  // dernière écriture échoue après qu'un email a effectivement été délivré.
+  await markEventPaymentIntentIssued(paymentIntent, result.messageId);
+
   // 11. Log to email_history collection
   try {
     const serverTimestamp = admin.firestore.FieldValue.serverTimestamp();
@@ -788,6 +814,7 @@ async function sendPaymentEmailForMember(db, input) {
       installmentId: installmentId || null,
       installmentLabel: installmentLabel || null,
       amount,
+      paymentIntentId: paymentIntent?.id || null,
       messageId: result.messageId,
       resendId: result.provider === 'resend' ? result.messageId : null,
       gmailMessageId: result.provider === 'gmail' ? result.messageId : null,
@@ -839,6 +866,7 @@ async function sendPaymentEmailForMember(db, input) {
     success: true,
     message: 'Payment email sent successfully',
     emailId: result.messageId,
+    paymentIntentId: paymentIntent?.id || null,
   };
 }
 

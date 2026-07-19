@@ -52,13 +52,19 @@ exports.onInscriptionPaymentAudit = onDocumentWritten(
       const aStatus = av.status || 'unpaid';
       const bTx = bv.transaction_id || null;
       const aTx = av.transaction_id || null;
-      if (bStatus !== aStatus || bTx !== aTx) {
+      const bDue = bv.amount_due ?? null;
+      const aDue = av.amount_due ?? null;
+      const bPaid = bv.amount_paid ?? null;
+      const aPaid = av.amount_paid ?? null;
+      if (bStatus !== aStatus || bTx !== aTx || bDue !== aDue || bPaid !== aPaid) {
         changes.push({
           installment_id: installmentId,
           from_status: bStatus,
           to_status: aStatus,
-          amount_due: av.amount_due ?? null,
-          amount_paid: av.amount_paid ?? null,
+          amount_due_before: bDue,
+          amount_due: aDue,
+          amount_paid_before: bPaid,
+          amount_paid: aPaid,
           transaction_id: aTx,
         });
       }

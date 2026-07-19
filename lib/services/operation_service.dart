@@ -784,8 +784,7 @@ class OperationService {
 
       final allClosed = payments.isNotEmpty &&
           payments.values.every((p) =>
-              p is Map &&
-              (p['status'] == 'paid' || p['status'] == 'waived'));
+              p is Map && (p['status'] == 'paid' || p['status'] == 'waived'));
 
       tx.update(ref, {
         'installment_payments.$installmentId.status': 'paid',
@@ -830,37 +829,6 @@ class OperationService {
           '✅ Payment status updated to $status for participant $participantId');
     } catch (e) {
       debugPrint('❌ Error updating payment status: $e');
-      rethrow;
-    }
-  }
-
-  Future<void> updateInstallmentPaymentStatus({
-    required String clubId,
-    required String operationId,
-    required String participantId,
-    required String installmentId,
-    required String status,
-    double? amountDue,
-  }) async {
-    try {
-      final inscriptionRef = _firestore
-          .collection('clubs/$clubId/operations/$operationId/inscriptions')
-          .doc(participantId);
-
-      await inscriptionRef.update({
-        'installment_payments.$installmentId.status': status,
-        if (amountDue != null)
-          'installment_payments.$installmentId.amount_due': amountDue,
-        if (status == 'qr_sent')
-          'installment_payments.$installmentId.qr_sent_at':
-              FieldValue.serverTimestamp(),
-        'updated_at': FieldValue.serverTimestamp(),
-      });
-
-      debugPrint(
-          '✅ Installment status updated: $participantId/$installmentId -> $status');
-    } catch (e) {
-      debugPrint('❌ Error updating installment status: $e');
       rethrow;
     }
   }
@@ -938,9 +906,7 @@ class OperationService {
             // première tranche, les autres 'waived' à 0.
             final total = prix + (supplementTotal ?? 0);
             installments = {
-              for (var i = 0;
-                  i < operation.paymentInstallments.length;
-                  i++)
+              for (var i = 0; i < operation.paymentInstallments.length; i++)
                 operation.paymentInstallments[i].id: InstallmentPayment(
                   status: i == 0 ? 'unpaid' : 'waived',
                   amountDue: i == 0 ? total : 0,
