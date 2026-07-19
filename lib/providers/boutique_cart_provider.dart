@@ -1,8 +1,11 @@
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../models/boutique/boutique_product.dart';
 
 @immutable
 class BoutiqueCartItem {
@@ -42,11 +45,14 @@ class BoutiqueCartItem {
 
   BoutiqueCartItem copyWith({
     int? qty,
+    double? unitPrice,
+    double? deliverySurcharge,
+    String? productName,
   }) {
     return BoutiqueCartItem(
       key: key,
       productId: productId,
-      productName: productName,
+      productName: productName ?? this.productName,
       imageUrl: imageUrl,
       supplierId: supplierId,
       variantId: variantId,
@@ -54,8 +60,8 @@ class BoutiqueCartItem {
       deliveryMode: deliveryMode,
       deliveryLabel: deliveryLabel,
       qty: qty ?? this.qty,
-      unitPrice: unitPrice,
-      deliverySurcharge: deliverySurcharge,
+      unitPrice: unitPrice ?? this.unitPrice,
+      deliverySurcharge: deliverySurcharge ?? this.deliverySurcharge,
       personalization: personalization,
     );
   }
@@ -161,6 +167,14 @@ class BoutiqueCartProvider extends ChangeNotifier {
 
   BoutiqueCartProvider() {
     _load();
+    // Fix audit 2026-07-19 (H1): mandje leegmaken zodra de gebruiker uitlogt —
+    // het is toestel-lokaal en mag niet overerven naar een volgende gebruiker.
+    // (AuthProvider.logout wist ook de SharedPreferences-keys als vangnet.)
+    FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user == null && _items.isNotEmpty) {
+        clear();
+      }
+    });
   }
 
   bool get loaded => _loaded;
@@ -221,6 +235,104 @@ class BoutiqueCartProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_idempotencyStorageKey);
     notifyListeners();
+  }
+
+  /// Resultaat van [revalidate] — hoeveel regels verwijderd/geprijsd zijn.
+  /// Fix audit 2026-07-19 (H2): het mandje werd nooit gecontroleerd tegen de
+  /// actuele catalogus; verwijderde producten en prijswijzigingen bleven staan
+  /// tot een verwarrende checkout-fout of een ander bedrag in de betaalmail.
+  Future<({int removed, int repriced})> revalidate(
+    List<BoutiqueProduct> publishedProducts,
+  ) async {
+    final productsById = {
+      for (final product in publishedProducts) product.id: product,
+    };
+
+    var removed = 0;
+    var repriced = 0;
+    final validated = <BoutiqueCartItem>[];
+
+    for (final item in _items) {
+      final product = productsById[item.productId];
+      if (product == null) {
+        removed += 1;
+        continue;
+      }
+      BoutiqueVariant? variant;
+      for (final candidate in product.variants) {
+        if (candidate.id == item.variantId) {
+          variant = candidate;
+          break;
+        }
+      }
+      if (variant == null) {
+        removed += 1;
+        continue;
+      }
+
+      final newUnitPrice = product.priceForVariant(variant) +
+          _personalizationSurcharge(product, item.personalization);
+      double newDeliverySurcharge = 0;
+      for (final entry in product.deliverySurcharges.entries) {
+        if (entry.key.name == item.deliveryMode) {
+          newDeliverySurcharge = entry.value;
+          break;
+        }
+      }
+
+      if ((newUnitPrice - item.unitPrice).abs() > 0.004 ||
+          (newDeliverySurcharge - item.deliverySurcharge).abs() > 0.004) {
+        repriced += 1;
+        validated.add(item.copyWith(
+          unitPrice: newUnitPrice,
+          deliverySurcharge: newDeliverySurcharge,
+          productName: product.name,
+        ));
+      } else {
+        validated.add(item);
+      }
+    }
+
+    if (removed > 0 || repriced > 0) {
+      _items
+        ..clear()
+        ..addAll(validated);
+      await _persist();
+      notifyListeners();
+    }
+
+    return (removed: removed, repriced: repriced);
+  }
+
+  /// Herrekent de personalisatie-toeslag uit de actuele productconfig —
+  /// zelfde logica als de server (computeCustomizations in createOrder.js).
+  double _personalizationSurcharge(
+    BoutiqueProduct product,
+    Map<String, dynamic> personalization,
+  ) {
+    final config = product.personalization;
+    if (config == null || personalization.isEmpty) return 0;
+
+    var total = 0.0;
+    final logo = personalization['clubLogo'];
+    if (logo is Map && logo['enabled'] == true) {
+      total += config.clubLogo.surcharge;
+    }
+    final name = personalization['name'];
+    final nameText =
+        name is Map ? (name['text']?.toString().trim() ?? '') : '';
+    if (nameText.isNotEmpty) {
+      total += config.name.surcharge +
+          nameText.length * config.name.pricePerCharacter;
+    }
+    final certification = personalization['certification'];
+    final certValue = certification is Map
+        ? (certification['value']?.toString().trim() ?? '')
+        : '';
+    if (certValue.isNotEmpty) {
+      total += config.certification.surcharge;
+    }
+    return total;
   }
 
   /// Idempotency-key voor de checkout (fix audit 2026-07-19, K5).

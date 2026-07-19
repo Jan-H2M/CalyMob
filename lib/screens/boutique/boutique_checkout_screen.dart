@@ -8,6 +8,7 @@ import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/boutique_cart_provider.dart';
 import '../../providers/member_provider.dart';
+import '../../services/boutique/boutique_service.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'boutique_order_confirmation_screen.dart';
 
@@ -20,6 +21,7 @@ class BoutiqueCheckoutScreen extends StatefulWidget {
 
 class _BoutiqueCheckoutScreenState extends State<BoutiqueCheckoutScreen> {
   bool _submitting = false;
+  bool _revalidated = false;
   final TextEditingController _addressNameController = TextEditingController();
   final TextEditingController _addressLine1Controller = TextEditingController();
   final TextEditingController _addressLine2Controller = TextEditingController();
@@ -27,6 +29,43 @@ class _BoutiqueCheckoutScreenState extends State<BoutiqueCheckoutScreen> {
   final TextEditingController _cityController = TextEditingController();
   final TextEditingController _countryController =
       TextEditingController(text: 'Belgique');
+
+  @override
+  void initState() {
+    super.initState();
+    // Fix audit 2026-07-19 (H2): mandje valideren tegen de actuele catalogus
+    // vóór de bestelling — verwijderde producten eruit, prijzen bijgewerkt,
+    // met melding. Zo bevestigt het lid altijd het bedrag dat de server ook
+    // zal aanrekenen.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _revalidateCart());
+  }
+
+  Future<void> _revalidateCart() async {
+    if (_revalidated || !mounted) return;
+    _revalidated = true;
+    try {
+      final products = await BoutiqueService()
+          .watchPublishedProducts(FirebaseConfig.defaultClubId)
+          .first;
+      if (!mounted) return;
+      final result =
+          await context.read<BoutiqueCartProvider>().revalidate(products);
+      if (!mounted) return;
+      if (result.removed > 0 || result.repriced > 0) {
+        final messages = <String>[
+          if (result.removed > 0)
+            '${result.removed} article(s) plus disponible(s) retiré(s) du panier.',
+          if (result.repriced > 0)
+            'Prix mis à jour pour ${result.repriced} article(s).',
+        ];
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(messages.join(' '))),
+        );
+      }
+    } catch (_) {
+      // Catalogus tijdelijk onbereikbaar — de server blijft de eindcontrole.
+    }
+  }
 
   @override
   void dispose() {

@@ -72,12 +72,24 @@ class _MesCommandesScreenState extends State<MesCommandesScreen> {
 
     if (confirmed != true || !mounted) return;
 
-    await FirebaseFunctions.instanceFor(region: 'europe-west1')
-        .httpsCallable('cancelBoutiqueOrder')
-        .call({
-      'clubId': FirebaseConfig.defaultClubId,
-      'orderId': order['id'],
-    });
+    // Fix audit 2026-07-19 (H13): foutafhandeling — voordien kreeg de
+    // gebruiker bij een mislukte annulatie geen enkele feedback.
+    try {
+      await FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('cancelBoutiqueOrder')
+          .call({
+        'clubId': FirebaseConfig.defaultClubId,
+        'orderId': order['id'],
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Impossible de supprimer la commande. Réessayez.'),
+        ),
+      );
+      return;
+    }
 
     if (!mounted) return;
     setState(() {
@@ -89,12 +101,22 @@ class _MesCommandesScreenState extends State<MesCommandesScreen> {
   }
 
   Future<void> _resendPaymentEmail(Map<String, dynamic> order) async {
-    await FirebaseFunctions.instanceFor(region: 'europe-west1')
-        .httpsCallable('sendBoutiqueOrderPaymentEmail')
-        .call({
-      'clubId': FirebaseConfig.defaultClubId,
-      'orderId': order['id'],
-    });
+    try {
+      await FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('sendBoutiqueOrderPaymentEmail')
+          .call({
+        'clubId': FirebaseConfig.defaultClubId,
+        'orderId': order['id'],
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Impossible d'envoyer l'email. Réessayez."),
+        ),
+      );
+      return;
+    }
 
     if (!mounted) return;
     setState(() {

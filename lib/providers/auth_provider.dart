@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
 import '../services/session_service.dart';
 import '../services/notification_service.dart';
@@ -255,6 +256,18 @@ class AuthProvider with ChangeNotifier {
         }
       }
       _notificationService.stopListeningForTokenRefresh();
+
+      // Fix audit 2026-07-19 (H1): het Boutique-mandje en de checkout-key zijn
+      // toestel-lokaal (SharedPreferences) en waren niet user-gebonden — een
+      // volgende gebruiker op hetzelfde toestel erfde het mandje (incl.
+      // persoonlijke borduring). Wissen bij logout.
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('boutique_cart_items_v1');
+        await prefs.remove('boutique_checkout_key_v1');
+      } catch (e) {
+        debugPrint('⚠️ Boutique cart cleanup failed at logout: $e');
+      }
 
       // 1. Supprimer session Firestore
       await _sessionService.deleteSession();
