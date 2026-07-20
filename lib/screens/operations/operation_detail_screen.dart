@@ -79,10 +79,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   bool _isLoadingExercices = false;
   ParticipantOperation? _userInscription;
 
-  /// Plan de paiement affiché en accordéon dans la barre du bas. Ouvert par
-  /// défaut tant qu'une tranche reste à payer (l'utilisateur peut replier
-  /// pour laisser respirer les autres sections de l'événement).
-  bool _planExpanded = true;
+  /// Plan de paiement affiché en accordéon. Replié par défaut (demande Jan
+  /// 2026-07-19) : le badge de l'en-tête montre déjà « Payé ✓ » ou
+  /// « À payer · montant » ; le détail s'ouvre au tap.
+  bool _planExpanded = false;
 
   /// Cache van basis-info (avatar URL + niveau-code) per Membre-id voor
   /// alle deelnemers van het huidige event. Wordt in 1 batch opgehaald
