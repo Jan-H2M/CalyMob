@@ -84,6 +84,12 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   /// « À payer · montant » ; le détail s'ouvre au tap.
   bool _planExpanded = false;
 
+  /// Scroll du détail du plan (demande Jan 2026-07-19) : un plan long
+  /// (plusieurs tranches + invités) dépassait l'écran sans indication —
+  /// le détail défile désormais dans une hauteur bornée, avec une barre de
+  /// défilement toujours visible pour montrer qu'il y a plus.
+  final ScrollController _planScrollController = ScrollController();
+
   /// Cache van basis-info (avatar URL + niveau-code) per Membre-id voor
   /// alle deelnemers van het huidige event. Wordt in 1 batch opgehaald
   /// (whereIn op chunks van 30) zodra de participants-lijst geladen is,
@@ -180,6 +186,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
   @override
   void dispose() {
+    _planScrollController.dispose();
     super.dispose();
   }
 
@@ -3926,7 +3933,20 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               ),
             ),
           ),
-          if (_planExpanded) ...[
+          if (_planExpanded)
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.38,
+              ),
+              child: Scrollbar(
+                controller: _planScrollController,
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  controller: _planScrollController,
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
             const SizedBox(height: 4),
             // Un bloc par tranche: lignes par personne (Moi + invités),
             // sous-total ouvert de la tranche, highlight sur la prochaine.
@@ -4081,7 +4101,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                 ],
               ),
             ),
-          ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
           // Bouton QR toujours visible (hors accordéon), comme le CTA
           // principal de la section, juste sous le plan.
           if (openInstallment != null) ...[
