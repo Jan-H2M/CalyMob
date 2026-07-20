@@ -84,12 +84,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   /// « À payer · montant » ; le détail s'ouvre au tap.
   bool _planExpanded = false;
 
-  /// Scroll du détail du plan (demande Jan 2026-07-19) : un plan long
-  /// (plusieurs tranches + invités) dépassait l'écran sans indication —
-  /// le détail défile désormais dans une hauteur bornée, avec une barre de
-  /// défilement toujours visible pour montrer qu'il y a plus.
-  final ScrollController _planScrollController = ScrollController();
-
   /// Cache van basis-info (avatar URL + niveau-code) per Membre-id voor
   /// alle deelnemers van het huidige event. Wordt in 1 batch opgehaald
   /// (whereIn op chunks van 30) zodra de participants-lijst geladen is,
@@ -186,7 +180,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
   @override
   void dispose() {
-    _planScrollController.dispose();
     super.dispose();
   }
 
@@ -2241,6 +2234,31 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                             _buildInscribedMembersAccordion(operationProvider),
                             const SizedBox(height: 12),
 
+                            // 3bis. Ma situation de paiement — dans le flux
+                            // scrollable (fix Jan 2026-07-19 : ces cartes
+                            // vivaient dans la barre du bas fixe, qui devenait
+                            // énorme et « bloquait » le scroll de la page sur
+                            // les événements avec plan de paiement).
+                            if (isRegistered && isPaid) ...[
+                              _buildPaymentStatusBadge(userInscription),
+                              const SizedBox(height: 12),
+                            ],
+                            if (isRegistered &&
+                                !isPaid &&
+                                userInscription != null) ...[
+                              operation.paymentPlanEnabled
+                                  ? _buildPaymentPlanStatusCard(
+                                      inscription: userInscription,
+                                      operation: operation,
+                                    )
+                                  : _buildInscriptionStatusCard(
+                                      inscription: userInscription,
+                                      operation: operation,
+                                      inscriptionPrice: inscriptionPrice,
+                                    ),
+                              const SizedBox(height: 12),
+                            ],
+
                             // 4. Palanquées button (plongee events).
                             // Visible to all members; canEdit is gated inside
                             // _buildPalanqueeButton so non-managers (who don't
@@ -3716,26 +3734,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Show payment status badge if paid
-            if (isRegistered && isPaid) ...[
-              _buildPaymentStatusBadge(userInscription),
-              const SizedBox(height: 12),
-            ],
-
-            // Show inscription status card (payment mode) if registered but not yet paid
-            if (isRegistered && !isPaid && userInscription != null) ...[
-              operation is Operation && operation.paymentPlanEnabled
-                  ? _buildPaymentPlanStatusCard(
-                      inscription: userInscription,
-                      operation: operation,
-                    )
-                  : _buildInscriptionStatusCard(
-                      inscription: userInscription,
-                      operation: operation,
-                      inscriptionPrice: inscriptionPrice,
-                    ),
-              const SizedBox(height: 12),
-            ],
+            // NB (fix Jan 2026-07-19) : les cartes de paiement (badge, plan,
+            // inscription) sont désormais dans le flux scrollable de la page
+            // (section 3bis) — la barre fixe ne garde que le bouton d'action,
+            // comme sur les événements sans paiement.
 
             // Register/Unregister button
             _buildActionButton(
@@ -3933,20 +3935,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               ),
             ),
           ),
-          if (_planExpanded)
-            ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.38,
-              ),
-              child: Scrollbar(
-                controller: _planScrollController,
-                thumbVisibility: true,
-                child: SingleChildScrollView(
-                  controller: _planScrollController,
-                  padding: const EdgeInsets.only(right: 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
+          if (_planExpanded) ...[
             const SizedBox(height: 4),
             // Un bloc par tranche: lignes par personne (Moi + invités),
             // sous-total ouvert de la tranche, highlight sur la prochaine.
@@ -4101,11 +4090,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                 ],
               ),
             ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+          ],
           // Bouton QR toujours visible (hors accordéon), comme le CTA
           // principal de la section, juste sous le plan.
           if (openInstallment != null) ...[
