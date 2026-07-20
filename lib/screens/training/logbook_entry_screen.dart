@@ -127,6 +127,8 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
   final TextEditingController _duration = TextEditingController();
   final TextEditingController _notes = TextEditingController();
   final TextEditingController _lestage = TextEditingController();
+  // WP-20 finition — % O₂ explicite quand le compteur NITROX est coché.
+  final TextEditingController _o2Pct = TextEditingController();
   final TextEditingController _diveNumber = TextEditingController();
   final TextEditingController _dictation = TextEditingController();
   final stt.SpeechToText _speech = stt.SpeechToText();
@@ -293,6 +295,18 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
   final List<String> _timingAnchor = <String>[];
   bool _suppressDurationListener = false;
 
+  // WP-14 finition — claims draft embarqués (mode auto), pré-cochés.
+  // Décocher = le claim reste brouillon ; le cron processStaleDraftClaims
+  // recrée la tâche classique après 7 jours.
+  List<ExerciseClaimDraft> _embeddedDrafts = [];
+  final Set<String> _keptDraftIds = <String>{};
+
+  // WP-19 finition — champs verrouillés par la source (entrées liées à une
+  // sortie Calypso) : grisés, tap désactivé. Les rules refusent de toute
+  // façon leur modification.
+  List<String> _lockedFields = const [];
+  bool _isFieldLocked(String field) => _lockedFields.contains(field);
+
   @override
   void initState() {
     super.initState();
@@ -309,6 +323,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
     _loadDictationCatalogs();
     if (widget.mode == LogbookEntryMode.auto && widget.task != null) {
       _prefillFromTask();
+      _loadEmbeddedDrafts();
     } else if (widget.mode == LogbookEntryMode.edit &&
         widget.initialData != null) {
       _prefillFromMap(widget.initialData!);
@@ -319,7 +334,33 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
     }
   }
 
+  /// WP-14 finition — charge les claims draft de l'opération pour la section
+  /// « Exercices de ta palanquée » (pré-cochés, décochables).
+  Future<void> _loadEmbeddedDrafts() async {
+    final opId = widget.task?.context.operationId;
+    if (opId == null || opId.isEmpty) return;
+    final userId = context.read<AuthProvider>().currentUser?.uid;
+    if (userId == null) return;
+    try {
+      final drafts = await ExerciseClaimService()
+          .fetchDraftsForOperation(FirebaseConfig.defaultClubId, userId, opId);
+      if (!mounted) return;
+      setState(() {
+        _embeddedDrafts = drafts;
+        _keptDraftIds
+          ..clear()
+          ..addAll(drafts.map((d) => d.id));
+      });
+    } catch (e) {
+      debugPrint('⚠️ WP-14 chargement claims embarqués échoué: $e');
+    }
+  }
+
   void _prefillFromMap(Map<String, dynamic> map) {
+    final rawLocked = map['source_locked_fields'];
+    if (rawLocked is List) {
+      _lockedFields = rawLocked.map((e) => e.toString()).toList();
+    }
     final date = (map['date'] as Timestamp?)?.toDate();
     if (date != null) _date = date;
     final diveNumber = map['dive_number'];
@@ -430,6 +471,8 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
     }
     final lestage = (map['lestage_kg'] as num?)?.toDouble();
     if (lestage != null && lestage > 0) _lestage.text = _fmtNum(lestage);
+    final o2 = (map['o2_pct'] as num?)?.toDouble();
+    if (o2 != null && o2 > 0) _o2Pct.text = _fmtNum(o2);
 
     _binomes = _parseBinomesFromMap(map);
     _notes.text = (map['notes'] as String?) ?? '';
@@ -1118,7 +1161,10 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         padding: EdgeInsets.zero,
         child: DiveLocationPickerField(
           value: _locationSelection,
-          readOnly: widget.mode == LogbookEntryMode.auto,
+          // WP-19 finition — lieu verrouillé par la source en édition.
+          readOnly: widget.mode == LogbookEntryMode.auto ||
+              _isFieldLocked('location_name') ||
+              _isFieldLocked('location_id'),
           onSelected: (selection) => setState(() {
             _locationSelection = selection;
             if (selection.isSea) {
@@ -1189,6 +1235,51 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         ),
       ),
       const SizedBox(height: 12),
+      if (widget.mode == LogbookEntryMode.auto && _embeddedDrafts.isNotEmpty) ...[
+        _sectionTitle('EXERCICES DE TA PALANQUÉE'),
+        _whiteCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Pré-cochés d\'après la planification. Décoche ce que tu n\'as '
+                'pas fait — il restera en brouillon.',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _embeddedDrafts.map((draft) {
+                  final kept = _keptDraftIds.contains(draft.id);
+                  return FilterChip(
+                    selected: kept,
+                    onSelected: (_) => setState(() {
+                      if (kept) {
+                        _keptDraftIds.remove(draft.id);
+                      } else {
+                        _keptDraftIds.add(draft.id);
+                      }
+                    }),
+                    label: Text(
+                      draft.exerciseLabel == null
+                          ? draft.exerciseCode
+                          : '${draft.exerciseCode} · ${draft.exerciseLabel}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        decoration: kept ? null : TextDecoration.lineThrough,
+                      ),
+                    ),
+                    selectedColor: Colors.blue.shade100,
+                    checkmarkColor: Colors.blue.shade700,
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+      ],
       _sectionTitle('NOTES (optionnel)'),
       _whiteCard(
         child: TextField(
@@ -3068,6 +3159,8 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
                 TextField(
                   controller: _diveNumber,
                   keyboardType: TextInputType.number,
+                  // WP-19 finition — n° verrouillé par la source.
+                  enabled: !_isFieldLocked('dive_number'),
                   style: const TextStyle(
                     color: AppColors.donkerblauw,
                     fontSize: 15,
@@ -3093,16 +3186,22 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
   }
 
   Widget _datePickerField() {
+    // WP-19 finition — date verrouillée par la source : grisée, tap désactivé.
+    final locked = _isFieldLocked('date');
     return InkWell(
-      onTap: _pickDate,
+      onTap: locked ? null : _pickDate,
       borderRadius: BorderRadius.circular(10),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: AppColors.middenblauw.withValues(alpha: 0.08),
+          color: locked
+              ? Colors.grey.shade200
+              : AppColors.middenblauw.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: AppColors.middenblauw.withValues(alpha: 0.28),
+            color: locked
+                ? Colors.grey.shade300
+                : AppColors.middenblauw.withValues(alpha: 0.28),
           ),
         ),
         child: Row(
@@ -3420,6 +3519,46 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
             ),
           ],
         ),
+        // WP-20 finition — % O₂ explicite, uniquement quand NITROX est coché
+        // dans les compteurs (section optionnelle, parcours 2 min intact).
+        if (_counters.nitrox == true) ...[
+          const Divider(height: 18),
+          Text(
+            'NITROX — % O₂',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey.shade600,
+              letterSpacing: 1,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              const Icon(Icons.bubble_chart_outlined,
+                  size: 18, color: AppColors.middenblauw),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: _o2Pct,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    hintText: 'ex: 32',
+                    hintStyle: TextStyle(
+                      color: Colors.grey.shade400,
+                      fontStyle: FontStyle.italic,
+                    ),
+                    suffixText: '% O₂',
+                    border: InputBorder.none,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }
@@ -4487,6 +4626,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           .toList();
 
       final lestage = double.tryParse(_lestage.text.replaceAll(',', '.'));
+      final o2Pct = double.tryParse(_o2Pct.text.replaceAll(',', '.'));
       final explicitDiveNumber = await _resolveDiveNumberForSave(
         clubId: clubId,
         userId: userId,
@@ -4507,6 +4647,12 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         if (_combi != null) 'combi_type': _combi!.type,
         if (_tank != null) 'tank': _tank!.toMap(),
         if (lestage != null && lestage > 0) 'lestage_kg': lestage,
+        // WP-20 finition — % O₂ explicite (uniquement si nitrox coché).
+        if (_counters.nitrox == true && o2Pct != null && o2Pct > 0)
+          'o2_pct': o2Pct,
+        if (widget.mode == LogbookEntryMode.edit &&
+            (_counters.nitrox != true || o2Pct == null || o2Pct <= 0))
+          'o2_pct': FieldValue.delete(),
         if (explicitDiveNumber != null && explicitDiveNumber > 0)
           'dive_number': explicitDiveNumber,
         if (widget.mode == LogbookEntryMode.edit && explicitDiveNumber == null)
@@ -4561,21 +4707,29 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           await _taskService.markCompleted(clubId, widget.task!.id, userId);
         }
         // WP-14 (S3) — parcours unique : la fiche carnet embarque les claims
-        // de la palanquée. On soumet les déclarations draft de l'opération en
-        // même temps que l'entrée (pré-cochées) — plus de « seconde étape »
-        // oubliée. (Décocher individuellement = finition UI.)
+        // de la palanquée. On soumet uniquement les déclarations restées
+        // cochées dans la section « Exercices de ta palanquée » ; les
+        // décochées restent draft (filet 7 jours). Si la section n'a pas pu
+        // charger (_embeddedDrafts vide), fallback : tout soumettre comme
+        // avant, pour ne perdre aucune déclaration.
         final opId = widget.task?.context.operationId ??
             (widget.initialData?['operation_id'] as String?);
         if (opId != null && opId.isNotEmpty) {
           try {
             final claimSvc = ExerciseClaimService();
-            final drafts =
-                await claimSvc.fetchDraftsForOperation(clubId, userId, opId);
-            if (drafts.isNotEmpty) {
-              await claimSvc.submitClaims(
-                clubId,
-                drafts.map((d) => d.id).toList(),
-              );
+            List<String> idsToSubmit;
+            if (_embeddedDrafts.isNotEmpty) {
+              idsToSubmit = _embeddedDrafts
+                  .where((d) => _keptDraftIds.contains(d.id))
+                  .map((d) => d.id)
+                  .toList();
+            } else {
+              final drafts =
+                  await claimSvc.fetchDraftsForOperation(clubId, userId, opId);
+              idsToSubmit = drafts.map((d) => d.id).toList();
+            }
+            if (idsToSubmit.isNotEmpty) {
+              await claimSvc.submitClaims(clubId, idsToSubmit);
             }
           } catch (e) {
             debugPrint('⚠️ WP-14 soumission claims embarqués échouée: $e');

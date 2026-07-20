@@ -307,7 +307,8 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
     return data['combi_type'] != null ||
         data['combi'] is Map ||
         data['tank'] is Map ||
-        data['lestage_kg'] != null;
+        data['lestage_kg'] != null ||
+        data['o2_pct'] != null;
   }
 
   /// Read a time field — prefer the structured Timestamp version, fall back
@@ -1105,6 +1106,16 @@ class _EquipmentCard extends StatelessWidget {
         icon: Icons.fitness_center,
         label: 'Lestage',
         value: '${_fmt(lestage)} kg',
+      ));
+    }
+    // WP-20 finition — % O₂ explicite (nitrox).
+    final o2Pct = (data['o2_pct'] as num?)?.toDouble();
+    if (o2Pct != null && o2Pct > 0) {
+      if (rows.isNotEmpty) rows.add(const SizedBox(height: 6));
+      rows.add(_row(
+        icon: Icons.bubble_chart_outlined,
+        label: 'Nitrox',
+        value: '${_fmt(o2Pct)} % O₂',
       ));
     }
 

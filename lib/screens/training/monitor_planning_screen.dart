@@ -570,6 +570,50 @@ class _ParticipantTile extends StatelessWidget {
                                 color: AppColors.middenblauw,
                               ),
                             ],
+                            // WP-11 finition — badge 🎯 objectif personnel.
+                            if ((participant['target_formation_level'] ?? '')
+                                .toString()
+                                .isNotEmpty) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.shade50,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  '🎯 ${participant['target_formation_level']}',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.blue.shade700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            // WP-12 finition — badge points d'attention
+                            // (exercices « encore à travailler »).
+                            if ((snapshot?.pendingExercises.isNotEmpty ??
+                                false)) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.shade50,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  '⚠ ${snapshot!.pendingExercises.length}',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.orange.shade800,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                         if (level.isNotEmpty ||
