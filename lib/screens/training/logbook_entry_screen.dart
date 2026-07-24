@@ -38,6 +38,7 @@ import '../../widgets/binome_typeahead_field.dart';
 import '../../services/exercise_claim_service.dart';
 import '../../widgets/combi_picker_field.dart';
 import '../../widgets/dive_location_picker.dart';
+import '../../widgets/logbook_dive_form.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/tank_picker_field.dart';
 
@@ -906,17 +907,17 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
                 return Stack(
                   children: [
                     ListView(
-                      padding: EdgeInsets.fromLTRB(
+                      padding: const EdgeInsets.fromLTRB(
                         16,
                         0,
                         16,
-                        _isDictationPrefill ? 24 : 140,
+                        140,
                       ),
                       children: _isPoolEdit
                           ? _poolEditChildren()
                           : _diveEditChildren(userId),
                     ),
-                    if (!_isDictationPrefill && !_showAutoTaskOverlay)
+                    if (!_showAutoTaskOverlay)
                       Positioned(
                         left: 0,
                         right: 0,
@@ -1138,21 +1139,23 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
   }
 
   List<Widget> _diveEditChildren(String? userId) {
-    if (_isDictationPrefill) {
-      return [
-        _header(),
-        _dictationProfileCard(),
-      ];
-    }
-
     return [
       _header(),
       if (widget.mode == LogbookEntryMode.auto) _autoBanner(),
-      if (widget.mode == LogbookEntryMode.edit && widget.enableDictation) ...[
+      if (widget.enableDictation) ...[
         _dictationProfileCard(),
         const SizedBox(height: 12),
       ],
       const SizedBox(height: 12),
+      LogbookDiveForm(
+        key: const ValueKey('canonical-logbook-dive-form'),
+        children: _historicalDiveFormChildren(userId),
+      ),
+    ];
+  }
+
+  List<Widget> _historicalDiveFormChildren(String? userId) {
+    return [
       _sectionTitle('DATE & HEURES'),
       _dateTimeCard(),
       const SizedBox(height: 12),
@@ -1235,7 +1238,8 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         ),
       ),
       const SizedBox(height: 12),
-      if (widget.mode == LogbookEntryMode.auto && _embeddedDrafts.isNotEmpty) ...[
+      if (widget.mode == LogbookEntryMode.auto &&
+          _embeddedDrafts.isNotEmpty) ...[
         _sectionTitle('EXERCICES DE TA PALANQUÉE'),
         _whiteCard(
           child: Column(
@@ -1593,12 +1597,6 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
   }
 
   Widget _dictationProfileCard() {
-    final text = _dictation.text.trim();
-    final parsed = _aiDictationText == text && _aiDictationDraft != null
-        ? _aiDictationDraft!
-        : _parseDictatedDive(_dictation.text);
-    final rows = _dictationProfileRows(parsed);
-
     return _whiteCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1670,8 +1668,6 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
               const SizedBox(height: 10),
               _dictationStatusBanner(_lastAnalysisMessage!),
             ],
-            const SizedBox(height: 10),
-            _dictationProfileGrid(rows),
           ],
         ],
       ),
@@ -1804,7 +1800,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
             onPressed: canActFromDictation ? _applyDictationAndOpenForm : null,
             icon: const Icon(Icons.edit_note, size: 18),
             label: const Text(
-              'Corriger',
+              'Appliquer',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               softWrap: false,
@@ -1859,11 +1855,11 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         : parsed.notesParts.isNotEmpty
             ? parsed.notesParts.join(' ')
             : _notes.text.trim();
-    final dateValue = _manualFieldOverrides.contains('date')
-        ? _formatDate(_date)
-        : parsed.date == null
-            ? null
-            : _formatDate(parsed.date!);
+    final dateValue = _isDictationPrefill &&
+            !_manualFieldOverrides.contains('date') &&
+            parsed.date != null
+        ? _formatDate(parsed.date!)
+        : _formatDate(_date);
     final entryTimeValue = _entryTime != null
         ? _formatTime(_entryTime!)
         : parsed.entryTime == null
@@ -2015,6 +2011,16 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
             _counters.mer == true || parsed.counters.mer == true ? 'Oui' : null,
       ),
       _DictationField(
+        field: 'maree',
+        label: 'Marée',
+        value: _counters.maree == true ? 'Oui' : null,
+      ),
+      _DictationField(
+        field: 'surveillance',
+        label: 'Surveillance',
+        value: _counters.surveillance == true ? 'Oui' : null,
+      ),
+      _DictationField(
         field: 'notes',
         label: 'Notes',
         value: notesValue.isEmpty ? null : notesValue,
@@ -2023,124 +2029,8 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
     ];
   }
 
-  Widget _dictationProfileGrid(List<_DictationField> rows) {
-    const gap = 6.0;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final columns = constraints.maxWidth < 360 ? 2 : 3;
-        final itemWidth =
-            (constraints.maxWidth - (gap * (columns - 1))) / columns;
-
-        return Wrap(
-          spacing: gap,
-          runSpacing: gap,
-          children: [
-            for (final row in rows)
-              SizedBox(
-                width: row.wide ? constraints.maxWidth : itemWidth,
-                child: _dictationProfileRow(row),
-              ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _dictationProfileRow(_DictationField field) {
-    final done = field.value != null && field.value!.trim().isNotEmpty;
-    final active = _listening &&
-        _speechMode == _SpeechCaptureMode.guided &&
-        _guidedSteps[_guidedStepIndex].field == field.field;
-    final MaterialColor color = done
-        ? active
-            ? Colors.blue
-            : Colors.green
-        : field.required
-            ? active
-                ? Colors.blue
-                : Colors.red
-            : Colors.grey;
-    final displayValue = active && _speechPendingText.trim().isNotEmpty
-        ? _speechPendingText.trim()
-        : done
-            ? field.value!
-            : (field.hint ?? 'à compléter');
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: () => _openFieldInput(field),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: active ? 0.16 : 0.10),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: color.withValues(alpha: active ? 0.85 : 0.45),
-              width: active ? 1.5 : 1,
-            ),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                active
-                    ? Icons.mic
-                    : done
-                        ? Icons.check_circle
-                        : field.required
-                            ? Icons.error_outline
-                            : Icons.radio_button_unchecked,
-                size: 17,
-                color: color.shade700,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      field.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w900,
-                        color: color.shade800,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      active && _speechPendingText.trim().isEmpty
-                          ? 'Écoute...'
-                          : displayValue,
-                      maxLines: field.wide ? 3 : 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight:
-                            done || active ? FontWeight.w700 : FontWeight.w500,
-                        color: done || active
-                            ? color.shade900
-                            : Colors.grey.shade600,
-                        fontStyle: done || active
-                            ? FontStyle.normal
-                            : FontStyle.italic,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 6),
-              Icon(Icons.edit_outlined, size: 16, color: color.shade600),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
+  // Kept for guided-field editing while the guided speech flow is migrated.
+  // ignore: unused_element
   Future<void> _openFieldInput(_DictationField field) async {
     if (field.field == 'date') {
       final picked = await showDatePicker(
@@ -2999,6 +2889,10 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         return counters.copyWith(nuit: value);
       case 'mer':
         return counters.copyWith(mer: value);
+      case 'maree':
+        return counters.copyWith(maree: value);
+      case 'surveillance':
+        return counters.copyWith(surveillance: value);
       default:
         return counters;
     }
@@ -3061,6 +2955,10 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         return 'Nuit';
       case 'mer':
         return 'Mer';
+      case 'maree':
+        return 'Marée';
+      case 'surveillance':
+        return 'Surveillance';
       default:
         return 'Notes';
     }

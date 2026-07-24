@@ -6,11 +6,13 @@ import 'package:provider/provider.dart';
 
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
+import '../../adapters/logbook_ocr_grid_adapter.dart';
 import '../../models/logbook_ocr_import.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../services/logbook_ocr_import_service.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import '../../widgets/logbook_fields_grid.dart';
 import '../../utils/member_name.dart';
 import 'logbook_entry_screen.dart';
 
@@ -785,39 +787,14 @@ class _ReviewCardState extends State<_ReviewCard> {
         ),
         children: [
           if (row.warnings.isNotEmpty) _warning(row.warnings.join(' · ')),
-          _field('Date', _date, hint: 'JJ/MM/AAAA'),
-          _autocompleteField(
-            label: 'Lieu',
-            controller: _location,
-            suggestions: widget.locationSuggestions,
-            warning: row.locationName.needsReview,
-            hint: 'Tape pour rechercher dans le catalogue',
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: _field('Profondeur', _depth, suffix: 'm'),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _field('Durée', _duration, suffix: 'min'),
-              ),
-            ],
-          ),
-          _buddyAutocompleteField(),
           const SizedBox(height: 12),
-          _countersRow(),
-          const SizedBox(height: 12),
-          _equipmentRow(),
-          _field('Notes', _notes, maxLines: 2),
-          const SizedBox(height: 4),
           Row(
             children: [
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: _correctInManualForm,
                   icon: const Icon(Icons.edit_note, size: 17),
-                  label: const Text('Corriger comme saisie manuelle'),
+                  label: const Text('Ouvrir le formulaire de saisie'),
                 ),
               ),
               const SizedBox(width: 8),
@@ -833,199 +810,88 @@ class _ReviewCardState extends State<_ReviewCard> {
     );
   }
 
-  Widget _countersRow() {
-    final r = widget.row;
-    final state = <String, bool>{
-      'exo': r.exo.value == true,
-      'nitrox': r.nitrox.value == true,
-      'deco': r.deco.value == true,
-      'dp': r.dp.value == true,
-      'sf': r.sf.value == true,
-      'nuit': r.night.value == true,
-      'mer': r.sea.value == true,
-    };
-    // Same labels + tooltips as the manual entry form for consistency.
-    const labels = <String, String>{
-      'exo': 'Form.',
-      'nitrox': 'Nitrox',
-      'deco': 'Déco',
-      'dp': 'DP',
-      'sf': 'SF',
-      'nuit': 'Nuit',
-      'mer': 'Mer',
-    };
-    const tips = <String, String>{
-      'exo':
-          "Plongée d'exercice / formation (oefening LIFRAS, examen, opleiding).",
-      'nitrox': 'Mélange nitrox (≥ 22 % O₂) au lieu d\'air.',
-      'deco': 'Plongée avec paliers de décompression obligatoires.',
-      'dp': 'Tu étais directeur de palanquée.',
-      'sf': 'Tu étais serre-file de la palanquée.',
-      'nuit': 'Plongée de nuit (immersion après le coucher du soleil).',
-      'mer': 'Plongée en mer / eau salée.',
-    };
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'COMPTEURS',
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            color: Colors.grey.shade600,
-            letterSpacing: 0.6,
+  // Legacy inline editor retained temporarily as a rollback-safe fallback.
+  // The visible OCR path now opens the canonical historical form.
+  // ignore: unused_element
+  Widget _ocrFieldsGrid() {
+    final values = const LogbookOcrGridAdapter().fields(widget.row);
+    return LogbookFieldsGrid(
+      fields: [
+        for (final value in values)
+          LogbookGridField(
+            id: value.id,
+            label: value.label,
+            value: value.value,
+            selected: value.selected,
+            required: value.required,
+            wide: value.wide,
+            warning: value.needsReview,
+            onToggle: value.isToggle ? (_) => _toggleCounter(value.id) : null,
+            onTap: value.isToggle ? null : () => _openGridEditor(value.id),
           ),
-        ),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: [
-            for (final key in state.keys)
-              Tooltip(
-                message: tips[key]!,
-                waitDuration: const Duration(milliseconds: 250),
-                child: ChoiceChip(
-                  label: Text(labels[key]!),
-                  selected: state[key]!,
-                  onSelected: (_) => _toggleCounter(key),
-                  visualDensity: VisualDensity.compact,
-                  selectedColor: AppColors.middenblauw,
-                  labelStyle: TextStyle(
-                    color: state[key]! ? Colors.white : Colors.grey.shade800,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12.5,
-                  ),
-                ),
-              ),
-          ],
-        ),
       ],
     );
   }
 
-  Widget _equipmentRow() {
-    final r = widget.row;
-    final combi = r.combi.value;
-    final tank = r.tank.value;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'ÉQUIPEMENT',
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            color: Colors.grey.shade600,
-            letterSpacing: 0.6,
-          ),
+  Future<void> _openGridEditor(String field) async {
+    switch (field) {
+      case 'combi':
+        await _openCombiSheet();
+        return;
+      case 'tank':
+        await _openTankSheet();
+        return;
+    }
+
+    final editor = switch (field) {
+      'date' => _field('Date', _date, hint: 'JJ/MM/AAAA'),
+      'location' => _autocompleteField(
+          label: 'Lieu',
+          controller: _location,
+          suggestions: widget.locationSuggestions,
+          warning: widget.row.locationName.needsReview,
+          hint: 'Tape pour rechercher dans le catalogue',
         ),
-        const SizedBox(height: 6),
-        // Compact 1-line summaries that open a bottom-sheet on tap. Keeps the
-        // review card readable while still letting the user pick from their
-        // personal `Mes combinaisons` / `Mes bouteilles` catalogues.
-        InkWell(
-          onTap: () => _openCombiSheet(),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.checkroom_outlined,
-                    size: 18, color: Colors.grey.shade600),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    combi == null || combi.isEmpty
-                        ? 'Combinaison — toucher pour choisir'
-                        : _combiLabel(combi),
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: combi == null || combi.isEmpty
-                          ? Colors.grey.shade500
-                          : Colors.grey.shade900,
-                      fontStyle: combi == null || combi.isEmpty
-                          ? FontStyle.italic
-                          : FontStyle.normal,
-                    ),
-                  ),
+      'depth' => _field('Profondeur', _depth, suffix: 'm'),
+      'duration' => _field('Durée', _duration, suffix: 'min'),
+      'buddy' => _buddyAutocompleteField(),
+      'lestage' => _field('Lestage', _lestage, suffix: 'kg'),
+      'notes' => _field('Notes', _notes, maxLines: 3),
+      _ => null,
+    };
+    if (editor == null || !mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => Padding(
+        padding: EdgeInsets.fromLTRB(
+          16,
+          8,
+          16,
+          MediaQuery.viewInsetsOf(sheetContext).bottom + 16,
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              editor,
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () {
+                    _emit();
+                    Navigator.pop(sheetContext);
+                  },
+                  child: const Text('Appliquer'),
                 ),
-                if (combi != null && combi.isNotEmpty)
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 16),
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () => _setCombi(null),
-                  ),
-                const Icon(Icons.expand_more, size: 18),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 6),
-        InkWell(
-          onTap: () => _openTankSheet(),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.propane_tank_outlined,
-                    size: 18, color: Colors.grey.shade600),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    tank == null || tank.isEmpty
-                        ? 'Bouteille — toucher pour choisir'
-                        : _tankLabel(tank),
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: tank == null || tank.isEmpty
-                          ? Colors.grey.shade500
-                          : Colors.grey.shade900,
-                      fontStyle: tank == null || tank.isEmpty
-                          ? FontStyle.italic
-                          : FontStyle.normal,
-                    ),
-                  ),
-                ),
-                if (tank != null && tank.isNotEmpty)
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 16),
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () => _setTank(null),
-                  ),
-                const Icon(Icons.expand_more, size: 18),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 6),
-        TextField(
-          controller: _lestage,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          onChanged: (_) => _emit(),
-          onSubmitted: (_) => _emit(),
-          decoration: InputDecoration(
-            labelText: 'Lestage',
-            hintText: 'ex. 6',
-            suffixText: 'kg',
-            filled: true,
-            fillColor: Colors.grey.shade50,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-            isDense: true,
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -1086,11 +952,16 @@ class _ReviewCardState extends State<_ReviewCard> {
         title: 'Choisir une combinaison',
         items: items,
         labelBuilder: _combiLabel,
+        canClear: widget.row.combi.value != null,
         emptyText:
             'Ajoute des combinaisons dans Mon Profil → Mes combinaisons.',
       ),
     );
-    if (picked != null) _setCombi(picked);
+    if (picked?['__clear'] == true) {
+      _setCombi(null);
+    } else if (picked != null) {
+      _setCombi(picked);
+    }
   }
 
   Future<void> _openTankSheet() async {
@@ -1102,10 +973,15 @@ class _ReviewCardState extends State<_ReviewCard> {
         title: 'Choisir une bouteille',
         items: items,
         labelBuilder: _tankLabel,
+        canClear: widget.row.tank.value != null,
         emptyText: 'Ajoute des bouteilles dans Mon Profil → Mes bouteilles.',
       ),
     );
-    if (picked != null) _setTank(picked);
+    if (picked?['__clear'] == true) {
+      _setTank(null);
+    } else if (picked != null) {
+      _setTank(picked);
+    }
   }
 
   Widget _field(
@@ -1369,12 +1245,14 @@ class _PickerSheet extends StatelessWidget {
   final List<Map<String, dynamic>> items;
   final String Function(Map<String, dynamic>) labelBuilder;
   final String emptyText;
+  final bool canClear;
 
   const _PickerSheet({
     required this.title,
     required this.items,
     required this.labelBuilder,
     required this.emptyText,
+    this.canClear = false,
   });
 
   @override
@@ -1435,12 +1313,20 @@ class _PickerSheet extends StatelessWidget {
                 ),
               ),
             const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Annuler'),
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (canClear)
+                  TextButton(
+                    onPressed: () =>
+                        Navigator.of(context).pop({'__clear': true}),
+                    child: const Text('Effacer'),
+                  ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Annuler'),
+                ),
+              ],
             ),
           ],
         ),
