@@ -10,7 +10,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/formation_task.dart';
 
 class FormationTaskService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFirestore _firestore;
+
+  FormationTaskService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
 
   CollectionReference<Map<String, dynamic>> _collection(String clubId) =>
       _firestore.collection('clubs').doc(clubId).collection('formation_tasks');
@@ -30,7 +33,8 @@ class FormationTaskService {
   }
 
   /// One-shot fetch — used for splash screens or testing.
-  Future<List<FormationTask>> fetchUserInbox(String clubId, String userId) async {
+  Future<List<FormationTask>> fetchUserInbox(
+      String clubId, String userId) async {
     final snap = await _collection(clubId)
         .where('current_assignee_id', isEqualTo: userId)
         .where('status',
@@ -44,7 +48,8 @@ class FormationTaskService {
   // Narrow updates (must match the whitelist in firestore.rules §10.1)
   // -----------------------------------------------------------------------
 
-  Future<void> markCompleted(String clubId, String taskId, String userId) async {
+  Future<void> markCompleted(
+      String clubId, String taskId, String userId) async {
     await markDone(clubId, taskId, userId);
   }
 
@@ -74,7 +79,8 @@ class FormationTaskService {
     await _collection(clubId).doc(taskId).update(payload);
   }
 
-  Future<void> snooze(String clubId, String taskId, DateTime snoozedUntil) async {
+  Future<void> snooze(
+      String clubId, String taskId, DateTime snoozedUntil) async {
     await _collection(clubId).doc(taskId).update({
       'status': 'snoozed',
       'snoozed_until': Timestamp.fromDate(snoozedUntil),
@@ -90,4 +96,90 @@ class FormationTaskService {
       'updated_at': FieldValue.serverTimestamp(),
     });
   }
+
+  /// Completes every legacy task represented by a group roster atomically.
+  ///
+  /// Existing task documents remain the source of truth, so the existing
+  /// `onMonitorObservationCompleted` trigger continues to materialise one
+  /// pool-theme observation per member without a schema migration.
+  Future<void> markObservationRosterDone(
+    String clubId,
+    String userId,
+    String observerName,
+    Map<String, FormationTaskRosterCompletion> completions,
+  ) async {
+    if (completions.isEmpty) return;
+    final batch = _firestore.batch();
+    for (final entry in completions.entries) {
+      final value = entry.value;
+      batch.update(_collection(clubId).doc(entry.key), {
+        'status': 'done',
+        'completed_at': FieldValue.serverTimestamp(),
+        'completed_by': userId,
+        'updated_at': FieldValue.serverTimestamp(),
+        'completion_data': {
+          if (value.verdict != null) 'verdict': value.verdict,
+          'attendance_status': value.attendanceStatus,
+          'pool_session_id': value.poolSessionId,
+          'group_key': value.groupKey,
+          'theme_snapshot': value.themeSnapshot,
+          'member_id': value.memberId,
+          if (value.logbookEntryId != null)
+            'logbook_entry_id': value.logbookEntryId,
+          'observer_id': userId,
+          'observer_name': observerName,
+          if (value.comment.trim().isNotEmpty) 'comment': value.comment.trim(),
+        },
+      });
+    }
+    await batch.commit();
+  }
+
+  /// Persists a validator correction without completing the roster.
+  ///
+  /// `completion_data` is an existing client-writable compatibility field.
+  /// Keeping the override on each underlying task makes legacy documents
+  /// reload consistently while preserving their original context snapshots.
+  Future<void> updateObservationRosterTheme(
+    String clubId,
+    Iterable<String> taskIds,
+    String theme,
+  ) async {
+    final normalized = theme.trim();
+    if (normalized.isEmpty) {
+      throw ArgumentError.value(theme, 'theme', 'Le thème est obligatoire');
+    }
+    final ids = taskIds.toSet();
+    if (ids.isEmpty) return;
+    final batch = _firestore.batch();
+    for (final taskId in ids) {
+      batch.update(_collection(clubId).doc(taskId), {
+        'completion_data.theme_snapshot': normalized,
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+    }
+    await batch.commit();
+  }
+}
+
+class FormationTaskRosterCompletion {
+  final String? verdict;
+  final String attendanceStatus;
+  final String comment;
+  final String? poolSessionId;
+  final String? groupKey;
+  final String? themeSnapshot;
+  final String memberId;
+  final String? logbookEntryId;
+
+  const FormationTaskRosterCompletion({
+    required this.verdict,
+    required this.attendanceStatus,
+    required this.comment,
+    this.poolSessionId,
+    this.groupKey,
+    this.themeSnapshot,
+    required this.memberId,
+    this.logbookEntryId,
+  });
 }
