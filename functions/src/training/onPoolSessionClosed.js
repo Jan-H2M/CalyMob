@@ -183,6 +183,9 @@ const onPoolSessionClosed = onDocumentUpdated(
         .limit(1)
         .get();
 
+      let logbookEntryId = existingLogbook.empty
+        ? null
+        : existingLogbook.docs[0].id;
       if (!existingLogbook.empty) {
         skippedExistingLogbook++;
       } else {
@@ -193,6 +196,7 @@ const onPoolSessionClosed = onDocumentUpdated(
             .doc(clubId)
             .collection('student_logbook_entries')
             .doc();
+          logbookEntryId = logbookRef.id;
           const moniteurIds = Array.isArray(ga.moniteurIds) ? ga.moniteurIds : [];
           const moniteurNames = moniteurIds
             .map((id) => monitorNames.get(id))
@@ -252,6 +256,11 @@ const onPoolSessionClosed = onDocumentUpdated(
             .doc(clubId)
             .collection('formation_tasks')
             .doc();
+          const rosterKey = buildRosterKey(
+            sessionId,
+            ga.groupKey,
+            ga.validatorId,
+          );
           batch.set(taskRef, {
             type: 'monitor_observation',
             status: 'open',
@@ -261,11 +270,13 @@ const onPoolSessionClosed = onDocumentUpdated(
             member_name: memberName,
             current_assignee_id: ga.validatorId,
             current_assignee_type: 'monitor',
+            roster_key: rosterKey,
             context: {
               pool_session_id: sessionId,
               group_key: ga.groupKey || null,
               theme_snapshot: ga.themeSnapshot || null,
               level: ga.level || null,
+              logbook_entry_id: logbookEntryId,
             },
             available_actions: [
               { key: 'open', label: 'Évaluer', target_screen: 'monitor_observation' },
@@ -309,6 +320,10 @@ function composeTaskTitle(memberName, ga) {
   return tail ? `Évaluer ${memberName} (${tail})` : `Évaluer ${memberName}`;
 }
 
+function buildRosterKey(sessionId, groupKey, validatorId) {
+  return [sessionId, groupKey || 'unknown-group', validatorId].join('::');
+}
+
 function parseSessionDate(sessionId) {
   // Calypso pool sessions are keyed by YYYY-MM-DD (Europe/Brussels).
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(sessionId);
@@ -324,4 +339,5 @@ module.exports = {
   // Exported for tests
   parseSessionDate,
   composeTaskTitle,
+  buildRosterKey,
 };

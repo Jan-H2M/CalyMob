@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../models/formation_task.dart';
+import '../../models/formation_task_roster.dart';
 import '../../models/team_channel.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
@@ -13,6 +14,7 @@ import '../../services/team_channel_service.dart';
 import '../../services/unread_count_service.dart';
 import '../../utils/club_role_utils.dart';
 import '../../utils/permission_helper.dart';
+import '../../utils/roster_session_label.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../announcements/announcements_screen.dart';
 import '../teams/team_chat_screen.dart';
@@ -26,6 +28,7 @@ import '../training/historical_claims_screen.dart';
 import '../training/historical_qr_scan_screen.dart';
 import '../training/historical_validation_screen.dart';
 import '../training/monitor_observation_screen.dart';
+import '../training/monitor_observation_roster_screen.dart';
 import '../training/manual_exercise_claim_screen.dart';
 import '../training/formation_task_detail_screen.dart';
 import '../training/monitor_planning_screen.dart';
@@ -888,15 +891,39 @@ class _ActionsCalypsoInboxSectionState
 
         rows.addAll(
           tasks
-              .where((task) => _formationTaskMatchesSearch(
-                    task,
-                    widget.searchQuery,
-                  ))
-              .map((task) => _FormationTaskChatRow(
-                    task: task,
-                    searchQuery: widget.searchQuery,
-                  )),
+              .where(
+                (task) =>
+                    task.type != FormationTaskType.monitorObservation &&
+                    _formationTaskMatchesSearch(task, widget.searchQuery),
+              )
+              .map(
+                (task) => _FormationTaskChatRow(
+                  task: task,
+                  searchQuery: widget.searchQuery,
+                ),
+              ),
         );
+        for (final roster in FormationTaskRoster.aggregate(tasks)) {
+          final isLegacy = roster.key.startsWith('legacy::');
+          if (isLegacy) {
+            final task = roster.members.single.primaryTask;
+            if (_formationTaskMatchesSearch(task, widget.searchQuery)) {
+              rows.add(
+                _FormationTaskChatRow(
+                  task: task,
+                  searchQuery: widget.searchQuery,
+                ),
+              );
+            }
+          } else if (_rosterMatchesSearch(roster, widget.searchQuery)) {
+            rows.add(
+              _MonitorObservationRosterChatRow(
+                roster: roster,
+                searchQuery: widget.searchQuery,
+              ),
+            );
+          }
+        }
 
         if (widget.filter == _CommunicationFilter.unread && rows.isEmpty) {
           return const SizedBox.shrink();
@@ -1017,6 +1044,108 @@ class _FormationTaskChatRow extends StatelessWidget {
       tag: 'Action',
       tagColor: const Color(0xFF0F6D36),
       onTap: () => _openFormationTask(context, task),
+    );
+  }
+}
+
+class _MonitorObservationRosterChatRow extends StatefulWidget {
+  final FormationTaskRoster roster;
+  final String searchQuery;
+
+  const _MonitorObservationRosterChatRow({
+    required this.roster,
+    required this.searchQuery,
+  });
+
+  @override
+  State<_MonitorObservationRosterChatRow> createState() =>
+      _MonitorObservationRosterChatRowState();
+}
+
+class _MonitorObservationRosterChatRowState
+    extends State<_MonitorObservationRosterChatRow> {
+  String _sessionLabel = unknownRosterSessionDateLabel;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSessionLabel();
+  }
+
+  @override
+  void didUpdateWidget(_MonitorObservationRosterChatRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.roster.sessionId != widget.roster.sessionId) {
+      _sessionLabel = unknownRosterSessionDateLabel;
+      _loadSessionLabel();
+    }
+  }
+
+  Future<void> _loadSessionLabel() async {
+    final sessionId = widget.roster.sessionId.trim();
+    if (sessionId.isEmpty) return;
+    try {
+      final session = await FirebaseFirestore.instance
+          .collection('clubs')
+          .doc(FirebaseConfig.defaultClubId)
+          .collection('piscine_sessions')
+          .doc(sessionId)
+          .get();
+      if (!mounted || !session.exists) return;
+      final data = session.data() ?? const <String, dynamic>{};
+      final rawDate = data['date'];
+      setState(() {
+        _sessionLabel = formatRosterSessionLabel(
+          rawDate is Timestamp ? rawDate.toDate() : null,
+        );
+      });
+    } catch (_) {
+      // The neutral label remains visible; technical IDs are never exposed.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final roster = widget.roster;
+    final level = roster.level?.trim();
+    final title = level == null || level.isEmpty
+        ? 'Évaluer le groupe'
+        : 'Évaluer le groupe $level';
+    final details = <String>[
+      _sessionLabel,
+      if (level != null && level.isNotEmpty) 'Niveau $level',
+      _readableRosterGroup(roster.groupKey),
+      '${roster.members.length} élève(s)',
+    ].where((value) => value.isNotEmpty).join(' · ');
+    return _CommunicationChatRow(
+      avatar: const _CommunicationAvatar(
+        icon: Icons.groups_2_outlined,
+        colors: [Color(0xFF34D399), Color(0xFF047857)],
+        online: true,
+      ),
+      title: title,
+      sender: 'Évaluation groupée',
+      preview: details,
+      timeLabel: _formatShortTime(
+        roster.members
+            .expand((member) => member.tasks)
+            .map((task) => task.updatedAt ?? task.createdAt)
+            .whereType<DateTime>()
+            .fold<DateTime?>(
+              null,
+              (latest, value) =>
+                  latest == null || value.isAfter(latest) ? value : latest,
+            ),
+      ),
+      unreadCount: roster.members.length,
+      searchQuery: widget.searchQuery,
+      tag: 'Action',
+      tagColor: const Color(0xFF0F6D36),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => MonitorObservationRosterScreen(roster: roster),
+        ),
+      ),
     );
   }
 }
@@ -1268,6 +1397,26 @@ bool _formationTaskMatchesSearch(FormationTask task, String query) {
     task.context.operationTitle,
     task.context.targetGroupLevel,
   ]);
+}
+
+bool _rosterMatchesSearch(FormationTaskRoster roster, String query) {
+  return _matchesSearch(query, [
+    'Évaluer le groupe',
+    'Évaluation groupée',
+    roster.sessionId,
+    roster.groupKey,
+    roster.level,
+    roster.theme,
+    ...roster.members.map((member) => member.displayName),
+  ]);
+}
+
+String _readableRosterGroup(String value) {
+  if (value.isEmpty) return 'Groupe non renseigné';
+  return value
+      .replaceAll('star', '★')
+      .replaceAll('_groupe', ' · Groupe ')
+      .replaceAll('_', ' ');
 }
 
 bool _teamChannelMatchesSearch(TeamChannel channel, String query) {

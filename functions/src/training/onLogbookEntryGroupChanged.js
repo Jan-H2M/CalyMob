@@ -179,6 +179,8 @@ const onLogbookEntryGroupChanged = onDocumentUpdated(
 
     const memberName = after.member_name || taskData.member_name || 'Membre';
     const theme = after.theme_snapshot || taskData.context?.theme_snapshot || '';
+    const newGroupKey =
+      after.group_key || taskData.context?.group_key || 'unknown-group';
     const tail = [newLevel, theme].filter(Boolean).join(' ');
     const newTitle = tail ? `Évaluer ${memberName} (${tail})` : `Évaluer ${memberName}`;
 
@@ -186,8 +188,11 @@ const onLogbookEntryGroupChanged = onDocumentUpdated(
       await taskDoc.ref.update({
         current_assignee_id: newValidatorId,
         current_assignee_type: 'monitor',
+        roster_key: [sessionId, newGroupKey, newValidatorId].join('::'),
         title: newTitle,
         'context.level': newLevel,
+        'context.group_key': newGroupKey,
+        'context.logbook_entry_id': entryId,
         'context.group_number':
           typeof after.group_number === 'number' ? after.group_number : null,
         // Reset reminder state so the new assignee gets a clean run.

@@ -250,6 +250,7 @@ class FormationTask {
   final String? currentAssigneeName;
   final FormationTaskAssigneeType currentAssigneeType;
   final FormationTaskContext context;
+  final Map<String, dynamic> completionData;
   final DateTime? dueAt;
   final DateTime? snoozedUntil;
   final DateTime? completedAt;
@@ -274,6 +275,7 @@ class FormationTask {
     this.currentAssigneeName,
     required this.currentAssigneeType,
     required this.context,
+    this.completionData = const {},
     this.dueAt,
     this.snoozedUntil,
     this.completedAt,
@@ -302,6 +304,8 @@ class FormationTask {
       currentAssigneeType: _parseAssigneeType(data['current_assignee_type']),
       context: FormationTaskContext.fromMap(
           data['context'] as Map<String, dynamic>?),
+      completionData: Map<String, dynamic>.from(
+          data['completion_data'] as Map? ?? const {}),
       dueAt: (data['due_at'] as Timestamp?)?.toDate(),
       snoozedUntil: (data['snoozed_until'] as Timestamp?)?.toDate(),
       completedAt: (data['completed_at'] as Timestamp?)?.toDate(),
@@ -317,6 +321,13 @@ class FormationTask {
       createdAt: (data['created_at'] as Timestamp?)?.toDate(),
       updatedAt: (data['updated_at'] as Timestamp?)?.toDate(),
     );
+  }
+
+  String? get effectiveThemeSnapshot {
+    final corrected = completionData['theme_snapshot']?.toString().trim();
+    if (corrected != null && corrected.isNotEmpty) return corrected;
+    final original = context.themeSnapshot?.trim();
+    return original == null || original.isEmpty ? null : original;
   }
 
   static FormationTaskType _parseType(String? s) {
