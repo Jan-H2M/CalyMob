@@ -1028,10 +1028,14 @@ service cloud.firestore {
           );
 
           // Create: Member can upload their own certificate (mobile app - no session required)
-          allow create: if isAuthenticated()
-            && request.auth.uid == memberId
-            && request.resource.data.member_id == memberId
-            && request.resource.data.status == 'pending';
+          // Admins can also create certificates (web upload mirror: CalyCompta writes an
+          // approved certificate here so it is visible in CalyMob)
+          allow create: if isAuthenticated() && (
+            (request.auth.uid == memberId
+              && request.resource.data.member_id == memberId
+              && request.resource.data.status == 'pending')
+            || (isAdmin(clubId) && request.resource.data.member_id == memberId)
+          );
 
           // Update: Admin only - for approving/rejecting certificates
           // Admins set valid_until date and status
