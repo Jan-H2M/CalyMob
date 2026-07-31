@@ -170,9 +170,7 @@ ValidationResult validatePalanquee(
   final hasMoniteurInGroup = levels.any((l) => isMoniteur(l));
   final hasCPInGroup = levels.any((l) => isChefDePalanquee(l));
 
-  // --- Vérifier chaque paire ---
-  int globalMaxDepth = 999999; // Infinity equivalent
-
+  // --- Vérifier chaque paire (compositions interdites) ---
   for (int i = 0; i < levels.length; i++) {
     for (int j = i + 1; j < levels.length; j++) {
       final pair = getMaxDepthForPair(levels[i], levels[j]);
@@ -189,11 +187,30 @@ ValidationResult validatePalanquee(
           message: '${participants[i].membreNom} ($labelI) ne peut pas plonger avec ${participants[j].membreNom} ($labelJ).',
           rule: '§1.7.1 Limitations de profondeur',
         ));
-      } else if (pair.depth != null) {
-        if (pair.depth! < globalMaxDepth) {
-          globalMaxDepth = pair.depth!;
-        }
       }
+    }
+  }
+
+  // --- Profondeur max (§1.7.1) ---
+  // La profondeur d'une palanquée est déterminée par chaque plongeur avec son
+  // ENCADRANT (le plongeur du niveau le plus élevé), pas par toutes les paires
+  // entre elles. Ex: 4★ + 2★ + 2★ → chaque 2★ est encadré par le 4★ → 40m.
+  // La cellule 2★×2★ (20m) ne s'applique qu'à deux 2★ autonomes, sans
+  // encadrant de niveau supérieur (même principe que les exceptions NB+NB et
+  // 1★+1★ ci-dessus).
+  int globalMaxDepth = 999999; // Infinity equivalent
+  int chefIdx = 0;
+  for (int i = 1; i < levels.length; i++) {
+    if ((niveauHierarchy[levels[i]] ?? -1) >
+        (niveauHierarchy[levels[chefIdx]] ?? -1)) {
+      chefIdx = i;
+    }
+  }
+  for (int i = 0; i < levels.length; i++) {
+    if (i == chefIdx) continue;
+    final pair = getMaxDepthForPair(levels[i], levels[chefIdx]);
+    if (pair.allowed && pair.depth != null && pair.depth! < globalMaxDepth) {
+      globalMaxDepth = pair.depth!;
     }
   }
 
@@ -329,7 +346,7 @@ ValidationResult validatePalanquee(
 
   // --- Recommandation profondeur 4★ (§1.7.4) ---
   final has4StarOrAbove = levels.any((l) => ['4', 'AM', 'MC', 'MF', 'MN'].contains(l));
-  if (has4StarOrAbove && maxDepth != null && maxDepth! > 40) {
+  if (has4StarOrAbove && maxDepth != null && maxDepth > 40) {
     if (lieuType != null && ['Carrière', 'Lac'].contains(lieuType)) {
       warnings.add(const ValidationMessage(
         code: 'DEPTH_REC_LAKE',
