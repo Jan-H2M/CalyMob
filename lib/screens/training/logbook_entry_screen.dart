@@ -130,6 +130,8 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
   final TextEditingController _lestage = TextEditingController();
   // WP-20 finition — % O₂ explicite quand le compteur NITROX est coché.
   final TextEditingController _o2Pct = TextEditingController();
+  // WP-28 phase 2 — température de l'eau (champ PARTAGÉ avec les binômes).
+  final TextEditingController _waterTemp = TextEditingController();
   final TextEditingController _diveNumber = TextEditingController();
   final TextEditingController _dictation = TextEditingController();
   final stt.SpeechToText _speech = stt.SpeechToText();
@@ -474,6 +476,9 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
     if (lestage != null && lestage > 0) _lestage.text = _fmtNum(lestage);
     final o2 = (map['o2_pct'] as num?)?.toDouble();
     if (o2 != null && o2 > 0) _o2Pct.text = _fmtNum(o2);
+    // WP-28 phase 2 — 0 °C et négatif (glace) sont des valeurs valides.
+    final waterTemp = (map['water_temp_c'] as num?)?.toDouble();
+    if (waterTemp != null) _waterTemp.text = _fmtNum(waterTemp);
 
     _binomes = _parseBinomesFromMap(map);
     _notes.text = (map['notes'] as String?) ?? '';
@@ -870,9 +875,99 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
               setState(() => _counters = _counters.copyWith(sf: true));
             }
           }
+          // WP-28 phase 2 — pré-remplir les binômes avec les coéquipiers de
+          // la palanquée. Chacun remplit SA propre fiche depuis son propre
+          // point de vue, donc aucun remap nécessaire ici.
+          if (_binomes.isEmpty) {
+            final prefilled =
+                await _binomesFromPalanquee(pal.data() ?? const {}, userId);
+            if (prefilled.isNotEmpty && mounted && _binomes.isEmpty) {
+              setState(() => _binomes = prefilled);
+            }
+          }
         }
       } catch (_) {/* graceful */}
     }
+  }
+
+  /// WP-28 phase 2 — extrait les coéquipiers d'un doc `palanquees` et les
+  /// convertit en binômes membres. Formats tolérés : listes `members` /
+  /// `membres` / `plongeurs` / `participants` (ids ou maps avec noms
+  /// snapshotés) + entrées dédiées `dp` / `sf`. Les noms manquants sont
+  /// résolus depuis la collection members (3-4 lectures max).
+  Future<List<BinomeSelection>> _binomesFromPalanquee(
+    Map<String, dynamic> pal,
+    String? selfId,
+  ) async {
+    final entries = <String, String>{}; // member_id -> nom ('' si inconnu)
+
+    String? asString(dynamic v) =>
+        v is String && v.trim().isNotEmpty ? v.trim() : null;
+
+    void addEntry(dynamic item) {
+      if (item is String) {
+        final id = asString(item);
+        if (id != null) entries.putIfAbsent(id, () => '');
+        return;
+      }
+      if (item is Map) {
+        final id = asString(item['membre_id']) ??
+            asString(item['member_id']) ??
+            asString(item['id']);
+        if (id == null) return;
+        final display = asString(item['display_name']) ??
+            asString(item['displayName']) ??
+            asString(item['name']);
+        final composed = [
+          asString(item['membre_prenom']) ?? asString(item['prenom']),
+          asString(item['membre_nom']) ?? asString(item['nom']),
+        ].whereType<String>().join(' ').trim();
+        final name = display ?? composed;
+        final existing = entries[id];
+        if (existing == null || existing.isEmpty) entries[id] = name;
+      }
+    }
+
+    for (final key in ['members', 'membres', 'plongeurs', 'participants']) {
+      final list = pal[key];
+      if (list is List) {
+        for (final item in list) {
+          addEntry(item);
+        }
+      }
+    }
+    for (final key in ['dp', 'sf', 'serre_file', 'directeur_palanquee']) {
+      addEntry(pal[key]);
+    }
+    if (selfId != null) entries.remove(selfId);
+    if (entries.isEmpty) return const [];
+
+    const clubId = FirebaseConfig.defaultClubId;
+    final db = FirebaseFirestore.instance;
+    final result = <BinomeSelection>[];
+    for (final entry in entries.entries) {
+      var name = entry.value;
+      if (name.isEmpty) {
+        try {
+          final doc = await db
+              .collection('clubs')
+              .doc(clubId)
+              .collection('members')
+              .doc(entry.key)
+              .get();
+          final data = doc.data() ?? const {};
+          name = [
+            asString(data['prenom']),
+            asString(data['nom']),
+          ].whereType<String>().join(' ').trim();
+        } catch (_) {/* graceful */}
+      }
+      if (name.isEmpty) continue;
+      result.add(
+        BinomeSelection.member(memberId: entry.key, displayName: name),
+      );
+    }
+    return result;
   }
 
   @override
@@ -881,6 +976,8 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
     _duration.dispose();
     _notes.dispose();
     _lestage.dispose();
+    _o2Pct.dispose();
+    _waterTemp.dispose();
     _diveNumber.dispose();
     _speech.stop();
     _dictation.dispose();
@@ -1181,7 +1278,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         ),
       ),
       const SizedBox(height: 12),
-      _sectionTitle('PROFONDEUR · DURÉE'),
+      _sectionTitle('PROFONDEUR · DURÉE · EAU'),
       Row(
         children: [
           Expanded(
@@ -1190,7 +1287,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
                 controller: _depth,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
-                  hintText: 'Profondeur (m)',
+                  hintText: 'Prof. (m)',
                   hintStyle: TextStyle(
                     color: Colors.grey.shade400,
                     fontStyle: FontStyle.italic,
@@ -1208,6 +1305,27 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   hintText: 'Durée (min)',
+                  hintStyle: TextStyle(
+                    color: Colors.grey.shade400,
+                    fontStyle: FontStyle.italic,
+                  ),
+                  border: InputBorder.none,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // WP-28 phase 2 — température de l'eau (partagée avec les binômes).
+          Expanded(
+            child: _whiteCard(
+              child: TextField(
+                controller: _waterTemp,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                  signed: true,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'Eau (°C)',
                   hintStyle: TextStyle(
                     color: Colors.grey.shade400,
                     fontStyle: FontStyle.italic,
@@ -3569,6 +3687,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           _depth.text.trim().isNotEmpty ||
           _duration.text.trim().isNotEmpty ||
           _lestage.text.trim().isNotEmpty ||
+          _waterTemp.text.trim().isNotEmpty ||
           _entryTime != null ||
           _exitTime != null ||
           _locationSelection?.name.trim() !=
@@ -3581,6 +3700,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         _diveNumber.text.trim().isNotEmpty ||
         _notes.text.trim().isNotEmpty ||
         _lestage.text.trim().isNotEmpty ||
+        _waterTemp.text.trim().isNotEmpty ||
         _entryTime != null ||
         _exitTime != null ||
         _binomes.isNotEmpty ||
@@ -4525,6 +4645,8 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
 
       final lestage = double.tryParse(_lestage.text.replaceAll(',', '.'));
       final o2Pct = double.tryParse(_o2Pct.text.replaceAll(',', '.'));
+      // WP-28 phase 2 — champ partagé ; 0 °C / négatif (glace) valides.
+      final waterTemp = double.tryParse(_waterTemp.text.replaceAll(',', '.'));
       final explicitDiveNumber = await _resolveDiveNumberForSave(
         clubId: clubId,
         userId: userId,
@@ -4545,6 +4667,10 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         if (_combi != null) 'combi_type': _combi!.type,
         if (_tank != null) 'tank': _tank!.toMap(),
         if (lestage != null && lestage > 0) 'lestage_kg': lestage,
+        // WP-28 phase 2 — température de l'eau (champ partagé).
+        if (waterTemp != null) 'water_temp_c': waterTemp,
+        if (widget.mode == LogbookEntryMode.edit && waterTemp == null)
+          'water_temp_c': FieldValue.delete(),
         // WP-20 finition — % O₂ explicite (uniquement si nitrox coché).
         if (_counters.nitrox == true && o2Pct != null && o2Pct > 0)
           'o2_pct': o2Pct,

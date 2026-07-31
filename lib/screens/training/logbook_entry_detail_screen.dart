@@ -89,6 +89,8 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
     final country = data['country'] as String?;
     final depth = (data['depth_max_meters'] as num?)?.toDouble();
     final duration = (data['duration_minutes'] as num?)?.toInt();
+    // WP-28 phase 2 — température de l'eau.
+    final waterTemp = (data['water_temp_c'] as num?)?.toDouble();
     final source = (data['source'] as String?) ?? 'manual';
     final notes = (data['notes'] as String?)?.trim();
     final operationTitle = data['operation_title'] as String?;
@@ -111,7 +113,7 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
           exitTime: _readTime(data, 'exit_time', 'exit_time_str'),
         ),
         const SizedBox(height: 12),
-        _ParamsCard(depth: depth, duration: duration),
+        _ParamsCard(depth: depth, duration: duration, waterTemp: waterTemp),
         if (counters.isNotEmpty || data['zone'] != null) ...[
           const SizedBox(height: 12),
           _CountersCard(counters: counters, zone: data['zone'] as String?),
@@ -900,7 +902,15 @@ class _TimeBox extends StatelessWidget {
 class _ParamsCard extends StatelessWidget {
   final double? depth;
   final int? duration;
-  const _ParamsCard({this.depth, this.duration});
+  // WP-28 phase 2 — température de l'eau (champ partagé avec les binômes).
+  final double? waterTemp;
+  const _ParamsCard({this.depth, this.duration, this.waterTemp});
+
+  String get _tempLabel {
+    final t = waterTemp!;
+    final isInt = t == t.roundToDouble();
+    return '${isInt ? t.toStringAsFixed(0) : t.toStringAsFixed(1)} °C';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -922,6 +932,16 @@ class _ParamsCard extends StatelessWidget {
               icon: Icons.timer_outlined,
             ),
           ),
+          if (waterTemp != null) ...[
+            Container(width: 1, height: 36, color: Colors.grey.shade200),
+            Expanded(
+              child: _Stat(
+                label: 'EAU',
+                value: _tempLabel,
+                icon: Icons.thermostat_outlined,
+              ),
+            ),
+          ],
         ],
       ),
     );

@@ -156,6 +156,9 @@ class _LogbookDiveConfirmationScreenState
         return 'Plongée confirmée sans import dans ton carnet.';
       case 'declined':
         return 'Plongée refusée.';
+      // WP-28 — la demande a été annulée entre-temps (plongée supprimée…).
+      case 'cancelled':
+        return 'Cette demande n’est plus active.';
       default:
         return 'Réponse enregistrée.';
     }
@@ -345,6 +348,9 @@ class _DetailBody extends StatelessWidget {
         return 'Confirmée: elle n’a pas été importée dans ton carnet.';
       case 'declined':
         return 'Tu as refusé cette plongée.';
+      // WP-28 — annulée par le système (plongée supprimée ou binôme retiré).
+      case 'cancelled':
+        return 'Cette demande a été annulée : la plongée a été modifiée ou supprimée par son auteur.';
       default:
         return 'Statut: $status';
     }
@@ -424,6 +430,57 @@ class _DiveFacts extends StatelessWidget {
 
   const _DiveFacts({required this.snapshot});
 
+  // WP-28 phase 2 — noms des binômes tels que le DESTINATAIRE doit les voir
+  // (le snapshot est déjà réécrit de son point de vue par la CF).
+  static List<String> _buddyNames(Map<String, dynamic> snapshot) {
+    final out = <String>[];
+    final binomes = snapshot['binomes'];
+    if (binomes is List) {
+      for (final b in binomes) {
+        if (b is Map) {
+          final name =
+              (b['display_name'] ?? b['displayName'] ?? b['name']) as String?;
+          if (name != null && name.isNotEmpty) out.add(name);
+        } else if (b is String && b.isNotEmpty) {
+          out.add(b);
+        }
+      }
+    }
+    if (out.isEmpty) {
+      final buddies = snapshot['buddies'];
+      if (buddies is List) {
+        for (final b in buddies) {
+          if (b is Map) {
+            final name = b['name'] as String?;
+            if (name != null && name.isNotEmpty) out.add(name);
+          } else if (b is String && b.isNotEmpty) {
+            out.add(b);
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  static String? _zoneLabel(dynamic zone) {
+    switch (zone) {
+      case 'zelande':
+        return 'Zélande';
+      case 'glace':
+        return 'Glace';
+      case 'epave':
+        return 'Épave';
+      default:
+        return null;
+    }
+  }
+
+  static String _tempLabel(num temp) {
+    final t = temp.toDouble();
+    final isInt = t == t.roundToDouble();
+    return '${isInt ? t.toStringAsFixed(0) : t.toStringAsFixed(1)} °C';
+  }
+
   @override
   Widget build(BuildContext context) {
     final facts = <Widget>[
@@ -446,8 +503,48 @@ class _DiveFacts extends StatelessWidget {
           icon: Icons.timer_outlined,
           label: '${(snapshot['duration_minutes'] as num).toInt()} min',
         ),
+      // WP-28 phase 2 — température de l'eau + zone particulière.
+      if (snapshot['water_temp_c'] is num)
+        _Fact(
+          icon: Icons.thermostat_outlined,
+          label: _tempLabel(snapshot['water_temp_c'] as num),
+        ),
+      if (_zoneLabel(snapshot['zone']) != null)
+        _Fact(
+          icon: Icons.flag_outlined,
+          label: _zoneLabel(snapshot['zone'])!,
+        ),
     ];
-    return Wrap(spacing: 8, runSpacing: 8, children: facts);
+    final buddyNames = _buddyNames(snapshot);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(spacing: 8, runSpacing: 8, children: facts),
+        if (buddyNames.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.group_outlined,
+                size: 16,
+                color: AppColors.donkerblauw,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Avec ${buddyNames.join(', ')}',
+                  style: const TextStyle(
+                    color: AppColors.donkerblauw,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
   }
 }
 
