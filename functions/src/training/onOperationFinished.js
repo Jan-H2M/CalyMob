@@ -153,7 +153,10 @@ async function processParticipants(db, clubId, operationId, operationTitle, loca
       continue;
     }
 
-    // Filter on formation_active — same rule as onPiscineAttendeeCreated.
+    // D22 (décision Jan 2026-07-31) — une SORTIE plongée invite TOUS les
+    // participants confirmés à compléter leur carnet, en formation ou pas.
+    // Le filtre formation_active ne s'applique qu'aux séances piscine
+    // (voir onPiscineAttendeeCreated).
     const memberSnap = await db
       .collection('clubs')
       .doc(clubId)
@@ -165,10 +168,6 @@ async function processParticipants(db, clubId, operationId, operationTitle, loca
       continue;
     }
     const member = memberSnap.data();
-    if (!member.formation_active) {
-      skippedCount += 1;
-      continue;
-    }
 
     // Idempotency : skip if a logbook task already exists for this op+member.
     const existing = await db
