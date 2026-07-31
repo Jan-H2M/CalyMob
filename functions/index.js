@@ -15,7 +15,7 @@ admin.initializeApp();
 // the local emulator on Node 25 the legacy `admin.firestore.FieldValue`
 // accessor isn't auto-attached, breaking every `serverTimestamp()` call.
 // Pulling it from the modular entry-point fixes it without changing the
-// behaviour on Cloud Functions production runtime (Node 20).
+// behaviour on Cloud Functions production runtime (Node 22).
 if (!admin.firestore.FieldValue) {
   // eslint-disable-next-line global-require
   admin.firestore.FieldValue = require('firebase-admin/firestore').FieldValue;
