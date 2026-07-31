@@ -2,6 +2,32 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'crashlytics_service.dart';
 
+/// Exception de login qui conserve le code FirebaseAuth d'origine.
+///
+/// Permet à l'appelant (ex: login biométrique) de distinguer un refus des
+/// credentials eux-mêmes (mot de passe changé, compte désactivé → il faut
+/// purger les credentials biométriques) d'une erreur transitoire (réseau,
+/// throttling) où les credentials stockés restent parfaitement valables.
+class AuthLoginException implements Exception {
+  final String code;
+  final String message;
+
+  AuthLoginException(this.code, this.message);
+
+  /// True quand les credentials eux-mêmes sont refusés par Firebase Auth.
+  /// C'est la SEULE raison valable pour effacer les credentials biométriques.
+  bool get isCredentialFailure => const {
+        'wrong-password',
+        'invalid-credential',
+        'user-not-found',
+        'user-disabled',
+        'invalid-email',
+      }.contains(code);
+
+  @override
+  String toString() => message;
+}
+
 /// Service d'authentification Firebase
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -34,19 +60,24 @@ class AuthService {
 
       switch (e.code) {
         case 'user-not-found':
-          throw Exception('Aucun compte trouvé avec cet email');
+          throw AuthLoginException(e.code, 'Aucun compte trouvé avec cet email');
         case 'wrong-password':
-          throw Exception('Mot de passe incorrect');
+          throw AuthLoginException(e.code, 'Mot de passe incorrect');
+        case 'invalid-credential':
+          throw AuthLoginException(e.code, 'Email ou mot de passe incorrect');
         case 'invalid-email':
-          throw Exception('Email invalide');
+          throw AuthLoginException(e.code, 'Email invalide');
         case 'user-disabled':
-          throw Exception('Ce compte a été désactivé');
+          throw AuthLoginException(e.code, 'Ce compte a été désactivé');
         case 'too-many-requests':
-          throw Exception('Trop de tentatives. Réessayez dans quelques minutes');
+          throw AuthLoginException(
+              e.code, 'Trop de tentatives. Réessayez dans quelques minutes');
         default:
-          throw Exception('Erreur d\'authentification: ${e.message}');
+          throw AuthLoginException(
+              e.code, 'Erreur d\'authentification: ${e.message}');
       }
     } catch (e, stack) {
+      if (e is AuthLoginException) rethrow;
       CrashlyticsService.authError(e, stack, 'login unexpected error');
       debugPrint('❌ Erreur inattendue login: $e');
       throw Exception('Erreur de connexion: $e');

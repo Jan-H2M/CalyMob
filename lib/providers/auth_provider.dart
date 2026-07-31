@@ -196,14 +196,13 @@ class AuthProvider with ChangeNotifier {
       final user = await _authService.login(email, password);
       _currentUser = user;
 
-      // 2. Créer session Firestore
-      await _sessionService.createSession(
-        userId: user.uid,
-        clubId: clubId,
-      );
-
-      // 3. Enregistrer le token FCM et les infos de l'appareil
-      await _notificationService.saveTokenToFirestore(clubId, user.uid);
+      // 2+3. Session Firestore + FCM token/device info: le listener
+      // authStateChanges (déclenché par le sign-in ci-dessus) fait déjà les
+      // deux en fire-and-forget. Les attendre ici en plus doublait le
+      // travail (2× lecture du member doc, 2× getToken(), 2× write) ET
+      // ajoutait plusieurs secondes de réseau au chemin critique du login —
+      // c'était LA cause du login (biométrique) "super lent". Aucune de ces
+      // écritures n'est nécessaire pour entrer dans l'app.
 
       // 4. Identifier l'utilisateur dans Crashlytics pour le suivi
       CrashlyticsService.setUserContext(
@@ -215,7 +214,7 @@ class AuthProvider with ChangeNotifier {
       // 5. Configurer BiometricService avec l'ID utilisateur pour les diagnostics Firestore
       _biometricService.setUserId(user.uid);
 
-      debugPrint('✅ Login, session et FCM token OK');
+      debugPrint('✅ Login OK (session + FCM token via listener, en arrière-plan)');
 
       _isLoading = false;
       notifyListeners();

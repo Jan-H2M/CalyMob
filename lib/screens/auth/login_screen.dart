@@ -5,6 +5,7 @@ import '../../config/firebase_config.dart';
 import '../../config/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
+import '../../services/auth_service.dart';
 import '../../services/biometric_service.dart';
 import '../../widgets/ocean_background.dart';
 import '../home/landing_screen.dart';
@@ -63,10 +64,18 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _checkBiometricAvailability() async {
-    final available = await _biometricService.isBiometricAvailable();
-    final hasCredentials = await _biometricService.hasStoredCredentials();
-    final declined = await _biometricService.hasExplicitlyDeclinedBiometric();
-    final typeName = await _biometricService.getBiometricTypeName();
+    // Les quatre vérifications sont indépendantes → en parallèle, pour que
+    // le prompt biométrique apparaisse le plus vite possible au démarrage.
+    final results = await Future.wait<Object>([
+      _biometricService.isBiometricAvailable(),
+      _biometricService.hasStoredCredentials(),
+      _biometricService.hasExplicitlyDeclinedBiometric(),
+      _biometricService.getBiometricTypeName(),
+    ]);
+    final available = results[0] as bool;
+    final hasCredentials = results[1] as bool;
+    final declined = results[2] as bool;
+    final typeName = results[3] as String;
 
     if (mounted) {
       setState(() {
@@ -192,8 +201,11 @@ class _LoginScreenState extends State<LoginScreen> {
           MaterialPageRoute(builder: (_) => const LandingScreen()),
         );
       }
-    } catch (e) {
-      if (mounted) {
+    } on AuthLoginException catch (e) {
+      if (!mounted) return;
+      if (e.isCredentialFailure) {
+        // Le mot de passe stocké n'est plus valable (changé côté serveur,
+        // compte désactivé, ...) → purger et repasser au login manuel.
         await _biometricService.clearCredentials();
         if (!mounted) return;
         setState(() {
@@ -202,6 +214,28 @@ class _LoginScreenState extends State<LoginScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Session expirée. Veuillez vous reconnecter.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      } else {
+        // Erreur transitoire (réseau, throttling, ...): les credentials
+        // biométriques restent parfaitement valables — ne PAS les effacer.
+        // L'ancien code les purgeait ici, ce qui désactivait définitivement
+        // le login biométrique après une seule erreur réseau.
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${e.message} — réessayez.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      // Erreur inattendue: credentials biométriques intacts, réessayer suffit.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content:
+                Text('Connexion impossible. Vérifiez votre réseau et réessayez.'),
             backgroundColor: Colors.orange,
           ),
         );
