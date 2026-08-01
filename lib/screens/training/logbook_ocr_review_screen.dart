@@ -150,7 +150,7 @@ class _LogbookOcrReviewScreenState extends State<LogbookOcrReviewScreen> {
       final memSnap = await db
           .collection('clubs')
           .doc(clubId)
-          .collection('members')
+          .collection('member_directory')
           .limit(500)
           .get();
       final clubMembers = <String>{};

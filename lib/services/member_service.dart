@@ -12,7 +12,7 @@ class MemberService {
   Future<NiveauLIFRAS?> getMemberNiveau(String clubId, String memberId) async {
     try {
       final doc = await _firestore
-          .collection('clubs/$clubId/members')
+          .collection('clubs/$clubId/member_directory')
           .doc(memberId)
           .get();
 
@@ -77,7 +77,7 @@ class MemberService {
       String clubId, String memberId) async {
     try {
       final doc = await _firestore
-          .collection('clubs/$clubId/members')
+          .collection('clubs/$clubId/member_directory')
           .doc(memberId)
           .get();
 
@@ -97,7 +97,7 @@ class MemberService {
   Future<List<Map<String, dynamic>>> getMonitors(String clubId) async {
     try {
       final snapshot = await _firestore
-          .collection('clubs/$clubId/members')
+          .collection('clubs/$clubId/member_directory')
           .where('plongeur_code', whereIn: ['MC', 'MF', 'MN', 'AM']).get();
 
       final monitors = snapshot.docs.map((doc) {
@@ -127,7 +127,7 @@ class MemberService {
   Future<List<Map<String, dynamic>>> getAllMembers(String clubId) async {
     try {
       final snapshot =
-          await _firestore.collection('clubs/$clubId/members').get();
+          await _firestore.collection('clubs/$clubId/member_directory').get();
 
       final members = snapshot.docs.map((doc) {
         final data = doc.data();
@@ -174,17 +174,29 @@ class MemberService {
   /// Get a single member by ID (for QR scan result)
   Future<MemberProfile?> getMemberById(String clubId, String memberId) async {
     try {
-      final doc = await _firestore
-          .collection('clubs/$clubId/members')
-          .doc(memberId)
-          .get();
+      final results = await Future.wait([
+        _firestore
+            .collection('clubs/$clubId/member_directory')
+            .doc(memberId)
+            .get(),
+        _firestore
+            .collection('clubs/$clubId/member_operational_status')
+            .doc(memberId)
+            .get(),
+      ]);
+      final doc = results[0];
+      final statusDoc = results[1];
 
       if (!doc.exists) {
         debugPrint('❌ Membre $memberId non trouvé');
         return null;
       }
 
-      return MemberProfile.fromFirestore(doc);
+      return MemberProfile.fromDirectoryData(
+        doc.id,
+        doc.data() ?? const {},
+        operationalStatus: statusDoc.data(),
+      );
     } catch (e) {
       debugPrint('❌ Erreur récupération membre: $e');
       return null;
@@ -203,10 +215,10 @@ class MemberService {
       // Get all members and filter client-side
       // (Firestore doesn't support full-text search natively)
       final snapshot =
-          await _firestore.collection('clubs/$clubId/members').get();
+          await _firestore.collection('clubs/$clubId/member_directory').get();
 
       final members = snapshot.docs
-          .map((doc) => MemberProfile.fromFirestore(doc))
+          .map((doc) => MemberProfile.fromDirectory(doc))
           .where((member) {
         // Exclure les membres inactifs/supprimés
         if (!member.isActive) return false;

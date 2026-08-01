@@ -158,6 +158,42 @@ class MemberProfile {
     );
   }
 
+  /// Build the deliberately limited profile used by club directories.
+  factory MemberProfile.fromDirectory(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    return MemberProfile.fromDirectoryData(doc.id, data);
+  }
+
+  factory MemberProfile.fromDirectoryData(
+    String id,
+    Map<String, dynamic> data, {
+    Map<String, dynamic>? operationalStatus,
+  }) {
+    return MemberProfile(
+      id: id,
+      nom: memberLastName(data) ?? '',
+      prenom: memberFirstName(data) ?? '',
+      email: _stringOrNull(data['email']) ?? '',
+      plongeurCode: _stringOrNull(data['plongeur_code']),
+      plongeurNiveau: _stringOrNull(data['plongeur_niveau']),
+      fonctionDefaut: _stringOrNull(data['fonction_defaut']),
+      clubStatuten:
+          (data['clubStatuten'] as List<dynamic>?)?.cast<String>() ?? const [],
+      photoUrl: _stringOrNull(data['photo_url']),
+      consentInternalPhoto: data['consent_internal_photo'] == true,
+      shareEmail: data['share_email'] == true,
+      sharePhone: data['share_phone'] == true,
+      phoneNumber: _stringOrNull(data['phone_number']),
+      memberStatus: resolveMemberStatus(data),
+      cotisationValidite:
+          _parseDate(operationalStatus?['cotisation_validite']),
+      certificatMedicalValidite:
+          _parseDate(operationalStatus?['certificat_medical_validite']),
+      assuranceValidite:
+          _parseDate(operationalStatus?['assurance_validite']),
+    );
+  }
+
   static String? _stringOrNull(dynamic value) {
     if (value is String && value.trim().isNotEmpty) return value.trim();
     return null;

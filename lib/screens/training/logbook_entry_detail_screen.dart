@@ -577,7 +577,7 @@ class _MonitorLine extends StatelessWidget {
         final s = await db
             .collection('clubs')
             .doc(FirebaseConfig.defaultClubId)
-            .collection('members')
+            .collection('member_directory')
             .doc(id)
             .get();
         if (!s.exists) continue;

@@ -68,7 +68,7 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
   /// Haal de foto URL op voor een member (cached Future)
   Future<String?> _getPhotoUrl(String senderId) {
     return _photoFutureCache.putIfAbsent(senderId, () async {
-      final profile = await _profileService.getProfile(
+      final profile = await _profileService.getDirectoryProfile(
         FirebaseConfig.defaultClubId,
         senderId,
       );

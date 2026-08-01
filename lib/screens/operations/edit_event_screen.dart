@@ -130,7 +130,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
       final snapshot = await FirebaseFirestore.instance
           .collection('clubs')
           .doc(widget.clubId)
-          .collection('members')
+          .collection('member_directory')
           .get();
 
       final options = <_EncadrantOption>[];

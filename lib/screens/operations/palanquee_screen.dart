@@ -105,7 +105,7 @@ class _PalanqueeScreenState extends State<PalanqueeScreen> {
       final snapshot = await FirebaseFirestore.instance
           .collection('clubs')
           .doc(widget.clubId)
-          .collection('members')
+          .collection('member_directory')
           .where(FieldPath.documentId, whereIn: chunk)
           .get();
 

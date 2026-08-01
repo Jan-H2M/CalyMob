@@ -96,7 +96,7 @@ class _MonitorPlanningScreenState extends State<MonitorPlanningScreen> {
         final m = await fs
             .collection('clubs')
             .doc(clubId)
-            .collection('members')
+            .collection('member_directory')
             .doc(memberId)
             .get();
         if (!m.exists) continue;

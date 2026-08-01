@@ -192,6 +192,16 @@ service cloud.firestore {
       );
     }
 
+    // Minimal operational status access for people responsible for safely
+    // running activities. The projection never contains address, banking,
+    // contact, notification or device data.
+    function canViewOperationalMemberStatus(clubId) {
+      return isAdmin(clubId)
+        || isOrganisateurForClub(clubId)
+        || isEncadrantForClub(clubId)
+        || hasAccueilRole(clubId);
+    }
+
     // LIFRAS Moniteur — plongeur_code in MC / MF / MN. AM (Assistant Moniteur)
     // is bewust uitgesloten: per LIFRAS valideert AM enkel onder supervisie
     // van een MC+, en die supervisor-flow is nog niet gemodelleerd in de app.
@@ -886,12 +896,31 @@ service cloud.firestore {
         allow write: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
-      // Members - club membership required to read member list
-      // During login: user reads own doc (isMember checks exists() which is true if doc exists)
-      // Mobile app: member reads all members for member list
-      // Web app: admin reads all members for user management
+      // Privacy-safe club directory. Written only by syncMemberProjections
+      // (Admin SDK) and readable by authenticated club members.
+      match /member_directory/{memberId} {
+        allow read: if isMember(clubId);
+        allow write: if false;
+      }
+
+      // Medical/administrative readiness is separated from the public
+      // directory. A member sees their own status; activity staff only the
+      // operational fields required to run an activity safely.
+      match /member_operational_status/{memberId} {
+        allow read: if isAuthenticated() && (
+          request.auth.uid == memberId ||
+          canViewOperationalMemberStatus(clubId)
+        );
+        allow write: if false;
+      }
+
+      // Private member source of truth. Club-wide lists must use
+      // member_directory; ordinary members can only read their own document.
       match /members/{memberId} {
-        allow read: if isMember(clubId) || (isAuthenticated() && request.auth.uid == memberId);
+        allow read: if isAuthenticated() && (
+          request.auth.uid == memberId ||
+          isAdmin(clubId)
+        );
 
         // Allow users to update their own profile fields (needed during login/app usage, before session exists)
         // Includes: login timestamp, FCM tokens for push notifications, app installation tracking,
@@ -903,6 +932,7 @@ service cloud.firestore {
             'lastLogin', 'updatedAt',
             // Profile editing (CalyMob)
             'photo_url', 'photo_uploaded_at', 'updated_at',
+            'avatar_nudge_snoozed_until',
             'consent_internal_photo', 'consent_internal_photo_date',
             'consent_external_photo', 'consent_external_photo_date',
             'share_email', 'share_phone', 'phone_number',

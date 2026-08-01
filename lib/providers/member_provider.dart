@@ -29,6 +29,16 @@ class MemberProvider with ChangeNotifier {
   String? get email => _memberData?['email'] as String?;
   String? get phoneNumber => _memberData?['phone_number'] as String?;
   String? get photoUrl => _memberData?['photo_url'] as String?;
+  bool get consentInternalPhoto =>
+      _memberData?['consent_internal_photo'] == true;
+
+  DateTime? get avatarNudgeSnoozedUntil {
+    final value = _memberData?['avatar_nudge_snoozed_until'];
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+    return null;
+  }
 
   /// LIFRAS plongeur code ("1*", "2*", "3*", "4*", "AM", "MC", ...)
   /// Determineert het brevet-niveau van de member.

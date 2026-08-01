@@ -124,7 +124,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
       final snapshot = await FirebaseFirestore.instance
           .collection('clubs')
           .doc(_clubId)
-          .collection('members')
+          .collection('member_directory')
           .get();
 
       final options = <_EncadrantOption>[];
