@@ -138,14 +138,7 @@ const processFormationTaskReminders = onSchedule(
           await admin.messaging().sendEachForMulticast({
             tokens,
             notification: { title: pushTitle, body: pushBody },
-            data: {
-              type: 'formation_reminder',
-              task_count: String(dueTasks.length),
-              deeplink:
-                dueTasks.length === 1
-                  ? `formation_task:${dueTasks[0].id}`
-                  : 'communication:inbox',
-            },
+            data: buildReminderPayload(clubId, dueTasks),
             android: { priority: 'high' },
             apns: { payload: { aps: { sound: 'default' } } },
           });
@@ -247,6 +240,20 @@ function collectFcmTokens(member) {
   return Array.from(new Set(tokens));
 }
 
+function buildReminderPayload(clubId, dueTasks) {
+  const singleTaskId = dueTasks.length === 1 ? dueTasks[0].id : null;
+  return {
+    type: 'formation_reminder',
+    club_id: String(clubId),
+    task_count: String(dueTasks.length),
+    deeplink: singleTaskId
+      ? `formation_task:${singleTaskId}`
+      : 'communication:inbox',
+    ...(singleTaskId ? { formation_task_id: String(singleTaskId) } : {}),
+    click_action: 'FLUTTER_NOTIFICATION_CLICK',
+  };
+}
+
 async function bumpTasksAfterPush(db, tasks) {
   for (const task of tasks) {
     await task.ref.update({
@@ -291,4 +298,5 @@ async function sendEscalationDigest(db, clubId, ancientTasks) {
 module.exports = {
   processFormationTaskReminders,
   isDueForReminder,
+  buildReminderPayload,
 };

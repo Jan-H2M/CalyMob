@@ -12,7 +12,10 @@ jest.mock('firebase-admin/firestore', () => ({
   Timestamp: {},
 }));
 
-const { isDueForReminder } = require('./processFormationTaskReminders');
+const {
+  isDueForReminder,
+  buildReminderPayload,
+} = require('./processFormationTaskReminders');
 
 const DAY = 24 * 60 * 60 * 1000;
 const now = Date.now();
@@ -58,5 +61,31 @@ describe('WP-17 — monitor_validation reminder plan [3,8,12] / escalate 14', ()
 describe('WP-17 — types sans plan gardent la cadence générique', () => {
   test('pool_checkin jamais rappelé → dû', () => {
     expect(isDueForReminder(task({ type: 'pool_checkin', reminderCount: 0 }), now)).toBe(true);
+  });
+});
+
+describe('notification deep-link payload', () => {
+  test('one task carries an explicit stable route and task id', () => {
+    expect(buildReminderPayload('calypso', [{ id: 'task-1' }])).toEqual({
+      type: 'formation_reminder',
+      club_id: 'calypso',
+      task_count: '1',
+      deeplink: 'formation_task:task-1',
+      formation_task_id: 'task-1',
+      click_action: 'FLUTTER_NOTIFICATION_CLICK',
+    });
+  });
+
+  test('a digest routes to the inbox and never claims one arbitrary task', () => {
+    expect(buildReminderPayload('calypso', [
+      { id: 'task-1' },
+      { id: 'task-2' },
+    ])).toEqual({
+      type: 'formation_reminder',
+      club_id: 'calypso',
+      task_count: '2',
+      deeplink: 'communication:inbox',
+      click_action: 'FLUTTER_NOTIFICATION_CLICK',
+    });
   });
 });

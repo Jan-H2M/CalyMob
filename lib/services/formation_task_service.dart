@@ -44,6 +44,23 @@ class FormationTaskService {
     return snap.docs.map((doc) => FormationTask.fromFirestore(doc)).toList();
   }
 
+  /// Fetch one notification target and verify it still belongs to the user.
+  ///
+  /// The explicit assignee check is defence in depth in addition to Firestore
+  /// rules. A stale notification must never open another member's task after
+  /// reassignment.
+  Future<FormationTask?> fetchAssignedTask(
+    String clubId,
+    String taskId,
+    String userId,
+  ) async {
+    final snap = await _collection(clubId).doc(taskId).get();
+    if (!snap.exists) return null;
+    final task = FormationTask.fromFirestore(snap);
+    if (task.currentAssigneeId != userId) return null;
+    return task;
+  }
+
   // -----------------------------------------------------------------------
   // Narrow updates (must match the whitelist in firestore.rules §10.1)
   // -----------------------------------------------------------------------

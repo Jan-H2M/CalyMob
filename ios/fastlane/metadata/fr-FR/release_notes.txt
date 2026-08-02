@@ -5,3 +5,4 @@ Version 1.16.0 – Carnet et confidentialité
 - Binômes externes réutilisables dans les plongées suivantes
 - Statuts administratifs plus clairs et données membres mieux protégées
 - Rappels de photo de profil améliorés
+- Les notifications d’exercice ouvrent directement l’action concernée
