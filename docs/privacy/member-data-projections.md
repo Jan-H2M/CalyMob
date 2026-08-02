@@ -20,10 +20,15 @@ Deploying restrictive rules before projections exist would empty member lists.
 Use this order when Jan explicitly authorises a production rollout:
 
 1. Deploy `syncMemberProjections` from `CalyMob/functions`.
-2. From `CalyCompta`, first run the migration without `--apply`; then run
-   `node scripts/backfill-member-projections.mjs --apply --club=calypso`.
-3. Verify projection counts and spot-check that non-consented contact/photo
-   fields are null. Do not copy source member data into logs.
+2. From `CalyCompta`, run the dry-run, then a five-member canary and verify it:
+   `node scripts/backfill-member-projections.mjs --club=calypso`,
+   `node scripts/backfill-member-projections.mjs --apply --limit=5 --club=calypso`,
+   `node scripts/backfill-member-projections.mjs --verify --limit=5 --club=calypso`.
+3. Run the full idempotent backfill and verify all projection pairs:
+   `node scripts/backfill-member-projections.mjs --apply --club=calypso`, then
+   `node scripts/backfill-member-projections.mjs --verify --club=calypso`.
+   Verification reports aggregate counts only and checks that non-consented
+   contact/photo values and private source fields did not enter the directory.
 4. Release the CalyMob version that reads `member_directory`.
 5. Deploy the source-of-truth `CalyCompta/firestore.rules`.
 

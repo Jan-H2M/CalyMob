@@ -174,28 +174,35 @@ class MemberService {
   /// Get a single member by ID (for QR scan result)
   Future<MemberProfile?> getMemberById(String clubId, String memberId) async {
     try {
-      final results = await Future.wait([
-        _firestore
-            .collection('clubs/$clubId/member_directory')
-            .doc(memberId)
-            .get(),
-        _firestore
-            .collection('clubs/$clubId/member_operational_status')
-            .doc(memberId)
-            .get(),
-      ]);
-      final doc = results[0];
-      final statusDoc = results[1];
+      final doc = await _firestore
+          .collection('clubs/$clubId/member_directory')
+          .doc(memberId)
+          .get();
 
       if (!doc.exists) {
-        debugPrint('❌ Membre $memberId non trouvé');
+        debugPrint('❌ Membre non trouvé dans l’annuaire');
         return null;
+      }
+
+      // Least privilege: ordinary members can resolve the public directory
+      // profile even when Firestore correctly denies the separate operational
+      // status document. Authorised activity staff still receive that status.
+      Map<String, dynamic>? operationalStatus;
+      try {
+        final statusDoc = await _firestore
+            .collection('clubs/$clubId/member_operational_status')
+            .doc(memberId)
+            .get();
+        operationalStatus = statusDoc.data();
+      } on FirebaseException catch (e) {
+        if (e.code != 'permission-denied') rethrow;
+        debugPrint('ℹ️ Statut opérationnel non accessible pour ce rôle');
       }
 
       return MemberProfile.fromDirectoryData(
         doc.id,
         doc.data() ?? const {},
-        operationalStatus: statusDoc.data(),
+        operationalStatus: operationalStatus,
       );
     } catch (e) {
       debugPrint('❌ Erreur récupération membre: $e');
