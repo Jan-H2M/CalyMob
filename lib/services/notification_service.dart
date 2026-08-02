@@ -27,6 +27,8 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
 
+  String? _initialLocalNotificationPayload;
+
   /// Subscription pour FCM token refresh events
   StreamSubscription<String>? _tokenRefreshSubscription;
 
@@ -58,13 +60,22 @@ class NotificationService {
       await _localNotifications.initialize(
         initSettings,
         onDidReceiveNotificationResponse: (NotificationResponse response) {
-          debugPrint(
-              '🔔 Local notification tapped, payload: ${response.payload}');
+          debugPrint('🔔 Local notification tapped');
           if (onLocalNotificationTap != null && response.payload != null) {
             onLocalNotificationTap!(response.payload);
           }
         },
       );
+
+      // A foreground notification can remain in the OS tray and launch the
+      // app after it was terminated. FirebaseMessaging.getInitialMessage()
+      // does not report those locally displayed notifications.
+      final launchDetails =
+          await _localNotifications.getNotificationAppLaunchDetails();
+      if (launchDetails?.didNotificationLaunchApp == true) {
+        _initialLocalNotificationPayload =
+            launchDetails?.notificationResponse?.payload;
+      }
 
       // Demander la permission (iOS uniquement, Android 13+ demande aussi)
       final settings = await _messaging.requestPermission(
@@ -83,7 +94,7 @@ class NotificationService {
         // Obtenir le token FCM
         final token = await _messaging.getToken();
         if (token != null) {
-          debugPrint('✅ FCM Token: $token');
+          debugPrint('✅ FCM token disponible');
           return;
         }
       }
@@ -93,6 +104,13 @@ class NotificationService {
       debugPrint('❌ Erreur initialisation notifications: $e');
       CrashlyticsService.notificationError(e, stack, 'initialize failed');
     }
+  }
+
+  /// Returns a local-notification launch payload exactly once.
+  String? takeInitialLocalNotificationPayload() {
+    final payload = _initialLocalNotificationPayload;
+    _initialLocalNotificationPayload = null;
+    return payload;
   }
 
   /// Configurer les handlers pour les messages foreground
@@ -142,9 +160,8 @@ class NotificationService {
 
   /// Afficher une notification quand l'app est au premier plan
   Future<void> _handleForegroundMessage(RemoteMessage message) async {
-    debugPrint('📬 Message reçu en foreground: ${message.messageId}');
-    debugPrint('   Titre: ${message.notification?.title}');
-    debugPrint('   Corps: ${message.notification?.body}');
+    debugPrint(
+        '📬 Message reçu en foreground (type=${message.data['type'] ?? 'unknown'})');
 
     final notification = message.notification;
     if (notification == null) return;
@@ -171,7 +188,10 @@ class NotificationService {
     } else if (type == 'session_reminder') {
       channelId = 'piscine_reminders';
       channelName = 'Rappels piscine';
-    } else if (type == 'exercice_declared' || type == 'exercice_digest') {
+    } else if (type == 'exercice_declared' ||
+        type == 'exercice_digest' ||
+        type == 'formation_reminder' ||
+        type == 'claim_rejected') {
       channelId = 'exercise_declarations';
       channelName = 'Déclarations d\'exercices';
     } else if (type == 'new_operation') {
@@ -754,8 +774,6 @@ class NotificationService {
 /// Handler pour les messages en arrière-plan (doit être une fonction top-level)
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  debugPrint('📬 Message en arrière-plan: ${message.messageId}');
-  debugPrint('Titre: ${message.notification?.title}');
-  debugPrint('Corps: ${message.notification?.body}');
-  debugPrint('Data: ${message.data}');
+  debugPrint(
+      '📬 Message en arrière-plan (type=${message.data['type'] ?? 'unknown'})');
 }

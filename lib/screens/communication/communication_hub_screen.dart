@@ -10,6 +10,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../providers/unread_count_provider.dart';
 import '../../services/formation_task_service.dart';
+import '../../services/formation_task_navigation_service.dart';
 import '../../services/team_channel_service.dart';
 import '../../services/unread_count_service.dart';
 import '../../utils/club_role_utils.dart';
@@ -18,20 +19,9 @@ import '../../utils/roster_session_label.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../announcements/announcements_screen.dart';
 import '../teams/team_chat_screen.dart';
-import '../training/pool_checkin_screen.dart';
-import '../training/monitor_validation_screen.dart';
-import '../training/exercise_claim_retry_screen.dart';
-import '../training/exercise_claim_screen.dart';
-import '../training/logbook_entry_screen.dart';
 import '../training/logbook_dive_confirmation_screen.dart';
-import '../training/historical_claims_screen.dart';
 import '../training/historical_qr_scan_screen.dart';
-import '../training/historical_validation_screen.dart';
-import '../training/monitor_observation_screen.dart';
 import '../training/monitor_observation_roster_screen.dart';
-import '../training/manual_exercise_claim_screen.dart';
-import '../training/formation_task_detail_screen.dart';
-import '../training/monitor_planning_screen.dart';
 
 enum _CommunicationFilter {
   all('Tout', Icons.forum_outlined),
@@ -1043,7 +1033,7 @@ class _FormationTaskChatRow extends StatelessWidget {
       searchQuery: searchQuery,
       tag: 'Action',
       tagColor: const Color(0xFF0F6D36),
-      onTap: () => _openFormationTask(context, task),
+      onTap: () => openFormationTask(context, task),
     );
   }
 }
@@ -1445,141 +1435,6 @@ String _formationTaskStatusLabel(FormationTask task) {
   if (task.status == FormationTaskStatus.blocked) return 'Bloquée';
   if (task.status == FormationTaskStatus.snoozed) return 'Reportée';
   return 'À traiter';
-}
-
-void _openFormationTask(BuildContext context, FormationTask task) {
-  switch (task.type) {
-    case FormationTaskType.poolCheckin:
-      Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => PoolCheckinScreen(task: task),
-      ));
-      break;
-    case FormationTaskType.monitorValidation:
-      Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => MonitorValidationScreen(task: task),
-      ));
-      break;
-    case FormationTaskType.logbookCompletion:
-      Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => LogbookEntryScreen.auto(task: task),
-      ));
-      break;
-    case FormationTaskType.historicalValidation:
-      Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) {
-          final batchId = task.context.historicalClaimBatchId;
-          if (batchId == null || batchId.isEmpty) {
-            return const HistoricalClaimsScreen();
-          }
-          if (task.currentAssigneeType == FormationTaskAssigneeType.monitor ||
-              task.currentAssigneeType ==
-                  FormationTaskAssigneeType.schoolResponsible) {
-            return HistoricalValidationScreen(batchId: batchId);
-          }
-          return HistoricalClaimQrScreen(batchId: batchId);
-        },
-      ));
-      break;
-    case FormationTaskType.monitorObservation:
-      Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => MonitorObservationScreen(task: task),
-      ));
-      break;
-    case FormationTaskType.externalProofReview:
-      Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => MonitorValidationScreen(task: task),
-      ));
-      break;
-    case FormationTaskType.exerciseClaim:
-      // WP-04 : les tâches liées à une opération confirment les claims déjà
-      // planifiés. Les anciennes tâches restent entièrement natives grâce au
-      // formulaire de déclaration manuelle.
-      if (task.context.operationId != null &&
-          task.context.operationId!.isNotEmpty) {
-        Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => ExerciseClaimScreen(task: task),
-        ));
-      } else {
-        Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => ManualExerciseClaimScreen(task: task),
-        ));
-      }
-      break;
-    case FormationTaskType.claimRejected:
-      Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => ExerciseClaimRetryScreen(task: task),
-      ));
-      break;
-    case FormationTaskType.buddyConfirmation:
-      // WP-05 : écran natif « Plongées à confirmer » au lieu du navigateur.
-      Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => const LogbookDiveConfirmationsInboxScreen(),
-      ));
-      break;
-    case FormationTaskType.eventPreparation:
-      _openEventPreparationTask(context, task);
-      break;
-    case FormationTaskType.manualReminder:
-      Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => FormationTaskDetailScreen(task: task),
-      ));
-      break;
-    // ignore: unreachable_switch_default
-    default:
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Action « ${task.typeLabel} » — bientôt disponible'),
-        ),
-      );
-  }
-}
-
-Future<void> _openEventPreparationTask(
-  BuildContext context,
-  FormationTask task,
-) async {
-  final operationId = task.context.operationId;
-  if (operationId == null || operationId.isEmpty) {
-    await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => FormationTaskDetailScreen(
-        task: task,
-        missingContextMessage:
-            'Cette préparation ne contient pas encore de sortie associée.',
-      ),
-    ));
-    return;
-  }
-
-  final saved = await Navigator.of(context).push<bool>(MaterialPageRoute(
-    builder: (_) => MonitorPlanningScreen(
-      operationId: operationId,
-      palanqueeId: task.context.palanqueeId,
-    ),
-  ));
-  if (saved != true || !context.mounted) return;
-
-  final userId = context.read<AuthProvider>().currentUser?.uid;
-  if (userId == null) return;
-  try {
-    await FormationTaskService().markDone(
-      FirebaseConfig.defaultClubId,
-      task.id,
-      userId,
-      completionData: {
-        'operation_id': operationId,
-        if (task.context.palanqueeId != null)
-          'palanquee_id': task.context.palanqueeId,
-      },
-    );
-  } catch (error) {
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-            'Le planning est sauvé, mais l\'action reste ouverte : $error'),
-      ),
-    );
-  }
 }
 
 List<Color> _formationTaskGradient(FormationTask task) {
