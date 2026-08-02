@@ -234,7 +234,7 @@ class FichePalanqueePdf {
       final snapshot = await FirebaseFirestore.instance
           .collection('clubs')
           .doc(clubId)
-          .collection('members')
+          .collection('member_directory')
           .where(FieldPath.documentId, whereIn: chunk)
           .get();
 

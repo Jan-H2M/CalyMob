@@ -18,15 +18,34 @@ class ProfileService {
           .get();
 
       if (!doc.exists) {
-        debugPrint('❌ Profil membre $userId non trouvé');
+        debugPrint('❌ Profil membre non trouvé');
         return null;
       }
 
       final profile = MemberProfile.fromFirestore(doc);
-      debugPrint('✅ Profil chargé: ${profile.fullName}');
+      debugPrint('✅ Profil membre chargé');
       return profile;
     } catch (e) {
       debugPrint('❌ Erreur récupération profil: $e');
+      return null;
+    }
+  }
+
+  /// Récupérer uniquement les champs consentis du répertoire du club.
+  /// Utiliser ceci pour afficher un autre membre (chat, organisateur, etc.).
+  Future<MemberProfile?> getDirectoryProfile(
+    String clubId,
+    String userId,
+  ) async {
+    try {
+      final doc = await _firestore
+          .collection('clubs/$clubId/member_directory')
+          .doc(userId)
+          .get();
+      if (!doc.exists) return null;
+      return MemberProfile.fromDirectory(doc);
+    } catch (e) {
+      debugPrint('❌ Erreur de lecture du répertoire membre: $e');
       return null;
     }
   }
@@ -50,7 +69,7 @@ class ProfileService {
     File photoFile,
   ) async {
     try {
-      debugPrint('📤 Upload photo profil pour $userId...');
+      debugPrint('📤 Upload de la photo de profil...');
 
       // Chemin dans Storage: clubs/{clubId}/members/{userId}/profile.jpg
       final ref =
@@ -71,7 +90,7 @@ class ProfileService {
       // Récupérer l'URL de téléchargement
       final downloadUrl = await uploadTask.ref.getDownloadURL();
 
-      debugPrint('✅ Photo uploadée: $downloadUrl');
+      debugPrint('✅ Photo de profil uploadée');
       return downloadUrl;
     } catch (e) {
       debugPrint('❌ Erreur upload photo: $e');
@@ -337,14 +356,17 @@ class ProfileService {
     }
   }
 
-  /// Récupérer tous les profils (pour "Who's Who")
+  /// Récupérer les profils limités de l'annuaire (pour "Who's Who").
+  /// Never use private `members` documents for a club-wide list.
   Future<List<MemberProfile>> getAllProfiles(String clubId) async {
     try {
-      final snapshot =
-          await _firestore.collection('clubs/$clubId/members').get();
+      final snapshot = await _firestore
+          .collection('clubs/$clubId/member_directory')
+          .get();
 
-      final profiles =
-          snapshot.docs.map((doc) => MemberProfile.fromFirestore(doc)).toList();
+      final profiles = snapshot.docs
+          .map((doc) => MemberProfile.fromDirectory(doc))
+          .toList();
 
       profiles.sort((a, b) {
         final lastNameCompare =

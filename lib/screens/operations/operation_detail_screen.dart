@@ -259,7 +259,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     final orgId = operation?.organisateurId;
     if (orgId == null || orgId.isEmpty) return;
 
-    final profile = await _profileService.getProfile(widget.clubId, orgId);
+    final profile =
+        await _profileService.getDirectoryProfile(widget.clubId, orgId);
     if (mounted) {
       setState(() {
         _organisateurProfile = profile;

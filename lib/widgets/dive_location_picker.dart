@@ -28,12 +28,14 @@ class DiveLocationSelection {
   final String name;
   final String? country;
   final bool isSea;
+  final String? zone;
 
   const DiveLocationSelection({
     this.id,
     required this.name,
     this.country,
     this.isSea = false,
+    this.zone,
   });
 }
 
@@ -181,6 +183,7 @@ class _DiveLocationPickerSheetState extends State<_DiveLocationPickerSheet> {
                 name: existing.name,
                 country: existing.country ?? row.country,
                 isSea: existing.isSea || row.isSea,
+                zone: existing.zone ?? row.zone,
               );
       }
 
@@ -192,6 +195,7 @@ class _DiveLocationPickerSheetState extends State<_DiveLocationPickerSheet> {
           name: (data['name'] as String?)?.trim() ?? '—',
           country: (data['country'] as String?)?.trim(),
           isSea: waterType == 'sea' || waterType == 'mer',
+          zone: ((data['zone'] ?? data['region']) as String?)?.trim(),
         ));
       }
       for (final d in carnetSnap?.docs ?? const []) {
@@ -357,6 +361,7 @@ class _DiveLocationPickerSheetState extends State<_DiveLocationPickerSheet> {
               name: r.name,
               country: r.country,
               isSea: r.isSea,
+              zone: r.zone,
             ),
           );
         },
@@ -423,12 +428,14 @@ class _LocationRow {
   final String name;
   final String? country;
   final bool isSea;
+  final String? zone;
 
   const _LocationRow({
     this.id,
     required this.name,
     this.country,
     this.isSea = false,
+    this.zone,
   });
 }
 

@@ -254,6 +254,13 @@ exports.onPiscineAttendeeCreated = onPiscineAttendeeCreated;
 const { onOperationFinished } = require('./src/training/onOperationFinished');
 exports.onOperationFinished = onOperationFinished;
 
+// Privacy-safe projections consumed by member-facing directory and
+// authorised operational status screens.
+const {
+  syncMemberProjections,
+} = require('./src/privacy/syncMemberProjections');
+exports.syncMemberProjections = syncMemberProjections;
+
 const { processFormationTaskReminders } = require('./src/training/processFormationTaskReminders');
 exports.processFormationTaskReminders = processFormationTaskReminders;
 

@@ -12,7 +12,7 @@ class MemberService {
   Future<NiveauLIFRAS?> getMemberNiveau(String clubId, String memberId) async {
     try {
       final doc = await _firestore
-          .collection('clubs/$clubId/members')
+          .collection('clubs/$clubId/member_directory')
           .doc(memberId)
           .get();
 
@@ -77,7 +77,7 @@ class MemberService {
       String clubId, String memberId) async {
     try {
       final doc = await _firestore
-          .collection('clubs/$clubId/members')
+          .collection('clubs/$clubId/member_directory')
           .doc(memberId)
           .get();
 
@@ -97,7 +97,7 @@ class MemberService {
   Future<List<Map<String, dynamic>>> getMonitors(String clubId) async {
     try {
       final snapshot = await _firestore
-          .collection('clubs/$clubId/members')
+          .collection('clubs/$clubId/member_directory')
           .where('plongeur_code', whereIn: ['MC', 'MF', 'MN', 'AM']).get();
 
       final monitors = snapshot.docs.map((doc) {
@@ -127,7 +127,7 @@ class MemberService {
   Future<List<Map<String, dynamic>>> getAllMembers(String clubId) async {
     try {
       final snapshot =
-          await _firestore.collection('clubs/$clubId/members').get();
+          await _firestore.collection('clubs/$clubId/member_directory').get();
 
       final members = snapshot.docs.map((doc) {
         final data = doc.data();
@@ -175,16 +175,35 @@ class MemberService {
   Future<MemberProfile?> getMemberById(String clubId, String memberId) async {
     try {
       final doc = await _firestore
-          .collection('clubs/$clubId/members')
+          .collection('clubs/$clubId/member_directory')
           .doc(memberId)
           .get();
 
       if (!doc.exists) {
-        debugPrint('❌ Membre $memberId non trouvé');
+        debugPrint('❌ Membre non trouvé dans l’annuaire');
         return null;
       }
 
-      return MemberProfile.fromFirestore(doc);
+      // Least privilege: ordinary members can resolve the public directory
+      // profile even when Firestore correctly denies the separate operational
+      // status document. Authorised activity staff still receive that status.
+      Map<String, dynamic>? operationalStatus;
+      try {
+        final statusDoc = await _firestore
+            .collection('clubs/$clubId/member_operational_status')
+            .doc(memberId)
+            .get();
+        operationalStatus = statusDoc.data();
+      } on FirebaseException catch (e) {
+        if (e.code != 'permission-denied') rethrow;
+        debugPrint('ℹ️ Statut opérationnel non accessible pour ce rôle');
+      }
+
+      return MemberProfile.fromDirectoryData(
+        doc.id,
+        doc.data() ?? const {},
+        operationalStatus: operationalStatus,
+      );
     } catch (e) {
       debugPrint('❌ Erreur récupération membre: $e');
       return null;
@@ -203,10 +222,10 @@ class MemberService {
       // Get all members and filter client-side
       // (Firestore doesn't support full-text search natively)
       final snapshot =
-          await _firestore.collection('clubs/$clubId/members').get();
+          await _firestore.collection('clubs/$clubId/member_directory').get();
 
       final members = snapshot.docs
-          .map((doc) => MemberProfile.fromFirestore(doc))
+          .map((doc) => MemberProfile.fromDirectory(doc))
           .where((member) {
         // Exclure les membres inactifs/supprimés
         if (!member.isActive) return false;

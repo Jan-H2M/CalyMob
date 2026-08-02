@@ -148,6 +148,10 @@ class FormationTaskContext {
   final String? historicalClaimBatchId;
   final String? palanqueeId;
   final String? locationId;
+  final String? locationName;
+  final String? locationCountry;
+  final bool locationIsSea;
+  final String? locationZone;
 
   /// WP-02 — reason given by the monitor when a claim is rejected. Set on
   /// `claim_rejected` tasks so the student sees it directly on the card.
@@ -176,6 +180,10 @@ class FormationTaskContext {
     this.historicalClaimBatchId,
     this.palanqueeId,
     this.locationId,
+    this.locationName,
+    this.locationCountry,
+    this.locationIsSea = false,
+    this.locationZone,
     this.rejectedReason,
     this.role,
     this.encadrantGroups = const [],
@@ -202,6 +210,10 @@ class FormationTaskContext {
       historicalClaimBatchId: map['historical_claim_batch_id'],
       palanqueeId: map['palanquee_id'],
       locationId: map['location_id'],
+      locationName: map['location_name'],
+      locationCountry: map['location_country'],
+      locationIsSea: map['location_is_sea'] == true,
+      locationZone: map['location_zone'],
       rejectedReason: map['rejected_reason'],
       role: map['role'],
       encadrantGroups: (map['encadrant_groups'] as List?)

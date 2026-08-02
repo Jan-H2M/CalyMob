@@ -211,7 +211,7 @@ class _ReactionNameCache {
         final doc = await FirebaseFirestore.instance
             .collection('clubs')
             .doc(clubId)
-            .collection('members')
+            .collection('member_directory')
             .doc(userId)
             .get();
 

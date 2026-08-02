@@ -38,6 +38,7 @@ import '../../widgets/binome_typeahead_field.dart';
 import '../../services/exercise_claim_service.dart';
 import '../../widgets/combi_picker_field.dart';
 import '../../widgets/dive_location_picker.dart';
+import '../../utils/dive_number_policy.dart';
 import '../../widgets/logbook_dive_form.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/tank_picker_field.dart';
@@ -133,6 +134,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
   // WP-28 phase 2 — température de l'eau (champ PARTAGÉ avec les binômes).
   final TextEditingController _waterTemp = TextEditingController();
   final TextEditingController _diveNumber = TextEditingController();
+  bool _diveNumberIsAutomaticSuggestion = false;
   final TextEditingController _dictation = TextEditingController();
   final stt.SpeechToText _speech = stt.SpeechToText();
   List<BinomeSelection> _binomes = const [];
@@ -490,7 +492,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
       final userId = context.read<AuthProvider>().currentUser?.uid;
       final db = FirebaseFirestore.instance;
       final snaps = await Future.wait([
-        db.collection('clubs').doc(clubId).collection('members').get(),
+        db.collection('clubs').doc(clubId).collection('member_directory').get(),
         db
             .collection('clubs')
             .doc(clubId)
@@ -601,20 +603,33 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
       if (!mounted || _diveNumber.text.trim().isNotEmpty) return;
       setState(() {
         _diveNumber.text = (highest + 1).toString();
-        _manualFieldOverrides.add('dive_number');
+        _diveNumberIsAutomaticSuggestion = true;
       });
     } catch (e) {
       debugPrint('[LogbookEntry] next dive number load failed: $e');
     }
   }
 
-  Future<int?> _resolveDiveNumberForSave({
+  Future<DiveNumberResolution> _resolveDiveNumberForSave({
     required String clubId,
     required String userId,
   }) async {
     final typed = int.tryParse(_diveNumber.text.trim());
     if (widget.mode == LogbookEntryMode.edit) {
-      return typed != null && typed > 0 ? typed : null;
+      return resolveDiveNumber(
+        typed: typed,
+        isEditing: true,
+        isAutomaticSuggestion: false,
+        usedNumbers: const {},
+      );
+    }
+    if (typed == null || typed <= 0 || _diveNumberIsAutomaticSuggestion) {
+      return resolveDiveNumber(
+        typed: typed,
+        isEditing: false,
+        isAutomaticSuggestion: _diveNumberIsAutomaticSuggestion,
+        usedNumbers: const {},
+      );
     }
 
     try {
@@ -624,18 +639,20 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           .collection('student_logbook_entries')
           .where('member_id', isEqualTo: userId)
           .get();
-      var highest = 0;
+      final used = <int>{};
       for (final doc in snap.docs) {
         final n = doc.data()['dive_number'];
-        if (n is num && n > highest) highest = n.toInt();
+        if (n is num && n > 0) used.add(n.toInt());
       }
-      final next = highest + 1;
-      if (typed != null && typed > highest) return typed;
-      _diveNumber.text = next.toString();
-      return next;
+      return resolveDiveNumber(
+        typed: typed,
+        isEditing: false,
+        isAutomaticSuggestion: false,
+        usedNumbers: used,
+      );
     } catch (e) {
       debugPrint('[LogbookEntry] save dive number guard failed: $e');
-      return typed != null && typed > 0 ? typed : null;
+      return DiveNumberResolution(value: typed);
     }
   }
 
@@ -790,12 +807,17 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
   Future<void> _prefillFromTask() async {
     final ctx = widget.task!.context;
     final userId = context.read<AuthProvider>().currentUser?.uid;
-    if (ctx.operationTitle != null) {
+    if (ctx.locationName != null && ctx.locationName!.trim().isNotEmpty) {
       setState(() {
         _locationSelection = DiveLocationSelection(
           id: ctx.locationId,
-          name: ctx.operationTitle!,
+          name: ctx.locationName!,
+          country: ctx.locationCountry,
+          isSea: ctx.locationIsSea,
+          zone: ctx.locationZone,
         );
+        if (ctx.locationIsSea) _counters = _counters.copyWith(mer: true);
+        if (ctx.locationZone != null) _zone = _normalizeZone(ctx.locationZone!);
       });
     }
 
@@ -814,15 +836,20 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           if (dateField is Timestamp) {
             setState(() => _date = dateField.toDate());
           }
-          final title =
-              (data['titre'] as String?) ?? (data['title'] as String?);
-          if (title != null) {
+          final operationLocation = ((data['lieu'] ??
+                      data['location_name'] ??
+                      data['lieu_nom']) as String? ??
+                  '')
+              .trim();
+          if (operationLocation.isNotEmpty &&
+              (_locationSelection?.name.trim().isEmpty ?? true)) {
             setState(() {
               _locationSelection = DiveLocationSelection(
                 id: _locationSelection?.id ?? ctx.locationId,
-                name: title,
+                name: operationLocation,
                 country: _locationSelection?.country,
                 isSea: _locationSelection?.isSea ?? false,
+                zone: _locationSelection?.zone,
               );
             });
           }
@@ -845,11 +872,20 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           setState(() {
             _locationSelection = DiveLocationSelection(
               id: ctx.locationId,
-              name: _locationSelection?.name ?? (data['name'] as String? ?? ''),
+              name: ((data['name'] ?? data['nom']) as String? ??
+                      _locationSelection?.name ??
+                      '')
+                  .trim(),
               country: (data['country'] as String?),
               isSea: isSea,
+              zone: ((data['zone'] ?? data['region']) as String?),
             );
             if (isSea) _counters = _counters.copyWith(mer: true);
+            final locationZone =
+                ((data['zone'] ?? data['region']) as String?)?.trim();
+            if (locationZone != null && locationZone.isNotEmpty) {
+              _zone = _normalizeZone(locationZone);
+            }
           });
         }
       } catch (_) {/* graceful */}
@@ -952,7 +988,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           final doc = await db
               .collection('clubs')
               .doc(clubId)
-              .collection('members')
+              .collection('member_directory')
               .doc(entry.key)
               .get();
           final data = doc.data() ?? const {};
@@ -1262,8 +1298,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         child: DiveLocationPickerField(
           value: _locationSelection,
           // WP-19 finition — lieu verrouillé par la source en édition.
-          readOnly: widget.mode == LogbookEntryMode.auto ||
-              _isFieldLocked('location_name') ||
+          readOnly: _isFieldLocked('location_name') ||
               _isFieldLocked('location_id'),
           onSelected: (selection) => setState(() {
             _locationSelection = selection;
@@ -1273,6 +1308,9 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
             // WP-07 — pré-remplissage Zélande depuis le lieu.
             if (_zone == null && _looksLikeZelande(selection.name)) {
               _zone = 'zelande';
+            }
+            if (_zone == null && selection.zone != null) {
+              _zone = _normalizeZone(selection.zone!);
             }
           }),
         ),
@@ -1353,6 +1391,38 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           binomes: _binomes,
           currentUserId: userId,
           onChanged: (next) => setState(() => _binomes = next),
+        ),
+      ),
+      const SizedBox(height: 8),
+      Semantics(
+        label: 'Données partagées avec les binômes Calypso',
+        child: Container(
+          padding: const EdgeInsets.all(11),
+          decoration: BoxDecoration(
+            color: AppColors.lichtblauw.withValues(alpha: 0.18),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: AppColors.middenblauw.withValues(alpha: 0.22),
+            ),
+          ),
+          child: const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.privacy_tip_outlined,
+                  size: 18, color: AppColors.middenblauw),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Un membre Calypso ajouté reçoit une demande de confirmation. '
+                  'Sont partagés : date, lieu, horaires, profondeur, durée, '
+                  'conditions, zone, température, remarques et binômes. '
+                  'Le numéro de plongée, le matériel, le lestage, le mélange O₂ '
+                  'et les compteurs personnels restent privés.',
+                  style: TextStyle(fontSize: 11.5, height: 1.35),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
       const SizedBox(height: 12),
@@ -2769,6 +2839,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
     setState(() {
       if (_canApplyDictationField('dive_number') && draft.diveNumber != null) {
         _diveNumber.text = draft.diveNumber.toString();
+        _diveNumberIsAutomaticSuggestion = false;
       }
       if (_canApplyDictationField('date') && draft.date != null) {
         _date = draft.date!;
@@ -2886,7 +2957,10 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
       case 'dive_number':
         final n = _numberFromSpeech(raw);
         if (n == null || n <= 0) return false;
-        setState(() => _diveNumber.text = n.round().toString());
+        setState(() {
+          _diveNumber.text = n.round().toString();
+          _diveNumberIsAutomaticSuggestion = false;
+        });
         return true;
       case 'date':
         final date = _parseDictatedDate(normalized);
@@ -3174,6 +3248,10 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
                 const SizedBox(height: 2),
                 TextField(
                   controller: _diveNumber,
+                  onChanged: (_) {
+                    _diveNumberIsAutomaticSuggestion = false;
+                    _manualFieldOverrides.add('dive_number');
+                  },
                   keyboardType: TextInputType.number,
                   // WP-19 finition — n° verrouillé par la source.
                   enabled: !_isFieldLocked('dive_number'),
@@ -3426,7 +3504,17 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
     'zeeland',
     'zélande',
     'zelande',
+    'strijenham',
+    'scharendijke',
+    'dreischor',
+    'den osse',
+    'zeelandbrug',
   ];
+
+  String? _normalizeZone(String value) {
+    final normalized = value.toLowerCase().trim();
+    return _looksLikeZelande(normalized) ? 'zelande' : null;
+  }
 
   bool _looksLikeZelande(String? locationName) {
     if (locationName == null || locationName.isEmpty) return false;
@@ -4647,10 +4735,23 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
       final o2Pct = double.tryParse(_o2Pct.text.replaceAll(',', '.'));
       // WP-28 phase 2 — champ partagé ; 0 °C / négatif (glace) valides.
       final waterTemp = double.tryParse(_waterTemp.text.replaceAll(',', '.'));
-      final explicitDiveNumber = await _resolveDiveNumberForSave(
+      final diveNumberResolution = await _resolveDiveNumberForSave(
         clubId: clubId,
         userId: userId,
       );
+      if (diveNumberResolution.conflict) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Ce numéro de plongée est déjà utilisé. Choisis un autre numéro.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+      final explicitDiveNumber = diveNumberResolution.value;
       final extras = <String, dynamic>{
         ...?widget.createExtras,
         'binomes': _binomes.map((b) => b.toMap()).toList(),
@@ -5040,7 +5141,7 @@ class _PoolMemberNameList extends StatelessWidget {
         final s = await db
             .collection('clubs')
             .doc(FirebaseConfig.defaultClubId)
-            .collection('members')
+            .collection('member_directory')
             .doc(id)
             .get();
         if (!s.exists) {

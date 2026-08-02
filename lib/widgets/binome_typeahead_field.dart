@@ -13,8 +13,8 @@
 ///     [BinomeSelection] objects with snapshot fields, ready to be
 ///     written into the v2.2 `binomes[]` array.
 ///
-/// The widget does NOT touch Firestore on its own; it loads the
-/// members list once via [_loadMembers] and filters client-side.
+/// The widget loads the privacy-safe directory plus external buddies from the
+/// signed-in diver's own recent logbook entries.
 /// For a 100-member club this is well under 100 KB on the wire.
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -129,23 +129,42 @@ class _BinomeTypeaheadFieldState extends State<BinomeTypeaheadField> {
   final TextEditingController _input = TextEditingController();
   final FocusNode _focus = FocusNode();
   List<_MemberRow> _members = const [];
+  List<BinomeSelection> _recentExternalBinomes = const [];
   bool _loading = true;
   String _query = '';
 
   @override
   void initState() {
     super.initState();
-    _loadMembers();
+    _focus.addListener(_onFocusChanged);
+    _loadSuggestions();
   }
 
-  Future<void> _loadMembers() async {
+  void _onFocusChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _loadSuggestions() async {
     try {
       const clubId = FirebaseConfig.defaultClubId;
-      final snap = await (widget.firestore ?? FirebaseFirestore.instance)
+      final db = widget.firestore ?? FirebaseFirestore.instance;
+      final memberFuture = db
           .collection('clubs')
           .doc(clubId)
-          .collection('members')
+          .collection('member_directory')
           .get();
+      final historyFuture = widget.currentUserId == null
+          ? null
+          : db
+              .collection('clubs')
+              .doc(clubId)
+              .collection('student_logbook_entries')
+              .where('member_id', isEqualTo: widget.currentUserId)
+              .orderBy('date', descending: true)
+              .limit(200)
+              .get();
+      final snap = await memberFuture;
+      final historySnap = await historyFuture;
       final rows = snap.docs
           .map((d) {
             final data = d.data();
@@ -164,9 +183,13 @@ class _BinomeTypeaheadFieldState extends State<BinomeTypeaheadField> {
           .toList()
         ..sort((a, b) =>
             a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
+      final recentExternals = _externalBinomesFromEntries(
+        historySnap?.docs.map((doc) => doc.data()) ?? const [],
+      );
       if (!mounted) return;
       setState(() {
         _members = rows;
+        _recentExternalBinomes = recentExternals;
         _loading = false;
       });
     } catch (_) {
@@ -178,6 +201,7 @@ class _BinomeTypeaheadFieldState extends State<BinomeTypeaheadField> {
   @override
   void dispose() {
     _input.dispose();
+    _focus.removeListener(_onFocusChanged);
     _focus.dispose();
     super.dispose();
   }
@@ -203,6 +227,19 @@ class _BinomeTypeaheadFieldState extends State<BinomeTypeaheadField> {
         return a.displayName.compareTo(b.displayName);
       });
     return rows.take(8).toList();
+  }
+
+  List<BinomeSelection> get _filteredRecentExternals {
+    final query = _normalizeBinomeSearch(_query);
+    final selected = widget.binomes
+        .where((buddy) => buddy.isExternal)
+        .map(_externalBinomeKey)
+        .toSet();
+    return _recentExternalBinomes.where((buddy) {
+      if (selected.contains(_externalBinomeKey(buddy))) return false;
+      if (query.isEmpty) return true;
+      return _normalizeBinomeSearch(buddy.chipLabel).contains(query);
+    }).take(5).toList();
   }
 
   void _addBinome(BinomeSelection b) {
@@ -232,8 +269,11 @@ class _BinomeTypeaheadFieldState extends State<BinomeTypeaheadField> {
   @override
   Widget build(BuildContext context) {
     final filtered = _filtered;
+    final recentExternals = _filteredRecentExternals;
     final query = _query.trim();
     final showAddExternal = query.isNotEmpty;
+    final showSuggestions = _focus.hasFocus &&
+        (_query.isNotEmpty || recentExternals.isNotEmpty);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -278,7 +318,7 @@ class _BinomeTypeaheadFieldState extends State<BinomeTypeaheadField> {
                 : null,
           ),
         ),
-        if (_query.isNotEmpty) ...[
+        if (showSuggestions) ...[
           const SizedBox(height: 4),
           Container(
             decoration: BoxDecoration(
@@ -300,6 +340,34 @@ class _BinomeTypeaheadFieldState extends State<BinomeTypeaheadField> {
                     ),
                   )
                 else ...[
+                  if (recentExternals.isNotEmpty) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 10, 14, 3),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Binômes externes récents',
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                    for (final buddy in recentExternals)
+                      _ResultTile(
+                        icon: Icons.history,
+                        title: buddy.displayName ?? 'Binôme externe',
+                        subtitle: [buddy.niveau, buddy.club]
+                            .whereType<String>()
+                            .where((value) => value.isNotEmpty)
+                            .join(' · '),
+                        onTap: () => _addBinome(buddy),
+                      ),
+                    if (filtered.isNotEmpty || showAddExternal)
+                      const Divider(height: 1),
+                  ],
                   for (final m in filtered)
                     _ResultTile(
                       icon: Icons.person_outline,
@@ -341,6 +409,33 @@ class _BinomeTypeaheadFieldState extends State<BinomeTypeaheadField> {
     );
   }
 }
+
+List<BinomeSelection> _externalBinomesFromEntries(
+  Iterable<Map<String, dynamic>> entries,
+) {
+  final byKey = <String, BinomeSelection>{};
+  for (final entry in entries) {
+    final rawBinomes = entry['binomes'];
+    if (rawBinomes is! List) continue;
+    for (final raw in rawBinomes) {
+      if (raw is! Map || raw['type'] != 'external') continue;
+      final buddy = BinomeSelection.external(
+        displayName:
+            ((raw['display_name'] ?? raw['displayName']) as String?)?.trim(),
+        niveau: (raw['niveau'] as String?)?.trim(),
+        club: (raw['club'] as String?)?.trim(),
+      );
+      if (buddy.chipLabel == 'Binôme externe') continue;
+      byKey.putIfAbsent(_externalBinomeKey(buddy), () => buddy);
+    }
+  }
+  return byKey.values.toList();
+}
+
+String _externalBinomeKey(BinomeSelection buddy) =>
+    _normalizeBinomeSearch(
+      '${buddy.displayName ?? ''}|${buddy.niveau ?? ''}|${buddy.club ?? ''}',
+    );
 
 class _ResultTile extends StatelessWidget {
   final IconData icon;

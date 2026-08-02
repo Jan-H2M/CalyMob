@@ -96,7 +96,8 @@ class _CertificatePresentationScreenState extends State<CertificatePresentationS
     try {
       // Fetch fresh data from server
       final cert = await _certService.getCurrentCertification(_clubId, widget.userId);
-      final profile = await _profileService.getProfile(_clubId, widget.userId);
+      final profile =
+          await _profileService.getDirectoryProfile(_clubId, widget.userId);
 
       setState(() {
         _currentCert = cert;

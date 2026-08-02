@@ -130,5 +130,31 @@ void main() {
       expect(profile.assuranceValiditeEffective, assuranceValidite);
       expect(profile.assuranceStatus, ValidationStatus.valid);
     });
+
+    test('joins only the restricted operational status onto directory data',
+        () {
+      final validUntil = Timestamp.fromDate(DateTime(2099, 1, 30));
+      final profile = MemberProfile.fromDirectoryData(
+        'member',
+        {
+          'first_name': 'Directory',
+          'last_name': 'Member',
+          'share_email': false,
+          'consent_internal_photo': false,
+        },
+        operationalStatus: {
+          'cotisation_validite': validUntil,
+          'certificat_medical_validite': validUntil,
+          'assurance_validite': validUntil,
+        },
+      );
+
+      expect(profile.fullName, 'Directory Member');
+      expect(profile.email, isEmpty);
+      expect(profile.photoUrl, isNull);
+      expect(profile.cotisationStatus, ValidationStatus.valid);
+      expect(profile.certificatStatus, ValidationStatus.valid);
+      expect(profile.assuranceStatus, ValidationStatus.valid);
+    });
   });
 }

@@ -199,6 +199,20 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
     return filtered;
   }
 
+  Future<List<MemberProfile>> _loadDirectoryWithOwnStatus(
+    String currentUserId,
+  ) async {
+    final directory = await _profileService.getAllProfiles(_clubId);
+    if (currentUserId.isEmpty) return directory;
+    final ownProfile = await _profileService.getProfile(_clubId, currentUserId);
+    if (ownProfile == null) return directory;
+    final index = directory.indexWhere((member) => member.id == currentUserId);
+    if (index == -1) return [...directory, ownProfile];
+    final result = [...directory];
+    result[index] = ownProfile;
+    return result;
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentUserId = context.watch<AuthProvider>().currentUser?.uid ?? '';
@@ -346,7 +360,7 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
                     filterLevel: _filterLevel,
                   )
                 : FutureBuilder<List<MemberProfile>>(
-              future: _profileService.getAllProfiles(_clubId),
+              future: _loadDirectoryWithOwnStatus(currentUserId),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
@@ -533,34 +547,26 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
                               child: Container(
                                 padding: const EdgeInsets.all(4),
                                 decoration: const BoxDecoration(
-                                  color: Colors.green,
+                                  color: AppColors.middenblauw,
                                   shape: BoxShape.circle,
                                 ),
                                 child: const Icon(
-                                  Icons.check,
+                                  Icons.person,
                                   color: Colors.white,
                                   size: 10,
                                 ),
                               ),
                             ),
-                          // Validation status indicator (cotisation + certificat)
-                          Positioned(
-                            bottom: 5,
-                            right: 15,
-                            child: Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: BoxDecoration(
-                                color: _isMemberValid(member) ? Colors.green : Colors.red,
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white, width: 1),
-                              ),
-                              child: Icon(
-                                _isMemberValid(member) ? Icons.check : Icons.close,
-                                color: Colors.white,
-                                size: 10,
+                          if (isCurrentUser)
+                            Positioned(
+                              left: 4,
+                              right: 4,
+                              bottom: 0,
+                              child: _administrativeStatusBadge(
+                                member,
+                                compact: true,
                               ),
                             ),
-                          ),
                         ],
                       ),
                     ),
@@ -671,24 +677,6 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
                         ),
                       ),
                     ),
-                    // Validation status indicator (cotisation + certificat)
-                    Positioned(
-                      bottom: 40,
-                      left: 40,
-                      child: Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: _isMemberValid(member) ? Colors.green : Colors.red,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2),
-                        ),
-                        child: Icon(
-                          _isMemberValid(member) ? Icons.check : Icons.close,
-                          color: Colors.white,
-                          size: 16,
-                        ),
-                      ),
-                    ),
                     // Sea star with diver level - positioned bottom right, overlapping
                     if (member.plongeurCode != null)
                       Positioned(
@@ -735,6 +723,19 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
               ),
 
               const SizedBox(height: 20),
+
+              if (isCurrentUser) ...[
+                _administrativeStatusBadge(member),
+                const SizedBox(height: 8),
+                Text(
+                  _isMemberValid(member)
+                      ? 'Votre cotisation et votre certificat médical sont en ordre.'
+                      : 'Ouvrez Mon Profil pour vérifier votre cotisation ou votre certificat médical.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                ),
+                const SizedBox(height: 16),
+              ],
 
               // Boutons de contact
               Column(
@@ -1009,6 +1010,53 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
             member.cotisationStatus == ValidationStatus.warning) &&
            (member.certificatStatus == ValidationStatus.valid ||
             member.certificatStatus == ValidationStatus.warning);
+  }
+
+  Widget _administrativeStatusBadge(
+    MemberProfile member, {
+    bool compact = false,
+  }) {
+    final valid = _isMemberValid(member);
+    final label = valid ? 'En ordre' : 'À vérifier';
+    final color = valid ? Colors.green.shade700 : Colors.orange.shade800;
+    return Semantics(
+      label: 'Votre statut administratif : $label',
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 5 : 12,
+          vertical: compact ? 2 : 7,
+        ),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white, width: compact ? 1 : 0),
+        ),
+        child: Row(
+          mainAxisSize: compact ? MainAxisSize.max : MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              valid ? Icons.check_circle_outline : Icons.info_outline,
+              color: Colors.white,
+              size: compact ? 10 : 18,
+            ),
+            SizedBox(width: compact ? 3 : 6),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: compact ? 10 : 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// Format the level code for display in the sea star

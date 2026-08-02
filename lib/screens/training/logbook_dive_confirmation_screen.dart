@@ -481,6 +481,20 @@ class _DiveFacts extends StatelessWidget {
     return '${isInt ? t.toStringAsFixed(0) : t.toStringAsFixed(1)} °C';
   }
 
+  static List<String> _sharedCounterLabels(dynamic raw) {
+    if (raw is! Map) return const [];
+    const labels = <String, String>{
+      'nuit': 'Nuit',
+      'mer': 'Mer',
+      'maree': 'Marée',
+      'deco': 'Décompression',
+    };
+    return [
+      for (final entry in labels.entries)
+        if (raw[entry.key] == true) entry.value,
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final facts = <Widget>[
@@ -503,6 +517,16 @@ class _DiveFacts extends StatelessWidget {
           icon: Icons.timer_outlined,
           label: '${(snapshot['duration_minutes'] as num).toInt()} min',
         ),
+      if ((snapshot['entry_time_str'] as String?)?.isNotEmpty == true)
+        _Fact(
+          icon: Icons.login,
+          label: 'Immersion ${snapshot['entry_time_str']}',
+        ),
+      if ((snapshot['exit_time_str'] as String?)?.isNotEmpty == true)
+        _Fact(
+          icon: Icons.logout,
+          label: 'Sortie ${snapshot['exit_time_str']}',
+        ),
       // WP-28 phase 2 — température de l'eau + zone particulière.
       if (snapshot['water_temp_c'] is num)
         _Fact(
@@ -516,6 +540,8 @@ class _DiveFacts extends StatelessWidget {
         ),
     ];
     final buddyNames = _buddyNames(snapshot);
+    final sharedCounters = _sharedCounterLabels(snapshot['counters']);
+    final notes = (snapshot['notes'] as String?)?.trim();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -541,6 +567,34 @@ class _DiveFacts extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ],
+        if (sharedCounters.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Text(
+            'Conditions : ${sharedCounters.join(', ')}',
+            style: const TextStyle(
+              color: AppColors.donkerblauw,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+        if (notes != null && notes.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Semantics(
+            label: 'Remarques partagées : $notes',
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.65),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                'Remarques : $notes',
+                style: const TextStyle(color: AppColors.donkerblauw),
+              ),
+            ),
           ),
         ],
       ],

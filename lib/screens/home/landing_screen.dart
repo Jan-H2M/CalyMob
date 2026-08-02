@@ -17,6 +17,7 @@ import '../operations/operations_list_screen.dart';
 import '../communication/communication_hub_screen.dart';
 import '../boutique/boutique_screen.dart';
 import '../profile/profile_screen.dart';
+import '../profile/identite_screen.dart';
 import '../profile/who_is_who_screen.dart';
 import '../training/mon_carnet_screen.dart';
 import '../../services/boutique/boutique_access_service.dart';
@@ -125,10 +126,12 @@ class _LandingScreenState extends State<LandingScreen> {
       await Future.delayed(const Duration(milliseconds: 1200));
       if (!mounted) return;
 
-      final hasPhoto = (memberProvider.photoUrl ?? '').isNotEmpty;
+      final hasVisiblePhoto = (memberProvider.photoUrl ?? '').isNotEmpty &&
+          memberProvider.consentInternalPhoto;
       final shouldShow = await AvatarNudgeService.shouldShow(
         userId: userId,
-        hasPhoto: hasPhoto,
+        hasVisiblePhoto: hasVisiblePhoto,
+        serverSnoozedUntil: memberProvider.avatarNudgeSnoozedUntil,
       );
       if (!shouldShow || !mounted) return;
 
@@ -211,7 +214,7 @@ class _LandingScreenState extends State<LandingScreen> {
               if (!mounted || !dialogContext.mounted) return;
               Navigator.of(dialogContext).pop();
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                MaterialPageRoute(builder: (_) => const IdentiteScreen()),
               );
             },
             icon: const Icon(Icons.add_a_photo_outlined, size: 18),

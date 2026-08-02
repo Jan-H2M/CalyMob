@@ -56,6 +56,25 @@ function isFinished(status) {
   return FINISHED_STATUS_VALUES.has(String(status).toLowerCase().trim());
 }
 
+function nonEmptyString(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function buildOperationLocationContext(operation, location) {
+  const waterType = nonEmptyString(location?.water_type || location?.type);
+  return {
+    location_name:
+      nonEmptyString(location?.name || location?.nom) ||
+      nonEmptyString(operation.lieu || operation.location_name || operation.lieu_nom),
+    location_country:
+      nonEmptyString(location?.country) || nonEmptyString(operation.country),
+    location_is_sea: ['sea', 'mer'].includes((waterType || '').toLowerCase()),
+    location_zone:
+      nonEmptyString(location?.zone || location?.region) ||
+      nonEmptyString(operation.lieu_type || operation.location_zone),
+  };
+}
+
 const onOperationFinished = onDocumentUpdated(
   {
     region: FUNCTION_REGION,
@@ -84,6 +103,14 @@ const onOperationFinished = onDocumentUpdated(
 
     const operationTitle = after.titre || after.title || `Sortie ${operationId}`;
     const locationId = after.lieu_id || after.location_id || null;
+    let locationData = null;
+    if (locationId) {
+      const locationSnap = await db
+        .collection('clubs').doc(clubId)
+        .collection('dive_locations').doc(locationId).get();
+      if (locationSnap.exists) locationData = locationSnap.data();
+    }
+    const locationContext = buildOperationLocationContext(after, locationData);
 
     console.log(
       `[${FUNCTION_NAME}] operation ${operationId} (${operationTitle}) finished, creating logbook tasks`
@@ -111,14 +138,14 @@ const onOperationFinished = onDocumentUpdated(
         console.log(`[${FUNCTION_NAME}] no participants found for ${operationId}`);
         return;
       }
-      return processParticipants(db, clubId, operationId, operationTitle, locationId, legacySnap.docs);
+      return processParticipants(db, clubId, operationId, operationTitle, locationId, locationContext, legacySnap.docs);
     }
 
-    await processParticipants(db, clubId, operationId, operationTitle, locationId, participantsSnap.docs);
+    await processParticipants(db, clubId, operationId, operationTitle, locationId, locationContext, participantsSnap.docs);
   }
 );
 
-async function processParticipants(db, clubId, operationId, operationTitle, locationId, participantDocs) {
+async function processParticipants(db, clubId, operationId, operationTitle, locationId, locationContext, participantDocs) {
   // Pre-fetch palanquées for this operation to denormalise per-member palanquée_id.
   const palanqueesSnap = await db
     .collection('clubs')
@@ -207,6 +234,7 @@ async function processParticipants(db, clubId, operationId, operationTitle, loca
         operation_title: operationTitle,
         palanquee_id: palanqueeId,
         location_id: locationId,
+        ...locationContext,
         // WP-14 (S3) — la fiche carnet embarque les claims draft de l'opération
         // (une seule étape élève) ; pas de tâche exercise_claim séparée.
         claims_embedded: true,
@@ -264,4 +292,5 @@ module.exports = {
   // Exported for unit tests
   isFinished,
   extractPalanqueeMemberIds,
+  buildOperationLocationContext,
 };

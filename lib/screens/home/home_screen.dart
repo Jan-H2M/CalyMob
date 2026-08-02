@@ -13,7 +13,7 @@ import '../../services/profile_service.dart';
 import '../../services/compatibility_service.dart';
 import '../../services/app_update_service.dart';
 import '../../services/avatar_nudge_service.dart';
-import '../profile/profile_screen.dart';
+import '../profile/identite_screen.dart';
 import '../../models/compatibility_settings.dart';
 import '../../utils/permission_helper.dart';
 import '../../widgets/operation_card.dart';
@@ -76,11 +76,13 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
 
       final memberProvider = context.read<MemberProvider>();
-      final hasPhoto = (memberProvider.photoUrl ?? '').isNotEmpty;
+      final hasVisiblePhoto = (memberProvider.photoUrl ?? '').isNotEmpty &&
+          memberProvider.consentInternalPhoto;
 
       final should = await AvatarNudgeService.shouldShow(
         userId: userId,
-        hasPhoto: hasPhoto,
+        hasVisiblePhoto: hasVisiblePhoto,
+        serverSnoozedUntil: memberProvider.avatarNudgeSnoozedUntil,
       );
       if (!should || !mounted) return;
 
@@ -167,7 +169,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Navigator.of(ctx).pop();
               Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) => const ProfileScreen(),
+                  builder: (_) => const IdentiteScreen(),
                 ),
               );
             },

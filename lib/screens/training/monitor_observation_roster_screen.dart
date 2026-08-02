@@ -80,7 +80,7 @@ class _MonitorObservationRosterScreenState
             (member) => db
                 .collection('clubs')
                 .doc(clubId)
-                .collection('members')
+                .collection('member_directory')
                 .doc(member.memberId)
                 .get(),
           )
