@@ -109,6 +109,7 @@ class LogbookOcrSuggestedRow {
       warnings.isNotEmpty ||
       date.needsReview ||
       locationName.needsReview ||
+      country.needsReview ||
       depthMaxMeters.needsReview ||
       durationMinutes.needsReview ||
       buddies.needsReview ||

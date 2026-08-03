@@ -20,6 +20,11 @@ void main() {
         confidence: 0.93,
         raw: 'Vodelee',
       ),
+      country: const LogbookOcrField(
+        value: 'BE',
+        confidence: 0.89,
+        raw: 'Belgique',
+      ),
       depthMaxMeters: const LogbookOcrField(
         value: 22.5,
         confidence: 0.88,
@@ -41,6 +46,7 @@ void main() {
     final fields = adapter.fields(row);
     final date = fields.singleWhere((field) => field.id == 'date');
     final depth = fields.singleWhere((field) => field.id == 'depth');
+    final country = fields.singleWhere((field) => field.id == 'country');
     final dp = fields.singleWhere((field) => field.id == 'dp');
     final buddies = fields.singleWhere((field) => field.id == 'buddy');
 
@@ -49,6 +55,8 @@ void main() {
     expect(date.confidence, 0.72);
     expect(date.needsReview, isTrue);
     expect(depth.value, '22.5 m');
+    expect(country.value, 'BE');
+    expect(country.raw, 'Belgique');
     expect(dp.isToggle, isTrue);
     expect(dp.selected, isTrue);
     expect(dp.raw, 'DP');

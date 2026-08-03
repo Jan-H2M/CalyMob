@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'tariff.dart';
+import '../utils/country_codes.dart';
 
 /// Modèle DiveLocation - Lieu de plongée avec tarifs
 /// Firestore collection: clubs/{clubId}/dive_locations
@@ -42,7 +43,7 @@ class DiveLocation {
       id: doc.id,
       name: data['name'] ?? '',
       description: data['description'],
-      country: data['country'] ?? '',
+      country: normalizeCountryCode(data['country'] as String?) ?? '',
       address: data['address'],
       phone: data['phone'],
       email: data['email'],

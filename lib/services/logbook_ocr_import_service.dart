@@ -7,6 +7,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import '../models/logbook_ocr_import.dart';
 import '../models/student_logbook_entry.dart';
 import 'student_logbook_service.dart';
+import '../utils/country_codes.dart';
 
 class LogbookOcrImportService {
   final StudentLogbookService _logbookService;
@@ -88,7 +89,7 @@ class LogbookOcrImportService {
       entryTime: _stringField(fields['entryTime']),
       exitTime: _stringField(fields['exitTime']),
       locationName: _stringField(fields['locationName']),
-      country: _stringField(fields['country']),
+      country: _countryField(fields['country']),
       depthMaxMeters: _doubleField(fields['depthMaxMeters']),
       durationMinutes: _intField(fields['durationMinutes']),
       deco: _boolField(fields['deco']),
@@ -130,6 +131,19 @@ class LogbookOcrImportService {
       confidence: _double(map['confidence']) ?? 0,
       raw: map['raw'] as String?,
       needsReview: map['needsReview'] == true,
+    );
+  }
+
+  LogbookOcrField<String> _countryField(dynamic raw) {
+    final map = Map<String, dynamic>.from((raw as Map?) ?? {});
+    final source = map['value'] is String ? map['value'] as String : null;
+    final value = normalizeCountryCode(source);
+    return LogbookOcrField<String>(
+      value: value,
+      confidence: _double(map['confidence']) ?? 0,
+      raw: map['raw'] as String? ?? source,
+      needsReview: map['needsReview'] == true ||
+          (source != null && source.trim().isNotEmpty && value == null),
     );
   }
 
