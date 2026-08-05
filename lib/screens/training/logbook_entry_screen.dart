@@ -548,6 +548,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
 
       for (final doc in locationSnap.docs) {
         final data = doc.data();
+        if (data['merged_into_location_id'] != null) continue;
         final name = ((data['name'] ?? data['nom']) as String? ?? '').trim();
         final waterType =
             ((data['water_type'] ?? data['type']) as String? ?? '')

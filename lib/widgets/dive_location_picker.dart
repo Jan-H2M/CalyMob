@@ -189,6 +189,7 @@ class _DiveLocationPickerSheetState extends State<_DiveLocationPickerSheet> {
 
       for (final d in centralSnap.docs) {
         final data = d.data();
+        if (data['merged_into_location_id'] != null) continue;
         final waterType = (data['water_type'] as String?)?.toLowerCase();
         addRow(_LocationRow(
           id: d.id,
