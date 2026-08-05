@@ -2,22 +2,15 @@
  * Private reference-data location resolver.
  *
  * Both CalyCompta and CalyMob call this function. The clients never receive
- * access to the separate reference-data Firestore project; they receive only
- * a conservative exact-match coordinate result. Near matches are returned as
+ * direct access to the internal reference collection; they receive only a
+ * conservative exact-match coordinate result. Near matches are returned as
  * proposals only; they never cause a coordinate to be written automatically.
- *
- * Deployment prerequisite:
- * - REFERENCE_DATA_PROJECT_ID points to the separate Firebase project.
- * - This function's runtime service account has roles/datastore.user there.
  */
 
-const { applicationDefault, getApps, initializeApp } = require('firebase-admin/app');
-const { getFirestore } = require('firebase-admin/firestore');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 
 const REGION = 'europe-west1';
-const REFERENCE_APP_NAME = 'calypso-reference-data';
 const MAX_CANDIDATES = 50;
 const MAX_SUGGESTIONS = 3;
 const MIN_SUGGESTION_SCORE = 0.78;
@@ -117,22 +110,11 @@ function requireAdmin(member) {
   }
 }
 
-function getReferenceDb() {
-  const projectId = String(process.env.REFERENCE_DATA_PROJECT_ID || '').trim();
-  if (!projectId) {
-    throw new HttpsError(
-      'failed-precondition',
-      'La base de référence des sites de plongée n’est pas encore configurée.',
-    );
-  }
-  let referenceApp = getApps().find((app) => app.name === REFERENCE_APP_NAME);
-  if (!referenceApp) {
-    referenceApp = initializeApp({
-      projectId,
-      credential: applicationDefault(),
-    }, REFERENCE_APP_NAME);
-  }
-  return getFirestore(referenceApp);
+function getReferenceSites(clubId) {
+  // Reference data belongs to the existing Calypso Firestore project but is
+  // deliberately stored in a server-only collection. This avoids exposing the
+  // raw provider catalogue to clients or relying on a second Firebase project.
+  return admin.firestore().collection('clubs').doc(clubId).collection('reference_dive_sites');
 }
 
 function selectExactMatch(candidates) {
@@ -164,8 +146,7 @@ const resolveReferenceDiveSiteLocation = onCall(
     // Firebase account. This mirrors the access bar used throughout Calypso.
     await getClubMember(clubId, uid);
 
-    const referenceDb = getReferenceDb();
-    const sites = referenceDb.collection('provider_sites');
+    const sites = getReferenceSites(clubId);
     // The legacy normalized_name query permits existing imports to keep
     // working. match_keys includes approved aliases and generic-prefix forms.
     const [nameSnap, aliasSnap] = await Promise.all([
@@ -266,7 +247,7 @@ const confirmReferenceDiveSiteLocation = onCall(
     }
 
     requireAdmin(await getClubMember(clubId, uid));
-    const snap = await getReferenceDb().collection('provider_sites')
+    const snap = await getReferenceSites(clubId)
       .doc(`ssi_${providerSiteId}`)
       .get();
     if (!snap.exists || !eligibleSite(snap.data())) {
