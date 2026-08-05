@@ -6,14 +6,20 @@
 /// See `CARNET_DE_FORMATION_TECH.md` v2.1 §6.3 + §10.3.
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import '../models/student_logbook_entry.dart';
 import '../utils/logbook_sync.dart';
 
 class StudentLogbookService {
   final FirebaseFirestore _firestore;
+  final FirebaseFunctions _functions;
 
-  StudentLogbookService({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+  StudentLogbookService({
+    FirebaseFirestore? firestore,
+    FirebaseFunctions? functions,
+  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+        _functions =
+            functions ?? FirebaseFunctions.instanceFor(region: 'europe-west1');
 
   CollectionReference<Map<String, dynamic>> _collection(String clubId) =>
       _firestore
@@ -21,19 +27,57 @@ class StudentLogbookService {
           .doc(clubId)
           .collection('student_logbook_entries');
 
+  Future<Map<String, dynamic>> _withReferenceGps({
+    required String clubId,
+    required String locationName,
+    Map<String, dynamic>? extras,
+  }) async {
+    final payload = <String, dynamic>{...?extras};
+    // Never overwrite coordinates that a caller already resolved explicitly.
+    if (payload['latitude'] is num && payload['longitude'] is num) {
+      return payload;
+    }
+    if (locationName.trim().isEmpty) return payload;
+    try {
+      final response = await _functions
+          .httpsCallable('resolveReferenceDiveSiteLocation')
+          .call(<String, dynamic>{
+        'clubId': clubId,
+        'locationName': locationName.trim(),
+      });
+      final data = Map<String, dynamic>.from(response.data as Map);
+      if (data['found'] == true &&
+          data['latitude'] is num &&
+          data['longitude'] is num) {
+        payload['latitude'] = (data['latitude'] as num).toDouble();
+        payload['longitude'] = (data['longitude'] as num).toDouble();
+        payload['gps_reference_source'] = 'private_reference_exact_name';
+      }
+    } on FirebaseFunctionsException {
+      // Non-fatal: entries must remain saveable while the separate reference
+      // project is not configured or an exact match is unavailable.
+    } catch (_) {
+      // Network/offline failures are non-fatal for manual carnet entries.
+    }
+    return payload;
+  }
+
   Future<String> create({
     required String clubId,
     required StudentLogbookEntry entry,
     Map<String, dynamic>? extras,
   }) async {
+    final resolvedExtras = await _withReferenceGps(
+      clubId: clubId,
+      locationName: entry.locationName,
+      extras: extras,
+    );
     final payload = <String, dynamic>{
       ...entry.toMap(),
       'created_at': FieldValue.serverTimestamp(),
       'updated_at': FieldValue.serverTimestamp(),
     };
-    if (extras != null) {
-      payload.addAll(extras);
-    }
+    payload.addAll(resolvedExtras);
     final docRef = await _collection(clubId).add(payload);
     return docRef.id;
   }
@@ -45,6 +89,11 @@ class StudentLogbookService {
     Map<String, dynamic>? extras,
     String? editedBy,
   }) async {
+    final resolvedExtras = await _withReferenceGps(
+      clubId: clubId,
+      locationName: entry.locationName,
+      extras: extras,
+    );
     final payload = <String, dynamic>{
       ...entry.toMap(),
       'updated_at': FieldValue.serverTimestamp(),
@@ -52,9 +101,7 @@ class StudentLogbookService {
       'edited_at': FieldValue.serverTimestamp(),
       if (editedBy != null) 'edited_by': editedBy,
     };
-    if (extras != null) {
-      payload.addAll(extras);
-    }
+    payload.addAll(resolvedExtras);
     await _collection(clubId).doc(entryId).update(payload);
   }
 
