@@ -4,6 +4,7 @@ const {
   suggestionScore,
   selectExactMatch,
   referenceDescription,
+  matchesReferenceQuery,
 } = require('./resolveReferenceDiveSiteLocation');
 
 describe('reference dive-site name matching', () => {
@@ -33,5 +34,12 @@ describe('reference dive-site name matching', () => {
     expect(referenceDescription({ descriptions: { en: 'English description' } }))
       .toBe('English description');
     expect(referenceDescription({ descriptions: { fr: '   ' } })).toBeNull();
+  });
+
+  test('finds compound SSI names when an administrator types spaces', () => {
+    expect(matchesReferenceQuery({
+      display_name: 'Anna Jacobapolder',
+      match_keys: ['anna jacobapolder'],
+    }, 'Anna jacoba polder')).toBe(true);
   });
 });
