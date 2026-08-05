@@ -197,14 +197,27 @@ const resolveReferenceDiveSiteLocation = onCall(
     // Fuzzy matching is deliberately suggestion-only. A review UI can show
     // these candidates and, after confirmation, store the spelling as an
     // approved alias for deterministic future matches.
-    const longestToken = normalizedName.split(' ').sort((a, b) => b.length - a.length)[0];
+    // A historical club spelling can split an SSI compound word, for example
+    // "Anna jacoba polder" versus SSI's "Anna Jacobapolder". Query a few of
+    // the most distinctive tokens and merge the result set before scoring;
+    // this remains suggestion-only, never an automatic write.
+    const searchTokens = [...new Set(normalizedName.split(' ')
+      .filter((token) => token.length >= 3))]
+      .sort((a, b) => b.length - a.length)
+      .slice(0, 3);
     let suggestions = [];
-    if (longestToken && longestToken.length >= 3) {
-      const tokenSnap = await sites.where('search_tokens', 'array-contains', longestToken)
+    if (searchTokens.length) {
+      const tokenSnapshots = await Promise.all(searchTokens.map((token) => sites
+        .where('search_tokens', 'array-contains', token)
         .limit(MAX_CANDIDATES)
-        .get();
-      suggestions = tokenSnap.docs
-        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .get()));
+      const suggestedById = new Map();
+      for (const snapshot of tokenSnapshots) {
+        for (const doc of snapshot.docs) {
+          suggestedById.set(doc.id, { id: doc.id, ...doc.data() });
+        }
+      }
+      suggestions = [...suggestedById.values()]
         .filter(eligibleSite)
         .map((site) => ({ site, score: suggestionScore(normalizedName, site) }))
         .filter(({ score }) => score >= MIN_SUGGESTION_SCORE)
