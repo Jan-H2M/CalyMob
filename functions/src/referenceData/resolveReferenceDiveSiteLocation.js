@@ -311,11 +311,16 @@ const listReferenceDiveSites = onCall(
     const sites = getReferenceSites(clubId);
 
     if (query) {
-      const token = normalizeLocationName(query).split(' ').filter((value) => value.length >= 3)
-        .sort((left, right) => right.length - left.length)[0];
-      if (!token) return { items: [], nextCursor: null, searched: true };
-      const snap = await sites.where('search_tokens', 'array-contains', token).limit(200).get();
-      const items = snap.docs.map((doc) => doc.data()).filter(eligibleSite).filter((site) => matchesReferenceQuery(site, query))
+      const tokens = [...new Set(normalizeLocationName(query).split(' ').filter((value) => value.length >= 3))]
+        .sort((left, right) => right.length - left.length).slice(0, 3);
+      if (!tokens.length) return { items: [], nextCursor: null, searched: true };
+      const snapshots = await Promise.all(tokens.map((token) => sites
+        .where('search_tokens', 'array-contains', token).limit(200).get()));
+      const byId = new Map();
+      for (const snapshot of snapshots) {
+        for (const doc of snapshot.docs) byId.set(doc.id, doc.data());
+      }
+      const items = [...byId.values()].filter(eligibleSite).filter((site) => matchesReferenceQuery(site, query))
         .sort((left, right) => left.display_name.localeCompare(right.display_name, 'fr'))
         .slice(0, limit).map(publicReferenceSite);
       return { items, nextCursor: null, searched: true };
