@@ -30,6 +30,21 @@ class DiveLocationService {
     }
   }
 
+  /// Lieux activés pour la création d'activités.
+  ///
+  /// Les anciens enregistrements sans indicateur restent disponibles par
+  /// défaut. Seuls les lieux explicitement désactivés dans CalyCompta sont
+  /// exclus de ce sélecteur.
+  Future<List<DiveLocation>> getEventLocations(String clubId) async {
+    final locations = await getAllLocations(clubId);
+    final eventLocations = locations
+        .where((location) => location.availableForEvents)
+        .toList(growable: false);
+    debugPrint(
+        '📅 ${eventLocations.length} lieux disponibles pour les activités');
+    return eventLocations;
+  }
+
   /// Récupérer un lieu par ID
   Future<DiveLocation?> getLocationById(
       String clubId, String locationId) async {

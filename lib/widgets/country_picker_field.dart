@@ -8,6 +8,7 @@ class CountryPickerField extends StatelessWidget {
   final ValueChanged<String?> onChanged;
   final List<String> recentCountryCodes;
   final bool readOnly;
+  final String emptyLabel;
 
   const CountryPickerField({
     super.key,
@@ -15,13 +16,14 @@ class CountryPickerField extends StatelessWidget {
     required this.onChanged,
     this.recentCountryCodes = const [],
     this.readOnly = false,
+    this.emptyLabel = 'Ajouter un pays (optionnel)',
   });
 
   @override
   Widget build(BuildContext context) {
     final code = normalizeCountryCode(value);
     final label = code == null
-        ? 'Ajouter un pays (optionnel)'
+        ? emptyLabel
         : countryDisplayNameForContext(context, code, includeCode: true);
 
     return Material(

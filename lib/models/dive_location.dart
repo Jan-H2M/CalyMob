@@ -18,6 +18,7 @@ class DiveLocation {
   final DateTime createdAt;
   final DateTime updatedAt;
   final String? createdBy;
+  final bool availableForEvents;
 
   DiveLocation({
     required this.id,
@@ -33,6 +34,7 @@ class DiveLocation {
     required this.createdAt,
     required this.updatedAt,
     this.createdBy,
+    this.availableForEvents = true,
   });
 
   /// Convertir depuis Firestore DocumentSnapshot
@@ -53,6 +55,7 @@ class DiveLocation {
       createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (data['updated_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
       createdBy: data['created_by'],
+      availableForEvents: data['available_for_events'] != false,
     );
   }
 

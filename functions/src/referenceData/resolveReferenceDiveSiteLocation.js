@@ -84,6 +84,8 @@ function publicReferenceSite(site) {
     countryIso3: site.country_iso3 || null,
     latitude: site.location?.latitude ?? null,
     longitude: site.location?.longitude ?? null,
+    waterType: site.water_type || null,
+    locationType: site.location_type || null,
     hasFrenchDescription: Boolean(site.descriptions?.fr),
   };
 }
@@ -291,7 +293,7 @@ const confirmReferenceDiveSiteLocation = onCall(
 );
 
 /**
- * Compact, administrator-only browser for the local SSI reference catalogue.
+ * Compact, read-only browser for authenticated club members.
  * The raw descriptions stay server-side; the UI receives only list metadata.
  */
 const listReferenceDiveSites = onCall(
@@ -307,7 +309,7 @@ const listReferenceDiveSites = onCall(
     if (!clubId || clubId.length > 100 || query.length > 180 || cursor.length > 200) {
       throw new HttpsError('invalid-argument', 'Paramètres de recherche invalides.');
     }
-    requireAdmin(await getClubMember(clubId, uid));
+    await getClubMember(clubId, uid);
     const sites = getReferenceSites(clubId);
 
     if (query) {

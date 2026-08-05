@@ -39,7 +39,6 @@ import '../../services/exercise_claim_service.dart';
 import '../../widgets/combi_picker_field.dart';
 import '../../widgets/dive_location_picker.dart';
 import '../../utils/dive_number_policy.dart';
-import '../../widgets/country_picker_field.dart';
 import '../../utils/country_codes.dart';
 import '../../widgets/logbook_dive_form.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
@@ -128,7 +127,6 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
   TimeOfDay? _exitTime;
   DiveLocationSelection? _locationSelection;
   String? _countryCode;
-  List<String> _recentCountryCodes = const [];
   final TextEditingController _depth = TextEditingController();
   final TextEditingController _duration = TextEditingController();
   final TextEditingController _notes = TextEditingController();
@@ -537,7 +535,6 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           .where((m) => m.displayName.trim().isNotEmpty)
           .toList();
       final locationsByName = <String, _DictationLocation>{};
-      final countryUseCounts = <String, int>{};
       void addLocation(_DictationLocation location) {
         final key = _normalizeDictation(location.name);
         if (key.isEmpty) return;
@@ -573,9 +570,6 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
             ((data['location_name'] ?? data['lieu']) as String? ?? '').trim();
         final counters = data['counters'];
         final country = normalizeCountryCode(data['country'] as String?);
-        if (country != null) {
-          countryUseCounts[country] = (countryUseCounts[country] ?? 0) + 1;
-        }
         addLocation(_DictationLocation(
           id: '',
           name: name,
@@ -585,13 +579,10 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
       }
       final locations = locationsByName.values.toList()
         ..sort((a, b) => a.name.compareTo(b.name));
-      final recentCountries = countryUseCounts.entries.toList()
-        ..sort((a, b) => b.value.compareTo(a.value));
       if (!mounted) return;
       setState(() {
         _dictationMembers = members;
         _dictationLocations = locations;
-        _recentCountryCodes = recentCountries.map((e) => e.key).toList();
       });
     } catch (e) {
       debugPrint('[LogbookEntry] dictation catalog load failed: $e');
@@ -1324,9 +1315,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
                 // A free-typed location deliberately clears a previous site's
                 // country rather than silently keeping a wrong value.
                 _countryCode = normalizeCountryCode(selection.country);
-                if (selection.isSea) {
-                  _counters = _counters.copyWith(mer: true);
-                }
+                _counters = _counters.copyWith(mer: selection.isSea);
                 // WP-07 — pré-remplissage Zélande depuis le lieu.
                 if (_zone == null && _looksLikeZelande(selection.name)) {
                   _zone = 'zelande';
@@ -1334,14 +1323,6 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
                 if (_zone == null && selection.zone != null) {
                   _zone = _normalizeZone(selection.zone!);
                 }
-              }),
-            ),
-            const Divider(height: 1),
-            CountryPickerField(
-              value: _countryCode,
-              recentCountryCodes: _recentCountryCodes,
-              onChanged: (code) => setState(() {
-                _countryCode = normalizeCountryCode(code);
               }),
             ),
           ],
@@ -4792,6 +4773,10 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
       final explicitDiveNumber = diveNumberResolution.value;
       final extras = <String, dynamic>{
         ...?widget.createExtras,
+        if (_locationSelection?.latitude != null)
+          'latitude': _locationSelection!.latitude,
+        if (_locationSelection?.longitude != null)
+          'longitude': _locationSelection!.longitude,
         'binomes': _binomes.map((b) => b.toMap()).toList(),
         if (_entryTime != null)
           'entry_time':

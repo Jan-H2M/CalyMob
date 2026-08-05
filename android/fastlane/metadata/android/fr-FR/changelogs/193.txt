@@ -1,0 +1,6 @@
+Recherche de lieux de plongée plus rapide et plus complète.
+
+- Catalogue et base de référence réunis dans une seule liste
+- Recherche étendue après quelques lettres, sans charger toute la base
+- Saisie manuelle avec pays, type d’eau et GPS
+- Meilleur préremplissage du carnet et des activités

@@ -1,8 +1,7 @@
-Version 1.16.0 – Carnet et confidentialité
+Version 1.16.1 – Lieux de plongée
 
-- Carnet : numéros de plongée conservés et doublons signalés
-- Lieux de plongée et horaires mieux préremplis
-- Binômes externes réutilisables dans les plongées suivantes
-- Statuts administratifs plus clairs et données membres mieux protégées
-- Rappels de photo de profil améliorés
-- Les notifications d’exercice ouvrent directement l’action concernée
+- Recherche rapide dans le catalogue et la base de référence après quelques lettres
+- Résultats réunis dans une seule liste claire, sans doublons
+- Saisie manuelle complète avec pays, type d’eau et coordonnées GPS
+- Les caractéristiques du lieu préremplissent mieux le carnet
+- Les activités utilisent uniquement les lieux activés par le club

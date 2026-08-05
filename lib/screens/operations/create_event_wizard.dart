@@ -326,7 +326,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
   Future<void> _loadLocations() async {
     setState(() => _loadingLocations = true);
     try {
-      final locs = await _locationService.getAllLocations(_clubId);
+      final locs = await _locationService.getEventLocations(_clubId);
       setState(() {
         _locations = locs;
         _loadingLocations = false;
@@ -679,7 +679,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Text(
-            'Sélectionnez un lieu pour pré-remplir les tarifs et les informations de l\'événement.',
+            'Sélectionnez un lieu activé pour les activités afin de pré-remplir les tarifs et les informations de l\'événement.',
             style: TextStyle(
               fontSize: 13,
               color: Colors.grey[700],
