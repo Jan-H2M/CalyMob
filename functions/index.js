@@ -360,6 +360,8 @@ exports.backfillMyDiveNumbers = backfillMyDiveNumbers;
 // It returns only a conservative coordinate match, never the source dataset.
 exports.resolveReferenceDiveSiteLocation = require('./src/referenceData/resolveReferenceDiveSiteLocation').resolveReferenceDiveSiteLocation;
 exports.confirmReferenceDiveSiteLocation = require('./src/referenceData/resolveReferenceDiveSiteLocation').confirmReferenceDiveSiteLocation;
+exports.previewDiveLocationMerge = require('./src/referenceData/mergeDiveLocations').previewDiveLocationMerge;
+exports.mergeDiveLocations = require('./src/referenceData/mergeDiveLocations').mergeDiveLocations;
 
 // Buddy confirmation flow for Mon Carnet: when a diver adds Calypso members as
 // binômes, those members confirm the shared dive and copy/compare it.
