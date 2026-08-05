@@ -22,6 +22,7 @@ import 'package:provider/provider.dart';
 import '../config/app_colors.dart';
 import '../config/firebase_config.dart';
 import '../providers/auth_provider.dart';
+import '../utils/country_codes.dart';
 
 class DiveLocationSelection {
   final String? id;
@@ -96,11 +97,9 @@ class DiveLocationPickerField extends StatelessWidget {
                               color: Colors.black87,
                             ),
                           ),
-                          if (value!.country != null &&
-                              value!.country!.isNotEmpty)
+                          if (value!.isSea)
                             Text(
-                              '${value!.country}'
-                              '${value!.isSea ? ' · mer' : ''}',
+                              'mer',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.black.withValues(alpha: 0.55),
@@ -193,7 +192,7 @@ class _DiveLocationPickerSheetState extends State<_DiveLocationPickerSheet> {
         addRow(_LocationRow(
           id: d.id,
           name: (data['name'] as String?)?.trim() ?? '—',
-          country: (data['country'] as String?)?.trim(),
+          country: normalizeCountryCode(data['country'] as String?),
           isSea: waterType == 'sea' || waterType == 'mer',
           zone: ((data['zone'] ?? data['region']) as String?)?.trim(),
         ));
@@ -205,7 +204,7 @@ class _DiveLocationPickerSheetState extends State<_DiveLocationPickerSheet> {
         final counters = data['counters'];
         addRow(_LocationRow(
           name: name,
-          country: (data['country'] as String?)?.trim(),
+          country: normalizeCountryCode(data['country'] as String?),
           isSea: counters is Map && counters['mer'] == true,
         ));
       }
@@ -346,7 +345,8 @@ class _DiveLocationPickerSheetState extends State<_DiveLocationPickerSheet> {
       children.add(_tile(
         title: r.name,
         subtitle: [
-          if (r.country != null && r.country!.isNotEmpty) r.country,
+          if (r.country != null && r.country!.isNotEmpty)
+            countryDisplayNameForContext(context, r.country, includeCode: true),
           if (r.isSea) 'mer',
         ].whereType<String>().join(' · '),
         leading: Icon(
@@ -455,10 +455,20 @@ String _normalizeLocationSearch(String value) {
 int _locationSearchScore(String query, _LocationRow row) {
   final name = _normalizeLocationSearch(row.name);
   final country = _normalizeLocationSearch(row.country ?? '');
-  if (name == query || country == query) return 0;
+  final countryNames = ['fr', 'nl', 'en']
+      .map((languageCode) => _normalizeLocationSearch(countryDisplayName(
+            row.country,
+            languageCode: languageCode,
+          )))
+      .where((name) => name.isNotEmpty)
+      .toList();
+  if (name == query || country == query || countryNames.contains(query)) {
+    return 0;
+  }
   final words = [
     ...name.split(' '),
     if (country.isNotEmpty) ...country.split(' '),
+    for (final countryName in countryNames) ...countryName.split(' '),
   ].where((w) => w.isNotEmpty).toList();
   if (words.any((w) => w == query)) return 1;
   if (words.any((w) => w.startsWith(query))) return 2;

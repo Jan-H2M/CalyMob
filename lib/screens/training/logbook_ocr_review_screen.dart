@@ -11,6 +11,7 @@ import '../../models/logbook_ocr_import.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../services/logbook_ocr_import_service.dart';
+import '../../utils/country_codes.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/logbook_fields_grid.dart';
 import '../../utils/member_name.dart';
@@ -665,7 +666,8 @@ class _ReviewCardState extends State<_ReviewCard> {
       if (parsedDate != null) 'date': Timestamp.fromDate(parsedDate),
       if (row.diveNumber.value != null) 'dive_number': row.diveNumber.value,
       'location_name': _location.text.trim(),
-      if (row.country.value != null) 'country': row.country.value,
+      if (normalizeCountryCode(row.country.value) case final code?)
+        'country': code,
       if (double.tryParse(_depth.text.replaceAll(',', '.')) != null)
         'depth_max_meters': double.tryParse(_depth.text.replaceAll(',', '.')),
       if (int.tryParse(_duration.text) != null)

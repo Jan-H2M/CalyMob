@@ -28,6 +28,8 @@ import 'logbook_dive_confirmation_screen.dart';
 import 'logbook_entry_detail_screen.dart';
 import 'logbook_entry_screen.dart';
 import 'stats_screen.dart';
+import '../../utils/country_codes.dart';
+import '../../utils/logbook_sync.dart';
 
 class MonCarnetScreen extends StatefulWidget {
   const MonCarnetScreen({super.key});
@@ -93,7 +95,14 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
         .where('member_id', isEqualTo: userId);
     return q.snapshots().map((snap) {
       final rows = snap.docs
-          .map((d) => _LogbookEntryRow.fromMap(d.id, d.data()))
+          .map((d) => _LogbookEntryRow.fromMap(
+                d.id,
+                logbookRowWithSyncState(
+                  id: d.id,
+                  data: d.data(),
+                  hasPendingWrites: d.metadata.hasPendingWrites,
+                ),
+              ))
           .toList();
       // Mode-based partition — pool entries (source=piscine) are isolated
       // from dive entries (everything else). We don't ship the count back
@@ -756,7 +765,7 @@ class _LogbookEntryRow {
       groupNumber: groupNumberRaw is num ? groupNumberRaw.toInt() : null,
       locationName:
           (map['location_name'] as String?) ?? (map['lieu'] as String?) ?? '—',
-      country: map['country'] as String?,
+      country: normalizeCountryCode(map['country'] as String?),
       depthMeters: (map['depth_max_meters'] as num?)?.toDouble(),
       durationMinutes: (map['duration_minutes'] as num?)?.toInt(),
       source: (map['source'] as String?) ?? 'manual',
@@ -809,14 +818,15 @@ class _EntryCard extends StatelessWidget {
           ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-            child: isPool ? _poolBody(dateLabel) : _diveBody(dateLabel),
+            child:
+                isPool ? _poolBody(dateLabel) : _diveBody(context, dateLabel),
           ),
         ),
       ),
     );
   }
 
-  Widget _diveBody(String dateLabel) {
+  Widget _diveBody(BuildContext context, String dateLabel) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -879,6 +889,27 @@ class _EntryCard extends StatelessWidget {
             ),
           ],
         ),
+        if (entry.country != null && entry.country!.trim().isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              const Icon(Icons.public, size: 13, color: Colors.white70),
+              const SizedBox(width: 4),
+              Text(
+                countryDisplayNameForContext(
+                  context,
+                  entry.country,
+                  includeCode: true,
+                ),
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ],
         if (entry.depthMeters != null ||
             entry.durationMinutes != null ||
             entry.buddyNames.isNotEmpty) ...[

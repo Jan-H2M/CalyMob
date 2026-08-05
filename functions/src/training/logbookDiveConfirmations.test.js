@@ -49,6 +49,7 @@ const janEntry = () => ({
   source: 'manual',
   date: new Date('2026-07-26T09:00:00Z'),
   location_name: 'Vodelée',
+  country: 'BE',
   depth_max_meters: 21,
   duration_minutes: 42,
   counters: { mer: false, nuit: true, deco: true, dp: true, sf: true, exo: true, nitrox: true, surveillance: true, maree: true },
@@ -150,6 +151,7 @@ describe('WP-28 shared-fields whitelist', () => {
     expect(snapshot.water_temp_c).toBe(12);
     expect(snapshot.notes).toBe('Belle plongée, hippocampe !');
     expect(snapshot.location_name).toBe('Vodelée');
+    expect(snapshot.country).toBe('BE');
     expect(snapshot.depth_max_meters).toBe(21);
     expect(snapshot.duration_minutes).toBe(42);
   });
@@ -176,6 +178,7 @@ describe('WP-28 shared-fields whitelist', () => {
     expect(payload.binomes.map((b) => b.member_id)).toEqual([JAN.id, BERT.id]);
     expect(payload.buddies.map((b) => b.name)).toEqual([JAN.name, BERT.name]);
     expect(payload.zone).toBe('zelande');
+    expect(payload.country).toBe('BE');
     expect(payload.water_temp_c).toBe(12);
     expect(payload.validation_status).toBe('buddy_confirmed');
     expect(payload.dive_number).toBeUndefined();
@@ -244,6 +247,11 @@ describe('WP-28 snapshot comparison (refresh / re-ask)', () => {
 
   test('température change is substantive', () => {
     const b = { ...base(), water_temp_c: 8 };
+    expect(snapshotDiffers(base(), b, { includeNotes: false })).toBe(true);
+  });
+
+  test('country change is substantive', () => {
+    const b = { ...base(), country: 'NL' };
     expect(snapshotDiffers(base(), b, { includeNotes: false })).toBe(true);
   });
 

@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:xml/xml.dart';
 import '../models/student_logbook_entry.dart';
 import 'student_logbook_service.dart';
+import '../utils/country_codes.dart';
 
 class ParsedLogbookXlsxRow {
   final int rowNumber;
@@ -208,13 +209,19 @@ class LogbookXlsxImportService {
       'binomes': buddies.map((buddy) => buddy.toMap()).toList(),
     };
 
+    final rawCountry = _cellString(values['country']);
+    final country = normalizeCountryCode(rawCountry);
+    if (rawCountry.isNotEmpty && country == null) {
+      warnings.add(
+        'Pays « $rawCountry » non reconnu. Utilise un code ISO à 2 lettres.',
+      );
+    }
+
     return ParsedLogbookXlsxRow(
       rowNumber: rowNumber,
       date: date,
       locationName: location,
-      country: _cellString(values['country']).isEmpty
-          ? null
-          : _cellString(values['country']),
+      country: country,
       depthMaxMeters: depth,
       durationMinutes: duration,
       diveNumber: _cellInt(values['dive_number']),

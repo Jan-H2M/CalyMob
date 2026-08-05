@@ -26,6 +26,7 @@ import '../../config/firebase_config.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../utils/member_name.dart';
 import 'logbook_entry_screen.dart';
+import '../../widgets/logbook_location_card.dart';
 
 class LogbookEntryDetailScreen extends StatefulWidget {
   final String entryId;
@@ -105,7 +106,11 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
       children: [
-        _LocationCard(name: locationName, country: country, isSea: isSea),
+        LogbookLocationCard(
+          name: locationName,
+          country: country,
+          isSea: isSea,
+        ),
         const SizedBox(height: 12),
         _DateTimeCard(
           date: date,
@@ -167,7 +172,7 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
       children: [
-        _LocationCard(name: locationName, country: null, isSea: false),
+        LogbookLocationCard(name: locationName, isSea: false),
         const SizedBox(height: 12),
         _PoolGroupCard(
           level: groupLevel,
@@ -219,9 +224,11 @@ class _LogbookEntryDetailScreenState extends State<LogbookEntryDetailScreen> {
   String? get _editedLabel {
     final v = data['edited_at'];
     DateTime? d;
-    if (v is Timestamp)
+    if (v is Timestamp) {
       d = v.toDate();
-    else if (v is String) d = DateTime.tryParse(v);
+    } else if (v is String) {
+      d = DateTime.tryParse(v);
+    }
     if (d == null) return null;
     return '✎ modifié le ${d.day.toString().padLeft(2, '0')}/'
         '${d.month.toString().padLeft(2, '0')}/${d.year}';
@@ -697,60 +704,6 @@ class _SectionLabel extends StatelessWidget {
         fontSize: 10.5,
         letterSpacing: 1.2,
         fontWeight: FontWeight.bold,
-      ),
-    );
-  }
-}
-
-class _LocationCard extends StatelessWidget {
-  final String name;
-  final String? country;
-  final bool isSea;
-
-  const _LocationCard({
-    required this.name,
-    this.country,
-    required this.isSea,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return _Card(
-      child: Row(
-        children: [
-          Icon(
-            isSea ? Icons.waves : Icons.terrain,
-            color: isSea ? Colors.cyan.shade700 : Colors.green.shade700,
-            size: 36,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
-                ),
-                if (country != null && country!.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      country!,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
