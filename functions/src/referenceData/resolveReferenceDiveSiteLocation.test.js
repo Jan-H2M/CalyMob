@@ -3,6 +3,7 @@ const {
   similarity,
   suggestionScore,
   selectExactMatch,
+  referenceDescription,
 } = require('./resolveReferenceDiveSiteLocation');
 
 describe('reference dive-site name matching', () => {
@@ -23,5 +24,14 @@ describe('reference dive-site name matching', () => {
     };
     expect(similarity('vodelee', 'vodelee')).toBe(1);
     expect(suggestionScore('carriere de vodele', site)).toBeGreaterThan(0.9);
+  });
+
+  test('uses a French reference description first and falls back to the source text', () => {
+    expect(referenceDescription({
+      descriptions: { fr: 'Description française', en: 'English description' },
+    })).toBe('Description française');
+    expect(referenceDescription({ descriptions: { en: 'English description' } }))
+      .toBe('English description');
+    expect(referenceDescription({ descriptions: { fr: '   ' } })).toBeNull();
   });
 });

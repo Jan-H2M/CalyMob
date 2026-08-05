@@ -84,6 +84,19 @@ function publicSuggestion(site, score) {
   };
 }
 
+function referenceDescription(site) {
+  const descriptions = site?.descriptions;
+  if (!descriptions || typeof descriptions !== 'object') return null;
+  // Prefer a reviewed French value when one is available; the SSI import
+  // currently preserves English as the source fallback. The club receives a
+  // copy only when an administrator adopts the matching site and may edit it.
+  for (const language of ['fr', 'en']) {
+    const value = descriptions[language];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+}
+
 function eligibleSite(site) {
   return site.provider === 'ssi'
     && site.quality?.status !== 'rejected'
@@ -177,6 +190,7 @@ const resolveReferenceDiveSiteLocation = onCall(
         provider: 'ssi',
         providerSiteId: match.provider_site_id,
         confidence: 'exact_name_or_alias',
+        description: referenceDescription(match),
       };
     }
 
@@ -255,6 +269,7 @@ const confirmReferenceDiveSiteLocation = onCall(
       provider: 'ssi',
       providerSiteId: site.provider_site_id,
       confidence: 'manual_admin_confirmation',
+      description: referenceDescription(site),
     };
   },
 );
@@ -264,6 +279,7 @@ module.exports = {
   similarity,
   suggestionScore,
   selectExactMatch,
+  referenceDescription,
   resolveReferenceDiveSiteLocation,
   confirmReferenceDiveSiteLocation,
 };
