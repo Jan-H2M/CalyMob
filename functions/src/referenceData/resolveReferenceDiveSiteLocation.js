@@ -77,6 +77,28 @@ function publicSuggestion(site, score) {
   };
 }
 
+function publicReferenceSite(site) {
+  return {
+    id: site.provider_site_id,
+    displayName: site.display_name,
+    countryIso3: site.country_iso3 || null,
+    latitude: site.location?.latitude ?? null,
+    longitude: site.location?.longitude ?? null,
+    hasFrenchDescription: Boolean(site.descriptions?.fr),
+  };
+}
+
+function compactName(value) {
+  return normalizeLocationName(value).replace(/ /g, '');
+}
+
+function matchesReferenceQuery(site, query) {
+  const compactQuery = compactName(query);
+  if (!compactQuery) return true;
+  return [site.display_name, ...(Array.isArray(site.match_keys) ? site.match_keys : [])]
+    .some((value) => compactName(value).includes(compactQuery));
+}
+
 function referenceDescription(site) {
   const descriptions = site?.descriptions;
   if (!descriptions || typeof descriptions !== 'object') return null;
@@ -268,12 +290,62 @@ const confirmReferenceDiveSiteLocation = onCall(
   },
 );
 
+/**
+ * Compact, administrator-only browser for the local SSI reference catalogue.
+ * The raw descriptions stay server-side; the UI receives only list metadata.
+ */
+const listReferenceDiveSites = onCall(
+  { region: REGION, memory: '256MiB', timeoutSeconds: 15, maxInstances: 20 },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) throw new HttpsError('unauthenticated', 'Authentification requise.');
+    const clubId = typeof request.data?.clubId === 'string' ? request.data.clubId.trim() : '';
+    const query = typeof request.data?.query === 'string' ? request.data.query.trim() : '';
+    const cursor = typeof request.data?.cursor === 'string' ? request.data.cursor.trim() : '';
+    const requestedLimit = Number(request.data?.limit);
+    const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 10), 100) : 50;
+    if (!clubId || clubId.length > 100 || query.length > 180 || cursor.length > 200) {
+      throw new HttpsError('invalid-argument', 'Paramètres de recherche invalides.');
+    }
+    requireAdmin(await getClubMember(clubId, uid));
+    const sites = getReferenceSites(clubId);
+
+    if (query) {
+      const token = normalizeLocationName(query).split(' ').filter((value) => value.length >= 3)
+        .sort((left, right) => right.length - left.length)[0];
+      if (!token) return { items: [], nextCursor: null, searched: true };
+      const snap = await sites.where('search_tokens', 'array-contains', token).limit(200).get();
+      const items = snap.docs.map((doc) => doc.data()).filter(eligibleSite).filter((site) => matchesReferenceQuery(site, query))
+        .sort((left, right) => left.display_name.localeCompare(right.display_name, 'fr'))
+        .slice(0, limit).map(publicReferenceSite);
+      return { items, nextCursor: null, searched: true };
+    }
+
+    let startAfter = null;
+    if (cursor) {
+      const cursorSnap = await sites.doc(cursor).get();
+      if (cursorSnap.exists) startAfter = cursorSnap;
+    }
+    let requestQuery = sites.orderBy('display_name').limit(limit + 1);
+    if (startAfter) requestQuery = requestQuery.startAfter(startAfter);
+    const snap = await requestQuery.get();
+    const page = snap.docs.slice(0, limit);
+    return {
+      items: page.map((doc) => publicReferenceSite(doc.data())),
+      nextCursor: snap.docs.length > limit ? page[page.length - 1].id : null,
+      searched: false,
+    };
+  },
+);
+
 module.exports = {
   normalizeLocationName,
   similarity,
   suggestionScore,
   selectExactMatch,
   referenceDescription,
+  matchesReferenceQuery,
   resolveReferenceDiveSiteLocation,
   confirmReferenceDiveSiteLocation,
+  listReferenceDiveSites,
 };
