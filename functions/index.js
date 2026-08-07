@@ -65,6 +65,10 @@ exports.onNewEventMessage = onNewEventMessage;
 const { onNewAnnouncement } = require('./src/notifications/onNewAnnouncement');
 exports.onNewAnnouncement = onNewAnnouncement;
 
+// Daily 07:00 birthday push, only when one or more active members celebrate.
+const { birthdayNotification } = require('./src/notifications/birthdayNotification');
+exports.birthdayNotification = birthdayNotification;
+
 // Push notifications for announcement replies
 const { onNewAnnouncementReply } = require('./src/notifications/onNewAnnouncementReply');
 exports.onNewAnnouncementReply = onNewAnnouncementReply;

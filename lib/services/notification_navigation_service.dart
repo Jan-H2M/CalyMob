@@ -17,6 +17,7 @@ enum NotificationRouteKind {
   communicationInbox,
   medicalCertificate,
   logbookConfirmation,
+  birthday,
   unsupported,
 }
 
@@ -113,6 +114,8 @@ class NotificationNavigationRequest {
       case 'logbook_dive_confirmation':
       case 'logbook_dive_confirmation_result':
         return NotificationRouteKind.logbookConfirmation;
+      case 'birthday':
+        return NotificationRouteKind.birthday;
       default:
         // Forward-compatible payloads can opt into the generic task route.
         if (formationTaskId != null) {

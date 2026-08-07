@@ -410,6 +410,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
     try {
       switch (request.routeKind) {
+        case NotificationRouteKind.birthday:
+          // A birthday push has no detail page. Opening the app is the
+          // intended destination, so keep the member on the home screen.
+          navigator.popUntil((route) => route.isFirst);
+          break;
+
         case NotificationRouteKind.operation:
           final operationId = request.operationId;
           if (operationId == null) return _showMissingNotificationTarget();
