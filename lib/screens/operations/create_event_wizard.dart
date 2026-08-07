@@ -14,6 +14,7 @@ import '../../services/fiscal_year_service.dart';
 import '../../services/operation_service.dart';
 import '../../services/session_service.dart';
 import '../../utils/member_name.dart';
+import 'payment_rules_section.dart';
 
 /// Wizard de création d'événement en 2 étapes
 /// Identique fonctionnellement à CreateEventWizard de CalyCompta
@@ -72,6 +73,11 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
   String _statut = 'ouvert';
   List<_EditableTariff> _editableTariffs = [];
   bool _saving = false;
+  bool _paymentRequired = false;
+  Set<String> _allowedPaymentMethods = {'qr_immediate', 'qr_email', 'on_site'};
+  String _registrationConfirmationPolicy = 'immediate';
+  int _paymentDeadlineDays = 3;
+  bool _autoCancelUnpaid = true;
 
   @override
   void initState() {
@@ -489,6 +495,11 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
         // Firebase UID of the original creator — used to authorize later
         // responsable changes. Distinct from created_by source tag above.
         'creator_user_id': userId,
+        'payment_required': _paymentRequired,
+        'allowed_payment_methods': _allowedPaymentMethods.toList(),
+        'registration_confirmation_policy': _registrationConfirmationPolicy,
+        'payment_deadline_days': _paymentDeadlineDays,
+        'auto_cancel_unpaid': _autoCancelUnpaid,
       };
 
       await _operationService.createOperation(clubId: _clubId, data: data);
@@ -1158,6 +1169,31 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
 
           // Tarifs (éditables — pré-remplis depuis le lieu si applicable)
           _buildTariffsSection(),
+          const SizedBox(height: 16),
+
+          PaymentRulesSection(
+            paymentRequired: _paymentRequired,
+            allowedMethods: _allowedPaymentMethods,
+            confirmationPolicy: _registrationConfirmationPolicy,
+            deadlineDays: _paymentDeadlineDays,
+            autoCancelUnpaid: _autoCancelUnpaid,
+            onChanged: (
+                    {paymentRequired,
+                    allowedMethods,
+                    confirmationPolicy,
+                    deadlineDays,
+                    autoCancelUnpaid}) =>
+                setState(() {
+              if (paymentRequired != null) _paymentRequired = paymentRequired;
+              if (allowedMethods != null)
+                _allowedPaymentMethods = allowedMethods;
+              if (confirmationPolicy != null)
+                _registrationConfirmationPolicy = confirmationPolicy;
+              if (deadlineDays != null) _paymentDeadlineDays = deadlineDays;
+              if (autoCancelUnpaid != null)
+                _autoCancelUnpaid = autoCancelUnpaid;
+            }),
+          ),
           const SizedBox(height: 16),
 
           // Statut

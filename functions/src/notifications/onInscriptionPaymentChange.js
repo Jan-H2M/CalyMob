@@ -35,6 +35,29 @@ exports.onInscriptionPaymentChange = onDocumentWritten(
     const beforeData = event.data?.before?.data();
     const afterData = event.data?.after?.data();
 
+    // A bank-matched/collected payment is the source of truth for confirming
+    // registrations that were created provisionally.
+    if (afterData?.paye === true && afterData.registration_status === 'pending_payment') {
+      try {
+        await event.data.after.ref.update({
+          registration_status: 'confirmed',
+          confirmed_at: admin.firestore.FieldValue.serverTimestamp(),
+          payment_expires_at: null,
+        });
+        const guestSnap = await event.data.after.ref.parent
+          .where('parent_inscription_id', '==', inscriptionId).get();
+        const batch = admin.firestore().batch();
+        guestSnap.docs.forEach((guest) => batch.update(guest.ref, {
+          registration_status: 'confirmed',
+          confirmed_at: admin.firestore.FieldValue.serverTimestamp(),
+          payment_expires_at: null,
+        }));
+        if (!guestSnap.empty) await batch.commit();
+      } catch (error) {
+        console.error('[onInscriptionPaymentChange] failed to confirm paid inscription', error);
+      }
+    }
+
     // Detect whether this change can possibly affect the unpaid set.
     // - Create / delete → always relevant
     // - Update → only if `paye` or `payment_status` actually changed

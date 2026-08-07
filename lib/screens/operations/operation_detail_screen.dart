@@ -499,7 +499,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
             // If there's a price, show payment options dialog.
             // Skip when priceTbd — the organiser will bill later.
-            if (totalPrice > 0 &&
+            if (operation.paymentRequired &&
+                totalPrice > 0 &&
                 !operation.priceTbd &&
                 _userInscription != null) {
               final openInstallment =
@@ -587,7 +588,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
             // If there's a price, show payment options dialog.
             // Skip when priceTbd — the organiser will bill later.
-            if (basePrice > 0 &&
+            if (operation.paymentRequired &&
+                basePrice > 0 &&
                 !operation.priceTbd &&
                 _userInscription != null) {
               final openInstallment =
@@ -889,7 +891,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
       // 3. Payment options dialog with grand total.
       // (skip when priceTbd — organiser will bill later)
-      if (totalPrice > 0 && !operation.priceTbd) {
+      if (operation.paymentRequired && totalPrice > 0 && !operation.priceTbd) {
         final openInstallment =
             _firstOpenInstallment(operation, _userInscription);
         await _showPaymentOptionsDialog(
@@ -960,7 +962,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       return;
     }
 
-    final payNow = await showDialog<bool>(
+    final allowed = operation.allowedPaymentMethods as List<String>;
+    final choice = await showDialog<String>(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
@@ -1001,96 +1004,108 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               ),
             ),
             const SizedBox(height: 24),
-
-            // Button 1: Pay now (green)
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green.shade600,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.all(16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+            if (allowed.contains('qr_immediate'))
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context, 'qr_immediate'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green.shade600,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.all(16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.qr_code_2, size: 22),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Payer maintenant',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Affichez le QR et payez avec votre application bancaire',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.white.withOpacity(0.9),
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                   ),
                 ),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.email_outlined, size: 22),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'Payer maintenant',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Recevez un QR code par email pour payer via votre app bancaire\n(ou virement manuel avec la communication exacte)',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.white.withOpacity(0.9),
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
               ),
-            ),
-
-            const SizedBox(height: 12),
-
-            // Button 2: Pay later (grey/blue)
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(context, false),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blueGrey.shade100,
-                  foregroundColor: Colors.blueGrey.shade800,
-                  padding: const EdgeInsets.all(16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+            if (allowed.contains('qr_email')) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.pop(context, 'qr_email'),
+                  icon: const Icon(Icons.email_outlined),
+                  label: const Text('Recevoir le QR par email'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.all(16),
                   ),
                 ),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.schedule,
-                            size: 22, color: Colors.blueGrey.shade700),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Payer plus tard',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: Colors.blueGrey.shade800,
+              ),
+            ],
+            if (allowed.contains('on_site')) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context, 'on_site'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blueGrey.shade100,
+                    foregroundColor: Colors.blueGrey.shade800,
+                    padding: const EdgeInsets.all(16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.schedule,
+                              size: 22, color: Colors.blueGrey.shade700),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Payer plus tard',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Colors.blueGrey.shade800,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Payez sur place lors de l\'événement',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.blueGrey.shade600,
+                        ],
                       ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
+                      const SizedBox(height: 6),
+                      Text(
+                        'Payez sur place lors de l\'événement',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.blueGrey.shade600,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
+            ],
           ],
         ),
       ),
@@ -1098,7 +1113,18 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
     final operationProvider = context.read<OperationProvider>();
 
-    if (payNow == true && mounted) {
+    if (choice == 'qr_immediate' && mounted) {
+      await _showPaymentQrOnDevice(
+        operation: operation,
+        amount: amount,
+        memberEmail: memberEmail,
+        memberFirstName: memberFirstName,
+        memberLastName: memberLastName,
+        installmentLabel: installmentLabel,
+      );
+      await operationProvider.reloadParticipants(
+          widget.clubId, widget.operationId);
+    } else if (choice == 'qr_email' && mounted) {
       final emailSent = await _sendPaymentEmail(
         operation: operation,
         amount: amount,
@@ -1127,7 +1153,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       // Refresh participant list to show updated payment status
       await operationProvider.reloadParticipants(
           widget.clubId, widget.operationId);
-    } else if (payNow == false && mounted) {
+    } else if (choice == 'on_site' && mounted) {
       if (installmentId == null) {
         // Set status to qr_on_site (will pay at the event)
         await _operationService.updatePaymentStatus(
@@ -4226,9 +4252,14 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     final IconData icon =
         isEmail ? Icons.mark_email_read_outlined : Icons.qr_code_scanner;
 
-    final String title = 'Inscrit';
-    final String subtitle =
-        isEmail ? 'QR code envoyé par email' : 'Paiement sur place via QR code';
+    final String title = inscription.registrationStatus == 'pending_payment'
+        ? 'Inscription provisoire'
+        : 'Inscrit';
+    final String subtitle = isEmail
+        ? 'QR code envoyé par email'
+        : inscription.paymentStatus == 'qr_on_site'
+            ? 'Paiement sur place via QR code'
+            : 'Paiement en attente';
 
     String? timestampLine;
     if (isEmail && inscription.paymentStatusAt != null) {
@@ -4323,6 +4354,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     final memberEmail = authProvider.currentUser?.email ?? '';
     final memberFirstName = memberProvider.prenom ?? '';
     final memberLastName = memberProvider.nom ?? '';
+    final allowed = operation.allowedPaymentMethods as List<String>;
 
     await showModalBottomSheet<void>(
       context: context,
@@ -4370,60 +4402,87 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               ),
               const SizedBox(height: 20),
 
-              // Primary action: send / resend QR email
-              ElevatedButton.icon(
-                onPressed: () async {
-                  Navigator.pop(sheetCtx);
-                  // CALYMOB-1C: must be the Firestore inscription doc id,
-                  // not the auth uid. Inscriptions are created with .add()
-                  // so doc.id is auto-generated and not equal to userId.
-                  final emailSent = await _sendPaymentEmail(
-                    operation: operation,
-                    amount: inscriptionPrice,
-                    participantId: inscription.id,
-                    memberEmail: memberEmail,
-                    memberFirstName: memberFirstName,
-                    memberLastName: memberLastName,
-                    installmentId: installmentId,
-                    installmentLabel: installmentLabel,
-                  );
-                  if (!emailSent) return;
-
-                  // Tranche-status wordt atomair door sendPaymentQrEmail
-                  // beheerd. De app mag het geaggregeerde QR-bedrag nooit in
-                  // de persoonlijke amount_due terugschrijven.
-                  if (installmentId == null) {
-                    await _operationService.updatePaymentStatus(
-                      clubId: widget.clubId,
-                      operationId: widget.operationId,
-                      participantId: inscription.id,
-                      status: 'qr_email_sent',
+              if (allowed.contains('qr_immediate')) ...[
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    Navigator.pop(sheetCtx);
+                    await _showPaymentQrOnDevice(
+                      operation: operation,
+                      amount: inscriptionPrice,
+                      memberEmail: memberEmail,
+                      memberFirstName: memberFirstName,
+                      memberLastName: memberLastName,
+                      installmentLabel: installmentLabel,
                     );
-                  }
-                  if (mounted) {
-                    await context
-                        .read<OperationProvider>()
-                        .reloadParticipants(widget.clubId, widget.operationId);
-                  }
-                },
-                icon: const Icon(Icons.email_outlined),
-                label: Text(
-                  isEmail
-                      ? 'Renvoyer le QR code par email'
-                      : 'Recevoir le QR code par email',
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue.shade600,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                  },
+                  icon: const Icon(Icons.qr_code_2),
+                  label: const Text('Payer maintenant'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green.shade600,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                 ),
-              ),
+                const SizedBox(height: 10),
+              ],
+
+              if (allowed.contains('qr_email'))
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    Navigator.pop(sheetCtx);
+                    // CALYMOB-1C: must be the Firestore inscription doc id,
+                    // not the auth uid. Inscriptions are created with .add()
+                    // so doc.id is auto-generated and not equal to userId.
+                    final emailSent = await _sendPaymentEmail(
+                      operation: operation,
+                      amount: inscriptionPrice,
+                      participantId: inscription.id,
+                      memberEmail: memberEmail,
+                      memberFirstName: memberFirstName,
+                      memberLastName: memberLastName,
+                      installmentId: installmentId,
+                      installmentLabel: installmentLabel,
+                    );
+                    if (!emailSent) return;
+
+                    // Tranche-status wordt atomair door sendPaymentQrEmail
+                    // beheerd. De app mag het geaggregeerde QR-bedrag nooit in
+                    // de persoonlijke amount_due terugschrijven.
+                    if (installmentId == null) {
+                      await _operationService.updatePaymentStatus(
+                        clubId: widget.clubId,
+                        operationId: widget.operationId,
+                        participantId: inscription.id,
+                        status: 'qr_email_sent',
+                      );
+                    }
+                    if (mounted) {
+                      await context
+                          .read<OperationProvider>()
+                          .reloadParticipants(
+                              widget.clubId, widget.operationId);
+                    }
+                  },
+                  icon: const Icon(Icons.email_outlined),
+                  label: Text(
+                    isEmail
+                        ? 'Renvoyer le QR code par email'
+                        : 'Recevoir le QR code par email',
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue.shade600,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
 
               // Secondary action (only when currently email): switch to on-site
-              if (isEmail && installmentId == null) ...[
+              if (allowed.contains('on_site') &&
+                  installmentId == null &&
+                  inscription.paymentStatus != 'qr_on_site') ...[
                 const SizedBox(height: 10),
                 OutlinedButton.icon(
                   onPressed: () async {

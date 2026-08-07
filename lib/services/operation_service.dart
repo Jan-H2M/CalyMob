@@ -89,9 +89,11 @@ class OperationService {
           .collection('clubs/$clubId/operations/$operationId/inscriptions')
           .get();
 
-      debugPrint(
-          '👥 ${snapshot.size} participants pour opération $operationId');
-      return snapshot.size;
+      final count = snapshot.docs
+          .where((doc) => doc.data()['registration_status'] != 'canceled')
+          .length;
+      debugPrint('👥 $count participants pour opération $operationId');
+      return count;
     } catch (e) {
       debugPrint('❌ Erreur comptage participants: $e');
       return 0;
@@ -111,7 +113,8 @@ class OperationService {
           .where('membre_id', isEqualTo: userId)
           .get();
 
-      final isRegistered = snapshot.docs.isNotEmpty;
+      final isRegistered = snapshot.docs
+          .any((doc) => doc.data()['registration_status'] != 'canceled');
       debugPrint(isRegistered
           ? '✅ Utilisateur $userId déjà inscrit à $operationId'
           : '❌ Utilisateur $userId NON inscrit à $operationId');
@@ -180,6 +183,16 @@ class OperationService {
         membrePrenom: memberProfile?.prenom,
         prix: prix,
         paye: false,
+        paymentStatus: operation.paymentRequired ? 'open' : null,
+        registrationStatus: operation.paymentRequired &&
+                operation.registrationConfirmationPolicy == 'after_payment'
+            ? 'pending_payment'
+            : 'confirmed',
+        paymentExpiresAt: operation.paymentRequired &&
+                operation.registrationConfirmationPolicy == 'after_payment' &&
+                operation.autoCancelUnpaid
+            ? DateTime.now().add(Duration(days: operation.paymentDeadlineDays))
+            : null,
         dateInscription: DateTime.now(),
         selectedSupplements: selectedSupplements ?? [],
         supplementTotal: supplementTotal ?? 0,
@@ -406,6 +419,7 @@ class OperationService {
 
       final participants = snapshot.docs
           .map((doc) => ParticipantOperation.fromFirestore(doc))
+          .where((participant) => participant.registrationStatus != 'canceled')
           .toList();
 
       // Sort by first name (prénom), then last name — diacritics-insensitive
@@ -432,6 +446,7 @@ class OperationService {
         .map((snapshot) {
       final participants = snapshot.docs
           .map((doc) => ParticipantOperation.fromFirestore(doc))
+          .where((participant) => participant.registrationStatus != 'canceled')
           .toList();
 
       // Sort by first name (prénom), then last name — diacritics-insensitive
@@ -490,7 +505,16 @@ class OperationService {
         return null;
       }
 
-      return ParticipantOperation.fromFirestore(snapshot.docs.first);
+      // Een vervallen/geannuleerde inschrijving mag een nieuwe inschrijving
+      // niet blokkeren. Kies daarom alleen een nog actieve registratie.
+      for (final document in snapshot.docs) {
+        final inscription = ParticipantOperation.fromFirestore(document);
+        if (inscription.registrationStatus != 'canceled') {
+          return inscription;
+        }
+      }
+
+      return null;
     } catch (e) {
       debugPrint('❌ Erreur récupération inscription: $e');
       return null;
@@ -878,6 +902,8 @@ class OperationService {
       // facturé (cas Louis Longrée, Gozo). Si le tarif invité est connu on
       // reprend ses montants; sinon tout le prix va sur la 1re tranche.
       Map<String, InstallmentPayment> installments = const {};
+      String registrationStatus = 'confirmed';
+      Timestamp? paymentExpiresAt;
       final opSnap = await _firestore
           .collection('clubs/$clubId/operations')
           .doc(operationId)
@@ -915,6 +941,16 @@ class OperationService {
           }
         }
       }
+      if (parentInscriptionId != null) {
+        final parentSnap = await _firestore
+            .collection('clubs/$clubId/operations/$operationId/inscriptions')
+            .doc(parentInscriptionId)
+            .get();
+        final parent = parentSnap.data();
+        registrationStatus =
+            parent?['registration_status'] as String? ?? 'confirmed';
+        paymentExpiresAt = parent?['payment_expires_at'] as Timestamp?;
+      }
 
       final inscriptionData = {
         'operation_id': operationId,
@@ -924,6 +960,8 @@ class OperationService {
         'membre_prenom': guestPrenom,
         'prix': prix,
         'paye': false,
+        'registration_status': registrationStatus,
+        if (paymentExpiresAt != null) 'payment_expires_at': paymentExpiresAt,
         'date_inscription': FieldValue.serverTimestamp(),
         // Guest marker
         'is_guest': true,

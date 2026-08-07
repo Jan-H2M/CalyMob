@@ -11,6 +11,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../services/operation_service.dart';
 import '../../utils/member_name.dart';
+import 'payment_rules_section.dart';
 
 /// Écran d'édition d'un événement existant
 /// Accessible par le créateur original, le responsable actuel ou un admin.
@@ -48,6 +49,11 @@ class _EditEventScreenState extends State<EditEventScreen> {
   late List<_EditableSupplement> _supplements;
   late bool _priceTbd;
   late bool _allowGuests;
+  late bool _paymentRequired;
+  late Set<String> _allowedPaymentMethods;
+  late String _registrationConfirmationPolicy;
+  late int _paymentDeadlineDays;
+  late bool _autoCancelUnpaid;
   bool _saving = false;
   bool _hasChanges = false;
 
@@ -82,6 +88,11 @@ class _EditEventScreenState extends State<EditEventScreen> {
     _organisateurNom = op.organisateurNom;
     _priceTbd = op.priceTbd;
     _allowGuests = op.allowGuests;
+    _paymentRequired = op.paymentRequired;
+    _allowedPaymentMethods = op.allowedPaymentMethods.toSet();
+    _registrationConfirmationPolicy = op.registrationConfirmationPolicy;
+    _paymentDeadlineDays = op.paymentDeadlineDays;
+    _autoCancelUnpaid = op.autoCancelUnpaid;
 
     // Copier les tarifs existants en version éditable
     _tariffs =
@@ -418,6 +429,11 @@ class _EditEventScreenState extends State<EditEventScreen> {
         'supplements': supplementsData,
         'price_tbd': _priceTbd,
         'allow_guests': _allowGuests,
+        'payment_required': _paymentRequired,
+        'allowed_payment_methods': _allowedPaymentMethods.toList(),
+        'registration_confirmation_policy': _registrationConfirmationPolicy,
+        'payment_deadline_days': _paymentDeadlineDays,
+        'auto_cancel_unpaid': _autoCancelUnpaid,
         'montant_prevu': budget,
         'communication': _communicationController.text.trim().isNotEmpty
             ? _communicationController.text.trim()
@@ -672,6 +688,34 @@ class _EditEventScreenState extends State<EditEventScreen> {
 
                 // ========== AUTORISER LES INVITÉS EXTERNES ==========
                 _buildAllowGuestsSection(),
+                const SizedBox(height: 16),
+
+                PaymentRulesSection(
+                  paymentRequired: _paymentRequired,
+                  allowedMethods: _allowedPaymentMethods,
+                  confirmationPolicy: _registrationConfirmationPolicy,
+                  deadlineDays: _paymentDeadlineDays,
+                  autoCancelUnpaid: _autoCancelUnpaid,
+                  onChanged: (
+                          {paymentRequired,
+                          allowedMethods,
+                          confirmationPolicy,
+                          deadlineDays,
+                          autoCancelUnpaid}) =>
+                      setState(() {
+                    if (paymentRequired != null)
+                      _paymentRequired = paymentRequired;
+                    if (allowedMethods != null)
+                      _allowedPaymentMethods = allowedMethods;
+                    if (confirmationPolicy != null)
+                      _registrationConfirmationPolicy = confirmationPolicy;
+                    if (deadlineDays != null)
+                      _paymentDeadlineDays = deadlineDays;
+                    if (autoCancelUnpaid != null)
+                      _autoCancelUnpaid = autoCancelUnpaid;
+                    _hasChanges = true;
+                  }),
+                ),
                 const SizedBox(height: 16),
 
                 // ========== TARIFS ==========

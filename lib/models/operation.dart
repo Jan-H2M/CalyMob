@@ -69,6 +69,11 @@ class Operation {
   final bool priceTbd;
   final bool paymentPlanEnabled;
   final List<PaymentInstallment> paymentInstallments;
+  final bool paymentRequired;
+  final List<String> allowedPaymentMethods;
+  final String registrationConfirmationPolicy;
+  final int paymentDeadlineDays;
+  final bool autoCancelUnpaid;
 
   /// Allow members to register external guests (family / friends) for this
   /// event from CalyMob. When true, members see an "Ajouter un invité" button
@@ -134,6 +139,11 @@ class Operation {
     this.priceTbd = false,
     this.paymentPlanEnabled = false,
     this.paymentInstallments = const [],
+    this.paymentRequired = false,
+    this.allowedPaymentMethods = const ['qr_immediate', 'qr_email', 'on_site'],
+    this.registrationConfirmationPolicy = 'immediate',
+    this.paymentDeadlineDays = 3,
+    this.autoCancelUnpaid = true,
     this.allowGuests = false,
     this.organisateurId,
     this.organisateurNom,
@@ -172,6 +182,21 @@ class Operation {
       paymentPlanEnabled: data['payment_plan_enabled'] == true,
       paymentInstallments:
           _parsePaymentInstallments(data['payment_installments']),
+      paymentRequired: data.containsKey('payment_required')
+          ? data['payment_required'] == true
+          : ((data['prix_membre'] as num?)?.toDouble() ?? 0) > 0 ||
+              ((data['event_tariffs'] as List?) ?? const [])
+                  .whereType<Map>()
+                  .any((tariff) => ((tariff['price'] as num?) ?? 0) > 0),
+      allowedPaymentMethods: (data['allowed_payment_methods'] as List?)
+              ?.whereType<String>()
+              .toList() ??
+          const ['qr_immediate', 'qr_email', 'on_site'],
+      registrationConfirmationPolicy:
+          data['registration_confirmation_policy'] as String? ?? 'immediate',
+      paymentDeadlineDays:
+          (data['payment_deadline_days'] as num?)?.toInt() ?? 3,
+      autoCancelUnpaid: data['auto_cancel_unpaid'] != false,
       allowGuests: data['allow_guests'] == true,
       organisateurId: data['organisateur_id'],
       organisateurNom: data['organisateur_nom'],

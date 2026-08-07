@@ -1,6 +1,20 @@
 {
   "indexes": [
     {
+      "collectionGroup": "inscriptions",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "registration_status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "payment_expires_at",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "medical_certificates",
       "queryScope": "COLLECTION",
       "fields": [
