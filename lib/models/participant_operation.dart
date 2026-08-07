@@ -131,6 +131,8 @@ class ParticipantOperation {
   final double supplementTotal; // Somme des prix des suppléments
   final String?
       paymentStatus; // Payment status: open, pending, paid, failed, canceled, expired
+  final String registrationStatus;
+  final DateTime? paymentExpiresAt;
   final DateTime?
       paymentStatusAt; // Timestamp of last payment_status update (= last QR email sent time when status is 'qr_email_sent')
   final bool
@@ -187,6 +189,8 @@ class ParticipantOperation {
     this.selectedSupplements = const [],
     this.supplementTotal = 0,
     this.paymentStatus,
+    this.registrationStatus = 'confirmed',
+    this.paymentExpiresAt,
     this.paymentStatusAt,
     this.transactionMatched = false,
     this.transactionId,
@@ -316,6 +320,8 @@ class ParticipantOperation {
           _parseSelectedSupplements(data['selected_supplements']),
       supplementTotal: (data['supplement_total'] ?? 0).toDouble(),
       paymentStatus: data['payment_status'],
+      registrationStatus: data['registration_status'] as String? ?? 'confirmed',
+      paymentExpiresAt: (data['payment_expires_at'] as Timestamp?)?.toDate(),
       paymentStatusAt: (data['payment_status_at'] as Timestamp?)?.toDate(),
       transactionMatched: data['transaction_matched'] ?? false,
       transactionId: data['transaction_id'] as String?,
@@ -411,6 +417,10 @@ class ParticipantOperation {
           selectedSupplements.map((s) => s.toMap()).toList(),
       'supplement_total': supplementTotal,
       'payment_status': paymentStatus,
+      'registration_status': registrationStatus,
+      'payment_expires_at': paymentExpiresAt != null
+          ? Timestamp.fromDate(paymentExpiresAt!)
+          : null,
       'transaction_matched': transactionMatched,
       'transaction_id': transactionId,
       'mode_paiement': modePaiement,
@@ -454,6 +464,8 @@ class ParticipantOperation {
     List<SelectedSupplement>? selectedSupplements,
     double? supplementTotal,
     String? paymentStatus,
+    String? registrationStatus,
+    DateTime? paymentExpiresAt,
     DateTime? paymentStatusAt,
     bool? transactionMatched,
     String? transactionId,
@@ -491,6 +503,8 @@ class ParticipantOperation {
       selectedSupplements: selectedSupplements ?? this.selectedSupplements,
       supplementTotal: supplementTotal ?? this.supplementTotal,
       paymentStatus: paymentStatus ?? this.paymentStatus,
+      registrationStatus: registrationStatus ?? this.registrationStatus,
+      paymentExpiresAt: paymentExpiresAt ?? this.paymentExpiresAt,
       paymentStatusAt: paymentStatusAt ?? this.paymentStatusAt,
       transactionMatched: transactionMatched ?? this.transactionMatched,
       transactionId: transactionId ?? this.transactionId,
