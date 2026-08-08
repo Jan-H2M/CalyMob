@@ -362,6 +362,14 @@ const {
 exports.assignDiveNumber = assignDiveNumber;
 exports.backfillMyDiveNumbers = backfillMyDiveNumbers;
 
+// Private reference-data lookup used by both CalyMob and CalyCompta.
+// It returns only a conservative coordinate match, never the source dataset.
+exports.resolveReferenceDiveSiteLocation = require('./src/referenceData/resolveReferenceDiveSiteLocation').resolveReferenceDiveSiteLocation;
+exports.confirmReferenceDiveSiteLocation = require('./src/referenceData/resolveReferenceDiveSiteLocation').confirmReferenceDiveSiteLocation;
+exports.listReferenceDiveSites = require('./src/referenceData/resolveReferenceDiveSiteLocation').listReferenceDiveSites;
+exports.previewDiveLocationMerge = require('./src/referenceData/mergeDiveLocations').previewDiveLocationMerge;
+exports.mergeDiveLocations = require('./src/referenceData/mergeDiveLocations').mergeDiveLocations;
+
 // Buddy confirmation flow for Mon Carnet: when a diver adds Calypso members as
 // binômes, those members confirm the shared dive and copy/compare it.
 const {
