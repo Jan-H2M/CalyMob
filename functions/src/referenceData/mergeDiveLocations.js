@@ -12,6 +12,7 @@ const { FieldValue } = require('firebase-admin/firestore');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 
 const REGION = 'europe-west1';
+const RUNNING_MERGE_TTL_MS = 15 * 60 * 1000;
 
 async function requireClubAdmin(clubId, uid) {
   const member = await admin.firestore()
@@ -136,7 +137,42 @@ const mergeDiveLocations = onCall({ region: REGION, timeoutSeconds: 180, memory:
   const context = await loadMergeContext(input);
   const { source, target, references } = context;
   const targetLocation = locationDetails(target);
-  const writer = admin.firestore().bulkWriter();
+  const db = admin.firestore();
+  const auditRef = context.clubRef.collection('dive_location_merges').doc();
+
+  // Lock the source before rewriting references. A failed or timed-out run can
+  // be retried after 15 minutes; successful runs are permanently blocked by
+  // merged_into_location_id.
+  await db.runTransaction(async (transaction) => {
+    const sourceSnap = await transaction.get(context.sourceSnap.ref);
+    const current = sourceSnap.data() || {};
+    if (current.merged_into_location_id) {
+      throw new HttpsError('failed-precondition', 'Ce site a déjà été fusionné.');
+    }
+    const startedAt = current.merge_started_at?.toMillis?.() || 0;
+    if (current.merge_status === 'running' && Date.now() - startedAt < RUNNING_MERGE_TTL_MS) {
+      throw new HttpsError('aborted', 'Une fusion est déjà en cours pour ce site.');
+    }
+    transaction.set(context.sourceSnap.ref, {
+      merge_status: 'running',
+      merge_target_location_id: target.id,
+      merge_started_at: FieldValue.serverTimestamp(),
+      merge_started_by: input.uid,
+    }, { merge: true });
+    transaction.create(auditRef, {
+      status: 'running',
+      source_location_id: source.id,
+      source_name: source.name || '',
+      target_location_id: target.id,
+      target_name: target.name || '',
+      include_exact_name_entries: input.includeExactNameEntries,
+      counts: publicCounts(references),
+      requested_by: input.uid,
+      created_at: FieldValue.serverTimestamp(),
+    });
+  });
+
+  const writer = db.bulkWriter();
 
   for (const doc of references.operations) {
     const data = doc.data();
@@ -173,29 +209,45 @@ const mergeDiveLocations = onCall({ region: REGION, timeoutSeconds: 180, memory:
     writer.update(doc.ref, patch);
   }
 
-  writer.update(context.targetSnap.ref, {
-    ...targetEnrichment(source, target),
-    updated_at: FieldValue.serverTimestamp(),
-  });
-  writer.update(context.sourceSnap.ref, {
-    merged_into_location_id: target.id,
-    available_for_events: false,
-    merged_at: FieldValue.serverTimestamp(),
-    merged_by: input.uid,
-    updated_at: FieldValue.serverTimestamp(),
-  });
-  const auditRef = context.clubRef.collection('dive_location_merges').doc();
-  writer.create(auditRef, {
-    source_location_id: source.id,
-    source_name: source.name || '',
-    target_location_id: target.id,
-    target_name: target.name || '',
-    include_exact_name_entries: input.includeExactNameEntries,
-    counts: publicCounts(references),
-    merged_by: input.uid,
-    created_at: FieldValue.serverTimestamp(),
-  });
-  await writer.close();
+  try {
+    await writer.close();
+    // Archive only after every known reference has been rewritten. Keeping
+    // finalisation in one transaction prevents an archived source with a
+    // missing audit record or an unenriched target.
+    await db.runTransaction(async (transaction) => {
+      transaction.set(context.targetSnap.ref, {
+        ...targetEnrichment(source, target),
+        updated_at: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      transaction.set(context.sourceSnap.ref, {
+        merged_into_location_id: target.id,
+        available_for_events: false,
+        merge_status: 'completed',
+        merged_at: FieldValue.serverTimestamp(),
+        merged_by: input.uid,
+        updated_at: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      transaction.set(auditRef, {
+        status: 'completed',
+        completed_at: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    });
+  } catch (error) {
+    await Promise.allSettled([
+      context.sourceSnap.ref.set({
+        merge_status: 'failed',
+        merge_error: String(error?.message || error).slice(0, 500),
+        merge_failed_at: FieldValue.serverTimestamp(),
+      }, { merge: true }),
+      auditRef.set({
+        status: 'failed',
+        error: String(error?.message || error).slice(0, 500),
+        failed_at: FieldValue.serverTimestamp(),
+      }, { merge: true }),
+    ]);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', 'La fusion a échoué. Le site source n’a pas été supprimé.');
+  }
 
   return {
     success: true,

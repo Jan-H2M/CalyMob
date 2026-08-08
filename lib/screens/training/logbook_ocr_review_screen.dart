@@ -144,7 +144,6 @@ class _LogbookOcrReviewScreenState extends State<LogbookOcrReviewScreen> {
       final clubLocs = <String>{};
       for (final d in locSnap.docs) {
         final v = d.data();
-        if (v['merged_into_location_id'] != null) continue;
         final n = (v['name'] ?? v['nom'] ?? '').toString().trim();
         if (n.isNotEmpty) clubLocs.add(n);
       }

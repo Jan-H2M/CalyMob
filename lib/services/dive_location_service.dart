@@ -16,9 +16,6 @@ class DiveLocationService {
           .get();
 
       final locations = snapshot.docs
-          // Merged records are retained for historical links but are not
-          // selectable as a new dive location.
-          .where((doc) => doc.data()['merged_into_location_id'] == null)
           .map((doc) => DiveLocation.fromFirestore(doc))
           .toList();
 
@@ -31,8 +28,7 @@ class DiveLocationService {
   }
 
   /// Récupérer un lieu par ID
-  Future<DiveLocation?> getLocationById(
-      String clubId, String locationId) async {
+  Future<DiveLocation?> getLocationById(String clubId, String locationId) async {
     try {
       final doc = await _firestore
           .collection('clubs/$clubId/dive_locations')
