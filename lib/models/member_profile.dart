@@ -13,7 +13,7 @@ class MemberProfile {
   final String? plongeurCode; // Niveau de plongée (ex: "P2", "P4", "MC")
   final String? plongeurNiveau; // Niveau complet en texte
   final String?
-      fonctionDefaut; // Fonction par défaut: "membre", "encadrant", "ca"
+  fonctionDefaut; // Fonction par défaut: "membre", "encadrant", "ca"
   final List<String> clubStatuten; // Fonctions multiples dans le club
 
   // Photo de profil
@@ -23,7 +23,7 @@ class MemberProfile {
   // Consentements
   final bool consentInternalPhoto; // Consentement pour usage interne (REQUIS)
   final bool
-      consentExternalPhoto; // Consentement pour usage externe (OPTIONNEL)
+  consentExternalPhoto; // Consentement pour usage externe (OPTIONNEL)
   final DateTime? consentInternalPhotoDate; // Date du consentement interne
   final DateTime? consentExternalPhotoDate; // Date du consentement externe
 
@@ -59,7 +59,7 @@ class MemberProfile {
   final String? membershipSeasonId;
   final String? lifrasId;
   final DateTime?
-      assuranceValidite; // Validité de l'assurance utilisée pour l'accès piscine/activités
+  assuranceValidite; // Validité de l'assurance utilisée pour l'accès piscine/activités
   final bool hasLifras; // Affilié à la LIFRAS
 
   // Métadonnées
@@ -110,7 +110,8 @@ class MemberProfile {
   /// Convertir depuis Firestore
   factory MemberProfile.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
-    final lifrasId = _stringOrNull(data['lifras_id']) ??
+    final lifrasId =
+        _stringOrNull(data['lifras_id']) ??
         _stringOrNull(data['licence_lifras']);
 
     return MemberProfile(
@@ -145,8 +146,9 @@ class MemberProfile {
       fcmToken: data['fcm_token'],
       memberStatus: resolveMemberStatus(data),
       cotisationValidite: _parseDate(data['cotisation_validite']),
-      certificatMedicalValidite:
-          _parseDate(data['certificat_medical_validite']),
+      certificatMedicalValidite: _parseDate(
+        data['certificat_medical_validite'],
+      ),
       membershipCategoryCode: data['membership_category_code'],
       membershipPeriod: data['membership_period'],
       membershipSeasonId: data['membership_season_id'],
@@ -185,12 +187,11 @@ class MemberProfile {
       sharePhone: data['share_phone'] == true,
       phoneNumber: _stringOrNull(data['phone_number']),
       memberStatus: resolveMemberStatus(data),
-      cotisationValidite:
-          _parseDate(operationalStatus?['cotisation_validite']),
-      certificatMedicalValidite:
-          _parseDate(operationalStatus?['certificat_medical_validite']),
-      assuranceValidite:
-          _parseDate(operationalStatus?['assurance_validite']),
+      cotisationValidite: _parseDate(operationalStatus?['cotisation_validite']),
+      certificatMedicalValidite: _parseDate(
+        operationalStatus?['certificat_medical_validite'],
+      ),
+      assuranceValidite: _parseDate(operationalStatus?['assurance_validite']),
     );
   }
 
@@ -208,8 +209,9 @@ class MemberProfile {
       final parsed = DateTime.tryParse(trimmed);
       if (parsed != null) return parsed;
 
-      final match =
-          RegExp(r'^(\d{1,2})/(\d{1,2})/(\d{4})$').firstMatch(trimmed);
+      final match = RegExp(
+        r'^(\d{1,2})/(\d{1,2})/(\d{4})$',
+      ).firstMatch(trimmed);
       if (match != null) {
         final day = int.tryParse(match.group(1)!);
         final month = int.tryParse(match.group(2)!);
@@ -238,8 +240,9 @@ class MemberProfile {
       'fonction_defaut': fonctionDefaut,
       'clubStatuten': clubStatuten,
       'photo_url': photoUrl,
-      'photo_uploaded_at':
-          photoUploadedAt != null ? Timestamp.fromDate(photoUploadedAt!) : null,
+      'photo_uploaded_at': photoUploadedAt != null
+          ? Timestamp.fromDate(photoUploadedAt!)
+          : null,
       'consent_internal_photo': consentInternalPhoto,
       'consent_external_photo': consentExternalPhoto,
       'consent_internal_photo_date': consentInternalPhotoDate != null
@@ -345,14 +348,15 @@ class MemberProfile {
   }
 
   String? get formattedAddress {
-    final locality = [addressPostcode, addressCity]
-        .whereType<String>()
-        .where((part) => part.trim().isNotEmpty)
-        .join(' ');
-    final parts = [addressStreet, locality, addressCountry]
-        .whereType<String>()
-        .where((part) => part.trim().isNotEmpty)
-        .toList();
+    final locality = [
+      addressPostcode,
+      addressCity,
+    ].whereType<String>().where((part) => part.trim().isNotEmpty).join(' ');
+    final parts = [
+      addressStreet,
+      locality,
+      addressCountry,
+    ].whereType<String>().where((part) => part.trim().isNotEmpty).toList();
     if (parts.isNotEmpty) return parts.join(', ');
     return legacyAddress;
   }
@@ -366,20 +370,23 @@ class MemberProfile {
   /// Resolve active status from the same legacy fields used by CalyCompta.
   ///
   /// Older member documents can carry contradictory status fields after
-  /// migrations. For mobile display we treat any explicit active signal as
-  /// active, while still excluding explicit inactive/deleted records when no
-  /// active signal exists.
+  /// migrations. The canonical member_status takes precedence; legacy fields
+  /// are only consulted when it is absent.
   static String? resolveMemberStatus(Map<String, dynamic> data) {
-    if (data['member_status'] == 'active' ||
-        data['app_status'] == 'active' ||
-        data['status'] == 'active' ||
+    // member_status is canonical. Do not let a stale legacy `isActive: true`
+    // override an explicit inactive/archived membership status.
+    final canonicalStatus = data['member_status']?.toString().toLowerCase();
+    if (canonicalStatus != null && canonicalStatus.isNotEmpty) {
+      return canonicalStatus == 'active' ? 'active' : 'inactive';
+    }
+
+    final rawStatus = data['app_status'] ?? data['status'];
+    if (rawStatus == 'active' ||
         data['isActive'] == true ||
         data['actif'] == true) {
       return 'active';
     }
 
-    final rawStatus =
-        data['member_status'] ?? data['app_status'] ?? data['status'];
     if (rawStatus == 'inactive' ||
         rawStatus == 'deleted' ||
         rawStatus == 'archived' ||
