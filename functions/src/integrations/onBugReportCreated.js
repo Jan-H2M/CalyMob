@@ -43,6 +43,14 @@ exports.onNewBugReport = onDocumentCreated(
     const { clubId, reportId } = event.params;
     const report = event.data.data();
 
+    // CalyCompta is the source of truth for bug follow-up. Linear sync is off
+    // by default and can only be re-enabled through an explicit server-side
+    // environment setting during a controlled migration.
+    if (process.env.ENABLE_LINEAR_BUG_SYNC !== 'true') {
+      console.log(`ℹ️ Linear bug sync disabled; report ${reportId} remains in CalyCompta`);
+      return { skipped: true, reason: 'linear-sync-disabled' };
+    }
+
     console.log(`🐛 New bug report: ${reportId} (club: ${clubId})`);
     console.log('Report data:', JSON.stringify({
       title: report.title,
