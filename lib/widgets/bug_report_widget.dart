@@ -104,9 +104,15 @@ class _BugReportOverlayState extends State<BugReportOverlay> {
     );
   }
 
-  /// Prend un screenshot et ouvre le formulaire.
+  /// Capture l'écran concerné et ouvre le formulaire.
   Future<void> _captureAndShowForm(BuildContext context) async {
     Uint8List? screenshotBytes;
+    final currentRoute = ModalRoute.of(context)?.settings.name;
+
+    // Retirer l'icône flottante avant la capture et empêcher plusieurs
+    // formulaires de s'ouvrir lors de taps successifs.
+    bugReportController.deactivate();
+    await WidgetsBinding.instance.endOfFrame;
 
     // Sur le web, toImage() n'est pas fiable (assertion errors).
     // Ne capturer le screenshot que sur mobile.
@@ -138,6 +144,7 @@ class _BugReportOverlayState extends State<BugReportOverlay> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => _BugReportForm(
         screenshotBytes: screenshotBytes,
+        currentRoute: currentRoute,
       ),
     );
   }
@@ -244,7 +251,7 @@ class _BugIconOverlayState extends State<_BugIconOverlay>
               ],
             ),
             child: const Center(
-              child: Text('🐛', style: TextStyle(fontSize: 24)),
+              child: Text('💬', style: TextStyle(fontSize: 24)),
             ),
           ),
         ),
@@ -256,8 +263,9 @@ class _BugIconOverlayState extends State<_BugIconOverlay>
 /// Le formulaire de signalement dans un bottom sheet.
 class _BugReportForm extends StatefulWidget {
   final Uint8List? screenshotBytes;
+  final String? currentRoute;
 
-  const _BugReportForm({this.screenshotBytes});
+  const _BugReportForm({this.screenshotBytes, this.currentRoute});
 
   @override
   State<_BugReportForm> createState() => _BugReportFormState();
@@ -318,12 +326,12 @@ class _BugReportFormState extends State<_BugReportForm> {
                   const SizedBox(height: 16),
 
                   // Titre du formulaire
-                  Row(
+                  const Row(
                     children: [
-                      const Text('🐛', style: TextStyle(fontSize: 24)),
-                      const SizedBox(width: 8),
+                      Text('💬', style: TextStyle(fontSize: 24)),
+                      SizedBox(width: 8),
                       Text(
-                        'Signaler un bug',
+                        'Remarque ou amélioration',
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -338,19 +346,21 @@ class _BugReportFormState extends State<_BugReportForm> {
                   if (widget.screenshotBytes != null && _includeScreenshot)
                     _buildScreenshotPreview(),
 
-                  // Titre du problème
+                  // Objet de la remarque
                   TextFormField(
                     controller: _titleController,
                     decoration: const InputDecoration(
-                      labelText: 'Quel est le problème ?',
-                      hintText: "Ex: L'app se ferme quand j'ouvre la caméra",
+                      labelText: 'Que souhaitez-vous nous signaler ?',
+                      hintText:
+                          'Ex. Un bouton ne fonctionne pas ou une fonctionnalité manque',
                     ),
                     validator: (value) {
                       if (value == null || value.trim().isEmpty) {
-                        return 'Veuillez décrire le problème';
+                        return 'Veuillez saisir votre remarque';
                       }
                       return null;
                     },
+                    maxLength: 200,
                     maxLines: 2,
                     textInputAction: TextInputAction.next,
                   ),
@@ -360,16 +370,18 @@ class _BugReportFormState extends State<_BugReportForm> {
                   TextFormField(
                     controller: _descriptionController,
                     decoration: const InputDecoration(
-                      labelText: 'Plus de détails (optionnel)',
-                      hintText: 'Quand est-ce que ça arrive ? Étapes pour reproduire...',
+                      labelText: 'Contexte et détails (optionnel)',
+                      hintText:
+                          'Décrivez le contexte, les étapes ou l\'amélioration souhaitée...',
                     ),
+                    maxLength: 2000,
                     maxLines: 3,
                   ),
                   const SizedBox(height: 20),
 
-                  // Sélecteur de gravité
+                  // Sélecteur d'importance
                   Text(
-                    'Gravité',
+                    'Importance',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -379,11 +391,11 @@ class _BugReportFormState extends State<_BugReportForm> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      _buildPriorityChip('blocking', '🔴', 'Bloquant'),
+                      _buildPriorityChip('blocking', '🔴', 'Urgent'),
                       const SizedBox(width: 8),
-                      _buildPriorityChip('annoying', '🟡', 'Gênant'),
+                      _buildPriorityChip('annoying', '🟡', 'Important'),
                       const SizedBox(width: 8),
-                      _buildPriorityChip('minor', '🔵', 'Mineur'),
+                      _buildPriorityChip('minor', '🔵', 'Suggestion'),
                     ],
                   ),
                   const SizedBox(height: 24),
@@ -421,10 +433,13 @@ class _BugReportFormState extends State<_BugReportForm> {
                     width: double.infinity,
                     height: 44,
                     child: OutlinedButton(
-                      onPressed: _isSending ? null : () {
-                        bugReportController.deactivate();
-                        Navigator.maybeOf(context)?.pop(); // fixes CALYMOB-E
-                      },
+                      onPressed: _isSending
+                          ? null
+                          : () {
+                              bugReportController.deactivate();
+                              Navigator.maybeOf(context)
+                                  ?.pop(); // fixes CALYMOB-E
+                            },
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.grey[700],
                         side: BorderSide(color: Colors.grey[400]!),
@@ -432,7 +447,8 @@ class _BugReportFormState extends State<_BugReportForm> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      child: const Text('Annuler', style: TextStyle(fontSize: 15)),
+                      child:
+                          const Text('Annuler', style: TextStyle(fontSize: 15)),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -446,13 +462,14 @@ class _BugReportFormState extends State<_BugReportForm> {
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.info_outline, size: 16, color: Colors.grey[500]),
+                        Icon(Icons.info_outline,
+                            size: 16, color: Colors.grey[500]),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'Les informations de votre appareil et la version de '
-                            "l'app seront envoyées automatiquement pour nous aider "
-                            'à résoudre le problème.',
+                            'Votre nom, votre e-mail, la version de l\'app, les '
+                            'informations de votre appareil et l\'écran concerné '
+                            'seront joints pour nous aider à traiter votre demande.',
                             style: TextStyle(
                               fontSize: 11,
                               color: Colors.grey[600],
@@ -521,7 +538,9 @@ class _BugReportFormState extends State<_BugReportForm> {
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            color: isSelected ? AppColors.middenblauw.withOpacity(0.1) : Colors.grey[100],
+            color: isSelected
+                ? AppColors.middenblauw.withOpacity(0.1)
+                : Colors.grey[100],
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
               color: isSelected ? AppColors.middenblauw : Colors.grey[300]!,
@@ -554,17 +573,12 @@ class _BugReportFormState extends State<_BugReportForm> {
 
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final memberProvider = Provider.of<MemberProvider>(context, listen: false);
-      final clubId = FirebaseConfig.defaultClubId;
+      final memberProvider =
+          Provider.of<MemberProvider>(context, listen: false);
+      const clubId = FirebaseConfig.defaultClubId;
       final userId = authProvider.currentUser?.uid ?? '';
       final userName = memberProvider.displayName;
       final userEmail = authProvider.currentUser?.email ?? '';
-
-      // Déterminer la route actuelle
-      String? currentRoute;
-      try {
-        currentRoute = ModalRoute.of(context)?.settings.name;
-      } catch (_) {}
 
       await _bugReportService.submitBugReport(
         clubId: clubId,
@@ -577,7 +591,7 @@ class _BugReportFormState extends State<_BugReportForm> {
             : _descriptionController.text.trim(),
         priority: _priority,
         screenshotBytes: _includeScreenshot ? widget.screenshotBytes : null,
-        currentRoute: currentRoute,
+        currentRoute: widget.currentRoute,
       );
 
       // Désactiver le mode bug report
@@ -597,7 +611,7 @@ class _BugReportFormState extends State<_BugReportForm> {
               SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Merci ! Nous allons examiner votre signalement.',
+                  'Merci ! Votre remarque a bien été envoyée.',
                 ),
               ),
             ],
@@ -610,12 +624,12 @@ class _BugReportFormState extends State<_BugReportForm> {
       debugPrint('❌ Erreur envoi bug report: $e');
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erreur lors de l\'envoi: $e'),
-          backgroundColor: Colors.red,
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text(
+          'La remarque n\'a pas pu être envoyée. Veuillez réessayer.',
         ),
-      );
+        backgroundColor: Colors.red,
+      ));
     } finally {
       if (mounted) setState(() => _isSending = false);
     }

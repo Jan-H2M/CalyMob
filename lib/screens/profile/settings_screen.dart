@@ -15,6 +15,7 @@ import '../../services/biometric_service.dart';
 import '../../services/app_update_service.dart';
 import '../../services/local_read_tracker.dart';
 import '../../providers/unread_count_provider.dart';
+import '../auth/login_screen.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'ocean_settings_screen.dart';
 import 'privacy_policy_screen.dart';
@@ -22,7 +23,6 @@ import 'change_password_screen.dart';
 import 'notification_preferences_screen.dart';
 import 'calendar_feed_screen.dart';
 import '../training/carnet_preview_gallery_screen.dart';
-import '../../widgets/bug_report_widget.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 
 /// Écran des paramètres
@@ -1091,53 +1091,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await _checkForUpdate();
   }
 
-  /// Active le mode bug report: affiche les instructions, puis l'icône 🐛 flottante.
-  void _startBugReportMode() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Text('🐛', style: TextStyle(fontSize: 24)),
-            SizedBox(width: 8),
-            Text('Signaler un bug'),
-          ],
-        ),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '1. Une petite icône va apparaître sur votre écran\n\n'
-              '2. Allez à l\'écran où vous avez constaté le problème\n\n'
-              '3. Appuyez sur l\'icône pour prendre une capture et décrire le problème',
-              style: TextStyle(fontSize: 14, height: 1.4),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Annuler'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx); // Fermer le dialog
-              Navigator.pop(context); // Quitter les Settings
-              bugReportController.activate(timeoutSeconds: 60);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.middenblauw,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Commencer'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildAppearanceSection() {
     return Card(
       child: ListTile(
@@ -1163,18 +1116,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Column(
         children: [
-          // Bouton "Signaler un bug"
-          ListTile(
-            leading: const Text('🐛', style: TextStyle(fontSize: 20)),
-            title: const Text('Signaler un bug'),
-            subtitle: const Text(
-              'Prenez une capture et décrivez le problème',
-              style: TextStyle(fontSize: 12),
-            ),
-            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-            onTap: () => _startBugReportMode(),
-          ),
-          const Divider(height: 1),
           ListTile(
             leading: Icon(
               hasUpdate ? Icons.system_update : Icons.check_circle,
@@ -1404,6 +1345,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         children: [
           ListTile(
+            leading: const Icon(Icons.logout, color: Colors.red),
+            title: const Text(
+              'Déconnexion',
+              style: TextStyle(color: Colors.red),
+            ),
+            subtitle: const Text(
+              'Se déconnecter de CalyMob',
+              style: TextStyle(fontSize: 12),
+            ),
+            trailing: const Icon(Icons.chevron_right, color: Colors.red),
+            onTap: _handleLogout,
+          ),
+          const Divider(height: 1),
+          ListTile(
             leading: const Icon(Icons.delete_forever, color: Colors.red),
             title: const Text(
               'Supprimer mon compte',
@@ -1418,6 +1373,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _handleLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Déconnexion'),
+        content: const Text('Voulez-vous vous déconnecter ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text(
+              'Déconnecter',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await context.read<AuthProvider>().logout();
+    if (!mounted) return;
+    context.read<MemberProvider>().clear();
+    context.read<UnreadCountProvider>().clear();
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
     );
   }
 
