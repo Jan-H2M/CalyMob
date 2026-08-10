@@ -399,7 +399,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       try {
         final userId = context.read<AuthProvider>().currentUser?.uid ?? '';
-        await _notificationService.saveTokenToFirestore(_clubId, userId);
+        await _notificationService.saveTokenToFirestore(
+          _clubId,
+          userId,
+          explicitEnable: true,
+        );
 
         if (mounted) {
           setState(() => _notificationsEnabled = true);
