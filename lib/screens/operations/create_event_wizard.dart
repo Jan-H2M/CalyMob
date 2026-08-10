@@ -15,6 +15,7 @@ import '../../services/operation_service.dart';
 import '../../services/session_service.dart';
 import '../../utils/member_name.dart';
 import 'payment_rules_section.dart';
+import 'event_payment_defaults.dart';
 
 /// Wizard de création d'événement en 2 étapes
 /// Identique fonctionnellement à CreateEventWizard de CalyCompta
@@ -73,11 +74,13 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
   String _statut = 'ouvert';
   List<_EditableTariff> _editableTariffs = [];
   bool _saving = false;
-  bool _paymentRequired = false;
-  Set<String> _allowedPaymentMethods = {'qr_immediate', 'qr_email', 'on_site'};
-  String _registrationConfirmationPolicy = 'immediate';
-  int _paymentDeadlineDays = 3;
-  bool _autoCancelUnpaid = true;
+  bool _paymentRequired = EventPaymentDefaults.paymentRequired;
+  Set<String> _allowedPaymentMethods =
+      Set.of(EventPaymentDefaults.allowedPaymentMethods);
+  String _registrationConfirmationPolicy =
+      EventPaymentDefaults.registrationConfirmationPolicy;
+  int _paymentDeadlineDays = EventPaymentDefaults.paymentDeadlineDays;
+  bool _autoCancelUnpaid = EventPaymentDefaults.autoCancelUnpaid;
 
   @override
   void initState() {
