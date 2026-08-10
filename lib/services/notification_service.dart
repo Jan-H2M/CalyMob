@@ -14,6 +14,14 @@ import 'crashlytics_service.dart';
 import 'notification_service_io.dart'
     if (dart.library.html) 'notification_service_web.dart' as platform_helper;
 
+@visibleForTesting
+bool shouldRegisterNotificationToken({
+  required bool? storedPreference,
+  bool explicitEnable = false,
+}) {
+  return explicitEnable || storedPreference != false;
+}
+
 /// Service de gestion des notifications push
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -136,6 +144,12 @@ class NotificationService {
       try {
         final memberRef =
             _firestore.collection('clubs/$clubId/members').doc(userId);
+        final member = await memberRef.get();
+        if (member.data()?['notifications_enabled'] == false) {
+          debugPrint(
+              'ℹ️ FCM token refresh ignoré: notifications désactivées');
+          return;
+        }
         await memberRef.update({
           'fcm_tokens': FieldValue.arrayUnion([newToken]),
           'fcm_token': newToken,
@@ -354,7 +368,11 @@ class NotificationService {
   /// Supporte plusieurs appareils en utilisant un array de tokens
   /// Note: app_installed et device info worden ALTIJD gezet, ook zonder FCM token.
   /// Zo tellen gebruikers die notificaties weigeren toch mee in de adoptiecijfers.
-  Future<void> saveTokenToFirestore(String clubId, String userId) async {
+  Future<void> saveTokenToFirestore(
+    String clubId,
+    String userId, {
+    bool explicitEnable = false,
+  }) async {
     // Hijs updateData buiten de try-scope zodat het catch-block de veldnamen
     // kan loggen (diagnose voor Firestore-rules whitelist drift).
     final updateData = <String, dynamic>{};
@@ -370,6 +388,10 @@ class NotificationService {
       final doc = await memberRef.get();
       final existingData = doc.data();
       final isFirstInstall = existingData?['app_first_installed'] == null;
+      final registerNotificationToken = shouldRegisterNotificationToken(
+        storedPreference: existingData?['notifications_enabled'] as bool?,
+        explicitEnable: explicitEnable,
+      );
 
       // Fix #5: detecteer een app-update door de vorige version/build te
       // vergelijken met de huidige. iOS APNs tokens blijven soms "plakken"
@@ -443,7 +465,9 @@ class NotificationService {
       // CalyMob. Calling getToken() here can wait indefinitely for a missing
       // service worker/VAPID setup and keeps the login button spinning even
       // though Firebase Auth and the Firestore session already succeeded.
-      final token = kIsWeb ? null : await getToken();
+      final token = kIsWeb || !registerNotificationToken
+          ? null
+          : await getToken();
       if (token != null) {
         updateData['fcm_tokens'] = FieldValue.arrayUnion([token]);
         updateData['fcm_token'] = token; // Garder pour compatibilité
@@ -451,7 +475,9 @@ class NotificationService {
         updateData['notifications_enabled'] = true;
       } else {
         debugPrint(
-            '⚠️  Aucun token FCM disponible — app_installed quand même mis à jour');
+            registerNotificationToken
+                ? '⚠️  Aucun token FCM disponible — app_installed quand même mis à jour'
+                : 'ℹ️ FCM token niet geregistreerd: expliciete notificatie-opt-out behouden');
       }
 
       await memberRef.update(updateData);
@@ -594,6 +620,7 @@ class NotificationService {
       final updates = <String, dynamic>{
         'fcm_token': FieldValue.delete(),
         'fcm_token_updated_at': FieldValue.delete(),
+        'notifications_enabled': false,
       };
 
       // Retirer ce token spécifique de l'array
@@ -605,22 +632,6 @@ class NotificationService {
           .collection('clubs/$clubId/members')
           .doc(userId)
           .update(updates);
-
-      // Vérifier si c'était le dernier token
-      final doc = await _firestore
-          .collection('clubs/$clubId/members')
-          .doc(userId)
-          .get();
-      final data = doc.data();
-      final tokens = data?['fcm_tokens'] as List<dynamic>?;
-      if (tokens == null || tokens.isEmpty) {
-        await _firestore
-            .collection('clubs/$clubId/members')
-            .doc(userId)
-            .update({
-          'notifications_enabled': false,
-        });
-      }
 
       debugPrint('✅ Token FCM supprimé de Firestore');
     } catch (e, stack) {
