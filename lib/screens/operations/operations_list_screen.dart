@@ -36,7 +36,11 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
     super.initState();
     // Start de gecombineerde stream
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ActivityProvider>().listenToActivities(_clubId);
+      final userId = context.read<AuthProvider>().currentUser?.uid;
+      context.read<ActivityProvider>().listenToActivities(
+        _clubId,
+        currentUserId: userId,
+      );
     });
   }
 
@@ -58,9 +62,7 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => CreateEventWizard(
-                  eventCategory: category,
-                ),
+                builder: (_) => CreateEventWizard(eventCategory: category),
               ),
             );
           },
@@ -117,9 +119,7 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => SessionDetailScreen(
-            session: item.piscineSession!,
-          ),
+          builder: (_) => SessionDetailScreen(session: item.piscineSession!),
         ),
       );
     } else if (item.isOperation) {
@@ -127,10 +127,8 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => OperationDetailScreen(
-            operationId: item.id,
-            clubId: _clubId,
-          ),
+          builder: (_) =>
+              OperationDetailScreen(operationId: item.id, clubId: _clubId),
         ),
       );
     }
@@ -145,10 +143,7 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text(
-          'Événements',
-          style: TextStyle(color: Colors.white),
-        ),
+        title: const Text('Événements', style: TextStyle(color: Colors.white)),
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
@@ -232,10 +227,7 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
         decoration: BoxDecoration(
           color: isOn ? Colors.white : Colors.white.withOpacity(0.2),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: Colors.white.withOpacity(0.3),
-            width: 1,
-          ),
+          border: Border.all(color: Colors.white.withOpacity(0.3), width: 1),
         ),
         alignment: Alignment.center,
         child: Row(
@@ -278,10 +270,7 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
         decoration: BoxDecoration(
           color: isSelected ? Colors.white : Colors.white.withOpacity(0.2),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: Colors.white.withOpacity(0.3),
-            width: 1,
-          ),
+          border: Border.all(color: Colors.white.withOpacity(0.3), width: 1),
         ),
         alignment: Alignment.center,
         child: Text(
@@ -322,8 +311,10 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
     // ou la bascule "Passés" (membre) — affichent le plus récent d'abord ;
     // sinon les prochaines activités d'abord (ordre croissant).
     final mostRecentFirst = isClosedMode || activityProvider.includePast;
-    filtered.sort((a, b) =>
-        mostRecentFirst ? b.date.compareTo(a.date) : a.date.compareTo(b.date));
+    filtered.sort(
+      (a, b) =>
+          mostRecentFirst ? b.date.compareTo(a.date) : a.date.compareTo(b.date),
+    );
 
     // Group by month
     final grouped = _groupByMonth(filtered);
@@ -337,10 +328,10 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
               _selectedFilter == 'plongee'
                   ? Icons.scuba_diving
                   : _selectedFilter == 'piscine'
-                      ? Icons.pool
-                      : _selectedFilter == 'sortie'
-                          ? Icons.directions_boat
-                          : Icons.event_busy,
+                  ? Icons.pool
+                  : _selectedFilter == 'sortie'
+                  ? Icons.directions_boat
+                  : Icons.event_busy,
               size: 64,
               color: Colors.white.withOpacity(0.7),
             ),
@@ -390,10 +381,7 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            AppColors.donkerblauw,
-            AppColors.middenblauw,
-          ],
+          colors: [AppColors.donkerblauw, AppColors.middenblauw],
         ),
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
@@ -479,15 +467,14 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
-                      colors: item.isPiscine
+                      colors: item.isDraft
+                          ? const [Color(0xFFF59E0B), Color(0xFFB45309)]
+                          : item.isPiscine
                           ? [
                               AppColors.piscineBlauwLight, // Piscine blauw
                               AppColors.piscineBlauw,
                             ]
-                          : [
-                              AppColors.middenblauw,
-                              AppColors.donkerblauw,
-                            ],
+                          : [AppColors.middenblauw, AppColors.donkerblauw],
                     ),
                   ),
                   child: Column(
@@ -515,7 +502,9 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                       const SizedBox(height: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.white.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(8),
@@ -595,6 +584,27 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                         const SizedBox(height: 8),
                         Row(
                           children: [
+                            if (item.isDraft) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFF3C4),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  item.statusLabel!,
+                                  style: const TextStyle(
+                                    color: Color(0xFF92400E),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
                             if (item.isPiscine) ...[
                               // Piscine: toon accueil en encadrants count
                               Icon(
@@ -633,7 +643,9 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                                 item.operation?.priceTbd == true)
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 4),
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
                                 decoration: BoxDecoration(
                                   color: Colors.orange.withOpacity(0.25),
                                   borderRadius: BorderRadius.circular(8),
@@ -652,7 +664,9 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                                 item.prix! > 0)
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 4),
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
                                 decoration: BoxDecoration(
                                   color: AppColors.lichtblauw.withOpacity(0.3),
                                   borderRadius: BorderRadius.circular(8),
