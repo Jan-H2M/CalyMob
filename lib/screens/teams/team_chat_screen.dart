@@ -25,10 +25,12 @@ import '../../widgets/poll_widget.dart';
 
 class TeamChatScreen extends StatefulWidget {
   final TeamChannel channel;
+  final bool openPollComposer;
 
   const TeamChatScreen({
     super.key,
     required this.channel,
+    this.openPollComposer = false,
   });
 
   @override
@@ -55,6 +57,11 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
   void initState() {
     super.initState();
     _markMessagesAsRead();
+    if (widget.openPollComposer) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _createPoll();
+      });
+    }
   }
 
   @override
