@@ -4,6 +4,7 @@
 /// See `CARNET_DE_FORMATION_TECH.md` v2.1 §6.3 + §7 (counter pattern).
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../utils/country_codes.dart';
 
 /// Counter pattern — see tech doc §7.
 /// Only true values are stored. No `jour` (default when nuit=false), no `air`
@@ -87,32 +88,52 @@ class LogbookCounters {
 
   bool isOn(String key) {
     switch (key) {
-      case 'exo': return exo == true;
-      case 'nitrox': return nitrox == true;
-      case 'deco': return deco == true;
-      case 'dp': return dp == true;
-      case 'sf': return sf == true;
-      case 'nuit': return nuit == true;
-      case 'mer': return mer == true;
-      case 'maree': return maree == true;
-      case 'surveillance': return surveillance == true;
-      default: return false;
+      case 'exo':
+        return exo == true;
+      case 'nitrox':
+        return nitrox == true;
+      case 'deco':
+        return deco == true;
+      case 'dp':
+        return dp == true;
+      case 'sf':
+        return sf == true;
+      case 'nuit':
+        return nuit == true;
+      case 'mer':
+        return mer == true;
+      case 'maree':
+        return maree == true;
+      case 'surveillance':
+        return surveillance == true;
+      default:
+        return false;
     }
   }
 
   LogbookCounters toggle(String key) {
     final on = isOn(key);
     switch (key) {
-      case 'exo': return copyWith(exo: !on);
-      case 'nitrox': return copyWith(nitrox: !on);
-      case 'deco': return copyWith(deco: !on);
-      case 'dp': return copyWith(dp: !on);
-      case 'sf': return copyWith(sf: !on);
-      case 'nuit': return copyWith(nuit: !on);
-      case 'mer': return copyWith(mer: !on);
-      case 'maree': return copyWith(maree: !on);
-      case 'surveillance': return copyWith(surveillance: !on);
-      default: return this;
+      case 'exo':
+        return copyWith(exo: !on);
+      case 'nitrox':
+        return copyWith(nitrox: !on);
+      case 'deco':
+        return copyWith(deco: !on);
+      case 'dp':
+        return copyWith(dp: !on);
+      case 'sf':
+        return copyWith(sf: !on);
+      case 'nuit':
+        return copyWith(nuit: !on);
+      case 'mer':
+        return copyWith(mer: !on);
+      case 'maree':
+        return copyWith(maree: !on);
+      case 'surveillance':
+        return copyWith(surveillance: !on);
+      default:
+        return this;
     }
   }
 }
@@ -143,7 +164,8 @@ class LogbookBuddy {
     return {
       if (memberId != null) 'member_id': memberId,
       'name': name,
-      if (externalOrganization != null) 'external_organization': externalOrganization,
+      if (externalOrganization != null)
+        'external_organization': externalOrganization,
       if (confirmationStatus != null) 'confirmation_status': confirmationStatus,
     };
   }
@@ -201,7 +223,7 @@ class StudentLogbookEntry {
       'date': Timestamp.fromDate(date),
       if (locationId != null) 'location_id': locationId,
       'location_name': locationName,
-      if (country != null) 'country': country,
+      if (normalizeCountryCode(country) case final code?) 'country': code,
       if (operationId != null) 'operation_id': operationId,
       if (operationTitle != null) 'operation_title': operationTitle,
       if (palanqueeId != null) 'palanquee_id': palanqueeId,

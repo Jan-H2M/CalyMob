@@ -26,6 +26,7 @@ class LogbookOcrGridAdapter {
           required: true,
           wide: true,
         ),
+        _value('country', 'Pays', row.country, row.country.value),
         _value(
           'depth',
           'Profondeur',

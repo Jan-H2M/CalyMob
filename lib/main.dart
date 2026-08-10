@@ -10,6 +10,7 @@ import 'package:intl/intl.dart' hide TextDirection;
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:syncfusion_flutter_core/core.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:country_picker/country_picker.dart';
 import 'package:syncfusion_localizations/syncfusion_localizations.dart';
 
 // Firebase options
@@ -827,9 +828,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
             SfGlobalLocalizations.delegate,
+            CountryLocalizations.delegate,
           ],
           supportedLocales: const [
             Locale('fr', 'FR'),
+            Locale('nl', 'BE'),
+            Locale('en'),
           ],
           locale: const Locale('fr', 'FR'),
           theme: ThemeData(

@@ -45,12 +45,32 @@ void main() {
       expect(row.diveNumber, 12);
       expect(row.date, DateTime.utc(2026, 7, 10));
       expect(row.locationName, 'Vodelée');
+      expect(row.country, 'BE');
       expect(row.depthMaxMeters, 22.5);
       expect(row.durationMinutes, 45);
       expect(row.counters.exo, isTrue);
       expect(row.buddies.map((buddy) => buddy.name),
           ['Pierre Dupont', 'Patrick V.']);
       expect(row.extras['entry_time_str'], '14:30');
+    });
+
+    test('normalizes localized and lowercase countries to ISO alpha-2', () {
+      final result = LogbookXlsxImportService().parse(
+        _xlsx([
+          ['Date', 'Lieu', 'Pays'],
+          ['2026-07-10', 'Krk', 'croatie'],
+          ['2026-07-11', 'Madeira', 'pt'],
+          ['2026-07-12', 'Mystère', 'Atlantide'],
+          ['2026-07-13', 'Sans pays', ''],
+        ]),
+      );
+
+      expect(result.rows[0].country, 'HR');
+      expect(result.rows[1].country, 'PT');
+      expect(result.rows[2].country, isNull);
+      expect(result.rows[2].warnings.single, contains('non reconnu'));
+      expect(result.rows[3].country, isNull);
+      expect(result.rows[3].warnings, isEmpty);
     });
 
     test('reports invalid dates and warns without a location', () {

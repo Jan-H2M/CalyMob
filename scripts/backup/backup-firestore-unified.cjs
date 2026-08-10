@@ -40,6 +40,8 @@ const COLLECTIONS = [
   'bank_transactions',
   'expense_claims',
   'members',
+  'dive_locations',
+  'student_logbook_entries',
   'inventory_members', // ← AJOUTÉ pour backup pré-unification
   'settings',
   'fiscal_years',

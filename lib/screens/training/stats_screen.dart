@@ -17,6 +17,7 @@ import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import '../../utils/country_codes.dart';
 
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
@@ -122,6 +123,10 @@ class _StatsScreenState extends State<StatsScreen> {
                           _countersCard(stats),
                           const SizedBox(height: 12),
                           _locationsCard(stats),
+                          if (stats.topCountries.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            _countriesCard(stats),
+                          ],
                         ],
                       ),
               ),
@@ -564,6 +569,80 @@ class _StatsScreenState extends State<StatsScreen> {
       ),
     );
   }
+
+  Widget _countriesCard(_Stats s) {
+    final maxCount = s.topCountries.first['count'] as int;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'PAYS VISITÉS',
+            style: TextStyle(
+              color: AppColors.donkerblauw.withValues(alpha: 0.7),
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.1,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...s.topCountries.take(5).map((country) {
+            final count = country['count'] as int;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 7),
+              child: Row(
+                children: [
+                  const Icon(Icons.public,
+                      size: 16, color: AppColors.middenblauw),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      countryDisplayNameForContext(
+                        context,
+                        country['code'] as String?,
+                        includeCode: true,
+                      ),
+                      style: const TextStyle(
+                        color: AppColors.donkerblauw,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '$count',
+                    style: const TextStyle(
+                      color: AppColors.donkerblauw,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 54,
+                    child: LinearProgressIndicator(
+                      value: maxCount == 0 ? 0 : count / maxCount,
+                      minHeight: 6,
+                      borderRadius: BorderRadius.circular(999),
+                      backgroundColor: const Color(0xFFE2EBF3),
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        AppColors.middenblauw,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
 }
 
 const _axisStyle = TextStyle(
@@ -590,6 +669,7 @@ class _Stats {
   final List<int> depthHistogram;
   final List<int> months;
   final List<Map<String, dynamic>> topLocations;
+  final List<Map<String, dynamic>> topCountries;
 
   const _Stats({
     required this.totalDives,
@@ -606,6 +686,7 @@ class _Stats {
     required this.depthHistogram,
     required this.months,
     required this.topLocations,
+    required this.topCountries,
   });
 }
 
@@ -618,6 +699,7 @@ _Stats _computeStats(List<Map<String, dynamic>> entries) {
   final histogram = List<int>.filled(8, 0);
   final months = List<int>.filled(12, 0);
   final locationCounts = <String, Map<String, dynamic>>{};
+  final countryCounts = <String, int>{};
 
   for (final e in entries) {
     // Pool sessions (source=piscine) are counted separately from dives
@@ -648,6 +730,11 @@ _Stats _computeStats(List<Map<String, dynamic>> entries) {
     if (c['sf'] == true) sf += 1;
     if (c['exo'] == true) exo += 1;
 
+    final country = normalizeCountryCode(e['country'] as String?);
+    if (country != null) {
+      countryCounts[country] = (countryCounts[country] ?? 0) + 1;
+    }
+
     // Bucket Top Lieux by location_id when present, otherwise by a normalised
     // location_name. This is critical for Excel-imported and OCR-imported
     // entries, which rarely carry a `location_id` (no picker involved). Without
@@ -676,6 +763,13 @@ _Stats _computeStats(List<Map<String, dynamic>> entries) {
 
   final top = locationCounts.values.toList()
     ..sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
+  final topCountries = countryCounts.entries
+      .map((entry) => <String, dynamic>{
+            'code': entry.key,
+            'count': entry.value,
+          })
+      .toList()
+    ..sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
 
   return _Stats(
     totalDives: totalDives,
@@ -692,5 +786,6 @@ _Stats _computeStats(List<Map<String, dynamic>> entries) {
     depthHistogram: histogram,
     months: months,
     topLocations: top,
+    topCountries: topCountries,
   );
 }

@@ -39,6 +39,8 @@ import '../../services/exercise_claim_service.dart';
 import '../../widgets/combi_picker_field.dart';
 import '../../widgets/dive_location_picker.dart';
 import '../../utils/dive_number_policy.dart';
+import '../../widgets/country_picker_field.dart';
+import '../../utils/country_codes.dart';
 import '../../widgets/logbook_dive_form.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/tank_picker_field.dart';
@@ -125,6 +127,8 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
   TimeOfDay? _entryTime;
   TimeOfDay? _exitTime;
   DiveLocationSelection? _locationSelection;
+  String? _countryCode;
+  List<String> _recentCountryCodes = const [];
   final TextEditingController _depth = TextEditingController();
   final TextEditingController _duration = TextEditingController();
   final TextEditingController _notes = TextEditingController();
@@ -414,9 +418,10 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
     _locationSelection = DiveLocationSelection(
       id: map['location_id'] as String?,
       name: (map['location_name'] as String?) ?? '',
-      country: map['country'] as String?,
+      country: normalizeCountryCode(map['country'] as String?),
       isSea: (map['counters'] as Map?)?['mer'] == true,
     );
+    _countryCode = normalizeCountryCode(map['country'] as String?);
 
     // Pool group context — only meaningful when source == piscine.
     _poolLevel = map['group_level'] as String?;
@@ -532,6 +537,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           .where((m) => m.displayName.trim().isNotEmpty)
           .toList();
       final locationsByName = <String, _DictationLocation>{};
+      final countryUseCounts = <String, int>{};
       void addLocation(_DictationLocation location) {
         final key = _normalizeDictation(location.name);
         if (key.isEmpty) return;
@@ -556,7 +562,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         addLocation(_DictationLocation(
           id: doc.id,
           name: name,
-          country: data['country'] as String?,
+          country: normalizeCountryCode(data['country'] as String?),
           isSea: waterType == 'sea' || waterType == 'mer',
         ));
       }
@@ -565,19 +571,26 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         final name =
             ((data['location_name'] ?? data['lieu']) as String? ?? '').trim();
         final counters = data['counters'];
+        final country = normalizeCountryCode(data['country'] as String?);
+        if (country != null) {
+          countryUseCounts[country] = (countryUseCounts[country] ?? 0) + 1;
+        }
         addLocation(_DictationLocation(
           id: '',
           name: name,
-          country: data['country'] as String?,
+          country: country,
           isSea: counters is Map && counters['mer'] == true,
         ));
       }
       final locations = locationsByName.values.toList()
         ..sort((a, b) => a.name.compareTo(b.name));
+      final recentCountries = countryUseCounts.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
       if (!mounted) return;
       setState(() {
         _dictationMembers = members;
         _dictationLocations = locations;
+        _recentCountryCodes = recentCountries.map((e) => e.key).toList();
       });
     } catch (e) {
       debugPrint('[LogbookEntry] dictation catalog load failed: $e');
@@ -816,6 +829,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           isSea: ctx.locationIsSea,
           zone: ctx.locationZone,
         );
+        _countryCode = normalizeCountryCode(ctx.locationCountry);
         if (ctx.locationIsSea) _counters = _counters.copyWith(mer: true);
         if (ctx.locationZone != null) _zone = _normalizeZone(ctx.locationZone!);
       });
@@ -880,6 +894,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
               isSea: isSea,
               zone: ((data['zone'] ?? data['region']) as String?),
             );
+            _countryCode = normalizeCountryCode(data['country'] as String?);
             if (isSea) _counters = _counters.copyWith(mer: true);
             final locationZone =
                 ((data['zone'] ?? data['region']) as String?)?.trim();
@@ -1295,24 +1310,40 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
       _sectionTitle('LIEU'),
       _whiteCard(
         padding: EdgeInsets.zero,
-        child: DiveLocationPickerField(
-          value: _locationSelection,
-          // WP-19 finition — lieu verrouillé par la source en édition.
-          readOnly: _isFieldLocked('location_name') ||
-              _isFieldLocked('location_id'),
-          onSelected: (selection) => setState(() {
-            _locationSelection = selection;
-            if (selection.isSea) {
-              _counters = _counters.copyWith(mer: true);
-            }
-            // WP-07 — pré-remplissage Zélande depuis le lieu.
-            if (_zone == null && _looksLikeZelande(selection.name)) {
-              _zone = 'zelande';
-            }
-            if (_zone == null && selection.zone != null) {
-              _zone = _normalizeZone(selection.zone!);
-            }
-          }),
+        child: Column(
+          children: [
+            DiveLocationPickerField(
+              value: _locationSelection,
+              // WP-19 finition — lieu verrouillé par la source en édition.
+              readOnly: _isFieldLocked('location_name') ||
+                  _isFieldLocked('location_id'),
+              onSelected: (selection) => setState(() {
+                _locationSelection = selection;
+                // Safe suggestion only: copy the canonical site's ISO code.
+                // A free-typed location deliberately clears a previous site's
+                // country rather than silently keeping a wrong value.
+                _countryCode = normalizeCountryCode(selection.country);
+                if (selection.isSea) {
+                  _counters = _counters.copyWith(mer: true);
+                }
+                // WP-07 — pré-remplissage Zélande depuis le lieu.
+                if (_zone == null && _looksLikeZelande(selection.name)) {
+                  _zone = 'zelande';
+                }
+                if (_zone == null && selection.zone != null) {
+                  _zone = _normalizeZone(selection.zone!);
+                }
+              }),
+            ),
+            const Divider(height: 1),
+            CountryPickerField(
+              value: _countryCode,
+              recentCountryCodes: _recentCountryCodes,
+              onChanged: (code) => setState(() {
+                _countryCode = normalizeCountryCode(code);
+              }),
+            ),
+          ],
         ),
       ),
       const SizedBox(height: 12),
@@ -2752,7 +2783,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           : DiveLocationSelection(
               id: locationMap['id'] as String?,
               name: (locationMap['name'] as String?) ?? '',
-              country: locationMap['country'] as String?,
+              country: normalizeCountryCode(locationMap['country'] as String?),
               isSea: locationMap['isSea'] == true,
             ),
       depthMeters: _aiDouble(fields['depthMeters']),
@@ -2862,6 +2893,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
                   ));
         if (location != null) {
           _locationSelection = location;
+          _countryCode = normalizeCountryCode(location.country);
           if (_locationSelection!.isSea && _canApplyDictationField('mer')) {
             _counters = _counters.copyWith(mer: true);
           }
@@ -2972,6 +3004,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         if (location == null) return false;
         setState(() {
           _locationSelection = location;
+          _countryCode = normalizeCountryCode(location.country);
           if (location.isSea) _counters = _counters.copyWith(mer: true);
         });
         return true;
@@ -3779,10 +3812,14 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           _entryTime != null ||
           _exitTime != null ||
           _locationSelection?.name.trim() !=
-              ((widget.initialData?['location_name'] as String?) ?? '').trim();
+              ((widget.initialData?['location_name'] as String?) ?? '')
+                  .trim() ||
+          _countryCode !=
+              normalizeCountryCode(widget.initialData?['country'] as String?);
     }
     return _dictation.text.trim().isNotEmpty ||
         _locationSelection?.name.trim().isNotEmpty == true ||
+        _countryCode != null ||
         _depth.text.trim().isNotEmpty ||
         _duration.text.trim().isNotEmpty ||
         _diveNumber.text.trim().isNotEmpty ||
@@ -4782,6 +4819,8 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
           'dive_number': explicitDiveNumber,
         if (widget.mode == LogbookEntryMode.edit && explicitDiveNumber == null)
           'dive_number': FieldValue.delete(),
+        if (widget.mode == LogbookEntryMode.edit && _countryCode == null)
+          'country': FieldValue.delete(),
         // WP-07 — supprimer la zone si l'élève l'a désélectionnée en édition.
         if (widget.mode == LogbookEntryMode.edit && _zone == null)
           'zone': FieldValue.delete(),
@@ -4801,7 +4840,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         date: _date,
         locationId: _locationSelection?.id,
         locationName: _locationSelection?.name ?? '',
-        country: _locationSelection?.country,
+        country: _countryCode,
         operationId: widget.task?.context.operationId ??
             widget.initialData?['operation_id'] as String?,
         operationTitle: widget.task?.context.operationTitle ??
