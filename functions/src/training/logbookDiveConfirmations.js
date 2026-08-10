@@ -83,6 +83,23 @@ function normalizeText(value) {
     .replace(/\s+/g, ' ');
 }
 
+function locationsMatch(left, right) {
+  const a = normalizeText(left);
+  const b = normalizeText(right);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  return a.length >= 4 && b.length >= 4 && (a.includes(b) || b.includes(a));
+}
+
+function mergeSharedNotes(existingNotes, sharedNotes) {
+  const existing = String(existingNotes || '').trim();
+  const shared = String(sharedNotes || '').trim();
+  if (!shared) return existing || null;
+  if (!existing) return shared;
+  if (normalizeText(existing).includes(normalizeText(shared))) return existing;
+  return `${existing}\n\n${shared}`;
+}
+
 function memberDisplayName(data = {}) {
   return resolveMemberDisplayName(data, 'Membre');
 }
@@ -416,7 +433,7 @@ function compareDive(snapshot = {}, entry = {}) {
 
   const sourceLocation = normalizeText(snapshot.location_name || snapshot.lieu);
   const existingLocation = normalizeText(entry.location_name || entry.lieu);
-  const sameLocation = sourceLocation && existingLocation && sourceLocation === existingLocation;
+  const sameLocation = locationsMatch(sourceLocation, existingLocation);
   if (!sameLocation) {
     differences.push({
       field: 'location_name',
@@ -824,6 +841,7 @@ const respondToLogbookDiveConfirmation = onCall(
     const allowed = new Set([
       'confirm_copy',
       'confirm_existing_identical',
+      'confirm_merge_notes',
       'confirm_keep_existing',
       'confirm_replace_existing',
       'confirm_no_import',
@@ -874,23 +892,54 @@ const respondToLogbookDiveConfirmation = onCall(
     if (action === 'decline') {
       status = 'declined';
     } else if (action === 'confirm_copy') {
-      const entryRef = db.collection('clubs').doc(clubId).collection('student_logbook_entries').doc();
-      await entryRef.set(buildCopyPayload(
-        snapshot,
-        uid,
-        respondentName,
-        confirmationId,
-        confirmation.source_member_id,
-        confirmation.source_entry_id
-      ));
-      copiedEntryId = entryRef.id;
-      status = 'confirmed_copied';
+      // Recheck immediately before writing. A matching entry can have been
+      // added after the request was created, or an older request can carry an
+      // incomplete match result. Never create a second carnet entry then.
+      const liveMatch = await findExistingMatch(db, clubId, uid, snapshot);
+      if (liveMatch.entryId) {
+        finalMatchedEntryId = liveMatch.entryId;
+        status = liveMatch.matchType === 'identical'
+          ? 'confirmed_existing_identical'
+          : 'confirmed_existing_different';
+      } else {
+        const entryRef = db.collection('clubs').doc(clubId).collection('student_logbook_entries').doc();
+        await entryRef.set(buildCopyPayload(
+          snapshot,
+          uid,
+          respondentName,
+          confirmationId,
+          confirmation.source_member_id,
+          confirmation.source_entry_id
+        ));
+        copiedEntryId = entryRef.id;
+        status = 'confirmed_copied';
+      }
     } else if (action === 'confirm_existing_identical') {
       if (!finalMatchedEntryId) {
         const match = await findExistingMatch(db, clubId, uid, snapshot);
         finalMatchedEntryId = match.entryId;
       }
       status = 'confirmed_existing_identical';
+    } else if (action === 'confirm_merge_notes') {
+      if (!finalMatchedEntryId) throw new HttpsError('invalid-argument', 'matchedEntryId manquant');
+      const existingRef = db.collection('clubs').doc(clubId)
+        .collection('student_logbook_entries').doc(finalMatchedEntryId);
+      const existingSnap = await existingRef.get();
+      if (!existingSnap.exists) {
+        throw new HttpsError('not-found', 'Plongée existante introuvable');
+      }
+      if (existingSnap.data().member_id !== uid) {
+        throw new HttpsError('permission-denied', 'Cette plongée ne t’appartient pas');
+      }
+      await existingRef.update({
+        notes: mergeSharedNotes(existingSnap.data().notes, snapshot.notes),
+        validation_status: 'buddy_confirmed',
+        shared_from_member_id: confirmation.source_member_id,
+        shared_from_entry_id: confirmation.source_entry_id,
+        logbook_confirmation_id: confirmationId,
+        updated_at: FieldValue.serverTimestamp(),
+      });
+      status = 'confirmed_existing_notes_merged';
     } else if (action === 'confirm_keep_existing') {
       status = 'confirmed_existing_different';
     } else if (action === 'confirm_no_import') {
@@ -927,6 +976,7 @@ const respondToLogbookDiveConfirmation = onCall(
     const labels = {
       confirmed_copied: 'confirmée et copiée dans son carnet',
       confirmed_existing_identical: 'confirmée : une plongée identique existait déjà',
+      confirmed_existing_notes_merged: 'confirmée : ses remarques ont été ajoutées à sa plongée existante',
       confirmed_existing_different: 'confirmée : la plongée existante diffère',
       confirmed_no_import: 'confirmée sans import',
       declined: 'refusée',
@@ -954,6 +1004,8 @@ module.exports = {
   respondToLogbookDiveConfirmation,
   // Exported for unit tests (WP-28)
   buildDiveSnapshot,
+  locationsMatch,
+  mergeSharedNotes,
   sharedCounters,
   personalCounters,
   countersEqual,
