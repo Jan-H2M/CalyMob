@@ -18,6 +18,7 @@ Basisversie: `1.17.0+194`
 | COM-050 | Makers zien hun eigen eventbrouillons privacyvast in de activiteitenlijst, met een duidelijk Brouillon-label | Android + iOS | 3 regressietests, 370 volledige tests, Flutter-analyse en Android-debugbuild | Laag | Releasewachtrij |
 | COM-055 | Gedeelde duiken bevestigen zonder duplicaat en opmerkingen gecontroleerd toevoegen aan een bestaand carnetrecord | Android + iOS + Cloud Function | 23 gerichte tests, 111 functiontests, 370 Fluttertests, analyse en Android-debugbuild | Laag | Releasewachtrij |
 | COM-054 | Nieuwe activiteiten starten met betaling verplicht, bevestiging na betaling, alleen QR per e-mail, drie dagen betaaltermijn en automatische annulering | Android + iOS | Gerichte regressietest, 371 Fluttertests en Android-debugbuild | Laag | Releasewachtrij |
+| MOB-016 | Betaalstatus wordt transactioneel tegen de actuele activiteitinstellingen gevalideerd, zodat een verouderd scherm geen betaling ter plaatse meer kan opslaan | Android + iOS | 4 gerichte regressietests, 375 Fluttertests, gerichte analyse en Android-debugbuild | Laag | Releasewachtrij |
 
 ## Voorgestelde Franse releasenotes
 
@@ -28,6 +29,7 @@ Basisversie: `1.17.0+194`
 - Vos brouillons d’événements sont désormais visibles et clairement identifiés dans la liste des activités.
 - Les plongées partagées peuvent être confirmées sans doublon, avec un choix clair pour reprendre les remarques.
 - Les nouvelles activités utilisent désormais automatiquement les règles de paiement du club.
+- Un mode de paiement désactivé ne peut plus être enregistré depuis un écran resté ouvert.
 - Diverses améliorations de stabilité et de suivi des signalements.
 
 ## Releasepoort
