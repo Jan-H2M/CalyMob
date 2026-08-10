@@ -44,6 +44,10 @@ class ActivityItem {
   /// Check of dit een reguliere operation is
   bool get isOperation => type == 'operation';
 
+  bool get isDraft => operation?.statut == 'brouillon';
+
+  String? get statusLabel => isDraft ? 'Brouillon' : null;
+
   /// Factory constructor voor Operation → ActivityItem
   factory ActivityItem.fromOperation(Operation op) {
     return ActivityItem(
@@ -94,7 +98,7 @@ class ActivityItem {
       'Jeudi',
       'Vendredi',
       'Samedi',
-      'Dimanche'
+      'Dimanche',
     ];
     final months = [
       'janvier',
@@ -108,7 +112,7 @@ class ActivityItem {
       'septembre',
       'octobre',
       'novembre',
-      'décembre'
+      'décembre',
     ];
     return '${weekdays[date.weekday - 1]} ${date.day} ${months[date.month - 1]}';
   }
