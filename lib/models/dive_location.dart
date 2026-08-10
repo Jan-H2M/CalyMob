@@ -13,6 +13,12 @@ class DiveLocation {
   final String? email;
   final String? website;
   final String? notes;
+
+  /// Whether this location may be proposed when creating an activity.
+  ///
+  /// Missing Firestore values default to true for legacy locations, matching
+  /// the CalyCompta settings screen.
+  final bool availableForEvents;
   final List<Tariff> tariffs;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -28,6 +34,7 @@ class DiveLocation {
     this.email,
     this.website,
     this.notes,
+    this.availableForEvents = true,
     this.tariffs = const [],
     required this.createdAt,
     required this.updatedAt,
@@ -48,6 +55,7 @@ class DiveLocation {
       email: data['email'],
       website: data['website'],
       notes: data['notes'],
+      availableForEvents: data['available_for_events'] != false,
       tariffs: _parseTariffs(data['tariffs']),
       createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (data['updated_at'] as Timestamp?)?.toDate() ?? DateTime.now(),

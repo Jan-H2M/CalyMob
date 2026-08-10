@@ -15,9 +15,8 @@ class DiveLocationService {
           .orderBy('name', descending: false)
           .get();
 
-      final locations = snapshot.docs
-          .map((doc) => DiveLocation.fromFirestore(doc))
-          .toList();
+      final locations =
+          snapshot.docs.map((doc) => DiveLocation.fromFirestore(doc)).toList();
 
       debugPrint('📍 ${locations.length} lieux de plongée chargés');
       return locations;
@@ -27,8 +26,16 @@ class DiveLocationService {
     }
   }
 
+  /// Récupérer uniquement les lieux proposés dans
+  /// CalyCompta > Paramètres > Sites de plongée > Pour les activités.
+  Future<List<DiveLocation>> getEventLocations(String clubId) async {
+    final locations = await getAllLocations(clubId);
+    return locations.where((location) => location.availableForEvents).toList();
+  }
+
   /// Récupérer un lieu par ID
-  Future<DiveLocation?> getLocationById(String clubId, String locationId) async {
+  Future<DiveLocation?> getLocationById(
+      String clubId, String locationId) async {
     try {
       final doc = await _firestore
           .collection('clubs/$clubId/dive_locations')
