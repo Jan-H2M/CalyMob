@@ -16,6 +16,7 @@ Basisversie: `1.17.0+194`
 | Locaties | Bij het maken van een activiteit alleen locaties tonen die in CalyCompta beschikbaar zijn gemaakt | Android + iOS | Modeltest, Flutter-analyse en volledige tests | Laag | Releasewachtrij |
 | COM-048 | Duikplaatszoekfunctie zoekt accentongevoelig op naam, land, zone, type en aliassen met vaste rangschikking | Android + iOS | Utilitytest, Flutter-analyse en volledige tests | Laag | Releasewachtrij |
 | COM-050 | Makers zien hun eigen eventbrouillons privacyvast in de activiteitenlijst, met een duidelijk Brouillon-label | Android + iOS | 3 regressietests, 370 volledige tests, Flutter-analyse en Android-debugbuild | Laag | Releasewachtrij |
+| COM-055 | Gedeelde duiken bevestigen zonder duplicaat en opmerkingen gecontroleerd toevoegen aan een bestaand carnetrecord | Android + iOS + Cloud Function | 23 gerichte tests, 111 functiontests, 370 Fluttertests, analyse en Android-debugbuild | Laag | Releasewachtrij |
 
 ## Voorgestelde Franse releasenotes
 
@@ -24,6 +25,7 @@ Basisversie: `1.17.0+194`
 - La création d’une activité respecte désormais les lieux activés dans CalyCompta.
 - La recherche de lieux de plongée est désormais plus complète et plus fiable.
 - Vos brouillons d’événements sont désormais visibles et clairement identifiés dans la liste des activités.
+- Les plongées partagées peuvent être confirmées sans doublon, avec un choix clair pour reprendre les remarques.
 - Diverses améliorations de stabilité et de suivi des signalements.
 
 ## Releasepoort

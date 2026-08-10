@@ -40,7 +40,8 @@ class LogbookDiveConfirmationsInboxScreen extends StatelessWidget {
                           if (snap.connectionState == ConnectionState.waiting) {
                             return const Center(
                               child: CircularProgressIndicator(
-                                  color: Colors.white),
+                                color: Colors.white,
+                              ),
                             );
                           }
                           if (snap.hasError) {
@@ -125,9 +126,9 @@ class _LogbookDiveConfirmationScreenState
       });
       if (!mounted) return;
       final status = (result.data as Map?)?['status']?.toString() ?? '';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_statusSnack(status))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_statusSnack(status))));
       Navigator.pop(context);
     } on FirebaseFunctionsException catch (e) {
       if (!mounted) return;
@@ -136,9 +137,9 @@ class _LogbookDiveConfirmationScreenState
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Réponse impossible: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Réponse impossible: $e')));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -150,6 +151,8 @@ class _LogbookDiveConfirmationScreenState
         return 'Plongée confirmée et copiée dans ton carnet.';
       case 'confirmed_existing_identical':
         return 'Plongée confirmée: elle était déjà identique.';
+      case 'confirmed_existing_notes_merged':
+        return 'Plongée confirmée et remarques ajoutées à ta plongée.';
       case 'confirmed_existing_different':
         return 'Plongée confirmée avec ta version existante.';
       case 'confirmed_no_import':
@@ -220,8 +223,9 @@ class _DetailBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final snapshot =
-        Map<String, dynamic>.from((data['dive_snapshot'] as Map?) ?? {});
+    final snapshot = Map<String, dynamic>.from(
+      (data['dive_snapshot'] as Map?) ?? {},
+    );
     final status = data['status'] as String? ?? 'pending';
     final matchType = data['match_type'] as String? ?? 'none';
     final matchedEntryId = data['matched_entry_id'] as String?;
@@ -280,17 +284,29 @@ class _DetailBody extends StatelessWidget {
                   'Tu peux confirmer la plongée et choisir si elle doit être copiée dans ton carnet.',
             ),
           const SizedBox(height: 14),
-          if (matchType == 'identical')
+          if (matchType == 'identical') ...[
             _PrimaryAction(
               icon: Icons.check_circle_outline,
-              label: 'Confirmer',
+              label: 'Confirmer sans modifier mon carnet',
               submitting: submitting,
               onPressed: () => onRespond(
                 'confirm_existing_identical',
                 matchedEntryId: matchedEntryId,
               ),
-            )
-          else if (matchType == 'similar') ...[
+            ),
+            if ((snapshot['notes'] as String?)?.trim().isNotEmpty == true) ...[
+              const SizedBox(height: 8),
+              _SecondaryAction(
+                icon: Icons.notes_outlined,
+                label: 'Ajouter ses remarques à ma plongée',
+                submitting: submitting,
+                onPressed: () => onRespond(
+                  'confirm_merge_notes',
+                  matchedEntryId: matchedEntryId,
+                ),
+              ),
+            ],
+          ] else if (matchType == 'similar') ...[
             _PrimaryAction(
               icon: Icons.check_circle_outline,
               label: 'Confirmer et garder ma version',
@@ -342,6 +358,8 @@ class _DetailBody extends StatelessWidget {
         return 'Confirmée et copiée dans ton carnet.';
       case 'confirmed_existing_identical':
         return 'Confirmée: tu avais déjà cette plongée identique.';
+      case 'confirmed_existing_notes_merged':
+        return 'Confirmée: les remarques partagées ont été ajoutées à ta plongée.';
       case 'confirmed_existing_different':
         return 'Confirmée: tu avais déjà une version différente.';
       case 'confirmed_no_import':
@@ -365,8 +383,9 @@ class _ConfirmationTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final snapshot =
-        Map<String, dynamic>.from((data['dive_snapshot'] as Map?) ?? {});
+    final snapshot = Map<String, dynamic>.from(
+      (data['dive_snapshot'] as Map?) ?? {},
+    );
     final source = data['source_member_name'] as String? ?? 'Un membre';
     final location = snapshot['location_name'] as String? ?? 'Plongée';
     final date = _formatDate(snapshot['date']);
@@ -523,10 +542,7 @@ class _DiveFacts extends StatelessWidget {
           label: 'Immersion ${snapshot['entry_time_str']}',
         ),
       if ((snapshot['exit_time_str'] as String?)?.isNotEmpty == true)
-        _Fact(
-          icon: Icons.logout,
-          label: 'Sortie ${snapshot['exit_time_str']}',
-        ),
+        _Fact(icon: Icons.logout, label: 'Sortie ${snapshot['exit_time_str']}'),
       // WP-28 phase 2 — température de l'eau + zone particulière.
       if (snapshot['water_temp_c'] is num)
         _Fact(
@@ -534,10 +550,7 @@ class _DiveFacts extends StatelessWidget {
           label: _tempLabel(snapshot['water_temp_c'] as num),
         ),
       if (_zoneLabel(snapshot['zone']) != null)
-        _Fact(
-          icon: Icons.flag_outlined,
-          label: _zoneLabel(snapshot['zone'])!,
-        ),
+        _Fact(icon: Icons.flag_outlined, label: _zoneLabel(snapshot['zone'])!),
     ];
     final buddyNames = _buddyNames(snapshot);
     final sharedCounters = _sharedCounterLabels(snapshot['counters']);

@@ -20,6 +20,8 @@ jest.mock('../utils/badge-helper', () => ({
 
 const {
   buildDiveSnapshot,
+  locationsMatch,
+  mergeSharedNotes,
   sharedCounters,
   personalCounters,
   binomesForTarget,
@@ -30,6 +32,23 @@ const {
   buildCopyPayload,
   buildReplaceUpdate,
 } = require('./logbookDiveConfirmations');
+
+describe('COM-055 duplicate and shared-note handling', () => {
+  test('recognises a specific site name inside a longer location label', () => {
+    expect(locationsMatch('Cavalaire - Togo', 'Togo')).toBe(true);
+    expect(locationsMatch('Vodelée', 'La Gombe')).toBe(false);
+  });
+
+  test('adds shared observations without deleting personal notes', () => {
+    expect(mergeSharedNotes('Mon lestage était bon.', 'Vu un hippocampe.'))
+      .toBe('Mon lestage était bon.\n\nVu un hippocampe.');
+  });
+
+  test('does not duplicate observations already present', () => {
+    expect(mergeSharedNotes('Vu un hippocampe.', 'vu un hippocampe'))
+      .toBe('Vu un hippocampe.');
+  });
+});
 
 const JAN = { id: 'jan-id', name: 'Jan Andriessens' };
 const POL = { id: 'pol-id', name: 'Pol Dupont' };
