@@ -1,0 +1,31 @@
+# CalyMob releasewachtrij
+
+Deze lijst bundelt afgeronde mobiele wijzigingen tot Jan een gezamenlijke
+App Store- en Play Store-release goedkeurt. Een merge naar `main` publiceert
+de app niet en wijzigt de Firestore-appversie niet.
+
+## Volgende release
+
+Basisversie: `1.17.0+194`
+
+| Referentie | Wijziging | Platform | Validatie | Risico | Status |
+|---|---|---|---|---|---|
+| MOB-014 | Vanuit Activiteiten een interessepeiling in het algemene clubkanaal starten | Android + iOS | Flutter-analyse en tests in PR | Laag | PR |
+| MOB-015 | “Bug melden” hernoemen en verplaatsen naar “Remarque ou amélioration”; afmelden blijft onder instellingen | Android + iOS | Flutter-analyse en tests in PR | Laag | PR |
+| Technisch | Oude Linear Cloud Function en Linear-velden uit nieuwe bugrapporten verwijderen | Backend + Android + iOS | Function-loadcheck en Flutter-tests in PR | Laag | PR |
+
+## Voorgestelde Franse releasenotes
+
+- Vous pouvez désormais lancer un sondage d’intérêt depuis les activités.
+- Le parcours « Remarque ou amélioration » a été clarifié et déplacé dans le profil.
+- Diverses améliorations de stabilité et de suivi des signalements.
+
+## Releasepoort
+
+Voor verzending naar de stores:
+
+1. alle opgenomen PR's moeten op `main` staan;
+2. Flutter-analyse en tests moeten slagen of een gedocumenteerde baseline hebben;
+3. Android- en iOS-builds moeten slagen;
+4. Jan keurt versie, platformen en definitieve Franse releasenotes goed;
+5. de Firestore-appversie wordt pas gepubliceerd nadat beide stores live zijn.

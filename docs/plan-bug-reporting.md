@@ -1,5 +1,11 @@
 # Plan: In-App Bug Reporting — CalyMob & CalyCompta
 
+> **Status (2026-08-10): historisch ontwerp.** De Linear-synchronisatie is
+> definitief verwijderd. Firestore `clubs/{clubId}/bug_reports` en
+> CalyCompta **Signalements & Bugs** zijn de enige bron voor triage, review en
+> afsluiting. De Linear-secties hieronder blijven alleen bewaard als
+> beslissingshistoriek en beschrijven niet langer de actieve architectuur.
+
 ## Probleem
 
 CalyMob en CalyCompta hebben geen manier voor gebruikers om bugs te melden vanuit de app. Bugs worden nu ad hoc gemeld (mondeling, email, support formulier) zonder structuur, zonder context (device info, screenshots), en zonder opvolging. Er is geen centraal overzicht van openstaande bugs.
