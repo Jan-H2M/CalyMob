@@ -167,14 +167,6 @@ exports.onMedicalCertStatusChange = onMedicalCertStatusChange;
 exports.onMedicalCertCreated = onMedicalCertCreated;
 
 // =============================================================================
-// BUG REPORT → LINEAR SYNC (Gen2)
-// =============================================================================
-
-// Sync new bug reports to Linear as issues
-const { onNewBugReport } = require('./src/integrations/onBugReportCreated');
-exports.onNewBugReport = onNewBugReport;
-
-// =============================================================================
 // CARNET DE FORMATION — PROGRESSION (Gen2)
 // =============================================================================
 

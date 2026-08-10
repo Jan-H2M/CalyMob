@@ -93,7 +93,6 @@ class BugReportService {
         sentryEventUrl: sentryReplayId
           ? `https://h2m-ai.sentry.io/replays/?query=${sentryReplayId}`
           : null,
-        linearIssueId: null,
         screenshotUrl: null,       // backward compat (first screenshot URL)
         screenshots: [] as any[],  // new: array of screenshot metadata
         createdAt: serverTimestamp(),

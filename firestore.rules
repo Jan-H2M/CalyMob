@@ -1532,7 +1532,7 @@ service cloud.firestore {
         allow create: if isMember(clubId)
           && 'reporter' in request.resource.data
           && request.resource.data.reporter.uid == request.auth.uid;
-        // Modification: admin uniquement (pour mettre à jour le statut, linearIssueId)
+        // Modification: admin uniquement (pour le suivi interne du statut)
         allow update: if isAdmin(clubId) && hasValidSession(clubId);
         // Suppression: admin uniquement
         allow delete: if isAdmin(clubId) && hasValidSession(clubId);
