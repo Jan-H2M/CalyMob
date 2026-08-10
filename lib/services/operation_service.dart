@@ -11,6 +11,14 @@ import '../models/user_event_registration.dart';
 import '../utils/tariff_utils.dart';
 import 'refund_service.dart';
 
+class PaymentMethodNotAllowedException implements Exception {
+  const PaymentMethodNotAllowedException();
+
+  @override
+  String toString() =>
+      'Ce moyen de paiement n’est plus autorisé pour cette activité.';
+}
+
 /// Service de gestion des opérations (événements)
 class OperationService {
   final FirebaseFirestore _firestore;
@@ -840,13 +848,50 @@ class OperationService {
     required String status,
   }) async {
     try {
-      await _firestore
-          .collection('clubs/$clubId/operations/$operationId/inscriptions')
-          .doc(participantId)
-          .update({
-        'payment_status': status,
-        'payment_status_at': FieldValue.serverTimestamp(),
-        'updated_at': FieldValue.serverTimestamp(),
+      final operationRef =
+          _firestore.doc('clubs/$clubId/operations/$operationId');
+      final participantRef = operationRef.collection('inscriptions').doc(
+            participantId,
+          );
+
+      await _firestore.runTransaction((transaction) async {
+        final operationSnapshot = await transaction.get(operationRef);
+        if (!operationSnapshot.exists) {
+          throw StateError('Activité introuvable.');
+        }
+
+        final operationData = operationSnapshot.data()!;
+        final requiredMethod = switch (status) {
+          'qr_on_site' => 'on_site',
+          'qr_email_sent' => 'qr_email',
+          _ => null,
+        };
+
+        if (requiredMethod != null) {
+          final paymentRequired = operationData.containsKey('payment_required')
+              ? operationData['payment_required'] == true
+              : ((operationData['prix_membre'] as num?) ?? 0) > 0 ||
+                  ((operationData['event_tariffs'] as List?) ?? const [])
+                      .whereType<Map>()
+                      .any(
+                        (tariff) => ((tariff['price'] as num?) ?? 0) > 0,
+                      );
+          final allowedMethods =
+              (operationData['allowed_payment_methods'] as List?)
+                      ?.whereType<String>()
+                      .toSet() ??
+                  const {'qr_immediate', 'qr_email', 'on_site'};
+
+          if (!paymentRequired || !allowedMethods.contains(requiredMethod)) {
+            throw const PaymentMethodNotAllowedException();
+          }
+        }
+
+        transaction.update(participantRef, {
+          'payment_status': status,
+          'payment_status_at': FieldValue.serverTimestamp(),
+          'updated_at': FieldValue.serverTimestamp(),
+        });
       });
 
       debugPrint(
