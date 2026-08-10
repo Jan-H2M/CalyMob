@@ -8,15 +8,14 @@ import '../../models/medical_certification.dart';
 import '../../models/member_profile.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
-import '../../providers/unread_count_provider.dart';
 import '../../services/medical_certification_service.dart';
 import '../../services/profile_service.dart';
 import '../../utils/club_role_utils.dart';
 import '../../widgets/certification_status_badge.dart';
 import '../../widgets/cotisation_status_badge.dart';
+import '../../widgets/bug_report_widget.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/user_qr_card.dart';
-import '../auth/login_screen.dart';
 import '../expenses/financial_screen.dart';
 import '../piscine/availability_screen.dart';
 import 'medical_certification_screen.dart';
@@ -56,39 +55,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
         roles.contains('gonflage');
   }
 
-  // ---------------- Logout ----------------
-
-  Future<void> _handleLogout() async {
-    final confirmed = await showDialog<bool>(
+  void _startFeedbackMode() {
+    showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Déconnexion'),
-        content: const Text('Voulez-vous vous déconnecter ?'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Text('💬', style: TextStyle(fontSize: 24)),
+            SizedBox(width: 8),
+            Expanded(child: Text('Remarque ou amélioration')),
+          ],
+        ),
+        content: const Text(
+          '1. Une petite icône va apparaître sur votre écran\n\n'
+          '2. Allez à l\'écran concerné par votre remarque\n\n'
+          '3. Appuyez sur l\'icône pour joindre une capture et nous expliquer votre demande',
+          style: TextStyle(fontSize: 14, height: 1.4),
+        ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
+            onPressed: () => Navigator.pop(ctx),
             child: const Text('Annuler'),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Déconnecter',
-                style: TextStyle(color: Colors.white)),
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.pop(context);
+              bugReportController.activate(timeoutSeconds: 60);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.middenblauw,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Commencer'),
           ),
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
-    await context.read<AuthProvider>().logout();
-    if (!mounted) return;
-    context.read<MemberProvider>().clear();
-    context.read<UnreadCountProvider>().clear();
-    if (mounted) {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-        (route) => false,
-      );
-    }
   }
 
   // ---------------- Build ----------------
@@ -274,16 +278,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ),
                             ),
                           ),
-                          _divider(),
-                          _TileRow(
-                            icon: Icons.logout,
-                            iconBg: Colors.red.shade50,
-                            iconColor: Colors.red,
-                            title: 'Déconnexion',
-                            titleColor: Colors.red,
-                            onTap: _handleLogout,
-                          ),
                         ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    const _SectionHeader(label: 'Aide et suggestions'),
+                    const SizedBox(height: 8),
+                    _whiteCard(
+                      child: _TileRow(
+                        icon: Icons.chat_bubble_outline,
+                        iconBg: Colors.orange.shade50,
+                        iconColor: AppColors.oranje,
+                        title: 'Remarque ou amélioration',
+                        subtitle: 'Signaler un problème ou proposer une idée',
+                        onTap: _startFeedbackMode,
                       ),
                     ),
                   ],
@@ -477,7 +485,6 @@ class _TileRow extends StatelessWidget {
   final Color? iconBg;
   final Color? iconColor;
   final String title;
-  final Color? titleColor;
   final String? subtitle;
   final Widget? subtitleWidget;
   final String? trailingPreview;
@@ -489,7 +496,6 @@ class _TileRow extends StatelessWidget {
     this.onTap,
     this.iconBg,
     this.iconColor,
-    this.titleColor,
     this.subtitle,
     this.subtitleWidget,
     this.trailingPreview,
@@ -530,7 +536,7 @@ class _TileRow extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
-                        color: titleColor ?? Colors.black87,
+                        color: Colors.black87,
                       ),
                     ),
                     if (subtitleWidget != null) ...[
