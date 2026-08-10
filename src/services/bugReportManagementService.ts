@@ -57,8 +57,6 @@ export interface BugReport {
   screenshots: ScreenshotMeta[];
   sentryReplayId: string | null;
   sentryEventUrl: string | null;
-  linearIssueId: string | null;
-  linearIssueUrl?: string | null;
   createdAt: Timestamp | Date;
   updatedAt?: Timestamp | Date;
   resolvedAt?: Timestamp | Date;
@@ -519,8 +517,6 @@ class BugReportManagementService {
       screenshots: [],
       sentryReplayId: null,
       sentryEventUrl: null,
-      linearIssueId: null,
-      linearIssueUrl: null,
       createdAt: serverTimestamp(),
     };
     const docRef = await addDoc(colRef, docData);
@@ -581,8 +577,6 @@ class BugReportManagementService {
       screenshots,
       sentryReplayId: data.sentryReplayId || null,
       sentryEventUrl: data.sentryEventUrl || null,
-      linearIssueId: data.linearIssueId || null,
-      linearIssueUrl: data.linearIssueUrl || null,
       createdAt: data.createdAt || new Date(),
       updatedAt: data.updatedAt || null,
       resolvedAt: data.resolvedAt || null,

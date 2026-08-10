@@ -71,8 +71,6 @@ class BugReportService {
         'sentryEventUrl': sentryReplayId != null
             ? 'https://h2m-ai.sentry.io/replays/?query=$sentryReplayId'
             : null,
-        'linearIssueId': null, // Rempli par la Cloud Function
-        'linearIssueUrl': null,
         'screenshotUrl': null, // Backward compat — rempli ci-dessous
         'screenshots': <Map<String, dynamic>>[], // Format CalyCompta
         'createdAt': FieldValue.serverTimestamp(),
