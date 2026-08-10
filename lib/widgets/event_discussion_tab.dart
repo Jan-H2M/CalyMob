@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../config/app_colors.dart';
 import '../config/firebase_config.dart';
 import '../models/event_message.dart';
@@ -22,6 +23,16 @@ import 'message_edit_sheet.dart';
 import 'message_reactions.dart';
 import 'poll_compose_dialog.dart';
 import 'poll_widget.dart';
+
+@visibleForTesting
+Uri? eventMessageLinkUri(String? href) {
+  if (href == null) return null;
+  final uri = Uri.tryParse(href);
+  if (uri == null || !{'http', 'https', 'mailto'}.contains(uri.scheme)) {
+    return null;
+  }
+  return uri;
+}
 
 class EventDiscussionTab extends StatefulWidget {
   final String clubId;
@@ -701,6 +712,15 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
                 MarkdownBody(
                   data: message.message,
                   selectable: true,
+                  onTapLink: (text, href, title) async {
+                    final uri = eventMessageLinkUri(href);
+                    if (uri != null) {
+                      await launchUrl(
+                        uri,
+                        mode: LaunchMode.externalApplication,
+                      );
+                    }
+                  },
                   styleSheet: MarkdownStyleSheet(
                     p: const TextStyle(fontSize: 15, color: Colors.black87),
                     strong: const TextStyle(fontSize: 15, color: Colors.black87, fontWeight: FontWeight.w700),
