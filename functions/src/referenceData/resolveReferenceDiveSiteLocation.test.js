@@ -5,6 +5,7 @@ const {
   selectExactMatch,
   referenceDescription,
   matchesReferenceQuery,
+  referenceSearchPlan,
 } = require('./resolveReferenceDiveSiteLocation');
 
 describe('reference dive-site name matching', () => {
@@ -41,5 +42,14 @@ describe('reference dive-site name matching', () => {
       display_name: 'Anna Jacobapolder',
       match_keys: ['anna jacobapolder'],
     }, 'Anna jacoba polder')).toBe(true);
+  });
+
+  test('builds a prefix query for a partial reference-site name', () => {
+    expect(referenceSearchPlan(' Hur ')).toEqual({
+      normalizedQuery: 'hur',
+      tokens: ['hur'],
+      prefixEnd: 'hur\uf8ff',
+    });
+    expect(matchesReferenceQuery({ display_name: 'Hurghada', match_keys: [] }, 'Hur')).toBe(true);
   });
 });

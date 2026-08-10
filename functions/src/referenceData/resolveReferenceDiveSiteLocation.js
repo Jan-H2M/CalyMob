@@ -99,6 +99,18 @@ function matchesReferenceQuery(site, query) {
     .some((value) => compactName(value).includes(compactQuery));
 }
 
+function referenceSearchPlan(query) {
+  const normalizedQuery = normalizeLocationName(query);
+  const tokens = [...new Set(normalizedQuery.split(' ').filter((value) => value.length >= 3))]
+    .sort((left, right) => right.length - left.length)
+    .slice(0, 3);
+  return {
+    normalizedQuery,
+    tokens,
+    prefixEnd: normalizedQuery ? `${normalizedQuery}\uf8ff` : '',
+  };
+}
+
 function referenceDescription(site) {
   const descriptions = site?.descriptions;
   if (!descriptions || typeof descriptions !== 'object') return null;
@@ -311,11 +323,17 @@ const listReferenceDiveSites = onCall(
     const sites = getReferenceSites(clubId);
 
     if (query) {
-      const tokens = [...new Set(normalizeLocationName(query).split(' ').filter((value) => value.length >= 3))]
-        .sort((left, right) => right.length - left.length).slice(0, 3);
+      const { normalizedQuery, tokens, prefixEnd } = referenceSearchPlan(query);
       if (!tokens.length) return { items: [], nextCursor: null, searched: true };
-      const snapshots = await Promise.all(tokens.map((token) => sites
-        .where('search_tokens', 'array-contains', token).limit(200).get()));
+      // search_tokens supports exact words, but a user typing a partial first
+      // word (for example "Hur" for "Hurghada") previously received no
+      // candidates. Add a normalized-name prefix query and merge both result
+      // sets before applying the existing conservative substring filter.
+      const snapshots = await Promise.all([
+        sites.orderBy('normalized_name').startAt(normalizedQuery).endAt(prefixEnd).limit(200).get(),
+        ...tokens.map((token) => sites
+          .where('search_tokens', 'array-contains', token).limit(200).get()),
+      ]);
       const byId = new Map();
       for (const snapshot of snapshots) {
         for (const doc of snapshot.docs) byId.set(doc.id, doc.data());
@@ -350,6 +368,7 @@ module.exports = {
   selectExactMatch,
   referenceDescription,
   matchesReferenceQuery,
+  referenceSearchPlan,
   resolveReferenceDiveSiteLocation,
   confirmReferenceDiveSiteLocation,
   listReferenceDiveSites,
