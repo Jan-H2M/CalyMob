@@ -14,12 +14,14 @@ Basisversie: `1.17.0+194`
 | MOB-015 | “Bug melden” hernoemen en verplaatsen naar “Remarque ou amélioration”; afmelden blijft onder instellingen | Android + iOS | Flutter-analyse en tests | Laag | Releasewachtrij |
 | Technisch | Oude Linear Cloud Function en Linear-velden uit nieuwe bugrapporten verwijderen | Backend + Android + iOS | Function-loadcheck en Flutter-tests | Laag | Releasewachtrij |
 | Locaties | Bij het maken van een activiteit alleen locaties tonen die in CalyCompta beschikbaar zijn gemaakt | Android + iOS | Modeltest, Flutter-analyse en volledige tests | Laag | Releasewachtrij |
+| COM-048 | Duikplaatszoekfunctie zoekt accentongevoelig op naam, land, zone, type en aliassen met vaste rangschikking | Android + iOS | Utilitytest, Flutter-analyse en volledige tests | Laag | Releasewachtrij |
 
 ## Voorgestelde Franse releasenotes
 
 - Vous pouvez désormais lancer un sondage d’intérêt depuis les activités.
 - Le parcours « Remarque ou amélioration » a été clarifié et déplacé dans le profil.
 - La création d’une activité respecte désormais les lieux activés dans CalyCompta.
+- La recherche de lieux de plongée est désormais plus complète et plus fiable.
 - Diverses améliorations de stabilité et de suivi des signalements.
 
 ## Releasepoort

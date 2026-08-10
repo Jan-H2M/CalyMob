@@ -22,6 +22,7 @@ import 'package:provider/provider.dart';
 import '../config/app_colors.dart';
 import '../config/firebase_config.dart';
 import '../providers/auth_provider.dart';
+import '../utils/dive_location_search.dart';
 
 class DiveLocationSelection {
   final String? id;
@@ -184,30 +185,46 @@ class _DiveLocationPickerSheetState extends State<_DiveLocationPickerSheet> {
                 country: existing.country ?? row.country,
                 isSea: existing.isSea || row.isSea,
                 zone: existing.zone ?? row.zone,
+                type: existing.type ?? row.type,
+                aliases: {...existing.aliases, ...row.aliases}.toList(),
               );
       }
 
       for (final d in centralSnap.docs) {
         final data = d.data();
         final waterType = (data['water_type'] as String?)?.toLowerCase();
-        addRow(_LocationRow(
-          id: d.id,
-          name: (data['name'] as String?)?.trim() ?? '—',
-          country: (data['country'] as String?)?.trim(),
-          isSea: waterType == 'sea' || waterType == 'mer',
-          zone: ((data['zone'] ?? data['region']) as String?)?.trim(),
-        ));
+        addRow(
+          _LocationRow(
+            id: d.id,
+            name: (data['name'] as String?)?.trim() ?? '—',
+            country: (data['country'] as String?)?.trim(),
+            isSea: waterType == 'sea' || waterType == 'mer',
+            zone: ((data['zone'] ?? data['region']) as String?)?.trim(),
+            type: (data['location_type'] as String?)?.trim(),
+            aliases: [
+              if (data['reference_match'] is Map &&
+                  data['reference_match']['display_name'] is String)
+                data['reference_match']['display_name'] as String,
+              if (data['logbook_import'] is Map &&
+                  data['logbook_import']['aliases'] is List)
+                ...(data['logbook_import']['aliases'] as List)
+                    .whereType<String>(),
+            ],
+          ),
+        );
       }
       for (final d in carnetSnap?.docs ?? const []) {
         final data = d.data();
         final name =
             ((data['location_name'] ?? data['lieu']) as String? ?? '').trim();
         final counters = data['counters'];
-        addRow(_LocationRow(
-          name: name,
-          country: (data['country'] as String?)?.trim(),
-          isSea: counters is Map && counters['mer'] == true,
-        ));
+        addRow(
+          _LocationRow(
+            name: name,
+            country: (data['country'] as String?)?.trim(),
+            isSea: counters is Map && counters['mer'] == true,
+          ),
+        );
       }
       final rows = rowsByName.values.toList()
         ..sort((a, b) => a.name.compareTo(b.name));
@@ -343,46 +360,53 @@ class _DiveLocationPickerSheetState extends State<_DiveLocationPickerSheet> {
   Widget _resultsList(List<_LocationRow> rows, String q) {
     final children = <Widget>[];
     for (final r in rows) {
-      children.add(_tile(
-        title: r.name,
-        subtitle: [
-          if (r.country != null && r.country!.isNotEmpty) r.country,
-          if (r.isSea) 'mer',
-        ].whereType<String>().join(' · '),
-        leading: Icon(
-          r.isSea ? Icons.waves : Icons.terrain,
-          color: r.isSea ? Colors.cyan.shade700 : Colors.green.shade700,
+      children.add(
+        _tile(
+          title: r.name,
+          subtitle: [
+            if (r.country != null && r.country!.isNotEmpty) r.country,
+            if (r.isSea) 'mer',
+          ].whereType<String>().join(' · '),
+          leading: Icon(
+            r.isSea ? Icons.waves : Icons.terrain,
+            color: r.isSea ? Colors.cyan.shade700 : Colors.green.shade700,
+          ),
+          onTap: () {
+            Navigator.pop(
+              context,
+              DiveLocationSelection(
+                id: r.id,
+                name: r.name,
+                country: r.country,
+                isSea: r.isSea,
+                zone: r.zone,
+              ),
+            );
+          },
         ),
-        onTap: () {
-          Navigator.pop(
-            context,
-            DiveLocationSelection(
-              id: r.id,
-              name: r.name,
-              country: r.country,
-              isSea: r.isSea,
-              zone: r.zone,
-            ),
-          );
-        },
-      ));
+      );
     }
 
     // Free-typed fallback when query has text but doesn't match any row.
-    if (q.isNotEmpty && !rows.any((r) => r.name.toLowerCase() == q)) {
+    if (q.isNotEmpty &&
+        !rows.any((r) => normalizeDiveLocationSearch(r.name) == q)) {
       children.add(const Divider(height: 1));
-      children.add(_tile(
-        title: 'Utiliser « ${_query.text.trim()} » tel quel',
-        subtitle: 'Lieu libre — pas dans la base',
-        leading:
-            const Icon(Icons.edit_location_alt_outlined, color: Colors.grey),
-        onTap: () {
-          Navigator.pop(
-            context,
-            DiveLocationSelection(name: _query.text.trim()),
-          );
-        },
-      ));
+      children.add(
+        _tile(
+          title: 'Utiliser « ${_query.text.trim()} » tel quel',
+          subtitle: 'Lieu libre — pas dans la base',
+          leading: const Icon(
+            Icons.edit_location_alt_outlined,
+            color: Colors.grey,
+          ),
+          onTap: () {
+            Navigator.pop(
+              context,
+              DiveLocationSelection(name: _query.text.trim()),
+            );
+          },
+        ),
+      );
     }
 
     if (children.isEmpty) {
@@ -429,6 +453,8 @@ class _LocationRow {
   final String? country;
   final bool isSea;
   final String? zone;
+  final String? type;
+  final List<String> aliases;
 
   const _LocationRow({
     this.id,
@@ -436,32 +462,26 @@ class _LocationRow {
     this.country,
     this.isSea = false,
     this.zone,
+    this.type,
+    this.aliases = const [],
   });
 }
 
 String _normalizeLocationSearch(String value) {
-  return value
-      .toLowerCase()
-      .replaceAll(RegExp(r'[àáâä]'), 'a')
-      .replaceAll(RegExp(r'[èéêë]'), 'e')
-      .replaceAll(RegExp(r'[ìíîï]'), 'i')
-      .replaceAll(RegExp(r'[òóôö]'), 'o')
-      .replaceAll(RegExp(r'[ùúûü]'), 'u')
-      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
-      .trim()
-      .replaceAll(RegExp(r'\s+'), ' ');
+  return normalizeDiveLocationSearch(value);
 }
 
 int _locationSearchScore(String query, _LocationRow row) {
-  final name = _normalizeLocationSearch(row.name);
-  final country = _normalizeLocationSearch(row.country ?? '');
-  if (name == query || country == query) return 0;
-  final words = [
-    ...name.split(' '),
-    if (country.isNotEmpty) ...country.split(' '),
-  ].where((w) => w.isNotEmpty).toList();
-  if (words.any((w) => w == query)) return 1;
-  if (words.any((w) => w.startsWith(query))) return 2;
-  if (query.length >= 4 && name.contains(query)) return 5;
-  return 999;
+  final countryCode = row.country?.toUpperCase();
+  return scoreDiveLocation(
+    DiveLocationSearchCandidate(
+      name: row.name,
+      countryCode: countryCode,
+      countryLabel: diveLocationCountryLabels[countryCode],
+      zone: row.zone,
+      type: row.type,
+      aliases: row.aliases,
+    ),
+    query,
+  );
 }
