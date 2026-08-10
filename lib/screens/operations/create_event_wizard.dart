@@ -332,7 +332,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
   Future<void> _loadLocations() async {
     setState(() => _loadingLocations = true);
     try {
-      final locs = await _locationService.getAllLocations(_clubId);
+      final locs = await _locationService.getEventLocations(_clubId);
       setState(() {
         _locations = locs;
         _loadingLocations = false;
