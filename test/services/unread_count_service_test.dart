@@ -75,6 +75,27 @@ void main() {
       expect(tracker.getLastRead('key_1'), isNull);
       expect(tracker.getLastRead('key_2'), isNull);
     });
+
+    test('markAllAsRead legt een globale baseline op alle gesprekken', () async {
+      final tracker = LocalReadTracker();
+      await tracker.init();
+      await tracker.resetAll();
+
+      await tracker.markAsRead('bestaand_gesprek');
+      final oudeTimestamp = tracker.getLastRead('bestaand_gesprek')!;
+      await Future.delayed(const Duration(milliseconds: 10));
+
+      await tracker.markAllAsRead();
+
+      final globaleBaseline = tracker.globalReadBaseline;
+      expect(globaleBaseline, isNotNull);
+      expect(tracker.getLastRead('nooit_geopend_gesprek'),
+          equals(globaleBaseline));
+      expect(tracker.getLastRead('bestaand_gesprek')!.isAfter(oudeTimestamp),
+          isTrue);
+
+      await tracker.resetAll();
+    });
   });
 
   group('UnreadCountService - Announcements', () {
