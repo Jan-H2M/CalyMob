@@ -1,17 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:lottie/lottie.dart';
 import 'package:intl/intl.dart';
 import '../../config/firebase_config.dart';
-import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../models/activity_item.dart';
+import '../../models/team_channel.dart';
 import '../../providers/activity_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../widgets/loading_widget.dart';
-import '../../services/event_message_service.dart';
-import '../../services/session_message_service.dart';
 import '../../services/unread_count_service.dart';
 import '../../providers/auth_provider.dart';
 import 'operation_detail_screen.dart';
@@ -19,6 +16,7 @@ import 'event_search_screen.dart';
 import 'event_type_selector.dart';
 import 'create_event_wizard.dart';
 import '../piscine/session_detail_screen.dart';
+import '../teams/team_chat_screen.dart';
 
 /// Liste des événements avec filtre (Tout / Plongées / Piscine / Sorties)
 /// Combineert operations en piscine sessions in één overzicht
@@ -66,6 +64,27 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
               ),
             );
           },
+        ),
+      ),
+    );
+  }
+
+  /// Lance une enquête d'intérêt dans le canal général avant de créer
+  /// un événement. Le sondage reste visible par tous les membres du club.
+  void _openInterestPoll() {
+    const channelType = TeamChannelType.general;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TeamChatScreen(
+          channel: TeamChannel(
+            id: channelType.id,
+            name: channelType.displayName,
+            type: channelType,
+            description: channelType.description,
+            createdAt: DateTime.now(),
+          ),
+          openPollComposer: true,
         ),
       ),
     );
@@ -142,6 +161,12 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
               MaterialPageRoute(builder: (_) => const EventSearchScreen()),
             ),
           ),
+          if (canCreateEvents)
+            IconButton(
+              icon: const Icon(Icons.poll_outlined, size: 27),
+              tooltip: 'Créer un sondage d\'intérêt',
+              onPressed: _openInterestPoll,
+            ),
           if (canCreateEvents)
             IconButton(
               icon: const Icon(Icons.add_circle_outline, size: 28),
@@ -451,200 +476,205 @@ class _OperationsListScreenState extends State<OperationsListScreen> {
                   width: 70,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: item.isPiscine
-                        ? [
-                            AppColors.piscineBlauwLight, // Piscine blauw
-                            AppColors.piscineBlauw,
-                          ]
-                        : [
-                            AppColors.middenblauw,
-                            AppColors.donkerblauw,
-                          ],
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: item.isPiscine
+                          ? [
+                              AppColors.piscineBlauwLight, // Piscine blauw
+                              AppColors.piscineBlauw,
+                            ]
+                          : [
+                              AppColors.middenblauw,
+                              AppColors.donkerblauw,
+                            ],
+                    ),
                   ),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      dayNumber,
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                        height: 1,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      dayName.substring(0, 3).toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white.withOpacity(0.9),
-                        letterSpacing: 1,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        time,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        dayNumber,
                         style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
                           color: Colors.white,
+                          height: 1,
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              // Activity details
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Title row with icon
-                      Row(
-                        children: [
-                          Icon(
-                            icon,
-                            size: 18,
-                            color: item.isPiscine
-                                ? AppColors.piscineBlauw
-                                : AppColors.middenblauw,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              item.titre,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.donkerblauw,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
+                      const SizedBox(height: 2),
+                      Text(
+                        dayName.substring(0, 3).toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withOpacity(0.9),
+                          letterSpacing: 1,
+                        ),
                       ),
-                      // Location (niet tonen voor piscine - dat is al duidelijk)
-                      if (item.lieu != null && item.lieu!.isNotEmpty && !item.isPiscine) ...[
-                        const SizedBox(height: 8),
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          time,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Activity details
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Title row with icon
                         Row(
                           children: [
                             Icon(
-                              Icons.location_on,
-                              size: 14,
-                              color: Colors.grey[600],
+                              icon,
+                              size: 18,
+                              color: item.isPiscine
+                                  ? AppColors.piscineBlauw
+                                  : AppColors.middenblauw,
                             ),
-                            const SizedBox(width: 4),
+                            const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                item.lieu!,
+                                item.titre,
                                 style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.grey[700],
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.donkerblauw,
                                 ),
-                                maxLines: 1,
+                                maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           ],
                         ),
-                      ],
-                      // Extra info (verschilt per type)
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          if (item.isPiscine) ...[
-                            // Piscine: toon accueil en encadrants count
-                            Icon(
-                              Icons.group,
-                              size: 14,
-                              color: AppColors.piscineBlauw.withOpacity(0.7),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              item.subtitle ?? '',
-                              style: TextStyle(
-                                fontSize: 13,
+                        // Location (niet tonen voor piscine - dat is al duidelijk)
+                        if (item.lieu != null &&
+                            item.lieu!.isNotEmpty &&
+                            !item.isPiscine) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.location_on,
+                                size: 14,
                                 color: Colors.grey[600],
                               ),
-                            ),
-                          ] else if (item.capaciteMax != null &&
-                              item.capaciteMax! > 0) ...[
-                            // Operation: toon capaciteit
-                            Icon(
-                              Icons.group,
-                              size: 14,
-                              color: AppColors.middenblauw.withOpacity(0.7),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Max ${item.capaciteMax}',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ],
-                          const Spacer(),
-                          // Price badge (alleen voor operations met prijs)
-                          if (!item.isPiscine && item.operation?.priceTbd == true)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.withOpacity(0.25),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Text(
-                                'Prix à confirmer',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFFB45309),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  item.lieu!,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey[700],
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                            )
-                          else if (!item.isPiscine && item.prix != null && item.prix! > 0)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: AppColors.lichtblauw.withOpacity(0.3),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                '${item.prix!.toStringAsFixed(2)} €',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.donkerblauw,
-                                ),
-                              ),
-                            ),
+                            ],
+                          ),
                         ],
-                      ),
-                    ],
+                        // Extra info (verschilt per type)
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            if (item.isPiscine) ...[
+                              // Piscine: toon accueil en encadrants count
+                              Icon(
+                                Icons.group,
+                                size: 14,
+                                color: AppColors.piscineBlauw.withOpacity(0.7),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                item.subtitle ?? '',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ] else if (item.capaciteMax != null &&
+                                item.capaciteMax! > 0) ...[
+                              // Operation: toon capaciteit
+                              Icon(
+                                Icons.group,
+                                size: 14,
+                                color: AppColors.middenblauw.withOpacity(0.7),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Max ${item.capaciteMax}',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                            const Spacer(),
+                            // Price badge (alleen voor operations met prijs)
+                            if (!item.isPiscine &&
+                                item.operation?.priceTbd == true)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withOpacity(0.25),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Text(
+                                  'Prix à confirmer',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFFB45309),
+                                  ),
+                                ),
+                              )
+                            else if (!item.isPiscine &&
+                                item.prix != null &&
+                                item.prix! > 0)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: AppColors.lichtblauw.withOpacity(0.3),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  '${item.prix!.toStringAsFixed(2)} €',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.donkerblauw,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              // Unread badge + arrow indicator
-              _buildUnreadBadgeAndArrow(item),
-            ],
+                // Unread badge + arrow indicator
+                _buildUnreadBadgeAndArrow(item),
+              ],
             ),
           ),
         ),
