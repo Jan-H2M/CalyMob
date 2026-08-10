@@ -10,9 +10,9 @@ Basisversie: `1.17.0+194`
 
 | Referentie | Wijziging | Platform | Validatie | Risico | Status |
 |---|---|---|---|---|---|
-| MOB-014 | Vanuit Activiteiten een interessepeiling in het algemene clubkanaal starten | Android + iOS | Flutter-analyse en tests in PR | Laag | PR |
-| MOB-015 | “Bug melden” hernoemen en verplaatsen naar “Remarque ou amélioration”; afmelden blijft onder instellingen | Android + iOS | Flutter-analyse en tests in PR | Laag | PR |
-| Technisch | Oude Linear Cloud Function en Linear-velden uit nieuwe bugrapporten verwijderen | Backend + Android + iOS | Function-loadcheck en Flutter-tests in PR | Laag | PR |
+| MOB-014 | Vanuit Activiteiten een interessepeiling in het algemene clubkanaal starten | Android + iOS | Flutter-analyse en tests | Laag | Releasewachtrij |
+| MOB-015 | “Bug melden” hernoemen en verplaatsen naar “Remarque ou amélioration”; afmelden blijft onder instellingen | Android + iOS | Flutter-analyse en tests | Laag | Releasewachtrij |
+| Technisch | Oude Linear Cloud Function en Linear-velden uit nieuwe bugrapporten verwijderen | Backend + Android + iOS | Function-loadcheck en Flutter-tests | Laag | Releasewachtrij |
 
 ## Voorgestelde Franse releasenotes
 
