@@ -22,6 +22,8 @@ Basisversie: `1.17.0+194`
 | MOB-011 | Een expliciete notificatie-opt-out blijft behouden bij login, app-resume en FCM-tokenrotatie; alleen de gebruiker kan opnieuw inschakelen | Android + iOS | 3 gerichte regressietests, 379 Fluttertests, gerichte analyse en Android-debugbuild | Laag | Releasewachtrij |
 | MOB-013 | Web- en e-maillinks in eventdiscussies openen opnieuw vanuit Markdown-berichten, met blokkering van onveilige URI-schema’s | Android + iOS | 3 gerichte regressietests, 382 Fluttertests, gerichte analyse en Android-debugbuild | Laag | Releasewachtrij |
 
+| COM-044 | Cloud Functions respecteren `member_status` als canonieke ledenstatus; legacyvelden zijn alleen fallback tijdens de migratie | Cloud Functions | 10 gerichte tests en 115 volledige functiontests | Middel | Deploy na review |
+
 ## Voorgestelde Franse releasenotes
 
 - Vous pouvez désormais lancer un sondage d’intérêt depuis les activités.

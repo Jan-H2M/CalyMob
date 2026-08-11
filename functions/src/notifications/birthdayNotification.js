@@ -3,6 +3,7 @@
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { logger } = require('firebase-functions');
 const admin = require('firebase-admin');
+const { isActiveMember } = require('../utils/memberStatus');
 const {
   collectTokensAndMembers,
   sendNotificationsWithBadge,
@@ -26,10 +27,6 @@ function dateParts(value) {
       .map((part) => [part.type, part.value]),
   );
   return { year: parts.year, month: parts.month, day: parts.day };
-}
-
-function isActiveMember(data = {}) {
-  return String(data.member_status || data.status || '').toLowerCase() === 'active';
 }
 
 function hasBirthdayToday(data, now = new Date()) {

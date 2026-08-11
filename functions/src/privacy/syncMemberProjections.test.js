@@ -66,4 +66,14 @@ describe('member privacy projections', () => {
     expect(projected).not.toHaveProperty('email');
     expect(projected).not.toHaveProperty('iban');
   });
+
+  test('canonical inactive status wins over stale active legacy fields', () => {
+    const projected = buildOperationalStatusProjection({
+      member_status: 'inactive',
+      app_status: 'active',
+      isActive: true,
+      actif: true,
+    });
+    expect(projected.member_status).toBe('inactive');
+  });
 });
