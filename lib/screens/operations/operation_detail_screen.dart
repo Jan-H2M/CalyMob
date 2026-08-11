@@ -298,10 +298,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       userId: userId,
     );
 
-    if (mounted && inscription != null) {
+    if (mounted) {
       setState(() {
         _userInscription = inscription;
-        _selectedExercices = List<String>.from(inscription.exercices);
+        _selectedExercices =
+            inscription == null ? [] : List<String>.from(inscription.exercices);
       });
     }
   }
@@ -1715,6 +1716,34 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     }
   }
 
+  Future<void> _handleJoinWaitlist() async {
+    final authProvider = context.read<AuthProvider>();
+    final operationProvider = context.read<OperationProvider>();
+    final userId = authProvider.currentUser?.uid ?? '';
+    if (userId.isEmpty) return;
+    try {
+      await operationProvider.joinWaitlist(
+        clubId: widget.clubId,
+        operationId: widget.operationId,
+        userId: userId,
+        userName: authProvider.currentUser?.email ?? '',
+        memberProfile: _userProfile,
+      );
+      await _loadUserInscription();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Vous êtes ajouté à la liste d’attente'),
+        backgroundColor: Colors.green,
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Erreur: $e'),
+        backgroundColor: Colors.red,
+      ));
+    }
+  }
+
   /// Handle editing the current user's inscription (supplements, guests).
   ///
   /// The [EditMyInscriptionDialog] handles ALL writes internally via
@@ -2095,6 +2124,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                   operationProvider.getParticipantCount(operation.id);
               final isRegistered =
                   operationProvider.isUserRegistered(operation.id);
+              final isWaitlisted =
+                  operationProvider.isUserWaitlisted(operation.id);
               final isOpen = operation.statut == 'ouvert';
               final isFull = operation.capaciteMax != null &&
                   participantCount >= operation.capaciteMax!;
@@ -2317,6 +2348,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                   _buildBottomButtons(
                     operation: operation,
                     isRegistered: isRegistered,
+                    isWaitlisted: isWaitlisted,
                     canRegister: canRegister,
                     isOpen: isOpen,
                     isFull: isFull,
@@ -3737,6 +3769,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   Widget _buildBottomButtons({
     required operation,
     required bool isRegistered,
+    required bool isWaitlisted,
     required bool canRegister,
     required bool isOpen,
     required bool isFull,
@@ -3769,6 +3802,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             // Register/Unregister button
             _buildActionButton(
               isRegistered: isRegistered,
+              isWaitlisted: isWaitlisted,
               canRegister: canRegister,
               isOpen: isOpen,
               isFull: isFull,
@@ -4569,12 +4603,29 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
   Widget _buildActionButton({
     required bool isRegistered,
+    required bool isWaitlisted,
     required bool canRegister,
     required bool isOpen,
     required bool isFull,
     Operation? operation,
     ParticipantOperation? userInscription,
   }) {
+    if (isWaitlisted) {
+      return Column(mainAxisSize: MainAxisSize.min, children: [
+        const Text('Vous êtes sur la liste d’attente.',
+            style: TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          height: 50,
+          child: OutlinedButton.icon(
+            onPressed: _handleUnregister,
+            icon: const Icon(Icons.close),
+            label: const Text('Quitter la liste d’attente'),
+          ),
+        ),
+      ]);
+    }
     if (isRegistered) {
       final deadlinePassed = operation != null &&
           operation.effectiveDeadline != null &&
@@ -4660,17 +4711,25 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       );
     }
 
+    final eventStarted = operation?.dateDebut != null &&
+        !DateTime.now().isBefore(operation!.dateDebut!);
     if (!isOpen) {
       return SizedBox(
         width: double.infinity,
         height: 50,
-        child: ElevatedButton(
-          onPressed: null,
+        child: ElevatedButton.icon(
+          onPressed: eventStarted ? null : _handleJoinWaitlist,
+          icon: Icon(eventStarted ? Icons.lock : Icons.hourglass_bottom),
           style: ElevatedButton.styleFrom(
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
-          child: const Text('Événement fermé', style: TextStyle(fontSize: 16)),
+          label: Text(
+            eventStarted
+                ? 'Événement fermé'
+                : 'Rejoindre la liste d’attente',
+            style: const TextStyle(fontSize: 16),
+          ),
         ),
       );
     }
@@ -4692,15 +4751,16 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           SizedBox(
             width: double.infinity,
             height: 50,
-            child: ElevatedButton(
-              onPressed: null,
+            child: ElevatedButton.icon(
+              onPressed: eventStarted ? null : _handleJoinWaitlist,
+              icon: const Icon(Icons.hourglass_bottom),
               style: ElevatedButton.styleFrom(
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
                 disabledBackgroundColor: Colors.grey.shade400,
                 disabledForegroundColor: Colors.white70,
               ),
-              child: const Text('Inscriptions clôturées',
+              label: const Text('Rejoindre la liste d’attente',
                   style: TextStyle(fontSize: 16)),
             ),
           ),
@@ -4712,14 +4772,15 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       return SizedBox(
         width: double.infinity,
         height: 50,
-        child: ElevatedButton(
-          onPressed: null,
+        child: ElevatedButton.icon(
+          onPressed: _handleJoinWaitlist,
+          icon: const Icon(Icons.hourglass_bottom),
           style: ElevatedButton.styleFrom(
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
-          child:
-              const Text('Événement complet', style: TextStyle(fontSize: 16)),
+          label: const Text('Rejoindre la liste d’attente',
+              style: TextStyle(fontSize: 16)),
         ),
       );
     }

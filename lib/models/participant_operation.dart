@@ -241,6 +241,9 @@ class ParticipantOperation {
   bool get hasPartialPayment =>
       !paye && installmentPayments.values.any((p) => p.status == 'paid');
 
+  /// Waitlist entries reserve no place and never enter payment flows.
+  bool get isWaitlisted => registrationStatus == 'waitlisted';
+
   /// Get display status for payment
   String get paymentDisplayStatus {
     // Fully paid with bank transaction matched

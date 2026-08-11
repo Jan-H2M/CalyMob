@@ -98,7 +98,9 @@ class OperationService {
           .get();
 
       final count = snapshot.docs
-          .where((doc) => doc.data()['registration_status'] != 'canceled')
+          .where((doc) =>
+              doc.data()['registration_status'] != 'canceled' &&
+              doc.data()['registration_status'] != 'waitlisted')
           .length;
       debugPrint('👥 $count participants pour opération $operationId');
       return count;
@@ -121,8 +123,10 @@ class OperationService {
           .where('membre_id', isEqualTo: userId)
           .get();
 
-      final isRegistered = snapshot.docs
-          .any((doc) => doc.data()['registration_status'] != 'canceled');
+      final isRegistered = snapshot.docs.any((doc) {
+        final status = doc.data()['registration_status'];
+        return status != 'canceled' && status != 'waitlisted';
+      });
       debugPrint(isRegistered
           ? '✅ Utilisateur $userId déjà inscrit à $operationId'
           : '❌ Utilisateur $userId NON inscrit à $operationId');
@@ -132,6 +136,46 @@ class OperationService {
       debugPrint('❌ Erreur vérification inscription: $e');
       return false;
     }
+  }
+
+  /// Join without reserving capacity or starting a payment flow.
+  Future<void> joinWaitlist({
+    required String clubId,
+    required String operationId,
+    required String userId,
+    required String userName,
+    required Operation operation,
+    MemberProfile? memberProfile,
+  }) async {
+    final existing = await getUserInscription(
+      clubId: clubId,
+      operationId: operationId,
+      userId: userId,
+    );
+    if (existing != null) {
+      throw Exception(existing.isWaitlisted
+          ? 'Vous êtes déjà sur la liste d’attente'
+          : 'Vous êtes déjà inscrit à cet événement');
+    }
+    final participant = ParticipantOperation(
+      id: '',
+      operationId: operationId,
+      operationTitre: operation.titre,
+      membreId: userId,
+      membreNom: memberProfile?.nom ?? userName,
+      membrePrenom: memberProfile?.prenom,
+      prix: memberProfile == null
+          ? operation.prixMembre ?? 0
+          : TariffUtils.computeRegistrationPrice(
+              operation: operation, profile: memberProfile),
+      paye: false,
+      paymentStatus: null,
+      registrationStatus: 'waitlisted',
+      dateInscription: DateTime.now(),
+    );
+    await _firestore
+        .collection('clubs/$clubId/operations/$operationId/inscriptions')
+        .add(participant.toFirestore());
   }
 
   /// S'inscrire à une opération
@@ -149,10 +193,12 @@ class OperationService {
   }) async {
     try {
       // Vérifier si déjà inscrit
-      final alreadyRegistered =
-          await isUserRegistered(clubId, operationId, userId);
-      if (alreadyRegistered) {
-        throw Exception('Vous êtes déjà inscrit à cet événement');
+      final existing = await getUserInscription(
+        clubId: clubId, operationId: operationId, userId: userId);
+      if (existing != null) {
+        throw Exception(existing.isWaitlisted
+            ? 'Vous êtes déjà sur la liste d’attente'
+            : 'Vous êtes déjà inscrit à cet événement');
       }
 
       // Vérifier capacité
@@ -293,8 +339,10 @@ class OperationService {
         throw Exception('Inscription non trouvée');
       }
 
-      // Supprimer l'inscription
-      await snapshot.docs.first.reference.delete();
+      final activeDocs = snapshot.docs.where(
+          (doc) => doc.data()['registration_status'] != 'canceled');
+      if (activeDocs.isEmpty) throw Exception('Inscription non trouvée');
+      await activeDocs.first.reference.delete();
 
       debugPrint('✅ Désinscription réussie: user $userId');
     } catch (e) {
@@ -427,7 +475,9 @@ class OperationService {
 
       final participants = snapshot.docs
           .map((doc) => ParticipantOperation.fromFirestore(doc))
-          .where((participant) => participant.registrationStatus != 'canceled')
+          .where((participant) =>
+              participant.registrationStatus != 'canceled' &&
+              !participant.isWaitlisted)
           .toList();
 
       // Sort by first name (prénom), then last name — diacritics-insensitive
@@ -454,7 +504,9 @@ class OperationService {
         .map((snapshot) {
       final participants = snapshot.docs
           .map((doc) => ParticipantOperation.fromFirestore(doc))
-          .where((participant) => participant.registrationStatus != 'canceled')
+          .where((participant) =>
+              participant.registrationStatus != 'canceled' &&
+              !participant.isWaitlisted)
           .toList();
 
       // Sort by first name (prénom), then last name — diacritics-insensitive
