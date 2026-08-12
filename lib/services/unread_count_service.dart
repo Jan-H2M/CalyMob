@@ -4,6 +4,20 @@ import 'package:flutter/foundation.dart';
 import 'local_read_tracker.dart';
 import '../utils/club_role_utils.dart';
 
+@visibleForTesting
+bool isCountableRegistration(Map<String, dynamic> data) {
+  final status = data['registration_status'];
+  return status != 'canceled' && status != 'waitlisted';
+}
+
+String unreadSessionReadKey(String sessionId, String groupType,
+    [String? groupLevel]) {
+  if (groupLevel == null || groupLevel.isEmpty) {
+    return 'session_${sessionId}_$groupType';
+  }
+  return 'session_${sessionId}_${groupType}_$groupLevel';
+}
+
 /// Service die ongelezen tellingen berekent via lokale timestamps
 /// + Firestore count() queries. Geen read_by arrays meer.
 ///
@@ -67,11 +81,8 @@ class UnreadCountService {
   }
 
   // ============================================================
-  // EVENT MESSAGES — over alle open operaties
+  // EVENT MESSAGES — over alle operaties waarvoor de user ingeschreven is
   // ============================================================
-
-  /// Max aantal operaties om te tellen (voorkomt ANR bij veel open events)
-  static const int _maxOperationsToCount = 10;
 
   Future<int> countUnreadEventMessages(String clubId) async {
     try {
@@ -82,49 +93,39 @@ class UnreadCountService {
       final userId = FirebaseAuth.instance.currentUser?.uid;
       if (userId == null) return 0;
 
-      // Haal parallel: (a) max N meest recente open evenementen, (b) alle
-      // inscriptions van deze user in deze club.
-      final opsFuture = _firestore
-          .collection('clubs/$clubId/operations')
-          .where('type', isEqualTo: 'evenement')
-          .where('statut', isEqualTo: 'ouvert')
-          .orderBy('date_debut', descending: true)
-          .limit(_maxOperationsToCount)
-          .get()
-          .timeout(_queryTimeout);
-
-      final inscriptionsFuture = _firestore
+      // The operation list must not be limited to open/recent events: a
+      // participant can still have unread messages after an event closes.
+      final inscriptionsSnapshot = await _firestore
           .collectionGroup('inscriptions')
           .where('membre_id', isEqualTo: userId)
           .get()
           .timeout(_queryTimeout);
 
-      final results = await Future.wait([opsFuture, inscriptionsFuture]);
-      final opsSnapshot = results[0];
-      final inscriptionsSnapshot = results[1];
-
       // Build set van operation-IDs waar user is ingeschreven.
       // Path pattern: clubs/{clubId}/operations/{opId}/inscriptions/{inscId}
       final inscribedOpIds = <String>{};
       for (final doc in inscriptionsSnapshot.docs) {
+        final data = doc.data();
+        if (!isCountableRegistration(data)) continue;
         final opRef = doc.reference.parent.parent;
-        if (opRef != null) inscribedOpIds.add(opRef.id);
+        final path = opRef?.path.split('/');
+        if (path != null &&
+            path.length >= 4 &&
+            path[0] == 'clubs' &&
+            path[1] == clubId &&
+            path[2] == 'operations') {
+          inscribedOpIds.add(path[3]);
+        }
       }
       if (inscribedOpIds.isEmpty) return 0;
 
-      // Filter open events op inscriptions
-      final participatingDocs = opsSnapshot.docs
-          .where((opDoc) => inscribedOpIds.contains(opDoc.id))
-          .toList();
-      if (participatingDocs.isEmpty) return 0;
-
-      // Tel ongelezen berichten per operatie parallel (sneller dan sequentieel)
-      final futures = participatingDocs.map((opDoc) async {
+      // Tel ongelezen berichten per operatie parallel (ook gesloten events).
+      final futures = inscribedOpIds.map((operationId) async {
         final lastRead =
-            _tracker.getLastRead('operation_${opDoc.id}') ?? _epoch;
+            _tracker.getLastRead('operation_$operationId') ?? _epoch;
 
         final query = _firestore
-            .collection('clubs/$clubId/operations/${opDoc.id}/messages')
+            .collection('clubs/$clubId/operations/$operationId/messages')
             .where('created_at', isGreaterThan: Timestamp.fromDate(lastRead));
 
         final snapshot = await query.count().get().timeout(_queryTimeout);
@@ -163,7 +164,10 @@ class UnreadCountService {
           .get()
           .timeout(_queryTimeout);
 
-      if (inscriptionCheck.docs.isEmpty) return 0;
+      if (inscriptionCheck.docs.isEmpty ||
+          !isCountableRegistration(inscriptionCheck.docs.first.data())) {
+        return 0;
+      }
 
       final lastRead = _tracker.getLastRead('operation_$operationId') ?? _epoch;
 
@@ -183,11 +187,14 @@ class UnreadCountService {
   // TEAM MESSAGES — per channel
   // ============================================================
 
-  Future<int> countUnreadTeamMessages(String clubId, List<String> roles,
-      {bool includeAllChannels = false,
-      String? plongeurCode,
-      String? targetFormationLevel,
-      bool formationActive = false}) async {
+  Future<int> countUnreadTeamMessages(
+    String clubId,
+    List<String> roles, {
+    bool includeAllChannels = false,
+    String? plongeurCode,
+    String? targetFormationLevel,
+    bool formationActive = false,
+  }) async {
     final channelIds = ClubRoleUtils.getVisibleTeamChannelIds(
       roles,
       includeAllChannels: includeAllChannels,
@@ -237,11 +244,10 @@ class UnreadCountService {
   // SESSION MESSAGES — per actieve sessie
   // ============================================================
 
-  /// Max aantal sessies om te tellen (voorkomt ANR bij veel gepubliceerde sessies)
-  static const int _maxSessionsToCount = 5;
-
   Future<int> countUnreadSessionMessages(
-      String clubId, List<String> roles) async {
+    String clubId,
+    List<String> roles,
+  ) async {
     final normalizedRoles = ClubRoleUtils.normalizeRoles(roles);
     final hasAccueil = normalizedRoles.contains('accueil');
     final hasEncadrant = normalizedRoles.contains('encadrant');
@@ -249,12 +255,11 @@ class UnreadCountService {
     if (!hasAccueil && !hasEncadrant) return 0;
 
     try {
-      // Haal max N meest recente gepubliceerde sessies op (beperkt queries)
+      // Haal alle gepubliceerde sessies op; limiting to the five most recent
+      // made older active chats appear permanently stale.
       final sessionsSnapshot = await _firestore
           .collection('clubs/$clubId/piscine_sessions')
           .where('statut', isEqualTo: 'publie')
-          .orderBy('date', descending: true)
-          .limit(_maxSessionsToCount)
           .get()
           .timeout(_queryTimeout);
 
@@ -266,12 +271,22 @@ class UnreadCountService {
         groupTypes.add('niveau');
       }
 
-      // Tel ongelezen berichten per sessie+group parallel
       final futures = <Future<int>>[];
       for (final sessionDoc in sessionsSnapshot.docs) {
         for (final groupType in groupTypes) {
-          futures.add(
-              _countUnreadForSessionGroup(clubId, sessionDoc.id, groupType));
+          if (groupType != 'niveau') {
+            futures.add(
+                _countUnreadForSessionGroup(clubId, sessionDoc.id, groupType));
+            continue;
+          }
+          final rawLevels = sessionDoc.data()['niveaux'];
+          final levels = rawLevels is Map
+              ? rawLevels.keys.map((level) => level.toString())
+              : const <String>[];
+          for (final level in levels) {
+            futures.add(_countUnreadForSessionGroup(
+                clubId, sessionDoc.id, groupType, level));
+          }
         }
       }
 
@@ -283,19 +298,22 @@ class UnreadCountService {
     }
   }
 
-  /// Helper: tel ongelezen berichten voor één sessie+group combinatie
+  /// Count each session group independently, including separate niveau keys.
   Future<int> _countUnreadForSessionGroup(
-      String clubId, String sessionId, String groupType) async {
+      String clubId, String sessionId, String groupType,
+      [String? groupLevel]) async {
     try {
-      final key = 'session_${sessionId}_$groupType';
+      final key = unreadSessionReadKey(sessionId, groupType, groupLevel);
       final lastRead = _tracker.getLastRead(key) ?? _epoch;
-
       final query = _firestore
           .collection('clubs/$clubId/piscine_sessions/$sessionId/messages')
           .where('group_type', isEqualTo: groupType)
           .where('created_at', isGreaterThan: Timestamp.fromDate(lastRead));
+      final scopedQuery = groupLevel == null
+          ? query
+          : query.where('group_level', isEqualTo: groupLevel);
 
-      final snapshot = await query.count().get().timeout(_queryTimeout);
+      final snapshot = await scopedQuery.count().get().timeout(_queryTimeout);
       return snapshot.count ?? 0;
     } catch (e) {
       return 0;
@@ -308,11 +326,14 @@ class UnreadCountService {
 
   /// Bereken alle ongelezen counts in één keer.
   /// Retourneert een map met categorie → count.
-  Future<Map<String, int>> refreshAllCounts(String clubId, List<String> roles,
-      {bool includeAllTeamChannels = false,
-      String? plongeurCode,
-      String? targetFormationLevel,
-      bool formationActive = false}) async {
+  Future<Map<String, int>> refreshAllCounts(
+    String clubId,
+    List<String> roles, {
+    bool includeAllTeamChannels = false,
+    String? plongeurCode,
+    String? targetFormationLevel,
+    bool formationActive = false,
+  }) async {
     final results = await Future.wait([
       countUnreadAnnouncements(clubId),
       countUnreadEventMessages(clubId),

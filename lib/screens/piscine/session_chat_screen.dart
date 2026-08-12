@@ -12,6 +12,7 @@ import '../../widgets/message_hover_caret.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/unread_count_provider.dart';
 import '../../services/local_read_tracker.dart';
+import '../../services/unread_count_service.dart';
 import '../../services/profile_service.dart';
 import '../../services/session_message_service.dart';
 import '../../widgets/attachment_display.dart';
@@ -80,9 +81,11 @@ class _SessionChatScreenState extends State<SessionChatScreen> {
   Future<void> _markMessagesAsRead() async {
     final tracker = LocalReadTracker();
     await tracker.init();
-    await tracker.markAsRead(
-      'session_${widget.session.id}_${widget.chatGroup.type.value}',
-    );
+    await tracker.markAsRead(unreadSessionReadKey(
+      widget.session.id,
+      widget.chatGroup.type.value,
+      widget.chatGroup.level,
+    ));
 
     if (!mounted) return;
     await context.read<UnreadCountProvider>().refresh();
