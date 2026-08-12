@@ -4713,19 +4713,20 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
     final eventStarted = operation?.dateDebut != null &&
         !DateTime.now().isBefore(operation!.dateDebut!);
+    final waitlistAllowed = operation?.allowWaitlist == true && !eventStarted;
     if (!isOpen) {
       return SizedBox(
         width: double.infinity,
         height: 50,
         child: ElevatedButton.icon(
-          onPressed: eventStarted ? null : _handleJoinWaitlist,
+          onPressed: waitlistAllowed ? _handleJoinWaitlist : null,
           icon: Icon(eventStarted ? Icons.lock : Icons.hourglass_bottom),
           style: ElevatedButton.styleFrom(
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
           label: Text(
-            eventStarted
+            !waitlistAllowed
                 ? 'Événement fermé'
                 : 'Rejoindre la liste d’attente',
             style: const TextStyle(fontSize: 16),
@@ -4752,7 +4753,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             width: double.infinity,
             height: 50,
             child: ElevatedButton.icon(
-              onPressed: eventStarted ? null : _handleJoinWaitlist,
+              onPressed: waitlistAllowed ? _handleJoinWaitlist : null,
               icon: const Icon(Icons.hourglass_bottom),
               style: ElevatedButton.styleFrom(
                 shape: RoundedRectangleBorder(
@@ -4773,14 +4774,17 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         width: double.infinity,
         height: 50,
         child: ElevatedButton.icon(
-          onPressed: _handleJoinWaitlist,
+          onPressed: waitlistAllowed ? _handleJoinWaitlist : null,
           icon: const Icon(Icons.hourglass_bottom),
           style: ElevatedButton.styleFrom(
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
-          label: const Text('Rejoindre la liste d’attente',
-              style: TextStyle(fontSize: 16)),
+          label: Text(
+              waitlistAllowed
+                  ? 'Rejoindre la liste d’attente'
+                  : 'Événement complet',
+              style: const TextStyle(fontSize: 16)),
         ),
       );
     }

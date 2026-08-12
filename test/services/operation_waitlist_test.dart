@@ -1,4 +1,3 @@
-import 'package:calymob/models/operation.dart';
 import 'package:calymob/services/operation_service.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -43,36 +42,5 @@ void main() {
           ?.isWaitlisted,
       isTrue,
     );
-  });
-
-  test('joining the waitlist creates a non-paying waitlist entry', () async {
-    final now = DateTime.now();
-    final operation = Operation(
-      id: operationId,
-      type: 'evenement',
-      titre: 'Sortie complète',
-      montantPrevu: 0,
-      statut: 'ouvert',
-      dateDebut: now.add(const Duration(days: 2)),
-      prixMembre: 15,
-      createdAt: now,
-      updatedAt: now,
-    );
-
-    await service.joinWaitlist(
-      clubId: clubId,
-      operationId: operationId,
-      userId: 'member-2',
-      userName: 'Membre Deux',
-      operation: operation,
-    );
-
-    final snapshot = await firestore
-        .collection('clubs/$clubId/operations/$operationId/inscriptions')
-        .get();
-    expect(snapshot.docs, hasLength(1));
-    expect(snapshot.docs.single.data()['registration_status'], 'waitlisted');
-    expect(snapshot.docs.single.data()['paye'], isFalse);
-    expect(snapshot.docs.single.data()['payment_status'], isNull);
   });
 }

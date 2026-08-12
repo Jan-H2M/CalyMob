@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import '../models/operation.dart';
 import '../models/member_profile.dart';
@@ -22,9 +23,15 @@ class PaymentMethodNotAllowedException implements Exception {
 /// Service de gestion des opérations (événements)
 class OperationService {
   final FirebaseFirestore _firestore;
+  final FirebaseFunctions? _injectedFunctions;
 
-  OperationService({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+  OperationService({FirebaseFirestore? firestore, FirebaseFunctions? functions})
+      : _firestore = firestore ?? FirebaseFirestore.instance,
+        _injectedFunctions = functions;
+
+  FirebaseFunctions get _functions =>
+      _injectedFunctions ??
+      FirebaseFunctions.instanceFor(region: 'europe-west1');
 
   /// Remove diacritics for locale-aware sorting (é→e, è→e, ü→u, etc.)
   static String _removeDiacritics(String str) {
@@ -157,25 +164,10 @@ class OperationService {
           ? 'Vous êtes déjà sur la liste d’attente'
           : 'Vous êtes déjà inscrit à cet événement');
     }
-    final participant = ParticipantOperation(
-      id: '',
-      operationId: operationId,
-      operationTitre: operation.titre,
-      membreId: userId,
-      membreNom: memberProfile?.nom ?? userName,
-      membrePrenom: memberProfile?.prenom,
-      prix: memberProfile == null
-          ? operation.prixMembre ?? 0
-          : TariffUtils.computeRegistrationPrice(
-              operation: operation, profile: memberProfile),
-      paye: false,
-      paymentStatus: null,
-      registrationStatus: 'waitlisted',
-      dateInscription: DateTime.now(),
-    );
-    await _firestore
-        .collection('clubs/$clubId/operations/$operationId/inscriptions')
-        .add(participant.toFirestore());
+    await _functions.httpsCallable('joinEventWaitlist').call({
+      'clubId': clubId,
+      'operationId': operationId,
+    });
   }
 
   /// S'inscrire à une opération
@@ -194,7 +186,7 @@ class OperationService {
     try {
       // Vérifier si déjà inscrit
       final existing = await getUserInscription(
-        clubId: clubId, operationId: operationId, userId: userId);
+          clubId: clubId, operationId: operationId, userId: userId);
       if (existing != null) {
         throw Exception(existing.isWaitlisted
             ? 'Vous êtes déjà sur la liste d’attente'
@@ -339,10 +331,17 @@ class OperationService {
         throw Exception('Inscription non trouvée');
       }
 
-      final activeDocs = snapshot.docs.where(
-          (doc) => doc.data()['registration_status'] != 'canceled');
+      final activeDocs = snapshot.docs
+          .where((doc) => doc.data()['registration_status'] != 'canceled');
       if (activeDocs.isEmpty) throw Exception('Inscription non trouvée');
-      await activeDocs.first.reference.delete();
+      if (activeDocs.first.data()['registration_status'] == 'waitlisted') {
+        await _functions.httpsCallable('leaveEventWaitlist').call({
+          'clubId': clubId,
+          'operationId': operationId,
+        });
+      } else {
+        await activeDocs.first.reference.delete();
+      }
 
       debugPrint('✅ Désinscription réussie: user $userId');
     } catch (e) {
