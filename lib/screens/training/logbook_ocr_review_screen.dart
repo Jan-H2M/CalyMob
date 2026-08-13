@@ -139,7 +139,6 @@ class _LogbookOcrReviewScreenState extends State<LogbookOcrReviewScreen> {
           .collection('clubs')
           .doc(clubId)
           .collection('dive_locations')
-          .limit(300)
           .get();
       final clubLocs = <String>{};
       for (final d in locSnap.docs) {
@@ -596,6 +595,8 @@ class _ReviewCardState extends State<_ReviewCard> {
         .map((s) => s.trim())
         .where((s) => s.isNotEmpty)
         .toList();
+    final nextLocation = _location.text.trim();
+    final canonicalName = ((widget.row.locationResolution?['canonical'] as Map?)?['name'] as String?)?.trim();
 
     widget.onChanged(
       widget.row.copyWith(
@@ -606,11 +607,13 @@ class _ReviewCardState extends State<_ReviewCard> {
           needsReview: parsedDate == null,
         ),
         locationName: LogbookOcrField<String>(
-          value: _location.text.trim().isEmpty ? null : _location.text.trim(),
+          value: nextLocation.isEmpty ? null : nextLocation,
           confidence: widget.row.locationName.confidence,
           raw: widget.row.locationName.raw,
-          needsReview: _location.text.trim().isEmpty,
+          needsReview: nextLocation.isEmpty,
         ),
+        clearLocationResolution: canonicalName != null &&
+            canonicalName.isNotEmpty && canonicalName != nextLocation,
         depthMaxMeters: LogbookOcrField<double>(
           value: double.tryParse(_depth.text.replaceAll(',', '.')),
           confidence: widget.row.depthMaxMeters.confidence,
@@ -645,6 +648,73 @@ class _ReviewCardState extends State<_ReviewCard> {
     );
   }
 
+  Widget _canonicalSuggestions() {
+    final raw = widget.row.locationResolution?['suggestions'];
+    final suggestions = raw is List
+        ? raw.whereType<Map>().map((value) => Map<String, dynamic>.from(value)).toList()
+        : const <Map<String, dynamic>>[];
+    if (suggestions.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.orange.shade50,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.orange.shade200),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Lieu ambigu — confirme une suggestion',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+            const SizedBox(height: 4),
+            for (final suggestion in suggestions)
+              TextButton.icon(
+                onPressed: () => _confirmCanonicalSuggestion(suggestion),
+                icon: const Icon(Icons.link, size: 15),
+                label: Text(
+                  '${suggestion['name'] ?? 'Lieu'}${suggestion['country'] == null ? '' : ' · ${suggestion['country']}' }',
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  alignment: Alignment.centerLeft,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmCanonicalSuggestion(Map<String, dynamic> suggestion) {
+    final id = suggestion['id'];
+    final name = suggestion['name'];
+    if (id is! String || name is! String || id.isEmpty || name.isEmpty) return;
+    _location.value = TextEditingValue(
+      text: name,
+      selection: TextSelection.collapsed(offset: name.length),
+    );
+    widget.onChanged(widget.row.copyWith(
+      locationName: LogbookOcrField<String>(
+        value: name,
+        confidence: widget.row.locationName.confidence,
+        raw: widget.row.locationName.raw,
+        needsReview: false,
+      ),
+      locationResolution: {
+        'status': 'exact',
+        'query': name,
+        'canonical': suggestion,
+        'suggestions': const [],
+        'linkSource': 'ocr',
+        'resolverVersion': 'canonical-location-v1',
+        'confirmation': 'selected',
+      },
+    ));
+  }
+
   Future<void> _correctInManualForm() async {
     final row = widget.row;
     final parsedDate = _parseDate(_date.text);
@@ -664,6 +734,9 @@ class _ReviewCardState extends State<_ReviewCard> {
     final prefill = <String, dynamic>{
       if (parsedDate != null) 'date': Timestamp.fromDate(parsedDate),
       if (row.diveNumber.value != null) 'dive_number': row.diveNumber.value,
+      if (row.locationResolution?['status'] == 'exact' &&
+          (row.locationResolution?['canonical'] as Map?)?['id'] is String)
+        'location_id': (row.locationResolution?['canonical'] as Map)['id'],
       'location_name': _location.text.trim(),
       if (row.country.value != null) 'country': row.country.value,
       if (double.tryParse(_depth.text.replaceAll(',', '.')) != null)
@@ -705,6 +778,7 @@ class _ReviewCardState extends State<_ReviewCard> {
             'ocr_confidence': row.confidence,
             if (row.warnings.isNotEmpty) 'ocr_warnings': row.warnings,
             'ocr_reviewed_at': FieldValue.serverTimestamp(),
+            ..._locationExtras(row.locationResolution),
           },
         ),
       ),
@@ -712,6 +786,22 @@ class _ReviewCardState extends State<_ReviewCard> {
     if (result != null && mounted) {
       widget.onImportedViaManualForm();
     }
+  }
+
+  Map<String, dynamic> _locationExtras(Map<String, dynamic>? raw) {
+    if (raw == null) return const {};
+    final status = raw['status'];
+    final canonical = raw['canonical'];
+    if (status == 'exact' && canonical is Map) {
+      return {
+        'location_snapshot': Map<String, dynamic>.from(canonical),
+        'location_link_source': 'ocr',
+        'location_resolver_version': 'canonical-location-v1',
+      };
+    }
+    return {
+      if (status is String) 'location_resolution_status': status,
+    };
   }
 
   DateTime? _parseDate(String value) {
@@ -787,6 +877,9 @@ class _ReviewCardState extends State<_ReviewCard> {
         ),
         children: [
           if (row.warnings.isNotEmpty) _warning(row.warnings.join(' · ')),
+          if (row.locationResolution?['status'] == 'ambiguous' &&
+              (row.locationResolution?['suggestions'] as List?)?.isNotEmpty == true)
+            _canonicalSuggestions(),
           const SizedBox(height: 12),
           Row(
             children: [

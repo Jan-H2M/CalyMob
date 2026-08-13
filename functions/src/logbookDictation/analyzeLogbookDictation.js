@@ -9,6 +9,10 @@
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
+const {
+  loadCanonicalLocations,
+  resolveLocationCandidates,
+} = require('../referenceData/resolveCanonicalDiveLocation');
 
 const REGION = 'europe-west1';
 const DEFAULT_MODEL = process.env.LOGBOOK_DICTATION_AI_MODEL || 'gpt-5.2';
@@ -76,7 +80,9 @@ async function loadContext(clubId, uid) {
   const db = admin.firestore();
   const [membersSnap, locationsSnap, carnetSnap] = await Promise.all([
     db.collection('clubs').doc(clubId).collection('members').limit(500).get(),
-    db.collection('clubs').doc(clubId).collection('dive_locations').limit(500).get(),
+    // No client-style limit here: canonical matching must see every active
+    // club location, even when the catalogue grows past historical limits.
+    db.collection('clubs').doc(clubId).collection('dive_locations').get(),
     db
       .collection('clubs').doc(clubId)
       .collection('student_logbook_entries')
@@ -125,7 +131,7 @@ async function loadContext(clubId, uid) {
 
   return {
     members: members.slice(0, 250),
-    locations: Array.from(locationsByName.values()).slice(0, 300),
+    locations: Array.from(locationsByName.values()),
   };
 }
 
@@ -253,7 +259,7 @@ function extractOutputText(response) {
   return chunks.join('');
 }
 
-function sanitizeResult(result, input) {
+function sanitizeResult(result, input, canonicalLocations = []) {
   const fields = result && typeof result.fields === 'object' ? result.fields : {};
   const mapLocked = (locked) => {
     switch (locked) {
@@ -284,6 +290,29 @@ function sanitizeResult(result, input) {
       else if (key === 'location') fields.location = null;
       else fields[key] = null;
     }
+  }
+  const location = fields.location && typeof fields.location === 'object'
+    ? fields.location
+    : null;
+  const locationName = normalizeName(location?.name);
+  const resolution = resolveLocationCandidates(locationName, canonicalLocations);
+  if (location) {
+    fields.location = {
+      ...location,
+      id: resolution.status === 'exact' ? resolution.canonical.id : null,
+      name: locationName || null,
+      country: resolution.status === 'exact'
+        ? resolution.canonical.country
+        : (location.country || null),
+      isSea: resolution.status === 'exact'
+        ? ['sea', 'mer'].includes(String(resolution.canonical.waterType || '').toLowerCase())
+        : location.isSea === true,
+      matchedExisting: resolution.status === 'exact',
+      resolutionStatus: resolution.status,
+      resolutionSuggestions: resolution.suggestions,
+      linkSource: 'dictation',
+      resolverVersion: 'canonical-location-v1',
+    };
   }
   return {
     confidence: Math.max(0, Math.min(1, Number(result.confidence) || 0)),
@@ -358,6 +387,13 @@ exports.analyzeLogbookDictation = onCall(
     const input = validateInput(request.data || {});
     const context = await loadContext(input.clubId, uid);
     const result = await callOpenAi({ input, context });
-    return sanitizeResult(result, input);
+    // Re-resolve the model's spelling server-side against the full canonical
+    // catalogue. The AI prompt is an aid, never the source of truth.
+    const canonicalLocations = await loadCanonicalLocations(input.clubId);
+    return sanitizeResult(result, input, canonicalLocations);
   }
 );
+
+module.exports.normalizeName = normalizeName;
+module.exports.loadContext = loadContext;
+module.exports.sanitizeResult = sanitizeResult;
