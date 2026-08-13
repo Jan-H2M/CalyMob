@@ -1,0 +1,10 @@
+Nouvelles fonctionnalités et améliorations :
+- sondages d’intérêt depuis les activités ;
+- parcours « Remarque ou amélioration » clarifié ;
+- recherche et gestion des lieux de plongée améliorées ;
+- brouillons d’événements visibles et clairement identifiés ;
+- confirmation des plongées partagées sans doublon ;
+- règles de paiement des activités appliquées automatiquement ;
+- meilleure protection des préférences de notification ;
+- liens des discussions d’événements corrigés ;
+- diverses améliorations de stabilité.
