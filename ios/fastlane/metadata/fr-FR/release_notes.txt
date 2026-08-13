@@ -1,1 +1,10 @@
-Nouvelles options de paiement pour les événements : les organisateurs peuvent choisir comment les participants paient et quand une inscription est confirmée. Les événements gratuits n’affichent désormais plus d’étape de paiement.
+Améliorations et corrections :
+• Sondages d’intérêt depuis les activités.
+• Parcours « Remarque ou amélioration » clarifié.
+• Recherche et gestion des lieux de plongée améliorées.
+• Brouillons d’événements clairement identifiés.
+• Plongées partagées confirmées sans doublon.
+• Règles de paiement appliquées automatiquement.
+• Préférences de notification mieux protégées.
+• Liens des discussions corrigés.
+• Stabilité améliorée.
