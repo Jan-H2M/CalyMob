@@ -418,16 +418,12 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     final userId = authProvider.currentUser?.uid ?? '';
     final userEmail = authProvider.currentUser?.email ?? '';
 
-    final selectableTariffs = operation.eventTariffs
-        .where((t) => !t.isGuestTariff && t.selfSelectable)
-        .toList()
-      ..sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
-    final selectedTariff = selectableTariffs.length > 1
-        ? await _showTariffSelectionDialog(operation, selectableTariffs)
-        : selectableTariffs.length == 1
-            ? selectableTariffs.first
-            : null;
-    if (selectableTariffs.length > 1 && selectedTariff == null) return;
+    // A member's tariff is derived from their club function by the service.
+    // The member-registration flow must not ask them to choose a tariff: the
+    // picker was ambiguous for ordinary events and could override the known
+    // Encadrant/CA/Membre function. Guest tariffs remain selectable in the
+    // dedicated guest dialog below.
+    const Tariff? selectedTariff = null;
 
     // Calculate base price for display
     final basePrice = selectedTariff?.price ??
@@ -677,52 +673,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         ),
       );
     }
-  }
-
-  Future<Tariff?> _showTariffSelectionDialog(
-    Operation operation,
-    List<Tariff> tariffs,
-  ) {
-    Tariff selected = tariffs.firstWhere(
-      (t) => t.isDefault,
-      orElse: () => tariffs.first,
-    );
-
-    return showDialog<Tariff>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Choisir votre tarif'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: tariffs.map((tariff) {
-              return RadioListTile<Tariff>(
-                value: tariff,
-                groupValue: selected,
-                onChanged: (value) {
-                  if (value != null) {
-                    setDialogState(() => selected = value);
-                  }
-                },
-                title: Text(tariff.label),
-                subtitle: Text(CurrencyFormatter.format(tariff.price)),
-                dense: true,
-              );
-            }).toList(),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Annuler'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, selected),
-              child: const Text('Continuer'),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   _OpenInstallment? _firstOpenInstallment(
