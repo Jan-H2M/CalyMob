@@ -10,6 +10,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../providers/activity_provider.dart';
 import '../../services/dive_location_service.dart';
+import '../../services/dive_location_sync_contract.dart';
 import '../../services/fiscal_year_service.dart';
 import '../../services/operation_service.dart';
 import '../../services/session_service.dart';
@@ -43,6 +44,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
   // Wizard state
   int _currentStep = 1; // 1 = location, 2 = details
   bool _loadingLocations = false;
+  DiveLocationLoadState _locationLoadState = DiveLocationLoadState.empty;
   List<DiveLocation> _locations = [];
   DiveLocation? _selectedLocation;
   String _searchQuery = '';
@@ -334,20 +336,51 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
 
   Future<void> _loadLocations() async {
     setState(() => _loadingLocations = true);
-    try {
-      final locs = await _locationService.getEventLocations(_clubId);
-      setState(() {
-        _locations = locs;
-        _loadingLocations = false;
-      });
-    } catch (e) {
-      setState(() => _loadingLocations = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur chargement des lieux: $e')),
-        );
-      }
+    final result = await _locationService.getEventLocationsWithState(_clubId);
+    if (!mounted) return;
+    setState(() {
+      _locations = result.items;
+      _locationLoadState = result.state;
+      _loadingLocations = false;
+    });
+  }
+
+  Widget _buildLocationSyncBanner() {
+    switch (_locationLoadState) {
+      case DiveLocationLoadState.offline:
+        return _buildLocationStatusBanner(Icons.cloud_off,
+            'Hors connexion : les lieux affichés viennent du cache local.', Colors.orange.shade50, Colors.orange.shade900);
+      case DiveLocationLoadState.cached:
+        return _buildLocationStatusBanner(Icons.history,
+            'Catalogue en cache — il sera actualisé dès la reconnexion.', Colors.blue.shade50, Colors.blue.shade900);
+      case DiveLocationLoadState.error:
+        return _buildLocationStatusBanner(Icons.error_outline,
+            'Impossible de charger le catalogue. Réessaie quand la connexion est disponible.', Colors.red.shade50, Colors.red.shade900);
+      default:
+        return const SizedBox.shrink();
     }
+  }
+
+  Widget _buildLocationStatusBanner(
+      IconData icon, String message, Color background, Color foreground) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: foreground),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message, style: TextStyle(color: foreground, fontSize: 12))),
+          ],
+        ),
+      ),
+    );
   }
 
   void _onLocationSelected(DiveLocation location) {
@@ -713,6 +746,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
           child: _buildSearchBar(),
         ),
 
+        _buildLocationSyncBanner(),
+
         if (_loadingLocations)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 48),
@@ -845,6 +880,12 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
   }
 
   Widget _buildEmptyLocations() {
+    final message = switch (_locationLoadState) {
+      DiveLocationLoadState.offline => 'Connexion indisponible et aucun cache local',
+      DiveLocationLoadState.error => 'Le catalogue est temporairement indisponible',
+      DiveLocationLoadState.empty => _searchQuery.isNotEmpty ? 'Aucun lieu trouvé' : 'Aucun lieu configuré',
+      _ => _searchQuery.isNotEmpty ? 'Aucun lieu trouvé' : 'Aucun lieu configuré',
+    };
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 48),
       child: Column(
@@ -853,12 +894,10 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
           Icon(Icons.location_off, size: 48, color: Colors.grey[400]),
           const SizedBox(height: 16),
           Text(
-            _searchQuery.isNotEmpty
-                ? 'Aucun lieu trouvé'
-                : 'Aucun lieu configuré',
+            message,
             style: TextStyle(color: Colors.grey[600], fontSize: 16),
           ),
-          if (_searchQuery.isEmpty) ...[
+          if (_searchQuery.isEmpty && _locationLoadState != DiveLocationLoadState.error) ...[
             const SizedBox(height: 12),
             TextButton(
               onPressed: _loadLocations,
