@@ -362,6 +362,8 @@ exports.listReferenceDiveSites = require('./src/referenceData/resolveReferenceDi
 exports.previewDiveLocationMerge = require('./src/referenceData/mergeDiveLocations').previewDiveLocationMerge;
 exports.mergeDiveLocations = require('./src/referenceData/mergeDiveLocations').mergeDiveLocations;
 exports.deleteDiveLocationSafely = require('./src/referenceData/deleteDiveLocationSafely').deleteDiveLocationSafely;
+exports.previewDiveLocationReconciliation = require('./src/referenceData/previewDiveLocationReconciliation').previewDiveLocationReconciliation;
+exports.resolveCanonicalDiveLocation = require('./src/referenceData/resolveCanonicalDiveLocation').resolveCanonicalDiveLocation;
 
 // Buddy confirmation flow for Mon Carnet: when a diver adds Calypso members as
 // binômes, those members confirm the shared dive and copy/compare it.
