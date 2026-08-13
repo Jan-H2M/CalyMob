@@ -34,6 +34,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../services/formation_task_service.dart';
 import '../../services/student_logbook_service.dart';
+import '../../services/canonical_dive_location_resolver.dart';
 import '../../widgets/binome_typeahead_field.dart';
 import '../../services/exercise_claim_service.dart';
 import '../../widgets/combi_picker_field.dart';
@@ -497,7 +498,6 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
             .collection('clubs')
             .doc(clubId)
             .collection('dive_locations')
-            .limit(500)
             .get(),
         if (userId != null)
           db
@@ -2738,6 +2738,28 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
     final locationMap = fields['location'] is Map
         ? Map<String, dynamic>.from(fields['location'] as Map)
         : null;
+    final locationResolution = locationMap == null
+        ? null
+        : <String, dynamic>{
+            'status': (locationMap['resolutionStatus'] as String?) ??
+                (locationMap['matchedExisting'] == true ? 'exact' : 'not_found'),
+            'query': (locationMap['name'] as String?) ?? '',
+            'canonical': locationMap['id'] is String &&
+                    (locationMap['id'] as String).trim().isNotEmpty
+                ? {
+                    'id': locationMap['id'],
+                    'name': locationMap['name'],
+                    'country': locationMap['country'],
+                    'waterType': locationMap['isSea'] == true ? 'sea' : null,
+                  }
+                : null,
+            'suggestions': locationMap['resolutionSuggestions'] is List
+                ? locationMap['resolutionSuggestions']
+                : const [],
+            'linkSource': (locationMap['linkSource'] as String?) ?? 'dictation',
+            'resolverVersion':
+                (locationMap['resolverVersion'] as String?) ?? 'canonical-location-v1',
+          };
     final countersMap =
         Map<String, dynamic>.from((fields['counters'] as Map?) ?? {});
 
@@ -2755,6 +2777,7 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
               country: locationMap['country'] as String?,
               isSea: locationMap['isSea'] == true,
             ),
+      locationResolution: locationResolution,
       depthMeters: _aiDouble(fields['depthMeters']),
       durationMinutes: _aiInt(fields['durationMinutes']),
       binomes: _aiBinomes(fields['buddies']),
@@ -4786,6 +4809,15 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
         if (widget.mode == LogbookEntryMode.edit && _zone == null)
           'zone': FieldValue.delete(),
       };
+      final dictatedResolution = _aiDictationDraft?.locationResolution;
+      if (dictatedResolution != null &&
+          _locationSelection?.id ==
+              ((dictatedResolution['canonical'] as Map?)?['id'] as String?)) {
+        extras.addAll(CanonicalLocationResolution.fromMap(
+          dictatedResolution,
+          fallbackSource: 'dictation',
+        ).entryExtras);
+      }
 
       final source = widget.mode == LogbookEntryMode.auto
           ? 'calypso_operation'
@@ -4956,6 +4988,7 @@ class _DictatedDiveDraft {
   final TimeOfDay? exitTime;
   final String? locationName;
   final DiveLocationSelection? locationSelection;
+  final Map<String, dynamic>? locationResolution;
   final double? depthMeters;
   final int? durationMinutes;
   final List<String> buddies;
@@ -4973,6 +5006,7 @@ class _DictatedDiveDraft {
     this.exitTime,
     this.locationName,
     this.locationSelection,
+    this.locationResolution,
     this.depthMeters,
     this.durationMinutes,
     this.buddies = const [],

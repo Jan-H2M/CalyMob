@@ -8,6 +8,10 @@
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
+const {
+  loadCanonicalLocations,
+  resolveLocationCandidates,
+} = require('../referenceData/resolveCanonicalDiveLocation');
 
 const REGION = 'europe-west1';
 const MAX_IMAGE_BYTES = Number(process.env.LOGBOOK_OCR_MAX_IMAGE_BYTES || 8 * 1024 * 1024);
@@ -240,21 +244,35 @@ async function getOpenAiKey(clubId) {
  */
 async function getClubLocationNames(clubId) {
   try {
-    const snap = await admin
-      .firestore()
-      .collection('clubs').doc(clubId)
-      .collection('dive_locations').limit(200).get();
-    const names = [];
-    for (const d of snap.docs) {
-      const v = d.data() || {};
-      const n = (v.name || v.nom || '').trim();
-      if (n) names.push(n);
-    }
-    return names;
+    // This list is only a prompt hint. The actual resolver below always reads
+    // the complete catalogue, so prompt-size protection can never truncate a
+    // linkable location.
+    return (await loadCanonicalLocations(clubId)).map((location) => location.name);
   } catch (err) {
     console.warn('[analyzeLogbookPage] dive_locations lookup failed:', err.message);
     return [];
   }
+}
+
+function attachLocationResolutions(rows, locations) {
+  return rows.map((row) => {
+    const query = row.fields?.locationName?.value;
+    const resolution = resolveLocationCandidates(query, locations);
+    const warnings = [...(row.warnings || [])];
+    if (resolution.status === 'ambiguous') warnings.push('Lieu ambigu: confirmation requise');
+    if (resolution.status === 'not_found' && query) warnings.push('Lieu non reconnu: texte libre behouden');
+    return {
+      ...row,
+      warnings: [...new Set(warnings)],
+      locationResolution: {
+        status: resolution.status,
+        canonical: resolution.canonical,
+        suggestions: resolution.suggestions,
+        linkSource: 'ocr',
+        resolverVersion: 'canonical-location-v1',
+      },
+    };
+  });
 }
 
 async function callOpenAiVision({ clubId, imageBuffer, mimeType, defaultYear, localeHints }) {
@@ -461,7 +479,10 @@ exports.analyzeLogbookPage = onCall(
     });
 
     const page = aiResult.page && typeof aiResult.page === 'object' ? aiResult.page : {};
-    const rows = normalizeRows(aiResult, input.defaultYear);
+    const rows = attachLocationResolutions(
+      normalizeRows(aiResult, input.defaultYear),
+      await loadCanonicalLocations(input.clubId),
+    );
     const importJobRef = admin.firestore()
       .collection('clubs')
       .doc(input.clubId)
@@ -473,7 +494,7 @@ exports.analyzeLogbookPage = onCall(
       status: 'review',
       storage_path: input.storagePath,
       default_year: input.defaultYear,
-      parser_version: 'logbook-ocr-v1-openai-responses',
+      parser_version: 'logbook-ocr-v1-openai-responses+canonical-location-v1',
       detected_format: typeof page.detectedFormat === 'string' ? page.detectedFormat : 'unknown',
       language: typeof page.language === 'string' ? page.language : 'unknown',
       overall_confidence: clampConfidence(page.overallConfidence),
@@ -495,3 +516,6 @@ exports.analyzeLogbookPage = onCall(
     };
   },
 );
+
+module.exports.normalizeRows = normalizeRows;
+module.exports.attachLocationResolutions = attachLocationResolutions;

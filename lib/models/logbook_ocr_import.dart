@@ -62,6 +62,9 @@ class LogbookOcrSuggestedRow {
   final LogbookOcrField<Map<String, dynamic>> combi;
   final LogbookOcrField<Map<String, dynamic>> tank;
   final LogbookOcrField<double> lestageKg;
+  /// Server-side canonical resolver result. It is intentionally separate from
+  /// the OCR field so ambiguous/free-text names remain reviewable.
+  final Map<String, dynamic>? locationResolution;
   // Duplicate-detection result, attached after the AI response by the
   // review screen. When `existingEntryId` is non-null, the row is dimmed
   // and unchecked by default — the user can still flip the checkbox to
@@ -95,6 +98,7 @@ class LogbookOcrSuggestedRow {
     this.combi = const LogbookOcrField<Map<String, dynamic>>(confidence: 0),
     this.tank = const LogbookOcrField<Map<String, dynamic>>(confidence: 0),
     this.lestageKg = const LogbookOcrField<double>(confidence: 0),
+    this.locationResolution,
     this.existingEntryId,
     this.existingEntryLabel,
   });
@@ -139,6 +143,8 @@ class LogbookOcrSuggestedRow {
     LogbookOcrField<Map<String, dynamic>>? combi,
     LogbookOcrField<Map<String, dynamic>>? tank,
     LogbookOcrField<double>? lestageKg,
+    Map<String, dynamic>? locationResolution,
+    bool clearLocationResolution = false,
     String? existingEntryId,
     String? existingEntryLabel,
     bool clearExistingEntry = false,
@@ -169,6 +175,9 @@ class LogbookOcrSuggestedRow {
       combi: combi ?? this.combi,
       tank: tank ?? this.tank,
       lestageKg: lestageKg ?? this.lestageKg,
+      locationResolution: clearLocationResolution
+          ? null
+          : (locationResolution ?? this.locationResolution),
       existingEntryId:
           clearExistingEntry ? null : (existingEntryId ?? this.existingEntryId),
       existingEntryLabel: clearExistingEntry

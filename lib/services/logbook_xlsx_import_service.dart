@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:xml/xml.dart';
 import '../models/student_logbook_entry.dart';
 import 'student_logbook_service.dart';
+import 'canonical_dive_location_resolver.dart';
 
 class ParsedLogbookXlsxRow {
   final int rowNumber;
@@ -56,12 +57,19 @@ class LogbookXlsxParseResult {
 /// Parser/importer for the canonical Calypso logbook .xlsx layout.
 class LogbookXlsxImportService {
   final StudentLogbookService? _providedLogbookService;
+  final CanonicalDiveLocationResolver? _providedLocationResolver;
 
-  LogbookXlsxImportService({StudentLogbookService? logbookService})
-      : _providedLogbookService = logbookService;
+  LogbookXlsxImportService({
+    StudentLogbookService? logbookService,
+    CanonicalDiveLocationResolver? locationResolver,
+  })  : _providedLogbookService = logbookService,
+        _providedLocationResolver = locationResolver;
 
   StudentLogbookService get _logbookService =>
       _providedLogbookService ?? StudentLogbookService();
+
+  CanonicalDiveLocationResolver get _locationResolver =>
+      _providedLocationResolver ?? CanonicalDiveLocationResolver();
 
   static const Map<String, String> _headerKeys = {
     'n°': 'dive_number',
@@ -240,10 +248,19 @@ class LogbookXlsxImportService {
     required String memberId,
     required String memberName,
     required ParsedLogbookXlsxRow row,
-  }) {
+  }) async {
     if (!row.isValid) {
       throw StateError('Une ligne invalide ne peut pas être importée.');
     }
+    final resolution = row.locationName.trim().isEmpty ||
+            row.locationName == '(à compléter)'
+        ? null
+        : await _locationResolver.resolve(
+            clubId: clubId,
+            locationName: row.locationName,
+            source: 'import',
+          );
+    final canonical = resolution?.isExact == true ? resolution!.canonical : null;
     return _logbookService.create(
       clubId: clubId,
       entry: StudentLogbookEntry(
@@ -252,15 +269,19 @@ class LogbookXlsxImportService {
         memberName: memberName,
         source: 'imported',
         date: row.date!,
-        locationName: row.locationName,
-        country: row.country,
+        locationId: canonical?['id'] as String?,
+        locationName: canonical?['name'] as String? ?? row.locationName,
+        country: canonical?['country'] as String? ?? row.country,
         depthMaxMeters: row.depthMaxMeters,
         durationMinutes: row.durationMinutes,
         counters: row.counters,
         buddies: row.buddies,
         notes: row.notes,
       ),
-      extras: row.extras,
+      extras: {
+        ...row.extras,
+        if (resolution != null) ...resolution.entryExtras,
+      },
     );
   }
 

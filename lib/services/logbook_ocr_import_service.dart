@@ -7,6 +7,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import '../models/logbook_ocr_import.dart';
 import '../models/student_logbook_entry.dart';
 import 'student_logbook_service.dart';
+import 'canonical_dive_location_resolver.dart';
 
 class LogbookOcrImportService {
   final StudentLogbookService _logbookService;
@@ -103,6 +104,9 @@ class LogbookOcrImportService {
       combi: _mapField(fields['combi']),
       tank: _mapField(fields['tank']),
       lestageKg: _doubleField(fields['lestageKg']),
+      locationResolution: map['locationResolution'] is Map
+          ? Map<String, dynamic>.from(map['locationResolution'] as Map)
+          : null,
     );
   }
 
@@ -344,7 +348,9 @@ class LogbookOcrImportService {
         memberName: memberName.isEmpty ? null : memberName,
         source: 'ocr_import',
         date: row.date.value!,
-        locationName: row.locationName.value!.trim(),
+        locationId: _canonicalId(row.locationResolution),
+        locationName: _canonicalName(row.locationResolution) ??
+            row.locationName.value!.trim(),
         country: row.country.value,
         depthMaxMeters: row.depthMaxMeters.value,
         durationMinutes: row.durationMinutes.value,
@@ -389,6 +395,7 @@ class LogbookOcrImportService {
           'ocr_confidence': row.confidence,
           if (row.warnings.isNotEmpty) 'ocr_warnings': row.warnings,
           'ocr_reviewed_at': FieldValue.serverTimestamp(),
+          ..._locationExtras(row.locationResolution),
           if (row.exitTime.value != null) 'exit_time_str': row.exitTime.value,
           if (row.entryTime.value != null)
             'entry_time_str': row.entryTime.value,
@@ -409,6 +416,27 @@ class LogbookOcrImportService {
       ids.add(id);
     }
     return ids;
+  }
+
+  String? _canonicalId(Map<String, dynamic>? resolution) {
+    if (resolution?['status'] != 'exact') return null;
+    final canonical = resolution?['canonical'];
+    return canonical is Map ? canonical['id'] as String? : null;
+  }
+
+  String? _canonicalName(Map<String, dynamic>? resolution) {
+    if (resolution?['status'] != 'exact') return null;
+    final canonical = resolution?['canonical'];
+    return canonical is Map ? canonical['name'] as String? : null;
+  }
+
+  Map<String, dynamic> _locationExtras(Map<String, dynamic>? resolution) {
+    if (resolution == null) return const {};
+    final parsed = CanonicalLocationResolution.fromMap(
+      resolution,
+      fallbackSource: 'ocr',
+    );
+    return parsed.entryExtras;
   }
 
   String? _notesFor(LogbookOcrSuggestedRow row) {
