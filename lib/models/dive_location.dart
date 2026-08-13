@@ -19,6 +19,9 @@ class DiveLocation {
   /// Missing Firestore values default to true for legacy locations, matching
   /// the CalyCompta settings screen.
   final bool availableForEvents;
+
+  /// Previous ID when this record was merged into another canonical location.
+  final String? mergedIntoLocationId;
   final List<Tariff> tariffs;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -35,6 +38,7 @@ class DiveLocation {
     this.website,
     this.notes,
     this.availableForEvents = true,
+    this.mergedIntoLocationId,
     this.tariffs = const [],
     required this.createdAt,
     required this.updatedAt,
@@ -56,6 +60,7 @@ class DiveLocation {
       website: data['website'],
       notes: data['notes'],
       availableForEvents: data['available_for_events'] != false,
+      mergedIntoLocationId: data['merged_into_location_id'] as String?,
       tariffs: _parseTariffs(data['tariffs']),
       createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (data['updated_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
