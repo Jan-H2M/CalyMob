@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import '../models/operation.dart';
 import '../models/member_profile.dart';
@@ -22,9 +23,15 @@ class PaymentMethodNotAllowedException implements Exception {
 /// Service de gestion des opérations (événements)
 class OperationService {
   final FirebaseFirestore _firestore;
+  final FirebaseFunctions? _injectedFunctions;
 
-  OperationService({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+  OperationService({FirebaseFirestore? firestore, FirebaseFunctions? functions})
+      : _firestore = firestore ?? FirebaseFirestore.instance,
+        _injectedFunctions = functions;
+
+  FirebaseFunctions get _functions =>
+      _injectedFunctions ??
+      FirebaseFunctions.instanceFor(region: 'europe-west1');
 
   /// Remove diacritics for locale-aware sorting (é→e, è→e, ü→u, etc.)
   static String _removeDiacritics(String str) {
@@ -98,7 +105,9 @@ class OperationService {
           .get();
 
       final count = snapshot.docs
-          .where((doc) => doc.data()['registration_status'] != 'canceled')
+          .where((doc) =>
+              doc.data()['registration_status'] != 'canceled' &&
+              doc.data()['registration_status'] != 'waitlisted')
           .length;
       debugPrint('👥 $count participants pour opération $operationId');
       return count;
@@ -121,8 +130,10 @@ class OperationService {
           .where('membre_id', isEqualTo: userId)
           .get();
 
-      final isRegistered = snapshot.docs
-          .any((doc) => doc.data()['registration_status'] != 'canceled');
+      final isRegistered = snapshot.docs.any((doc) {
+        final status = doc.data()['registration_status'];
+        return status != 'canceled' && status != 'waitlisted';
+      });
       debugPrint(isRegistered
           ? '✅ Utilisateur $userId déjà inscrit à $operationId'
           : '❌ Utilisateur $userId NON inscrit à $operationId');
@@ -132,6 +143,31 @@ class OperationService {
       debugPrint('❌ Erreur vérification inscription: $e');
       return false;
     }
+  }
+
+  /// Join without reserving capacity or starting a payment flow.
+  Future<void> joinWaitlist({
+    required String clubId,
+    required String operationId,
+    required String userId,
+    required String userName,
+    required Operation operation,
+    MemberProfile? memberProfile,
+  }) async {
+    final existing = await getUserInscription(
+      clubId: clubId,
+      operationId: operationId,
+      userId: userId,
+    );
+    if (existing != null) {
+      throw Exception(existing.isWaitlisted
+          ? 'Vous êtes déjà sur la liste d’attente'
+          : 'Vous êtes déjà inscrit à cet événement');
+    }
+    await _functions.httpsCallable('joinEventWaitlist').call({
+      'clubId': clubId,
+      'operationId': operationId,
+    });
   }
 
   /// S'inscrire à une opération
@@ -149,10 +185,12 @@ class OperationService {
   }) async {
     try {
       // Vérifier si déjà inscrit
-      final alreadyRegistered =
-          await isUserRegistered(clubId, operationId, userId);
-      if (alreadyRegistered) {
-        throw Exception('Vous êtes déjà inscrit à cet événement');
+      final existing = await getUserInscription(
+          clubId: clubId, operationId: operationId, userId: userId);
+      if (existing != null) {
+        throw Exception(existing.isWaitlisted
+            ? 'Vous êtes déjà sur la liste d’attente'
+            : 'Vous êtes déjà inscrit à cet événement');
       }
 
       // Vérifier capacité
@@ -293,8 +331,17 @@ class OperationService {
         throw Exception('Inscription non trouvée');
       }
 
-      // Supprimer l'inscription
-      await snapshot.docs.first.reference.delete();
+      final activeDocs = snapshot.docs
+          .where((doc) => doc.data()['registration_status'] != 'canceled');
+      if (activeDocs.isEmpty) throw Exception('Inscription non trouvée');
+      if (activeDocs.first.data()['registration_status'] == 'waitlisted') {
+        await _functions.httpsCallable('leaveEventWaitlist').call({
+          'clubId': clubId,
+          'operationId': operationId,
+        });
+      } else {
+        await activeDocs.first.reference.delete();
+      }
 
       debugPrint('✅ Désinscription réussie: user $userId');
     } catch (e) {
@@ -427,7 +474,9 @@ class OperationService {
 
       final participants = snapshot.docs
           .map((doc) => ParticipantOperation.fromFirestore(doc))
-          .where((participant) => participant.registrationStatus != 'canceled')
+          .where((participant) =>
+              participant.registrationStatus != 'canceled' &&
+              !participant.isWaitlisted)
           .toList();
 
       // Sort by first name (prénom), then last name — diacritics-insensitive
@@ -454,7 +503,9 @@ class OperationService {
         .map((snapshot) {
       final participants = snapshot.docs
           .map((doc) => ParticipantOperation.fromFirestore(doc))
-          .where((participant) => participant.registrationStatus != 'canceled')
+          .where((participant) =>
+              participant.registrationStatus != 'canceled' &&
+              !participant.isWaitlisted)
           .toList();
 
       // Sort by first name (prénom), then last name — diacritics-insensitive

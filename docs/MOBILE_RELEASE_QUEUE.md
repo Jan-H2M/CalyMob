@@ -21,6 +21,7 @@ Basisversie: `1.17.0+194`
 | MOB-016 | Betaalstatus wordt transactioneel tegen de actuele activiteitinstellingen gevalideerd, zodat een verouderd scherm geen betaling ter plaatse meer kan opslaan | Android + iOS | 4 gerichte regressietests, 375 Fluttertests, gerichte analyse en Android-debugbuild | Laag | Releasewachtrij |
 | MOB-011 | Een expliciete notificatie-opt-out blijft behouden bij login, app-resume en FCM-tokenrotatie; alleen de gebruiker kan opnieuw inschakelen | Android + iOS | 3 gerichte regressietests, 379 Fluttertests, gerichte analyse en Android-debugbuild | Laag | Releasewachtrij |
 | MOB-013 | Web- en e-maillinks in eventdiscussies openen opnieuw vanuit Markdown-berichten, met blokkering van onveilige URI-schema’s | Android + iOS | 3 gerichte regressietests, 382 Fluttertests, gerichte analyse en Android-debugbuild | Laag | Releasewachtrij |
+| COM-045 | Leden kunnen bij een volle of gesloten inschrijving op de wachtlijst komen en die weer verlaten; wachtenden tellen niet mee als deelnemer | Android + iOS | 2 gerichte regressietests, Flutter-analyse en Android-debugbuild | Middel | Releasewachtrij |
 
 ## Voorgestelde Franse releasenotes
 
@@ -34,6 +35,7 @@ Basisversie: `1.17.0+194`
 - Un mode de paiement désactivé ne peut plus être enregistré depuis un écran resté ouvert.
 - Votre choix de désactiver les notifications reste désormais respecté après le retour dans l’application.
 - Les liens dans les discussions d’événements s’ouvrent à nouveau correctement.
+- Vous pouvez désormais rejoindre la liste d’attente lorsqu’une activité est complète ou que les inscriptions sont clôturées.
 - Diverses améliorations de stabilité et de suivi des signalements.
 
 ## Releasepoort

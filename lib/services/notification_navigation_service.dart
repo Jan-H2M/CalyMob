@@ -86,6 +86,7 @@ class NotificationNavigationRequest {
     switch (type) {
       case 'event_message':
       case 'new_operation':
+      case 'event_waitlist_promoted':
         return NotificationRouteKind.operation;
       case 'announcement':
       case 'announcement_reply':

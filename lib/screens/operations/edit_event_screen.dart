@@ -49,6 +49,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
   late List<_EditableSupplement> _supplements;
   late bool _priceTbd;
   late bool _allowGuests;
+  late bool _allowWaitlist;
   late bool _paymentRequired;
   late Set<String> _allowedPaymentMethods;
   late String _registrationConfirmationPolicy;
@@ -88,6 +89,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
     _organisateurNom = op.organisateurNom;
     _priceTbd = op.priceTbd;
     _allowGuests = op.allowGuests;
+    _allowWaitlist = op.allowWaitlist;
     _paymentRequired = op.paymentRequired;
     _allowedPaymentMethods = op.allowedPaymentMethods.toSet();
     _registrationConfirmationPolicy = op.registrationConfirmationPolicy;
@@ -429,6 +431,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
         'supplements': supplementsData,
         'price_tbd': _priceTbd,
         'allow_guests': _allowGuests,
+        'allow_waitlist': _allowWaitlist,
         'payment_required': _paymentRequired,
         'allowed_payment_methods': _allowedPaymentMethods.toList(),
         'registration_confirmation_policy': _registrationConfirmationPolicy,
@@ -688,6 +691,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
 
                 // ========== AUTORISER LES INVITÉS EXTERNES ==========
                 _buildAllowGuestsSection(),
+                _buildAllowWaitlistSection(),
                 const SizedBox(height: 16),
 
                 PaymentRulesSection(
@@ -1384,6 +1388,24 @@ class _EditEventScreenState extends State<EditEventScreen> {
             fontStyle: FontStyle.italic,
           ),
         ),
+      ),
+    ]);
+  }
+
+  Widget _buildAllowWaitlistSection() {
+    return _buildSectionCard(children: [
+      SwitchListTile.adaptive(
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Autoriser la liste d’attente'),
+        subtitle: const Text(
+          'Les membres pourront rejoindre la liste quand l’événement est complet ou fermé.',
+        ),
+        value: _allowWaitlist,
+        onChanged: (value) => setState(() {
+          _allowWaitlist = value;
+          _hasChanges = true;
+        }),
+        activeColor: AppColors.middenblauw,
       ),
     ]);
   }
