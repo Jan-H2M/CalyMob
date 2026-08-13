@@ -77,14 +77,11 @@ void main() {
   group('all app states use the same route mapping', () {
     for (final origin in NotificationTapOrigin.values) {
       test(origin.name, () {
-        final value = request(
-          {
-            'type': 'formation_reminder',
-            'task_count': '1',
-            'formation_task_id': 'task-1',
-          },
-          origin: origin,
-        );
+        final value = request({
+          'type': 'formation_reminder',
+          'task_count': '1',
+          'formation_task_id': 'task-1',
+        }, origin: origin);
 
         expect(value.origin, origin);
         expect(value.routeKind, NotificationRouteKind.formationTask);
@@ -118,16 +115,43 @@ void main() {
     }
   });
 
+  test('accepts canonical payload aliases from callable and FCM senders', () {
+    final value = request({
+      'type': 'event_waitlist_promoted',
+      'clubId': 'club-1',
+      'operationId': 'operation-1',
+    });
+
+    expect(value.clubId, 'club-1');
+    expect(value.operationId, 'operation-1');
+    expect(value.routeKind, NotificationRouteKind.operation);
+
+    final session = request({
+      'type': 'session_message',
+      'sessionId': 'session-1',
+      'groupType': 'niveau',
+      'groupLevel': 'P2',
+    });
+    expect(session.sessionId, 'session-1');
+    expect(session.groupType, 'niveau');
+    expect(session.groupLevel, 'P2');
+
+    final formation = request({
+      'type': 'formation_reminder',
+      'formationTaskId': 'task-1',
+      'taskCount': '1',
+    });
+    expect(formation.formationTaskId, 'task-1');
+    expect(formation.routeKind, NotificationRouteKind.formationTask);
+  });
+
   group('idempotent pending queue', () {
     test('keeps a cold-start tap pending until the app consumes it', () {
       final queue = NotificationNavigationQueue();
-      final value = request(
-        {
-          'type': 'formation_reminder',
-          'formation_task_id': 'task-1',
-        },
-        origin: NotificationTapOrigin.terminated,
-      );
+      final value = request({
+        'type': 'formation_reminder',
+        'formation_task_id': 'task-1',
+      }, origin: NotificationTapOrigin.terminated);
 
       expect(queue.enqueue(value), isTrue);
       expect(queue.pendingCount, 1);
@@ -137,14 +161,14 @@ void main() {
     test('ignores duplicate callbacks and double taps', () {
       final now = DateTime(2026, 8, 2, 10);
       final queue = NotificationNavigationQueue();
-      final first = request(
-        {'type': 'formation_reminder', 'formation_task_id': 'task-1'},
-        messageId: 'message-1',
-      );
-      final duplicate = request(
-        {'type': 'formation_reminder', 'formation_task_id': 'task-1'},
-        messageId: 'message-1',
-      );
+      final first = request({
+        'type': 'formation_reminder',
+        'formation_task_id': 'task-1',
+      }, messageId: 'message-1');
+      final duplicate = request({
+        'type': 'formation_reminder',
+        'formation_task_id': 'task-1',
+      }, messageId: 'message-1');
 
       expect(queue.enqueue(first, now: now), isTrue);
       expect(queue.enqueue(duplicate, now: now), isFalse);

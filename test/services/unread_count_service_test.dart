@@ -17,6 +17,29 @@ import 'package:calymob/services/unread_count_service.dart';
 void main() {
   const clubId = 'calypso';
 
+  group('Notification badge regression policy', () {
+    test('closed-event registrations remain countable', () {
+      expect(isCountableRegistration({'registration_status': 'confirmed'}),
+          isTrue);
+      expect(
+          isCountableRegistration({'registration_status': 'pending_payment'}),
+          isTrue);
+      expect(isCountableRegistration({'registration_status': 'canceled'}),
+          isFalse);
+      expect(isCountableRegistration({'registration_status': 'waitlisted'}),
+          isFalse);
+    });
+
+    test('niveau chats have independent read keys', () {
+      expect(unreadSessionReadKey('session-1', 'niveau', 'P2'),
+          'session_session-1_niveau_P2');
+      expect(unreadSessionReadKey('session-1', 'encadrants'),
+          'session_session-1_encadrants');
+      expect(unreadSessionReadKey('session-1', 'niveau', 'P3'),
+          isNot('session_session-1_niveau_P2'));
+    });
+  });
+
   group('LocalReadTracker', () {
     setUp(() {
       // Mock SharedPreferences
@@ -59,7 +82,8 @@ void main() {
       await Future.delayed(const Duration(milliseconds: 10));
       await tracker.initIfAbsent('new_key');
       final second = tracker.getLastRead('new_key');
-      expect(second!.millisecondsSinceEpoch, equals(first!.millisecondsSinceEpoch));
+      expect(second!.millisecondsSinceEpoch,
+          equals(first!.millisecondsSinceEpoch));
     });
 
     test('resetAll verwijdert alle keys', () async {
@@ -76,7 +100,8 @@ void main() {
       expect(tracker.getLastRead('key_2'), isNull);
     });
 
-    test('markAllAsRead legt een globale baseline op alle gesprekken', () async {
+    test('markAllAsRead legt een globale baseline op alle gesprekken',
+        () async {
       final tracker = LocalReadTracker();
       await tracker.init();
       await tracker.resetAll();
@@ -106,12 +131,13 @@ void main() {
       fakeFirestore = FakeFirebaseFirestore();
     });
 
-    test('CRITICAL FIX: nooit geopend → tel ALLE announcements als ongelezen', () async {
+    test('CRITICAL FIX: nooit geopend → tel ALLE announcements als ongelezen',
+        () async {
       // Setup: 3 announcements, user heeft het scherm nooit geopend
       for (int i = 0; i < 3; i++) {
         await fakeFirestore.collection('clubs/$clubId/announcements').add({
-          'created_at': Timestamp.fromDate(
-              DateTime.now().subtract(Duration(days: i))),
+          'created_at':
+              Timestamp.fromDate(DateTime.now().subtract(Duration(days: i))),
           'title': 'Annonce $i',
           'content': 'Contenu $i',
         });
@@ -167,8 +193,7 @@ void main() {
       // Query: alleen messages na lastRead
       final snapshot = await fakeFirestore
           .collection('clubs/$clubId/announcements')
-          .where('created_at',
-              isGreaterThan: Timestamp.fromDate(lastRead))
+          .where('created_at', isGreaterThan: Timestamp.fromDate(lastRead))
           .get();
       expect(snapshot.docs.length, equals(1),
           reason: 'Alleen het nieuwe announcement is ongelezen');
@@ -200,8 +225,8 @@ void main() {
         await fakeFirestore
             .collection('clubs/$clubId/operations/$operationId/messages')
             .add({
-          'created_at': Timestamp.fromDate(
-              DateTime.now().subtract(Duration(hours: i))),
+          'created_at':
+              Timestamp.fromDate(DateTime.now().subtract(Duration(hours: i))),
           'message': 'Message $i',
           'sender_id': 'user_$i',
           'sender_name': 'User $i',
@@ -227,7 +252,8 @@ void main() {
           reason: 'Alle 5 messages moeten ongelezen zijn');
     });
 
-    test('multi-user scenario: 3 users posten, badges updaten correct', () async {
+    test('multi-user scenario: 3 users posten, badges updaten correct',
+        () async {
       await fakeFirestore
           .collection('clubs/$clubId/operations')
           .doc(operationId)
@@ -280,8 +306,7 @@ void main() {
       // Jan's count: 3 messages na zijn lastRead
       final snapshot = await fakeFirestore
           .collection('clubs/$clubId/operations/$operationId/messages')
-          .where('created_at',
-              isGreaterThan: Timestamp.fromDate(janLastRead))
+          .where('created_at', isGreaterThan: Timestamp.fromDate(janLastRead))
           .get();
       expect(snapshot.docs.length, equals(3),
           reason: 'Jan ziet 3 ongelezen messages');
@@ -340,7 +365,8 @@ void main() {
           normalizedRoles.contains('encadrants')) {
         channelIds.add('equipe_encadrants');
       }
-      if (normalizedRoles.contains('gonflage')) channelIds.add('equipe_gonflage');
+      if (normalizedRoles.contains('gonflage'))
+        channelIds.add('equipe_gonflage');
 
       expect(channelIds, equals(['equipe_accueil', 'equipe_encadrants']),
           reason: 'Accueil en encadrant rollen moeten 2 channels geven');
@@ -352,13 +378,15 @@ void main() {
       final normalizedRoles = roles.map((r) => r.toLowerCase()).toList();
 
       if (normalizedRoles.contains('accueil')) channelIds.add('equipe_accueil');
-      if (normalizedRoles.contains('encadrant')) channelIds.add('equipe_encadrants');
+      if (normalizedRoles.contains('encadrant'))
+        channelIds.add('equipe_encadrants');
 
       expect(channelIds.isEmpty, isTrue,
           reason: 'Geen rollen → geen channels → 0 messages');
     });
 
-    test('CRITICAL FIX: nooit geopend team channel → tel ALLE messages', () async {
+    test('CRITICAL FIX: nooit geopend team channel → tel ALLE messages',
+        () async {
       const channelId = 'equipe_encadrants';
 
       // 4 messages in het team channel
@@ -366,8 +394,8 @@ void main() {
         await fakeFirestore
             .collection('clubs/$clubId/team_channels/$channelId/messages')
             .add({
-          'created_at': Timestamp.fromDate(
-              DateTime.now().subtract(Duration(hours: i))),
+          'created_at':
+              Timestamp.fromDate(DateTime.now().subtract(Duration(hours: i))),
           'message': 'Team message $i',
           'sender_id': 'user_$i',
         });
@@ -435,12 +463,10 @@ void main() {
         'sender_id': 'pierre',
       });
 
-      var lastRead =
-          tracker.getLastRead('operation_$operationId') ?? epoch;
+      var lastRead = tracker.getLastRead('operation_$operationId') ?? epoch;
       var snap = await fakeFirestore
           .collection('clubs/$clubId/operations/$operationId/messages')
-          .where('created_at',
-              isGreaterThan: Timestamp.fromDate(lastRead))
+          .where('created_at', isGreaterThan: Timestamp.fromDate(lastRead))
           .get();
       expect(snap.docs.length, equals(2),
           reason: 'Étape 1: Jan voit 2 messages non lus');
@@ -451,8 +477,7 @@ void main() {
 
       snap = await fakeFirestore
           .collection('clubs/$clubId/operations/$operationId/messages')
-          .where('created_at',
-              isGreaterThan: Timestamp.fromDate(lastRead))
+          .where('created_at', isGreaterThan: Timestamp.fromDate(lastRead))
           .get();
       expect(snap.docs.length, equals(0),
           reason: 'Étape 2: Jan a tout lu, 0 non lus');
@@ -469,8 +494,7 @@ void main() {
 
       snap = await fakeFirestore
           .collection('clubs/$clubId/operations/$operationId/messages')
-          .where('created_at',
-              isGreaterThan: Timestamp.fromDate(lastRead))
+          .where('created_at', isGreaterThan: Timestamp.fromDate(lastRead))
           .get();
       expect(snap.docs.length, equals(1),
           reason: 'Étape 3: Jan voit 1 nouveau message de Marie');
@@ -495,11 +519,11 @@ void main() {
 
       snap = await fakeFirestore
           .collection('clubs/$clubId/operations/$operationId/messages')
-          .where('created_at',
-              isGreaterThan: Timestamp.fromDate(lastRead))
+          .where('created_at', isGreaterThan: Timestamp.fromDate(lastRead))
           .get();
       expect(snap.docs.length, equals(3),
-          reason: 'Étape 4: Jan voit 3 messages non lus (Marie + Pierre + Geoffroy)');
+          reason:
+              'Étape 4: Jan voit 3 messages non lus (Marie + Pierre + Geoffroy)');
 
       // === ÉTAPE 5: Jan ouvre à nouveau → tout lu ===
       await tracker.markAsRead('operation_$operationId');
@@ -507,8 +531,7 @@ void main() {
 
       snap = await fakeFirestore
           .collection('clubs/$clubId/operations/$operationId/messages')
-          .where('created_at',
-              isGreaterThan: Timestamp.fromDate(lastRead))
+          .where('created_at', isGreaterThan: Timestamp.fromDate(lastRead))
           .get();
       expect(snap.docs.length, equals(0),
           reason: 'Étape 5: Jan a tout lu, retour à 0');
