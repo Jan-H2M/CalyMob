@@ -10,6 +10,7 @@ const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
 const { memberDisplayName } = require('../utils/memberName');
+const { resolveMemberStatus } = require('../utils/memberStatus');
 
 const FUNCTION_REGION = 'europe-west1';
 
@@ -25,21 +26,7 @@ function stringList(value) {
 }
 
 function resolvedMemberStatus(data) {
-  if (
-    data.member_status === 'active' ||
-    data.app_status === 'active' ||
-    data.status === 'active' ||
-    data.isActive === true ||
-    data.actif === true
-  ) return 'active';
-
-  const status = data.member_status || data.app_status || data.status;
-  if (
-    ['inactive', 'deleted', 'archived', 'suspended', 'pending'].includes(status) ||
-    data.isActive === false ||
-    data.actif === false
-  ) return 'inactive';
-  return 'active';
+  return resolveMemberStatus(data, { defaultStatus: 'active' });
 }
 
 function buildMemberDirectoryProjection(data) {

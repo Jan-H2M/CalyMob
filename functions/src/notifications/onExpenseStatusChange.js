@@ -14,6 +14,7 @@
 
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
+const { isActiveMember } = require('../utils/memberStatus');
 const { isLegacyMirrorWrite } = require('../expenses/expenseSync');
 const {
   buildEmailRouting,
@@ -241,8 +242,7 @@ async function sendSecondApprovalNeededToValidators(db, clubId, demandeId, expen
       }
 
       // Check if active
-      const isActive = member.isActive === true || member.app_status === 'active';
-      if (!isActive) {
+      if (!isActiveMember(member)) {
         return;
       }
 

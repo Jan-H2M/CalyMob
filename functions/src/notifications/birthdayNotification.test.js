@@ -20,6 +20,7 @@ describe('birthdayNotification helpers', () => {
     expect(_test.isActiveMember({ member_status: 'active' })).toBe(true);
     expect(_test.isActiveMember({ status: 'ACTIVE' })).toBe(true);
     expect(_test.isActiveMember({ member_status: 'inactive' })).toBe(false);
+    expect(_test.isActiveMember({ member_status: 'inactive', status: 'active' })).toBe(false);
   });
 
   test('builds the approved single and multiple birthday texts', () => {
