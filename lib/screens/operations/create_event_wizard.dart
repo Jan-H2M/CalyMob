@@ -498,6 +498,9 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
         // Firebase UID of the original creator — used to authorize later
         // responsable changes. Distinct from created_by source tag above.
         'creator_user_id': userId,
+        // COM-045: enable the waitlist by default for new events. The
+        // organiser can turn it off later in EditEventScreen.
+        'allow_waitlist': true,
         'payment_required': _paymentRequired,
         'allowed_payment_methods': _allowedPaymentMethods.toList(),
         'registration_confirmation_policy': _registrationConfirmationPolicy,

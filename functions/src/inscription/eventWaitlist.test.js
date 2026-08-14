@@ -15,6 +15,11 @@ describe('event waitlist policy', () => {
     expect(waitlistReason({ ...base, statut: 'ferme' }, 1, now)).toBe('closed');
     expect(waitlistReason(base, 1, now)).toBeNull();
   });
+  test('keeps the default enabled for legacy events without the field', () => {
+    const legacy = { ...base };
+    delete legacy.allow_waitlist;
+    expect(waitlistReason(legacy, 2, now)).toBe('full');
+  });
   test('blocks disabled, cancelled and started events', () => {
     expect(waitlistReason({ ...base, allow_waitlist: false }, 2, now)).toBeNull();
     expect(waitlistReason({ ...base, statut: 'annule' }, 2, now)).toBeNull();

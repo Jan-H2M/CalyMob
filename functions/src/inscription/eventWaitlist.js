@@ -22,7 +22,10 @@ function waitlistReason(operation, activeCount, now = new Date()) {
   const start = asDate(operation.date_debut);
   if (operation.statut === 'annule') return null;
   if (!start || now >= start) return null;
-  if (operation.allow_waitlist !== true) return null;
+  // The product default is enabled. Only an explicit false disables the
+  // waitlist, so legacy events without the field behave consistently with
+  // newly created events.
+  if (operation.allow_waitlist === false) return null;
   const capacity = Number(operation.capacite_max);
   if (Number.isFinite(capacity) && capacity > 0 && activeCount >= capacity) return 'full';
   const deadline = effectiveDeadline(operation);

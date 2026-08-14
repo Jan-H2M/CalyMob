@@ -82,6 +82,9 @@ class Operation {
   /// isGuestTariff=true. Default false — preserves current behaviour where
   /// only admins/encadrants can add guests via the existing flow.
   final bool allowGuests;
+  /// Whether members may join the waitlist when the event is full or closed.
+  /// Missing legacy fields use the enabled product default; an organiser can
+  /// still explicitly disable the option by saving false in the editor.
   final bool allowWaitlist;
 
   // Organisateur (can be reassigned after creation)
@@ -146,7 +149,7 @@ class Operation {
     this.paymentDeadlineDays = 3,
     this.autoCancelUnpaid = true,
     this.allowGuests = false,
-    this.allowWaitlist = false,
+    this.allowWaitlist = true,
     this.organisateurId,
     this.organisateurNom,
     this.creatorUserId,
@@ -200,7 +203,9 @@ class Operation {
           (data['payment_deadline_days'] as num?)?.toInt() ?? 3,
       autoCancelUnpaid: data['auto_cancel_unpaid'] != false,
       allowGuests: data['allow_guests'] == true,
-      allowWaitlist: data['allow_waitlist'] == true,
+      // Missing legacy fields use the product default (enabled). Only an
+      // explicit false disables the waitlist.
+      allowWaitlist: data['allow_waitlist'] != false,
       organisateurId: data['organisateur_id'],
       organisateurNom: data['organisateur_nom'],
       creatorUserId: data['creator_user_id'],
