@@ -542,12 +542,13 @@ class _MaterialFinanceMockupScreenState
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(item.inventoryNumber,
+                    Text('${_categoryForItem(item)} · ${item.option}',
                         style: const TextStyle(
                           color: AppColors.donkerblauw,
                           fontWeight: FontWeight.w800,
                         )),
-                    Text(item.description,
+                    Text(
+                        'N° inventaire ${item.inventoryNumber} · ${item.description}',
                         style: const TextStyle(color: Colors.black54)),
                   ],
                 ),
@@ -887,6 +888,16 @@ class _MaterialFinanceMockupScreenState
       }
     }
     return null;
+  }
+
+  String _categoryForItem(_DemoItem item) {
+    for (final entry in _inventory.entries) {
+      if (entry.value.any(
+          (candidate) => candidate.inventoryNumber == item.inventoryNumber)) {
+        return entry.key;
+      }
+    }
+    return 'Matériel';
   }
 
   String _returnKey(_DemoReturnLoan loan, _DemoItem item) =>
