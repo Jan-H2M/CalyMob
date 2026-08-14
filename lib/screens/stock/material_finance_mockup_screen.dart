@@ -1159,11 +1159,7 @@ class _RequestAssignmentSheetState extends State<_RequestAssignmentSheet> {
                   label: line.category,
                   option: line.option == '1 article' ? null : line.option,
                   value: _selected[line.category],
-                  items: (widget.inventory[line.category] ?? [])
-                      .where((item) =>
-                          item.option == line.option ||
-                          line.option == '1 article')
-                      .toList(),
+                  items: widget.inventory[line.category] ?? [],
                   onChanged: (item) => setState(() {
                     if (item == null) {
                       _selected.remove(line.category);
@@ -1442,11 +1438,12 @@ class _InventoryChoiceRowState extends State<_InventoryChoiceRow> {
       .toList();
 
   void _selectVariant(String? variant) {
+    if (variant == null) return;
     setState(() {
       _variant = variant;
       _selectedItem = null;
     });
-    widget.onResolvedChanged?.call(variant == null);
+    widget.onResolvedChanged?.call(false);
     widget.onChanged(null);
   }
 
@@ -1476,25 +1473,21 @@ class _InventoryChoiceRowState extends State<_InventoryChoiceRow> {
         const SizedBox(width: 10),
         Expanded(
           flex: 2,
-          child: DropdownButtonFormField<String?>(
+          child: DropdownButtonFormField<String>(
             initialValue: _variant,
             decoration: const InputDecoration(
-              hintText: 'Choisir une taille',
+              hintText: 'Taille / variante',
               border: OutlineInputBorder(),
               contentPadding: EdgeInsets.symmetric(horizontal: 12),
             ),
-            items: [
-              const DropdownMenuItem<String?>(
-                value: null,
-                child: Text('Choisir…'),
-              ),
-              ..._variants.map(
-                (variant) => DropdownMenuItem<String?>(
-                  value: variant,
-                  child: Text(variant),
-                ),
-              ),
-            ],
+            items: _variants
+                .map(
+                  (variant) => DropdownMenuItem<String>(
+                    value: variant,
+                    child: Text(variant),
+                  ),
+                )
+                .toList(),
             onChanged: _selectVariant,
           ),
         ),
