@@ -606,8 +606,10 @@ class _PackageComposerSheet extends StatefulWidget {
 
 class _PackageComposerSheetState extends State<_PackageComposerSheet> {
   late int _step;
+  late int _furthestStep;
   late String? _member;
   late Map<String, _DemoItem> _selection;
+  DateTime _returnDate = DateTime.now().add(const Duration(days: 7));
   String _paymentMode = 'remote';
   String _paymentStatus = 'unpaid';
   String _handoverStatus = 'blocked';
@@ -616,8 +618,44 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
   void initState() {
     super.initState();
     _step = widget.initialStep;
+    _furthestStep = widget.initialStep;
     _member = widget.initialMember;
     _selection = {...?widget.initialSelection};
+  }
+
+  void _goToStep(int target) {
+    // The organizer can revisit any step already reached, but cannot skip
+    // the required member and inventory choices.
+    if (target > _furthestStep) return;
+    setState(() => _step = target);
+  }
+
+  void _setStep(int target) {
+    setState(() {
+      _step = target;
+      if (target > _furthestStep) _furthestStep = target;
+    });
+  }
+
+  Future<void> _pickReturnDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _returnDate,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 730)),
+      helpText: 'Choisir la date de retour prévue',
+      cancelText: 'Annuler',
+      confirmText: 'Valider',
+    );
+    if (picked != null && mounted) {
+      setState(() => _returnDate = picked);
+    }
+  }
+
+  String _formatReturnDate(DateTime value) {
+    final day = value.day.toString().padLeft(2, '0');
+    final month = value.month.toString().padLeft(2, '0');
+    return '$day/$month/${value.year}';
   }
 
   @override
@@ -640,7 +678,7 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
-              child: _WizardSteps(current: _step),
+              child: _WizardSteps(current: _step, onStepTap: _goToStep),
             ),
             Expanded(
               child: ListView(
@@ -667,6 +705,7 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
           title: '1 · Choisir le membre',
           subtitle:
               'Le responsable peut agir au nom du membre sans demande préalable.',
+          dark: true,
         ),
         DropdownButtonFormField<String>(
           initialValue: _member,
@@ -686,7 +725,7 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
         _nextButton(
           label: 'Étape 2 · Choisir le matériel',
           enabled: _member != null,
-          onPressed: () => setState(() => _step = 1),
+          onPressed: () => _setStep(1),
         ),
       ],
     );
@@ -700,6 +739,7 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
           title: '2 · Choisir le matériel',
           subtitle:
               'Un seul article par catégorie. Les listes commencent par le numéro d’inventaire.',
+          dark: true,
         ),
         ...widget.inventory.entries.map(
           (entry) => Padding(
@@ -741,7 +781,7 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
           children: [
             Expanded(
               child: OutlinedButton(
-                onPressed: () => setState(() => _step = 0),
+                onPressed: () => _setStep(0),
                 child: const Text('Membre'),
               ),
             ),
@@ -750,7 +790,7 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
               child: _nextButton(
                 label: 'Étape 3 · Détails',
                 enabled: selectedCount > 0,
-                onPressed: () => setState(() => _step = 2),
+                onPressed: () => _setStep(2),
               ),
             ),
           ],
@@ -767,6 +807,7 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
           title: '3 · Détails et finances',
           subtitle:
               'Cette étape devient active quand le paquet est complet et traçable.',
+          dark: true,
         ),
         _SurfaceCard(
           child: Column(
@@ -776,10 +817,16 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
                 label: 'Matériel',
                 value: '$selectedCount article(s)',
               ),
-              const TextField(
-                decoration: InputDecoration(
-                  labelText: 'Retour prévu',
-                  border: OutlineInputBorder(),
+              InkWell(
+                onTap: _pickReturnDate,
+                borderRadius: BorderRadius.circular(4),
+                child: InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Retour prévu',
+                    suffixIcon: Icon(Icons.calendar_month_outlined),
+                    border: OutlineInputBorder(),
+                  ),
+                  child: Text(_formatReturnDate(_returnDate)),
                 ),
               ),
               const SizedBox(height: 10),
@@ -816,7 +863,7 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
           children: [
             Expanded(
               child: OutlinedButton(
-                onPressed: () => setState(() => _step = 1),
+                onPressed: () => _setStep(1),
                 child: const Text('Matériel'),
               ),
             ),
@@ -825,7 +872,7 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
               child: _nextButton(
                 label: 'Étape 4 · Signature',
                 enabled: true,
-                onPressed: () => setState(() => _step = 3),
+                onPressed: () => _setStep(3),
               ),
             ),
           ],
@@ -843,6 +890,7 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
           title: '4 · Signature et remise',
           subtitle:
               'La remise reste bloquée tant que la caution n’est pas confirmée.',
+          dark: true,
         ),
         _InfoBanner(
           icon: canFinish ? Icons.check_circle_outline : Icons.lock_outline,
@@ -870,7 +918,7 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
           children: [
             Expanded(
               child: OutlinedButton(
-                onPressed: () => setState(() => _step = 2),
+                onPressed: () => _setStep(2),
                 child: const Text('Détails'),
               ),
             ),
@@ -942,6 +990,7 @@ class _RequestAssignmentSheetState extends State<_RequestAssignmentSheet> {
               title: '2 · Attribuer l’inventaire',
               subtitle:
                   'Choisissez un numéro disponible correspondant à chaque variante demandée.',
+              dark: true,
             ),
             ...widget.request.lines.map(
               (line) => Padding(
@@ -1066,59 +1115,81 @@ class _PaymentPanel extends StatelessWidget {
               color: Colors.blueGrey.shade50,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Row(
-              children: [
-                Container(
-                  width: 92,
-                  height: 92,
-                  color: Colors.white,
-                  child: const Icon(Icons.qr_code_2,
-                      size: 82, color: AppColors.donkerblauw),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            child: isRemote
+                ? Row(
                     children: [
-                      Text(
-                        isRemote
-                            ? 'QR dans l’e-mail du membre'
-                            : 'QR affiché sur le téléphone',
-                        style: const TextStyle(
+                      Container(
+                        width: 92,
+                        height: 92,
+                        color: Colors.white,
+                        child: const Icon(Icons.qr_code_2,
+                            size: 82, color: AppColors.donkerblauw),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'QR dans l’e-mail du membre',
+                              style: TextStyle(
+                                  color: AppColors.donkerblauw,
+                                  fontWeight: FontWeight.w800),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              'Le membre paie avec son application bancaire.',
+                              style: TextStyle(color: Colors.black54),
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: [
+                                OutlinedButton(
+                                  onPressed: onEmailSent,
+                                  child: Text(status == 'email_sent'
+                                      ? 'E-mail envoyé ✓'
+                                      : 'Envoyer l’e-mail'),
+                                ),
+                                OutlinedButton(
+                                  onPressed: onPaymentConfirmed,
+                                  child: const Text('Simuler paiement reçu'),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  )
+                : Column(
+                    children: [
+                      const Icon(Icons.qr_code_2,
+                          size: 190, color: AppColors.donkerblauw),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Présentez ce QR-code au membre',
+                        style: TextStyle(
                             color: AppColors.donkerblauw,
-                            fontWeight: FontWeight.w800),
+                            fontWeight: FontWeight.w800,
+                            fontSize: 16),
+                        textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        isRemote
-                            ? 'Le membre paie avec son application bancaire.'
-                            : 'Le membre scanne directement ce code.',
-                        style: const TextStyle(color: Colors.black54),
+                      const Text(
+                        'Le membre paie directement avec son application bancaire.',
+                        style: TextStyle(color: Colors.black54),
+                        textAlign: TextAlign.center,
                       ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: [
-                          OutlinedButton(
-                            onPressed: isRemote ? onEmailSent : null,
-                            child: Text(status == 'email_sent'
-                                ? 'E-mail envoyé ✓'
-                                : 'Envoyer l’e-mail'),
-                          ),
-                          OutlinedButton(
-                            onPressed: onPaymentConfirmed,
-                            child: Text(isRemote
-                                ? 'Simuler paiement reçu'
-                                : 'J’ai vu le paiement'),
-                          ),
-                        ],
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: onPaymentConfirmed,
+                        icon: const Icon(Icons.visibility_outlined),
+                        label: const Text('J’ai vu le paiement'),
                       ),
                     ],
                   ),
-                ),
-              ],
-            ),
           ),
           const SizedBox(height: 10),
           _InfoBanner(
@@ -1188,8 +1259,9 @@ class _ModeButton extends StatelessWidget {
 
 class _WizardSteps extends StatelessWidget {
   final int current;
+  final ValueChanged<int> onStepTap;
 
-  const _WizardSteps({required this.current});
+  const _WizardSteps({required this.current, required this.onStepTap});
 
   @override
   Widget build(BuildContext context) {
@@ -1198,30 +1270,34 @@ class _WizardSteps extends StatelessWidget {
       children: [
         for (var index = 0; index < labels.length; index++)
           Expanded(
-            child: Container(
-              margin:
-                  EdgeInsets.only(right: index == labels.length - 1 ? 0 : 5),
-              padding: const EdgeInsets.only(top: 7),
-              decoration: BoxDecoration(
-                border: Border(
-                  top: BorderSide(
-                    color: index < current
-                        ? AppColors.success
-                        : index == current
-                            ? AppColors.middenblauw
-                            : Colors.grey.shade300,
-                    width: 3,
+            child: InkWell(
+              onTap: index <= current ? () => onStepTap(index) : null,
+              borderRadius: BorderRadius.circular(6),
+              child: Container(
+                margin:
+                    EdgeInsets.only(right: index == labels.length - 1 ? 0 : 5),
+                padding: const EdgeInsets.only(top: 7, bottom: 5),
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(
+                      color: index < current
+                          ? AppColors.success
+                          : index == current
+                              ? AppColors.middenblauw
+                              : Colors.grey.shade300,
+                      width: 3,
+                    ),
                   ),
                 ),
-              ),
-              child: Text(
-                '${index + 1} · ${labels[index]}',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: index <= current
-                      ? AppColors.middenblauw
-                      : Colors.grey.shade600,
-                  fontWeight: index == current ? FontWeight.w800 : null,
+                child: Text(
+                  '${index + 1} · ${labels[index]}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: index <= current
+                        ? AppColors.middenblauw
+                        : Colors.grey.shade600,
+                    fontWeight: index == current ? FontWeight.w800 : null,
+                  ),
                 ),
               ),
             ),
@@ -1235,11 +1311,13 @@ class _PageHeader extends StatelessWidget {
   final String title;
   final String subtitle;
   final Widget? action;
+  final bool dark;
 
   const _PageHeader({
     required this.title,
     required this.subtitle,
     this.action,
+    this.dark = false,
   });
 
   @override
@@ -1253,18 +1331,22 @@ class _PageHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Text(title,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 21,
-                        fontWeight: FontWeight.w800)),
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    color: dark ? AppColors.donkerblauw : Colors.white,
+                    fontSize: 21,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
               ),
               if (action != null) action!,
             ],
           ),
           const SizedBox(height: 4),
           Text(subtitle,
-              style: const TextStyle(color: Colors.white70, height: 1.35)),
+              style: TextStyle(
+                  color: dark ? Colors.black54 : Colors.white70, height: 1.35)),
           const SizedBox(height: 12),
         ],
       ),
