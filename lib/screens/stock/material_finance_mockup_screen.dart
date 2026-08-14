@@ -65,65 +65,78 @@ class _MaterialFinanceMockupScreenState
   final Map<String, List<_DemoItem>> _inventory = const {
     'Gilet stabilisateur': [
       _DemoItem(
-        'GILET-036 (numéro d’inventaire) · MARES · série M36',
+        'GILET-036',
+        'MARES · série M36',
         'XL',
       ),
       _DemoItem(
-        'GILET-009 (numéro d’inventaire) · SCUBAPRO T ONE',
+        'GILET-009',
+        'SCUBAPRO T ONE',
         'XL',
       ),
       _DemoItem(
-        'GILET-014 (numéro d’inventaire) · AQUALUNG WAVE',
+        'GILET-014',
+        'AQUALUNG WAVE',
         'M',
       ),
     ],
     'Ordinateur': [
       _DemoItem(
-        'ORD-006 (numéro d’inventaire) · CRESSI LEONARDO',
+        'ORD-006',
+        'CRESSI LEONARDO',
         'CRESSI',
       ),
       _DemoItem(
-        'ORD-008 (numéro d’inventaire) · CRESSI LEONARDO',
+        'ORD-008',
+        'CRESSI LEONARDO',
         'CRESSI',
       ),
     ],
     'Bouteille': [
       _DemoItem(
-        'BT-007 (numéro d’inventaire) · FABER · série 79/12399',
+        'BT-007',
+        'FABER · série 79/12399',
         '12 L · DIN',
       ),
       _DemoItem(
-        'BT-002 (numéro d’inventaire) · FABER · série 85/3002/27',
+        'BT-002',
+        'FABER · série 85/3002/27',
         '12 L · DIN',
       ),
       _DemoItem(
-        'BT-011 (numéro d’inventaire) · FABER · série 85/3002/56',
+        'BT-011',
+        'FABER · série 85/3002/56',
         '10 L · DIN',
       ),
     ],
     'Palmes réglables': [
       _DemoItem(
-        'PAL-042 (numéro d’inventaire) · MARES AVANTI',
+        'PAL-042',
+        'MARES AVANTI',
         '42/43',
       ),
       _DemoItem(
-        'PAL-038 (numéro d’inventaire) · SCUBAPRO',
+        'PAL-038',
+        'SCUBAPRO',
         '38/40',
       ),
     ],
     'Détendeur': [
       _DemoItem(
-        'DET-008 (numéro d’inventaire) · SCUBAPRO MK2/R195',
+        'DET-008',
+        'SCUBAPRO MK2/R195',
         'SCUBAPRO',
       ),
       _DemoItem(
-        'DET-007 (numéro d’inventaire) · SCUBAPRO MK2/R195',
+        'DET-007',
+        'SCUBAPRO MK2/R195',
         'SCUBAPRO',
       ),
     ],
     'Compas / Boussole': [
       _DemoItem(
-        'COMP-003 (numéro d’inventaire) · SUUNTO SK-8',
+        'COMP-003',
+        'SUUNTO SK-8',
         'SUUNTO',
       ),
     ],
@@ -186,10 +199,11 @@ class _MaterialFinanceMockupScreenState
                             ? 'Retours 1'
                             : labels[index],
                   ),
+                  showCheckmark: false,
                   selectedColor: Colors.white,
-                  backgroundColor: Colors.white24,
+                  backgroundColor: Colors.white.withValues(alpha: 0.78),
                   labelStyle: TextStyle(
-                    color: _tab == index ? AppColors.donkerblauw : Colors.white,
+                    color: AppColors.donkerblauw,
                     fontWeight: FontWeight.w700,
                   ),
                   onSelected: (_) => setState(() => _tab = index),
@@ -741,27 +755,14 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
               'Un seul article par catégorie. Les listes commencent par le numéro d’inventaire.',
           dark: true,
         ),
+        const _InventoryColumnHeader(),
         ...widget.inventory.entries.map(
           (entry) => Padding(
             padding: const EdgeInsets.only(bottom: 12),
-            child: DropdownButtonFormField<_DemoItem>(
-              initialValue: _selection[entry.key],
-              decoration: InputDecoration(
-                labelText: entry.key,
-                border: const OutlineInputBorder(),
-              ),
-              items: [
-                const DropdownMenuItem<_DemoItem>(
-                  value: null,
-                  child: Text('Aucun article'),
-                ),
-                ...entry.value.map(
-                  (item) => DropdownMenuItem(
-                    value: item,
-                    child: Text(item.label),
-                  ),
-                ),
-              ],
+            child: _InventoryChoiceRow(
+              label: entry.key,
+              value: _selection[entry.key],
+              items: entry.value,
               onChanged: (item) => setState(() {
                 if (item == null) {
                   _selection.remove(entry.key);
@@ -964,11 +965,12 @@ class _RequestAssignmentSheet extends StatefulWidget {
 
 class _RequestAssignmentSheetState extends State<_RequestAssignmentSheet> {
   final Map<String, _DemoItem> _selected = {};
+  final Set<String> _resolvedCategories = {};
 
   @override
   Widget build(BuildContext context) {
     final complete = widget.request.lines.every(
-      (line) => _selected.containsKey(line.category),
+      (line) => _resolvedCategories.contains(line.category),
     );
     return SizedBox(
       height: MediaQuery.sizeOf(context).height * 0.84,
@@ -992,27 +994,21 @@ class _RequestAssignmentSheetState extends State<_RequestAssignmentSheet> {
                   'Choisissez un numéro disponible correspondant à chaque variante demandée.',
               dark: true,
             ),
+            const _InventoryColumnHeader(),
             ...widget.request.lines.map(
               (line) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: DropdownButtonFormField<_DemoItem>(
-                  initialValue: _selected[line.category],
-                  decoration: InputDecoration(
-                    labelText: '${line.category} · ${line.option}',
-                    border: const OutlineInputBorder(),
-                  ),
+                child: _InventoryChoiceRow(
+                  label: line.category,
+                  option: line.option,
+                  value: _selected[line.category],
                   items: (widget.inventory[line.category] ?? [])
                       .where((item) =>
                           item.option == line.option ||
                           line.option == '1 article')
-                      .map(
-                        (item) => DropdownMenuItem(
-                          value: item,
-                          child: Text(item.label),
-                        ),
-                      )
                       .toList(),
                   onChanged: (item) => setState(() {
+                    _resolvedCategories.add(line.category);
                     if (item == null) {
                       _selected.remove(line.category);
                     } else {
@@ -1038,6 +1034,161 @@ class _RequestAssignmentSheetState extends State<_RequestAssignmentSheet> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _InventoryColumnHeader extends StatelessWidget {
+  const _InventoryColumnHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          const Expanded(
+            flex: 2,
+            child: Text(
+              'Matériel',
+              style: TextStyle(
+                color: Colors.black54,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          const Expanded(
+            flex: 3,
+            child: Text(
+              'N° inventaire',
+              style: TextStyle(
+                color: Colors.black54,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InventoryChoiceRow extends StatelessWidget {
+  final String label;
+  final String? option;
+  final _DemoItem? value;
+  final List<_DemoItem> items;
+  final ValueChanged<_DemoItem?> onChanged;
+
+  const _InventoryChoiceRow({
+    required this.label,
+    this.option,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          flex: 2,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 13, right: 6),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: AppColors.donkerblauw,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                if (option != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    option!,
+                    style: const TextStyle(color: Colors.black54, fontSize: 12),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          flex: 3,
+          child: DropdownButtonFormField<_DemoItem?>(
+            initialValue: value,
+            decoration: const InputDecoration(
+              hintText: 'Choisir…',
+              border: OutlineInputBorder(),
+              contentPadding: EdgeInsets.symmetric(horizontal: 12),
+            ),
+            items: [
+              const DropdownMenuItem<_DemoItem?>(
+                value: null,
+                child: Text('Aucun article'),
+              ),
+              ...items.map(
+                (item) => DropdownMenuItem<_DemoItem?>(
+                  value: item,
+                  child: _InventoryMenuItem(item),
+                ),
+              ),
+            ],
+            selectedItemBuilder: (context) => [
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Aucun article'),
+              ),
+              ...items.map(
+                (item) => Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    item.inventoryNumber,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            ],
+            onChanged: onChanged,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _InventoryMenuItem extends StatelessWidget {
+  final _DemoItem item;
+
+  const _InventoryMenuItem(this.item);
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 92,
+          child: Text(
+            item.inventoryNumber,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            item.description,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1495,8 +1646,11 @@ class _DemoLine {
 }
 
 class _DemoItem {
-  final String label;
+  final String inventoryNumber;
+  final String description;
   final String option;
 
-  const _DemoItem(this.label, this.option);
+  const _DemoItem(this.inventoryNumber, this.description, this.option);
+
+  String get label => '$inventoryNumber · $description';
 }
