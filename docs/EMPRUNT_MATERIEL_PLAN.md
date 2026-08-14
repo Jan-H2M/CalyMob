@@ -128,6 +128,7 @@ La première implémentation couvre désormais la chaîne suivante :
 - **CalyMob** enregistre une demande par catégories et propriétés (`lines[{category, attrs, qty}]`) : bouteilles 10/12 L et raccord, gilet XS–XXL, palmes S/M/XL, ceinture 4–8 kg, détendeur, lampe, compas, ordinateur et parachute.
 - **CalyMob** affiche les statuts `submitted`, `validated`, `ready`, `handed_over` et `refused` dans « Mes demandes » et reste compatible avec les anciennes demandes basées sur `itemIds`.
 - **CalyCompta** expose l’onglet « Demandes » sous Stock › Prêts. Le responsable peut consulter les choix, attribuer les articles disponibles (donc les numéros d’inventaire), valider pour créer le prêt et la caution, ou refuser avec un motif.
+- Le membre ne choisit pas un numéro d’inventaire — il choisit la catégorie et la variante. L’article physique (marque/modèle + code d’inventaire, par exemple un ordinateur `ORD-6`) est choisi côté CalyCompta au moment de la remise, afin de ne pas exposer ou promettre un exemplaire précis avant l’attribution.
 - L’index Firestore membre/statut est ajouté pour que « Mes demandes » ne disparaisse plus silencieusement.
 
 Hors de cette livraison : l’envoi de notifications push/e-mail dédié et l’état intermédiaire « prêt à retirer » après validation. Ces éléments restent séparés pour éviter de créer une promesse de remise avant l’attribution physique.
