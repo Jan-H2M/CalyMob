@@ -53,10 +53,10 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
                   onTap: userId == null
                       ? null
                       : () => _openRequestSheet(
-                          memberId: userId,
-                          memberName: memberProvider.displayName,
-                          memberEmail: memberProvider.email ?? '',
-                        ),
+                            memberId: userId,
+                            memberName: memberProvider.displayName,
+                            memberEmail: memberProvider.email ?? '',
+                          ),
                 ),
               ),
               if (canValidate)
@@ -377,9 +377,7 @@ class _LoanReturnCard extends StatelessWidget {
               ),
               if (loan.items.isNotEmpty) ...[
                 const SizedBox(height: 12),
-                ...loan.items
-                    .take(3)
-                    .map(
+                ...loan.items.take(3).map(
                       (item) => Padding(
                         padding: const EdgeInsets.only(bottom: 5),
                         child: Text(
@@ -524,17 +522,17 @@ class _LoanRequestCard extends StatelessWidget {
                   ? request.lines.map((line) => line.label)
                   : request.items.map((item) => item.displayName))
               .map(
-                (label) => Padding(
-                  padding: const EdgeInsets.only(bottom: 5),
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      color: Colors.grey.shade800,
-                      fontSize: 13.5,
-                    ),
-                  ),
+            (label) => Padding(
+              padding: const EdgeInsets.only(bottom: 5),
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: Colors.grey.shade800,
+                  fontSize: 13.5,
                 ),
               ),
+            ),
+          ),
           if (request.items.isEmpty)
             Text(
               '${request.itemIds.length} article(s) demande(s)',
@@ -585,8 +583,7 @@ class _ReturnValidationSheet extends StatefulWidget {
     MaterialReturnDecision decision,
     double refundAmount,
     String notes,
-  )
-  onSubmit;
+  ) onSubmit;
 
   const _ReturnValidationSheet({required this.loan, required this.onSubmit});
 
@@ -639,9 +636,9 @@ class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
             Text(
               'Validation retour',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: AppColors.donkerblauw,
-              ),
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.donkerblauw,
+                  ),
             ),
             const SizedBox(height: 4),
             Text(
@@ -692,8 +689,8 @@ class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
                 setState(() {
                   _decision = value;
                   if (value == MaterialReturnDecision.fullRefund) {
-                    _refundController.text = widget.loan.cautionAmount
-                        .toStringAsFixed(2);
+                    _refundController.text =
+                        widget.loan.cautionAmount.toStringAsFixed(2);
                   } else if (value == MaterialReturnDecision.retainCaution ||
                       value == MaterialReturnDecision.decideLater) {
                     _refundController.text = '0.00';
@@ -759,7 +756,7 @@ class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
   Future<void> _submit() async {
     final refundAmount =
         double.tryParse(_refundController.text.trim().replaceAll(',', '.')) ??
-        0;
+            0;
 
     if (refundAmount < 0 || refundAmount > widget.loan.cautionAmount) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -895,9 +892,9 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
             Text(
               'Demande de pret',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: AppColors.donkerblauw,
-              ),
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.donkerblauw,
+                  ),
             ),
             const SizedBox(height: 6),
             Text(
@@ -1003,9 +1000,9 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
                                 onPressed: quantity <= 1
                                     ? null
                                     : () => setState(
-                                        () => _quantities[category.id] =
-                                            quantity - 1,
-                                      ),
+                                          () => _quantities[category.id] =
+                                              quantity - 1,
+                                        ),
                                 icon: const Icon(Icons.remove_circle_outline),
                               ),
                               Text(
@@ -1018,9 +1015,9 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
                                 onPressed: quantity >= 4
                                     ? null
                                     : () => setState(
-                                        () => _quantities[category.id] =
-                                            quantity + 1,
-                                      ),
+                                          () => _quantities[category.id] =
+                                              quantity + 1,
+                                        ),
                                 icon: const Icon(Icons.add_circle_outline),
                               ),
                             ],
@@ -1160,61 +1157,6 @@ class _MaterialRequestCategory {
     required this.icon,
     required this.choices,
   });
-}
-
-class _SheetStatusState extends StatelessWidget {
-  final IconData icon;
-  final String? title;
-  final String? subtitle;
-  final String? message;
-
-  const _SheetStatusState({
-    required this.icon,
-    this.title,
-    this.subtitle,
-    this.message,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final loading = message != null;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 18),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (loading)
-              const CircularProgressIndicator(color: AppColors.middenblauw)
-            else
-              Icon(icon, size: 56, color: AppColors.middenblauw),
-            const SizedBox(height: 16),
-            Text(
-              message ?? title ?? '',
-              style: const TextStyle(
-                color: AppColors.donkerblauw,
-                fontSize: 17,
-                fontWeight: FontWeight.w800,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            if (!loading && subtitle != null && subtitle!.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                subtitle!,
-                style: TextStyle(
-                  color: Colors.grey.shade700,
-                  fontSize: 14,
-                  height: 1.35,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _InfoChip extends StatelessWidget {
