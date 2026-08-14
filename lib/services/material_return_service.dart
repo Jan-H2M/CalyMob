@@ -22,7 +22,7 @@ class MaterialReturnService {
   final FirebaseFirestore _firestore;
 
   MaterialReturnService({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance;
+      : _firestore = firestore ?? FirebaseFirestore.instance;
 
   Stream<List<MaterialLoan>> watchReturnableLoans(String clubId) {
     return _firestore
@@ -58,22 +58,22 @@ class MaterialReturnService {
         .where('statut', isEqualTo: 'disponible')
         .snapshots()
         .asyncMap((snapshot) async {
-          final typeNames = await _loadItemTypeNames(clubId);
-          final items = snapshot.docs
-              .map((doc) {
-                final item = MaterialLoanItem.fromFirestore(doc);
-                return item.copyWithTypeName(typeNames[item.typeId]);
-              })
-              .where((item) => item.isBorrowable)
-              .toList();
-          if (kDebugMode) {
-            debugPrint(
-              'Materiel disponible geladen: ${items.length}/${snapshot.docs.length}',
-            );
-          }
-          items.sort((a, b) => a.displayName.compareTo(b.displayName));
-          return items;
-        });
+      final typeNames = await _loadItemTypeNames(clubId);
+      final items = snapshot.docs
+          .map((doc) {
+            final item = MaterialLoanItem.fromFirestore(doc);
+            return item.copyWithTypeName(typeNames[item.typeId]);
+          })
+          .where((item) => item.isBorrowable)
+          .toList();
+      if (kDebugMode) {
+        debugPrint(
+          'Materiel disponible geladen: ${items.length}/${snapshot.docs.length}',
+        );
+      }
+      items.sort((a, b) => a.displayName.compareTo(b.displayName));
+      return items;
+    });
   }
 
   Future<Map<String, String>> _loadItemTypeNames(String clubId) async {
@@ -88,8 +88,7 @@ class MaterialReturnService {
 
       return {
         for (final doc in snapshot.docs)
-          doc.id:
-              doc.data()['nom']?.toString() ??
+          doc.id: doc.data()['nom']?.toString() ??
               doc.data()['name']?.toString() ??
               doc.data()['code']?.toString() ??
               doc.id,
@@ -109,35 +108,34 @@ class MaterialReturnService {
         .doc(clubId)
         .collection('inventory_loan_requests')
         .where('memberId', isEqualTo: memberId)
-        .where(
-          'status',
-          whereIn: [
-            'submitted',
-            'approved',
-            'validated',
-            'ready',
-            'handed_over',
-            'refused',
-          ],
-        )
         .snapshots()
         .asyncMap((snapshot) async {
-          final requests = <MaterialLoanRequest>[];
-          for (final doc in snapshot.docs) {
-            final rawRequest = MaterialLoanRequest.fromFirestore(doc);
-            final items = rawRequest.lines.isEmpty
-                ? await _loadLoanItems(clubId, rawRequest.itemIds)
-                : const <MaterialLoanItem>[];
-            requests.add(MaterialLoanRequest.fromFirestore(doc, items: items));
-          }
+      final requests = <MaterialLoanRequest>[];
+      for (final doc in snapshot.docs) {
+        final rawRequest = MaterialLoanRequest.fromFirestore(doc);
+        if (!{
+          'submitted',
+          'approved',
+          'validated',
+          'ready',
+          'handed_over',
+          'refused',
+        }.contains(rawRequest.status)) {
+          continue;
+        }
+        final items = rawRequest.lines.isEmpty
+            ? await _loadLoanItems(clubId, rawRequest.itemIds)
+            : const <MaterialLoanItem>[];
+        requests.add(MaterialLoanRequest.fromFirestore(doc, items: items));
+      }
 
-          requests.sort((a, b) {
-            final aDate = a.createdAt ?? DateTime(1900);
-            final bDate = b.createdAt ?? DateTime(1900);
-            return bDate.compareTo(aDate);
-          });
-          return requests;
-        });
+      requests.sort((a, b) {
+        final aDate = a.createdAt ?? DateTime(1900);
+        final bDate = b.createdAt ?? DateTime(1900);
+        return bDate.compareTo(aDate);
+      });
+      return requests;
+    });
   }
 
   Future<String> submitLoanRequest({
@@ -303,9 +301,8 @@ class MaterialReturnService {
       }
 
       final existingDemandSnap = await transaction.get(demandRef);
-      final memberSnap = loan.memberId.isNotEmpty
-          ? await transaction.get(memberRef)
-          : null;
+      final memberSnap =
+          loan.memberId.isNotEmpty ? await transaction.get(memberRef) : null;
 
       String? paymentReference;
       String? paymentReferenceKey;
@@ -321,11 +318,14 @@ class MaterialReturnService {
         communicationQr =
             '$paymentReferenceKey Remb. caution ${loan.loanNumber}';
 
-        transaction.set(counterRef, {
-          'counter': nextCounter,
-          'year': year,
-          'updated_at': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+        transaction.set(
+            counterRef,
+            {
+              'counter': nextCounter,
+              'year': year,
+              'updated_at': FieldValue.serverTimestamp(),
+            },
+            SetOptions(merge: true));
       } else if (existingDemandSnap.exists) {
         final data = existingDemandSnap.data() ?? {};
         paymentReference = data['payment_reference']?.toString();
