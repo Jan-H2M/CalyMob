@@ -20,10 +20,16 @@ class MaterialFinanceMockupScreen extends StatefulWidget {
 class _MaterialFinanceMockupScreenState
     extends State<MaterialFinanceMockupScreen> {
   int _tab = 0;
-  bool _refundCreated = false;
-  bool _refundPaid = false;
-  String _returnMember = 'Alice DUPONT';
+  String? _selectedReturnLoanId;
   final Map<String, String> _returnStates = {};
+  final Map<String, String> _returnComments = {};
+  final Map<String, String> _retentionChoices = {};
+  final Map<String, String> _manualRetentions = {};
+  final Set<String> _returnPhotos = {};
+  final Set<String> _maintenanceFollowUps = {};
+  final Set<String> _missingEscalations = {};
+  final Set<String> _refundCreatedLoanIds = {};
+  final Set<String> _refundPaidLoanIds = {};
 
   final List<_DemoRequest> _requests = const [
     _DemoRequest(
@@ -142,6 +148,33 @@ class _MaterialFinanceMockupScreenState
     ],
   };
 
+  final List<_DemoReturnLoan> _returnLoans = const [
+    _DemoReturnLoan(
+      id: 'PRET-2026-0012',
+      memberName: 'Alice DUPONT',
+      initials: 'AD',
+      returnDate: '21/08/2026',
+      deposit: 120,
+      itemNumbers: ['GILET-036', 'ORD-006'],
+    ),
+    _DemoReturnLoan(
+      id: 'PRET-2026-0013',
+      memberName: 'Bruno MARTIN',
+      initials: 'BM',
+      returnDate: '22/08/2026',
+      deposit: 80,
+      itemNumbers: ['BT-007', 'PAL-042'],
+    ),
+    _DemoReturnLoan(
+      id: 'PRET-2026-0014',
+      memberName: 'Camille LEROY',
+      initials: 'CL',
+      returnDate: '19/08/2026',
+      deposit: 40,
+      itemNumbers: ['GILET-014'],
+    ),
+  ];
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -196,7 +229,7 @@ class _MaterialFinanceMockupScreenState
                     index == 0
                         ? 'Demandes 4'
                         : index == 2
-                            ? 'Retours 1'
+                            ? 'Retours ${_returnLoans.length}'
                             : labels[index],
                   ),
                   showCheckmark: false,
@@ -339,143 +372,616 @@ class _MaterialFinanceMockupScreenState
   }
 
   Widget _buildReturns() {
-    final request = _requests.firstWhere((item) => item.name == _returnMember);
-    final items = request.lines
-        .map((line) => _inventory[line.category]?.first)
-        .whereType<_DemoItem>()
-        .toList();
-    final allChecked = items.every((item) => _returnStates[item.label] != null);
-    final retained = items.fold<double>(
-      0,
-      (total, item) =>
-          total +
-          (_returnStates[item.label] == 'missing'
-              ? 40
-              : _returnStates[item.label] == 'damaged'
-                  ? 20
-                  : 0),
-    );
-    final refund = 120 - retained;
+    if (_selectedReturnLoanId == null) return _buildReturnList();
+    final loan = _returnLoans
+        .firstWhere((candidate) => candidate.id == _selectedReturnLoanId);
+    return _buildReturnDetails(loan);
+  }
 
+  Widget _buildReturnList() {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
       children: [
-        const _PageHeader(
+        _PageHeader(
           title: 'Retours de matériel',
           subtitle:
-              'Choisir le membre, contrôler chaque article et préparer le remboursement.',
+              '${_returnLoans.length} membre(s) ont du matériel à restituer. Ouvrez une fiche pour contrôler le retour.',
         ),
-        _SurfaceCard(
-          child: DropdownButtonFormField<String>(
-            initialValue: _returnMember,
-            decoration: const InputDecoration(
-              labelText: 'Student / prêt',
-              border: OutlineInputBorder(),
-            ),
-            items: _requests
-                .map((item) => DropdownMenuItem(
-                      value: item.name,
-                      child: Text('${item.name} · PRET-2026-0012'),
-                    ))
-                .toList(),
-            onChanged: (value) => setState(() {
-              _returnMember = value ?? _returnMember;
-              _returnStates.clear();
-            }),
-          ),
-        ),
-        const SizedBox(height: 12),
-        ...items.map(
-          (item) => _SurfaceCard(
-            margin: const EdgeInsets.only(bottom: 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(item.label,
-                    style: const TextStyle(
-                        color: AppColors.donkerblauw,
-                        fontWeight: FontWeight.w800)),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  initialValue: _returnStates[item.label],
-                  decoration: const InputDecoration(
-                    labelText: 'État au retour',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'complete',
-                      child: Text('Complet et en bon état'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'damaged',
-                      child: Text('Endommagé · retenue 20 EUR'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'missing',
-                      child: Text('Manquant · retenue 40 EUR'),
-                    ),
-                  ],
-                  onChanged: (value) => setState(() {
-                    if (value == null) {
-                      _returnStates.remove(item.label);
-                    } else {
-                      _returnStates[item.label] = value;
-                    }
-                  }),
-                ),
-              ],
-            ),
-          ),
-        ),
-        _SurfaceCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                allChecked ? 'Contrôle complet' : 'Contrôle à terminer',
-                style: TextStyle(
-                  color:
-                      allChecked ? AppColors.success : Colors.orange.shade800,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 8),
-              _AmountRow(label: 'Caution reçue', value: '120,00 EUR'),
-              _AmountRow(
-                label: 'Retenue',
-                value: '${retained.toStringAsFixed(2)} EUR',
-              ),
-              _AmountRow(
-                label: 'À rembourser',
-                value: '${refund.toStringAsFixed(2)} EUR',
-                emphasized: true,
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: allChecked
-                      ? () => setState(() => _refundCreated = true)
-                      : null,
-                  icon: Icon(
-                    _refundCreated
-                        ? Icons.check_circle_outline
-                        : Icons.send_outlined,
-                  ),
-                  label: Text(_refundCreated
-                      ? 'Remboursement demandé ✓'
-                      : 'Créer la demande de remboursement'),
-                ),
-              ),
-            ],
-          ),
+        ..._returnLoans.map((loan) => _buildReturnMemberCard(loan)),
+        const SizedBox(height: 4),
+        const _InfoBanner(
+          icon: Icons.history_outlined,
+          text:
+              'Les incidents, commentaires et photos restent liés à chaque article et seront visibles dans CaliConta.',
         ),
       ],
     );
   }
 
+  Widget _buildReturnMemberCard(_DemoReturnLoan loan) {
+    final status = _returnListStatus(loan);
+    return _SurfaceCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      onTap: () => setState(() => _selectedReturnLoanId = loan.id),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 25,
+            backgroundColor: AppColors.lichtblauw.withValues(alpha: 0.25),
+            foregroundColor: AppColors.donkerblauw,
+            child: Text(loan.initials,
+                style: const TextStyle(fontWeight: FontWeight.w800)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(loan.memberName,
+                    style: const TextStyle(
+                      color: AppColors.donkerblauw,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    )),
+                const SizedBox(height: 3),
+                Text('${loan.id} · ${loan.itemNumbers.length} article(s)'),
+                const SizedBox(height: 3),
+                Text('Retour prévu · ${loan.returnDate}',
+                    style:
+                        TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              _StatusPill(label: status.$1, color: status.$2),
+              const SizedBox(height: 8),
+              const Icon(Icons.chevron_right, color: AppColors.middenblauw),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReturnDetails(_DemoReturnLoan loan) {
+    final items = _itemsForReturn(loan);
+    final allChecked =
+        items.every((item) => _returnStates[_returnKey(loan, item)] != null);
+    final hasIncompleteEvidence = items
+        .any((item) => _isIssue(loan, item) && !_hasIssueEvidence(loan, item));
+    final hasMissingItem =
+        items.any((item) => _returnStates[_returnKey(loan, item)] == 'missing');
+    final retained = items.fold<double>(
+        0, (total, item) => total + _retentionFor(loan, item));
+    final refund = loan.deposit - retained;
+    final canCreateRefund =
+        allChecked && !hasIncompleteEvidence && !hasMissingItem;
+    final refundCreated = _refundCreatedLoanIds.contains(loan.id);
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+      children: [
+        _PageHeader(
+          title: 'Retour de ${loan.memberName}',
+          subtitle:
+              'Contrôlez chaque article. Les incidents sont conservés dans l’historique du matériel.',
+          action: IconButton(
+            tooltip: 'Liste des retours',
+            onPressed: () => setState(() => _selectedReturnLoanId = null),
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+          ),
+        ),
+        _SurfaceCard(
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 23,
+                backgroundColor: AppColors.lichtblauw.withValues(alpha: 0.25),
+                foregroundColor: AppColors.donkerblauw,
+                child: Text(loan.initials,
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(loan.memberName,
+                        style: const TextStyle(
+                          color: AppColors.donkerblauw,
+                          fontWeight: FontWeight.w800,
+                        )),
+                    Text('${loan.id} · retour prévu le ${loan.returnDate}'),
+                  ],
+                ),
+              ),
+              _StatusPill(
+                  label: 'Caution ${_formatAmount(loan.deposit)}',
+                  color: AppColors.middenblauw),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        ...items.map((item) => _buildReturnItemCard(loan, item)),
+        _buildReturnSummary(
+          loan: loan,
+          allChecked: allChecked,
+          hasIncompleteEvidence: hasIncompleteEvidence,
+          hasMissingItem: hasMissingItem,
+          retained: retained,
+          refund: refund,
+          refundCreated: refundCreated,
+          canCreateRefund: canCreateRefund,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReturnItemCard(_DemoReturnLoan loan, _DemoItem item) {
+    final key = _returnKey(loan, item);
+    final state = _returnStates[key];
+    final issue = _isIssue(loan, item);
+    final hasEvidence = _hasIssueEvidence(loan, item);
+    final maintenanceCreated = _maintenanceFollowUps.contains(key);
+    final escalated = _missingEscalations.contains(key);
+
+    return _SurfaceCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.inventory_2_outlined,
+                  color: AppColors.middenblauw),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(item.inventoryNumber,
+                        style: const TextStyle(
+                          color: AppColors.donkerblauw,
+                          fontWeight: FontWeight.w800,
+                        )),
+                    Text(item.description,
+                        style: const TextStyle(color: Colors.black54)),
+                  ],
+                ),
+              ),
+              if (state != null)
+                _StatusPill(
+                  label: _returnStateLabel(state),
+                  color: _returnStateColor(state),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: state,
+            decoration: const InputDecoration(
+              labelText: 'État au retour',
+              border: OutlineInputBorder(),
+            ),
+            items: const [
+              DropdownMenuItem(
+                value: 'complete',
+                child: Text('Complet et en bon état'),
+              ),
+              DropdownMenuItem(
+                value: 'damaged',
+                child: Text('Endommagé'),
+              ),
+              DropdownMenuItem(
+                value: 'missing',
+                child: Text('Manquant'),
+              ),
+            ],
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() {
+                _returnStates[key] = value;
+                if (value != 'missing') _missingEscalations.remove(key);
+                if (value != 'damaged') {
+                  _retentionChoices.remove(key);
+                  _manualRetentions.remove(key);
+                  _maintenanceFollowUps.remove(key);
+                }
+              });
+            },
+          ),
+          if (state == 'damaged') ...[
+            const SizedBox(height: 12),
+            _buildDamageResolution(loan, item),
+          ],
+          if (issue) ...[
+            const SizedBox(height: 12),
+            TextFormField(
+              initialValue: _returnComments[key],
+              minLines: 2,
+              maxLines: 3,
+              onChanged: (value) =>
+                  setState(() => _returnComments[key] = value),
+              decoration: const InputDecoration(
+                labelText: 'Commentaire sur l’article',
+                hintText: 'Décrivez précisément l’état constaté…',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: () => setState(() => _returnPhotos.add(key)),
+              icon: Icon(_returnPhotos.contains(key)
+                  ? Icons.photo_library_outlined
+                  : Icons.add_a_photo_outlined),
+              label: Text(_returnPhotos.contains(key)
+                  ? 'Photo jointe ✓'
+                  : 'Ajouter une photo'),
+            ),
+            if (!hasEvidence) ...[
+              const SizedBox(height: 10),
+              const _InfoBanner(
+                icon: Icons.warning_amber_outlined,
+                text:
+                    'Un commentaire et une photo sont requis pour documenter cet incident.',
+              ),
+            ],
+            const SizedBox(height: 12),
+            _buildItemHistory(
+              loan: loan,
+              item: item,
+              maintenanceCreated: maintenanceCreated,
+              escalated: escalated,
+            ),
+          ],
+          if (state == 'damaged') ...[
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: hasEvidence
+                  ? () => setState(() => _maintenanceFollowUps.add(key))
+                  : null,
+              icon: Icon(maintenanceCreated
+                  ? Icons.build_circle_outlined
+                  : Icons.build_outlined),
+              label: Text(maintenanceCreated
+                  ? 'Suivi maintenance créé ✓'
+                  : 'Créer un suivi de maintenance'),
+            ),
+          ],
+          if (state == 'missing') ...[
+            const SizedBox(height: 10),
+            _buildMissingEscalation(
+              loan: loan,
+              item: item,
+              hasEvidence: hasEvidence,
+              escalated: escalated,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDamageResolution(_DemoReturnLoan loan, _DemoItem item) {
+    final key = _returnKey(loan, item);
+    final choice = _retentionChoices[key] ?? 'none';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        DropdownButtonFormField<String>(
+          initialValue: choice,
+          decoration: const InputDecoration(
+            labelText: 'Retenue proposée',
+            border: OutlineInputBorder(),
+          ),
+          items: const [
+            DropdownMenuItem(value: 'none', child: Text('Aucune retenue')),
+            DropdownMenuItem(
+              value: 'repair_20',
+              child: Text('Forfait réparation · 20,00 EUR'),
+            ),
+            DropdownMenuItem(
+              value: 'replacement_40',
+              child: Text('Pièce à remplacer · 40,00 EUR'),
+            ),
+            DropdownMenuItem(
+              value: 'manual',
+              child: Text('Montant manuel'),
+            ),
+          ],
+          onChanged: (value) => setState(
+            () => _retentionChoices[key] = value ?? 'none',
+          ),
+        ),
+        if (choice == 'manual') ...[
+          const SizedBox(height: 10),
+          TextFormField(
+            initialValue: _manualRetentions[key],
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            onChanged: (value) =>
+                setState(() => _manualRetentions[key] = value),
+            decoration: const InputDecoration(
+              labelText: 'Montant de la retenue',
+              suffixText: 'EUR',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ],
+        const SizedBox(height: 8),
+        const Text(
+          'La retenue est proposée par l’encadrant et reste traçable avec le constat.',
+          style: TextStyle(color: Colors.black54, fontSize: 12),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMissingEscalation({
+    required _DemoReturnLoan loan,
+    required _DemoItem item,
+    required bool hasEvidence,
+    required bool escalated,
+  }) {
+    final key = _returnKey(loan, item);
+    if (escalated) {
+      return const _InfoBanner(
+        icon: Icons.escalator_warning_outlined,
+        text:
+            'Incident envoyé à CaliConta. Le responsable matériel décide de la compensation avant tout remboursement.',
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _InfoBanner(
+          icon: Icons.report_problem_outlined,
+          text:
+              'Aucune retenue n’est calculée automatiquement pour un article manquant. Une décision est requise.',
+        ),
+        const SizedBox(height: 10),
+        FilledButton.icon(
+          onPressed: hasEvidence
+              ? () => setState(() => _missingEscalations.add(key))
+              : null,
+          icon: const Icon(Icons.priority_high_outlined),
+          label: const Text('Créer l’escalade dans CaliConta'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildItemHistory({
+    required _DemoReturnLoan loan,
+    required _DemoItem item,
+    required bool maintenanceCreated,
+    required bool escalated,
+  }) {
+    final key = _returnKey(loan, item);
+    final state = _returnStates[key] ?? 'damaged';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blueGrey.shade50,
+        border: Border.all(color: Colors.blueGrey.shade100),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Historique matériel · CaliConta',
+              style: TextStyle(
+                  color: AppColors.donkerblauw, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 5),
+          Text(
+            'Retour contrôlé · ${_returnStateLabel(state)} · commentaire${_returnPhotos.contains(key) ? ' + photo' : ''}',
+            style: const TextStyle(fontSize: 12),
+          ),
+          if (maintenanceCreated)
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text('Suivi de maintenance · à réparer',
+                  style: TextStyle(fontSize: 12, color: AppColors.success)),
+            ),
+          if (escalated)
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text('Incident de matériel · décision en attente',
+                  style: TextStyle(fontSize: 12, color: Colors.deepOrange)),
+            ),
+          const Padding(
+            padding: EdgeInsets.only(top: 4),
+            child: Text('La clôture “réparé” sera ajoutée à cette même fiche.',
+                style: TextStyle(fontSize: 12, color: Colors.black54)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReturnSummary({
+    required _DemoReturnLoan loan,
+    required bool allChecked,
+    required bool hasIncompleteEvidence,
+    required bool hasMissingItem,
+    required double retained,
+    required double refund,
+    required bool refundCreated,
+    required bool canCreateRefund,
+  }) {
+    final title = !allChecked
+        ? 'Contrôle à terminer'
+        : hasIncompleteEvidence
+            ? 'Constat à compléter'
+            : hasMissingItem
+                ? 'Décision requise'
+                : 'Contrôle complet';
+    final titleColor = !allChecked || hasIncompleteEvidence
+        ? Colors.orange.shade800
+        : hasMissingItem
+            ? Colors.deepOrange
+            : AppColors.success;
+
+    return _SurfaceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title,
+              style: TextStyle(color: titleColor, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 8),
+          _AmountRow(
+              label: 'Caution reçue', value: _formatAmount(loan.deposit)),
+          if (hasMissingItem) ...[
+            const _AmountRow(label: 'Compensation', value: 'À décider'),
+            const _AmountRow(label: 'Remboursement', value: 'En attente'),
+            const SizedBox(height: 8),
+            const _InfoBanner(
+              icon: Icons.pending_actions_outlined,
+              text:
+                  'Le dossier reste ouvert jusqu’à la décision du responsable matériel dans CaliConta.',
+            ),
+          ] else ...[
+            _AmountRow(label: 'Retenue', value: _formatAmount(retained)),
+            _AmountRow(
+              label: 'À rembourser',
+              value: _formatAmount(refund),
+              emphasized: true,
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: canCreateRefund
+                    ? () => setState(() => _refundCreatedLoanIds.add(loan.id))
+                    : null,
+                icon: Icon(refundCreated
+                    ? Icons.check_circle_outline
+                    : Icons.send_outlined),
+                label: Text(refundCreated
+                    ? 'Remboursement demandé ✓'
+                    : 'Créer la demande de remboursement'),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  List<_DemoItem> _itemsForReturn(_DemoReturnLoan loan) {
+    final items = <_DemoItem>[];
+    for (final number in loan.itemNumbers) {
+      final item = _findInventoryItem(number);
+      if (item != null) items.add(item);
+    }
+    return items;
+  }
+
+  _DemoItem? _findInventoryItem(String inventoryNumber) {
+    for (final items in _inventory.values) {
+      for (final item in items) {
+        if (item.inventoryNumber == inventoryNumber) return item;
+      }
+    }
+    return null;
+  }
+
+  String _returnKey(_DemoReturnLoan loan, _DemoItem item) =>
+      '${loan.id}:${item.inventoryNumber}';
+
+  bool _isIssue(_DemoReturnLoan loan, _DemoItem item) {
+    final state = _returnStates[_returnKey(loan, item)];
+    return state == 'damaged' || state == 'missing';
+  }
+
+  bool _hasIssueEvidence(_DemoReturnLoan loan, _DemoItem item) {
+    final key = _returnKey(loan, item);
+    return (_returnComments[key]?.trim().isNotEmpty ?? false) &&
+        _returnPhotos.contains(key);
+  }
+
+  double _retentionFor(_DemoReturnLoan loan, _DemoItem item) {
+    if (_returnStates[_returnKey(loan, item)] != 'damaged') return 0;
+    switch (_retentionChoices[_returnKey(loan, item)] ?? 'none') {
+      case 'repair_20':
+        return 20;
+      case 'replacement_40':
+        return 40;
+      case 'manual':
+        return double.tryParse((_manualRetentions[_returnKey(loan, item)] ?? '')
+                .replaceAll(',', '.')) ??
+            0;
+      default:
+        return 0;
+    }
+  }
+
+  (String, Color) _returnListStatus(_DemoReturnLoan loan) {
+    final items = _itemsForReturn(loan);
+    if (items
+        .any((item) => _returnStates[_returnKey(loan, item)] == 'missing')) {
+      return ('Incident', Colors.deepOrange);
+    }
+    if (items.isNotEmpty &&
+        items.every((item) => _returnStates[_returnKey(loan, item)] != null)) {
+      return ('Contrôlé', AppColors.success);
+    }
+    if (items.any((item) => _returnStates[_returnKey(loan, item)] != null)) {
+      return ('En cours', Colors.orange);
+    }
+    return ('À contrôler', Colors.orange);
+  }
+
+  String _returnStateLabel(String state) {
+    switch (state) {
+      case 'complete':
+        return 'Bon état';
+      case 'damaged':
+        return 'Endommagé';
+      case 'missing':
+        return 'Manquant';
+      default:
+        return state;
+    }
+  }
+
+  Color _returnStateColor(String state) {
+    switch (state) {
+      case 'complete':
+        return AppColors.success;
+      case 'damaged':
+        return Colors.orange.shade800;
+      case 'missing':
+        return Colors.deepOrange;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _formatAmount(double amount) =>
+      '${amount.toStringAsFixed(2).replaceAll('.', ',')} EUR';
+
+  _DemoReturnLoan? _firstCreatedRefundLoan() {
+    for (final loan in _returnLoans) {
+      if (_refundCreatedLoanIds.contains(loan.id)) return loan;
+    }
+    return null;
+  }
+
   Widget _buildFinances() {
+    final refundLoan = _firstCreatedRefundLoan();
+    final refundPaid =
+        refundLoan != null && _refundPaidLoanIds.contains(refundLoan.id);
+    final proposedRefund = refundLoan == null
+        ? 0.0
+        : refundLoan.deposit -
+            _itemsForReturn(refundLoan).fold<double>(
+              0,
+              (total, item) => total + _retentionFor(refundLoan, item),
+            );
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
       children: [
@@ -515,25 +1021,30 @@ class _MaterialFinanceMockupScreenState
                       fontWeight: FontWeight.w800,
                       fontSize: 16)),
               const SizedBox(height: 12),
-              if (!_refundCreated)
+              if (refundLoan == null)
                 const _InfoBanner(
                   icon: Icons.inbox_outlined,
                   text: 'La liste se remplit après le contrôle d’un retour.',
                 )
               else ...[
-                _AmountRow(label: 'Membre', value: _returnMember),
-                const _AmountRow(label: 'Caution reçue', value: '120,00 EUR'),
-                const _AmountRow(label: 'Montant proposé', value: '120,00 EUR'),
+                _AmountRow(label: 'Membre', value: refundLoan.memberName),
+                _AmountRow(
+                    label: 'Caution reçue',
+                    value: _formatAmount(refundLoan.deposit)),
+                _AmountRow(
+                    label: 'Montant proposé',
+                    value: _formatAmount(proposedRefund)),
                 _StatusPill(
-                  label: _refundPaid ? 'Exécuté' : 'À exécuter',
-                  color: _refundPaid ? AppColors.success : Colors.orange,
+                  label: refundPaid ? 'Exécuté' : 'À exécuter',
+                  color: refundPaid ? AppColors.success : Colors.orange,
                 ),
                 const SizedBox(height: 12),
-                if (!_refundPaid)
+                if (!refundPaid)
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
-                      onPressed: () => setState(() => _refundPaid = true),
+                      onPressed: () =>
+                          setState(() => _refundPaidLoanIds.add(refundLoan.id)),
                       icon: const Icon(Icons.account_balance_outlined),
                       label: const Text('Marquer comme payé'),
                     ),
@@ -2204,6 +2715,24 @@ class _DemoLine {
   final String option;
 
   const _DemoLine(this.category, this.option);
+}
+
+class _DemoReturnLoan {
+  final String id;
+  final String memberName;
+  final String initials;
+  final String returnDate;
+  final double deposit;
+  final List<String> itemNumbers;
+
+  const _DemoReturnLoan({
+    required this.id,
+    required this.memberName,
+    required this.initials,
+    required this.returnDate,
+    required this.deposit,
+    required this.itemNumbers,
+  });
 }
 
 class _DemoItem {
