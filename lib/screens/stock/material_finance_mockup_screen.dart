@@ -165,7 +165,7 @@ class _MaterialFinanceMockupScreenState
       id: 'PRET-2026-0014',
       memberName: 'Camille LEROY',
       initials: 'CL',
-      returnDate: '19/08/2026',
+      returnDate: '12/08/2026',
       deposit: 40,
       itemNumbers: ['GILET-014'],
     ),
@@ -342,11 +342,14 @@ class _MaterialFinanceMockupScreenState
 
   Widget _buildActiveLoanCard(_DemoReturnLoan loan) {
     final items = _itemsForReturn(loan);
+    final isOverdue = _isReturnOverdue(loan);
     final material = items
         .map((item) => '${_categoryForItem(item)} · ${item.option}')
         .join(' · ');
     return _SurfaceCard(
       margin: const EdgeInsets.only(bottom: 12),
+      backgroundColor: isOverdue ? Colors.deepOrange.shade50 : null,
+      borderColor: isOverdue ? Colors.deepOrange.shade300 : null,
       onTap: () => setState(() {
         _selectedReturnLoanId = loan.id;
         _tab = 2;
@@ -380,18 +383,26 @@ class _MaterialFinanceMockupScreenState
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: Colors.black54)),
                 const SizedBox(height: 6),
-                Text('Retour prévu · ${loan.returnDate}',
-                    style:
-                        TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                Text(
+                  '${isOverdue ? 'En retard · retour prévu' : 'Retour prévu'} · ${loan.returnDate}',
+                  style: TextStyle(
+                    color: isOverdue ? Colors.deepOrange : Colors.grey.shade600,
+                    fontSize: 12,
+                    fontWeight: isOverdue ? FontWeight.w800 : FontWeight.normal,
+                  ),
+                ),
               ],
             ),
           ),
           const SizedBox(width: 6),
-          const Column(
+          Column(
             children: [
-              _StatusPill(label: 'Actif', color: AppColors.success),
-              SizedBox(height: 10),
-              Icon(Icons.chevron_right, color: AppColors.middenblauw),
+              _StatusPill(
+                label: isOverdue ? 'En retard' : 'Actif',
+                color: isOverdue ? Colors.deepOrange : AppColors.success,
+              ),
+              const SizedBox(height: 10),
+              const Icon(Icons.chevron_right, color: AppColors.middenblauw),
             ],
           ),
         ],
@@ -428,8 +439,11 @@ class _MaterialFinanceMockupScreenState
 
   Widget _buildReturnMemberCard(_DemoReturnLoan loan) {
     final status = _returnListStatus(loan);
+    final isOverdue = _isReturnOverdue(loan);
     return _SurfaceCard(
       margin: const EdgeInsets.only(bottom: 12),
+      backgroundColor: isOverdue ? Colors.deepOrange.shade50 : null,
+      borderColor: isOverdue ? Colors.deepOrange.shade300 : null,
       onTap: () => setState(() => _selectedReturnLoanId = loan.id),
       child: Row(
         children: [
@@ -454,9 +468,14 @@ class _MaterialFinanceMockupScreenState
                 const SizedBox(height: 3),
                 Text('${loan.id} · ${loan.itemNumbers.length} article(s)'),
                 const SizedBox(height: 3),
-                Text('Retour prévu · ${loan.returnDate}',
-                    style:
-                        TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                Text(
+                  '${isOverdue ? 'En retard · retour prévu' : 'Retour prévu'} · ${loan.returnDate}',
+                  style: TextStyle(
+                    color: isOverdue ? Colors.deepOrange : Colors.grey.shade600,
+                    fontSize: 12,
+                    fontWeight: isOverdue ? FontWeight.w800 : FontWeight.normal,
+                  ),
+                ),
               ],
             ),
           ),
@@ -968,10 +987,30 @@ class _MaterialFinanceMockupScreenState
         items.every((item) => _returnStates[_returnKey(loan, item)] != null)) {
       return ('Contrôlé', AppColors.success);
     }
+    if (_isReturnOverdue(loan)) return ('En retard', Colors.deepOrange);
     if (items.any((item) => _returnStates[_returnKey(loan, item)] != null)) {
       return ('En cours', Colors.orange);
     }
     return ('À contrôler', Colors.orange);
+  }
+
+  bool _isReturnOverdue(_DemoReturnLoan loan) {
+    final parts = loan.returnDate.split('/');
+    if (parts.length != 3) return false;
+    final day = int.tryParse(parts[0]);
+    final month = int.tryParse(parts[1]);
+    final year = int.tryParse(parts[2]);
+    if (day == null || month == null || year == null) return false;
+
+    final items = _itemsForReturn(loan);
+    final fullyChecked = items.isNotEmpty &&
+        items.every((item) => _returnStates[_returnKey(loan, item)] != null);
+    if (fullyChecked) return false;
+
+    final dueDate = DateTime(year, month, day);
+    final today = DateTime.now();
+    final startOfToday = DateTime(today.year, today.month, today.day);
+    return dueDate.isBefore(startOfToday);
   }
 
   String _returnStateLabel(String state) {
@@ -2538,18 +2577,28 @@ class _SurfaceCard extends StatelessWidget {
   final Widget child;
   final VoidCallback? onTap;
   final EdgeInsetsGeometry margin;
+  final Color? backgroundColor;
+  final Color? borderColor;
 
   const _SurfaceCard({
     required this.child,
     this.onTap,
     this.margin = EdgeInsets.zero,
+    this.backgroundColor,
+    this.borderColor,
   });
 
   @override
   Widget build(BuildContext context) {
     final card = Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(14),
+      color: backgroundColor ?? Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: borderColor == null
+            ? BorderSide.none
+            : BorderSide(color: borderColor!),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: Padding(padding: const EdgeInsets.all(14), child: child),
     );
     return Container(
