@@ -1176,7 +1176,7 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'statut', 'current_loan_id', 'updatedAt'
           ])
-          && request.resource.data.statut in ['disponible', 'prete', 'en_maintenance']
+          && request.resource.data.statut in ['disponible', 'reserve', 'prete', 'en_maintenance']
         );
         allow delete: if isAdmin(clubId) && hasValidSession(clubId);
       }

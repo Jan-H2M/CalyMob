@@ -120,4 +120,51 @@ void main() {
         .get();
     expect(loans.docs, isEmpty);
   });
+
+  test('reserves material until an EPC QR caution is confirmed', () async {
+    final gilet = item(id: 'gilet-036', code: 'GILET-036', variant: 'XL');
+    await seedItem(gilet);
+
+    final loanId = await service.createPendingQrLoan(
+      clubId: clubId,
+      member: const MaterialLoanMember(id: 'alice', name: 'Alice DUPONT'),
+      items: [gilet],
+      expectedReturnDate: DateTime(2026, 8, 21),
+      createdByUserId: 'encadrant-1',
+      createdByName: 'Encadrant',
+      paymentMode: 'epc_qr_email',
+    );
+
+    var loan = await firestore
+        .collection('clubs')
+        .doc(clubId)
+        .collection('inventory_loans')
+        .doc(loanId)
+        .get();
+    expect(loan.data()?['statut'], 'attente_caution');
+    expect(loan.data()?['caution_payment_status'], 'unpaid');
+    expect(loan.data()?['handover_status'], 'blocked');
+
+    var inventory = await firestore
+        .collection('clubs')
+        .doc(clubId)
+        .collection('inventory_items')
+        .doc(gilet.id)
+        .get();
+    expect(inventory.data()?['statut'], 'reserve');
+    expect(inventory.data()?['current_loan_id'], loanId);
+
+    await service.confirmPendingPaymentAndHandover(
+      clubId: clubId,
+      loanId: loanId,
+      confirmedByUserId: 'encadrant-1',
+      confirmedByName: 'Encadrant',
+    );
+
+    loan = await loan.reference.get();
+    inventory = await inventory.reference.get();
+    expect(loan.data()?['statut'], 'actif');
+    expect(loan.data()?['caution_payment_status'], 'paid');
+    expect(inventory.data()?['statut'], 'prete');
+  });
 }

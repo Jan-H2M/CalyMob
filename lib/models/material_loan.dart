@@ -285,6 +285,7 @@ class MaterialLoan {
   final DateTime? expectedReturnDate;
   final double cautionAmount;
   final String cautionStatus;
+  final String paymentMode;
   final String status;
   final String? refundDemandId;
   final List<MaterialLoanItem> items;
@@ -299,6 +300,7 @@ class MaterialLoan {
     this.expectedReturnDate,
     required this.cautionAmount,
     required this.cautionStatus,
+    this.paymentMode = 'epc_qr_onsite',
     required this.status,
     this.refundDemandId,
     required this.items,
@@ -341,6 +343,7 @@ class MaterialLoan {
       ),
       cautionStatus: data['caution_payment_status']?.toString() ??
           (data['caution_payee'] == true ? 'paid' : 'unpaid'),
+      paymentMode: data['payment_mode']?.toString() ?? 'epc_qr_onsite',
       status: data['statut']?.toString() ?? 'actif',
       refundDemandId: (data['caution_refund_request_id'] ??
               data['caution_refund_demand_id'])

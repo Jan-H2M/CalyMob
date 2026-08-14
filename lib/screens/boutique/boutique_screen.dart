@@ -213,7 +213,7 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
 
   bool _canOpenMaterialReturns(MemberProvider memberProvider) {
     final role = memberProvider.appRole?.toLowerCase();
-    if (role == 'admin' || role == 'superadmin' || role == 'validateur') {
+    if (role == 'admin' || role == 'superadmin') {
       return true;
     }
 

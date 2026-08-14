@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
@@ -86,7 +87,10 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
                 ),
               Expanded(
                 child: canValidate
-                    ? _buildReturnValidationList()
+                    ? _buildReturnValidationList(
+                        createdByUserId: userId,
+                        createdByName: memberProvider.displayName,
+                      )
                     : _buildMemberLoans(userId),
               ),
             ],
@@ -96,48 +100,218 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
     );
   }
 
-  Widget _buildReturnValidationList() {
+  Widget _buildReturnValidationList({
+    required String? createdByUserId,
+    required String createdByName,
+  }) {
     return StreamBuilder<List<MaterialLoan>>(
-      stream: _service.watchReturnableLoans(_clubId),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const LoadingWidget(
-            message: 'Chargement des prets en cours...',
-          );
-        }
+      stream: _loanService.watchPendingPaymentLoans(_clubId),
+      builder: (context, pendingSnapshot) {
+        return StreamBuilder<List<MaterialLoan>>(
+          stream: _service.watchReturnableLoans(_clubId),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const LoadingWidget(
+                message: 'Chargement des prets en cours...',
+              );
+            }
 
-        if (snapshot.hasError) {
-          return EmptyStateWidget(
-            icon: Icons.error_outline,
-            title: 'Impossible de charger les retours',
-            subtitle: snapshot.error.toString(),
-          );
-        }
+            if (snapshot.hasError) {
+              return EmptyStateWidget(
+                icon: Icons.error_outline,
+                title: 'Impossible de charger les retours',
+                subtitle: snapshot.error.toString(),
+              );
+            }
 
-        final loans = _filterLoans(snapshot.data ?? const []);
-        if (loans.isEmpty) {
-          return const EmptyStateWidget(
-            icon: Icons.inventory_2_outlined,
-            title: 'Aucun retour en attente',
-            subtitle:
-                'Utilisez le bouton ci-dessus pour encoder une demande de pret.',
-          );
-        }
+            final pendingLoans = _filterLoans(pendingSnapshot.data ?? const []);
+            final loans = _filterLoans(snapshot.data ?? const []);
+            if (pendingLoans.isEmpty && loans.isEmpty) {
+              return const EmptyStateWidget(
+                icon: Icons.inventory_2_outlined,
+                title: 'Aucun retour en attente',
+                subtitle:
+                    'Utilisez le bouton ci-dessus pour encoder une demande de pret.',
+              );
+            }
 
-        return ListView.separated(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-          itemCount: loans.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 12),
-          itemBuilder: (context, index) {
-            final loan = loans[index];
-            return _LoanReturnCard(
-              loan: loan,
-              onValidate: () => _openReturnSheet(loan),
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              children: [
+                if (pendingLoans.isNotEmpty) ...[
+                  const _ListSectionTitle('Cautions à confirmer'),
+                  const Text(
+                    'Le matériel est réservé, mais ne peut pas encore quitter le local.',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  const SizedBox(height: 10),
+                  ...pendingLoans.map(
+                    (loan) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _PendingLoanCard(
+                        loan: loan,
+                        onShowQr: loan.paymentMode == 'epc_qr_onsite'
+                            ? () => _showPendingLoanQr(loan)
+                            : null,
+                        onSendEmail: loan.paymentMode == 'epc_qr_email'
+                            ? () => _sendPendingLoanPaymentEmail(loan)
+                            : null,
+                        onConfirm: createdByUserId == null
+                            ? null
+                            : () => _confirmPendingLoan(
+                                  loan,
+                                  createdByUserId: createdByUserId,
+                                  createdByName: createdByName,
+                                ),
+                      ),
+                    ),
+                  ),
+                ],
+                if (loans.isNotEmpty) ...[
+                  const _ListSectionTitle('Retours à contrôler'),
+                  ...loans.map(
+                    (loan) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _LoanReturnCard(
+                        loan: loan,
+                        onValidate: () => _openReturnSheet(loan),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             );
           },
         );
       },
     );
+  }
+
+  Future<void> _confirmPendingLoan(
+    MaterialLoan loan, {
+    required String createdByUserId,
+    required String createdByName,
+  }) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Confirmer la caution ?'),
+        content: Text(
+          'Confirmez seulement après avoir constaté les ${loan.cautionAmount.toStringAsFixed(2)} EUR. Le matériel sera alors remis à ${loan.memberName}.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Paiement constaté'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await _loanService.confirmPendingPaymentAndHandover(
+        clubId: _clubId,
+        loanId: loan.id,
+        confirmedByUserId: createdByUserId,
+        confirmedByName: createdByName,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Caution confirmée. Matériel remis.'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Impossible de confirmer la caution : $error'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  Future<void> _showPendingLoanQr(MaterialLoan loan) async {
+    try {
+      final qr = await _loanService.getPendingLoanPaymentQr(
+        clubId: _clubId,
+        loanId: loan.id,
+      );
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text('Caution · ${qr.amount.toStringAsFixed(2)} EUR'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Le membre scanne ce QR avec son application bancaire. Le matériel ne peut être remis qu’après constatation du paiement.',
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  color: Colors.white,
+                  padding: const EdgeInsets.all(12),
+                  child: QrImageView(
+                    data: qr.epcPayload,
+                    version: QrVersions.auto,
+                    size: 220,
+                    errorCorrectionLevel: QrErrorCorrectLevel.M,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text('Communication : ${qr.reference}'),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Fermer'),
+            ),
+          ],
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Impossible d’afficher le QR : $error'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  Future<void> _sendPendingLoanPaymentEmail(MaterialLoan loan) async {
+    try {
+      await _loanService.sendPendingLoanPaymentQrEmail(
+        clubId: _clubId,
+        loanId: loan.id,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('QR envoyé à l’adresse e-mail enregistrée du membre.'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Impossible d’envoyer le QR : $error'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
   }
 
   Widget _buildMemberLoans(String? userId) {
@@ -191,7 +365,7 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
 
   bool _canValidateReturns(MemberProvider memberProvider) {
     final role = memberProvider.appRole?.toLowerCase();
-    if (role == 'admin' || role == 'superadmin' || role == 'validateur') {
+    if (role == 'admin' || role == 'superadmin') {
       return true;
     }
 
@@ -300,6 +474,116 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
         ),
       );
     }
+  }
+}
+
+class _ListSectionTitle extends StatelessWidget {
+  final String text;
+
+  const _ListSectionTitle(this.text);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(top: 6, bottom: 6),
+        child: Text(
+          text,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 17,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      );
+}
+
+class _PendingLoanCard extends StatelessWidget {
+  final MaterialLoan loan;
+  final VoidCallback? onShowQr;
+  final VoidCallback? onSendEmail;
+  final VoidCallback? onConfirm;
+
+  const _PendingLoanCard({
+    required this.loan,
+    this.onShowQr,
+    this.onSendEmail,
+    this.onConfirm,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final emailSent = loan.cautionStatus == 'email_sent';
+    return Material(
+      color: Colors.amber.shade50,
+      borderRadius: BorderRadius.circular(14),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const _LoanActionIcon(icon: Icons.lock_clock_outlined),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        loan.memberName,
+                        style: const TextStyle(
+                          color: AppColors.donkerblauw,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Text(loan.loanNumber),
+                    ],
+                  ),
+                ),
+                _StatusPill(
+                    label: emailSent ? 'QR e-mail envoyé' : 'QR à montrer'),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '${loan.itemIds.length} article(s) réservé(s) · caution ${loan.cautionAmount.toStringAsFixed(2)} EUR',
+              style: const TextStyle(color: Colors.black87),
+            ),
+            const SizedBox(height: 10),
+            if (loan.paymentMode == 'epc_qr_onsite') ...[
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: onShowQr,
+                  icon: const Icon(Icons.qr_code_2_outlined),
+                  label: const Text('Afficher le QR sur place'),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ] else ...[
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: onSendEmail,
+                  icon: const Icon(Icons.email_outlined),
+                  label: Text(emailSent
+                      ? 'Renvoyer le QR au membre'
+                      : 'Envoyer le QR au membre'),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: onConfirm,
+                icon: const Icon(Icons.verified_outlined),
+                label: const Text('Paiement constaté : remettre le matériel'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -1046,7 +1330,8 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
   MaterialLoanMember? _member;
   DateTime _returnDate = DateTime.now().add(const Duration(days: 7));
   bool _loadingMembers = true;
-  bool _paymentConfirmed = false;
+  String _paymentMode = 'epc_qr_onsite';
+  String? _pendingLoanId;
   bool _submitting = false;
 
   @override
@@ -1091,10 +1376,8 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                   (item) => _selectedInventoryByType.values.contains(item.id),
                 )
                 .toList();
-            final canSubmit = _member != null &&
-                selectedItems.isNotEmpty &&
-                _paymentConfirmed &&
-                !_submitting;
+            final canSubmit =
+                _member != null && selectedItems.isNotEmpty && !_submitting;
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1183,21 +1466,48 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                           color: Colors.blueGrey.shade50,
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: SwitchListTile.adaptive(
-                          contentPadding: EdgeInsets.zero,
-                          value: _paymentConfirmed,
-                          onChanged: (value) =>
-                              setState(() => _paymentConfirmed = value),
-                          title: const Text(
-                            'Caution de 100,00 EUR confirmée',
-                            style: TextStyle(
-                              color: AppColors.donkerblauw,
-                              fontWeight: FontWeight.w800,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Caution fixe : 100,00 EUR',
+                              style: TextStyle(
+                                color: AppColors.donkerblauw,
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
-                          ),
-                          subtitle: const Text(
-                            'À cocher seulement après avoir constaté le paiement sur place. Le paiement à distance sera relié séparément au statut bancaire.',
-                          ),
+                            const SizedBox(height: 6),
+                            IgnorePointer(
+                              ignoring: _pendingLoanId != null,
+                              child: RadioGroup<String>(
+                                groupValue: _paymentMode,
+                                onChanged: (value) {
+                                  if (value == null) return;
+                                  setState(() => _paymentMode = value);
+                                },
+                                child: const Column(
+                                  children: [
+                                    RadioListTile<String>(
+                                      contentPadding: EdgeInsets.zero,
+                                      value: 'epc_qr_onsite',
+                                      title: Text('QR code sur place'),
+                                      subtitle: Text(
+                                        'Le responsable affiche le QR sur ce téléphone, puis confirme le paiement observé.',
+                                      ),
+                                    ),
+                                    RadioListTile<String>(
+                                      contentPadding: EdgeInsets.zero,
+                                      value: 'epc_qr_email',
+                                      title: Text('Envoyer le QR par e-mail'),
+                                      subtitle: Text(
+                                        'Le QR est envoyé uniquement à l’adresse e-mail enregistrée du membre. Le matériel reste réservé jusqu’à confirmation.',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -1218,7 +1528,9 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                     label: Text(
                       _submitting
                           ? 'Création...'
-                          : 'Créer et remettre le prêt (${selectedItems.length})',
+                          : _paymentMode == 'epc_qr_email'
+                              ? 'Réserver et envoyer le QR (${selectedItems.length})'
+                              : 'Réserver et afficher le QR (${selectedItems.length})',
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.middenblauw,
@@ -1423,20 +1735,95 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
     if (member == null) return;
     setState(() => _submitting = true);
     try {
-      await widget.loanService.createDirectLoan(
+      final loanId = _pendingLoanId ??
+          await widget.loanService.createPendingQrLoan(
+            clubId: widget.clubId,
+            member: member,
+            items: items,
+            expectedReturnDate: _returnDate,
+            createdByUserId: widget.createdByUserId,
+            createdByName: widget.createdByName,
+            paymentMode: _paymentMode,
+            notes: _notesController.text,
+          );
+      _pendingLoanId ??= loanId;
+      if (!mounted) return;
+      if (_paymentMode == 'epc_qr_email') {
+        await widget.loanService.sendPendingLoanPaymentQrEmail(
+          clubId: widget.clubId,
+          loanId: loanId,
+        );
+        if (!mounted) return;
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'QR envoyé à l’adresse e-mail du membre. Le matériel reste réservé jusqu’au paiement.',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        return;
+      }
+
+      final qr = await widget.loanService.getPendingLoanPaymentQr(
         clubId: widget.clubId,
-        member: member,
-        items: items,
-        expectedReturnDate: _returnDate,
-        createdByUserId: widget.createdByUserId,
-        createdByName: widget.createdByName,
-        notes: _notesController.text,
+        loanId: loanId,
+      );
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
+          title: Text('Caution · ${qr.amount.toStringAsFixed(2)} EUR'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Le membre scanne ce QR avec son application bancaire. Confirmez uniquement après avoir constaté le paiement.',
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  color: Colors.white,
+                  padding: const EdgeInsets.all(12),
+                  child: QrImageView(
+                    data: qr.epcPayload,
+                    version: QrVersions.auto,
+                    size: 220,
+                    errorCorrectionLevel: QrErrorCorrectLevel.M,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text('Communication : ${qr.reference}'),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Plus tard'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.verified_outlined),
+              label: const Text('Paiement constaté'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+      await widget.loanService.confirmPendingPaymentAndHandover(
+        clubId: widget.clubId,
+        loanId: loanId,
+        confirmedByUserId: widget.createdByUserId,
+        confirmedByName: widget.createdByName,
       );
       if (!mounted) return;
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Prêt créé et matériel remis.'),
+          content: Text('Paiement confirmé. Le matériel est remis.'),
           backgroundColor: AppColors.success,
         ),
       );
