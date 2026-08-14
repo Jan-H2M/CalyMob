@@ -627,6 +627,9 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
   String _paymentMode = 'remote';
   String _paymentStatus = 'unpaid';
   String _handoverStatus = 'blocked';
+  final Map<String, String> _handoverConditions = {};
+  String _handoverNotes = '';
+  bool _handoverPhotoAdded = false;
 
   @override
   void initState() {
@@ -898,6 +901,8 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
 
   Widget _signatureStep(int selectedCount) {
     final canFinish = _handoverStatus == 'handed_over';
+    final hasConditionIssue =
+        _handoverConditions.values.any((condition) => condition != 'Bon');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -929,6 +934,8 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
               : 'Retournez à l’étape 3 pour confirmer la caution et autoriser la remise.',
         ),
         const SizedBox(height: 14),
+        _handoverConditionSection(hasConditionIssue),
+        const SizedBox(height: 14),
         Row(
           children: [
             Expanded(
@@ -948,6 +955,142 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
           ],
         ),
       ],
+    );
+  }
+
+  Widget _handoverConditionSection(bool hasConditionIssue) {
+    final hasNote = _handoverNotes.trim().isNotEmpty;
+    return _SurfaceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'État au départ',
+            style: TextStyle(
+              color: AppColors.donkerblauw,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Documentez l’état avant que le membre emporte le matériel.',
+            style: TextStyle(color: Colors.black54),
+          ),
+          const SizedBox(height: 12),
+          ..._selection.values.map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.inventory_2_outlined,
+                          color: AppColors.middenblauw),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${item.inventoryNumber} · ${item.description}',
+                          style: const TextStyle(
+                            color: AppColors.donkerblauw,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  DropdownButtonFormField<String>(
+                    initialValue:
+                        _handoverConditions[item.inventoryNumber] ?? 'Bon',
+                    decoration: const InputDecoration(
+                      labelText: 'État constaté',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'Bon',
+                        child: Text('Bon · rien à signaler'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'À surveiller',
+                        child: Text('À surveiller · trace ou usure'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Endommagé',
+                        child: Text('Endommagé · à documenter'),
+                      ),
+                    ],
+                    onChanged: (value) => setState(() {
+                      _handoverConditions[item.inventoryNumber] =
+                          value ?? 'Bon';
+                    }),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (hasConditionIssue) ...[
+            const _InfoBanner(
+              icon: Icons.warning_amber,
+              text:
+                  'Un article n’est pas déclaré en parfait état. Ajoutez une note et, si utile, une photo.',
+            ),
+            const SizedBox(height: 10),
+          ],
+          TextField(
+            maxLines: 2,
+            onChanged: (value) => setState(() => _handoverNotes = value),
+            decoration: const InputDecoration(
+              labelText: 'Note d’état avant remise',
+              hintText: 'Ex. petite rayure sur le boîtier…',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          if (hasNote)
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: Text(
+                  'Note d’état enregistrée ✓',
+                  style: TextStyle(color: AppColors.success, fontSize: 12),
+                ),
+              ),
+            ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: () => setState(() => _handoverPhotoAdded = true),
+            icon: Icon(_handoverPhotoAdded
+                ? Icons.photo_library_outlined
+                : Icons.add_a_photo_outlined),
+            label: Text(_handoverPhotoAdded
+                ? 'Photo d’état ajoutée ✓'
+                : 'Ajouter une photo d’état'),
+          ),
+          if (_handoverPhotoAdded) ...[
+            const SizedBox(height: 8),
+            Container(
+              height: 82,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: Colors.blueGrey.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blueGrey.shade100),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.image_outlined, color: AppColors.middenblauw),
+                  SizedBox(width: 8),
+                  Text('Photo d’état · aperçu mock-up'),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -1014,7 +1157,7 @@ class _RequestAssignmentSheetState extends State<_RequestAssignmentSheet> {
                 padding: const EdgeInsets.only(bottom: 12),
                 child: _InventoryChoiceRow(
                   label: line.category,
-                  option: line.option,
+                  option: line.option == '1 article' ? null : line.option,
                   value: _selected[line.category],
                   items: (widget.inventory[line.category] ?? [])
                       .where((item) =>
@@ -1022,11 +1165,17 @@ class _RequestAssignmentSheetState extends State<_RequestAssignmentSheet> {
                           line.option == '1 article')
                       .toList(),
                   onChanged: (item) => setState(() {
-                    _resolvedCategories.add(line.category);
                     if (item == null) {
                       _selected.remove(line.category);
                     } else {
                       _selected[line.category] = item;
+                    }
+                  }),
+                  onResolvedChanged: (resolved) => setState(() {
+                    if (resolved) {
+                      _resolvedCategories.add(line.category);
+                    } else {
+                      _resolvedCategories.remove(line.category);
                     }
                   }),
                 ),
@@ -1214,9 +1363,21 @@ class _InventoryColumnHeader extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           const Expanded(
+            flex: 2,
+            child: Text(
+              'Taille / variante',
+              style: TextStyle(
+                color: Colors.black54,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          const Expanded(
             flex: 3,
             child: Text(
-              'N° inventaire',
+              'N° inventaire / série',
               style: TextStyle(
                 color: Colors.black54,
                 fontSize: 11,
@@ -1230,12 +1391,13 @@ class _InventoryColumnHeader extends StatelessWidget {
   }
 }
 
-class _InventoryChoiceRow extends StatelessWidget {
+class _InventoryChoiceRow extends StatefulWidget {
   final String label;
   final String? option;
   final _DemoItem? value;
   final List<_DemoItem> items;
   final ValueChanged<_DemoItem?> onChanged;
+  final ValueChanged<bool>? onResolvedChanged;
 
   const _InventoryChoiceRow({
     required this.label,
@@ -1243,7 +1405,50 @@ class _InventoryChoiceRow extends StatelessWidget {
     required this.value,
     required this.items,
     required this.onChanged,
+    this.onResolvedChanged,
   });
+
+  @override
+  State<_InventoryChoiceRow> createState() => _InventoryChoiceRowState();
+}
+
+class _InventoryChoiceRowState extends State<_InventoryChoiceRow> {
+  late String? _variant;
+  late _DemoItem? _selectedItem;
+
+  @override
+  void initState() {
+    super.initState();
+    _variant = widget.option ?? widget.value?.option;
+    _selectedItem = widget.value;
+  }
+
+  @override
+  void didUpdateWidget(covariant _InventoryChoiceRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.value != widget.value || oldWidget.option != widget.option) {
+      _selectedItem = widget.value;
+      _variant = widget.option ?? widget.value?.option;
+    }
+  }
+
+  List<String> get _variants => <String>{
+        ...widget.items.map((item) => item.option),
+      }.toList()
+        ..sort();
+
+  List<_DemoItem> get _itemsForVariant => widget.items
+      .where((item) => _variant == null || item.option == _variant)
+      .toList();
+
+  void _selectVariant(String? variant) {
+    setState(() {
+      _variant = variant;
+      _selectedItem = null;
+    });
+    widget.onResolvedChanged?.call(variant == null);
+    widget.onChanged(null);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1258,30 +1463,49 @@ class _InventoryChoiceRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  label,
+                  widget.label,
                   style: const TextStyle(
                     color: AppColors.donkerblauw,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                if (option != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    option!,
-                    style: const TextStyle(color: Colors.black54, fontSize: 12),
-                  ),
-                ],
               ],
             ),
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
+          flex: 2,
+          child: DropdownButtonFormField<String?>(
+            initialValue: _variant,
+            decoration: const InputDecoration(
+              hintText: 'Choisir une taille',
+              border: OutlineInputBorder(),
+              contentPadding: EdgeInsets.symmetric(horizontal: 12),
+            ),
+            items: [
+              const DropdownMenuItem<String?>(
+                value: null,
+                child: Text('Choisir…'),
+              ),
+              ..._variants.map(
+                (variant) => DropdownMenuItem<String?>(
+                  value: variant,
+                  child: Text(variant),
+                ),
+              ),
+            ],
+            onChanged: _selectVariant,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
           flex: 3,
           child: DropdownButtonFormField<_DemoItem?>(
-            initialValue: value,
+            initialValue:
+                _itemsForVariant.contains(_selectedItem) ? _selectedItem : null,
             decoration: const InputDecoration(
-              hintText: 'Choisir…',
+              hintText: 'Choisir un N°',
               border: OutlineInputBorder(),
               contentPadding: EdgeInsets.symmetric(horizontal: 12),
             ),
@@ -1290,10 +1514,13 @@ class _InventoryChoiceRow extends StatelessWidget {
                 value: null,
                 child: Text('Aucun article'),
               ),
-              ...items.map(
+              ..._itemsForVariant.map(
                 (item) => DropdownMenuItem<_DemoItem?>(
                   value: item,
-                  child: _InventoryMenuItem(item),
+                  child: Text(
+                    '${item.inventoryNumber} · ${item.description}',
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
             ],
@@ -1302,7 +1529,7 @@ class _InventoryChoiceRow extends StatelessWidget {
                 alignment: Alignment.centerLeft,
                 child: Text('Aucun article'),
               ),
-              ...items.map(
+              ..._itemsForVariant.map(
                 (item) => Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
@@ -1312,7 +1539,13 @@ class _InventoryChoiceRow extends StatelessWidget {
                 ),
               ),
             ],
-            onChanged: onChanged,
+            onChanged: _variant == null
+                ? null
+                : (item) {
+                    setState(() => _selectedItem = item);
+                    widget.onResolvedChanged?.call(true);
+                    widget.onChanged(item);
+                  },
           ),
         ),
       ],
@@ -1320,29 +1553,210 @@ class _InventoryChoiceRow extends StatelessWidget {
   }
 }
 
-class _InventoryMenuItem extends StatelessWidget {
-  final _DemoItem item;
+class _InventoryPickerResult {
+  final _DemoItem? item;
 
-  const _InventoryMenuItem(this.item);
+  const _InventoryPickerResult(this.item);
+}
+
+class _InventorySearchSheet extends StatefulWidget {
+  final String title;
+  final String? requestedOption;
+  final _DemoItem? selectedItem;
+  final List<_DemoItem> items;
+
+  const _InventorySearchSheet({
+    required this.title,
+    required this.requestedOption,
+    required this.selectedItem,
+    required this.items,
+  });
+
+  @override
+  State<_InventorySearchSheet> createState() => _InventorySearchSheetState();
+}
+
+class _InventorySearchSheetState extends State<_InventorySearchSheet> {
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  String _query = '';
+  String _variantFilter = '';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _searchFocusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 92,
-          child: Text(
-            item.inventoryNumber,
-            style: const TextStyle(fontWeight: FontWeight.w700),
+    final variants =
+        <String>{...widget.items.map((item) => item.option)}.toList()..sort();
+    final normalizedQuery = _query.trim().toLowerCase();
+    final filteredItems = widget.items.where((item) {
+      final matchesVariant =
+          _variantFilter.isEmpty || item.option == _variantFilter;
+      final searchable =
+          '${item.inventoryNumber} ${item.option} ${item.description}'
+              .toLowerCase();
+      return matchesVariant &&
+          (normalizedQuery.isEmpty || searchable.contains(normalizedQuery));
+    }).toList();
+
+    return SizedBox(
+      height: MediaQuery.sizeOf(context).height * 0.82,
+      child: Material(
+        color: Colors.white,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Choisir · ${widget.title}',
+                      style: const TextStyle(
+                        color: AppColors.donkerblauw,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              if (widget.requestedOption != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    'Variante demandée · ${widget.requestedOption}',
+                    style: const TextStyle(color: Colors.black54),
+                  ),
+                ),
+              TextField(
+                controller: _searchController,
+                focusNode: _searchFocusNode,
+                onChanged: (value) => setState(() => _query = value),
+                decoration: InputDecoration(
+                  labelText: 'Rechercher par taille ou N° inventaire',
+                  hintText: 'Ex. XL, ORD-006 ou CRESSI',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _query = '');
+                          },
+                          icon: const Icon(Icons.clear),
+                        ),
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              if (variants.length > 1) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    FilterChip(
+                      label: const Text('Toutes'),
+                      selected: _variantFilter.isEmpty,
+                      onSelected: (_) => setState(() => _variantFilter = ''),
+                    ),
+                    ...variants.map(
+                      (variant) => FilterChip(
+                        label: Text(variant),
+                        selected: _variantFilter == variant,
+                        onSelected: (_) =>
+                            setState(() => _variantFilter = variant),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 8),
+              Text(
+                '${filteredItems.length} article(s) trouvé(s)',
+                style: const TextStyle(color: Colors.black54, fontSize: 12),
+              ),
+              const SizedBox(height: 4),
+              Expanded(
+                child: ListView.separated(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  itemCount: filteredItems.length + 1,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    if (index == 0) {
+                      return ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 2,
+                        ),
+                        leading: const Icon(Icons.remove_circle_outline),
+                        title: const Text('Aucun article'),
+                        subtitle: const Text('Laisser cette ligne vide'),
+                        onTap: () => Navigator.of(context)
+                            .pop(const _InventoryPickerResult(null)),
+                      );
+                    }
+                    final item = filteredItems[index - 1];
+                    final selected = item == widget.selectedItem;
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 2,
+                      ),
+                      title: Row(
+                        children: [
+                          SizedBox(
+                            width: 105,
+                            child: Text(
+                              item.inventoryNumber,
+                              style: const TextStyle(
+                                color: AppColors.donkerblauw,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              item.option,
+                              style: const TextStyle(color: Colors.black54),
+                            ),
+                          ),
+                        ],
+                      ),
+                      subtitle: Text(item.description),
+                      trailing: selected
+                          ? const Icon(Icons.check_circle,
+                              color: AppColors.success)
+                          : const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.of(context)
+                          .pop(_InventoryPickerResult(item)),
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
         ),
-        Expanded(
-          child: Text(
-            item.description,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
