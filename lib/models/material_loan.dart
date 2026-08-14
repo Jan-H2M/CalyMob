@@ -211,10 +211,10 @@ class MaterialLoanRequestLine {
           : data['attributes'] is Map
           ? Map<String, dynamic>.from(data['attributes'] as Map)
           : const {},
-      quantity:
-          (data['qty'] as num?)?.toInt() ??
-          (data['quantity'] as num?)?.toInt() ??
-          1,
+      // Requests are intentionally limited to one physical article per
+      // category. Keep reading legacy qty fields for compatibility, but
+      // normalize them so the member and organizer flows stay consistent.
+      quantity: 1,
     );
   }
 

@@ -801,7 +801,6 @@ class _MaterialRequestSheet extends StatefulWidget {
 class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
   final _notesController = TextEditingController();
   final Map<String, String?> _selectedChoices = {};
-  final Map<String, int> _quantities = {};
   DateTime _expectedReturnDate = DateTime.now().add(const Duration(days: 7));
   bool _submitting = false;
 
@@ -898,7 +897,7 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Choisissez une catégorie et une taille. Le responsable attribuera le matériel réel lors de la remise.',
+              'Choisissez au maximum un article par catégorie. Le responsable attribuera le matériel réel lors de la remise.',
               style: TextStyle(color: Colors.grey.shade700),
             ),
             const SizedBox(height: 14),
@@ -927,7 +926,6 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
                   final category = _categories[index];
                   final selected = _selectedChoices.containsKey(category.id);
                   final choice = _selectedChoices[category.id];
-                  final quantity = _quantities[category.id] ?? 1;
 
                   return Container(
                     padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
@@ -961,7 +959,7 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
                             ),
                           ),
                           subtitle: selected && choice != null
-                              ? Text('$choice · quantité $quantity')
+                              ? Text(choice)
                               : const Text('Non sélectionné'),
                         ),
                         if (selected) ...[
@@ -987,40 +985,6 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
                                 );
                               }
                             },
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              const Text(
-                                'Quantité',
-                                style: TextStyle(fontWeight: FontWeight.w600),
-                              ),
-                              const Spacer(),
-                              IconButton(
-                                onPressed: quantity <= 1
-                                    ? null
-                                    : () => setState(
-                                          () => _quantities[category.id] =
-                                              quantity - 1,
-                                        ),
-                                icon: const Icon(Icons.remove_circle_outline),
-                              ),
-                              Text(
-                                '$quantity',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              IconButton(
-                                onPressed: quantity >= 4
-                                    ? null
-                                    : () => setState(
-                                          () => _quantities[category.id] =
-                                              quantity + 1,
-                                        ),
-                                icon: const Icon(Icons.add_circle_outline),
-                              ),
-                            ],
                           ),
                         ],
                       ],
@@ -1071,7 +1035,7 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
             'label': category.label,
             'option': _selectedChoices[category.id],
           },
-          quantity: _quantities[category.id] ?? 1,
+          quantity: 1,
         ),
       )
       .toList();
@@ -1080,10 +1044,8 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
     setState(() {
       if (!selected) {
         _selectedChoices.remove(category.id);
-        _quantities.remove(category.id);
       } else {
         _selectedChoices[category.id] = category.choices.first;
-        _quantities[category.id] = 1;
       }
     });
   }
