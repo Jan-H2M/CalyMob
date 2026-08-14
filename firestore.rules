@@ -113,6 +113,13 @@ service cloud.firestore {
       return hasClubStatut(clubId, ['gonflage', 'Gonflage', 'G']);
     }
 
+    // Material may only be handed over and returned by trusted operational
+    // staff. This mirrors the Boutique visibility check in CalyMob.
+    function canManageMaterialLoans(clubId) {
+      return isAdmin(clubId) || isEncadrantForClub(clubId) ||
+        hasCARole(clubId) || hasGonflageRole(clubId);
+    }
+
     function hasBureauRole(clubId) {
       return hasClubStatut(clubId, [
         'BS', 'bs', 'Banque Signature', 'banque signature',
@@ -1153,9 +1160,24 @@ service cloud.firestore {
       match /inventory_items/{itemId} {
         allow read: if isMember(clubId);
         // Write requires fiscal year check if fiscal_year_id is present
-        allow create, update: if isAdmin(clubId)
+        allow create: if isAdmin(clubId)
           && hasValidSession(clubId)
           && (!('fiscal_year_id' in request.resource.data) || canModifyFiscalYearData(clubId, request.resource.data.fiscal_year_id));
+        // Loan staff may only move a physical item between available and lent
+        // and attach/remove its current-loan pointer. They cannot edit stock
+        // attributes, prices or accounting data.
+        allow update: if (
+          isAdmin(clubId)
+          && hasValidSession(clubId)
+          && (!('fiscal_year_id' in request.resource.data) || canModifyFiscalYearData(clubId, request.resource.data.fiscal_year_id))
+        ) || (
+          canManageMaterialLoans(clubId)
+          && hasValidSession(clubId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'statut', 'current_loan_id', 'updatedAt'
+          ])
+          && request.resource.data.statut in ['disponible', 'reserve', 'prete', 'en_maintenance']
+        );
         allow delete: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
@@ -1168,8 +1190,37 @@ service cloud.firestore {
       // Write: admin (le responsable valide les retours et déclenche le
       // remboursement de caution). Prêts gratuits → pas de fiscal_year_id.
       match /inventory_loans/{loanId} {
-        allow read: if isMember(clubId);
-        allow write: if isAdmin(clubId) && hasValidSession(clubId);
+        allow read: if isMember(clubId) && (
+          resource.data.memberId == request.auth.uid ||
+          resource.data.member_id == request.auth.uid ||
+          canManageMaterialLoans(clubId)
+        );
+        allow create, update: if canManageMaterialLoans(clubId)
+          && hasValidSession(clubId);
+        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
+      }
+
+      // Dedicated counter so encadrants do not receive write access to the
+      // general settings collection when issuing a loan.
+      match /inventory_loan_counters/{year} {
+        allow read, write: if canManageMaterialLoans(clubId)
+          && hasValidSession(clubId);
+      }
+
+      // A return creates a request for the treasurer; it is deliberately not
+      // an executed payment. Only finance staff can update its decision or
+      // mark it paid afterwards.
+      match /material_refund_requests/{requestId} {
+        allow read: if isMember(clubId) && (
+          canManageMaterialLoans(clubId) ||
+          canManageExpenses(clubId) ||
+          resource.data.member_id == request.auth.uid
+        );
+        allow create: if canManageMaterialLoans(clubId)
+          && hasValidSession(clubId);
+        allow update: if canManageExpenses(clubId)
+          && hasValidSession(clubId);
+        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
       // Loans - simplified name (used by test scripts, alternative to inventory_loans)

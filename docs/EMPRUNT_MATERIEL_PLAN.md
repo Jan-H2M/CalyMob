@@ -1,6 +1,6 @@
 # Emprunter du matériel — refonte flux membre
 
-**Statut:** ontwerp / design-partner. Geen Flutter- of CalyCompta-code aanpassen zonder expliciete opdracht.
+**Statut:** implémentation COM-059 en cours — la base de données et les deux écrans sont maintenant reliés.
 **Mockup:** `EMPRUNT_MATERIEL_MOCKUP.html` (klikbaar).
 **Aanleiding:** testfeedback (juli 2026) — zie §1.
 
@@ -118,3 +118,17 @@ Nodig: (a) responsable-inbox op `inventory_loan_requests` in CalyCompta, (b) val
 - V-A: Definitieve categorielijst + waarden bevestigen (met club).
 - V-B: Definitie « responsable matériel » (welke rol ziet tabblad Demandes).
 - V-C: Caution — vast bedrag per categorie of handmatig + betaalmoment.
+
+## 8. Livraison COM-059 — 14/08/2026
+
+La pièce jointe `CALYMOB LAYOUT MATHOS.xlsx` est la source des choix affichés au membre. Elle est attachée à la carte COM-059 dans CalyCompta ; elle distingue les options de taille/variante côté plongeur des numéros d’inventaire côté responsable.
+
+La première implémentation couvre désormais la chaîne suivante :
+
+- **CalyMob** enregistre une demande par catégories et propriétés (`lines[{category, attrs, qty}]`) : bouteilles 10/12 L et raccord, gilet XS–XXL, palmes S/M/XL, ceinture 4–8 kg, détendeur, lampe, compas, ordinateur et parachute.
+- **CalyMob** affiche les statuts `submitted`, `validated`, `ready`, `handed_over` et `refused` dans « Mes demandes » et reste compatible avec les anciennes demandes basées sur `itemIds`.
+- **CalyCompta** expose l’onglet « Demandes » sous Stock › Prêts. Le responsable peut consulter les choix, attribuer les articles disponibles (donc les numéros d’inventaire), valider pour créer le prêt et la caution, ou refuser avec un motif.
+- Le membre ne choisit pas un numéro d’inventaire — il choisit la catégorie et la variante. L’article physique (marque/modèle + code d’inventaire, par exemple un ordinateur `ORD-6`) est choisi côté CalyCompta au moment de la remise, afin de ne pas exposer ou promettre un exemplaire précis avant l’attribution.
+- L’index Firestore membre/statut est ajouté pour que « Mes demandes » ne disparaisse plus silencieusement.
+
+Hors de cette livraison : l’envoi de notifications push/e-mail dédié et l’état intermédiaire « prêt à retirer » après validation. Ces éléments restent séparés pour éviter de créer une promesse de remise avant l’attribution physique.

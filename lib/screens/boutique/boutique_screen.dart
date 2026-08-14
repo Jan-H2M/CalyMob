@@ -15,6 +15,7 @@ import 'boutique_cart_screen.dart';
 import 'boutique_product_detail_screen.dart';
 import 'mes_commandes_screen.dart';
 import '../stock/material_returns_screen.dart';
+import '../stock/material_finance_mockup_screen.dart';
 import '../profile/ma_cotisation_screen.dart';
 
 class BoutiqueScreen extends StatefulWidget {
@@ -70,118 +71,139 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
         creatures: CreatureSet.fishAndBubbles,
         child: SafeArea(
           child: StreamBuilder<Map<String, String>>(
-            stream: _flagService.boutiqueVisibility(FirebaseConfig.defaultClubId),
+            stream:
+                _flagService.boutiqueVisibility(FirebaseConfig.defaultClubId),
             initialData: FeatureFlagService.parseBoutiqueVisibility(null),
             builder: (context, snapshot) {
               final visibility = snapshot.data ??
                   FeatureFlagService.parseBoutiqueVisibility(null);
               bool showSection(String key) =>
                   _sectionVisible(visibility, key, canSeeTesteurs);
-              final showMaterialReturns =
-                  showSection('pretsMateriel') && canOpenReturns;
+              final showMaterialLoans = showSection('pretsMateriel');
+              final showMaterialReturns = showMaterialLoans && canOpenReturns;
               return ListView(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-            children: [
-              Text(
-                'Articles club, vêtements, abonnements et accessoires.',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.84),
-                  fontSize: 15,
-                  height: 1.35,
-                ),
-              ),
-              const SizedBox(height: 22),
-              if (showSection('commandes')) ...[
-                _BoutiqueHomeCard(
-                  icon: Icons.receipt_long_outlined,
-                  title: 'Mes commandes',
-                  subtitle: 'Suivre les commandes et retrouver les paiements.',
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const MesCommandesScreen(),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 12),
-              ],
-              if (showSection('panier'))
-              Consumer<BoutiqueCartProvider>(
-                builder: (context, cart, _) {
-                  final subtitle = cart.isEmpty
-                      ? 'Votre panier est vide.'
-                      : '${cart.itemCount} article(s) en attente.';
-                  return _BoutiqueHomeCard(
-                    icon: Icons.shopping_bag_outlined,
-                    title: 'Mon panier',
-                    subtitle: subtitle,
-                    badge: cart.isEmpty ? null : '${cart.itemCount}',
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const BoutiqueCartScreen(),
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
-              if (showSection('panier')) const SizedBox(height: 12),
-              if (showSection('produits'))
-                _BoutiqueHomeCard(
-                  icon: Icons.storefront_outlined,
-                  title: 'Produits',
-                  subtitle: 'Parcourir le catalogue Boutique.',
-                  emphasized: true,
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const BoutiqueProductsScreen(),
-                      ),
-                    );
-                  },
-                ),
-              const SizedBox(height: 26),
-              Container(
-                height: 1,
-                margin: const EdgeInsets.symmetric(horizontal: 4),
-                color: Colors.white.withValues(alpha: 0.42),
-              ),
-              const SizedBox(height: 22),
-              if (showSection('cotisation'))
-                _BoutiqueHomeCard(
-                  icon: Icons.card_membership_outlined,
-                  title: 'Ma cotisation',
-                  subtitle: 'Consulter et payer votre cotisation membre.',
-                  emphasized: true,
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const MaCotisationScreen(),
-                      ),
-                    );
-                  },
-                ),
-              if (showMaterialReturns) ...[
-                const SizedBox(height: 12),
-                _BoutiqueHomeCard(
-                  icon: Icons.assignment_return_outlined,
-                  title: 'Prêts matériel',
-                  subtitle:
-                      'Valider les retours et créer le remboursement caution.',
-                  emphasized: true,
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const MaterialReturnsScreen(),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ],
-          );
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+                children: [
+                  Text(
+                    'Articles club, vêtements, abonnements et accessoires.',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.84),
+                      fontSize: 15,
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  if (showSection('commandes')) ...[
+                    _BoutiqueHomeCard(
+                      icon: Icons.receipt_long_outlined,
+                      title: 'Mes commandes',
+                      subtitle:
+                          'Suivre les commandes et retrouver les paiements.',
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const MesCommandesScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (showSection('panier'))
+                    Consumer<BoutiqueCartProvider>(
+                      builder: (context, cart, _) {
+                        final subtitle = cart.isEmpty
+                            ? 'Votre panier est vide.'
+                            : '${cart.itemCount} article(s) en attente.';
+                        return _BoutiqueHomeCard(
+                          icon: Icons.shopping_bag_outlined,
+                          title: 'Mon panier',
+                          subtitle: subtitle,
+                          badge: cart.isEmpty ? null : '${cart.itemCount}',
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const BoutiqueCartScreen(),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  if (showSection('panier')) const SizedBox(height: 12),
+                  if (showSection('produits'))
+                    _BoutiqueHomeCard(
+                      icon: Icons.storefront_outlined,
+                      title: 'Produits',
+                      subtitle: 'Parcourir le catalogue Boutique.',
+                      emphasized: true,
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const BoutiqueProductsScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  const SizedBox(height: 26),
+                  Container(
+                    height: 1,
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    color: Colors.white.withValues(alpha: 0.42),
+                  ),
+                  const SizedBox(height: 22),
+                  if (showSection('cotisation'))
+                    _BoutiqueHomeCard(
+                      icon: Icons.card_membership_outlined,
+                      title: 'Ma cotisation',
+                      subtitle: 'Consulter et payer votre cotisation membre.',
+                      emphasized: true,
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const MaCotisationScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  if (showMaterialLoans) ...[
+                    const SizedBox(height: 12),
+                    _BoutiqueHomeCard(
+                      icon: Icons.assignment_return_outlined,
+                      title: canOpenReturns
+                          ? 'Prêts matériel'
+                          : 'Mon matériel emprunté',
+                      subtitle: canOpenReturns
+                          ? 'Créer un prêt, contrôler les retours et suivre les cautions.'
+                          : 'Consulter le matériel que vous devez rapporter à la séance piscine.',
+                      emphasized: true,
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const MaterialReturnsScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                  if (showMaterialReturns) ...[
+                    const SizedBox(height: 12),
+                    _BoutiqueHomeCard(
+                      icon: Icons.account_balance_outlined,
+                      title: 'COM-059 · Flux financier (mock-up)',
+                      subtitle:
+                          'Tester les QR-paiements, remises et remboursements sans écriture réelle.',
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const MaterialFinanceMockupScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ],
+              );
             },
           ),
         ),
@@ -191,7 +213,7 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
 
   bool _canOpenMaterialReturns(MemberProvider memberProvider) {
     final role = memberProvider.appRole?.toLowerCase();
-    if (role == 'admin' || role == 'superadmin' || role == 'validateur') {
+    if (role == 'admin' || role == 'superadmin') {
       return true;
     }
 

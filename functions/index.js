@@ -29,6 +29,15 @@ if (!admin.firestore.FieldValue) {
 const { sendPaymentQrEmail } = require('./src/payment/sendPaymentQrEmail');
 exports.sendPaymentQrEmail = sendPaymentQrEmail;
 
+// Material-loan cautions have their own callable contract. They never reuse
+// event registrations, event templates or event bank-matching state.
+const {
+  getMaterialLoanPaymentQr,
+  sendMaterialLoanPaymentQrEmail,
+} = require('./src/payment/materialLoanPayment');
+exports.getMaterialLoanPaymentQr = getMaterialLoanPaymentQr;
+exports.sendMaterialLoanPaymentQrEmail = sendMaterialLoanPaymentQrEmail;
+
 // Payment reminder — called by CalyCompta to send QR emails + post message in event chat
 const { sendPaymentReminder } = require('./src/payment/sendPaymentReminder');
 exports.sendPaymentReminder = sendPaymentReminder;

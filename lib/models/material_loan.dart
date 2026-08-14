@@ -7,6 +7,7 @@ class MaterialLoanItem {
   final String? brand;
   final String? model;
   final String? serialNumber;
+  final String? variant;
   final String status;
   final String? typeId;
   final String? typeName;
@@ -18,6 +19,7 @@ class MaterialLoanItem {
     this.brand,
     this.model,
     this.serialNumber,
+    this.variant,
     required this.status,
     this.typeId,
     this.typeName,
@@ -64,6 +66,22 @@ class MaterialLoanItem {
     return parts.join(' - ');
   }
 
+  /// The member-facing choice shown before the inventory number. Inventory
+  /// types store this value under different names (taille, volume, custom
+  /// field…), so it is normalized when the Firestore item is read.
+  String get variantLabel {
+    final value = variant?.trim();
+    return value == null || value.isEmpty ? 'Standard' : value;
+  }
+
+  /// Explicit label for the physical inventory number shown to staff.
+  String get inventoryLabel {
+    final value = code.trim();
+    return value.isEmpty
+        ? 'N° inventaire non attribué'
+        : '$value (numéro d’inventaire)';
+  }
+
   String get displayName => '$typeLabel - $technicalDetails';
 
   bool get isBorrowable {
@@ -82,6 +100,7 @@ class MaterialLoanItem {
       brand: brand,
       model: model,
       serialNumber: serialNumber,
+      variant: variant,
       status: status,
       typeId: typeId,
       typeName: value ?? typeName,
@@ -99,6 +118,7 @@ class MaterialLoanItem {
       brand: data['fabricant']?.toString(),
       model: data['modele']?.toString(),
       serialNumber: data['numero_serie']?.toString(),
+      variant: _variantFromData(data),
       status: data['statut']?.toString() ??
           data['status']?.toString() ??
           data['etat_stock']?.toString() ??
@@ -109,11 +129,47 @@ class MaterialLoanItem {
   }
 }
 
+String? _variantFromData(Map<String, dynamic> data) {
+  const directKeys = [
+    'variant',
+    'option',
+    'taille',
+    'size',
+    'volume',
+    'contenance',
+    'capacity',
+  ];
+  for (final key in directKeys) {
+    final value = data[key]?.toString().trim();
+    if (value != null && value.isNotEmpty) return value;
+  }
+
+  final customFields = data['customFieldsValues'];
+  if (customFields is Map) {
+    for (final entry in customFields.entries) {
+      final key = entry.key.toString().toLowerCase();
+      if (!key.contains('taille') &&
+          !key.contains('size') &&
+          !key.contains('volume') &&
+          !key.contains('contenance') &&
+          !key.contains('capacity')) {
+        continue;
+      }
+      final value = entry.value?.toString().trim();
+      if (value != null && value.isNotEmpty) return value;
+    }
+  }
+  return null;
+}
+
 class MaterialLoanRequest {
   final String id;
   final String memberId;
   final String memberName;
+  final String memberEmail;
   final List<String> itemIds;
+  final List<MaterialLoanRequestLine> lines;
+  final List<String> assignedItemIds;
   final DateTime? expectedReturnDate;
   final String status;
   final String? notes;
@@ -124,7 +180,10 @@ class MaterialLoanRequest {
     required this.id,
     required this.memberId,
     required this.memberName,
+    this.memberEmail = '',
     required this.itemIds,
+    this.lines = const [],
+    this.assignedItemIds = const [],
     this.expectedReturnDate,
     required this.status,
     this.notes,
@@ -137,22 +196,82 @@ class MaterialLoanRequest {
     List<MaterialLoanItem> items = const [],
   }) {
     final data = doc.data() ?? {};
+    final rawLines = data['lines'] as List<dynamic>?;
     return MaterialLoanRequest(
       id: doc.id,
       memberId: data['memberId']?.toString() ?? '',
       memberName: data['memberName']?.toString() ?? 'Membre',
+      memberEmail: data['memberEmail']?.toString() ?? '',
       itemIds: (data['itemIds'] as List<dynamic>?)
               ?.map((item) => item.toString())
               .where((item) => item.trim().isNotEmpty)
               .toList() ??
           const [],
+      lines: rawLines
+              ?.whereType<Map>()
+              .map(
+                (line) => MaterialLoanRequestLine.fromMap(
+                  Map<String, dynamic>.from(line),
+                ),
+              )
+              .where((line) => line.category.isNotEmpty)
+              .toList() ??
+          const [],
+      assignedItemIds: (data['assignedItemIds'] as List<dynamic>?)
+              ?.map((item) => item.toString())
+              .where((item) => item.trim().isNotEmpty)
+              .toList() ??
+          const [],
       expectedReturnDate: _dateFromValue(
-          data['date_retour_prevue'] ?? data['expectedReturnDate']),
+        data['date_retour_prevue'] ?? data['expectedReturnDate'],
+      ),
       status: data['status']?.toString() ?? 'submitted',
       notes: data['notes']?.toString(),
       createdAt: _dateFromValue(data['createdAt'] ?? data['created_at']),
       items: items,
     );
+  }
+}
+
+class MaterialLoanRequestLine {
+  final String category;
+  final Map<String, dynamic> attributes;
+  final int quantity;
+
+  const MaterialLoanRequestLine({
+    required this.category,
+    this.attributes = const {},
+    this.quantity = 1,
+  });
+
+  factory MaterialLoanRequestLine.fromMap(Map<String, dynamic> data) {
+    return MaterialLoanRequestLine(
+      category: data['category']?.toString() ?? '',
+      attributes: data['attrs'] is Map
+          ? Map<String, dynamic>.from(data['attrs'] as Map)
+          : data['attributes'] is Map
+              ? Map<String, dynamic>.from(data['attributes'] as Map)
+              : const {},
+      // Requests are intentionally limited to one physical article per
+      // category. Keep reading legacy qty fields for compatibility, but
+      // normalize them so the member and organizer flows stay consistent.
+      quantity: 1,
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+        'category': category,
+        'attrs': attributes,
+        'qty': quantity,
+      };
+
+  String get label {
+    final detail = attributes.values
+        .map((value) => value.toString())
+        .where((value) => value.trim().isNotEmpty)
+        .join(' · ');
+    final base = category.trim();
+    return detail.isEmpty ? base : '$base · $detail';
   }
 }
 
@@ -166,6 +285,7 @@ class MaterialLoan {
   final DateTime? expectedReturnDate;
   final double cautionAmount;
   final String cautionStatus;
+  final String paymentMode;
   final String status;
   final String? refundDemandId;
   final List<MaterialLoanItem> items;
@@ -180,6 +300,7 @@ class MaterialLoan {
     this.expectedReturnDate,
     required this.cautionAmount,
     required this.cautionStatus,
+    this.paymentMode = 'epc_qr_onsite',
     required this.status,
     this.refundDemandId,
     required this.items,
@@ -212,8 +333,9 @@ class MaterialLoan {
               .toList() ??
           const [],
       loanDate: _dateFromValue(data['date_pret'] ?? data['date_debut']),
-      expectedReturnDate:
-          _dateFromValue(data['date_retour_prevue'] ?? data['date_fin_prevue']),
+      expectedReturnDate: _dateFromValue(
+        data['date_retour_prevue'] ?? data['date_fin_prevue'],
+      ),
       cautionAmount: _doubleFromValue(
         data['caution_amount'] ??
             data['montant_caution'] ??
@@ -221,8 +343,11 @@ class MaterialLoan {
       ),
       cautionStatus: data['caution_payment_status']?.toString() ??
           (data['caution_payee'] == true ? 'paid' : 'unpaid'),
+      paymentMode: data['payment_mode']?.toString() ?? 'epc_qr_onsite',
       status: data['statut']?.toString() ?? 'actif',
-      refundDemandId: data['caution_refund_demand_id']?.toString(),
+      refundDemandId: (data['caution_refund_request_id'] ??
+              data['caution_refund_demand_id'])
+          ?.toString(),
       items: items,
     );
   }
