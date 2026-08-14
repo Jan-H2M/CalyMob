@@ -666,6 +666,22 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
     }
   }
 
+  Future<void> _pickMember() async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.white,
+      builder: (_) => _MemberSearchSheet(
+        members: widget.requests,
+        selectedMember: _member,
+      ),
+    );
+    if (picked != null && mounted) {
+      setState(() => _member = picked);
+    }
+  }
+
   String _formatReturnDate(DateTime value) {
     final day = value.day.toString().padLeft(2, '0');
     final month = value.month.toString().padLeft(2, '0');
@@ -721,19 +737,17 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
               'Le responsable peut agir au nom du membre sans demande préalable.',
           dark: true,
         ),
-        DropdownButtonFormField<String>(
-          initialValue: _member,
-          decoration: const InputDecoration(
-            labelText: 'Membre',
-            border: OutlineInputBorder(),
+        InkWell(
+          onTap: _pickMember,
+          borderRadius: BorderRadius.circular(4),
+          child: InputDecorator(
+            decoration: const InputDecoration(
+              labelText: 'Membre',
+              suffixIcon: Icon(Icons.search),
+              border: OutlineInputBorder(),
+            ),
+            child: Text(_member ?? 'Rechercher un membre…'),
           ),
-          items: widget.requests
-              .map((request) => DropdownMenuItem(
-                    value: request.name,
-                    child: Text(request.name),
-                  ))
-              .toList(),
-          onChanged: (value) => setState(() => _member = value),
         ),
         const SizedBox(height: 16),
         _nextButton(
@@ -1032,6 +1046,146 @@ class _RequestAssignmentSheetState extends State<_RequestAssignmentSheet> {
               label: const Text('Étape 3 · Détails et paiement'),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MemberSearchSheet extends StatefulWidget {
+  final List<_DemoRequest> members;
+  final String? selectedMember;
+
+  const _MemberSearchSheet({
+    required this.members,
+    required this.selectedMember,
+  });
+
+  @override
+  State<_MemberSearchSheet> createState() => _MemberSearchSheetState();
+}
+
+class _MemberSearchSheetState extends State<_MemberSearchSheet> {
+  final TextEditingController _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final normalizedQuery = _query.trim().toLowerCase();
+    final filteredMembers = widget.members.where((member) {
+      if (normalizedQuery.isEmpty) return true;
+      return '${member.name} ${member.initials}'
+          .toLowerCase()
+          .contains(normalizedQuery);
+    }).toList();
+
+    return SizedBox(
+      height: MediaQuery.sizeOf(context).height * 0.82,
+      child: Material(
+        color: Colors.white,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Choisir un membre',
+                      style: TextStyle(
+                        color: AppColors.donkerblauw,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              TextField(
+                controller: _searchController,
+                autofocus: true,
+                onChanged: (value) => setState(() => _query = value),
+                decoration: InputDecoration(
+                  labelText: 'Rechercher par nom',
+                  hintText: 'Ex. Alice ou Dupont',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _query = '');
+                          },
+                          icon: const Icon(Icons.clear),
+                        ),
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                '${filteredMembers.length} membre(s)',
+                style: const TextStyle(color: Colors.black54, fontSize: 12),
+              ),
+              const SizedBox(height: 4),
+              Expanded(
+                child: filteredMembers.isEmpty
+                    ? const Center(
+                        child: Text('Aucun membre trouvé.'),
+                      )
+                    : ListView.separated(
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        itemCount: filteredMembers.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final member = filteredMembers[index];
+                          final selected = member.name == widget.selectedMember;
+                          return ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 2,
+                            ),
+                            leading: CircleAvatar(
+                              backgroundColor: AppColors.lichtblauw,
+                              child: Text(
+                                member.initials,
+                                style: const TextStyle(
+                                  color: AppColors.donkerblauw,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            title: Text(
+                              member.name,
+                              style: const TextStyle(
+                                color: AppColors.donkerblauw,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            subtitle:
+                                Text('Retour prévu · ${member.returnDate}'),
+                            trailing: selected
+                                ? const Icon(Icons.check_circle,
+                                    color: AppColors.success)
+                                : const Icon(Icons.chevron_right),
+                            onTap: () => Navigator.of(context).pop(member.name),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );
