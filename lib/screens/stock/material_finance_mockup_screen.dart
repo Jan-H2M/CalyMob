@@ -8,9 +8,15 @@ import '../../widgets/ocean/ocean_gradient_background.dart';
 /// This screen deliberately uses demo data and does not write to Firestore,
 /// send an e-mail, or initiate a bank transfer. It is the Flutter counterpart
 /// of the organizer finance mock-up used to review the workflow before wiring
-/// it to the real loan and accounting services.
+/// it to the real loan and accounting services. The student view is included
+/// here as a read-only Boutique preview of an active loan.
 class MaterialFinanceMockupScreen extends StatefulWidget {
-  const MaterialFinanceMockupScreen({super.key});
+  final bool studentPreview;
+
+  const MaterialFinanceMockupScreen({
+    super.key,
+    this.studentPreview = false,
+  });
 
   @override
   State<MaterialFinanceMockupScreen> createState() =>
@@ -150,7 +156,7 @@ class _MaterialFinanceMockupScreenState
       memberName: 'Alice DUPONT',
       initials: 'AD',
       returnDate: '21/08/2026',
-      deposit: 120,
+      deposit: 100,
       itemNumbers: ['GILET-036', 'ORD-006'],
     ),
     _DemoReturnLoan(
@@ -158,7 +164,7 @@ class _MaterialFinanceMockupScreenState
       memberName: 'Bruno MARTIN',
       initials: 'BM',
       returnDate: '22/08/2026',
-      deposit: 80,
+      deposit: 100,
       itemNumbers: ['BT-007', 'PAL-042'],
     ),
     _DemoReturnLoan(
@@ -166,13 +172,16 @@ class _MaterialFinanceMockupScreenState
       memberName: 'Camille LEROY',
       initials: 'CL',
       returnDate: '12/08/2026',
-      deposit: 40,
+      deposit: 100,
       itemNumbers: ['GILET-014'],
     ),
   ];
 
   @override
   Widget build(BuildContext context) {
+    if (widget.studentPreview) {
+      return const _StudentMaterialLoansMockupScreen();
+    }
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -183,6 +192,13 @@ class _MaterialFinanceMockupScreenState
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(
+            tooltip: 'Voir la vue étudiant',
+            onPressed: _openStudentView,
+            icon: const Icon(Icons.person_outline),
+          ),
+        ],
       ),
       body: OceanGradientBackground(
         creatures: CreatureSet.fishAndBubbles,
@@ -1083,7 +1099,7 @@ class _MaterialFinanceMockupScreenState
                 label: 'Référence',
                 value: '+++PRET-2026-0012+++',
               ),
-              const _AmountRow(label: 'Montant', value: '120,00 EUR'),
+              const _AmountRow(label: 'Montant', value: '100,00 EUR'),
               const _StatusPill(label: 'À payer', color: Colors.orange),
             ],
           ),
@@ -1156,6 +1172,218 @@ class _MaterialFinanceMockupScreenState
       builder: (_) => _PackageComposerSheet(
         inventory: _inventory,
         members: _members,
+      ),
+    );
+  }
+
+  Future<void> _openStudentView() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => const _StudentMaterialLoansMockupScreen(),
+      ),
+    );
+  }
+}
+
+/// Read-only student preview shown from the person icon in the organizer mock.
+/// It intentionally contains no request, payment or return action: those are
+/// handled in person by an authorized encadrant.
+class _StudentMaterialLoansMockupScreen extends StatelessWidget {
+  const _StudentMaterialLoansMockupScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        title: const Text(
+          'Boutique · Mes prêts',
+          style: TextStyle(color: Colors.white),
+        ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: OceanGradientBackground(
+        creatures: CreatureSet.fishAndBubbles,
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(top: 4),
+                child: _PageHeader(
+                  title: 'Mon matériel emprunté',
+                  subtitle:
+                      'Voici le matériel associé à votre compte jusqu’à son retour.',
+                ),
+              ),
+              _SurfaceCard(
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor:
+                          AppColors.lichtblauw.withValues(alpha: 0.22),
+                      child: const Text(
+                        'AD',
+                        style: TextStyle(
+                          color: AppColors.donkerblauw,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Alice DUPONT',
+                              style: TextStyle(
+                                  color: AppColors.donkerblauw,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 16)),
+                          SizedBox(height: 2),
+                          Text('PRET-2026-0012',
+                              style: TextStyle(color: Colors.black54)),
+                        ],
+                      ),
+                    ),
+                    const _StatusPill(
+                      label: 'Prêt actif',
+                      color: AppColors.success,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              _SurfaceCard(
+                backgroundColor: Colors.orange.shade50,
+                borderColor: Colors.orange.shade200,
+                child: const Row(
+                  children: [
+                    Icon(Icons.event_available_outlined,
+                        color: Colors.deepOrange),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Retour prévu le 21/08/2026',
+                              style: TextStyle(
+                                  color: AppColors.donkerblauw,
+                                  fontWeight: FontWeight.w800)),
+                          SizedBox(height: 2),
+                          Text('Rapportez tous les articles à un encadrant.',
+                              style: TextStyle(color: Colors.black54)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              const _SurfaceCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Caution',
+                        style: TextStyle(
+                            color: AppColors.donkerblauw,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 16)),
+                    SizedBox(height: 6),
+                    _AmountRow(
+                      label: 'Caution versée',
+                      value: '100,00 EUR',
+                      emphasized: true,
+                    ),
+                    Text(
+                      'Remboursable après le retour et le contrôle du matériel.',
+                      style: TextStyle(color: Colors.black54, height: 1.35),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Matériel que vous avez avec vous',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const _StudentLoanItemCard(
+                category: 'Gilet stabilisateur',
+                option: 'XL',
+                inventoryNumber: 'GILET-036',
+                description: 'MARES · série M36',
+                icon: Icons.accessibility_new_outlined,
+              ),
+              const SizedBox(height: 10),
+              const _StudentLoanItemCard(
+                category: 'Ordinateur',
+                option: 'CRESSI',
+                inventoryNumber: 'ORD-006',
+                description: 'CRESSI LEONARDO',
+                icon: Icons.watch_outlined,
+              ),
+              const SizedBox(height: 14),
+              const _InfoBanner(
+                icon: Icons.info_outline,
+                text:
+                    'Vous n’avez pas de demande à introduire. Pour le retour ou un problème, présentez-vous à un encadrant avec le matériel.',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StudentLoanItemCard extends StatelessWidget {
+  final String category;
+  final String option;
+  final String inventoryNumber;
+  final String description;
+  final IconData icon;
+
+  const _StudentLoanItemCard({
+    required this.category,
+    required this.option,
+    required this.inventoryNumber,
+    required this.description,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _SurfaceCard(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: AppColors.middenblauw),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('$category · $option',
+                    style: const TextStyle(
+                        color: AppColors.donkerblauw,
+                        fontWeight: FontWeight.w800)),
+                const SizedBox(height: 3),
+                Text(inventoryNumber,
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 1),
+                Text(description,
+                    style: const TextStyle(color: Colors.black54)),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1426,7 +1654,7 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
           mode: _paymentMode,
           status: _paymentStatus,
           handoverStatus: _handoverStatus,
-          amount: selectedCount * 40,
+          amount: 100,
           recipientName: _selectedMember?.name ?? _member ?? 'Membre',
           recipientEmail: _selectedMember?.email ?? '',
           onModeChanged: (mode) => setState(() {
@@ -2306,7 +2534,7 @@ class _PaymentPanel extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           _AmountRow(
-            label: 'Caution calculée',
+            label: 'Caution fixe',
             value: '${amount.toStringAsFixed(2)} EUR',
             emphasized: true,
           ),

@@ -22,7 +22,9 @@ class _Com059MockupApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const MaterialFinanceMockupScreen(),
+      home: MaterialFinanceMockupScreen(
+        studentPreview: Uri.base.queryParameters['view'] == 'student',
+      ),
     );
   }
 }
