@@ -1926,16 +1926,19 @@ class _InventoryChoiceRowState extends State<_InventoryChoiceRow> {
   @override
   void initState() {
     super.initState();
-    _variant = widget.option ?? widget.value?.option;
+    _variant = widget.value?.option ?? widget.option;
     _selectedItem = widget.value;
   }
 
   @override
   void didUpdateWidget(covariant _InventoryChoiceRow oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.value != widget.value || oldWidget.option != widget.option) {
+    if (oldWidget.option != widget.option) {
       _selectedItem = widget.value;
-      _variant = widget.option ?? widget.value?.option;
+      _variant = widget.value?.option ?? widget.option;
+    } else if (oldWidget.value != widget.value) {
+      _selectedItem = widget.value;
+      if (widget.value != null) _variant = widget.value!.option;
     }
   }
 
@@ -1949,7 +1952,6 @@ class _InventoryChoiceRowState extends State<_InventoryChoiceRow> {
       .toList();
 
   void _selectVariant(String? variant) {
-    if (variant == null) return;
     setState(() {
       _variant = variant;
       _selectedItem = null;
@@ -1984,21 +1986,25 @@ class _InventoryChoiceRowState extends State<_InventoryChoiceRow> {
         const SizedBox(width: 10),
         Expanded(
           flex: 2,
-          child: DropdownButtonFormField<String>(
+          child: DropdownButtonFormField<String?>(
             initialValue: _variant,
             decoration: const InputDecoration(
               hintText: 'Taille / variante',
               border: OutlineInputBorder(),
               contentPadding: EdgeInsets.symmetric(horizontal: 12),
             ),
-            items: _variants
-                .map(
-                  (variant) => DropdownMenuItem<String>(
-                    value: variant,
-                    child: Text(variant),
-                  ),
-                )
-                .toList(),
+            items: [
+              const DropdownMenuItem<String?>(
+                value: null,
+                child: Text('—'),
+              ),
+              ..._variants.map(
+                (variant) => DropdownMenuItem<String?>(
+                  value: variant,
+                  child: Text(variant),
+                ),
+              ),
+            ],
             onChanged: _selectVariant,
           ),
         ),
