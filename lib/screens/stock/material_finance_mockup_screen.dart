@@ -1139,8 +1139,8 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
   String _paymentStatus = 'unpaid';
   String _handoverStatus = 'blocked';
   final Map<String, String> _handoverConditions = {};
-  String _handoverNotes = '';
-  bool _handoverPhotoAdded = false;
+  final Map<String, String> _handoverNotes = {};
+  final Set<String> _handoverPhotos = {};
 
   @override
   void initState() {
@@ -1470,7 +1470,6 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
   }
 
   Widget _handoverConditionSection(bool hasConditionIssue) {
-    final hasNote = _handoverNotes.trim().isNotEmpty;
     return _SurfaceCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1485,60 +1484,131 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
           ),
           const SizedBox(height: 4),
           const Text(
-            'Documentez l’état avant que le membre emporte le matériel.',
+            'Chaque constat, note et photo est lié à son propre numéro d’inventaire.',
             style: TextStyle(color: Colors.black54),
           ),
           const SizedBox(height: 12),
           ..._selection.values.map(
             (item) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.inventory_2_outlined,
-                          color: AppColors.middenblauw),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '${item.inventoryNumber} · ${item.description}',
-                          style: const TextStyle(
-                            color: AppColors.donkerblauw,
-                            fontWeight: FontWeight.w700,
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blueGrey.shade50,
+                  border: Border.all(color: Colors.blueGrey.shade100),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.inventory_2_outlined,
+                            color: AppColors.middenblauw),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '${item.inventoryNumber} · ${item.description}',
+                            style: const TextStyle(
+                              color: AppColors.donkerblauw,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      initialValue:
+                          _handoverConditions[item.inventoryNumber] ?? 'Bon',
+                      decoration: const InputDecoration(
+                        labelText: 'État constaté',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'Bon',
+                          child: Text('Bon · rien à signaler'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'À surveiller',
+                          child: Text('À surveiller · trace ou usure'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Endommagé',
+                          child: Text('Endommagé · à documenter'),
+                        ),
+                      ],
+                      onChanged: (value) => setState(() {
+                        _handoverConditions[item.inventoryNumber] =
+                            value ?? 'Bon';
+                      }),
+                    ),
+                    const SizedBox(height: 10),
+                    TextFormField(
+                      initialValue: _handoverNotes[item.inventoryNumber],
+                      maxLines: 2,
+                      onChanged: (value) => setState(() {
+                        _handoverNotes[item.inventoryNumber] = value;
+                      }),
+                      decoration: InputDecoration(
+                        labelText: 'Note pour ${item.inventoryNumber}',
+                        hintText: 'Ex. petite rayure sur ce matériel…',
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                    if (_handoverNotes[item.inventoryNumber]
+                            ?.trim()
+                            .isNotEmpty ??
+                        false)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 6),
+                        child: Text(
+                          'Note liée à cet article ✓',
+                          style:
+                              TextStyle(color: AppColors.success, fontSize: 12),
+                        ),
+                      ),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: () => setState(
+                        () => _handoverPhotos.add(item.inventoryNumber),
+                      ),
+                      icon: Icon(
+                        _handoverPhotos.contains(item.inventoryNumber)
+                            ? Icons.photo_library_outlined
+                            : Icons.add_a_photo_outlined,
+                      ),
+                      label: Text(
+                        _handoverPhotos.contains(item.inventoryNumber)
+                            ? 'Photo de ${item.inventoryNumber} ajoutée ✓'
+                            : 'Ajouter une photo de ${item.inventoryNumber}',
+                      ),
+                    ),
+                    if (_handoverPhotos.contains(item.inventoryNumber)) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        height: 68,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.blueGrey.shade100),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.image_outlined,
+                                color: AppColors.middenblauw),
+                            const SizedBox(width: 8),
+                            Text('Photo liée à ${item.inventoryNumber}'),
+                          ],
                         ),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<String>(
-                    initialValue:
-                        _handoverConditions[item.inventoryNumber] ?? 'Bon',
-                    decoration: const InputDecoration(
-                      labelText: 'État constaté',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'Bon',
-                        child: Text('Bon · rien à signaler'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'À surveiller',
-                        child: Text('À surveiller · trace ou usure'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Endommagé',
-                        child: Text('Endommagé · à documenter'),
-                      ),
-                    ],
-                    onChanged: (value) => setState(() {
-                      _handoverConditions[item.inventoryNumber] =
-                          value ?? 'Bon';
-                    }),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -1549,56 +1619,6 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
                   'Un article n’est pas déclaré en parfait état. Ajoutez une note et, si utile, une photo.',
             ),
             const SizedBox(height: 10),
-          ],
-          TextField(
-            maxLines: 2,
-            onChanged: (value) => setState(() => _handoverNotes = value),
-            decoration: const InputDecoration(
-              labelText: 'Note d’état avant remise',
-              hintText: 'Ex. petite rayure sur le boîtier…',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          if (hasNote)
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Padding(
-                padding: EdgeInsets.only(top: 6),
-                child: Text(
-                  'Note d’état enregistrée ✓',
-                  style: TextStyle(color: AppColors.success, fontSize: 12),
-                ),
-              ),
-            ),
-          const SizedBox(height: 10),
-          OutlinedButton.icon(
-            onPressed: () => setState(() => _handoverPhotoAdded = true),
-            icon: Icon(_handoverPhotoAdded
-                ? Icons.photo_library_outlined
-                : Icons.add_a_photo_outlined),
-            label: Text(_handoverPhotoAdded
-                ? 'Photo d’état ajoutée ✓'
-                : 'Ajouter une photo d’état'),
-          ),
-          if (_handoverPhotoAdded) ...[
-            const SizedBox(height: 8),
-            Container(
-              height: 82,
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: Colors.blueGrey.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blueGrey.shade100),
-              ),
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.image_outlined, color: AppColors.middenblauw),
-                  SizedBox(width: 8),
-                  Text('Photo d’état · aperçu mock-up'),
-                ],
-              ),
-            ),
           ],
         ],
       ),
