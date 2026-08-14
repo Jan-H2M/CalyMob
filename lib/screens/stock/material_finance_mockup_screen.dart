@@ -35,26 +35,32 @@ class _MaterialFinanceMockupScreenState
     _DemoMember(
       name: 'Alice DUPONT',
       initials: 'AD',
+      email: 'alice.dupont@calypso-demo.test',
     ),
     _DemoMember(
       name: 'Bruno MARTIN',
       initials: 'BM',
+      email: 'bruno.martin@calypso-demo.test',
     ),
     _DemoMember(
       name: 'Camille LEROY',
       initials: 'CL',
+      email: 'camille.leroy@calypso-demo.test',
     ),
     _DemoMember(
       name: 'David PEETERS',
       initials: 'DP',
+      email: 'david.peeters@calypso-demo.test',
     ),
     _DemoMember(
       name: 'Élodie SIMON',
       initials: 'ES',
+      email: 'elodie.simon@calypso-demo.test',
     ),
     _DemoMember(
       name: 'François LEFEBVRE',
       initials: 'FL',
+      email: 'francois.lefebvre@calypso-demo.test',
     ),
   ];
 
@@ -1202,6 +1208,13 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
     return '$day/$month/${value.year}';
   }
 
+  _DemoMember? get _selectedMember {
+    for (final member in widget.members) {
+      if (member.name == _member) return member;
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final selectedCount = _selection.length;
@@ -1375,6 +1388,8 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
           status: _paymentStatus,
           handoverStatus: _handoverStatus,
           amount: selectedCount * 40,
+          recipientName: _selectedMember?.name ?? _member ?? 'Membre',
+          recipientEmail: _selectedMember?.email ?? '',
           onModeChanged: (mode) => setState(() {
             _paymentMode = mode;
             _paymentStatus = 'unpaid';
@@ -2195,6 +2210,8 @@ class _PaymentPanel extends StatelessWidget {
   final String status;
   final String handoverStatus;
   final double amount;
+  final String recipientName;
+  final String recipientEmail;
   final ValueChanged<String> onModeChanged;
   final VoidCallback onEmailSent;
   final VoidCallback onPaymentConfirmed;
@@ -2205,6 +2222,8 @@ class _PaymentPanel extends StatelessWidget {
     required this.status,
     required this.handoverStatus,
     required this.amount,
+    required this.recipientName,
+    required this.recipientEmail,
     required this.onModeChanged,
     required this.onEmailSent,
     required this.onPaymentConfirmed,
@@ -2279,15 +2298,26 @@ class _PaymentPanel extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              'QR dans l’e-mail du membre',
+                              'QR dans l’e-mail de l’étudiant',
                               style: TextStyle(
                                   color: AppColors.donkerblauw,
                                   fontWeight: FontWeight.w800),
                             ),
                             const SizedBox(height: 4),
-                            const Text(
-                              'Le membre paie avec son application bancaire.',
-                              style: TextStyle(color: Colors.black54),
+                            Text(
+                              'Destinataire · $recipientName',
+                              style: const TextStyle(color: Colors.black54),
+                            ),
+                            Text(
+                              recipientEmail.isEmpty
+                                  ? 'Aucune adresse e-mail enregistrée'
+                                  : recipientEmail,
+                              style: TextStyle(
+                                color: recipientEmail.isEmpty
+                                    ? Colors.deepOrange
+                                    : AppColors.donkerblauw,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                             const SizedBox(height: 8),
                             Wrap(
@@ -2295,9 +2325,11 @@ class _PaymentPanel extends StatelessWidget {
                               runSpacing: 6,
                               children: [
                                 OutlinedButton(
-                                  onPressed: onEmailSent,
+                                  onPressed: recipientEmail.isEmpty
+                                      ? null
+                                      : onEmailSent,
                                   child: Text(status == 'email_sent'
-                                      ? 'E-mail envoyé ✓'
+                                      ? 'E-mail envoyé à l’étudiant ✓'
                                       : 'Envoyer l’e-mail'),
                                 ),
                                 OutlinedButton(
@@ -2624,10 +2656,12 @@ class _StatusPill extends StatelessWidget {
 class _DemoMember {
   final String name;
   final String initials;
+  final String email;
 
   const _DemoMember({
     required this.name,
     required this.initials,
+    required this.email,
   });
 }
 
