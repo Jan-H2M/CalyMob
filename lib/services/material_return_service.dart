@@ -2,7 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/material_loan.dart';
-import '../utils/member_name.dart';
 
 enum MaterialReturnDecision {
   fullRefund,
@@ -12,10 +11,9 @@ enum MaterialReturnDecision {
 }
 
 class MaterialReturnResult {
-  final String? demandId;
-  final String? paymentReference;
+  final String? refundRequestId;
 
-  const MaterialReturnResult({this.demandId, this.paymentReference});
+  const MaterialReturnResult({this.refundRequestId});
 }
 
 class MaterialReturnService {
@@ -270,29 +268,17 @@ class MaterialReturnService {
         .collection('clubs')
         .doc(clubId)
         .collection('inventory_items');
-    final memberRef = _firestore
+    final refundRequestId = 'loan_caution_refund_${loan.id}';
+    final refundRequestRef = _firestore
         .collection('clubs')
         .doc(clubId)
-        .collection('members')
-        .doc(loan.memberId);
-
-    final year = DateTime.now().year;
-    final demandId = 'loan_caution_refund_${loan.id}';
-    final demandRef = _firestore
+        .collection('material_refund_requests')
+        .doc(refundRequestId);
+    final auditRef = _firestore
         .collection('clubs')
         .doc(clubId)
-        .collection('demandes_remboursement')
-        .doc(demandId);
-    final canonicalDemandRef = _firestore
-        .collection('clubs')
-        .doc(clubId)
-        .collection('expense_claims')
-        .doc(demandId);
-    final counterRef = _firestore
-        .collection('clubs')
-        .doc(clubId)
-        .collection('settings')
-        .doc('rem_reference_counter_$year');
+        .collection('audit_logs')
+        .doc();
 
     return _firestore.runTransaction((transaction) async {
       final loanSnap = await transaction.get(loanRef);
@@ -300,37 +286,7 @@ class MaterialReturnService {
         throw Exception('Pret introuvable');
       }
 
-      final existingDemandSnap = await transaction.get(demandRef);
-      final memberSnap =
-          loan.memberId.isNotEmpty ? await transaction.get(memberRef) : null;
-
-      String? paymentReference;
-      String? paymentReferenceKey;
-      String? communicationQr;
-
-      if (refundAmount > 0 && !existingDemandSnap.exists) {
-        final counterSnap = await transaction.get(counterRef);
-        final nextCounter =
-            (counterSnap.data()?['counter'] as num? ?? 0).toInt() + 1;
-        paymentReference =
-            'REM-$year-${nextCounter.toString().padLeft(4, '0')}';
-        paymentReferenceKey = '+++$paymentReference+++';
-        communicationQr =
-            '$paymentReferenceKey Remb. caution ${loan.loanNumber}';
-
-        transaction.set(
-            counterRef,
-            {
-              'counter': nextCounter,
-              'year': year,
-              'updated_at': FieldValue.serverTimestamp(),
-            },
-            SetOptions(merge: true));
-      } else if (existingDemandSnap.exists) {
-        final data = existingDemandSnap.data() ?? {};
-        paymentReference = data['payment_reference']?.toString();
-        communicationQr = data['communication_qr']?.toString();
-      }
+      final existingRefundRequest = await transaction.get(refundRequestRef);
 
       final now = FieldValue.serverTimestamp();
       final retainedAmount = (loan.cautionAmount - refundAmount).clamp(
@@ -351,78 +307,53 @@ class MaterialReturnService {
         'caution_retournee': refundAmount,
         'caution_non_rendue': retainedAmount,
         'caution_payment_status': cautionStatus,
-        if (refundAmount > 0) 'caution_refund_demand_id': demandId,
+        if (refundAmount > 0) 'caution_refund_request_id': refundRequestId,
         'updatedAt': now,
+      });
+
+      transaction.set(auditRef, {
+        'event_type': 'material_loan_return_validated',
+        'entity_type': 'inventory_loan',
+        'entity_id': loan.id,
+        'loan_number': loan.loanNumber,
+        'member_id': loan.memberId,
+        'member_name': loan.memberName,
+        'item_ids': loan.itemIds,
+        'return_decision': decision.name,
+        'refund_amount': refundAmount,
+        'retained_amount': retainedAmount,
+        'actor_id': validatedByUserId,
+        'actor_name': validatedByName,
+        'createdAt': now,
       });
 
       for (final itemId in loan.itemIds) {
         transaction.update(itemsRef.doc(itemId), {
           'statut': 'disponible',
+          'current_loan_id': FieldValue.delete(),
           'updatedAt': now,
         });
       }
 
-      if (refundAmount > 0 && !existingDemandSnap.exists) {
-        final memberData = memberSnap?.data() ?? {};
-        final memberName = _memberName(memberData, fallback: loan.memberName);
-        final fiscalYearId = 'FY$year';
-        final description =
-            'Retour materiel valide pour ${loan.loanNumber}. Caution a rembourser.';
-
-        final legacyPayload = <String, dynamic>{
-          'club_id': clubId,
-          'demandeur_id': loan.memberId,
-          'demandeur_nom': memberName,
-          'demandeur_prenom': memberFirstName(memberData) ?? '',
-          'demandeur_email': memberData['email']?.toString() ?? '',
-          'titre': 'Remboursement caution materiel ${loan.loanNumber}',
-          'description': description,
-          'montant': refundAmount,
-          'categorie': 'caution_materiel',
-          'code_comptable': '439-00-002',
-          'accounting_context': 'loan_caution_refunded',
-          'statut': 'approuve',
-          'date_depense': now,
-          'date_demande': now,
-          'date_soumission': now,
-          'date_approbation': now,
-          'approuve_par': validatedByUserId,
-          'approuve_par_nom': validatedByName,
-          'beneficiaire_type': 'demandeur',
+      if (refundAmount > 0 && !existingRefundRequest.exists) {
+        transaction.set(refundRequestRef, {
+          'loan_id': loan.id,
+          'loan_number': loan.loanNumber,
+          'member_id': loan.memberId,
+          'member_name': loan.memberName,
+          'amount': refundAmount,
+          'retained_amount': retainedAmount,
+          'status': 'pending_treasurer',
           'source': 'loan_caution_return',
-          'source_loan_id': loan.id,
-          'source_loan_number': loan.loanNumber,
-          'linked_to_loan_id': loan.id,
-          'linked_entity_type': 'loan_caution_refund',
-          'payment_reference': paymentReference,
-          'payment_reference_key': paymentReferenceKey,
-          'communication_qr': communicationQr,
-          'fiscal_year_id': fiscalYearId,
           'created_by': validatedByUserId,
+          'created_by_name': validatedByName,
           'created_at': now,
           'updated_at': now,
-          'status_history': [
-            {
-              'from': null,
-              'to': 'approuve',
-              'at': Timestamp.now(),
-              'by': validatedByUserId,
-              'by_name': validatedByName,
-              'reason': 'Retour materiel valide depuis CalyMob',
-            },
-          ],
-        };
-
-        transaction.set(demandRef, legacyPayload);
-        transaction.set(
-          canonicalDemandRef,
-          _canonicalPayload(legacyPayload, demandId, clubId),
-        );
+        });
       }
 
       return MaterialReturnResult(
-        demandId: refundAmount > 0 ? demandId : null,
-        paymentReference: paymentReference,
+        refundRequestId: refundAmount > 0 ? refundRequestId : null,
       );
     });
   }
@@ -441,48 +372,5 @@ class MaterialReturnService {
       case MaterialReturnDecision.decideLater:
         return 'return_validated';
     }
-  }
-
-  String _memberName(Map<String, dynamic> data, {required String fallback}) {
-    return memberDisplayName(data, fallback: fallback);
-  }
-
-  Map<String, dynamic> _canonicalPayload(
-    Map<String, dynamic> legacy,
-    String demandId,
-    String clubId,
-  ) {
-    return {
-      'club_id': clubId,
-      'legacy_collection': 'demandes_remboursement',
-      'legacy_document_id': demandId,
-      'requester_id': legacy['demandeur_id'],
-      'requester_name': legacy['demandeur_nom'],
-      'requester_first_name': legacy['demandeur_prenom'],
-      'requester_email': legacy['demandeur_email'],
-      'title': legacy['titre'],
-      'amount': legacy['montant'],
-      'description': legacy['description'],
-      'category': legacy['categorie'],
-      'account_code': legacy['code_comptable'],
-      'status': 'approved',
-      'requested_at': legacy['date_demande'],
-      'expense_date': legacy['date_depense'],
-      'submitted_at': legacy['date_soumission'],
-      'approved_at': legacy['date_approbation'],
-      'approved_by': legacy['approuve_par'],
-      'approved_by_name': legacy['approuve_par_nom'],
-      'beneficiary_type': legacy['beneficiaire_type'],
-      'payment_qr_message': legacy['communication_qr'],
-      'payment_reference': legacy['payment_reference'],
-      'payment_reference_key': legacy['payment_reference_key'],
-      'fiscal_year_id': legacy['fiscal_year_id'],
-      'source_loan_id': legacy['source_loan_id'],
-      'source_loan_number': legacy['source_loan_number'],
-      'accounting_context': legacy['accounting_context'],
-      'created_at': legacy['created_at'],
-      'updated_at': legacy['updated_at'],
-      'created_by': legacy['created_by'],
-    };
   }
 }
