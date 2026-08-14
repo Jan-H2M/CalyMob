@@ -381,7 +381,7 @@ class _LoanReturnCard extends StatelessWidget {
                       (item) => Padding(
                         padding: const EdgeInsets.only(bottom: 5),
                         child: Text(
-                          '${item.code} - ${item.name}',
+                          '${item.inventoryLabel} · ${item.name}',
                           style: TextStyle(
                             color: Colors.grey.shade800,
                             fontSize: 13.5,
@@ -653,7 +653,7 @@ class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
                 dense: true,
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
-                title: Text('${item.code} - ${item.name}'),
+                title: Text('${item.inventoryLabel} · ${item.name}'),
                 subtitle: item.serialNumber == null
                     ? null
                     : Text('Serie ${item.serialNumber}'),

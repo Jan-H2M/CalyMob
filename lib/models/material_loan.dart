@@ -64,6 +64,14 @@ class MaterialLoanItem {
     return parts.join(' - ');
   }
 
+  /// Explicit label for the physical inventory number shown to staff.
+  String get inventoryLabel {
+    final value = code.trim();
+    return value.isEmpty
+        ? 'N° inventaire non attribué'
+        : 'N° inventaire $value';
+  }
+
   String get displayName => '$typeLabel - $technicalDetails';
 
   bool get isBorrowable {
