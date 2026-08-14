@@ -1174,7 +1174,8 @@ class _StudentMaterialLoansMockupScreen extends StatelessWidget {
                                   color: AppColors.donkerblauw,
                                   fontWeight: FontWeight.w800)),
                           SizedBox(height: 2),
-                          Text('Rapportez tous les articles à un encadrant.',
+                          Text(
+                              'Rapportez le matériel lors de la séance piscine.',
                               style: TextStyle(color: Colors.black54)),
                         ],
                       ),
@@ -1234,7 +1235,7 @@ class _StudentMaterialLoansMockupScreen extends StatelessWidget {
               const _InfoBanner(
                 icon: Icons.info_outline,
                 text:
-                    'Vous n’avez pas de demande à introduire. Pour le retour ou un problème, présentez-vous à un encadrant avec le matériel.',
+                    'Vous n’avez pas de demande à introduire. Rapportez le matériel lors de la séance piscine ou signalez un problème à un encadrant.',
               ),
             ],
           ),
