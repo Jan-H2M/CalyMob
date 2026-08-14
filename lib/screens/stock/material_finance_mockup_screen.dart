@@ -31,40 +31,30 @@ class _MaterialFinanceMockupScreenState
   final Set<String> _refundCreatedLoanIds = {};
   final Set<String> _refundPaidLoanIds = {};
 
-  final List<_DemoRequest> _requests = const [
-    _DemoRequest(
+  final List<_DemoMember> _members = const [
+    _DemoMember(
       name: 'Alice DUPONT',
       initials: 'AD',
-      returnDate: '21/08/2026',
-      lines: [
-        _DemoLine('Gilet stabilisateur', 'XL'),
-        _DemoLine('Ordinateur', '1 article'),
-      ],
     ),
-    _DemoRequest(
+    _DemoMember(
       name: 'Bruno MARTIN',
       initials: 'BM',
-      returnDate: '22/08/2026',
-      lines: [
-        _DemoLine('Bouteille', '12 L · DIN'),
-        _DemoLine('Palmes réglables', '42/43'),
-      ],
     ),
-    _DemoRequest(
+    _DemoMember(
       name: 'Camille LEROY',
       initials: 'CL',
-      returnDate: '19/08/2026',
-      lines: [_DemoLine('Gilet stabilisateur', 'M')],
     ),
-    _DemoRequest(
+    _DemoMember(
       name: 'David PEETERS',
       initials: 'DP',
-      returnDate: '18/08/2026',
-      lines: [
-        _DemoLine('Détendeur', '1 article'),
-        _DemoLine('Bouteille', '10 L · DIN'),
-        _DemoLine('Compas / Boussole', '1 article'),
-      ],
+    ),
+    _DemoMember(
+      name: 'Élodie SIMON',
+      initials: 'ES',
+    ),
+    _DemoMember(
+      name: 'François LEFEBVRE',
+      initials: 'FL',
     ),
   ];
 
@@ -213,7 +203,7 @@ class _MaterialFinanceMockupScreenState
   }
 
   Widget _buildTabs() {
-    const labels = ['Demandes', 'Prêts actifs', 'Retours', 'Finances'];
+    const labels = ['Nouveau prêt', 'Prêts actifs', 'Retours', 'Finances'];
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),
       child: SingleChildScrollView(
@@ -226,8 +216,8 @@ class _MaterialFinanceMockupScreenState
                 child: ChoiceChip(
                   selected: _tab == index,
                   label: Text(
-                    index == 0
-                        ? 'Demandes 4'
+                    index == 1
+                        ? 'Prêts actifs ${_returnLoans.length}'
                         : index == 2
                             ? 'Retours ${_returnLoans.length}'
                             : labels[index],
@@ -257,74 +247,65 @@ class _MaterialFinanceMockupScreenState
       case 3:
         return _buildFinances();
       default:
-        return _buildRequests();
+        return _buildNewLoan();
     }
   }
 
-  Widget _buildRequests() {
+  Widget _buildNewLoan() {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
       children: [
-        _PageHeader(
-          title: 'Demandes de prêt',
+        const _PageHeader(
+          title: 'Nouveau prêt',
           subtitle:
-              'Traiter une demande CalyMob ou composer directement un paquet pour un membre.',
-          action: FilledButton.icon(
-            onPressed: _openManualComposer,
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Composer pour un membre'),
+              'L’encadrant prépare directement le matériel pour un membre, sans demande préalable.',
+        ),
+        const SizedBox(height: 12),
+        _SurfaceCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.add_box_outlined,
+                      color: AppColors.middenblauw, size: 30),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Composer un prêt de matériel',
+                      style: TextStyle(
+                        color: AppColors.donkerblauw,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Choisissez le membre, puis le matériel disponible, la date de retour, la caution et la signature.',
+                style: TextStyle(color: Colors.black54, height: 1.35),
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _openManualComposer,
+                  icon: const Icon(Icons.play_arrow_outlined),
+                  label: const Text('Commencer un nouveau prêt'),
+                ),
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 12),
-        ..._requests.map(_buildRequestCard),
+        const _InfoBanner(
+          icon: Icons.info_outline,
+          text:
+              'Le membre ne crée pas de demande : tout le parcours est réalisé par la personne autorisée à prêter le matériel.',
+        ),
       ],
-    );
-  }
-
-  Widget _buildRequestCard(_DemoRequest request) {
-    return _SurfaceCard(
-      margin: const EdgeInsets.only(bottom: 12),
-      onTap: () => _openRequestAssignment(request),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CircleAvatar(
-            backgroundColor: AppColors.lichtblauw.withValues(alpha: 0.25),
-            foregroundColor: AppColors.donkerblauw,
-            child: Text(request.initials),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  request.name,
-                  style: const TextStyle(
-                    color: AppColors.donkerblauw,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                ...request.lines.map(
-                  (line) => Text(
-                    '${line.category} · ${line.option}',
-                    style: const TextStyle(color: Colors.black54),
-                  ),
-                ),
-                const SizedBox(height: 7),
-                Text(
-                  'Retour prévu · ${request.returnDate}',
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-          const _StatusPill(label: 'Nouveau', color: Colors.orange),
-          const Icon(Icons.chevron_right, color: AppColors.middenblauw),
-        ],
-      ),
     );
   }
 
@@ -332,42 +313,83 @@ class _MaterialFinanceMockupScreenState
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
       children: [
-        const _PageHeader(
+        _PageHeader(
           title: 'Prêts actifs',
           subtitle:
-              'Le matériel est remis uniquement après confirmation de la caution.',
-        ),
-        _SurfaceCard(
-          child: Row(
-            children: [
-              const Icon(Icons.inventory_2_outlined,
-                  color: AppColors.middenblauw, size: 30),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Alice DUPONT',
-                        style: TextStyle(
-                            color: AppColors.donkerblauw,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 16)),
-                    SizedBox(height: 3),
-                    Text('PRET-2026-0012 · 2 articles'),
-                  ],
-                ),
-              ),
-              _StatusPill(label: 'Caution à payer', color: Colors.orange),
-            ],
+              '${_returnLoans.length} prêt(s) en cours. Ouvrez un prêt pour consulter le matériel ou démarrer le retour.',
+          action: IconButton(
+            tooltip: 'Nouveau prêt',
+            onPressed: () => setState(() => _tab = 0),
+            icon: const Icon(Icons.add_circle_outline, color: Colors.white),
           ),
         ),
+        ..._returnLoans.map(_buildActiveLoanCard),
         const SizedBox(height: 12),
-        _InfoBanner(
-          icon: Icons.lock_outline,
+        const _InfoBanner(
+          icon: Icons.assignment_return_outlined,
           text:
-              'La remise est bloquée jusqu’à une confirmation bancaire ou une confirmation manuelle tracée.',
+              'Pour enregistrer un retour, ouvrez le prêt concerné puis contrôlez le matériel article par article.',
         ),
       ],
+    );
+  }
+
+  Widget _buildActiveLoanCard(_DemoReturnLoan loan) {
+    final items = _itemsForReturn(loan);
+    final material = items
+        .map((item) => '${_categoryForItem(item)} · ${item.option}')
+        .join(' · ');
+    return _SurfaceCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      onTap: () => setState(() {
+        _selectedReturnLoanId = loan.id;
+        _tab = 2;
+      }),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 25,
+            backgroundColor: AppColors.lichtblauw.withValues(alpha: 0.25),
+            foregroundColor: AppColors.donkerblauw,
+            child: Text(loan.initials,
+                style: const TextStyle(fontWeight: FontWeight.w800)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(loan.memberName,
+                    style: const TextStyle(
+                      color: AppColors.donkerblauw,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    )),
+                const SizedBox(height: 3),
+                Text('${loan.id} · ${items.length} article(s)'),
+                const SizedBox(height: 5),
+                Text(material,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.black54)),
+                const SizedBox(height: 6),
+                Text('Retour prévu · ${loan.returnDate}',
+                    style:
+                        TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 6),
+          const Column(
+            children: [
+              _StatusPill(label: 'Actif', color: AppColors.success),
+              SizedBox(height: 10),
+              Icon(Icons.chevron_right, color: AppColors.middenblauw),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -1088,34 +1110,7 @@ class _MaterialFinanceMockupScreenState
       backgroundColor: Colors.white,
       builder: (_) => _PackageComposerSheet(
         inventory: _inventory,
-        requests: _requests,
-      ),
-    );
-  }
-
-  Future<void> _openRequestAssignment(_DemoRequest request) async {
-    final selected = await showModalBottomSheet<Map<String, _DemoItem>>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.white,
-      builder: (_) => _RequestAssignmentSheet(
-        request: request,
-        inventory: _inventory,
-      ),
-    );
-    if (!mounted || selected == null) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.white,
-      builder: (_) => _PackageComposerSheet(
-        inventory: _inventory,
-        requests: _requests,
-        initialMember: request.name,
-        initialSelection: selected,
-        initialStep: 2,
+        members: _members,
       ),
     );
   }
@@ -1123,17 +1118,11 @@ class _MaterialFinanceMockupScreenState
 
 class _PackageComposerSheet extends StatefulWidget {
   final Map<String, List<_DemoItem>> inventory;
-  final List<_DemoRequest> requests;
-  final String? initialMember;
-  final Map<String, _DemoItem>? initialSelection;
-  final int initialStep;
+  final List<_DemoMember> members;
 
   const _PackageComposerSheet({
     required this.inventory,
-    required this.requests,
-    this.initialMember,
-    this.initialSelection,
-    this.initialStep = 0,
+    required this.members,
   });
 
   @override
@@ -1156,10 +1145,10 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
   @override
   void initState() {
     super.initState();
-    _step = widget.initialStep;
-    _furthestStep = widget.initialStep;
-    _member = widget.initialMember;
-    _selection = {...?widget.initialSelection};
+    _step = 0;
+    _furthestStep = 0;
+    _member = null;
+    _selection = {};
   }
 
   void _goToStep(int target) {
@@ -1198,7 +1187,7 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
       useSafeArea: true,
       backgroundColor: Colors.white,
       builder: (_) => _MemberSearchSheet(
-        members: widget.requests,
+        members: widget.members,
         selectedMember: _member,
       ),
     );
@@ -1628,99 +1617,8 @@ class _PackageComposerSheetState extends State<_PackageComposerSheet> {
   }
 }
 
-class _RequestAssignmentSheet extends StatefulWidget {
-  final _DemoRequest request;
-  final Map<String, List<_DemoItem>> inventory;
-
-  const _RequestAssignmentSheet({
-    required this.request,
-    required this.inventory,
-  });
-
-  @override
-  State<_RequestAssignmentSheet> createState() =>
-      _RequestAssignmentSheetState();
-}
-
-class _RequestAssignmentSheetState extends State<_RequestAssignmentSheet> {
-  final Map<String, _DemoItem> _selected = {};
-  final Set<String> _resolvedCategories = {};
-
-  @override
-  Widget build(BuildContext context) {
-    final complete = widget.request.lines.every(
-      (line) => _resolvedCategories.contains(line.category),
-    );
-    return SizedBox(
-      height: MediaQuery.sizeOf(context).height * 0.84,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text('Demande de ${widget.request.name}'),
-          automaticallyImplyLeading: false,
-          actions: [
-            IconButton(
-              onPressed: () => Navigator.of(context).pop(),
-              icon: const Icon(Icons.close),
-            ),
-          ],
-        ),
-        body: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 22),
-          children: [
-            const _PageHeader(
-              title: '2 · Attribuer l’inventaire',
-              subtitle:
-                  'Choisissez un numéro disponible correspondant à chaque variante demandée.',
-              dark: true,
-            ),
-            const _InventoryColumnHeader(),
-            ...widget.request.lines.map(
-              (line) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _InventoryChoiceRow(
-                  label: line.category,
-                  option: line.option == '1 article' ? null : line.option,
-                  value: _selected[line.category],
-                  items: widget.inventory[line.category] ?? [],
-                  onChanged: (item) => setState(() {
-                    if (item == null) {
-                      _selected.remove(line.category);
-                    } else {
-                      _selected[line.category] = item;
-                    }
-                  }),
-                  onResolvedChanged: (resolved) => setState(() {
-                    if (resolved) {
-                      _resolvedCategories.add(line.category);
-                    } else {
-                      _resolvedCategories.remove(line.category);
-                    }
-                  }),
-                ),
-              ),
-            ),
-            const _InfoBanner(
-              icon: Icons.payments_outlined,
-              text:
-                  'Après l’attribution, l’étape 3 ouvre les dates, la caution et les deux modes de paiement.',
-            ),
-            const SizedBox(height: 14),
-            FilledButton.icon(
-              onPressed: complete
-                  ? () => Navigator.of(context).pop({..._selected})
-                  : null,
-              icon: const Icon(Icons.arrow_forward),
-              label: const Text('Étape 3 · Détails et paiement'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _MemberSearchSheet extends StatefulWidget {
-  final List<_DemoRequest> members;
+  final List<_DemoMember> members;
   final String? selectedMember;
 
   const _MemberSearchSheet({
@@ -1840,8 +1738,7 @@ class _MemberSearchSheetState extends State<_MemberSearchSheet> {
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                            subtitle:
-                                Text('Retour prévu · ${member.returnDate}'),
+                            subtitle: const Text('Membre du club'),
                             trailing: selected
                                 ? const Icon(Icons.check_circle,
                                     color: AppColors.success)
@@ -1911,19 +1808,15 @@ class _InventoryColumnHeader extends StatelessWidget {
 
 class _InventoryChoiceRow extends StatefulWidget {
   final String label;
-  final String? option;
   final _DemoItem? value;
   final List<_DemoItem> items;
   final ValueChanged<_DemoItem?> onChanged;
-  final ValueChanged<bool>? onResolvedChanged;
 
   const _InventoryChoiceRow({
     required this.label,
-    this.option,
     required this.value,
     required this.items,
     required this.onChanged,
-    this.onResolvedChanged,
   });
 
   @override
@@ -1937,19 +1830,16 @@ class _InventoryChoiceRowState extends State<_InventoryChoiceRow> {
   @override
   void initState() {
     super.initState();
-    _variant = widget.value?.option ?? widget.option;
+    _variant = widget.value?.option;
     _selectedItem = widget.value;
   }
 
   @override
   void didUpdateWidget(covariant _InventoryChoiceRow oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.option != widget.option) {
+    if (oldWidget.value != widget.value) {
       _selectedItem = widget.value;
-      _variant = widget.value?.option ?? widget.option;
-    } else if (oldWidget.value != widget.value) {
-      _selectedItem = widget.value;
-      if (widget.value != null) _variant = widget.value!.option;
+      _variant = widget.value?.option;
     }
   }
 
@@ -1967,7 +1857,6 @@ class _InventoryChoiceRowState extends State<_InventoryChoiceRow> {
       _variant = variant;
       _selectedItem = null;
     });
-    widget.onResolvedChanged?.call(false);
     widget.onChanged(null);
   }
 
@@ -2064,7 +1953,6 @@ class _InventoryChoiceRowState extends State<_InventoryChoiceRow> {
                 ? null
                 : (item) {
                     setState(() => _selectedItem = item);
-                    widget.onResolvedChanged?.call(true);
                     widget.onChanged(item);
                   },
           ),
@@ -2713,25 +2601,14 @@ class _StatusPill extends StatelessWidget {
   }
 }
 
-class _DemoRequest {
+class _DemoMember {
   final String name;
   final String initials;
-  final String returnDate;
-  final List<_DemoLine> lines;
 
-  const _DemoRequest({
+  const _DemoMember({
     required this.name,
     required this.initials,
-    required this.returnDate,
-    required this.lines,
   });
-}
-
-class _DemoLine {
-  final String category;
-  final String option;
-
-  const _DemoLine(this.category, this.option);
 }
 
 class _DemoReturnLoan {
