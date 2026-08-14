@@ -81,4 +81,117 @@ void main() {
     expect(legacyClaims.docs, isEmpty);
     expect(canonicalClaims.docs, isEmpty);
   });
+
+  test('keeps a damaged item out of stock and records its item incident',
+      () async {
+    final firestore = FakeFirebaseFirestore();
+    final service = MaterialReturnService(firestore: firestore);
+    const itemId = 'gilet-036';
+    const loanId = 'loan-002';
+
+    await firestore
+        .collection('clubs')
+        .doc(clubId)
+        .collection('inventory_items')
+        .doc(itemId)
+        .set({'statut': 'prete', 'current_loan_id': loanId});
+    await firestore
+        .collection('clubs')
+        .doc(clubId)
+        .collection('inventory_loans')
+        .doc(loanId)
+        .set({'statut': 'actif'});
+
+    const loan = MaterialLoan(
+      id: loanId,
+      loanNumber: 'PRET-2026-0002',
+      memberId: 'bruno',
+      memberName: 'Bruno MARTIN',
+      itemIds: [itemId],
+      cautionAmount: 100,
+      cautionStatus: 'paid',
+      status: 'actif',
+      items: [],
+    );
+
+    await service.validateReturn(
+      clubId: clubId,
+      loan: loan,
+      decision: MaterialReturnDecision.partialRefund,
+      refundAmount: 80,
+      validatedByUserId: 'encadrant-1',
+      validatedByName: 'Encadrant',
+      itemChecks: const [
+        MaterialReturnItemCheck(
+          itemId: itemId,
+          condition: MaterialReturnItemCondition.damaged,
+          note: 'Sangle déchirée.',
+          photoUrls: ['https://example.test/gilet-036.jpg'],
+        ),
+      ],
+    );
+
+    final item = await firestore
+        .collection('clubs')
+        .doc(clubId)
+        .collection('inventory_items')
+        .doc(itemId)
+        .get();
+    expect(item.data()?['statut'], 'en_maintenance');
+    expect(item.data()?['last_return_condition'], 'damaged');
+    expect(
+      item.data()?['last_return_photo_urls'],
+      ['https://example.test/gilet-036.jpg'],
+    );
+
+    final incident = await firestore
+        .collection('clubs')
+        .doc(clubId)
+        .collection('material_incidents')
+        .doc('${loanId}_$itemId')
+        .get();
+    expect(incident.data()?['status'], 'pending_maintenance');
+    expect(incident.data()?['note'], 'Sangle déchirée.');
+    expect(
+      incident.data()?['photo_urls'],
+      ['https://example.test/gilet-036.jpg'],
+    );
+  });
+
+  test('prevents a reimbursement while a missing item awaits a decision',
+      () async {
+    final firestore = FakeFirebaseFirestore();
+    final service = MaterialReturnService(firestore: firestore);
+    const loan = MaterialLoan(
+      id: 'loan-003',
+      loanNumber: 'PRET-2026-0003',
+      memberId: 'caroline',
+      memberName: 'Caroline SIMON',
+      itemIds: ['pal-042'],
+      cautionAmount: 100,
+      cautionStatus: 'paid',
+      status: 'actif',
+      items: [],
+    );
+
+    await expectLater(
+      service.validateReturn(
+        clubId: clubId,
+        loan: loan,
+        decision: MaterialReturnDecision.fullRefund,
+        refundAmount: 100,
+        validatedByUserId: 'encadrant-1',
+        validatedByName: 'Encadrant',
+        itemChecks: const [
+          MaterialReturnItemCheck(
+            itemId: 'pal-042',
+            condition: MaterialReturnItemCondition.missing,
+            note: 'Non rapporté.',
+            photoUrls: ['https://example.test/pal-042.jpg'],
+          ),
+        ],
+      ),
+      throwsArgumentError,
+    );
+  });
 }

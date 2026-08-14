@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/app_colors.dart';
@@ -156,7 +157,8 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const LoadingWidget(
-              message: 'Chargement de votre matériel...');
+            message: 'Chargement de votre matériel...',
+          );
         }
 
         if (snapshot.hasError) {
@@ -223,8 +225,12 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
-      builder: (context) =>
-          _ReturnValidationSheet(loan: loan, onSubmit: _validateReturn),
+      builder: (context) => _ReturnValidationSheet(
+        loan: loan,
+        clubId: _clubId,
+        service: _service,
+        onSubmit: _validateReturn,
+      ),
     );
   }
 
@@ -254,6 +260,7 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
     MaterialReturnDecision decision,
     double refundAmount,
     String notes,
+    List<MaterialReturnItemCheck> itemChecks,
   ) async {
     final authProvider = context.read<AuthProvider>();
     final memberProvider = context.read<MemberProvider>();
@@ -270,6 +277,7 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
         validatedByUserId: userId,
         validatedByName: memberProvider.displayName,
         notes: notes,
+        itemChecks: itemChecks,
       );
 
       if (!mounted) return;
@@ -494,8 +502,11 @@ class _MemberLoanCard extends StatelessWidget {
     final dueDate = loan.expectedReturnDate;
     final today = DateTime.now();
     final isLate = dueDate != null &&
-        DateTime(dueDate.year, dueDate.month, dueDate.day)
-            .isBefore(DateTime(today.year, today.month, today.day));
+        DateTime(
+          dueDate.year,
+          dueDate.month,
+          dueDate.day,
+        ).isBefore(DateTime(today.year, today.month, today.day));
     return Material(
       color: isLate ? Colors.deepOrange.shade50 : Colors.white,
       borderRadius: BorderRadius.circular(14),
@@ -581,14 +592,22 @@ class _MemberLoanCard extends StatelessWidget {
 
 class _ReturnValidationSheet extends StatefulWidget {
   final MaterialLoan loan;
+  final String clubId;
+  final MaterialReturnService service;
   final Future<void> Function(
     MaterialLoan loan,
     MaterialReturnDecision decision,
     double refundAmount,
     String notes,
+    List<MaterialReturnItemCheck> itemChecks,
   ) onSubmit;
 
-  const _ReturnValidationSheet({required this.loan, required this.onSubmit});
+  const _ReturnValidationSheet({
+    required this.loan,
+    required this.clubId,
+    required this.service,
+    required this.onSubmit,
+  });
 
   @override
   State<_ReturnValidationSheet> createState() => _ReturnValidationSheetState();
@@ -597,6 +616,7 @@ class _ReturnValidationSheet extends StatefulWidget {
 class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
   final _notesController = TextEditingController();
   late final TextEditingController _refundController;
+  late final List<_ReturnItemDraft> _itemDrafts;
   MaterialReturnDecision _decision = MaterialReturnDecision.fullRefund;
   bool _submitting = false;
 
@@ -606,12 +626,17 @@ class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
     _refundController = TextEditingController(
       text: widget.loan.cautionAmount.toStringAsFixed(2),
     );
+    _itemDrafts =
+        widget.loan.items.map((item) => _ReturnItemDraft(item: item)).toList();
   }
 
   @override
   void dispose() {
     _notesController.dispose();
     _refundController.dispose();
+    for (final draft in _itemDrafts) {
+      draft.dispose();
+    }
     super.dispose();
   }
 
@@ -649,19 +674,21 @@ class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
               style: TextStyle(color: Colors.grey.shade700),
             ),
             const SizedBox(height: 18),
-            ...widget.loan.items.map(
-              (item) => CheckboxListTile(
-                value: true,
-                onChanged: (_) {},
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
-                title: Text('${item.inventoryLabel} · ${item.name}'),
-                subtitle: item.serialNumber == null
-                    ? null
-                    : Text('Serie ${item.serialNumber}'),
+            const Text(
+              'Contrôle article par article',
+              style: TextStyle(
+                color: AppColors.donkerblauw,
+                fontWeight: FontWeight.w800,
               ),
             ),
+            const SizedBox(height: 8),
+            if (_itemDrafts.isEmpty)
+              const _InlineNotice(
+                text:
+                    'Les détails des articles ne sont pas disponibles pour ce prêt ancien.',
+              )
+            else
+              ..._itemDrafts.map(_buildItemCheck),
             const SizedBox(height: 10),
             DropdownButtonFormField<MaterialReturnDecision>(
               initialValue: _decision,
@@ -714,6 +741,15 @@ class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
                 border: OutlineInputBorder(),
               ),
             ),
+            if (_itemDrafts.any(
+              (draft) => draft.condition == MaterialReturnItemCondition.missing,
+            )) ...[
+              const SizedBox(height: 10),
+              const _InlineNotice(
+                text:
+                    'Article manquant : aucune caution n’est remboursée maintenant. La décision de compensation sera traitée dans CaliCompta.',
+              ),
+            ],
             const SizedBox(height: 12),
             TextField(
               controller: _notesController,
@@ -756,6 +792,151 @@ class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
     );
   }
 
+  Widget _buildItemCheck(_ReturnItemDraft draft) {
+    final item = draft.item;
+    final requiresEvidence =
+        draft.condition != MaterialReturnItemCondition.good;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color:
+            requiresEvidence ? Colors.orange.shade50 : Colors.blueGrey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: requiresEvidence
+              ? Colors.orange.shade200
+              : Colors.blueGrey.shade100,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${item.typeLabel} · ${item.variantLabel}',
+            style: const TextStyle(
+              color: AppColors.donkerblauw,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            item.inventoryLabel,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          Text(
+            item.technicalDetails,
+            style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+          ),
+          const SizedBox(height: 10),
+          DropdownButtonFormField<MaterialReturnItemCondition>(
+            initialValue: draft.condition,
+            decoration: const InputDecoration(
+              labelText: 'État au retour',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            items: const [
+              DropdownMenuItem(
+                value: MaterialReturnItemCondition.good,
+                child: Text('Complet et en bon état'),
+              ),
+              DropdownMenuItem(
+                value: MaterialReturnItemCondition.damaged,
+                child: Text('Endommagé · à réparer'),
+              ),
+              DropdownMenuItem(
+                value: MaterialReturnItemCondition.missing,
+                child: Text('Manquant · décision requise'),
+              ),
+            ],
+            onChanged: _submitting
+                ? null
+                : (value) {
+                    if (value == null) return;
+                    setState(() {
+                      draft.condition = value;
+                      if (value == MaterialReturnItemCondition.missing) {
+                        _decision = MaterialReturnDecision.decideLater;
+                        _refundController.text = '0.00';
+                      }
+                    });
+                  },
+          ),
+          if (requiresEvidence) ...[
+            const SizedBox(height: 10),
+            TextField(
+              controller: draft.noteController,
+              enabled: !_submitting,
+              minLines: 2,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Commentaire obligatoire',
+                hintText: 'Décrivez précisément ce qui est constaté.',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _submitting
+                      ? null
+                      : () => _pickPhoto(draft, ImageSource.camera),
+                  icon: const Icon(Icons.photo_camera_outlined),
+                  label: const Text('Prendre une photo'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _submitting
+                      ? null
+                      : () => _pickPhoto(draft, ImageSource.gallery),
+                  icon: const Icon(Icons.photo_library_outlined),
+                  label: const Text('Galerie'),
+                ),
+                if (draft.photos.isNotEmpty)
+                  Chip(
+                    avatar: const Icon(Icons.image_outlined, size: 18),
+                    label: Text('${draft.photos.length} photo(s)'),
+                    onDeleted: _submitting
+                        ? null
+                        : () => setState(() => draft.photos.removeLast()),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'La photo restera associée à ${item.inventoryLabel}.',
+              style: TextStyle(color: Colors.grey.shade700, fontSize: 12.5),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickPhoto(_ReturnItemDraft draft, ImageSource source) async {
+    try {
+      final photo = await ImagePicker().pickImage(
+        source: source,
+        imageQuality: 82,
+        maxWidth: 1800,
+      );
+      if (photo != null && mounted) {
+        setState(() => draft.photos.add(photo));
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Impossible d’ajouter la photo : $error'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
   Future<void> _submit() async {
     final refundAmount =
         double.tryParse(_refundController.text.trim().replaceAll(',', '.')) ??
@@ -771,15 +952,70 @@ class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
       return;
     }
 
+    for (final draft in _itemDrafts) {
+      if (draft.condition == MaterialReturnItemCondition.good) continue;
+      if (draft.noteController.text.trim().isEmpty || draft.photos.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '${draft.item.inventoryLabel} : ajoutez un commentaire et une photo.',
+            ),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        return;
+      }
+    }
+
     setState(() => _submitting = true);
-    await widget.onSubmit(
-      widget.loan,
-      _decision,
-      refundAmount,
-      _notesController.text,
-    );
-    if (mounted) setState(() => _submitting = false);
+    try {
+      final itemChecks = <MaterialReturnItemCheck>[];
+      for (final draft in _itemDrafts) {
+        final photoUrls = <String>[];
+        for (final photo in draft.photos) {
+          final bytes = await photo.readAsBytes();
+          final url = await widget.service.uploadReturnConditionPhoto(
+            clubId: widget.clubId,
+            loanId: widget.loan.id,
+            itemId: draft.item.id,
+            bytes: bytes,
+            fileName: photo.name,
+            contentType: photo.mimeType,
+          );
+          photoUrls.add(url);
+        }
+        itemChecks.add(
+          MaterialReturnItemCheck(
+            itemId: draft.item.id,
+            condition: draft.condition,
+            note: draft.noteController.text,
+            photoUrls: photoUrls,
+          ),
+        );
+      }
+
+      await widget.onSubmit(
+        widget.loan,
+        _decision,
+        refundAmount,
+        _notesController.text,
+        itemChecks,
+      );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
   }
+}
+
+class _ReturnItemDraft {
+  final MaterialLoanItem item;
+  final TextEditingController noteController = TextEditingController();
+  final List<XFile> photos = [];
+  MaterialReturnItemCondition condition = MaterialReturnItemCondition.good;
+
+  _ReturnItemDraft({required this.item});
+
+  void dispose() => noteController.dispose();
 }
 
 class _DirectLoanSheet extends StatefulWidget {
@@ -852,7 +1088,8 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
             }
             final selectedItems = items
                 .where(
-                    (item) => _selectedInventoryByType.values.contains(item.id))
+                  (item) => _selectedInventoryByType.values.contains(item.id),
+                )
                 .toList();
             final canSubmit = _member != null &&
                 selectedItems.isNotEmpty &&
@@ -924,10 +1161,8 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                         )
                       else
                         ...grouped.entries.map(
-                          (entry) => _buildInventorySelector(
-                            entry.key,
-                            entry.value,
-                          ),
+                          (entry) =>
+                              _buildInventorySelector(entry.key, entry.value),
                         ),
                       const SizedBox(height: 14),
                       TextField(
@@ -1077,7 +1312,8 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
         .where((item) => item.variantLabel == selectedVariant)
         .toList()
       ..sort(
-          (left, right) => left.inventoryLabel.compareTo(right.inventoryLabel));
+        (left, right) => left.inventoryLabel.compareTo(right.inventoryLabel),
+      );
     final isSelected = _selectedInventoryByType.containsKey(type);
 
     return Container(
@@ -1112,9 +1348,11 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                 fontWeight: FontWeight.w800,
               ),
             ),
-            subtitle: Text(isSelected
-                ? 'Choisir la variante et le numéro'
-                : 'Non sélectionné'),
+            subtitle: Text(
+              isSelected
+                  ? 'Choisir la variante et le numéro'
+                  : 'Non sélectionné',
+            ),
           ),
           if (isSelected) ...[
             DropdownButtonFormField<String>(
@@ -1125,10 +1363,10 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                 border: OutlineInputBorder(),
               ),
               items: variants
-                  .map((variant) => DropdownMenuItem(
-                        value: variant,
-                        child: Text(variant),
-                      ))
+                  .map(
+                    (variant) =>
+                        DropdownMenuItem(value: variant, child: Text(variant)),
+                  )
                   .toList(),
               onChanged: (variant) {
                 if (variant == null) return;
@@ -1161,9 +1399,8 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                   ),
                 ),
               ],
-              onChanged: (itemId) => setState(
-                () => _selectedInventoryByType[type] = itemId,
-              ),
+              onChanged: (itemId) =>
+                  setState(() => _selectedInventoryByType[type] = itemId),
             ),
           ],
         ],

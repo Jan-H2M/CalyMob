@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/material_loan.dart';
@@ -10,6 +11,33 @@ enum MaterialReturnDecision {
   decideLater,
 }
 
+/// Physical condition recorded for one exact inventory item at return.
+///
+/// Incidents belong to the physical item, not merely to the loan. This makes
+/// its history available to CalyCompta when staff repair or replace equipment.
+enum MaterialReturnItemCondition { good, damaged, missing }
+
+class MaterialReturnItemCheck {
+  final String itemId;
+  final MaterialReturnItemCondition condition;
+  final String? note;
+  final List<String> photoUrls;
+
+  const MaterialReturnItemCheck({
+    required this.itemId,
+    this.condition = MaterialReturnItemCondition.good,
+    this.note,
+    this.photoUrls = const [],
+  });
+
+  Map<String, dynamic> toMap() => {
+        'item_id': itemId,
+        'condition': condition.name,
+        if (note != null && note!.trim().isNotEmpty) 'note': note!.trim(),
+        'photo_urls': photoUrls,
+      };
+}
+
 class MaterialReturnResult {
   final String? refundRequestId;
 
@@ -18,9 +46,44 @@ class MaterialReturnResult {
 
 class MaterialReturnService {
   final FirebaseFirestore _firestore;
+  FirebaseStorage? _storage;
 
-  MaterialReturnService({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+  MaterialReturnService({
+    FirebaseFirestore? firestore,
+    FirebaseStorage? storage,
+  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+        _storage = storage;
+
+  FirebaseStorage get _storageInstance => _storage ??= FirebaseStorage.instance;
+
+  /// Uploads a return-condition photo under the exact item and loan. The URL
+  /// is subsequently attached to the immutable condition history entry.
+  Future<String> uploadReturnConditionPhoto({
+    required String clubId,
+    required String loanId,
+    required String itemId,
+    required Uint8List bytes,
+    required String fileName,
+    String? contentType,
+  }) async {
+    if (bytes.isEmpty) {
+      throw ArgumentError.value(bytes, 'bytes', 'Photo vide');
+    }
+
+    final safeName = fileName
+        .replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_')
+        .replaceFirst(RegExp(r'^_+'), '');
+    final timestamp = DateTime.now().microsecondsSinceEpoch;
+    final path = 'clubs/$clubId/inventory_incidents/$loanId/$itemId/'
+        '${timestamp}_${safeName.isEmpty ? 'photo.jpg' : safeName}';
+    final reference = _storageInstance.ref().child(path);
+
+    await reference.putData(
+      bytes,
+      SettableMetadata(contentType: contentType ?? 'image/jpeg'),
+    );
+    return reference.getDownloadURL();
+  }
 
   Stream<List<MaterialLoan>> watchReturnableLoans(String clubId) {
     return _firestore
@@ -257,7 +320,30 @@ class MaterialReturnService {
     required String validatedByUserId,
     required String validatedByName,
     String? notes,
+    List<MaterialReturnItemCheck> itemChecks = const [],
   }) async {
+    if (refundAmount < 0 || refundAmount > loan.cautionAmount) {
+      throw ArgumentError.value(
+        refundAmount,
+        'refundAmount',
+        'Le remboursement doit être compris entre 0 et la caution.',
+      );
+    }
+
+    final checksByItemId = <String, MaterialReturnItemCheck>{
+      for (final check in itemChecks)
+        if (loan.itemIds.contains(check.itemId)) check.itemId: check,
+    };
+    final hasMissingItem = checksByItemId.values.any(
+      (check) => check.condition == MaterialReturnItemCondition.missing,
+    );
+    if (hasMissingItem && refundAmount > 0) {
+      throw ArgumentError(
+        'Un article manquant doit d’abord être examiné dans CalyCompta. '
+        'Aucun remboursement ne peut être demandé à ce stade.',
+      );
+    }
+
     final loanRef = _firestore
         .collection('clubs')
         .doc(clubId)
@@ -279,6 +365,10 @@ class MaterialReturnService {
         .doc(clubId)
         .collection('audit_logs')
         .doc();
+    final incidentsRef = _firestore
+        .collection('clubs')
+        .doc(clubId)
+        .collection('material_incidents');
 
     return _firestore.runTransaction((transaction) async {
       final loanSnap = await transaction.get(loanRef);
@@ -289,11 +379,18 @@ class MaterialReturnService {
       final existingRefundRequest = await transaction.get(refundRequestRef);
 
       final now = FieldValue.serverTimestamp();
-      final retainedAmount = (loan.cautionAmount - refundAmount).clamp(
-        0,
-        loan.cautionAmount,
-      );
+      final historyRecordedAt = Timestamp.now();
+      final retainedAmount = (loan.cautionAmount - refundAmount)
+          .clamp(0, loan.cautionAmount)
+          .toDouble();
       final cautionStatus = _cautionStatusFor(decision, refundAmount);
+      final normalizedChecks = <Map<String, dynamic>>[];
+
+      for (final itemId in loan.itemIds) {
+        final check =
+            checksByItemId[itemId] ?? MaterialReturnItemCheck(itemId: itemId);
+        normalizedChecks.add(check.toMap());
+      }
 
       transaction.update(loanRef, {
         'statut': 'rendu',
@@ -307,6 +404,7 @@ class MaterialReturnService {
         'caution_retournee': refundAmount,
         'caution_non_rendue': retainedAmount,
         'caution_payment_status': cautionStatus,
+        'return_item_checks': normalizedChecks,
         if (refundAmount > 0) 'caution_refund_request_id': refundRequestId,
         'updatedAt': now,
       });
@@ -322,17 +420,61 @@ class MaterialReturnService {
         'return_decision': decision.name,
         'refund_amount': refundAmount,
         'retained_amount': retainedAmount,
+        'item_checks': normalizedChecks,
+        'incident_count': normalizedChecks
+            .where((check) => check['condition'] != 'good')
+            .length,
         'actor_id': validatedByUserId,
         'actor_name': validatedByName,
         'createdAt': now,
       });
 
       for (final itemId in loan.itemIds) {
+        final check =
+            checksByItemId[itemId] ?? MaterialReturnItemCheck(itemId: itemId);
+        final hasIncident = check.condition != MaterialReturnItemCondition.good;
         transaction.update(itemsRef.doc(itemId), {
-          'statut': 'disponible',
+          'statut': hasIncident ? 'en_maintenance' : 'disponible',
           'current_loan_id': FieldValue.delete(),
+          'last_return_condition': check.condition.name,
+          'last_return_note': check.note?.trim(),
+          'last_return_photo_urls': check.photoUrls,
+          'condition_history': FieldValue.arrayUnion([
+            {
+              'loan_id': loan.id,
+              'loan_number': loan.loanNumber,
+              'condition': check.condition.name,
+              if (check.note != null && check.note!.trim().isNotEmpty)
+                'note': check.note!.trim(),
+              'photo_urls': check.photoUrls,
+              'recorded_by': validatedByUserId,
+              'recorded_by_name': validatedByName,
+              'recorded_at': historyRecordedAt,
+            },
+          ]),
           'updatedAt': now,
         });
+
+        if (hasIncident) {
+          final incidentRef = incidentsRef.doc('${loan.id}_$itemId');
+          transaction.set(incidentRef, {
+            'loan_id': loan.id,
+            'loan_number': loan.loanNumber,
+            'member_id': loan.memberId,
+            'member_name': loan.memberName,
+            'item_id': itemId,
+            'condition': check.condition.name,
+            'status': check.condition == MaterialReturnItemCondition.missing
+                ? 'decision_required'
+                : 'pending_maintenance',
+            'note': check.note?.trim(),
+            'photo_urls': check.photoUrls,
+            'reported_by': validatedByUserId,
+            'reported_by_name': validatedByName,
+            'created_at': now,
+            'updated_at': now,
+          });
+        }
       }
 
       if (refundAmount > 0 && !existingRefundRequest.exists) {
