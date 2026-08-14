@@ -225,7 +225,7 @@ class _MaterialFinanceMockupScreenState
   }
 
   Widget _buildTabs() {
-    const labels = ['Nouveau prêt', 'Prêts actifs', 'Retours', 'Finances'];
+    const labels = ['Nouveau prêt', 'À restituer', 'Finances'];
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),
       child: SingleChildScrollView(
@@ -239,10 +239,8 @@ class _MaterialFinanceMockupScreenState
                   selected: _tab == index,
                   label: Text(
                     index == 1
-                        ? 'Prêts actifs ${_returnLoans.length}'
-                        : index == 2
-                            ? 'Retours ${_returnLoans.length}'
-                            : labels[index],
+                        ? 'À restituer ${_returnLoans.length}'
+                        : labels[index],
                   ),
                   showCheckmark: false,
                   selectedColor: Colors.white,
@@ -263,10 +261,8 @@ class _MaterialFinanceMockupScreenState
   Widget _buildTabContent() {
     switch (_tab) {
       case 1:
-        return _buildActiveLoans();
-      case 2:
         return _buildReturns();
-      case 3:
+      case 2:
         return _buildFinances();
       default:
         return _buildNewLoan();
@@ -331,101 +327,6 @@ class _MaterialFinanceMockupScreenState
     );
   }
 
-  Widget _buildActiveLoans() {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
-      children: [
-        _PageHeader(
-          title: 'Prêts actifs',
-          subtitle:
-              '${_returnLoans.length} prêt(s) en cours. Ouvrez un prêt pour consulter le matériel ou démarrer le retour.',
-          action: IconButton(
-            tooltip: 'Nouveau prêt',
-            onPressed: () => setState(() => _tab = 0),
-            icon: const Icon(Icons.add_circle_outline, color: Colors.white),
-          ),
-        ),
-        ..._returnLoans.map(_buildActiveLoanCard),
-        const SizedBox(height: 12),
-        const _InfoBanner(
-          icon: Icons.assignment_return_outlined,
-          text:
-              'Pour enregistrer un retour, ouvrez le prêt concerné puis contrôlez le matériel article par article.',
-        ),
-      ],
-    );
-  }
-
-  Widget _buildActiveLoanCard(_DemoReturnLoan loan) {
-    final items = _itemsForReturn(loan);
-    final isOverdue = _isReturnOverdue(loan);
-    final material = items
-        .map((item) => '${_categoryForItem(item)} · ${item.option}')
-        .join(' · ');
-    return _SurfaceCard(
-      margin: const EdgeInsets.only(bottom: 12),
-      backgroundColor: isOverdue ? Colors.deepOrange.shade50 : null,
-      borderColor: isOverdue ? Colors.deepOrange.shade300 : null,
-      onTap: () => setState(() {
-        _selectedReturnLoanId = loan.id;
-        _tab = 2;
-      }),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CircleAvatar(
-            radius: 25,
-            backgroundColor: AppColors.lichtblauw.withValues(alpha: 0.25),
-            foregroundColor: AppColors.donkerblauw,
-            child: Text(loan.initials,
-                style: const TextStyle(fontWeight: FontWeight.w800)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(loan.memberName,
-                    style: const TextStyle(
-                      color: AppColors.donkerblauw,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                    )),
-                const SizedBox(height: 3),
-                Text('${loan.id} · ${items.length} article(s)'),
-                const SizedBox(height: 5),
-                Text(material,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.black54)),
-                const SizedBox(height: 6),
-                Text(
-                  '${isOverdue ? 'En retard · retour prévu' : 'Retour prévu'} · ${loan.returnDate}',
-                  style: TextStyle(
-                    color: isOverdue ? Colors.deepOrange : Colors.grey.shade600,
-                    fontSize: 12,
-                    fontWeight: isOverdue ? FontWeight.w800 : FontWeight.normal,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 6),
-          Column(
-            children: [
-              _StatusPill(
-                label: isOverdue ? 'En retard' : 'Actif',
-                color: isOverdue ? Colors.deepOrange : AppColors.success,
-              ),
-              const SizedBox(height: 10),
-              const Icon(Icons.chevron_right, color: AppColors.middenblauw),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildReturns() {
     if (_selectedReturnLoanId == null) return _buildReturnList();
     final loan = _returnLoans
@@ -438,9 +339,9 @@ class _MaterialFinanceMockupScreenState
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
       children: [
         _PageHeader(
-          title: 'Retours de matériel',
+          title: 'Matériel à restituer',
           subtitle:
-              '${_returnLoans.length} membre(s) ont du matériel à restituer. Ouvrez une fiche pour contrôler le retour.',
+              '${_returnLoans.length} prêt(s) ouverts. Ouvrez une fiche quand le membre revient avec son matériel.',
         ),
         ..._returnLoans.map((loan) => _buildReturnMemberCard(loan)),
         const SizedBox(height: 4),
