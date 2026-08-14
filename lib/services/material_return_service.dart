@@ -15,17 +15,14 @@ class MaterialReturnResult {
   final String? demandId;
   final String? paymentReference;
 
-  const MaterialReturnResult({
-    this.demandId,
-    this.paymentReference,
-  });
+  const MaterialReturnResult({this.demandId, this.paymentReference});
 }
 
 class MaterialReturnService {
   final FirebaseFirestore _firestore;
 
   MaterialReturnService({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   Stream<List<MaterialLoan>> watchReturnableLoans(String clubId) {
     return _firestore
@@ -61,22 +58,22 @@ class MaterialReturnService {
         .where('statut', isEqualTo: 'disponible')
         .snapshots()
         .asyncMap((snapshot) async {
-      final typeNames = await _loadItemTypeNames(clubId);
-      final items = snapshot.docs
-          .map((doc) {
-            final item = MaterialLoanItem.fromFirestore(doc);
-            return item.copyWithTypeName(typeNames[item.typeId]);
-          })
-          .where((item) => item.isBorrowable)
-          .toList();
-      if (kDebugMode) {
-        debugPrint(
-          'Materiel disponible geladen: ${items.length}/${snapshot.docs.length}',
-        );
-      }
-      items.sort((a, b) => a.displayName.compareTo(b.displayName));
-      return items;
-    });
+          final typeNames = await _loadItemTypeNames(clubId);
+          final items = snapshot.docs
+              .map((doc) {
+                final item = MaterialLoanItem.fromFirestore(doc);
+                return item.copyWithTypeName(typeNames[item.typeId]);
+              })
+              .where((item) => item.isBorrowable)
+              .toList();
+          if (kDebugMode) {
+            debugPrint(
+              'Materiel disponible geladen: ${items.length}/${snapshot.docs.length}',
+            );
+          }
+          items.sort((a, b) => a.displayName.compareTo(b.displayName));
+          return items;
+        });
   }
 
   Future<Map<String, String>> _loadItemTypeNames(String clubId) async {
@@ -91,7 +88,8 @@ class MaterialReturnService {
 
       return {
         for (final doc in snapshot.docs)
-          doc.id: doc.data()['nom']?.toString() ??
+          doc.id:
+              doc.data()['nom']?.toString() ??
               doc.data()['name']?.toString() ??
               doc.data()['code']?.toString() ??
               doc.id,
@@ -111,16 +109,26 @@ class MaterialReturnService {
         .doc(clubId)
         .collection('inventory_loan_requests')
         .where('memberId', isEqualTo: memberId)
-        .where('status', whereIn: ['submitted', 'approved'])
+        .where(
+          'status',
+          whereIn: [
+            'submitted',
+            'approved',
+            'validated',
+            'ready',
+            'handed_over',
+            'refused',
+          ],
+        )
         .snapshots()
         .asyncMap((snapshot) async {
           final requests = <MaterialLoanRequest>[];
           for (final doc in snapshot.docs) {
             final rawRequest = MaterialLoanRequest.fromFirestore(doc);
-            final items = await _loadLoanItems(clubId, rawRequest.itemIds);
-            requests.add(
-              MaterialLoanRequest.fromFirestore(doc, items: items),
-            );
+            final items = rawRequest.lines.isEmpty
+                ? await _loadLoanItems(clubId, rawRequest.itemIds)
+                : const <MaterialLoanItem>[];
+            requests.add(MaterialLoanRequest.fromFirestore(doc, items: items));
           }
 
           requests.sort((a, b) {
@@ -152,14 +160,16 @@ class MaterialReturnService {
         .doc();
 
     final itemSnapshots = items
-        .map((item) => {
-              'id': item.id,
-              'code': item.code,
-              'nom': item.name,
-              'fabricant': item.brand,
-              'modele': item.model,
-              'numero_serie': item.serialNumber,
-            })
+        .map(
+          (item) => {
+            'id': item.id,
+            'code': item.code,
+            'nom': item.name,
+            'fabricant': item.brand,
+            'modele': item.model,
+            'numero_serie': item.serialNumber,
+          },
+        )
         .toList();
 
     await requestRef.set({
@@ -168,6 +178,44 @@ class MaterialReturnService {
       'memberEmail': memberEmail,
       'itemIds': items.map((item) => item.id).toList(),
       'items_snapshot': itemSnapshots,
+      'date_retour_prevue': Timestamp.fromDate(expectedReturnDate),
+      'status': 'submitted',
+      'notes': notes?.trim(),
+      'source': 'calymob',
+      'createdBy': memberId,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    return requestRef.id;
+  }
+
+  Future<String> submitLoanRequestLines({
+    required String clubId,
+    required String memberId,
+    required String memberName,
+    required String memberEmail,
+    required List<MaterialLoanRequestLine> lines,
+    required DateTime expectedReturnDate,
+    String? notes,
+  }) async {
+    if (lines.isEmpty) {
+      throw Exception('Choisissez au moins un materiel');
+    }
+
+    final requestRef = _firestore
+        .collection('clubs')
+        .doc(clubId)
+        .collection('inventory_loan_requests')
+        .doc();
+
+    await requestRef.set({
+      'memberId': memberId,
+      'memberName': memberName,
+      'memberEmail': memberEmail,
+      'lines': lines.map((line) => line.toMap()).toList(),
+      'itemIds': const <String>[],
+      'assignedItemIds': const <String>[],
       'date_retour_prevue': Timestamp.fromDate(expectedReturnDate),
       'status': 'submitted',
       'notes': notes?.trim(),
@@ -255,8 +303,9 @@ class MaterialReturnService {
       }
 
       final existingDemandSnap = await transaction.get(demandRef);
-      final memberSnap =
-          loan.memberId.isNotEmpty ? await transaction.get(memberRef) : null;
+      final memberSnap = loan.memberId.isNotEmpty
+          ? await transaction.get(memberRef)
+          : null;
 
       String? paymentReference;
       String? paymentReferenceKey;
@@ -272,14 +321,11 @@ class MaterialReturnService {
         communicationQr =
             '$paymentReferenceKey Remb. caution ${loan.loanNumber}';
 
-        transaction.set(
-            counterRef,
-            {
-              'counter': nextCounter,
-              'year': year,
-              'updated_at': FieldValue.serverTimestamp(),
-            },
-            SetOptions(merge: true));
+        transaction.set(counterRef, {
+          'counter': nextCounter,
+          'year': year,
+          'updated_at': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
       } else if (existingDemandSnap.exists) {
         final data = existingDemandSnap.data() ?? {};
         paymentReference = data['payment_reference']?.toString();
@@ -287,8 +333,10 @@ class MaterialReturnService {
       }
 
       final now = FieldValue.serverTimestamp();
-      final retainedAmount =
-          (loan.cautionAmount - refundAmount).clamp(0, loan.cautionAmount);
+      final retainedAmount = (loan.cautionAmount - refundAmount).clamp(
+        0,
+        loan.cautionAmount,
+      );
       final cautionStatus = _cautionStatusFor(decision, refundAmount);
 
       transaction.update(loanRef, {
@@ -361,18 +409,15 @@ class MaterialReturnService {
               'by': validatedByUserId,
               'by_name': validatedByName,
               'reason': 'Retour materiel valide depuis CalyMob',
-            }
+            },
           ],
         };
 
         transaction.set(demandRef, legacyPayload);
         transaction.set(
-            canonicalDemandRef,
-            _canonicalPayload(
-              legacyPayload,
-              demandId,
-              clubId,
-            ));
+          canonicalDemandRef,
+          _canonicalPayload(legacyPayload, demandId, clubId),
+        );
       }
 
       return MaterialReturnResult(
@@ -383,7 +428,9 @@ class MaterialReturnService {
   }
 
   String _cautionStatusFor(
-      MaterialReturnDecision decision, double refundAmount) {
+    MaterialReturnDecision decision,
+    double refundAmount,
+  ) {
     switch (decision) {
       case MaterialReturnDecision.fullRefund:
         return 'refund_pending';

@@ -53,10 +53,10 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
                   onTap: userId == null
                       ? null
                       : () => _openRequestSheet(
-                            memberId: userId,
-                            memberName: memberProvider.displayName,
-                            memberEmail: memberProvider.email ?? '',
-                          ),
+                          memberId: userId,
+                          memberName: memberProvider.displayName,
+                          memberEmail: memberProvider.email ?? '',
+                        ),
                 ),
               ),
               if (canValidate)
@@ -99,7 +99,8 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const LoadingWidget(
-              message: 'Chargement des prets en cours...');
+            message: 'Chargement des prets en cours...',
+          );
         }
 
         if (snapshot.hasError) {
@@ -187,8 +188,9 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
       return true;
     }
 
-    final normalized =
-        ClubRoleUtils.normalizeRoles(memberProvider.clubStatuten);
+    final normalized = ClubRoleUtils.normalizeRoles(
+      memberProvider.clubStatuten,
+    );
     return normalized.contains('gonflage') ||
         normalized.contains('ca') ||
         normalized.contains('encadrant');
@@ -216,10 +218,8 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
-      builder: (context) => _ReturnValidationSheet(
-        loan: loan,
-        onSubmit: _validateReturn,
-      ),
+      builder: (context) =>
+          _ReturnValidationSheet(loan: loan, onSubmit: _validateReturn),
     );
   }
 
@@ -298,10 +298,7 @@ class _LoanReturnCard extends StatelessWidget {
   final MaterialLoan loan;
   final VoidCallback onValidate;
 
-  const _LoanReturnCard({
-    required this.loan,
-    required this.onValidate,
-  });
+  const _LoanReturnCard({required this.loan, required this.onValidate});
 
   @override
   Widget build(BuildContext context) {
@@ -380,7 +377,9 @@ class _LoanReturnCard extends StatelessWidget {
               ),
               if (loan.items.isNotEmpty) ...[
                 const SizedBox(height: 12),
-                ...loan.items.take(3).map(
+                ...loan.items
+                    .take(3)
+                    .map(
                       (item) => Padding(
                         padding: const EdgeInsets.only(bottom: 5),
                         child: Text(
@@ -496,14 +495,14 @@ class _LoanRequestCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.pending_actions_outlined,
-                  color: AppColors.middenblauw),
+              const Icon(
+                Icons.pending_actions_outlined,
+                color: AppColors.middenblauw,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  request.status == 'approved'
-                      ? 'Demande acceptee'
-                      : 'Demande envoyee',
+                  _requestTitle(request.status),
                   style: const TextStyle(
                     color: AppColors.donkerblauw,
                     fontWeight: FontWeight.w800,
@@ -511,9 +510,7 @@ class _LoanRequestCard extends StatelessWidget {
                   ),
                 ),
               ),
-              _StatusPill(
-                label: request.status == 'approved' ? 'Acceptee' : 'En attente',
-              ),
+              _StatusPill(label: _requestStatusLabel(request.status)),
             ],
           ),
           const SizedBox(height: 10),
@@ -523,15 +520,21 @@ class _LoanRequestCard extends StatelessWidget {
               label: 'Retour ${_formatDate(request.expectedReturnDate!)}',
             ),
           const SizedBox(height: 10),
-          ...request.items.map(
-            (item) => Padding(
-              padding: const EdgeInsets.only(bottom: 5),
-              child: Text(
-                item.displayName,
-                style: TextStyle(color: Colors.grey.shade800, fontSize: 13.5),
+          ...(request.lines.isNotEmpty
+                  ? request.lines.map((line) => line.label)
+                  : request.items.map((item) => item.displayName))
+              .map(
+                (label) => Padding(
+                  padding: const EdgeInsets.only(bottom: 5),
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      color: Colors.grey.shade800,
+                      fontSize: 13.5,
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ),
           if (request.items.isEmpty)
             Text(
               '${request.itemIds.length} article(s) demande(s)',
@@ -540,6 +543,38 @@ class _LoanRequestCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _requestTitle(String status) {
+    switch (status) {
+      case 'validated':
+      case 'approved':
+        return 'Demande acceptee';
+      case 'ready':
+        return 'Pret a retirer';
+      case 'handed_over':
+        return 'Materiel remis';
+      case 'refused':
+        return 'Demande refusee';
+      default:
+        return 'Demande envoyee';
+    }
+  }
+
+  String _requestStatusLabel(String status) {
+    switch (status) {
+      case 'validated':
+      case 'approved':
+        return 'Acceptee';
+      case 'ready':
+        return 'A retirer';
+      case 'handed_over':
+        return 'Remis';
+      case 'refused':
+        return 'Refusee';
+      default:
+        return 'En attente';
+    }
   }
 }
 
@@ -550,12 +585,10 @@ class _ReturnValidationSheet extends StatefulWidget {
     MaterialReturnDecision decision,
     double refundAmount,
     String notes,
-  ) onSubmit;
+  )
+  onSubmit;
 
-  const _ReturnValidationSheet({
-    required this.loan,
-    required this.onSubmit,
-  });
+  const _ReturnValidationSheet({required this.loan, required this.onSubmit});
 
   @override
   State<_ReturnValidationSheet> createState() => _ReturnValidationSheetState();
@@ -606,9 +639,9 @@ class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
             Text(
               'Validation retour',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.donkerblauw,
-                  ),
+                fontWeight: FontWeight.bold,
+                color: AppColors.donkerblauw,
+              ),
             ),
             const SizedBox(height: 4),
             Text(
@@ -659,8 +692,8 @@ class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
                 setState(() {
                   _decision = value;
                   if (value == MaterialReturnDecision.fullRefund) {
-                    _refundController.text =
-                        widget.loan.cautionAmount.toStringAsFixed(2);
+                    _refundController.text = widget.loan.cautionAmount
+                        .toStringAsFixed(2);
                   } else if (value == MaterialReturnDecision.retainCaution ||
                       value == MaterialReturnDecision.decideLater) {
                     _refundController.text = '0.00';
@@ -672,8 +705,9 @@ class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
             TextField(
               controller: _refundController,
               enabled: _decision == MaterialReturnDecision.partialRefund,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: const InputDecoration(
                 labelText: 'Montant a rembourser',
                 suffixText: 'EUR',
@@ -706,8 +740,9 @@ class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
                         ),
                       )
                     : const Icon(Icons.verified_outlined),
-                label:
-                    Text(_submitting ? 'Validation...' : 'Valider le retour'),
+                label: Text(
+                  _submitting ? 'Validation...' : 'Valider le retour',
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.success,
                   foregroundColor: Colors.white,
@@ -722,9 +757,8 @@ class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
   }
 
   Future<void> _submit() async {
-    final refundAmount = double.tryParse(
-          _refundController.text.trim().replaceAll(',', '.'),
-        ) ??
+    final refundAmount =
+        double.tryParse(_refundController.text.trim().replaceAll(',', '.')) ??
         0;
 
     if (refundAmount < 0 || refundAmount > widget.loan.cautionAmount) {
@@ -769,18 +803,71 @@ class _MaterialRequestSheet extends StatefulWidget {
 
 class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
   final _notesController = TextEditingController();
-  final _searchController = TextEditingController();
-  final Set<String> _selectedItemIds = {};
-  final List<MaterialLoanItem> _selectedItems = [];
+  final Map<String, String?> _selectedChoices = {};
+  final Map<String, int> _quantities = {};
   DateTime _expectedReturnDate = DateTime.now().add(const Duration(days: 7));
-  String _search = '';
-  String _typeFilter = 'Tous';
   bool _submitting = false;
+
+  static const _categories = <_MaterialRequestCategory>[
+    _MaterialRequestCategory(
+      id: 'bouteille',
+      label: 'Bouteille',
+      icon: Icons.propane_tank_outlined,
+      choices: ['12 L avec insert', '12 L DIN', '10 L avec insert', '10 L DIN'],
+    ),
+    _MaterialRequestCategory(
+      id: 'detendeur',
+      label: 'Détendeur',
+      icon: Icons.air,
+      choices: ['Détendeur'],
+    ),
+    _MaterialRequestCategory(
+      id: 'gilet',
+      label: 'Gilet',
+      icon: Icons.checkroom_outlined,
+      choices: ['XS', 'S', 'M', 'L', 'XL', 'XXL'],
+    ),
+    _MaterialRequestCategory(
+      id: 'lampe',
+      label: 'Lampe',
+      icon: Icons.flashlight_on_outlined,
+      choices: ['Lampe'],
+    ),
+    _MaterialRequestCategory(
+      id: 'compas',
+      label: 'Compas',
+      icon: Icons.explore_outlined,
+      choices: ['Compas'],
+    ),
+    _MaterialRequestCategory(
+      id: 'palmes',
+      label: 'Palmes réglables',
+      icon: Icons.directions_run_outlined,
+      choices: ['S (36-40)', 'M (40-44)', 'XL (44-48)'],
+    ),
+    _MaterialRequestCategory(
+      id: 'ordinateur',
+      label: 'Ordinateur',
+      icon: Icons.watch_outlined,
+      choices: ['Ordinateur'],
+    ),
+    _MaterialRequestCategory(
+      id: 'ceinture',
+      label: 'Ceinture de plomb',
+      icon: Icons.fitness_center_outlined,
+      choices: ['4 kg', '5 kg', '6 kg', '7 kg', '8 kg'],
+    ),
+    _MaterialRequestCategory(
+      id: 'parachute',
+      label: 'Parachute',
+      icon: Icons.rocket_launch_outlined,
+      choices: ['Parachute'],
+    ),
+  ];
 
   @override
   void dispose() {
     _notesController.dispose();
-    _searchController.dispose();
     super.dispose();
   }
 
@@ -790,7 +877,7 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
     return Padding(
       padding: EdgeInsets.fromLTRB(18, 12, 18, bottomInset + 18),
       child: SizedBox(
-        height: MediaQuery.of(context).size.height * 0.78,
+        height: MediaQuery.of(context).size.height * 0.86,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -808,13 +895,13 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
             Text(
               'Demande de pret',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.donkerblauw,
-                  ),
+                fontWeight: FontWeight.bold,
+                color: AppColors.donkerblauw,
+              ),
             ),
             const SizedBox(height: 6),
             Text(
-              'Seul le materiel disponible apparait ici. Le responsable confirmera la sortie et la caution.',
+              'Choisissez une catégorie et une taille. Le responsable attribuera le matériel réel lors de la remise.',
               style: TextStyle(color: Colors.grey.shade700),
             ),
             const SizedBox(height: 14),
@@ -835,127 +922,112 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
               ),
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: _searchController,
-              onChanged: (value) => setState(() => _search = value),
-              decoration: const InputDecoration(
-                labelText: 'Rechercher',
-                hintText: 'Type, code, marque, modele, serie...',
-                prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 10),
             Expanded(
-              child: StreamBuilder<List<MaterialLoanItem>>(
-                stream: widget.service.watchBorrowableItems(widget.clubId),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const _SheetStatusState(
-                      icon: Icons.inventory_2_outlined,
-                      message: 'Chargement du materiel disponible...',
-                    );
-                  }
+              child: ListView.separated(
+                itemCount: _categories.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final category = _categories[index];
+                  final selected = _selectedChoices.containsKey(category.id);
+                  final choice = _selectedChoices[category.id];
+                  final quantity = _quantities[category.id] ?? 1;
 
-                  if (snapshot.hasError) {
-                    return _SheetStatusState(
-                      icon: Icons.error_outline,
-                      title: 'Impossible de charger le materiel',
-                      subtitle: snapshot.error.toString(),
-                    );
-                  }
-
-                  final items = snapshot.data ?? const [];
-                  if (items.isEmpty) {
-                    return const _SheetStatusState(
-                      icon: Icons.inventory_2_outlined,
-                      title: 'Aucun materiel disponible',
-                      subtitle:
-                          'Le responsable peut toujours encoder un pret depuis CalyCompta.',
-                    );
-                  }
-
-                  final typeFilters = _typeFiltersFor(items);
-                  final filteredItems = _filterItems(items);
-
-                  return Column(
-                    children: [
-                      SizedBox(
-                        height: 38,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: typeFilters.length,
-                          separatorBuilder: (_, __) => const SizedBox(width: 6),
-                          itemBuilder: (context, index) {
-                            final label = typeFilters[index];
-                            final selected = _typeFilter == label;
-                            return ChoiceChip(
-                              label: Text(
-                                _compactTypeFilterLabel(label),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              selected: selected,
-                              onSelected: (_) =>
-                                  setState(() => _typeFilter = label),
-                              visualDensity: VisualDensity.compact,
-                              labelPadding:
-                                  const EdgeInsets.symmetric(horizontal: 4),
-                              materialTapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
-                              selectedColor:
-                                  AppColors.middenblauw.withValues(alpha: 0.18),
-                              labelStyle: TextStyle(
-                                color: selected
-                                    ? AppColors.donkerblauw
-                                    : Colors.grey.shade700,
-                                fontWeight: selected
-                                    ? FontWeight.w800
-                                    : FontWeight.w600,
-                              ),
-                            );
-                          },
+                  return Container(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? AppColors.middenblauw.withValues(alpha: 0.08)
+                          : Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: selected
+                            ? AppColors.middenblauw.withValues(alpha: 0.45)
+                            : Colors.grey.shade200,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          value: selected,
+                          onChanged: (value) =>
+                              _toggleCategory(category, value),
+                          secondary: Icon(
+                            category.icon,
+                            color: AppColors.middenblauw,
+                          ),
+                          title: Text(
+                            category.label,
+                            style: const TextStyle(
+                              color: AppColors.donkerblauw,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          subtitle: selected && choice != null
+                              ? Text('$choice · quantité $quantity')
+                              : const Text('Non sélectionné'),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Expanded(
-                        child: filteredItems.isEmpty
-                            ? const _SheetStatusState(
-                                icon: Icons.search_off,
-                                title: 'Aucun resultat',
-                                subtitle:
-                                    'Essayez un autre type ou une autre recherche.',
-                              )
-                            : ListView.separated(
-                                itemCount: filteredItems.length,
-                                separatorBuilder: (_, __) => Divider(
-                                  color: Colors.grey.shade200,
-                                  height: 1,
-                                ),
-                                itemBuilder: (context, index) {
-                                  final item = filteredItems[index];
-                                  final selected =
-                                      _selectedItemIds.contains(item.id);
-                                  return CheckboxListTile(
-                                    value: selected,
-                                    onChanged: (_) => _toggleItem(item),
-                                    contentPadding: EdgeInsets.zero,
-                                    controlAffinity:
-                                        ListTileControlAffinity.leading,
-                                    title: Text(
-                                      _displayTypeLabel(item.typeLabel),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: AppColors.donkerblauw,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                    subtitle: Text(item.technicalDetails),
-                                  );
-                                },
+                        if (selected) ...[
+                          DropdownButtonFormField<String>(
+                            initialValue: choice,
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                              labelText: 'Option',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: category.choices
+                                .map(
+                                  (option) => DropdownMenuItem(
+                                    value: option,
+                                    child: Text(option),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (value) {
+                              if (value != null) {
+                                setState(
+                                  () => _selectedChoices[category.id] = value,
+                                );
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              const Text(
+                                'Quantité',
+                                style: TextStyle(fontWeight: FontWeight.w600),
                               ),
-                      ),
-                    ],
+                              const Spacer(),
+                              IconButton(
+                                onPressed: quantity <= 1
+                                    ? null
+                                    : () => setState(
+                                        () => _quantities[category.id] =
+                                            quantity - 1,
+                                      ),
+                                icon: const Icon(Icons.remove_circle_outline),
+                              ),
+                              Text(
+                                '$quantity',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: quantity >= 4
+                                    ? null
+                                    : () => setState(
+                                        () => _quantities[category.id] =
+                                            quantity + 1,
+                                      ),
+                                icon: const Icon(Icons.add_circle_outline),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
                   );
                 },
               ),
@@ -978,7 +1050,7 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
                 label: Text(
                   _submitting
                       ? 'Envoi...'
-                      : 'Envoyer la demande (${_selectedItems.length})',
+                      : 'Envoyer la demande (${_selectedLines.length})',
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.middenblauw,
@@ -993,74 +1065,30 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
     );
   }
 
-  void _toggleItem(MaterialLoanItem item) {
+  List<MaterialLoanRequestLine> get _selectedLines => _categories
+      .where((category) => _selectedChoices.containsKey(category.id))
+      .map(
+        (category) => MaterialLoanRequestLine(
+          category: category.id,
+          attributes: {
+            'label': category.label,
+            'option': _selectedChoices[category.id],
+          },
+          quantity: _quantities[category.id] ?? 1,
+        ),
+      )
+      .toList();
+
+  void _toggleCategory(_MaterialRequestCategory category, bool selected) {
     setState(() {
-      if (_selectedItemIds.contains(item.id)) {
-        _selectedItemIds.remove(item.id);
-        _selectedItems.removeWhere((selected) => selected.id == item.id);
+      if (!selected) {
+        _selectedChoices.remove(category.id);
+        _quantities.remove(category.id);
       } else {
-        _selectedItemIds.add(item.id);
-        _selectedItems.add(item);
+        _selectedChoices[category.id] = category.choices.first;
+        _quantities[category.id] = 1;
       }
     });
-  }
-
-  List<String> _typeFiltersFor(List<MaterialLoanItem> items) {
-    final labels = items.map((item) => item.typeLabel).toSet().toList()..sort();
-    return ['Tous', ...labels];
-  }
-
-  String _compactTypeFilterLabel(String label) {
-    if (label == 'Tous') return 'Tous';
-
-    final normalized = label.toLowerCase();
-    if (normalized.contains('bouteille')) return 'Btl.';
-    if (normalized.contains('compas') || normalized.contains('boussole')) {
-      return 'Comp.';
-    }
-    if (normalized.contains('detendeur') ||
-        normalized.contains('détendeur') ||
-        normalized.contains('regulator')) {
-      return 'Dét.';
-    }
-    if (normalized.contains('gilet')) return 'Gilet';
-    if (normalized.contains('ordinateur')) return 'Ordi';
-    if (normalized.contains('lampe')) return 'Lampe';
-
-    return label.length > 8 ? '${label.substring(0, 8)}.' : label;
-  }
-
-  String _displayTypeLabel(String label) {
-    final normalized = label.toLowerCase();
-    if (normalized.contains('gilet stabilisateur')) return 'Gilet stab. (BCD)';
-    if (normalized.contains('bouteille')) return 'Bouteille';
-    if (normalized.contains('compas') || normalized.contains('boussole')) {
-      return 'Compas / boussole';
-    }
-    if (normalized.contains('detendeur') || normalized.contains('détendeur')) {
-      return 'Détendeur';
-    }
-    return label;
-  }
-
-  List<MaterialLoanItem> _filterItems(List<MaterialLoanItem> items) {
-    final term = _search.trim().toLowerCase();
-    return items.where((item) {
-      if (_typeFilter != 'Tous' && item.typeLabel != _typeFilter) {
-        return false;
-      }
-      if (term.isEmpty) return true;
-
-      final haystack = [
-        item.typeLabel,
-        item.code,
-        item.name,
-        item.brand,
-        item.model,
-        item.serialNumber,
-      ].whereType<String>().join(' ').toLowerCase();
-      return haystack.contains(term);
-    }).toList();
   }
 
   Future<void> _pickReturnDate() async {
@@ -1076,7 +1104,7 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
   }
 
   Future<void> _submit() async {
-    if (_selectedItems.isEmpty) {
+    if (_selectedLines.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Choisissez au moins un materiel'),
@@ -1088,12 +1116,12 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
 
     setState(() => _submitting = true);
     try {
-      await widget.service.submitLoanRequest(
+      await widget.service.submitLoanRequestLines(
         clubId: widget.clubId,
         memberId: widget.memberId,
         memberName: widget.memberName,
         memberEmail: widget.memberEmail,
-        items: _selectedItems,
+        lines: _selectedLines,
         expectedReturnDate: _expectedReturnDate,
         notes: _notesController.text,
       );
@@ -1118,6 +1146,20 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
       if (mounted) setState(() => _submitting = false);
     }
   }
+}
+
+class _MaterialRequestCategory {
+  final String id;
+  final String label;
+  final IconData icon;
+  final List<String> choices;
+
+  const _MaterialRequestCategory({
+    required this.id,
+    required this.label,
+    required this.icon,
+    required this.choices,
+  });
 }
 
 class _SheetStatusState extends StatelessWidget {
@@ -1179,10 +1221,7 @@ class _InfoChip extends StatelessWidget {
   final IconData icon;
   final String label;
 
-  const _InfoChip({
-    required this.icon,
-    required this.label,
-  });
+  const _InfoChip({required this.icon, required this.label});
 
   @override
   Widget build(BuildContext context) {

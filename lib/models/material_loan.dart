@@ -99,7 +99,8 @@ class MaterialLoanItem {
       brand: data['fabricant']?.toString(),
       model: data['modele']?.toString(),
       serialNumber: data['numero_serie']?.toString(),
-      status: data['statut']?.toString() ??
+      status:
+          data['statut']?.toString() ??
           data['status']?.toString() ??
           data['etat_stock']?.toString() ??
           'disponible',
@@ -113,7 +114,10 @@ class MaterialLoanRequest {
   final String id;
   final String memberId;
   final String memberName;
+  final String memberEmail;
   final List<String> itemIds;
+  final List<MaterialLoanRequestLine> lines;
+  final List<String> assignedItemIds;
   final DateTime? expectedReturnDate;
   final String status;
   final String? notes;
@@ -124,7 +128,10 @@ class MaterialLoanRequest {
     required this.id,
     required this.memberId,
     required this.memberName,
+    this.memberEmail = '',
     required this.itemIds,
+    this.lines = const [],
+    this.assignedItemIds = const [],
     this.expectedReturnDate,
     required this.status,
     this.notes,
@@ -137,22 +144,85 @@ class MaterialLoanRequest {
     List<MaterialLoanItem> items = const [],
   }) {
     final data = doc.data() ?? {};
+    final rawLines = data['lines'] as List<dynamic>?;
     return MaterialLoanRequest(
       id: doc.id,
       memberId: data['memberId']?.toString() ?? '',
       memberName: data['memberName']?.toString() ?? 'Membre',
-      itemIds: (data['itemIds'] as List<dynamic>?)
+      memberEmail: data['memberEmail']?.toString() ?? '',
+      itemIds:
+          (data['itemIds'] as List<dynamic>?)
+              ?.map((item) => item.toString())
+              .where((item) => item.trim().isNotEmpty)
+              .toList() ??
+          const [],
+      lines:
+          rawLines
+              ?.whereType<Map>()
+              .map(
+                (line) => MaterialLoanRequestLine.fromMap(
+                  Map<String, dynamic>.from(line),
+                ),
+              )
+              .where((line) => line.category.isNotEmpty)
+              .toList() ??
+          const [],
+      assignedItemIds:
+          (data['assignedItemIds'] as List<dynamic>?)
               ?.map((item) => item.toString())
               .where((item) => item.trim().isNotEmpty)
               .toList() ??
           const [],
       expectedReturnDate: _dateFromValue(
-          data['date_retour_prevue'] ?? data['expectedReturnDate']),
+        data['date_retour_prevue'] ?? data['expectedReturnDate'],
+      ),
       status: data['status']?.toString() ?? 'submitted',
       notes: data['notes']?.toString(),
       createdAt: _dateFromValue(data['createdAt'] ?? data['created_at']),
       items: items,
     );
+  }
+}
+
+class MaterialLoanRequestLine {
+  final String category;
+  final Map<String, dynamic> attributes;
+  final int quantity;
+
+  const MaterialLoanRequestLine({
+    required this.category,
+    this.attributes = const {},
+    this.quantity = 1,
+  });
+
+  factory MaterialLoanRequestLine.fromMap(Map<String, dynamic> data) {
+    return MaterialLoanRequestLine(
+      category: data['category']?.toString() ?? '',
+      attributes: data['attrs'] is Map
+          ? Map<String, dynamic>.from(data['attrs'] as Map)
+          : data['attributes'] is Map
+          ? Map<String, dynamic>.from(data['attributes'] as Map)
+          : const {},
+      quantity:
+          (data['qty'] as num?)?.toInt() ??
+          (data['quantity'] as num?)?.toInt() ??
+          1,
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'category': category,
+    'attrs': attributes,
+    'qty': quantity,
+  };
+
+  String get label {
+    final detail = attributes.values
+        .map((value) => value.toString())
+        .where((value) => value.trim().isNotEmpty)
+        .join(' · ');
+    final base = category.trim();
+    return detail.isEmpty ? base : '$base · $detail';
   }
 }
 
@@ -193,7 +263,8 @@ class MaterialLoan {
     List<MaterialLoanItem> items = const [],
   }) {
     final data = doc.data() ?? {};
-    final loanNumber = data['loanNumber']?.toString() ??
+    final loanNumber =
+        data['loanNumber']?.toString() ??
         data['loan_number']?.toString() ??
         'PRET-${doc.id}';
 
@@ -202,24 +273,28 @@ class MaterialLoan {
       loanNumber: loanNumber,
       memberId:
           data['memberId']?.toString() ?? data['member_id']?.toString() ?? '',
-      memberName: data['memberName']?.toString() ??
+      memberName:
+          data['memberName']?.toString() ??
           data['member_name']?.toString() ??
           data['membre_nom']?.toString() ??
           'Membre',
-      itemIds: (data['itemIds'] as List<dynamic>?)
+      itemIds:
+          (data['itemIds'] as List<dynamic>?)
               ?.map((item) => item.toString())
               .where((item) => item.trim().isNotEmpty)
               .toList() ??
           const [],
       loanDate: _dateFromValue(data['date_pret'] ?? data['date_debut']),
-      expectedReturnDate:
-          _dateFromValue(data['date_retour_prevue'] ?? data['date_fin_prevue']),
+      expectedReturnDate: _dateFromValue(
+        data['date_retour_prevue'] ?? data['date_fin_prevue'],
+      ),
       cautionAmount: _doubleFromValue(
         data['caution_amount'] ??
             data['montant_caution'] ??
             data['caution_montant'],
       ),
-      cautionStatus: data['caution_payment_status']?.toString() ??
+      cautionStatus:
+          data['caution_payment_status']?.toString() ??
           (data['caution_payee'] == true ? 'paid' : 'unpaid'),
       status: data['statut']?.toString() ?? 'actif',
       refundDemandId: data['caution_refund_demand_id']?.toString(),
