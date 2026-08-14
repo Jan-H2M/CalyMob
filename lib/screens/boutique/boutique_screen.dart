@@ -15,6 +15,7 @@ import 'boutique_cart_screen.dart';
 import 'boutique_product_detail_screen.dart';
 import 'mes_commandes_screen.dart';
 import '../stock/material_returns_screen.dart';
+import '../stock/material_finance_mockup_screen.dart';
 import '../profile/ma_cotisation_screen.dart';
 
 class BoutiqueScreen extends StatefulWidget {
@@ -175,6 +176,20 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                     Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) => const MaterialReturnsScreen(),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
+                _BoutiqueHomeCard(
+                  icon: Icons.account_balance_outlined,
+                  title: 'COM-059 · Flux financier (mock-up)',
+                  subtitle:
+                      'Tester les QR-paiements, remises et remboursements sans écriture réelle.',
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const MaterialFinanceMockupScreen(),
                       ),
                     );
                   },
