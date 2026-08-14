@@ -69,7 +69,7 @@ class MaterialLoanItem {
     final value = code.trim();
     return value.isEmpty
         ? 'N° inventaire non attribué'
-        : 'N° inventaire $value';
+        : '$value (numéro d’inventaire)';
   }
 
   String get displayName => '$typeLabel - $technicalDetails';
