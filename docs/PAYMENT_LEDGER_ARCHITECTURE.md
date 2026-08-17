@@ -22,6 +22,10 @@ charge revision and amount. They create immutable payment intents for both
 flat and installment QR flows. CalyCompta settles incoming bank receipts and
 owns Firestore accounting rules.
 
+The exported legacy Noda event-payment functions (`createNodaPayment`,
+`checkNodaPaymentStatus` and `nodaWebhook`) are fail-closed. They no longer
+write `operation_participants`; historical Noda records require manual review.
+
 ## Change checklist
 
 When changing a payment flow, update the canonical document above, add a Dart
