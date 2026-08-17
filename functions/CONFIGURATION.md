@@ -1,4 +1,10 @@
-# Configuration des Cloud Functions - Paiements Noda
+# Configuration des Cloud Functions - Paiements Noda (historique)
+
+> **Attention — documentation historique pour Noda.** Les exemples de
+> déploiement et d'appel Noda ci-dessous ne sont pas un flux de production.
+> Les endpoints sont désormais fail-closed; utilisez le payment ledger
+> canonique et ses server commands décrits dans
+> [`docs/PAYMENT_LEDGER_ARCHITECTURE.md`](../docs/PAYMENT_LEDGER_ARCHITECTURE.md).
 
 ## 📋 Prérequis
 

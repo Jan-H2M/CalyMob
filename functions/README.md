@@ -1,5 +1,16 @@
 # Cloud Functions - CalyMob Payment System
 
+> **Current payment boundary:** Only the EPC/SEPA payment-ledger commands
+> exported from `functions/index.js` are operational. The Noda examples below
+> are retained as historical reference; production Noda endpoints are
+> fail-closed (`FAILED_PRECONDITION` / HTTP `410`) and never write accounting
+> fields. Ponto is an incoming bank-feed provider, not a member payment path.
+> See [`docs/PAYMENT_LEDGER_ARCHITECTURE.md`](../docs/PAYMENT_LEDGER_ARCHITECTURE.md)
+> before changing any payment code.
+
+The `createNodaPayment`, `nodaWebhook` and `checkNodaPaymentStatus` examples
+below are therefore **retired API reference**, not an implementation contract.
+
 ## 📦 Fonctions disponibles
 
 ### 1. createNodaPayment (Callable)
