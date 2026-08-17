@@ -25,7 +25,7 @@ class OperationService {
   final FirebaseFirestore _firestore;
 
   OperationService({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance;
+      : _firestore = firestore ?? FirebaseFirestore.instance;
 
   /// Remove diacritics for locale-aware sorting (é→e, è→e, ü→u, etc.)
   static String _removeDiacritics(String str) {
@@ -62,13 +62,12 @@ class OperationService {
         .orderBy('date_debut', descending: false)
         .snapshots()
         .map((snapshot) {
-          final operations = snapshot.docs
-              .map((doc) => Operation.fromFirestore(doc))
-              .toList();
+      final operations =
+          snapshot.docs.map((doc) => Operation.fromFirestore(doc)).toList();
 
-          debugPrint('📅 ${operations.length} événements ouverts chargés');
-          return operations;
-        });
+      debugPrint('📅 ${operations.length} événements ouverts chargés');
+      return operations;
+    });
   }
 
   /// Obtenir une opération par ID
@@ -201,13 +200,11 @@ class OperationService {
         prix: prix,
         paye: false,
         paymentStatus: operation.paymentRequired ? 'open' : null,
-        registrationStatus:
-            operation.paymentRequired &&
+        registrationStatus: operation.paymentRequired &&
                 operation.registrationConfirmationPolicy == 'after_payment'
             ? 'pending_payment'
             : 'confirmed',
-        paymentExpiresAt:
-            operation.paymentRequired &&
+        paymentExpiresAt: operation.paymentRequired &&
                 operation.registrationConfirmationPolicy == 'after_payment' &&
                 operation.autoCancelUnpaid
             ? DateTime.now().add(Duration(days: operation.paymentDeadlineDays))
@@ -246,9 +243,10 @@ class OperationService {
   Tariff? _findTariffByPrice(Operation operation, double price) {
     if (operation.eventTariffs.isEmpty) return null;
     return operation.eventTariffs.cast<Tariff?>().firstWhere(
-      (t) => t != null && !t.isGuestTariff && (t.price - price).abs() < 0.01,
-      orElse: () => null,
-    );
+          (t) =>
+              t != null && !t.isGuestTariff && (t.price - price).abs() < 0.01,
+          orElse: () => null,
+        );
   }
 
   Map<String, InstallmentPayment> _buildInstallmentPayments(
@@ -416,12 +414,11 @@ class OperationService {
         .collection('clubs/$clubId/operations/$operationId/inscriptions')
         .doc(inscriptionDocId)
         .update({
-          'selected_supplements': selectedSupplements
-              .map((s) => s.toMap())
-              .toList(),
-          'supplement_total': supplementTotal,
-          'updated_at': FieldValue.serverTimestamp(),
-        });
+      'selected_supplements':
+          selectedSupplements.map((s) => s.toMap()).toList(),
+      'supplement_total': supplementTotal,
+      'updated_at': FieldValue.serverTimestamp(),
+    });
   }
 
   /// Obtenir les participants d'une opération (one-time read)
@@ -467,21 +464,21 @@ class OperationService {
         .collection('clubs/$clubId/operations/$operationId/inscriptions')
         .snapshots()
         .map((snapshot) {
-          final participants = snapshot.docs
-              .map((doc) => ParticipantOperation.fromFirestore(doc))
-              .where(
-                (participant) => participant.registrationStatus != 'canceled',
-              )
-              .toList();
+      final participants = snapshot.docs
+          .map((doc) => ParticipantOperation.fromFirestore(doc))
+          .where(
+            (participant) => participant.registrationStatus != 'canceled',
+          )
+          .toList();
 
-          // Sort by first name (prénom), then last name — diacritics-insensitive
-          sortParticipantsByName(participants);
+      // Sort by first name (prénom), then last name — diacritics-insensitive
+      sortParticipantsByName(participants);
 
-          debugPrint(
-            '👥 [Stream] ${participants.length} participants mis à jour pour $operationId',
-          );
-          return participants;
-        });
+      debugPrint(
+        '👥 [Stream] ${participants.length} participants mis à jour pour $operationId',
+      );
+      return participants;
+    });
   }
 
   /// Mettre à jour les exercices sélectionnés pour une inscription
@@ -908,12 +905,11 @@ class OperationService {
           Tariff? guestTariff;
           if (tariffId != null) {
             guestTariff = operation.eventTariffs.cast<Tariff?>().firstWhere(
-              (t) => t?.id == tariffId,
-              orElse: () => null,
-            );
+                  (t) => t?.id == tariffId,
+                  orElse: () => null,
+                );
           }
-          final tariffSum =
-              guestTariff?.installmentAmounts.values.fold<double>(
+          final tariffSum = guestTariff?.installmentAmounts.values.fold<double>(
                 0,
                 (s, v) => s + v,
               ) ??
@@ -1011,49 +1007,49 @@ class OperationService {
         .where('membre_id', isEqualTo: userId)
         .snapshots()
         .asyncMap((snapshot) async {
-          final registrations = <UserEventRegistration>[];
+      final registrations = <UserEventRegistration>[];
 
-          for (var doc in snapshot.docs) {
-            try {
-              // Verify this inscription belongs to the correct club
-              final path = doc.reference.path;
-              if (!path.startsWith('clubs/$clubId/')) continue;
+      for (var doc in snapshot.docs) {
+        try {
+          // Verify this inscription belongs to the correct club
+          final path = doc.reference.path;
+          if (!path.startsWith('clubs/$clubId/')) continue;
 
-              final participant = ParticipantOperation.fromFirestore(doc);
+          final participant = ParticipantOperation.fromFirestore(doc);
 
-              // Get parent operation document
-              final operationRef = doc.reference.parent.parent;
-              if (operationRef == null) continue;
+          // Get parent operation document
+          final operationRef = doc.reference.parent.parent;
+          if (operationRef == null) continue;
 
-              final operationDoc = await operationRef.get();
-              if (!operationDoc.exists) continue;
+          final operationDoc = await operationRef.get();
+          if (!operationDoc.exists) continue;
 
-              final operation = Operation.fromFirestore(operationDoc);
+          final operation = Operation.fromFirestore(operationDoc);
 
-              registrations.add(
-                UserEventRegistration(
-                  operation: operation,
-                  participant: participant,
-                ),
-              );
-            } catch (e) {
-              debugPrint('⚠️ Erreur parsing registration: $e');
-              // Continue with next registration
-            }
-          }
-
-          // Sort by date (upcoming first)
-          registrations.sort((a, b) {
-            final dateA = a.operation.dateDebut ?? DateTime(2100);
-            final dateB = b.operation.dateDebut ?? DateTime(2100);
-            return dateA.compareTo(dateB);
-          });
-
-          debugPrint(
-            '📋 ${registrations.length} inscriptions chargées pour user $userId',
+          registrations.add(
+            UserEventRegistration(
+              operation: operation,
+              participant: participant,
+            ),
           );
-          return registrations;
-        });
+        } catch (e) {
+          debugPrint('⚠️ Erreur parsing registration: $e');
+          // Continue with next registration
+        }
+      }
+
+      // Sort by date (upcoming first)
+      registrations.sort((a, b) {
+        final dateA = a.operation.dateDebut ?? DateTime(2100);
+        final dateB = b.operation.dateDebut ?? DateTime(2100);
+        return dateA.compareTo(dateB);
+      });
+
+      debugPrint(
+        '📋 ${registrations.length} inscriptions chargées pour user $userId',
+      );
+      return registrations;
+    });
   }
 
   /// Stream van deelnemers die present zijn (voor live scanner lijst)
@@ -1067,19 +1063,19 @@ class OperationService {
         .where('present', isEqualTo: true)
         .snapshots()
         .map((snapshot) {
-          final participants = snapshot.docs
-              .map((doc) => ParticipantOperation.fromFirestore(doc))
-              .toList();
+      final participants = snapshot.docs
+          .map((doc) => ParticipantOperation.fromFirestore(doc))
+          .toList();
 
-          // Sort by presentAt descending (newest first)
-          participants.sort((a, b) {
-            final aTime = a.presentAt ?? DateTime(2000);
-            final bTime = b.presentAt ?? DateTime(2000);
-            return bTime.compareTo(aTime);
-          });
+      // Sort by presentAt descending (newest first)
+      participants.sort((a, b) {
+        final aTime = a.presentAt ?? DateTime(2000);
+        final bTime = b.presentAt ?? DateTime(2000);
+        return bTime.compareTo(aTime);
+      });
 
-          return participants;
-        });
+      return participants;
+    });
   }
 
   // ============================================================
@@ -1114,9 +1110,8 @@ class OperationService {
     required String operationId,
   }) async {
     try {
-      final operationRef = _firestore
-          .collection('clubs/$clubId/operations')
-          .doc(operationId);
+      final operationRef =
+          _firestore.collection('clubs/$clubId/operations').doc(operationId);
 
       for (final subcollection in const [
         'inscriptions',
@@ -1156,13 +1151,12 @@ class OperationService {
     required Map<String, dynamic> data,
   }) async {
     try {
-      final docRef = await _firestore
-          .collection('clubs/$clubId/operations')
-          .add({
-            ...data,
-            'created_at': FieldValue.serverTimestamp(),
-            'updated_at': FieldValue.serverTimestamp(),
-          });
+      final docRef =
+          await _firestore.collection('clubs/$clubId/operations').add({
+        ...data,
+        'created_at': FieldValue.serverTimestamp(),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
 
       debugPrint('✅ Opération créée: ${docRef.id} - ${data['titre']}');
       return docRef.id;
@@ -1346,9 +1340,8 @@ class OperationService {
           .orderBy('date_debut', descending: true)
           .get();
 
-      final operations = snapshot.docs
-          .map((doc) => Operation.fromFirestore(doc))
-          .toList();
+      final operations =
+          snapshot.docs.map((doc) => Operation.fromFirestore(doc)).toList();
 
       if (operations.isEmpty) {
         debugPrint('📅 Aucun évènement dans les $days derniers jours');
@@ -1429,9 +1422,8 @@ class OperationService {
     bool forceRefundClaim = false,
   }) async {
     // Read operation to check deadline
-    final operationRef = _firestore
-        .collection('clubs/$clubId/operations')
-        .doc(operationId);
+    final operationRef =
+        _firestore.collection('clubs/$clubId/operations').doc(operationId);
     final operationSnap = await operationRef.get();
     if (!operationSnap.exists) {
       throw Exception('Opération introuvable');
@@ -1476,23 +1468,20 @@ class OperationService {
 
       final existingData = inscriptionSnap.data()!;
       final existingSupplements = existingData['selected_supplements'] ?? [];
-      final existingSupplementTotal = (existingData['supplement_total'] ?? 0.0)
-          .toDouble();
-      final oldTotal =
-          (existingData['prix'] ?? 0.0).toDouble() +
+      final existingSupplementTotal =
+          (existingData['supplement_total'] ?? 0.0).toDouble();
+      final oldTotal = (existingData['prix'] ?? 0.0).toDouble() +
           existingSupplementTotal +
           oldGuestsTotal;
-      final newTotal =
-          (existingData['prix'] ?? 0.0).toDouble() +
+      final newTotal = (existingData['prix'] ?? 0.0).toDouble() +
           supplementTotal +
           newGuestsTotal;
       final isPaid = existingData['paye'] ?? false;
 
       // 2. Update parent inscription
       final updateData = <String, dynamic>{
-        'selected_supplements': selectedSupplements
-            .map((s) => s.toMap())
-            .toList(),
+        'selected_supplements':
+            selectedSupplements.map((s) => s.toMap()).toList(),
         'supplement_total': supplementTotal,
         'updated_at': FieldValue.serverTimestamp(),
       };
@@ -1510,8 +1499,7 @@ class OperationService {
 
         for (final guest in guests) {
           final now = DateTime.now();
-          final guestId =
-              guest.inscriptionId ??
+          final guestId = guest.inscriptionId ??
               'guest_${now.millisecondsSinceEpoch}_${Random().nextInt(99999).toString().padLeft(5, '0')}';
 
           if (guest.inscriptionId == null) {
@@ -1525,9 +1513,8 @@ class OperationService {
               'paye': false,
               'date_inscription': FieldValue.serverTimestamp(),
               'is_guest': true,
-              'selected_supplements': guest.selectedSupplements
-                  .map((s) => s.toMap())
-                  .toList(),
+              'selected_supplements':
+                  guest.selectedSupplements.map((s) => s.toMap()).toList(),
               'supplement_total': guest.supplementTotal,
               'parent_inscription_id': inscriptionId,
               'added_by': existingData['membre_id'],
@@ -1547,9 +1534,8 @@ class OperationService {
               'membre_nom': guest.nom,
               'membre_prenom': guest.prenom,
               'prix': guest.prix,
-              'selected_supplements': guest.selectedSupplements
-                  .map((s) => s.toMap())
-                  .toList(),
+              'selected_supplements':
+                  guest.selectedSupplements.map((s) => s.toMap()).toList(),
               'supplement_total': guest.supplementTotal,
               if (guest.tariffId != null) 'tariff_id': guest.tariffId,
               'updated_at': FieldValue.serverTimestamp(),
@@ -1611,8 +1597,7 @@ class OperationService {
             newAmount: newTotal,
             editSessionId: editSessionId,
             eventTitre: operation.titre,
-            description:
-                '${descriptionPrefix}diminution de '
+            description: '${descriptionPrefix}diminution de '
                 '${delta.toStringAsFixed(2)} € '
                 '(de ${oldTotal.toStringAsFixed(2)} € à '
                 '${newTotal.toStringAsFixed(2)} €).',
@@ -1651,9 +1636,8 @@ class OperationService {
           .doc(guestInscriptionId);
 
       batch.update(inscriptionRef, {
-        'selected_supplements': selectedSupplements
-            .map((s) => s.toMap())
-            .toList(),
+        'selected_supplements':
+            selectedSupplements.map((s) => s.toMap()).toList(),
         'supplement_total': supplementTotal,
         'updated_at': FieldValue.serverTimestamp(),
       });
