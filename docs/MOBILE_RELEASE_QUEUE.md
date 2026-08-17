@@ -13,9 +13,18 @@ Deze wijzigingen zijn geen release totdat accounting/auth/rules-review en
 end-to-end Firestore-tests afgerond zijn. Geen versie- of deployactie vanuit
 deze wachtrij zonder aparte goedkeuring.
 
+## Huidige productieversie
+
+`1.20.0+197` staat op Android in productie. Dezelfde build is naar App Store
+Connect verzonden en staat daar op `WAITING_FOR_REVIEW` (build `197`, valid).
+De Firestore-sleutel `settings/app_version` wordt pas bijgewerkt nadat iOS
+ook live is. Daarna worden `version: 1.20.0` en
+`minSupportedVersion: 1.20.0` samen gepubliceerd; zo worden oude mobiele
+versies bij betaalacties uitgefaseerd zonder een Store-review te omzeilen.
+
 ## Volgende release
 
-Basisversie: `1.17.0+194`
+Basisversie: `1.20.0+197`
 
 | Referentie | Wijziging | Platform | Validatie | Risico | Status |
 |---|---|---|---|---|---|
@@ -32,6 +41,8 @@ Basisversie: `1.17.0+194`
 | MOB-013 | Web- en e-maillinks in eventdiscussies openen opnieuw vanuit Markdown-berichten, met blokkering van onveilige URI-schema’s | Android + iOS | 3 gerichte regressietests, 382 Fluttertests, gerichte analyse en Android-debugbuild | Laag | Releasewachtrij |
 
 | COM-044 | Cloud Functions respecteren `member_status` als canonieke ledenstatus; legacyvelden zijn alleen fallback tijdens de migratie | Cloud Functions | 10 gerichte tests en 115 volledige functiontests | Middel | Deploy na review |
+
+| PAY-LEDGER-2026-08-17 | Canonieke payment ledger, server-only betaalcommando's, Gozo-installmentcompatibiliteit, historische Zeeland/Gozo-reparaties en fail-closed legacy Noda-routes | Android + iOS + Cloud Functions + Firestore rules | 8 ledger-tests, 5 Function-tests, 11 Flutter-tests, build-check, live Zeeland/Gozo-invariant-audit | Hoog | Android productie; iOS `WAITING_FOR_REVIEW`; app-version publicatie na iOS-live |
 
 ## Voorgestelde Franse releasenotes
 
