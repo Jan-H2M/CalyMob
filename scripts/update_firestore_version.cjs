@@ -3,8 +3,8 @@
  * Update app version in Firestore (CalyCompta maintenance page)
  * This script is called by bump_version.sh to sync mobile version with web admin
  *
- * Usage: node update_firestore_version.js <version>
- * Example: node update_firestore_version.js 1.0.13
+ * Usage: node update_firestore_version.cjs <version> [buildNumber] [minSupportedVersion]
+ * Example: node update_firestore_version.cjs 1.20.0 197 1.20.0
  */
 
 const path = require('path');
@@ -66,11 +66,11 @@ if (!initialized) {
 
 const db = admin.firestore();
 
-async function updateVersionInFirestore(version, buildNumber) {
+async function updateVersionInFirestore(version, buildNumber, minSupportedVersion) {
   if (!version) {
     console.error('❌ Error: Version argument is required');
-    console.error('Usage: node update_firestore_version.cjs <version> [buildNumber]');
-    console.error('Example: node update_firestore_version.cjs 1.0.13 70');
+    console.error('Usage: node update_firestore_version.cjs <version> [buildNumber] [minSupportedVersion]');
+    console.error('Example: node update_firestore_version.cjs 1.20.0 197 1.20.0');
     process.exit(1);
   }
 
@@ -78,6 +78,12 @@ async function updateVersionInFirestore(version, buildNumber) {
   if (!/^\d+\.\d+\.\d+$/.test(version)) {
     console.error(`❌ Error: Invalid version format "${version}"`);
     console.error('   Expected format: X.Y.Z (e.g., 1.0.12)');
+    process.exit(1);
+  }
+
+  if (minSupportedVersion && !/^\d+\.\d+\.\d+$/.test(minSupportedVersion)) {
+    console.error(`❌ Error: Invalid minSupportedVersion format "${minSupportedVersion}"`);
+    console.error('   Expected format: X.Y.Z (e.g., 1.20.0)');
     process.exit(1);
   }
 
@@ -102,8 +108,9 @@ async function updateVersionInFirestore(version, buildNumber) {
       message: null,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       source: 'mobile_build_script',
-      // Bewaar minSupportedVersion als die al bestond
-      minSupportedVersion: existingData.minSupportedVersion || null,
+      // Bewaar de bestaande minimumversie tenzij deze expliciet wordt
+      // meegegeven na bevestiging dat de nieuwe versie in beide stores live is.
+      minSupportedVersion: minSupportedVersion || existingData.minSupportedVersion || null,
     };
 
     // Add build number if provided
@@ -129,4 +136,5 @@ async function updateVersionInFirestore(version, buildNumber) {
 // Get version and optional build number from command line arguments
 const version = process.argv[2];
 const buildNumber = process.argv[3];
-updateVersionInFirestore(version, buildNumber);
+const minSupportedVersion = process.argv[4];
+updateVersionInFirestore(version, buildNumber, minSupportedVersion);
