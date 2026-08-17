@@ -141,6 +141,17 @@ function resolveFirstOpenInstallment(operationData, inscriptionData, guestInscri
         return left - right;
       })
     : [];
+  // Legacy operations such as Gozo keep the tranche map on each inscription
+  // but have no operation-level payment_installments array. Derive a stable
+  // fallback from the payer/guest maps so open final tranches are not omitted
+  // from reminders.
+  if (installments.length === 0) {
+    const ids = new Set(Object.keys(inscriptionData.installment_payments || {}));
+    for (const guest of guestInscriptions) {
+      Object.keys(guest.installment_payments || {}).forEach((id) => ids.add(id));
+    }
+    installments.push(...[...ids].map((id, index) => ({ id, label: id, display_order: index })));
+  }
   if (installments.length === 0) return null;
 
   const payments = inscriptionData.installment_payments || {};
@@ -272,11 +283,22 @@ async function recomputePaymentReminderDraft(db, clubId, operationRef, operation
     return { written: false, reason: 'out-of-window' };
   }
 
-  const inscriptionsSnap = await operationRef
-    .collection('inscriptions').where('paye', '==', false).get();
+  // Load the complete active set. Querying only `paye == false` misses the
+  // important case where a parent paid its own amount but a late guest still
+  // has an open balance.
+  const inscriptionsSnap = await operationRef.collection('inscriptions').get();
+  const activeDocs = inscriptionsSnap.docs.filter((doc) => {
+    const data = doc.data();
+    if (['canceled', 'cancelled', 'Annulé', 'annule'].includes(data.registration_status)) return false;
+    if (data.payment_required === false) return false;
+    const price = Number(data.prix || 0) + Number(data.supplement_total || 0);
+    const hasInstallments = data.installment_payments
+      && Object.keys(data.installment_payments).length > 0;
+    return hasInstallments || price > 0;
+  });
 
   // No unpaid → if there was a pending draft, clear it; otherwise noop.
-  if (inscriptionsSnap.empty) {
+  if (activeDocs.length === 0) {
     if (existing && existing.status === 'pending') {
       await operationRef.update({
         'payment_reminder.status': 'cleared',
@@ -292,7 +314,7 @@ async function recomputePaymentReminderDraft(db, clubId, operationRef, operation
   // sur le rappel agrégé du parent). Permet une sélection de tranche au
   // niveau du GROUPE (membre + invités).
   const guestsByParent = {};
-  for (const d of inscriptionsSnap.docs) {
+  for (const d of activeDocs) {
     const x = d.data();
     if (x.is_guest === true && x.parent_inscription_id) {
       if (!guestsByParent[x.parent_inscription_id]) guestsByParent[x.parent_inscription_id] = [];
@@ -302,7 +324,7 @@ async function recomputePaymentReminderDraft(db, clubId, operationRef, operation
 
   // Build groups (qr_email vs sur_place) with display names.
   const groups = { qr_email: [], sur_place: [] };
-  for (const insDoc of inscriptionsSnap.docs) {
+  for (const insDoc of activeDocs) {
     try {
       const ins = insDoc.data();
       const insId = insDoc.id;
@@ -316,8 +338,16 @@ async function recomputePaymentReminderDraft(db, clubId, operationRef, operation
       }
 
       const membreId = normalizeText(ins.membre_id) || insId;
-      const openInstallment = resolveFirstOpenInstallment(operationData, ins, guestsByParent[insId] || []);
-      const groupKey = openInstallment ? 'qr_email' : classifyGroup(ins.payment_status);
+      const linkedGuests = guestsByParent[insId] || [];
+      const openInstallment = resolveFirstOpenInstallment(operationData, ins, linkedGuests);
+      const ownFlatOpen = !operationData.payment_plan_enabled && ins.paye !== true
+        ? Number(ins.prix || 0) + Number(ins.supplement_total || 0) : 0;
+      const guestFlatOpen = !operationData.payment_plan_enabled
+        ? linkedGuests.reduce((sum, guest) => guest.paye === true ? sum
+          : sum + Number(guest.prix || 0) + Number(guest.supplement_total || 0), 0) : 0;
+      if (!openInstallment && ownFlatOpen + guestFlatOpen <= 0) continue;
+      const groupKey = openInstallment || ownFlatOpen + guestFlatOpen > 0
+        ? 'qr_email' : classifyGroup(ins.payment_status);
 
       const memberSnap = await db.collection('clubs').doc(clubId)
         .collection('members').doc(membreId).get();
@@ -331,6 +361,7 @@ async function recomputePaymentReminderDraft(db, clubId, operationRef, operation
         display_name: displayName,
         inscription_id: insId,
         ...(openInstallment ? openInstallment : {}),
+        ...(!openInstallment && { amount_due: ownFlatOpen + guestFlatOpen }),
       });
     } catch (error) {
       console.error(
@@ -344,6 +375,14 @@ async function recomputePaymentReminderDraft(db, clubId, operationRef, operation
   sortMembersByDisplayName(groups.sur_place);
 
   if (groups.qr_email.length === 0 && groups.sur_place.length === 0) {
+    if (existing && existing.status === 'pending') {
+      await operationRef.update({
+        'payment_reminder.status': 'cleared',
+        'payment_reminder.cleared_at': admin.firestore.FieldValue.serverTimestamp(),
+        'payment_reminder.groups': { qr_email: [], sur_place: [] },
+      });
+      return { written: true, reason: 'cleared-no-open-balance' };
+    }
     return { written: false, reason: 'no-valid-unpaid' };
   }
 
@@ -379,6 +418,7 @@ module.exports = {
   normalizeText,
   classifyGroup,
   resolveDisplayName,
+  resolveFirstOpenInstallment,
   sortMembersByDisplayName,
   composeReminderText,
   isOperationInReminderWindow,

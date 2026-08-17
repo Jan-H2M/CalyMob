@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import '../models/operation.dart';
 import '../models/member_profile.dart';
@@ -121,11 +122,14 @@ class OperationService {
           .where('membre_id', isEqualTo: userId)
           .get();
 
-      final isRegistered = snapshot.docs
-          .any((doc) => doc.data()['registration_status'] != 'canceled');
-      debugPrint(isRegistered
-          ? '✅ Utilisateur $userId déjà inscrit à $operationId'
-          : '❌ Utilisateur $userId NON inscrit à $operationId');
+      final isRegistered = snapshot.docs.any(
+        (doc) => doc.data()['registration_status'] != 'canceled',
+      );
+      debugPrint(
+        isRegistered
+            ? '✅ Utilisateur $userId déjà inscrit à $operationId'
+            : '❌ Utilisateur $userId NON inscrit à $operationId',
+      );
 
       return isRegistered;
     } catch (e) {
@@ -149,8 +153,11 @@ class OperationService {
   }) async {
     try {
       // Vérifier si déjà inscrit
-      final alreadyRegistered =
-          await isUserRegistered(clubId, operationId, userId);
+      final alreadyRegistered = await isUserRegistered(
+        clubId,
+        operationId,
+        userId,
+      );
       if (alreadyRegistered) {
         throw Exception('Vous êtes déjà inscrit à cet événement');
       }
@@ -174,7 +181,8 @@ class OperationService {
         );
         appliedTariff = _findTariffByPrice(operation, prix);
         debugPrint(
-            '💰 Prix calculé: $prix€ pour fonction ${TariffUtils.getFunctionLabel(memberProfile)}');
+          '💰 Prix calculé: $prix€ pour fonction ${TariffUtils.getFunctionLabel(memberProfile)}',
+        );
       } else {
         // Fallback si pas de profil
         prix = operation.prixMembre ?? 0.0;
@@ -224,7 +232,8 @@ class OperationService {
 
       final totalPrix = prix + (supplementTotal ?? 0);
       debugPrint(
-          '✅ Inscription réussie: $userName → ${operation.titre} (total: $totalPrix€)');
+        '✅ Inscription réussie: $userName → ${operation.titre} (total: $totalPrix€)',
+      );
     } catch (e) {
       debugPrint('❌ Erreur inscription: $e');
       rethrow;
@@ -362,7 +371,8 @@ class OperationService {
       }
       await batch.commit();
       debugPrint(
-          '✅ ${snapshot.docs.length} invité(s) transféré(s) vers $newParentInscriptionId');
+        '✅ ${snapshot.docs.length} invité(s) transféré(s) vers $newParentInscriptionId',
+      );
       return snapshot.docs.length;
     } catch (e) {
       debugPrint('❌ Erreur transferGuestsToParent: $e');
@@ -419,7 +429,8 @@ class OperationService {
   ) async {
     try {
       debugPrint(
-          '🔍 Recherche participants dans subcollection inscriptions pour operation_id: $operationId');
+        '🔍 Recherche participants dans subcollection inscriptions pour operation_id: $operationId',
+      );
 
       final snapshot = await _firestore
           .collection('clubs/$clubId/operations/$operationId/inscriptions')
@@ -434,7 +445,8 @@ class OperationService {
       sortParticipantsByName(participants);
 
       debugPrint(
-          '👥 ${participants.length} participants chargés pour $operationId');
+        '👥 ${participants.length} participants chargés pour $operationId',
+      );
       return participants;
     } catch (e) {
       debugPrint('❌ Erreur chargement participants: $e');
@@ -454,14 +466,17 @@ class OperationService {
         .map((snapshot) {
       final participants = snapshot.docs
           .map((doc) => ParticipantOperation.fromFirestore(doc))
-          .where((participant) => participant.registrationStatus != 'canceled')
+          .where(
+            (participant) => participant.registrationStatus != 'canceled',
+          )
           .toList();
 
       // Sort by first name (prénom), then last name — diacritics-insensitive
       sortParticipantsByName(participants);
 
       debugPrint(
-          '👥 [Stream] ${participants.length} participants mis à jour pour $operationId');
+        '👥 [Stream] ${participants.length} participants mis à jour pour $operationId',
+      );
       return participants;
     });
   }
@@ -559,7 +574,8 @@ class OperationService {
       });
 
       debugPrint(
-          '✅ Membre $memberId marqué présent pour opération $operationId');
+        '✅ Membre $memberId marqué présent pour opération $operationId',
+      );
     } catch (e) {
       debugPrint('❌ Erreur marquage présent: $e');
       rethrow;
@@ -628,7 +644,8 @@ class OperationService {
           .add(inscriptionData);
 
       debugPrint(
-          '✅ Inscription walk-in créée: ${member.fullName} → $operationTitle ($prix€)');
+        '✅ Inscription walk-in créée: ${member.fullName} → $operationTitle ($prix€)',
+      );
     } catch (e) {
       debugPrint('❌ Erreur création inscription walk-in: $e');
       rethrow;
@@ -693,7 +710,8 @@ class OperationService {
       });
 
       debugPrint(
-          '✅ Présence annulée pour member $memberId (inscription conservée)');
+        '✅ Présence annulée pour member $memberId (inscription conservée)',
+      );
       return UnmarkPresentResult(
         deletedInscription: false,
         inscriptionId: doc.id,
@@ -718,8 +736,9 @@ class OperationService {
     required UnmarkPresentResult result,
   }) async {
     try {
-      final inscriptionsRef = _firestore
-          .collection('clubs/$clubId/operations/$operationId/inscriptions');
+      final inscriptionsRef = _firestore.collection(
+        'clubs/$clubId/operations/$operationId/inscriptions',
+      );
 
       if (result.deletedInscription) {
         // Re-create the deleted walk-in document with the same ID
@@ -744,7 +763,8 @@ class OperationService {
         }
         await inscriptionsRef.doc(result.inscriptionId).update(update);
         debugPrint(
-            '↩️ Présence restaurée pour inscription ${result.inscriptionId}');
+          '↩️ Présence restaurée pour inscription ${result.inscriptionId}',
+        );
       }
     } catch (e) {
       debugPrint('❌ Erreur restauration: $e');
@@ -760,17 +780,12 @@ class OperationService {
     required String participantId,
   }) async {
     try {
-      await _firestore
-          .collection('clubs/$clubId/operations/$operationId/inscriptions')
-          .doc(participantId)
-          .update({
-        'paye': true,
-        'paye_at': FieldValue.serverTimestamp(),
-        'paye_method': 'epc_qr_onsite', // Payment collected on site via EPC QR
-        'payment_status':
-            'paid', // Sync payment_status with paye for data consistency
-        'date_paiement': FieldValue.serverTimestamp(),
-        'updated_at': FieldValue.serverTimestamp(),
+      await FirebaseFunctions.instanceFor(
+        region: 'europe-west1',
+      ).httpsCallable('recordOnSitePayment').call({
+        'clubId': clubId,
+        'operationId': operationId,
+        'participantId': participantId,
       });
 
       debugPrint('✅ Participant $participantId marked as paid');
@@ -791,52 +806,18 @@ class OperationService {
     required String participantId,
     required String installmentId,
   }) async {
-    final ref = _firestore
-        .collection('clubs/$clubId/operations/$operationId/inscriptions')
-        .doc(participantId);
-
-    await _firestore.runTransaction((tx) async {
-      final snap = await tx.get(ref);
-      if (!snap.exists) {
-        throw Exception('Inscription introuvable');
-      }
-      final data = snap.data() as Map<String, dynamic>;
-      final payments = Map<String, dynamic>.from(
-          (data['installment_payments'] as Map<String, dynamic>?) ?? {});
-      final cur =
-          Map<String, dynamic>.from(payments[installmentId] as Map? ?? {});
-      if (cur['status'] == 'paid' || cur['status'] == 'waived') {
-        return; // déjà réglée — idempotent
-      }
-
-      cur['status'] = 'paid';
-      cur['amount_paid'] = (cur['amount_due'] as num?) ?? 0;
-      cur['paid_at'] = Timestamp.now();
-      payments[installmentId] = cur;
-
-      final allClosed = payments.isNotEmpty &&
-          payments.values.every((p) =>
-              p is Map && (p['status'] == 'paid' || p['status'] == 'waived'));
-
-      tx.update(ref, {
-        'installment_payments.$installmentId.status': 'paid',
-        'installment_payments.$installmentId.amount_paid':
-            (cur['amount_due'] as num?) ?? 0,
-        'installment_payments.$installmentId.paid_at':
-            FieldValue.serverTimestamp(),
-        if (allClosed) ...{
-          'paye': true,
-          'paye_at': FieldValue.serverTimestamp(),
-          'paye_method': 'epc_qr_onsite',
-          'payment_status': 'paid',
-          'date_paiement': FieldValue.serverTimestamp(),
-        },
-        'updated_at': FieldValue.serverTimestamp(),
-      });
+    await FirebaseFunctions.instanceFor(
+      region: 'europe-west1',
+    ).httpsCallable('recordInstallmentPayment').call({
+      'clubId': clubId,
+      'operationId': operationId,
+      'participantId': participantId,
+      'installmentId': installmentId,
     });
 
     debugPrint(
-        '✅ Tranche $installmentId payée pour $participantId (installment-aware)');
+      '✅ Tranche $installmentId payée pour $participantId (installment-aware)',
+    );
   }
 
   /// Update payment status for a participant
@@ -848,54 +829,18 @@ class OperationService {
     required String status,
   }) async {
     try {
-      final operationRef =
-          _firestore.doc('clubs/$clubId/operations/$operationId');
-      final participantRef = operationRef.collection('inscriptions').doc(
-            participantId,
-          );
-
-      await _firestore.runTransaction((transaction) async {
-        final operationSnapshot = await transaction.get(operationRef);
-        if (!operationSnapshot.exists) {
-          throw StateError('Activité introuvable.');
-        }
-
-        final operationData = operationSnapshot.data()!;
-        final requiredMethod = switch (status) {
-          'qr_on_site' => 'on_site',
-          'qr_email_sent' => 'qr_email',
-          _ => null,
-        };
-
-        if (requiredMethod != null) {
-          final paymentRequired = operationData.containsKey('payment_required')
-              ? operationData['payment_required'] == true
-              : ((operationData['prix_membre'] as num?) ?? 0) > 0 ||
-                  ((operationData['event_tariffs'] as List?) ?? const [])
-                      .whereType<Map>()
-                      .any(
-                        (tariff) => ((tariff['price'] as num?) ?? 0) > 0,
-                      );
-          final allowedMethods =
-              (operationData['allowed_payment_methods'] as List?)
-                      ?.whereType<String>()
-                      .toSet() ??
-                  const {'qr_immediate', 'qr_email', 'on_site'};
-
-          if (!paymentRequired || !allowedMethods.contains(requiredMethod)) {
-            throw const PaymentMethodNotAllowedException();
-          }
-        }
-
-        transaction.update(participantRef, {
-          'payment_status': status,
-          'payment_status_at': FieldValue.serverTimestamp(),
-          'updated_at': FieldValue.serverTimestamp(),
-        });
+      await FirebaseFunctions.instanceFor(
+        region: 'europe-west1',
+      ).httpsCallable('recordPaymentCommunication').call({
+        'clubId': clubId,
+        'operationId': operationId,
+        'participantId': participantId,
+        'status': status,
       });
 
       debugPrint(
-          '✅ Payment status updated to $status for participant $participantId');
+        '✅ Payment status updated to $status for participant $participantId',
+      );
     } catch (e) {
       debugPrint('❌ Error updating payment status: $e');
       rethrow;
@@ -959,12 +904,15 @@ class OperationService {
             operation.paymentInstallments.isNotEmpty) {
           Tariff? guestTariff;
           if (tariffId != null) {
-            guestTariff = operation.eventTariffs
-                .cast<Tariff?>()
-                .firstWhere((t) => t?.id == tariffId, orElse: () => null);
+            guestTariff = operation.eventTariffs.cast<Tariff?>().firstWhere(
+                  (t) => t?.id == tariffId,
+                  orElse: () => null,
+                );
           }
-          final tariffSum = guestTariff?.installmentAmounts.values
-                  .fold<double>(0, (s, v) => s + v) ??
+          final tariffSum = guestTariff?.installmentAmounts.values.fold<double>(
+                0,
+                (s, v) => s + v,
+              ) ??
               0;
           if (guestTariff != null && (tariffSum - prix).abs() < 0.01) {
             installments = _buildInstallmentPayments(
@@ -1023,11 +971,7 @@ class OperationService {
         // `supplements` here would make the choice invisible everywhere.
         if (selectedSupplements != null && selectedSupplements.isNotEmpty)
           'selected_supplements': selectedSupplements
-              .map((s) => {
-                    'id': s.id,
-                    'name': s.name,
-                    'price': s.price,
-                  })
+              .map((s) => {'id': s.id, 'name': s.name, 'price': s.price})
               .toList(),
         if (supplementTotal != null && supplementTotal > 0)
           'supplement_total': supplementTotal,
@@ -1044,7 +988,8 @@ class OperationService {
           .add(inscriptionData);
 
       debugPrint(
-          '✅ Inscription invité créée: $guestPrenom $guestNom → $operationTitle (parent=$parentInscriptionId, tariff=$tariffId, supps=${selectedSupplements?.length ?? 0})');
+        '✅ Inscription invité créée: $guestPrenom $guestNom → $operationTitle (parent=$parentInscriptionId, tariff=$tariffId, supps=${selectedSupplements?.length ?? 0})',
+      );
     } catch (e) {
       debugPrint('❌ Erreur création inscription invité: $e');
       rethrow;
@@ -1054,7 +999,9 @@ class OperationService {
   /// Stream van alle inscriptions van een gebruiker met bijbehorende Operation data
   /// Uses collectionGroup query to find all inscriptions across all operations
   Stream<List<UserEventRegistration>> getUserRegistrationsStream(
-      String clubId, String userId) {
+    String clubId,
+    String userId,
+  ) {
     return _firestore
         .collectionGroup('inscriptions')
         .where('membre_id', isEqualTo: userId)
@@ -1079,10 +1026,12 @@ class OperationService {
 
           final operation = Operation.fromFirestore(operationDoc);
 
-          registrations.add(UserEventRegistration(
-            operation: operation,
-            participant: participant,
-          ));
+          registrations.add(
+            UserEventRegistration(
+              operation: operation,
+              participant: participant,
+            ),
+          );
         } catch (e) {
           debugPrint('⚠️ Erreur parsing registration: $e');
           // Continue with next registration
@@ -1097,7 +1046,8 @@ class OperationService {
       });
 
       debugPrint(
-          '📋 ${registrations.length} inscriptions chargées pour user $userId');
+        '📋 ${registrations.length} inscriptions chargées pour user $userId',
+      );
       return registrations;
     });
   }
@@ -1142,10 +1092,7 @@ class OperationService {
       await _firestore
           .collection('clubs/$clubId/operations')
           .doc(operationId)
-          .update({
-        ...data,
-        'updated_at': FieldValue.serverTimestamp(),
-      });
+          .update({...data, 'updated_at': FieldValue.serverTimestamp()});
       debugPrint('✅ Opération mise à jour: $operationId');
     } catch (e) {
       debugPrint('❌ Erreur mise à jour opération: $e');
@@ -1282,7 +1229,8 @@ class OperationService {
 
   /// Copy tariffs from a location with new unique IDs
   static List<Map<String, dynamic>> copyTariffsFromLocation(
-      List<Tariff> locationTariffs) {
+    List<Tariff> locationTariffs,
+  ) {
     final ts = DateTime.now().millisecondsSinceEpoch;
     return locationTariffs.asMap().entries.map((entry) {
       final index = entry.key;
@@ -1308,7 +1256,9 @@ class OperationService {
 
   /// Async variant voor refresh (one-time load)
   Future<List<UserEventRegistration>> getUserRegistrations(
-      String clubId, String userId) async {
+    String clubId,
+    String userId,
+  ) async {
     try {
       final snapshot = await _firestore
           .collectionGroup('inscriptions')
@@ -1334,10 +1284,12 @@ class OperationService {
 
           final operation = Operation.fromFirestore(operationDoc);
 
-          registrations.add(UserEventRegistration(
-            operation: operation,
-            participant: participant,
-          ));
+          registrations.add(
+            UserEventRegistration(
+              operation: operation,
+              participant: participant,
+            ),
+          );
         } catch (e) {
           debugPrint('⚠️ Erreur parsing registration: $e');
           // Continue with next registration
@@ -1352,7 +1304,8 @@ class OperationService {
       });
 
       debugPrint(
-          '📋 ${registrations.length} inscriptions chargées pour user $userId');
+        '📋 ${registrations.length} inscriptions chargées pour user $userId',
+      );
       return registrations;
     } catch (e) {
       debugPrint('❌ Erreur chargement inscriptions utilisateur: $e');
@@ -1379,8 +1332,10 @@ class OperationService {
       final snapshot = await _firestore
           .collection('clubs/$clubId/operations')
           .where('type', isEqualTo: 'evenement')
-          .where('date_debut',
-              isGreaterThanOrEqualTo: Timestamp.fromDate(cutoff))
+          .where(
+            'date_debut',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(cutoff),
+          )
           .where('date_debut', isLessThanOrEqualTo: Timestamp.fromDate(now))
           .orderBy('date_debut', descending: true)
           .get();
@@ -1419,7 +1374,8 @@ class OperationService {
 
       final attended = checks.whereType<Operation>().toList();
       debugPrint(
-          '📅 ${attended.length}/${operations.length} évènements attendus par $memberId');
+        '📅 ${attended.length}/${operations.length} évènements attendus par $memberId',
+      );
       return attended;
     } catch (e) {
       debugPrint('❌ Erreur getRecentAttendedOperations: $e');
@@ -1537,8 +1493,9 @@ class OperationService {
       // 3. Handle guest updates (upsert new + update existing)
       final addedGuestIds = <String>[];
       if (guests != null && guests.isNotEmpty) {
-        final inscriptionsRef = _firestore
-            .collection('clubs/$clubId/operations/$operationId/inscriptions');
+        final inscriptionsRef = _firestore.collection(
+          'clubs/$clubId/operations/$operationId/inscriptions',
+        );
 
         for (final guest in guests) {
           final now = DateTime.now();
@@ -1589,8 +1546,9 @@ class OperationService {
 
       // 4. Handle guest removals
       if (guestIdsToRemove != null && guestIdsToRemove.isNotEmpty) {
-        final inscriptionsRef = _firestore
-            .collection('clubs/$clubId/operations/$operationId/inscriptions');
+        final inscriptionsRef = _firestore.collection(
+          'clubs/$clubId/operations/$operationId/inscriptions',
+        );
         for (final guestId in guestIdsToRemove) {
           batch.delete(inscriptionsRef.doc(guestId));
         }
@@ -1645,8 +1603,10 @@ class OperationService {
                 '${newTotal.toStringAsFixed(2)} €).',
             unverifiedPayment: unverifiedPayment,
           );
-          debugPrint('✅ Refund requested for inscription $inscriptionId '
-              '(delta=$delta, unverified=$unverifiedPayment)');
+          debugPrint(
+            '✅ Refund requested for inscription $inscriptionId '
+            '(delta=$delta, unverified=$unverifiedPayment)',
+          );
         } catch (refundError) {
           // Log refund failure — the inscription update already succeeded
           debugPrint('⚠️ Refund creation failed (non-blocking): $refundError');
