@@ -141,6 +141,17 @@ function resolveFirstOpenInstallment(operationData, inscriptionData, guestInscri
         return left - right;
       })
     : [];
+  // Legacy operations such as Gozo keep the tranche map on each inscription
+  // but have no operation-level payment_installments array. Derive a stable
+  // fallback from the payer/guest maps so open final tranches are not omitted
+  // from reminders.
+  if (installments.length === 0) {
+    const ids = new Set(Object.keys(inscriptionData.installment_payments || {}));
+    for (const guest of guestInscriptions) {
+      Object.keys(guest.installment_payments || {}).forEach((id) => ids.add(id));
+    }
+    installments.push(...[...ids].map((id, index) => ({ id, label: id, display_order: index })));
+  }
   if (installments.length === 0) return null;
 
   const payments = inscriptionData.installment_payments || {};
@@ -407,6 +418,7 @@ module.exports = {
   normalizeText,
   classifyGroup,
   resolveDisplayName,
+  resolveFirstOpenInstallment,
   sortMembersByDisplayName,
   composeReminderText,
   isOperationInReminderWindow,
