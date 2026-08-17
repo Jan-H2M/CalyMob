@@ -21,6 +21,8 @@ De Firestore-sleutel `settings/app_version` wordt pas bijgewerkt nadat iOS
 ook live is. Daarna worden `version: 1.20.0` en
 `minSupportedVersion: 1.20.0` samen gepubliceerd; zo worden oude mobiele
 versies bij betaalacties uitgefaseerd zonder een Store-review te omzeilen.
+Gebruik na de Apple-goedkeuring:
+`node scripts/update_firestore_version.cjs 1.20.0 197 1.20.0`.
 
 ## Volgende release
 
