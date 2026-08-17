@@ -298,7 +298,7 @@ packages:
     source: hosted
     version: "6.0.5"
   cloud_functions_platform_interface:
-    dependency: transitive
+    dependency: "direct dev"
     description:
       name: cloud_functions_platform_interface
       sha256: e40eaed88bb5b8cec8377d5a83d9360f3fbf09088edb9b5e0c761763fa9caf52
@@ -554,7 +554,7 @@ packages:
     source: hosted
     version: "4.3.0"
   firebase_core_platform_interface:
-    dependency: transitive
+    dependency: "direct dev"
     description:
       name: firebase_core_platform_interface
       sha256: cccb4f572325dc14904c02fcc7db6323ad62ba02536833dddb5c02cac7341c64

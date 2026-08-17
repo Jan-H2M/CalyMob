@@ -116,6 +116,8 @@ dev_dependencies:
   fake_cloud_firestore: ^4.0.1
   mockito: ^5.4.4
   build_runner: ^2.4.13
+  cloud_functions_platform_interface: ^5.8.8
+  firebase_core_platform_interface: ^6.0.2
 
 flutter:
   uses-material-design: true
