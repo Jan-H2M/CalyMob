@@ -99,6 +99,13 @@ const sendPaymentReminder = onCall(
       throw new HttpsError('unauthenticated', 'Vous devez être connecté pour envoyer un rappel de paiement');
     }
 
+    const callerSnap = await db.collection('clubs').doc(clubId).collection('members')
+      .doc(request.auth.uid).get();
+    const callerRole = callerSnap.exists ? callerSnap.data().app_role : null;
+    if (!['admin', 'superadmin'].includes(callerRole)) {
+      throw new HttpsError('permission-denied', 'Seul un administrateur peut envoyer un rappel de paiement');
+    }
+
     const sentBy = request.auth.uid;
     const senderName = resolveSenderName(request.auth);
 

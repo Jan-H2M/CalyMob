@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const admin = require('firebase-admin');
+// Canonical payment contract: CalyCompta/docs/PAYMENT_LEDGER_ARCHITECTURE.md
 
 const COLLECTION = 'event_payment_intents';
 const SCHEMA_VERSION = 1;
@@ -50,6 +51,29 @@ function buildInstallmentAllocations({
   return allocations;
 }
 
+function buildFlatAllocations({ participantId, memberFirstName, memberLastName, flatAggregation }) {
+  if (!flatAggregation) return [];
+  const allocations = [];
+  if (toCents(flatAggregation.parentAmount) > 0) {
+    allocations.push({
+      inscription_id: participantId,
+      person_name: `${memberFirstName || ''} ${memberLastName || ''}`.trim() || 'Membre',
+      amount_cents: toCents(flatAggregation.parentAmount),
+      role: 'member',
+    });
+  }
+  for (const guest of flatAggregation.guests || []) {
+    if (!guest.inscriptionId || toCents(guest.prix) <= 0) continue;
+    allocations.push({
+      inscription_id: guest.inscriptionId,
+      person_name: guest.name || 'Invité',
+      amount_cents: toCents(guest.prix),
+      role: 'guest',
+    });
+  }
+  return allocations;
+}
+
 function allocationSignature(allocations) {
   return allocations
     .map((allocation) => `${allocation.inscription_id}:${allocation.amount_cents}`)
@@ -67,8 +91,10 @@ function buildIntentId(operationId, participantId, installmentId, allocations) {
 }
 
 async function prepareEventPaymentIntent(db, data) {
-  const allocations = buildInstallmentAllocations(data);
-  if (!data.installmentId || allocations.length === 0) return null;
+  const allocations = data.installmentId
+    ? buildInstallmentAllocations(data)
+    : buildFlatAllocations(data);
+  if (allocations.length === 0) return null;
 
   const expectedAmountCents = allocations.reduce(
     (sum, allocation) => sum + allocation.amount_cents,
@@ -83,7 +109,7 @@ async function prepareEventPaymentIntent(db, data) {
   const intentId = buildIntentId(
     data.operationId,
     data.participantId,
-    data.installmentId,
+    data.installmentId || 'full',
     allocations
   );
   const ref = db.collection('clubs').doc(data.clubId).collection(COLLECTION).doc(intentId);
@@ -100,7 +126,7 @@ async function prepareEventPaymentIntent(db, data) {
       operation_id: data.operationId,
       event_number: data.eventNumber || null,
       payer_inscription_id: data.participantId,
-      installment_id: data.installmentId,
+      installment_id: data.installmentId || null,
       installment_label: data.installmentLabel || null,
       expected_amount_cents: expectedAmountCents,
       allocations,
@@ -131,6 +157,7 @@ module.exports = {
   SCHEMA_VERSION,
   allocationSignature,
   buildInstallmentAllocations,
+  buildFlatAllocations,
   buildIntentId,
   markEventPaymentIntentIssued,
   normalizePaymentCommunication,

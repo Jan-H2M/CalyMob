@@ -242,6 +242,22 @@ service cloud.firestore {
         );
     }
 
+    // Accounting facts are server-owned. Client registrations may edit their
+    // event fields, but may never change payment, price, allocation, lifecycle
+    // or refund fields directly.
+    function changedInscriptionAccountingFields() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'paye', 'payment_status', 'payment_source', 'payment_status_at',
+        'transaction_id', 'transaction_montant', 'transaction_matched',
+        'mode_paiement', 'date_paiement', 'paye_at', 'paye_method',
+        'installment_payments', 'amount_paid', 'prix', 'supplement_total',
+        'selected_supplements', 'tariff_id', 'tariff_name',
+        'registration_status', 'payment_expires_at', 'refund_demande_id',
+        'refund_montant', 'refund_status', 'refund_created_at',
+        'payment_confirmed_by', 'payment_confirmed_at',
+      ]);
+    }
+
     // Check if fiscal year data can be modified based on its status
     // Progressive locking: open (everyone) → closed (admins only) → permanently_closed (superadmin only)
     function canModifyFiscalYearData(clubId, fiscalYearId) {
@@ -573,6 +589,13 @@ service cloud.firestore {
         );
       }
 
+      // Immutable accounting allocations. Admin SDK payment commands are the
+      // only writers; browser and mobile clients must never author money links.
+      match /payment_allocations/{allocationId} {
+        allow read: if isAdmin(clubId) && hasValidSession(clubId);
+        allow create, update, delete: if false;
+      }
+
       // Demandes de remboursement - USER ISOLATION: user can only see their own
       match /demandes_remboursement/{claimId} {
         // Read: User role can only see their own demands (via demandeur_id)
@@ -727,6 +750,9 @@ service cloud.firestore {
             && (
               (
                 request.resource.data.membre_id == request.auth.uid
+                && request.resource.data.get('paye', false) == false
+                && request.resource.data.get('transaction_id', null) == null
+                && request.resource.data.get('transaction_matched', false) == false
                 && request.time <= effectiveDeadline(
                   get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)).data
                 )
@@ -739,6 +765,9 @@ service cloud.firestore {
                 request.resource.data.get('is_guest', false) == true
                 && request.resource.data.get('added_by', '') == request.auth.uid
                 && request.resource.data.get('parent_inscription_id', null) != null
+                && request.resource.data.get('paye', false) == false
+                && request.resource.data.get('transaction_id', null) == null
+                && request.resource.data.get('transaction_matched', false) == false
                 && get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId))
                      .data.get('allow_guests', false) == true
                 && get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)/inscriptions/$(request.resource.data.parent_inscription_id))
@@ -775,13 +804,17 @@ service cloud.firestore {
           // Admins with valid session bypass the deadline check.
           allow update: if isMember(clubId)
             && (
-              request.auth.uid == resource.data.membre_id
-              && request.time <= effectiveDeadline(
-                get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)).data
-              )
-              || hasValidSession(clubId)
+              (isAdmin(clubId) && hasValidSession(clubId))
               || (
-                resource.data.get('is_guest', false) == true
+                !changedInscriptionAccountingFields()
+                && request.auth.uid == resource.data.membre_id
+                && request.time <= effectiveDeadline(
+                  get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)).data
+                )
+              )
+              || (
+                !changedInscriptionAccountingFields()
+                && resource.data.get('is_guest', false) == true
                 && resource.data.get('added_by', '') == request.auth.uid
                 && request.time <= effectiveDeadline(
                   get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)).data
@@ -857,32 +890,13 @@ service cloud.firestore {
         // OR an admin with a valid session creates the projection on behalf of
         // someone else — notably for guests (membre_id = guest_xxx), whose
         // projection can never match the admin's uid. Mirrors the update rule.
-        allow create: if isMember(clubId)
-          && (
-            request.resource.data.membre_id == request.auth.uid
-            || (isAdmin(clubId) && hasValidSession(clubId))
-          );
+        allow create: if isAdmin(clubId) && hasValidSession(clubId);
 
         // Delete: Club members can unregister themselves (mobile app)
-        allow delete: if isMember(clubId)
-          && resource.data.membre_id == request.auth.uid;
+        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
 
         // Update: Requires session (web app) OR user owns the document (mobile app)
-        allow update: if isMember(clubId)
-          && (
-            request.auth.uid == resource.data.membre_id
-            || (
-              hasValidSession(clubId)
-              && (
-                // Check fiscal year via parent operation
-                !('operation_id' in request.resource.data) ||
-                canModifyFiscalYearData(
-                  clubId,
-                  get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(request.resource.data.operation_id)).data.fiscal_year_id
-                )
-              )
-            )
-          );
+        allow update: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
       // LEGACY: Events - Gardé pour compatibilité migration

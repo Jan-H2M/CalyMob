@@ -4,6 +4,15 @@ Deze lijst bundelt afgeronde mobiele wijzigingen tot Jan een gezamenlijke
 App Store- en Play Store-release goedkeurt. Een merge naar `main` publiceert
 de app niet en wijzigt de Firestore-appversie niet.
 
+Payment-ledger wijzigingen volgen het canonieke contract in
+[`docs/PAYMENT_LEDGER_ARCHITECTURE.md`](./PAYMENT_LEDGER_ARCHITECTURE.md) en
+de gedeelde CalyCompta-documentatie. Voeg iedere mobiele betaalwijziging hier
+toe vóór merge.
+
+Deze wijzigingen zijn geen release totdat accounting/auth/rules-review en
+end-to-end Firestore-tests afgerond zijn. Geen versie- of deployactie vanuit
+deze wachtrij zonder aparte goedkeuring.
+
 ## Volgende release
 
 Basisversie: `1.17.0+194`

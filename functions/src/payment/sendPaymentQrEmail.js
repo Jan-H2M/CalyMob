@@ -392,8 +392,6 @@ async function aggregatePaymentForInscription(db, clubId, operationId, participa
     .where('is_guest', '==', true)
     .get();
 
-  if (childrenSnap.empty) return null;
-
   // Montant OUVERT d'une inscription (fix "flat aggregation ignore le déjà
   // payé"): avec plan → somme des tranches encore ouvertes; sans plan →
   // 0 si paye, sinon prix + suppléments. On ne re-facture jamais ce qui
@@ -419,7 +417,7 @@ async function aggregatePaymentForInscription(db, clubId, operationId, participa
     if (guestOpen <= 0) return; // invité déjà en règle — pas dans le QR
     guestSubtotal += guestOpen;
     const fullName = `${g.membre_prenom || ''} ${g.membre_nom || ''}`.trim() || 'Invité';
-    guests.push({ name: fullName, prix: guestOpen });
+    guests.push({ inscriptionId: doc.id, name: fullName, prix: guestOpen });
   });
 
   const totalAmount = parentAmount + guestSubtotal;
@@ -672,6 +670,7 @@ async function sendPaymentEmailForMember(db, input) {
     installmentId,
     installmentLabel,
     installmentPayment,
+    flatAggregation: aggregation,
     amount,
     eventNumber: effectiveEventNumber,
     communication: paymentReference,
@@ -887,14 +886,52 @@ const sendPaymentQrEmail = onCall(
     const db = admin.firestore();
 
     // Validate input
-    const { clubId, operationId, memberEmail, operationTitle } = request.data;
+    const { clubId, operationId, participantId, memberEmail, operationTitle } = request.data || {};
 
-    if (!clubId || !operationId || !memberEmail || !operationTitle) {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'Authentification requise');
+    }
+    if (!clubId || !operationId || !participantId || !memberEmail || !operationTitle) {
       throw new HttpsError('invalid-argument', 'Missing required fields');
     }
 
+    const [callerSnap, operationSnap, inscriptionSnap] = await Promise.all([
+      db.collection('clubs').doc(clubId).collection('members').doc(request.auth.uid).get(),
+      db.collection('clubs').doc(clubId).collection('operations').doc(operationId).get(),
+      db.collection('clubs').doc(clubId).collection('operations').doc(operationId)
+        .collection('inscriptions').doc(participantId).get(),
+    ]);
+    if (!operationSnap.exists || !inscriptionSnap.exists) {
+      throw new HttpsError('not-found', 'Activité ou inscription introuvable');
+    }
+    const caller = callerSnap.exists ? callerSnap.data() : null;
+    const inscription = inscriptionSnap.data();
+    const callerIsAdmin = ['admin', 'superadmin'].includes(caller?.app_role);
+    if (!callerIsAdmin && inscription.membre_id !== request.auth.uid) {
+      throw new HttpsError('permission-denied', 'Vous ne pouvez demander le paiement que pour votre propre inscription');
+    }
+    const operation = operationSnap.data();
+    let authoritativeEmail = memberEmail;
+    if (!callerIsAdmin) {
+      const memberSnap = await db.collection('clubs').doc(clubId).collection('members')
+        .doc(inscription.membre_id).get();
+      authoritativeEmail = memberSnap.exists ? String(memberSnap.data().email || '').trim() : '';
+      if (!authoritativeEmail) throw new HttpsError('failed-precondition', 'Aucune adresse email enregistrée');
+    }
+    const serverInput = {
+      ...request.data,
+      memberEmail: authoritativeEmail,
+      operationTitle: operation.titre || operation.title || operationTitle,
+      operationNumber: operation.event_number || null,
+      operationDate: operation.date_debut?.toDate
+        ? operation.date_debut.toDate().toISOString()
+        : request.data.operationDate,
+      memberFirstName: inscription.membre_prenom || request.data.memberFirstName,
+      memberLastName: inscription.membre_nom || request.data.memberLastName,
+    };
+
     try {
-      return await sendPaymentEmailForMember(db, request.data);
+      return await sendPaymentEmailForMember(db, serverInput);
     } catch (error) {
       console.error('❌ [sendPaymentQrEmail] Error:', error);
 

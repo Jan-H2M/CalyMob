@@ -42,6 +42,15 @@ exports.sendMaterialLoanPaymentQrEmail = sendMaterialLoanPaymentQrEmail;
 const { sendPaymentReminder } = require('./src/payment/sendPaymentReminder');
 exports.sendPaymentReminder = sendPaymentReminder;
 
+// Server-authoritative on-site QR confirmation. The mobile client may request
+// this action but may not write accounting fields directly.
+const { recordOnSitePayment } = require('./src/payment/recordOnSitePayment');
+exports.recordOnSitePayment = recordOnSitePayment;
+const { recordPaymentCommunication } = require('./src/payment/recordPaymentCommunication');
+exports.recordPaymentCommunication = recordPaymentCommunication;
+const { recordInstallmentPayment } = require('./src/payment/recordInstallmentPayment');
+exports.recordInstallmentPayment = recordInstallmentPayment;
+
 // =============================================================================
 // NODA PAYMENT FUNCTIONS (Gen2) - DEPRECATED, kept for backward compatibility
 // =============================================================================
