@@ -1,14 +1,23 @@
-# Mollie Payment Integration - CalyMob
+# Mollie Payment Integration - CalyMob (historical)
+
+> **Retired / reference only.** This document describes an older Mollie
+> payment-provider experiment. Its functions are not exported or deployed in
+> the current production build. Do not deploy this flow or use its
+> `operation_participants` writes. The current source of truth is
+> [`CalyCompta/docs/PAYMENT_LEDGER_ARCHITECTURE.md`](https://github.com/Jan-H2M/CalyCompta/blob/main/docs/PAYMENT_LEDGER_ARCHITECTURE.md).
 
 **Datum**: 16 december 2025
-**Status**: Geïmplementeerd en gedeployed
+**Status**: Historisch prototype; niet meer geëxporteerd of gedeployed
 **Commit**: `eff38fe`
 
 ---
 
 ## Overzicht
 
-Mollie is geïntegreerd als primaire betaalprovider voor CalyMob, waarmee leden hun evenement-inschrijvingen kunnen betalen via Belgische betaalmethodes. De integratie volgt het bestaande Noda payment pattern en houdt legacy Ponto code voor backward compatibility.
+Mollie was geïntegreerd als primaire betaalprovider voor CalyMob, maar die
+route is vervangen door de canonieke EPC/SEPA payment ledger. Dit document is
+alleen behouden als historische context; de productie-app gebruikt geen
+Mollie- of Ponto-payment-request-flow.
 
 ### Ondersteunde Betaalmethodes
 
@@ -28,7 +37,7 @@ Mollie is geïntegreerd als primaire betaalprovider voor CalyMob, waarmee leden 
 
 | Parameter | Waarde |
 |-----------|--------|
-| Test API Key | `test_KmcCG7eVBTuJMrEUrfCS5FcMtJAa5V` |
+| Test API Key | *(redacted; rotate any key copied from this historical document)* |
 | Profile ID | `pfl_7q2dbDLGu9` |
 | API Base URL | `https://api.mollie.com/v2` |
 | Webhook URL | `https://europe-west1-calycompta.cloudfunctions.net/mollieWebhook` |
@@ -442,17 +451,19 @@ firebase deploy --only functions
 
 ---
 
-## Backward Compatibility
+## Backward Compatibility (historical only)
 
 De legacy payment code is behouden:
 
 | Provider | Create Method | Status Method |
 |----------|--------------|---------------|
-| **Mollie** (primary) | `createMolliePayment()` | `checkMolliePaymentStatus()` |
-| Ponto (legacy) | `createPayment()` | `checkPaymentStatus()` |
-| Noda (legacy) | via Cloud Functions | `checkNodaPaymentStatus()` |
+| Mollie (historical, not deployed) | `createMolliePayment()` | `checkMolliePaymentStatus()` |
+| Ponto payment-request (historical, not deployed) | `createPontoPayment()` | `checkPontoPaymentStatus()` |
+| Noda (retired, fail-closed) | `createNodaPayment()` | `checkNodaPaymentStatus()` |
 
-Mollie is nu de **default provider** voor nieuwe betalingen in `operation_detail_screen.dart`.
+Mollie is **geen actieve provider**. Nieuwe betalingen gebruiken de EPC/SEPA
+payment ledger; legacy Noda endpoints fail closed and the old provider source
+files are not exported from `functions/index.js`.
 
 ---
 

@@ -142,16 +142,15 @@ functions/
 ├── index.js                     # Entry point, exports all functions
 └── src/
     ├── payment/
-    │   ├── createMolliePayment.js   # Mollie payment creation - onCall (ACTIVE)
-    │   ├── mollieWebhook.js         # Mollie webhook - onRequest
-    │   ├── checkMollieStatus.js     # Mollie status check - onCall
-    │   ├── createPontoPayment.js    # Ponto payment creation - onCall (ACTIVE)
-    │   ├── pontoWebhook.js          # Ponto webhook - onRequest
-    │   ├── checkPontoStatus.js      # Ponto status check - onCall
     │   ├── sendPaymentQrEmail.js    # EPC QR code email for bank transfers
-    │   ├── createPayment.js         # createNodaPayment (DEPRECATED)
-    │   ├── webhook.js               # nodaWebhook (DEPRECATED)
-    │   └── checkStatus.js           # checkNodaPaymentStatus (DEPRECATED)
+    │   ├── recordOnSitePayment.js   # Server-side on-site settlement command
+    │   ├── recordInstallmentPayment.js # Server-side installment command
+    │   ├── recordPaymentCommunication.js # QR/email communication command
+    │   ├── createMolliePayment.js   # Historical source; not exported/deployed
+    │   ├── createPontoPayment.js    # Historical source; Ponto is an AIS feed
+    │   ├── createPayment.js         # createNodaPayment (fail-closed)
+    │   ├── webhook.js               # nodaWebhook (410 Gone)
+    │   └── checkStatus.js           # checkNodaPaymentStatus (fail-closed)
     ├── notifications/
     │   ├── onNewEventMessage.js     # Event discussion messages
     │   ├── onEventStatusChange.js   # Event status updates
@@ -164,9 +163,9 @@ functions/
     │   ├── onNewTeamMessage.js      # Team channel messages
     │   └── sessionReminder.js       # Daily pool session reminders
     └── utils/
-        ├── mollie-client.js         # Axios client for Mollie API (ACTIVE)
-        ├── ponto-client.js          # Axios client for Ponto API (ACTIVE)
-        ├── noda-client.js           # Axios client for Noda API (DEPRECATED)
+        ├── mollie-client.js         # Historical Mollie client (not deployed)
+        ├── ponto-client.js          # Ponto AIS client; accounting lives in CalyCompta
+        ├── noda-client.js           # Retired Noda client (not used)
         ├── badge-helper.js          # Push notification badge management
         └── constants.js             # Shared constants
 ```
@@ -187,7 +186,7 @@ clubs/{clubId}/
 │   ├── participants/                # Event participants (legacy)
 │   ├── inscriptions/                # Event registrations (current)
 │   └── messages/                    # Event discussion messages
-├── operation_participants/          # Registration records with payment status
+├── operation_participants/          # Legacy compatibility/read model only
 ├── expense_claims/                  # Expense submissions
 ├── announcements/                   # Club announcements
 │   └── replies/                     # Announcement replies
@@ -214,7 +213,11 @@ clubs/{clubId}/
 
 1. **Push Notifications**: 10 Firestore triggers send FCM notifications for events, expenses, announcements, team messages, pool sessions, and medical certificates. Badge counts managed via `badge-helper.js`. The Flutter app handles navigation via `navigatorKey`.
 
-2. **Payments (Mollie + EPC QR)**: Mollie for online payments, EPC QR codes for bank transfers. Noda integration is DEPRECATED. Flow: `createMolliePayment` -> User redirected to Mollie checkout -> `mollieWebhook` receives confirmation -> Firestore `paye` field updated.
+2. **Payments (canonical EPC/SEPA ledger)**: EPC QR intents and on-site actions
+   go through the server commands in `functions/src/payment/`; CalyCompta owns
+   bank receipts, allocations and projections. Ponto is only an incoming bank
+   transaction feed. Mollie, Ponto payment-request and Noda event-payment
+   callables are historical/non-deployed; Noda endpoints fail closed.
 
 3. **Tariff System**: Flexible pricing with member/guest rates, optional pricing, and calculated totals in `pricing_calculator.dart` and `tariff_utils.dart`.
 
