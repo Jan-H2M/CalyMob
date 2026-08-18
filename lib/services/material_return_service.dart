@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
+import 'package:rxdart/rxdart.dart';
 
 import '../models/material_loan.dart';
 
@@ -112,24 +113,51 @@ class MaterialReturnService {
   }
 
   Stream<List<MaterialLoanItem>> watchBorrowableItems(String clubId) {
-    return _firestore
+    final inventoryStream = _firestore
         .collection('clubs')
         .doc(clubId)
         .collection('inventory_items')
         .where('statut', isEqualTo: 'disponible')
-        .snapshots()
-        .asyncMap((snapshot) async {
+        .snapshots();
+    final unavailableLoansStream = _firestore
+        .collection('clubs')
+        .doc(clubId)
+        .collection('inventory_loans')
+        .where(
+          'statut',
+          whereIn: ['actif', 'en_retard', 'en_cours', 'attente_caution'],
+        )
+        .snapshots();
+
+    return Rx.combineLatest2(
+      inventoryStream,
+      unavailableLoansStream,
+      (inventory, loans) => [inventory, loans],
+    ).asyncMap((snapshots) async {
+      final inventorySnapshot = snapshots[0];
+      final unavailableItemIds = snapshots[1]
+          .docs
+          .expand(
+            (loan) => (loan.data()['itemIds'] as List<dynamic>? ?? const [])
+                .map((id) => id.toString()),
+          )
+          .where((id) => id.isNotEmpty)
+          .toSet();
       final typeNames = await _loadItemTypeNames(clubId);
-      final items = snapshot.docs
+      final items = inventorySnapshot.docs
           .map((doc) {
             final item = MaterialLoanItem.fromFirestore(doc);
             return item.copyWithTypeName(typeNames[item.typeId]);
           })
-          .where((item) => item.isBorrowable)
+          .where(
+            (item) =>
+                item.isBorrowable && !unavailableItemIds.contains(item.id),
+          )
           .toList();
       if (kDebugMode) {
         debugPrint(
-          'Materiel disponible geladen: ${items.length}/${snapshot.docs.length}',
+          'Materiel disponible geladen: '
+          '${items.length}/${inventorySnapshot.docs.length}',
         );
       }
       items.sort((a, b) => a.displayName.compareTo(b.displayName));
