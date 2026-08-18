@@ -1,0 +1,5 @@
+Améliorations des prêts de matériel :
+- sélection plus claire du matériel disponible ;
+- meilleure lisibilité de l’écran de prêt ;
+- correction de l’affichage du QR code de caution ;
+- corrections de navigation et de stabilité.
