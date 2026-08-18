@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
@@ -13,6 +12,7 @@ import '../../services/material_return_service.dart';
 import '../../utils/club_role_utils.dart';
 import '../../widgets/empty_state_widget.dart';
 import '../../widgets/loading_widget.dart';
+import '../../widgets/material_payment_qr_dialog.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 
 class MaterialReturnsScreen extends StatefulWidget {
@@ -22,11 +22,14 @@ class MaterialReturnsScreen extends StatefulWidget {
   State<MaterialReturnsScreen> createState() => _MaterialReturnsScreenState();
 }
 
+enum _MaterialLoanTab { pending, returns, all }
+
 class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
   final _service = MaterialReturnService();
   final _loanService = MaterialLoanService();
   final _clubId = FirebaseConfig.defaultClubId;
   String _search = '';
+  _MaterialLoanTab? _activeTab = _MaterialLoanTab.pending;
 
   @override
   Widget build(BuildContext context) {
@@ -135,10 +138,21 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
               );
             }
 
+            final activeTab = _activeTab ?? _MaterialLoanTab.pending;
+            final visiblePending = activeTab != _MaterialLoanTab.returns;
+            final visibleReturns = activeTab != _MaterialLoanTab.pending;
+
             return ListView(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
               children: [
-                if (pendingLoans.isNotEmpty) ...[
+                _MaterialLoanTabs(
+                  activeTab: activeTab,
+                  pendingCount: pendingLoans.length,
+                  returnCount: loans.length,
+                  onChanged: (tab) => setState(() => _activeTab = tab),
+                ),
+                const SizedBox(height: 12),
+                if (visiblePending && pendingLoans.isNotEmpty) ...[
                   const _ListSectionTitle('Cautions à confirmer'),
                   const Text(
                     'Le matériel est réservé, mais ne peut pas encore quitter le local.',
@@ -167,7 +181,15 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
                     ),
                   ),
                 ],
-                if (loans.isNotEmpty) ...[
+                if (visiblePending &&
+                    pendingLoans.isEmpty &&
+                    activeTab == _MaterialLoanTab.pending)
+                  const _LoanTabEmptyState(
+                    icon: Icons.lock_open_outlined,
+                    title: 'Aucune caution à confirmer',
+                    subtitle: 'Les prêts réservés apparaîtront ici.',
+                  ),
+                if (visibleReturns && loans.isNotEmpty) ...[
                   const _ListSectionTitle('Retours à contrôler'),
                   ...loans.map(
                     (loan) => Padding(
@@ -179,6 +201,14 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
                     ),
                   ),
                 ],
+                if (visibleReturns &&
+                    loans.isEmpty &&
+                    activeTab == _MaterialLoanTab.returns)
+                  const _LoanTabEmptyState(
+                    icon: Icons.assignment_turned_in_outlined,
+                    title: 'Aucun retour à contrôler',
+                    subtitle: 'Les prêts remis au membre apparaîtront ici.',
+                  ),
               ],
             );
           },
@@ -246,37 +276,11 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
       if (!mounted) return;
       await showDialog<void>(
         context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: Text('Caution · ${qr.amount.toStringAsFixed(2)} EUR'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Le membre scanne ce QR avec son application bancaire. Le matériel ne peut être remis qu’après constatation du paiement.',
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  color: Colors.white,
-                  padding: const EdgeInsets.all(12),
-                  child: QrImageView(
-                    data: qr.epcPayload,
-                    version: QrVersions.auto,
-                    size: 220,
-                    errorCorrectionLevel: QrErrorCorrectLevel.M,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text('Communication : ${qr.reference}'),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Fermer'),
-            ),
-          ],
+        useRootNavigator: true,
+        builder: (dialogContext) => MaterialPaymentQrDialog(
+          payload: qr.epcPayload,
+          reference: qr.reference,
+          amount: qr.amount,
         ),
       );
     } catch (error) {
@@ -415,16 +419,20 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
+      backgroundColor: Colors.transparent,
+      clipBehavior: Clip.antiAlias,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
-      builder: (context) => _DirectLoanSheet(
-        service: _service,
-        loanService: _loanService,
-        clubId: _clubId,
-        createdByUserId: createdByUserId,
-        createdByName: createdByName,
+      builder: (context) => OceanGradientBackground(
+        creatures: CreatureSet.fishAndBubbles,
+        child: _DirectLoanSheet(
+          service: _service,
+          loanService: _loanService,
+          clubId: _clubId,
+          createdByUserId: createdByUserId,
+          createdByName: createdByName,
+        ),
       ),
     );
   }
@@ -496,6 +504,175 @@ class _ListSectionTitle extends StatelessWidget {
       );
 }
 
+class _MaterialLoanTabs extends StatelessWidget {
+  final _MaterialLoanTab activeTab;
+  final int pendingCount;
+  final int returnCount;
+  final ValueChanged<_MaterialLoanTab> onChanged;
+
+  const _MaterialLoanTabs({
+    required this.activeTab,
+    required this.pendingCount,
+    required this.returnCount,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final totalCount = pendingCount + returnCount;
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+      ),
+      child: Row(
+        children: [
+          _MaterialLoanTabButton(
+            label: 'À confirmer',
+            count: pendingCount,
+            selected: activeTab == _MaterialLoanTab.pending,
+            onTap: () => onChanged(_MaterialLoanTab.pending),
+          ),
+          _MaterialLoanTabButton(
+            label: 'Retours',
+            count: returnCount,
+            selected: activeTab == _MaterialLoanTab.returns,
+            onTap: () => onChanged(_MaterialLoanTab.returns),
+          ),
+          _MaterialLoanTabButton(
+            label: 'Tous',
+            count: totalCount,
+            selected: activeTab == _MaterialLoanTab.all,
+            onTap: () => onChanged(_MaterialLoanTab.all),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MaterialLoanTabButton extends StatelessWidget {
+  final String label;
+  final int count;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _MaterialLoanTabButton({
+    required this.label,
+    required this.count,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = selected ? AppColors.donkerblauw : Colors.white;
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 6),
+          decoration: BoxDecoration(
+            color: selected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: foreground,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                constraints: const BoxConstraints(minWidth: 22),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? AppColors.middenblauw.withValues(alpha: 0.12)
+                      : Colors.white.withValues(alpha: 0.20),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '$count',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: foreground,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LoanTabEmptyState extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  const _LoanTabEmptyState({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          _LoanActionIcon(icon: icon),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: AppColors.donkerblauw,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: const TextStyle(color: Colors.black54),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _PendingLoanCard extends StatelessWidget {
   final MaterialLoan loan;
   final VoidCallback? onShowQr;
@@ -540,7 +717,8 @@ class _PendingLoanCard extends StatelessWidget {
                   ),
                 ),
                 _StatusPill(
-                    label: emailSent ? 'QR e-mail envoyé' : 'QR à montrer'),
+                  label: emailSent ? 'QR e-mail envoyé' : 'QR à montrer',
+                ),
               ],
             ),
             const SizedBox(height: 10),
@@ -565,9 +743,11 @@ class _PendingLoanCard extends StatelessWidget {
                 child: OutlinedButton.icon(
                   onPressed: onSendEmail,
                   icon: const Icon(Icons.email_outlined),
-                  label: Text(emailSent
-                      ? 'Renvoyer le QR au membre'
-                      : 'Envoyer le QR au membre'),
+                  label: Text(
+                    emailSent
+                        ? 'Renvoyer le QR au membre'
+                        : 'Envoyer le QR au membre',
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
@@ -945,12 +1125,25 @@ class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
               ),
             ),
             const SizedBox(height: 16),
-            Text(
-              'Validation retour',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.donkerblauw,
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Validation retour',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.donkerblauw,
+                        ),
                   ),
+                ),
+                IconButton(
+                  onPressed:
+                      _submitting ? null : () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close),
+                  color: AppColors.donkerblauw,
+                  tooltip: 'Annuler',
+                ),
+              ],
             ),
             const SizedBox(height: 4),
             Text(
@@ -1046,29 +1239,45 @@ class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
               ),
             ),
             const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _submitting ? null : _submit,
-                icon: _submitting
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.verified_outlined),
-                label: Text(
-                  _submitting ? 'Validation...' : 'Valider le retour',
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed:
+                        _submitting ? null : () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                    label: const Text('Annuler'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                  ),
                 ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.success,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton.icon(
+                    onPressed: _submitting ? null : _submit,
+                    icon: _submitting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.verified_outlined),
+                    label: Text(
+                      _submitting ? 'Validation...' : 'Valider le retour',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.success,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
           ],
         ),
@@ -1326,6 +1535,7 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
   final _notesController = TextEditingController();
   final Map<String, String?> _selectedInventoryByType = {};
   final Map<String, String> _selectedVariantByType = {};
+  final Set<String> _disabledInventoryTypes = {};
   List<MaterialLoanMember> _members = const [];
   MaterialLoanMember? _member;
   DateTime _returnDate = DateTime.now().add(const Duration(days: 7));
@@ -1393,17 +1603,25 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                Text(
-                  'Nouveau prêt',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.donkerblauw,
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Nouveau prêt',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
                       ),
-                ),
-                const SizedBox(height: 5),
-                const Text(
-                  'Le responsable choisit directement le membre et son matériel. Une seule pièce par type est possible.',
-                  style: TextStyle(color: Colors.black54),
+                    ),
+                    IconButton(
+                      onPressed:
+                          _submitting ? null : () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close),
+                      color: Colors.white,
+                      tooltip: 'Annuler',
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
                 Expanded(
@@ -1417,20 +1635,18 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                         label: Text(
                           'Retour prévu : ${_formatDate(_returnDate)}',
                         ),
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor: Colors.white.withValues(alpha: 0.92),
+                        ),
                       ),
                       const SizedBox(height: 14),
                       const Text(
                         'Matériel disponible',
                         style: TextStyle(
-                          color: AppColors.donkerblauw,
+                          color: Colors.white,
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Choisissez d’abord la taille ou variante, puis le numéro d’inventaire exact.',
-                        style: TextStyle(color: Colors.black54, fontSize: 13),
                       ),
                       const SizedBox(height: 10),
                       if (snapshot.connectionState == ConnectionState.waiting)
@@ -1452,18 +1668,18 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                         controller: _notesController,
                         minLines: 2,
                         maxLines: 4,
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           labelText: 'Note de remise',
-                          hintText:
-                              'État constaté, remarque, incident existant…',
-                          border: OutlineInputBorder(),
+                          filled: true,
+                          fillColor: Colors.white.withValues(alpha: 0.92),
+                          border: const OutlineInputBorder(),
                         ),
                       ),
                       const SizedBox(height: 12),
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.blueGrey.shade50,
+                          color: Colors.white.withValues(alpha: 0.92),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Column(
@@ -1514,30 +1730,51 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: canSubmit ? () => _submit(selectedItems) : null,
-                    icon: _submitting
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.assignment_turned_in_outlined),
-                    label: Text(
-                      _submitting
-                          ? 'Création...'
-                          : _paymentMode == 'epc_qr_email'
-                              ? 'Réserver et envoyer le QR (${selectedItems.length})'
-                              : 'Réserver et afficher le QR (${selectedItems.length})',
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _submitting
+                            ? null
+                            : () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close),
+                        label: const Text('Annuler'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
                     ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.middenblauw,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton.icon(
+                        onPressed:
+                            canSubmit ? () => _submit(selectedItems) : null,
+                        icon: _submitting
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.assignment_turned_in_outlined),
+                        label: Text(
+                          _submitting
+                              ? 'Création...'
+                              : _paymentMode == 'epc_qr_email'
+                                  ? 'Réserver et envoyer le QR (${selectedItems.length})'
+                                  : 'Réserver et afficher le QR (${selectedItems.length})',
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.middenblauw,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ],
             );
@@ -1569,9 +1806,11 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
             controller: _memberSearchController,
             onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
-              labelText: 'Rechercher un membre',
-              hintText: _loadingMembers ? 'Chargement...' : 'Nom ou prénom',
+              hintText:
+                  _loadingMembers ? 'Chargement...' : 'Rechercher un membre',
               prefixIcon: const Icon(Icons.search),
+              filled: true,
+              fillColor: Colors.white.withValues(alpha: 0.92),
               border: const OutlineInputBorder(),
             ),
           ),
@@ -1608,33 +1847,38 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
 
   Widget _buildInventorySelector(String type, List<MaterialLoanItem> items) {
     final selectedId = _selectedInventoryByType[type];
-    MaterialLoanItem? selected;
+    final uniqueItemsById = <String, MaterialLoanItem>{};
     for (final item in items) {
+      uniqueItemsById[item.id] = item;
+    }
+    final uniqueItems = uniqueItemsById.values.toList();
+    MaterialLoanItem? selected;
+    for (final item in uniqueItems) {
       if (item.id == selectedId) {
         selected = item;
         break;
       }
     }
-    final variants = items.map((item) => item.variantLabel).toSet().toList()
-      ..sort();
+    final variants =
+        uniqueItems.map((item) => item.variantLabel).toSet().toList()..sort();
     final selectedVariant = _selectedVariantByType[type] ??
         selected?.variantLabel ??
         variants.first;
-    final candidates = items
+    final candidates = uniqueItems
         .where((item) => item.variantLabel == selectedVariant)
         .toList()
       ..sort(
         (left, right) => left.inventoryLabel.compareTo(right.inventoryLabel),
       );
-    final isSelected = _selectedInventoryByType.containsKey(type);
+    final isSelected = !_disabledInventoryTypes.contains(type);
+    final validSelectedId =
+        candidates.any((item) => item.id == selectedId) ? selectedId : null;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
       decoration: BoxDecoration(
-        color: isSelected
-            ? AppColors.middenblauw.withValues(alpha: 0.08)
-            : Colors.grey.shade50,
+        color: Colors.white.withValues(alpha: isSelected ? 0.94 : 0.82),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: isSelected ? AppColors.middenblauw : Colors.grey.shade200,
@@ -1644,11 +1888,13 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
         children: [
           SwitchListTile.adaptive(
             contentPadding: EdgeInsets.zero,
+            dense: true,
             value: isSelected,
             onChanged: (value) => setState(() {
               if (value) {
-                _selectedInventoryByType[type] = null;
+                _disabledInventoryTypes.remove(type);
               } else {
+                _disabledInventoryTypes.add(type);
                 _selectedInventoryByType.remove(type);
                 _selectedVariantByType.remove(type);
               }
@@ -1660,59 +1906,70 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                 fontWeight: FontWeight.w800,
               ),
             ),
-            subtitle: Text(
-              isSelected
-                  ? 'Choisir la variante et le numéro'
-                  : 'Non sélectionné',
-            ),
           ),
           if (isSelected) ...[
-            DropdownButtonFormField<String>(
-              initialValue: selectedVariant,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: 'Taille / variante',
-                border: OutlineInputBorder(),
-              ),
-              items: variants
-                  .map(
-                    (variant) =>
-                        DropdownMenuItem(value: variant, child: Text(variant)),
-                  )
-                  .toList(),
-              onChanged: (variant) {
-                if (variant == null) return;
-                setState(() {
-                  _selectedVariantByType[type] = variant;
-                  _selectedInventoryByType[type] = null;
-                });
-              },
-            ),
-            const SizedBox(height: 10),
-            DropdownButtonFormField<String>(
-              initialValue: selectedId,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: 'N° inventaire / série',
-                border: OutlineInputBorder(),
-              ),
-              items: [
-                const DropdownMenuItem<String>(
-                  value: null,
-                  child: Text('Aucun article'),
-                ),
-                ...candidates.map(
-                  (item) => DropdownMenuItem(
-                    value: item.id,
-                    child: Text(
-                      '${item.inventoryLabel} · ${item.technicalDetails}',
-                      overflow: TextOverflow.ellipsis,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: selectedVariant,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Taille',
+                      border: OutlineInputBorder(),
+                      isDense: true,
                     ),
+                    items: variants
+                        .map(
+                          (variant) => DropdownMenuItem(
+                            value: variant,
+                            child: Text(
+                              variant,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (variant) {
+                      if (variant == null) return;
+                      setState(() {
+                        _selectedVariantByType[type] = variant;
+                        _selectedInventoryByType[type] = null;
+                      });
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: validSelectedId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Inventaire',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: [
+                      const DropdownMenuItem<String>(
+                        value: null,
+                        child: Text('—'),
+                      ),
+                      ...candidates.map(
+                        (item) => DropdownMenuItem(
+                          value: item.id,
+                          child: Text(
+                            item.inventoryLabel,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ],
+                    onChanged: (itemId) =>
+                        setState(() => _selectedInventoryByType[type] = itemId),
                   ),
                 ),
               ],
-              onChanged: (itemId) =>
-                  setState(() => _selectedInventoryByType[type] = itemId),
             ),
           ],
         ],
@@ -1774,42 +2031,12 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
       final confirmed = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
-        builder: (dialogContext) => AlertDialog(
-          title: Text('Caution · ${qr.amount.toStringAsFixed(2)} EUR'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Le membre scanne ce QR avec son application bancaire. Confirmez uniquement après avoir constaté le paiement.',
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  color: Colors.white,
-                  padding: const EdgeInsets.all(12),
-                  child: QrImageView(
-                    data: qr.epcPayload,
-                    version: QrVersions.auto,
-                    size: 220,
-                    errorCorrectionLevel: QrErrorCorrectLevel.M,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text('Communication : ${qr.reference}'),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Plus tard'),
-            ),
-            FilledButton.icon(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              icon: const Icon(Icons.verified_outlined),
-              label: const Text('Paiement constaté'),
-            ),
-          ],
+        useRootNavigator: true,
+        builder: (dialogContext) => MaterialPaymentQrDialog(
+          payload: qr.epcPayload,
+          reference: qr.reference,
+          amount: qr.amount,
+          canConfirmPayment: true,
         ),
       );
       if (confirmed != true) return;
