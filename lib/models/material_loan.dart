@@ -74,12 +74,10 @@ class MaterialLoanItem {
     return value == null || value.isEmpty ? 'Standard' : value;
   }
 
-  /// Explicit label for the physical inventory number shown to staff.
+  /// Compact physical inventory code shown to staff.
   String get inventoryLabel {
     final value = code.trim();
-    return value.isEmpty
-        ? 'N° inventaire non attribué'
-        : '$value (numéro d’inventaire)';
+    return value.isEmpty ? '—' : value;
   }
 
   String get displayName => '$typeLabel - $technicalDetails';
