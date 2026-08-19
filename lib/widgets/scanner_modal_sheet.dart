@@ -148,6 +148,14 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
               'Impossible de démarrer la caméra (${error.errorCode.name}).';
         });
       }
+    } catch (error) {
+      await _barcodeSubscription?.cancel();
+      _barcodeSubscription = null;
+      if (mounted) {
+        setState(() {
+          _scannerError = 'Impossible de démarrer le scanner. $error';
+        });
+      }
     }
   }
 
@@ -155,6 +163,17 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
     await _barcodeSubscription?.cancel();
     _barcodeSubscription = null;
     await _scannerController.stop();
+  }
+
+  Future<void> _restartScanner() async {
+    if (mounted) setState(() => _scannerError = null);
+    try {
+      await _stopScanner();
+    } catch (_) {
+      // A stopped or interrupted native camera may reject stop(). Starting a
+      // fresh barcode subscription remains the correct recovery action.
+    }
+    await _startScanner();
   }
 
   Future<void> _handleBarcode(BarcodeCapture capture) async {
@@ -721,6 +740,14 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
               );
             },
           ),
+
+          // Always available as an operational escape hatch when a native
+          // camera preview is visible but barcode detection has gone silent.
+          IconButton(
+            onPressed: _showSearch ? null : _restartScanner,
+            icon: const Icon(Icons.refresh, color: Colors.white70, size: 27),
+            tooltip: 'Redémarrer le scanner',
+          ),
         ],
       ),
     );
@@ -791,7 +818,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
                   ),
                   const SizedBox(height: 12),
                   FilledButton.icon(
-                    onPressed: _startScanner,
+                    onPressed: _restartScanner,
                     icon: const Icon(Icons.refresh),
                     label: const Text('Réessayer'),
                   ),
