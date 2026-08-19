@@ -42,6 +42,7 @@ Basisversie: `1.20.0+197`
 | MOB-011 | Een expliciete notificatie-opt-out blijft behouden bij login, app-resume en FCM-tokenrotatie; alleen de gebruiker kan opnieuw inschakelen | Android + iOS | 3 gerichte regressietests, 379 Fluttertests, gerichte analyse en Android-debugbuild | Laag | Releasewachtrij |
 | MOB-013 | Web- en e-maillinks in eventdiscussies openen opnieuw vanuit Markdown-berichten, met blokkering van onveilige URI-schema’s | Android + iOS | 3 gerichte regressietests, 382 Fluttertests, gerichte analyse en Android-debugbuild | Laag | Releasewachtrij |
 | MOB-017 | Bij een materiaaluitlening alleen beschikbare inventaris tonen; buiten dienst, gereserveerde en reeds uitgeleende serienummers blijven uit de keuzelijst | Android + iOS | 1 gerichte regressietest, 390 Fluttertests, gerichte analyse en Android-debugbuild | Laag | Releasewachtrij |
+| COM-061 | Zwembadscanner hervat barcode-detectie na een app- of cameratoestemmingsovergang en toont een herstelactie bij camerafouten | Android + iOS | 4 gerichte regressietests, 394 Fluttertests, gerichte analyse en Android-debugbuild | Laag | Releasewachtrij |
 
 | COM-044 | Cloud Functions respecteren `member_status` als canonieke ledenstatus; legacyvelden zijn alleen fallback tijdens de migratie | Cloud Functions | 10 gerichte tests en 115 volledige functiontests | Middel | Deploy na review |
 
@@ -60,6 +61,7 @@ Basisversie: `1.20.0+197`
 - Votre choix de désactiver les notifications reste désormais respecté après le retour dans l’application.
 - Les liens dans les discussions d’événements s’ouvrent à nouveau correctement.
 - Les prêts de matériel ne proposent désormais que les articles réellement disponibles.
+- Le scanner d’entrée piscine reprend désormais correctement après une interruption de l’application.
 - Diverses améliorations de stabilité et de suivi des signalements.
 
 ## Releasepoort
