@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
@@ -9,8 +11,8 @@ import '../providers/auth_provider.dart';
 import '../services/member_service.dart';
 import '../services/piscine_session_service.dart';
 import '../services/operation_service.dart';
-import '../config/firebase_config.dart';
 import '../screens/piscine/add_attendee_dialog.dart';
+import '../utils/scanner_lifecycle.dart';
 import 'alarm_overlay.dart';
 
 /// Scanner modal that shows compact scanner + live attendee list
@@ -63,17 +65,20 @@ class ScannerModalSheet extends StatefulWidget {
   State<ScannerModalSheet> createState() => _ScannerModalSheetState();
 }
 
-class _ScannerModalSheetState extends State<ScannerModalSheet> {
+class _ScannerModalSheetState extends State<ScannerModalSheet>
+    with WidgetsBindingObserver {
   final MemberService _memberService = MemberService();
   final PiscineSessionService _piscineService = PiscineSessionService();
   final OperationService _operationService = OperationService();
 
   late final MobileScannerController _scannerController;
+  StreamSubscription<BarcodeCapture>? _barcodeSubscription;
 
   bool _isProcessing = false;
   String? _lastScannedId;
   String? _successMessage;
   String? _lastAddedName;
+  String? _scannerError;
 
   // Manual search state
   bool _showSearch = false;
@@ -85,19 +90,71 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _scannerController = MobileScannerController(
+      autoStart: false,
       detectionSpeed: DetectionSpeed.normal,
       facing: CameraFacing.back,
       torchEnabled: false,
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startScanner());
   }
 
   @override
   void dispose() {
-    _scannerController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    unawaited(_barcodeSubscription?.cancel());
+    _barcodeSubscription = null;
+    unawaited(_scannerController.dispose());
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final action = scannerLifecycleAction(
+      state: state,
+      hasCameraPermission: _scannerController.value.hasCameraPermission,
+      showingManualSearch: _showSearch,
+    );
+    switch (action) {
+      case ScannerLifecycleAction.start:
+        unawaited(_startScanner());
+      case ScannerLifecycleAction.stop:
+        unawaited(_stopScanner());
+      case ScannerLifecycleAction.none:
+        break;
+    }
+  }
+
+  Future<void> _startScanner() async {
+    if (!mounted || _showSearch) return;
+
+    await _barcodeSubscription?.cancel();
+    _barcodeSubscription = _scannerController.barcodes.listen(_handleBarcode);
+
+    try {
+      await _scannerController.start();
+      if (mounted && _scannerError != null) {
+        setState(() => _scannerError = null);
+      }
+    } on MobileScannerException catch (error) {
+      await _barcodeSubscription?.cancel();
+      _barcodeSubscription = null;
+      if (mounted) {
+        setState(() {
+          _scannerError = error.errorDetails?.message ??
+              'Impossible de démarrer la caméra (${error.errorCode.name}).';
+        });
+      }
+    }
+  }
+
+  Future<void> _stopScanner() async {
+    await _barcodeSubscription?.cancel();
+    _barcodeSubscription = null;
+    await _scannerController.stop();
   }
 
   Future<void> _handleBarcode(BarcodeCapture capture) async {
@@ -308,11 +365,11 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
         _searchController.clear();
         _searchResults.clear();
         // Pause scanner when searching
-        _scannerController.stop();
+        unawaited(_stopScanner());
         Future.microtask(() => _searchFocusNode.requestFocus());
       } else {
         _searchFocusNode.unfocus();
-        _scannerController.start();
+        unawaited(_startScanner());
       }
     });
   }
@@ -351,7 +408,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
     } finally {
       if (mounted) {
         setState(() => _isProcessing = false);
-        _scannerController.start();
+        unawaited(_startScanner());
       }
     }
   }
@@ -429,7 +486,8 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
   bool _canUnregister() {
     final endDate = widget.eventEndDate;
     if (endDate == null) return true;
-    final endOfDay = DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59);
+    final endOfDay =
+        DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59);
     return DateTime.now().isBefore(endOfDay);
   }
 
@@ -488,7 +546,8 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
           duration: const Duration(seconds: 5),
           behavior: SnackBarBehavior.floating,
           margin: const EdgeInsets.all(16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           action: SnackBarAction(
             label: 'Annuler',
             textColor: Colors.white,
@@ -511,9 +570,11 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
 
   /// Désinscription d'un participant événement avec undo.
   /// La confirmation est déjà gérée par [Dismissible.confirmDismiss].
-  Future<void> _unregisterOperationParticipant(ParticipantOperation participant) async {
+  Future<void> _unregisterOperationParticipant(
+      ParticipantOperation participant) async {
     final name =
-        '${participant.membrePrenom ?? ''} ${participant.membreNom ?? ''}'.trim();
+        '${participant.membrePrenom ?? ''} ${participant.membreNom ?? ''}'
+            .trim();
     final displayName = name.isEmpty ? 'ce participant' : name;
 
     if (!mounted) return;
@@ -544,7 +605,8 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
           duration: const Duration(seconds: 5),
           behavior: SnackBarBehavior.floating,
           margin: const EdgeInsets.all(16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           action: SnackBarAction(
             label: 'Annuler',
             textColor: Colors.white,
@@ -675,9 +737,10 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
               borderRadius: BorderRadius.circular(16),
               child: MobileScanner(
                 controller: _scannerController,
-                onDetect: _handleBarcode,
+                onDetect: null,
                 errorBuilder: (context, error, child) {
-                  debugPrint('📷 Scanner error: ${error.errorCode} - ${error.errorDetails?.message}');
+                  debugPrint(
+                      '📷 Scanner error: ${error.errorCode} - ${error.errorDetails?.message}');
                   return Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -691,8 +754,10 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          error.errorDetails?.message ?? 'Vérifiez les permissions caméra',
-                          style: const TextStyle(color: Colors.grey, fontSize: 12),
+                          error.errorDetails?.message ??
+                              'Vérifiez les permissions caméra',
+                          style:
+                              const TextStyle(color: Colors.grey, fontSize: 12),
                           textAlign: TextAlign.center,
                         ),
                       ],
@@ -703,6 +768,37 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
             ),
           ),
         ),
+
+        if (_scannerError != null)
+          Container(
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.black87,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.no_photography_outlined,
+                      color: Colors.white, size: 44),
+                  const SizedBox(height: 12),
+                  Text(
+                    _scannerError!,
+                    style: const TextStyle(color: Colors.white),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: _startScanner,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Réessayer'),
+                  ),
+                ],
+              ),
+            ),
+          ),
 
         // Scan frame overlay
         Center(
@@ -718,8 +814,10 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
                 // Corner indicators
                 Positioned(top: 0, left: 0, child: _buildCorner(true, true)),
                 Positioned(top: 0, right: 0, child: _buildCorner(true, false)),
-                Positioned(bottom: 0, left: 0, child: _buildCorner(false, true)),
-                Positioned(bottom: 0, right: 0, child: _buildCorner(false, false)),
+                Positioned(
+                    bottom: 0, left: 0, child: _buildCorner(false, true)),
+                Positioned(
+                    bottom: 0, right: 0, child: _buildCorner(false, false)),
               ],
             ),
           ),
@@ -834,16 +932,20 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
                           _searchController.text.length < 2
                               ? 'Tapez au moins 2 caractères'
                               : 'Aucun résultat',
-                          style: TextStyle(color: Colors.grey[500], fontSize: 14),
+                          style:
+                              TextStyle(color: Colors.grey[500], fontSize: 14),
                         ),
                       )
                     : ListView.builder(
                         itemCount: _searchResults.length,
                         itemBuilder: (context, index) {
                           final member = _searchResults[index];
-                          final cotisationOk = member.cotisationStatus == ValidationStatus.valid;
-                          final certificatOk = member.certificatStatus == ValidationStatus.valid;
-                          final assuranceOk = member.assuranceStatus == ValidationStatus.valid;
+                          final cotisationOk =
+                              member.cotisationStatus == ValidationStatus.valid;
+                          final certificatOk =
+                              member.certificatStatus == ValidationStatus.valid;
+                          final assuranceOk =
+                              member.assuranceStatus == ValidationStatus.valid;
                           return ListTile(
                             dense: true,
                             leading: CircleAvatar(
@@ -862,33 +964,52 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
                             ),
                             title: Text(
                               member.fullName,
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                              style: const TextStyle(
+                                  fontSize: 14, fontWeight: FontWeight.w500),
                             ),
                             subtitle: Row(
                               children: [
                                 Icon(
-                                  cotisationOk ? Icons.check_circle : Icons.cancel,
+                                  cotisationOk
+                                      ? Icons.check_circle
+                                      : Icons.cancel,
                                   size: 14,
-                                  color: cotisationOk ? AppColors.success : Colors.red,
+                                  color: cotisationOk
+                                      ? AppColors.success
+                                      : Colors.red,
                                 ),
                                 const SizedBox(width: 4),
-                                Text('Cotisation', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                                Text('Cotisation',
+                                    style: TextStyle(
+                                        fontSize: 11, color: Colors.grey[600])),
                                 const SizedBox(width: 10),
                                 Icon(
-                                  certificatOk ? Icons.check_circle : Icons.cancel,
+                                  certificatOk
+                                      ? Icons.check_circle
+                                      : Icons.cancel,
                                   size: 14,
-                                  color: certificatOk ? AppColors.success : Colors.red,
+                                  color: certificatOk
+                                      ? AppColors.success
+                                      : Colors.red,
                                 ),
                                 const SizedBox(width: 4),
-                                Text('Certificat', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                                Text('Certificat',
+                                    style: TextStyle(
+                                        fontSize: 11, color: Colors.grey[600])),
                                 const SizedBox(width: 10),
                                 Icon(
-                                  assuranceOk ? Icons.check_circle : Icons.cancel,
+                                  assuranceOk
+                                      ? Icons.check_circle
+                                      : Icons.cancel,
                                   size: 14,
-                                  color: assuranceOk ? AppColors.success : Colors.red,
+                                  color: assuranceOk
+                                      ? AppColors.success
+                                      : Colors.red,
                                 ),
                                 const SizedBox(width: 4),
-                                Text('Assurance', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                                Text('Assurance',
+                                    style: TextStyle(
+                                        fontSize: 11, color: Colors.grey[600])),
                               ],
                             ),
                             onTap: () => _selectMember(member),
@@ -927,7 +1048,8 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
   Widget _buildDividerWithCount() {
     return StreamBuilder(
       stream: widget.isPiscine
-          ? _piscineService.getAttendeesStream(widget.clubId, widget.operationId)
+          ? _piscineService.getAttendeesStream(
+              widget.clubId, widget.operationId)
           : _operationService.getPresentParticipantsStream(
               widget.clubId, widget.operationId),
       builder: (context, snapshot) {
@@ -955,7 +1077,8 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
               ),
               const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 decoration: BoxDecoration(
                   color: AppColors.success,
                   borderRadius: BorderRadius.circular(12),
@@ -1002,7 +1125,8 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
             separatorBuilder: (_, __) => const SizedBox(height: 8),
             itemBuilder: (context, index) {
               final attendee = sortedAttendees[index];
-              final isLatest = index == 0 && _lastAddedName == attendee.memberName;
+              final isLatest =
+                  index == 0 && _lastAddedName == attendee.memberName;
               final card = _buildPiscineAttendeeCard(attendee, isLatest);
               if (!_canUnregister()) return card;
               return Dismissible(
@@ -1042,7 +1166,8 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
                   '${participant.membrePrenom ?? ''} ${participant.membreNom ?? ''}'
                       .trim();
               final isLatest = index == 0 && _lastAddedName == name;
-              final card = _buildOperationParticipantCard(participant, isLatest);
+              final card =
+                  _buildOperationParticipantCard(participant, isLatest);
               if (!_canUnregister()) return card;
               final displayName = name.isEmpty ? 'ce participant' : name;
               return Dismissible(
@@ -1050,7 +1175,8 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
                 direction: DismissDirection.endToStart,
                 background: _buildDismissBackground(),
                 confirmDismiss: (_) => _confirmUnregister(displayName),
-                onDismissed: (_) => _unregisterOperationParticipant(participant),
+                onDismissed: (_) =>
+                    _unregisterOperationParticipant(participant),
                 child: card,
               );
             },
@@ -1185,7 +1311,8 @@ class _ScannerModalSheetState extends State<ScannerModalSheet> {
   Widget _buildOperationParticipantCard(
       ParticipantOperation participant, bool isLatest) {
     final name =
-        '${participant.membrePrenom ?? ''} ${participant.membreNom ?? ''}'.trim();
+        '${participant.membrePrenom ?? ''} ${participant.membreNom ?? ''}'
+            .trim();
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
