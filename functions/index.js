@@ -118,6 +118,11 @@ exports.mirrorCanonicalToLegacy = mirrorCanonicalToLegacy;
 const { onInscriptionPaymentAudit } = require('./src/audit/onInscriptionPaymentAudit');
 exports.onInscriptionPaymentAudit = onInscriptionPaymentAudit;
 
+// COM-062: registratielog — logged registered/unregistered/updated per inscription,
+// visible only in CalyCompta (append-only inscription_logs subcollection).
+const { onInscriptionChangeAudit } = require('./src/audit/onInscriptionChangeAudit');
+exports.onInscriptionChangeAudit = onInscriptionChangeAudit;
+
 // =============================================================================
 // PISCINE SESSION NOTIFICATIONS (Gen2)
 // =============================================================================
