@@ -356,6 +356,24 @@ class ProfileService {
     }
   }
 
+  /// MOB-020 — turn logbook invites on/off. Missing field means on.
+  Future<void> updateUsesCarnet(
+    String clubId,
+    String userId,
+    bool usesCarnet,
+  ) async {
+    try {
+      await _firestore.collection('clubs/$clubId/members').doc(userId).update({
+        'uses_carnet': usesCarnet,
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+      debugPrint('✅ Préférence carnet mise à jour: $usesCarnet');
+    } catch (e) {
+      debugPrint('❌ Erreur mise à jour préférence carnet: $e');
+      rethrow;
+    }
+  }
+
   /// Récupérer les profils limités de l'annuaire (pour "Who's Who").
   /// Never use private `members` documents for a club-wide list.
   Future<List<MemberProfile>> getAllProfiles(String clubId) async {

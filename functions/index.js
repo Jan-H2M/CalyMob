@@ -275,6 +275,11 @@ exports.onPiscineAttendeeCreated = onPiscineAttendeeCreated;
 const { onOperationFinished } = require('./src/training/onOperationFinished');
 exports.onOperationFinished = onOperationFinished;
 
+const {
+  onMemberCarnetPreferenceChanged,
+} = require('./src/training/onMemberCarnetPreferenceChanged');
+exports.onMemberCarnetPreferenceChanged = onMemberCarnetPreferenceChanged;
+
 // Privacy-safe projections consumed by member-facing directory and
 // authorised operational status screens.
 const {

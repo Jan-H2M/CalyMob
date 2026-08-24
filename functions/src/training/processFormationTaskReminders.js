@@ -108,6 +108,14 @@ const processFormationTaskReminders = onSchedule(
           .get();
         if (!memberSnap.exists) continue;
         const member = memberSnap.data();
+        const { isCarnetTaskType } = require('./carnetPreference');
+        const dueForPush = member.uses_carnet === false
+          ? dueTasks.filter((t) => !isCarnetTaskType(t.type))
+          : dueTasks;
+        if (dueForPush.length === 0) {
+          await bumpTasksWithoutPush(db, dueTasks);
+          continue;
+        }
 
         const lastPushAt = (member.last_formation_push_at?.toMillis?.()) || 0;
         if (now - lastPushAt < MIN_PUSH_PER_MEMBER_MS) {
@@ -119,11 +127,11 @@ const processFormationTaskReminders = onSchedule(
 
         // Send a single push covering N tasks.
         const pushTitle =
-          dueTasks.length === 1
-            ? dueTasks[0].title
-            : `${dueTasks.length} actions t'attendent`;
+          dueForPush.length === 1
+            ? dueForPush[0].title
+            : `${dueForPush.length} actions t'attendent`;
         const pushBody =
-          dueTasks.length === 1
+          dueForPush.length === 1
             ? 'Ouvre Calypso pour la traiter'
             : 'Ouvre Calypso pour voir tes actions';
 
@@ -138,13 +146,13 @@ const processFormationTaskReminders = onSchedule(
           await admin.messaging().sendEachForMulticast({
             tokens,
             notification: { title: pushTitle, body: pushBody },
-            data: buildReminderPayload(clubId, dueTasks),
+            data: buildReminderPayload(clubId, dueForPush),
             android: { priority: 'high' },
             apns: { payload: { aps: { sound: 'default' } } },
           });
           totalSent += 1;
           console.log(
-            `[${FUNCTION_NAME}] sent push to ${memberId} for ${dueTasks.length} task(s)`
+            `[${FUNCTION_NAME}] sent push to ${memberId} for ${dueForPush.length} task(s)`
           );
         } catch (err) {
           console.error(`[${FUNCTION_NAME}] FCM error for ${memberId}:`, err.message);

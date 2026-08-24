@@ -25,6 +25,23 @@ function stringList(value) {
     : [];
 }
 
+function asDate(value) {
+  if (!value) return null;
+  if (typeof value.toDate === 'function') return value.toDate();
+  if (value instanceof Date) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  return null;
+}
+
+function birthdayParts(data) {
+  const date = asDate(data.birth_date) || asDate(data.date_naissance);
+  if (!date) return { birth_month: null, birth_day: null };
+  return { birth_month: date.getMonth() + 1, birth_day: date.getDate() };
+}
+
 function resolvedMemberStatus(data) {
   return resolveMemberStatus(data, { defaultStatus: 'active' });
 }
@@ -62,6 +79,7 @@ function buildMemberDirectoryProjection(data) {
     email: shareEmail ? nonEmptyString(data.email) : null,
     phone_number: sharePhone ? nonEmptyString(data.phone_number) : null,
     photo_url: consentInternalPhoto ? nonEmptyString(data.photo_url) : null,
+    ...birthdayParts(data),
     updated_at: FieldValue.serverTimestamp(),
   };
 }
