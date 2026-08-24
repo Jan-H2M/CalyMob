@@ -14,6 +14,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../services/camera_permission_service.dart';
+import '../../utils/amount_parser.dart';
 import '../../utils/date_formatter.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 
@@ -256,7 +257,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
           ? memberProvider.displayName
           : (authProvider.displayName ?? authProvider.currentUser?.email ?? 'Utilisateur');
 
-      final montant = double.parse(_montantController.text.trim());
+      final montant = parseAmount(_montantController.text)!;
       final description = _descriptionController.text.trim();
 
       await expenseProvider.createExpense(
@@ -375,7 +376,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                                 if (value == null || value.isEmpty) {
                                   return 'Le montant est requis';
                                 }
-                                final montant = double.tryParse(value.trim());
+                                final montant = parseAmount(value);
                                 if (montant == null || montant <= 0) {
                                   return 'Montant invalide';
                                 }

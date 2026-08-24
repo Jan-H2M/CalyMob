@@ -4,6 +4,7 @@ import '../../config/app_assets.dart';
 import '../../config/app_colors.dart';
 import '../../models/expense_claim.dart';
 import '../../providers/expense_provider.dart';
+import '../../utils/amount_parser.dart';
 import '../../utils/date_formatter.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 
@@ -83,7 +84,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
 
     try {
       final expenseProvider = context.read<ExpenseProvider>();
-      final montant = double.parse(_montantController.text.trim());
+      final montant = parseAmount(_montantController.text)!;
       final description = _descriptionController.text.trim();
 
       await expenseProvider.updateExpense(
@@ -174,7 +175,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                                 if (value == null || value.isEmpty) {
                                   return 'Le montant est requis';
                                 }
-                                final montant = double.tryParse(value.trim());
+                                final montant = parseAmount(value);
                                 if (montant == null || montant <= 0) {
                                   return 'Montant invalide';
                                 }
