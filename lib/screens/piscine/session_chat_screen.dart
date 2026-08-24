@@ -823,7 +823,7 @@ class _MessageBubble extends StatelessWidget {
                       ),
                     const SizedBox(height: 4),
                     Text(
-                      message.formattedTime,
+                      message.formattedDateTime,
                       style: TextStyle(
                         fontSize: 10,
                         color: isOwn

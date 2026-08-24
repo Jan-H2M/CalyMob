@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:intl/intl.dart';
+import '../utils/date_formatter.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/app_colors.dart';
@@ -643,8 +643,6 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
     required bool isOwnMessage,
     required String currentUserId,
   }) {
-    final dateFormat = DateFormat('HH:mm');
-
     return MessageHoverCaret(
       onTap: () => _showMessageOptions(message, isOwnMessage),
       alignEnd: isOwnMessage,
@@ -753,7 +751,7 @@ class _EventDiscussionTabState extends State<EventDiscussionTab> {
                 ),
               const SizedBox(height: 4),
               Text(
-                dateFormat.format(message.createdAt),
+                DateFormatter.formatDayMonthTime(message.createdAt),
                 style: TextStyle(fontSize: 11, color: Colors.grey[600]),
               ),
             ],

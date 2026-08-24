@@ -14,6 +14,9 @@ class DateFormatter {
   static final DateFormat _dayMonthShortFormat = DateFormat('EEE d MMM', 'fr_FR');
   static final DateFormat _timeFormat = DateFormat('HH:mm', 'fr_FR');
   static final DateFormat _dateTimeFormat = DateFormat('d MMM yyyy à HH:mm', 'fr_FR');
+  /// Compact: jour + mois + heure pour les bulles de messages
+  /// (ex: '15 mars à 14:30').
+  static final DateFormat _dayMonthTimeFormat = DateFormat('d MMM à HH:mm', 'fr_FR');
 
   /// Format court: 15/03/2025
   static String formatShort(DateTime date) {
@@ -51,6 +54,11 @@ class DateFormatter {
   /// Format date + heure: 15 mars 2025 à 14:30
   static String formatDateTime(DateTime date) {
     return _dateTimeFormat.format(date);
+  }
+
+  /// Compact date + heure pour les bulles de messages: '15 mars à 14:30'.
+  static String formatDayMonthTime(DateTime date) {
+    return _dayMonthTimeFormat.format(date);
   }
 
   /// Format relatif: "Aujourd'hui", "Demain", "Dans 3 jours", etc.

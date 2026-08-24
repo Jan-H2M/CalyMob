@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'poll.dart';
 import 'session_message.dart' show MessageAttachment;
+import '../utils/date_formatter.dart';
 
 /// Types de canaux d'équipe
 enum TeamChannelType {
@@ -325,6 +326,9 @@ class TeamMessage {
     final minute = createdAt.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
   }
+
+  /// Formater date + heure pour l'affichage (ex. '15 mars à 14:30').
+  String get formattedDateTime => DateFormatter.formatDayMonthTime(createdAt);
 
   bool get hasAttachments => attachments.isNotEmpty;
   bool get hasPoll => poll != null;

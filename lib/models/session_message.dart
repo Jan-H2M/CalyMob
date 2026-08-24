@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'poll.dart';
+import '../utils/date_formatter.dart';
 
 /// Type de groupe de discussion
 enum SessionGroupType {
@@ -187,6 +188,9 @@ class SessionMessage {
     final minute = createdAt.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
   }
+
+  /// Formater date + heure pour l'affichage (ex. '15 mars à 14:30').
+  String get formattedDateTime => DateFormatter.formatDayMonthTime(createdAt);
 
   /// Copie avec modifications
   SessionMessage copyWith({

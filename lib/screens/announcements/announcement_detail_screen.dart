@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import '../../utils/date_formatter.dart';
 import '../../models/announcement.dart';
 import '../../models/announcement_reply.dart';
 import '../../models/session_message.dart' show MessageAttachment;
@@ -618,7 +619,7 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
                 // Footer
                 const SizedBox(height: 4),
                 Text(
-                  DateFormat('HH:mm').format(reply.createdAt),
+                  DateFormatter.formatDayMonthTime(reply.createdAt),
                   style: TextStyle(fontSize: 11, color: Colors.grey[600]),
                 ),
               ],
