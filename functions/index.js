@@ -230,6 +230,12 @@ exports.milImpactPreview = milSync.milImpactPreview;
 // Creates a demande de remboursement when a member reduces their inscription
 exports.createInscriptionRefund = require('./src/inscription/createRefundClaim').createInscriptionRefund;
 
+// Transactional event waitlist lifecycle (join, leave, organizer promotion).
+const eventWaitlist = require('./src/inscription/eventWaitlist');
+exports.joinEventWaitlist = eventWaitlist.joinEventWaitlist;
+exports.leaveEventWaitlist = eventWaitlist.leaveEventWaitlist;
+exports.promoteEventWaitlistEntry = eventWaitlist.promoteEventWaitlistEntry;
+
 // =============================================================================
 // BOUTIQUE (Gen2)
 // =============================================================================

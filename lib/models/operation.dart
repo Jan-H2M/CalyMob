@@ -82,6 +82,7 @@ class Operation {
   /// isGuestTariff=true. Default false — preserves current behaviour where
   /// only admins/encadrants can add guests via the existing flow.
   final bool allowGuests;
+  final bool allowWaitlist;
 
   // Organisateur (can be reassigned after creation)
   final String? organisateurId;
@@ -145,6 +146,7 @@ class Operation {
     this.paymentDeadlineDays = 3,
     this.autoCancelUnpaid = true,
     this.allowGuests = false,
+    this.allowWaitlist = false,
     this.organisateurId,
     this.organisateurNom,
     this.creatorUserId,
@@ -198,6 +200,7 @@ class Operation {
           (data['payment_deadline_days'] as num?)?.toInt() ?? 3,
       autoCancelUnpaid: data['auto_cancel_unpaid'] != false,
       allowGuests: data['allow_guests'] == true,
+      allowWaitlist: data['allow_waitlist'] == true,
       organisateurId: data['organisateur_id'],
       organisateurNom: data['organisateur_nom'],
       creatorUserId: data['creator_user_id'],

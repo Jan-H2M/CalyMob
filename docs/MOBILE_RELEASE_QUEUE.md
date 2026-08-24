@@ -4,29 +4,9 @@ Deze lijst bundelt afgeronde mobiele wijzigingen tot Jan een gezamenlijke
 App Store- en Play Store-release goedkeurt. Een merge naar `main` publiceert
 de app niet en wijzigt de Firestore-appversie niet.
 
-Payment-ledger wijzigingen volgen het canonieke contract in
-[`docs/PAYMENT_LEDGER_ARCHITECTURE.md`](./PAYMENT_LEDGER_ARCHITECTURE.md) en
-de gedeelde CalyCompta-documentatie. Voeg iedere mobiele betaalwijziging hier
-toe vóór merge.
-
-Deze wijzigingen zijn geen release totdat accounting/auth/rules-review en
-end-to-end Firestore-tests afgerond zijn. Geen versie- of deployactie vanuit
-deze wachtrij zonder aparte goedkeuring.
-
-## Huidige productieversie
-
-`1.20.0+197` staat op Android in productie. Dezelfde build is naar App Store
-Connect verzonden en staat daar op `WAITING_FOR_REVIEW` (build `197`, valid).
-De Firestore-sleutel `settings/app_version` wordt pas bijgewerkt nadat iOS
-ook live is. Daarna worden `version: 1.20.0` en
-`minSupportedVersion: 1.20.0` samen gepubliceerd; zo worden oude mobiele
-versies bij betaalacties uitgefaseerd zonder een Store-review te omzeilen.
-Gebruik na de Apple-goedkeuring:
-`node scripts/update_firestore_version.cjs 1.20.0 197 1.20.0`.
-
 ## Volgende release
 
-Basisversie: `1.20.0+197`
+Basisversie: `1.17.0+194`
 
 | Referentie | Wijziging | Platform | Validatie | Risico | Status |
 |---|---|---|---|---|---|
@@ -41,12 +21,7 @@ Basisversie: `1.20.0+197`
 | MOB-016 | Betaalstatus wordt transactioneel tegen de actuele activiteitinstellingen gevalideerd, zodat een verouderd scherm geen betaling ter plaatse meer kan opslaan | Android + iOS | 4 gerichte regressietests, 375 Fluttertests, gerichte analyse en Android-debugbuild | Laag | Releasewachtrij |
 | MOB-011 | Een expliciete notificatie-opt-out blijft behouden bij login, app-resume en FCM-tokenrotatie; alleen de gebruiker kan opnieuw inschakelen | Android + iOS | 3 gerichte regressietests, 379 Fluttertests, gerichte analyse en Android-debugbuild | Laag | Releasewachtrij |
 | MOB-013 | Web- en e-maillinks in eventdiscussies openen opnieuw vanuit Markdown-berichten, met blokkering van onveilige URI-schema’s | Android + iOS | 3 gerichte regressietests, 382 Fluttertests, gerichte analyse en Android-debugbuild | Laag | Releasewachtrij |
-| MOB-017 | Bij een materiaaluitlening alleen beschikbare inventaris tonen; buiten dienst, gereserveerde en reeds uitgeleende serienummers blijven uit de keuzelijst | Android + iOS | 1 gerichte regressietest, 390 Fluttertests, gerichte analyse en Android-debugbuild | Laag | Releasewachtrij |
-| COM-061 | Zwembadscanner hervat barcode-detectie na een app- of cameratoestemmingsovergang en toont een herstelactie bij camerafouten | Android + iOS | 4 gerichte regressietests, 394 Fluttertests, gerichte analyse en Android-debugbuild | Laag | Releasewachtrij |
-
-| COM-044 | Cloud Functions respecteren `member_status` als canonieke ledenstatus; legacyvelden zijn alleen fallback tijdens de migratie | Cloud Functions | 10 gerichte tests en 115 volledige functiontests | Middel | Deploy na review |
-
-| PAY-LEDGER-2026-08-17 | Canonieke payment ledger, server-only betaalcommando's, Gozo-installmentcompatibiliteit, historische Zeeland/Gozo-reparaties en fail-closed legacy Noda-routes | Android + iOS + Cloud Functions + Firestore rules | 8 ledger-tests, 5 Function-tests, 11 Flutter-tests, build-check, live Zeeland/Gozo-invariant-audit | Hoog | Android productie; iOS `WAITING_FOR_REVIEW`; app-version publicatie na iOS-live |
+| COM-045 | Leden kunnen bij een volle of gesloten inschrijving op de wachtlijst komen en die weer verlaten; wachtenden tellen niet mee als deelnemer | Android + iOS | 2 gerichte regressietests, Flutter-analyse en Android-debugbuild | Middel | Releasewachtrij |
 
 ## Voorgestelde Franse releasenotes
 
@@ -60,8 +35,7 @@ Basisversie: `1.20.0+197`
 - Un mode de paiement désactivé ne peut plus être enregistré depuis un écran resté ouvert.
 - Votre choix de désactiver les notifications reste désormais respecté après le retour dans l’application.
 - Les liens dans les discussions d’événements s’ouvrent à nouveau correctement.
-- Les prêts de matériel ne proposent désormais que les articles réellement disponibles.
-- Le scanner d’entrée piscine reprend désormais correctement après une interruption de l’application.
+- Vous pouvez désormais rejoindre la liste d’attente lorsqu’une activité est complète ou que les inscriptions sont clôturées.
 - Diverses améliorations de stabilité et de suivi des signalements.
 
 ## Releasepoort

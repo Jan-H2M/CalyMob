@@ -23,6 +23,7 @@ class OperationProvider with ChangeNotifier {
   Map<String, int> _participantCounts = {}; // Cache compteur participants
   Map<String, bool> _userRegistrationStatus =
       {}; // Cache inscriptions utilisateur (per operation)
+  final Map<String, bool> _userWaitlistStatus = {};
   List<ParticipantOperation> _selectedOperationParticipants =
       []; // Liste participants
   List<UserEventRegistration> _userRegistrations =
@@ -64,6 +65,9 @@ class OperationProvider with ChangeNotifier {
   bool isUserRegistered(String operationId) {
     return _userRegistrationStatus[operationId] ?? false;
   }
+
+  bool isUserWaitlisted(String operationId) =>
+      _userWaitlistStatus[operationId] ?? false;
 
   /// Charger les événements ouverts (stream)
   void listenToOpenEvents(String clubId) {
@@ -136,6 +140,9 @@ class OperationProvider with ChangeNotifier {
           userId,
         );
         _userRegistrationStatus[operationId] = isRegistered;
+        final inscription = await _operationService.getUserInscription(
+          clubId: clubId, operationId: operationId, userId: userId);
+        _userWaitlistStatus[operationId] = inscription?.isWaitlisted ?? false;
       }
 
       _isLoading = false;
@@ -146,6 +153,36 @@ class OperationProvider with ChangeNotifier {
       notifyListeners();
 
       debugPrint('❌ Erreur selectOperation: $e');
+    }
+  }
+
+  Future<void> joinWaitlist({
+    required String clubId,
+    required String operationId,
+    required String userId,
+    required String userName,
+    MemberProfile? memberProfile,
+  }) async {
+    final operation = _selectedOperation ??
+        _operations.firstWhere((op) => op.id == operationId);
+    _isLoading = true;
+    notifyListeners();
+    try {
+      await _operationService.joinWaitlist(
+        clubId: clubId,
+        operationId: operationId,
+        userId: userId,
+        userName: userName,
+        operation: operation,
+        memberProfile: memberProfile,
+      );
+      _userWaitlistStatus[operationId] = true;
+    } catch (e) {
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
@@ -205,6 +242,7 @@ class OperationProvider with ChangeNotifier {
     required String userId,
   }) async {
     try {
+      final wasRegistered = _userRegistrationStatus[operationId] ?? false;
       _isLoading = true;
       notifyListeners();
 
@@ -216,8 +254,12 @@ class OperationProvider with ChangeNotifier {
 
       // Mettre à jour cache
       _userRegistrationStatus[operationId] = false;
-      _participantCounts[operationId] =
-          (_participantCounts[operationId] ?? 1) - 1;
+      _userWaitlistStatus[operationId] = false;
+      if (wasRegistered) {
+        final currentCount = _participantCounts[operationId] ?? 1;
+        _participantCounts[operationId] =
+            currentCount > 0 ? currentCount - 1 : 0;
+      }
 
       _isLoading = false;
       notifyListeners();
