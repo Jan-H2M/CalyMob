@@ -1,3 +1,1 @@
-Améliorations des prêts de matériel : sélection plus claire, meilleure lisibilité et correction du QR code de caution.
-Le scanner d’entrée piscine est désormais plus fiable et peut être redémarré immédiatement en cas d’interruption de la caméra.
-Diverses corrections de navigation et de stabilité.
+Correction de la saisie des notes de frais : les montants avec une virgule décimale (ex. 121,56) sont désormais acceptés lors de la création et de la modification d'une demande de remboursement.
