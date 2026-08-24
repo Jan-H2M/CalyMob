@@ -977,6 +977,8 @@ service cloud.firestore {
             'has_pending_medical',
             // Carnet de plongée — équipement personnel (CalyMob combi/tank pickers)
             'dive_combis', 'dive_tanks',
+            // Carnet opt-out (CalyMob) — member can stop logbook invites
+            'uses_carnet',
             // Web device info (CalyCompta) — fields written by saveDeviceInfoToMember
             'device_platform', 'device_type', 'browser_name', 'browser_version',
             'device_locale', 'device_timezone',

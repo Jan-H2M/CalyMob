@@ -36,6 +36,20 @@ describe('member privacy projections', () => {
     expect(projected).not.toHaveProperty('certificat_medical_validite');
     expect(projected).not.toHaveProperty('address_street');
     expect(projected).not.toHaveProperty('fcm_token');
+    expect(projected).not.toHaveProperty('birth_date');
+    expect(projected).not.toHaveProperty('date_naissance');
+  });
+
+  test('directory only exposes birthday day and month, never the year', () => {
+    const projected = buildMemberDirectoryProjection({
+      prenom: 'Anna',
+      nom: 'Plongeuse',
+      birth_date: new Date('1991-09-14T12:00:00'),
+    });
+    expect(projected.birth_month).toBe(9);
+    expect(projected.birth_day).toBe(14);
+    expect(projected).not.toHaveProperty('birth_date');
+    expect(projected).not.toHaveProperty('date_naissance');
   });
 
   test('contact sharing is opt-in in the projection', () => {

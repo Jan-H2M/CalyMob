@@ -501,6 +501,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _updateUsesCarnet(bool value) async {
+    setState(() => _isLoading = true);
+    try {
+      final userId = context.read<AuthProvider>().currentUser?.uid ?? '';
+      await _profileService.updateUsesCarnet(_clubId, userId, value);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              value
+                  ? 'Le carnet reste actif : tu recevras encore les invitations.'
+                  : 'Carnet désactivé : plus d’invitations ni de notifications.',
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Erreur: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
   Future<void> _updatePhotoConsents(
     MemberProfile profile, {
     required bool consentInternal,
@@ -636,6 +669,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       // Notifications
                       _buildSectionHeader('Notifications'),
                       _buildNotificationsSection(profile),
+
+                      const SizedBox(height: 24),
+
+                      _buildSectionHeader('Carnet de plongée'),
+                      _buildCarnetSection(profile),
 
                       const SizedBox(height: 24),
 
@@ -869,6 +907,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildCarnetSection(MemberProfile profile) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: SwitchListTile(
+        value: profile.usesCarnet,
+        onChanged: _updateUsesCarnet,
+        title: const Text('J’utilise le carnet'),
+        subtitle: const Text(
+          'Si tu le désactives, les invitations pour enregistrer ou modifier une plongée sont acceptées automatiquement, sans notification.',
+          style: TextStyle(fontSize: 12),
+        ),
+        secondary: Icon(
+          Icons.menu_book_outlined,
+          color: profile.usesCarnet ? AppColors.middenblauw : Colors.grey,
+        ),
       ),
     );
   }

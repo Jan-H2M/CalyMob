@@ -34,6 +34,11 @@ class MemberProfile {
 
   // Informations personnelles complémentaires
   final DateTime? birthDate;
+  /// Directory-only birthday parts (no year). Used by Qui est qui.
+  final int? birthMonth;
+  final int? birthDay;
+  /// Member wants logbook invites. Missing field = true.
+  final bool usesCarnet;
   final String? addressStreet;
   final String? addressPostcode;
   final String? addressCity;
@@ -85,6 +90,9 @@ class MemberProfile {
     this.sharePhone = true, // Par défaut, partager le téléphone
     this.phoneNumber,
     this.birthDate,
+    this.birthMonth,
+    this.birthDay,
+    this.usesCarnet = true,
     this.addressStreet,
     this.addressPostcode,
     this.addressCity,
@@ -135,6 +143,9 @@ class MemberProfile {
       phoneNumber: data['phone_number'],
       birthDate:
           _parseDate(data['birth_date']) ?? _parseDate(data['date_naissance']),
+      birthMonth: _intOrNull(data['birth_month']),
+      birthDay: _intOrNull(data['birth_day']),
+      usesCarnet: data['uses_carnet'] != false,
       addressStreet: data['address_street'],
       addressPostcode: data['address_postcode'] ?? data['code_postal'],
       addressCity: data['address_city'] ?? data['localite'],
@@ -186,6 +197,8 @@ class MemberProfile {
       shareEmail: data['share_email'] == true,
       sharePhone: data['share_phone'] == true,
       phoneNumber: _stringOrNull(data['phone_number']),
+      birthMonth: _intOrNull(data['birth_month']),
+      birthDay: _intOrNull(data['birth_day']),
       memberStatus: resolveMemberStatus(data),
       cotisationValidite: _parseDate(operationalStatus?['cotisation_validite']),
       certificatMedicalValidite: _parseDate(
@@ -197,6 +210,12 @@ class MemberProfile {
 
   static String? _stringOrNull(dynamic value) {
     if (value is String && value.trim().isNotEmpty) return value.trim();
+    return null;
+  }
+
+  static int? _intOrNull(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
     return null;
   }
 
@@ -284,6 +303,9 @@ class MemberProfile {
     bool? sharePhone,
     String? phoneNumber,
     DateTime? birthDate,
+    int? birthMonth,
+    int? birthDay,
+    bool? usesCarnet,
     String? addressStreet,
     String? addressPostcode,
     String? addressCity,
@@ -315,6 +337,9 @@ class MemberProfile {
       sharePhone: sharePhone ?? this.sharePhone,
       phoneNumber: phoneNumber ?? this.phoneNumber,
       birthDate: birthDate ?? this.birthDate,
+      birthMonth: birthMonth ?? this.birthMonth,
+      birthDay: birthDay ?? this.birthDay,
+      usesCarnet: usesCarnet ?? this.usesCarnet,
       addressStreet: addressStreet ?? this.addressStreet,
       addressPostcode: addressPostcode ?? this.addressPostcode,
       addressCity: addressCity ?? this.addressCity,

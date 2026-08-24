@@ -21,6 +21,7 @@ const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 const { memberDisplayName } = require('../utils/memberName');
+const { usesCarnet } = require('./carnetPreference');
 
 const FUNCTION_NAME = 'onOperationFinished';
 const FUNCTION_REGION = 'europe-west1';
@@ -195,6 +196,10 @@ async function processParticipants(db, clubId, operationId, operationTitle, loca
       continue;
     }
     const member = memberSnap.data();
+    if (!usesCarnet(member)) {
+      skippedCount += 1;
+      continue;
+    }
 
     // Idempotency : skip if a logbook task already exists for this op+member.
     const existing = await db

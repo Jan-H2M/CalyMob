@@ -724,6 +724,19 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
 
               const SizedBox(height: 20),
 
+              if (_birthdayLabel(member) != null) ...[
+                Text(
+                  'Anniversaire : ${_birthdayLabel(member)}',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade800,
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
               if (isCurrentUser) ...[
                 _administrativeStatusBadge(member),
                 const SizedBox(height: 8),
@@ -1068,6 +1081,29 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
       return upperCode.substring(1);
     }
     return upperCode;
+  }
+
+  static const _monthNamesFr = [
+    'janvier',
+    'février',
+    'mars',
+    'avril',
+    'mai',
+    'juin',
+    'juillet',
+    'août',
+    'septembre',
+    'octobre',
+    'novembre',
+    'décembre',
+  ];
+
+  /// Day + month only. Never expose the year in Qui est qui.
+  String? _birthdayLabel(MemberProfile member) {
+    final day = member.birthDay ?? member.birthDate?.day;
+    final month = member.birthMonth ?? member.birthDate?.month;
+    if (day == null || month == null || month < 1 || month > 12) return null;
+    return '$day ${_monthNamesFr[month - 1]}';
   }
 }
 

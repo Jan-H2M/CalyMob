@@ -36,6 +36,7 @@ const {
   sendNotificationsWithBadge,
 } = require('../utils/badge-helper');
 const { memberDisplayName: resolveMemberDisplayName } = require('../utils/memberName');
+const { usesCarnet } = require('./carnetPreference');
 
 const FUNCTION_REGION = 'europe-west1';
 const CONFIRMATIONS = 'logbook_dive_confirmations';
@@ -779,6 +780,12 @@ const onLogbookDiveBuddiesChanged = onDocumentWritten(
     const baseSnapshot = buildDiveSnapshot(after);
 
     for (const target of targets) {
+      const targetMemberSnap = await db
+        .collection('clubs').doc(clubId)
+        .collection('members').doc(target.memberId).get();
+      if (targetMemberSnap.exists && !usesCarnet(targetMemberSnap.data())) {
+        continue;
+      }
       const targetSnapshot = snapshotForTarget(
         baseSnapshot, after, target, sourceMemberId, sourceMemberName
       );

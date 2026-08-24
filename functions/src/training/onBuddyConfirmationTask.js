@@ -21,6 +21,7 @@
 const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
+const { usesCarnet } = require('./carnetPreference');
 
 const FUNCTION_NAME = 'onBuddyConfirmationTask';
 const FUNCTION_REGION = 'europe-west1';
@@ -51,6 +52,36 @@ async function handleBuddyConfirmationTask(event) {
     .where('status', '==', 'pending')
     .get();
   const pendingCount = pendingSnap.size;
+
+  const memberSnap = await clubRef.collection('members').doc(memberId).get();
+  if (memberSnap.exists && !usesCarnet(memberSnap.data())) {
+    for (const doc of pendingSnap.docs) {
+      await doc.ref.update({
+        status: 'confirmed_no_import',
+        auto_accepted: true,
+        auto_accepted_reason: 'carnet_opt_out',
+        responded_at: FieldValue.serverTimestamp(),
+        updated_at: FieldValue.serverTimestamp(),
+      });
+    }
+    const leftoverTasks = await clubRef
+      .collection('formation_tasks')
+      .where('current_assignee_id', '==', memberId)
+      .get();
+    for (const d of leftoverTasks.docs) {
+      const t = d.data();
+      if (t.type === 'buddy_confirmation' && t.status === 'open') {
+        await d.ref.update({
+          status: 'done',
+          completed_at: FieldValue.serverTimestamp(),
+          completed_by: 'system',
+          completed_reason: 'carnet_opt_out',
+          updated_at: FieldValue.serverTimestamp(),
+        });
+      }
+    }
+    return;
+  }
 
   // ---- Find existing OPEN buddy_confirmation task(s) for the member ---------
   // Query on current_assignee_id (auto-indexed) + filter type/status in memory
