@@ -148,8 +148,6 @@ exports.eventPaymentReminder = eventPaymentReminder;
 // in real time, without waiting for the daily 08:30 run.
 const { onInscriptionPaymentChange } = require('./src/notifications/onInscriptionPaymentChange');
 exports.onInscriptionPaymentChange = onInscriptionPaymentChange;
-const { expirePendingRegistrations } = require('./src/payment/expirePendingRegistrations');
-exports.expirePendingRegistrations = expirePendingRegistrations;
 
 // Auto-mark a member as present on a paid dive event (event_category === 'plongee').
 // Fires when `paye` flips falsy → true on the inscription. Refunds are NOT auto-reverted.
