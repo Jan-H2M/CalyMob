@@ -747,6 +747,7 @@ service cloud.firestore {
           //      provided the event opted-in via allow_guests=true. Also
           //      blocked after the effective deadline.
           allow create: if isMember(clubId)
+            && get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)).data.get('statut', '') != 'annule'
             && (
               (
                 request.resource.data.membre_id == request.auth.uid

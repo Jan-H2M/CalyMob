@@ -11,7 +11,9 @@ import '../../providers/auth_provider.dart';
 import '../../models/member_profile.dart';
 import '../../services/profile_service.dart';
 import '../../services/member_service.dart';
+import '../../services/sensitive_info_service.dart';
 import '../../utils/permission_helper.dart';
+import '../../widgets/profile/emergency_contacts_card.dart';
 import '../../models/formation_snapshot_doc.dart';
 import '../../services/formation_snapshot_reader.dart';
 import '../exercises/member_exercises_screen.dart';
@@ -30,6 +32,7 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
   final String _clubId = 'calypso';
   final ProfileService _profileService = ProfileService();
   final MemberService _memberService = MemberService();
+  final SensitiveInfoService _sensitiveInfoService = SensitiveInfoService();
   final TextEditingController _searchController = TextEditingController();
 
   String _searchQuery = '';
@@ -38,6 +41,7 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
   String _sortBy = 'prenom'; // 'prenom' (first name) or 'nom' (last name)
   bool _canManageExercises = false; // Monitor, admin, or super admin
   bool _canSeeFormation = false; // WP-10 : voir l'onglet Formation (tout encadrant)
+  bool _canSeeEmergencyContacts = false;
   bool _showFormation = false; // WP-10 : segment « Membres | Formation »
 
   // Bubbles animation
@@ -83,11 +87,14 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
     // pédagogique reste, elle, sous canValidateLifras (_canManageExercises).
     final canSeeFormation =
         canValidate || PermissionHelper.isEncadrant(profile.clubStatuten);
+    final canSeeEmergencyContacts =
+        PermissionHelper.canViewEmergencyContacts(profile.clubStatuten);
 
     if (mounted) {
       setState(() {
         _canManageExercises = canValidate;
         _canSeeFormation = canSeeFormation;
+        _canSeeEmergencyContacts = canSeeEmergencyContacts;
       });
     }
   }
@@ -749,6 +756,15 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
                 ),
                 const SizedBox(height: 16),
               ],
+
+              if (_canSeeEmergencyContacts && !isCurrentUser)
+                EmergencyContactsCard(
+                  emergencyInfo: _sensitiveInfoService.watchEmergency(
+                    _clubId,
+                    member.id,
+                  ),
+                  onCall: _launchPhone,
+                ),
 
               // Boutons de contact
               Column(

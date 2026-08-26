@@ -5,7 +5,10 @@ import '../models/emergency_info.dart';
 import '../models/medical_info.dart';
 
 class SensitiveInfoService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFirestore _firestore;
+
+  SensitiveInfoService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
 
   DocumentReference<Map<String, dynamic>> _doc(
     String clubId,
@@ -29,6 +32,12 @@ class SensitiveInfoService {
       if (!doc.exists) return null;
       return EmergencyInfo.fromFirestore(doc);
     });
+  }
+
+  Future<EmergencyInfo?> getEmergency(String clubId, String userId) async {
+    final doc = await _doc(clubId, userId, 'emergency').get();
+    if (!doc.exists) return null;
+    return EmergencyInfo.fromFirestore(doc);
   }
 
   Stream<MedicalInfo?> watchMedical(String clubId, String userId) {
