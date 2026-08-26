@@ -154,6 +154,7 @@ class OperationService {
     required Operation operation,
     MemberProfile? memberProfile,
   }) async {
+    await _assertOperationAcceptsRegistration(clubId, operationId);
     final existing = await getUserInscription(
       clubId: clubId,
       operationId: operationId,
@@ -184,6 +185,7 @@ class OperationService {
     double? supplementTotal,
   }) async {
     try {
+      await _assertOperationAcceptsRegistration(clubId, operationId);
       // Vérifier si déjà inscrit
       final existing = await getUserInscription(
           clubId: clubId, operationId: operationId, userId: userId);
@@ -256,6 +258,7 @@ class OperationService {
       );
 
       // Sauvegarder dans Firestore (subcollection under operation)
+      await _assertOperationAcceptsRegistration(clubId, operationId);
       await _firestore
           .collection('clubs/$clubId/operations/$operationId/inscriptions')
           .add(participant.toFirestore());
@@ -266,6 +269,19 @@ class OperationService {
     } catch (e) {
       debugPrint('❌ Erreur inscription: $e');
       rethrow;
+    }
+  }
+
+  Future<void> _assertOperationAcceptsRegistration(
+    String clubId,
+    String operationId,
+  ) async {
+    final snapshot = await _firestore
+        .collection('clubs/$clubId/operations')
+        .doc(operationId)
+        .get();
+    if (!snapshot.exists || snapshot.data()?['statut'] != 'ouvert') {
+      throw Exception('Les inscriptions sont fermées pour cet événement');
     }
   }
 

@@ -46,7 +46,10 @@ class ActivityItem {
 
   bool get isDraft => operation?.statut == 'brouillon';
 
-  String? get statusLabel => isDraft ? 'Brouillon' : null;
+  bool get isCancelled => operation?.statut == 'annule';
+
+  String? get statusLabel =>
+      isCancelled ? 'ANNULÉ' : (isDraft ? 'Brouillon' : null);
 
   /// Factory constructor voor Operation → ActivityItem
   factory ActivityItem.fromOperation(Operation op) {

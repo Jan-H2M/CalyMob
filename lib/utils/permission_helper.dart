@@ -119,6 +119,19 @@ class PermissionHelper {
     return normalized.contains('encadrant') || normalized.contains('encadrants');
   }
 
+  /// Access gate for emergency contacts shared through Who's Who.
+  /// Mirrors isEncadrantForClub() + hasCARole() in firestore.rules.
+  static bool canViewEmergencyContacts(List<String> clubStatuten) {
+    if (isAdmin(clubStatuten)) return true;
+    final normalized = clubStatuten.map((s) => s.toLowerCase().trim()).toList();
+    return normalized.contains('encadrant') ||
+        normalized.contains('encadrants') ||
+        normalized.contains('e') ||
+        normalized.contains('ca') ||
+        normalized.contains('comite') ||
+        normalized.contains('comité');
+  }
+
   /// LIFRAS-validatie-gate: pedagogische beslissingen (oefeningen valideren,
   /// observaties, niveau-toewijzingen) vereisen Encadrant-fonctie ÉN
   /// Moniteur-niveau, of admin.

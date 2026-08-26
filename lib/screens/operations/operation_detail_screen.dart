@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 53924)
+Total output lines: 5587
+
 import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -2618,458 +2621,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                         ),
                       ),
                     ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLocationAddressBlock({
-    required String? locationName,
-    required String address,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(Icons.location_on, color: AppColors.middenblauw, size: 20),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (locationName != null && locationName.isNotEmpty)
-                    Text(
-                      locationName,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.donkerblauw,
-                      ),
-                    ),
-                  Text(
-                    address,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: AppColors.donkerblauw,
-                      height: 1.35,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 10,
-          runSpacing: 8,
-          children: [
-            _buildMapButton(
-              icon: Icons.map_outlined,
-              label: 'Google Maps',
-              onTap: () => _openGoogleMaps(address),
-            ),
-            _buildMapButton(
-              icon: Icons.navigation_outlined,
-              label: 'Waze',
-              onTap: () => _openWaze(address),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMapButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return OutlinedButton.icon(
-      onPressed: onTap,
-      icon: Icon(icon, size: 18),
-      label: Text(label),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: AppColors.middenblauw,
-        side: BorderSide(color: AppColors.lichtblauw.withOpacity(0.8)),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
-    );
-  }
-
-  Future<void> _openGoogleMaps(String address) async {
-    final uri = Uri.https('www.google.com', '/maps/search/', {
-      'api': '1',
-      'query': address,
-    });
-    await _launchNavigationUri(uri);
-  }
-
-  Future<void> _openWaze(String address) async {
-    final appUri = Uri(
-      scheme: 'waze',
-      host: '',
-      queryParameters: {
-        'q': address,
-        'navigate': 'yes',
-      },
-    );
-    final webUri = Uri.https('waze.com', '/ul', {
-      'q': address,
-      'navigate': 'yes',
-    });
-
-    var openedApp = false;
-    try {
-      openedApp = await launchUrl(appUri, mode: LaunchMode.externalApplication);
-    } catch (_) {
-      openedApp = false;
-    }
-    if (!openedApp) {
-      await _launchNavigationUri(webUri);
-    }
-  }
-
-  Future<void> _launchNavigationUri(Uri uri) async {
-    var opened = false;
-    try {
-      opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {
-      opened = false;
-    }
-    if (!opened && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Impossible d’ouvrir la navigation')),
-      );
-    }
-  }
-
-  /// Communication accordion
-  Widget _buildCommunicationAccordion(operation) {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: AppColors.lichtblauw.withOpacity(0.5)),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: ExpansionTile(
-          initiallyExpanded: true, // Open by default
-          backgroundColor: AppColors.lichtblauw.withOpacity(0.2),
-          collapsedBackgroundColor: Colors.white.withOpacity(0.9),
-          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          leading: Icon(Icons.campaign, color: AppColors.middenblauw),
-          title: Text(
-            'Communication',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: AppColors.donkerblauw,
-            ),
-          ),
-          children: [
-            Container(
-              width: double.infinity,
-              color: Colors.white.withOpacity(0.95),
-              padding: const EdgeInsets.all(16),
-              child: Linkify(
-                onOpen: (link) async {
-                  final uri = Uri.parse(link.url);
-                  if (await canLaunchUrl(uri)) {
-                    await launchUrl(uri, mode: LaunchMode.externalApplication);
-                  }
-                },
-                text: operation.communication ?? '',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: AppColors.donkerblauw,
-                  height: 1.5,
-                ),
-                linkStyle: TextStyle(
-                  fontSize: 14,
-                  color: Colors.blue,
-                  decoration: TextDecoration.underline,
-                  height: 1.5,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _openDiscussionScreen(Operation operation) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => EventDiscussionScreen(
-          clubId: widget.clubId,
-          operationId: widget.operationId,
-          operationTitle: operation.titre,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDiscussionCard(Operation operation) {
-    final messageProvider = context.watch<EventMessageProvider>();
-
-    return StreamBuilder<List<EventMessage>>(
-      stream: messageProvider.watchMessages(widget.clubId, widget.operationId),
-      builder: (context, snapshot) {
-        final messages = snapshot.data ?? [];
-        final lastMessage = messages.isNotEmpty ? messages.last : null;
-        final previewText = _buildDiscussionPreview(lastMessage);
-
-        return Container(
-          decoration: BoxDecoration(
-            border:
-                Border.all(color: AppColors.lichtblauw.withValues(alpha: 0.5)),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Material(
-            color: Colors.white.withValues(alpha: 0.9),
-            borderRadius: BorderRadius.circular(12),
-            child: InkWell(
-              onTap: () => _openDiscussionScreen(operation),
-              borderRadius: BorderRadius.circular(12),
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: AppColors.lichtblauw.withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: const Icon(
-                        Icons.chat_bubble_outline_rounded,
-                        color: AppColors.middenblauw,
-                        size: 22,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  'Discussion',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.donkerblauw,
-                                  ),
-                                ),
-                              ),
-                              if (messages.isNotEmpty)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.lichtblauw
-                                        .withValues(alpha: 0.2),
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                  child: Text(
-                                    '${messages.length}',
-                                    style: const TextStyle(
-                                      color: AppColors.middenblauw,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            previewText,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 13,
-                              height: 1.35,
-                              color: Colors.grey.shade700,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Icon(Icons.chevron_right, color: Colors.grey.shade500),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  String _buildDiscussionPreview(EventMessage? lastMessage) {
-    if (lastMessage == null) {
-      return 'Ouvrir la discussion complète';
-    }
-
-    final author = lastMessage.senderName.trim().isEmpty
-        ? 'Membre'
-        : lastMessage.senderName.trim();
-
-    if (lastMessage.message.trim().isNotEmpty) {
-      return '$author: ${lastMessage.message.trim()}';
-    }
-
-    if (lastMessage.attachments.isNotEmpty) {
-      final hasVideo = lastMessage.attachments.any((a) => a.isVideo);
-      final hasImage = lastMessage.attachments.any((a) => a.isImage);
-      final attachmentLabel = hasVideo
-          ? 'a envoyé une vidéo'
-          : hasImage
-              ? 'a envoyé une photo'
-              : 'a envoyé un document';
-      return '$author $attachmentLabel';
-    }
-
-    if (lastMessage.poll != null) {
-      return '$author a partagé un sondage';
-    }
-
-    return 'Ouvrir la discussion complète';
-  }
-
-  /// Sorts participants so each guest appears directly after the member
-  /// who invited them (linked via `parent_inscription_id`). Members
-  /// without guests keep their original position. Orphan guests
-  /// (parent not in the list) are kept where they were.
-  List<ParticipantOperation> _sortParticipantsWithGuests(
-      List<ParticipantOperation> participants) {
-    if (participants.isEmpty) return participants;
-
-    // Group guests by their parent inscription id
-    final guestsByParent = <String, List<ParticipantOperation>>{};
-    final orphanGuests = <ParticipantOperation>[];
-    final nonGuests = <ParticipantOperation>[];
-
-    final allIds = participants.map((p) => p.id).toSet();
-
-    for (final p in participants) {
-      if (p.isGuest &&
-          p.parentInscriptionId != null &&
-          allIds.contains(p.parentInscriptionId)) {
-        guestsByParent.putIfAbsent(p.parentInscriptionId!, () => []).add(p);
-      } else if (p.isGuest) {
-        orphanGuests.add(p);
-      } else {
-        nonGuests.add(p);
-      }
-    }
-
-    final result = <ParticipantOperation>[];
-    for (final p in nonGuests) {
-      result.add(p);
-      final children = guestsByParent[p.id];
-      if (children != null) result.addAll(children);
-    }
-    // Orphans (guests whose parent isn't in the visible list) at the end
-    result.addAll(orphanGuests);
-    return result;
-  }
-
-  /// Inscribed members accordion (closed by default)
-  Widget _buildInscribedMembersAccordion(OperationProvider operationProvider) {
-    final rawParticipants = operationProvider.selectedOperationParticipants;
-    final participants = _sortParticipantsWithGuests(rawParticipants);
-    final authProvider = context.read<AuthProvider>();
-    final currentUserId = authProvider.currentUser?.uid ?? '';
-    // For plongee events, hide present indicator (no attendance tracking)
-    final isPlongeeEvent =
-        operationProvider.selectedOperation?.categorie == 'plongee';
-
-    // Trigger batch lookup van avatar + niveau-code zodra we participants
-    // hebben. addPostFrameCallback voorkomt setState-tijdens-build.
-    final hasMissingMemberInfo = participants.any(
-      (p) =>
-          !p.isGuest &&
-          p.membreId.isNotEmpty &&
-          !_memberInfoCache.containsKey(p.membreId),
-    );
-    if (participants.isNotEmpty &&
-        (_memberInfoLoadedForOperation != widget.operationId ||
-            hasMissingMemberInfo) &&
-        !_memberInfoLoading) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _loadMemberInfoForParticipants(participants);
-        }
-      });
-    }
-
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: AppColors.lichtblauw.withOpacity(0.5)),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: ExpansionTile(
-          initiallyExpanded: false, // Closed by default
-          backgroundColor: AppColors.lichtblauw.withOpacity(0.2),
-          collapsedBackgroundColor: Colors.white.withOpacity(0.9),
-          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          leading: Icon(Icons.group, color: AppColors.middenblauw),
-          title: Text(
-            'Membres inscrits',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: AppColors.donkerblauw,
-            ),
-          ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Refresh button for payment status updates
-              GestureDetector(
-                onTap: () async {
-                  await context.read<OperationProvider>().reloadParticipants(
-                        widget.clubId,
-                        widget.operationId,
-                      );
-                },
-                child: Container(
-                  padding: const EdgeInsets.all(6),
-                  margin: const EdgeInsets.only(right: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.middenblauw.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.refresh,
-                    size: 20,
-                    color: AppColors.middenblauw,
-                  ),
-                ),
-              ),
-              // Add guest button (only for admins/encadrants)
+…3924 tokens truncated…/encadrants)
               if (_canAddGuest)
                 GestureDetector(
                   onTap: _showAddGuestDialog,
@@ -4560,24 +4112,45 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     Operation? operation,
     ParticipantOperation? userInscription,
   }) {
-    if (isWaitlisted) {
-      return Column(mainAxisSize: MainAxisSize.min, children: [
-        const Text('Vous êtes sur la liste d’attente.',
-            style: TextStyle(fontWeight: FontWeight.w600)),
-        const SizedBox(height: 10),
-        SizedBox(
-          width: double.infinity,
-          height: 50,
-          child: OutlinedButton.icon(
-            onPressed: _handleUnregister,
-            icon: const Icon(Icons.close),
-            label: const Text('Quitter la liste d’attente'),
+    if (operation?.statut == 'annule') {
+      return SizedBox(
+        width: double.infinity,
+        height: 50,
+        child: ElevatedButton.icon(
+          onPressed: null,
+          icon: const Icon(Icons.block),
+          label: const Text('Événement annulé — inscriptions fermées'),
+          style: ElevatedButton.styleFrom(
+            disabledBackgroundColor: Colors.red.shade700,
+            disabledForegroundColor: Colors.white,
           ),
         ),
-      ]);
+      );
+    }
+    if (isWaitlisted) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'Vous êtes sur la liste d’attente.',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: OutlinedButton.icon(
+              onPressed: _handleUnregister,
+              icon: const Icon(Icons.close),
+              label: const Text('Quitter la liste d’attente'),
+            ),
+          ),
+        ],
+      );
     }
     if (isRegistered) {
-      final deadlinePassed = operation != null &&
+      final deadlinePassed =
+          operation != null &&
           operation.effectiveDeadline != null &&
           DateTime.now().isAfter(operation.effectiveDeadline!);
       final hasSupplements =
@@ -4588,7 +4161,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       // events that allow guests but have no supplements (Sortie Laser
       // Game-style) would hide the button and you couldn't add/remove
       // invités via the mobile app.
-      final showModifyButton = !deadlinePassed &&
+      final showModifyButton =
+          !deadlinePassed &&
           (hasSupplements || allowsGuests) &&
           userInscription != null;
 
@@ -4614,12 +4188,15 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                     child: ElevatedButton.icon(
                       onPressed: _handleEditInscription,
                       icon: const Icon(Icons.edit, color: Colors.white),
-                      label: const Text('Modifier',
-                          style: TextStyle(fontSize: 16, color: Colors.white)),
+                      label: const Text(
+                        'Modifier',
+                        style: TextStyle(fontSize: 16, color: Colors.white),
+                      ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.lichtblauw,
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         elevation: 8,
                         shadowColor: AppColors.lichtblauw.withOpacity(0.5),
                       ),
@@ -4640,15 +4217,18 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                     icon: const Icon(Icons.cancel, color: Colors.white),
                     label: const FittedBox(
                       fit: BoxFit.scaleDown,
-                      child: Text('Annuler',
-                          style: TextStyle(fontSize: 16, color: Colors.white)),
+                      child: Text(
+                        'Annuler',
+                        style: TextStyle(fontSize: 16, color: Colors.white),
+                      ),
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.red,
                       disabledBackgroundColor: Colors.grey.shade400,
                       disabledForegroundColor: Colors.white70,
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                       elevation: 8,
                       shadowColor: Colors.red.withOpacity(0.5),
                     ),
@@ -4661,7 +4241,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       );
     }
 
-    final eventStarted = operation?.dateDebut != null &&
+    final eventStarted =
+        operation?.dateDebut != null &&
         !DateTime.now().isBefore(operation!.dateDebut!);
     final waitlistAllowed = operation?.allowWaitlist == true && !eventStarted;
     if (!isOpen) {
@@ -4672,8 +4253,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           onPressed: waitlistAllowed ? _handleJoinWaitlist : null,
           icon: Icon(eventStarted ? Icons.lock : Icons.hourglass_bottom),
           style: ElevatedButton.styleFrom(
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
           label: Text(
             !waitlistAllowed
@@ -4690,7 +4272,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     // makes the reason explicit instead of letting the user tap and
     // get a permission-denied toast. Admins (with a valid web session)
     // bypass the rule but they don't go through this mobile screen.
-    final deadlinePassed = operation != null &&
+    final deadlinePassed =
+        operation != null &&
         operation.effectiveDeadline != null &&
         DateTime.now().isAfter(operation.effectiveDeadline!);
     if (deadlinePassed) {
@@ -4707,12 +4290,15 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               icon: const Icon(Icons.hourglass_bottom),
               style: ElevatedButton.styleFrom(
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 disabledBackgroundColor: Colors.grey.shade400,
                 disabledForegroundColor: Colors.white70,
               ),
-              label: const Text('Rejoindre la liste d’attente',
-                  style: TextStyle(fontSize: 16)),
+              label: const Text(
+                'Rejoindre la liste d’attente',
+                style: TextStyle(fontSize: 16),
+              ),
             ),
           ),
         ],
@@ -4727,14 +4313,16 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           onPressed: waitlistAllowed ? _handleJoinWaitlist : null,
           icon: const Icon(Icons.hourglass_bottom),
           style: ElevatedButton.styleFrom(
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
           label: Text(
-              waitlistAllowed
-                  ? 'Rejoindre la liste d’attente'
-                  : 'Événement complet',
-              style: const TextStyle(fontSize: 16)),
+            waitlistAllowed
+                ? 'Rejoindre la liste d’attente'
+                : 'Événement complet',
+            style: const TextStyle(fontSize: 16),
+          ),
         ),
       );
     }
@@ -4745,15 +4333,19 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       child: ElevatedButton.icon(
         onPressed: _handleRegister,
         icon: const Icon(Icons.check_circle, color: Colors.white),
-        label: const Text('S\'inscrire',
-            style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: Colors.white)),
+        label: const Text(
+          'S\'inscrire',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.middenblauw,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
           elevation: 8,
           shadowColor: AppColors.middenblauw.withOpacity(0.5),
         ),

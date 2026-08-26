@@ -27,11 +27,15 @@ class ActivityService {
         .where('statut', isEqualTo: 'ouvert')
         .snapshots()
         .map((snapshot) => snapshot.docs);
+    final cancelledStream = baseQuery
+        .where('statut', isEqualTo: 'annule')
+        .snapshots()
+        .map((snapshot) => snapshot.docs);
     final closedStream = includeClosed
         ? baseQuery
-            .where('statut', isEqualTo: 'ferme')
-            .snapshots()
-            .map((snapshot) => snapshot.docs)
+              .where('statut', isEqualTo: 'ferme')
+              .snapshots()
+              .map((snapshot) => snapshot.docs)
         : Stream.value(<QueryDocumentSnapshot<Map<String, dynamic>>>[]);
 
     // Draft queries are scoped server-side to the logged-in user. This is
@@ -40,17 +44,17 @@ class ActivityService {
     final hasUser = currentUserId != null && currentUserId.isNotEmpty;
     final creatorDraftStream = hasUser
         ? baseQuery
-            .where('statut', isEqualTo: 'brouillon')
-            .where('creator_user_id', isEqualTo: currentUserId)
-            .snapshots()
-            .map((snapshot) => snapshot.docs)
+              .where('statut', isEqualTo: 'brouillon')
+              .where('creator_user_id', isEqualTo: currentUserId)
+              .snapshots()
+              .map((snapshot) => snapshot.docs)
         : Stream.value(<QueryDocumentSnapshot<Map<String, dynamic>>>[]);
     final legacyDraftStream = hasUser
         ? baseQuery
-            .where('statut', isEqualTo: 'brouillon')
-            .where('organisateur_id', isEqualTo: currentUserId)
-            .snapshots()
-            .map((snapshot) => snapshot.docs)
+              .where('statut', isEqualTo: 'brouillon')
+              .where('organisateur_id', isEqualTo: currentUserId)
+              .snapshots()
+              .map((snapshot) => snapshot.docs)
         : Stream.value(<QueryDocumentSnapshot<Map<String, dynamic>>>[]);
 
     // Stream 2: Gepubliceerde piscine sessies
@@ -59,34 +63,37 @@ class ActivityService {
         .where('statut', isEqualTo: 'publie')
         .snapshots()
         .map((snapshot) {
-      debugPrint('🏊 Piscine stream: ${snapshot.docs.length} docs');
-      return snapshot.docs;
-    });
+          debugPrint('🏊 Piscine stream: ${snapshot.docs.length} docs');
+          return snapshot.docs;
+        });
 
     // Combineer beide streams met rxdart
-    return Rx.combineLatestList<
-        List<QueryDocumentSnapshot<Map<String, dynamic>>>>([
-      openStream,
-      closedStream,
-      creatorDraftStream,
-      legacyDraftStream,
-      piscineStream,
-    ]).map((snapshots) {
+    return Rx.combineLatestList<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+      [
+        openStream,
+        cancelledStream,
+        closedStream,
+        creatorDraftStream,
+        legacyDraftStream,
+        piscineStream,
+      ],
+    ).map((snapshots) {
       final ops = <QueryDocumentSnapshot>[];
       final seen = <String>{};
-      for (var index = 0; index < 4; index++) {
+      for (var index = 0; index < 5; index++) {
         for (final doc in snapshots[index]) {
           if (seen.add(doc.id)) ops.add(doc);
         }
       }
-      final sessions = snapshots[4];
+      final sessions = snapshots[5];
       final activities = <ActivityItem>[];
 
       // Operations → ActivityItems
       for (var doc in ops) {
         try {
           final op = Operation.fromFirestore(doc);
-          final isLegacyDraft = op.statut == 'brouillon' &&
+          final isLegacyDraft =
+              op.statut == 'brouillon' &&
               op.creatorUserId == null &&
               op.organisateurId == currentUserId;
           final isOwnedDraft =
@@ -95,6 +102,8 @@ class ActivityService {
           if (op.categorie != 'piscine' &&
               (op.statut == 'ouvert' ||
                   (includeClosed && op.statut == 'ferme') ||
+                  (op.statut == 'annule' &&
+                      shouldShowCancelledOperation(op, DateTime.now())) ||
                   isOwnedDraft ||
                   isLegacyDraft)) {
             activities.add(ActivityItem.fromOperation(op));
@@ -123,6 +132,14 @@ class ActivityService {
 
       return activities;
     });
+  }
+
+  /// A cancelled activity remains in the member list through its end date,
+  /// or through its start date when no end date exists.
+  @visibleForTesting
+  static bool shouldShowCancelledOperation(Operation operation, DateTime now) {
+    final visibleThrough = operation.dateFin ?? operation.dateDebut;
+    return visibleThrough != null && !visibleThrough.isBefore(now);
   }
 
   /// Stream van afgesloten (ferme) evenementen.

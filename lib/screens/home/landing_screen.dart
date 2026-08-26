@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../providers/unread_count_provider.dart';
 import '../../services/app_update_service.dart';
 import '../../services/avatar_nudge_service.dart';
+import '../../services/sensitive_info_service.dart';
 import '../../utils/club_role_utils.dart';
 import '../../widgets/ocean_background.dart';
 import '../../widgets/ocean/ocean_config.dart';
@@ -18,6 +18,8 @@ import '../communication/communication_hub_screen.dart';
 import '../boutique/boutique_screen.dart';
 import '../profile/profile_screen.dart';
 import '../profile/identite_screen.dart';
+import '../profile/mes_informations_screen.dart';
+import '../../widgets/profile/profile_completion_nudge_dialog.dart';
 import '../profile/who_is_who_screen.dart';
 import '../training/mon_carnet_screen.dart';
 import '../../services/boutique/boutique_access_service.dart';
@@ -31,6 +33,7 @@ class LandingScreen extends StatefulWidget {
 }
 
 class _LandingScreenState extends State<LandingScreen> {
+  final SensitiveInfoService _sensitiveInfoService = SensitiveInfoService();
   String _versionString = '';
   OceanParams? _oceanParams;
   bool _avatarNudgeChecked = false;
@@ -128,103 +131,59 @@ class _LandingScreenState extends State<LandingScreen> {
 
       final hasVisiblePhoto = (memberProvider.photoUrl ?? '').isNotEmpty &&
           memberProvider.consentInternalPhoto;
+      final emergency = await _sensitiveInfoService.getEmergency(
+        FirebaseConfig.defaultClubId,
+        userId,
+      );
+      if (!mounted) return;
+      final needsEmergencyContact =
+          AvatarNudgeService.needsEmergencyContact(emergency);
       final shouldShow = await AvatarNudgeService.shouldShow(
         userId: userId,
         hasVisiblePhoto: hasVisiblePhoto,
+        needsEmergencyContact: needsEmergencyContact,
         serverSnoozedUntil: memberProvider.avatarNudgeSnoozedUntil,
       );
       if (!shouldShow || !mounted) return;
 
-      _showAvatarNudgeDialog(userId);
+      _showAvatarNudgeDialog(
+        userId,
+        needsPhoto: !hasVisiblePhoto,
+        needsEmergencyContact: needsEmergencyContact,
+      );
     } catch (e) {
       debugPrint('Avatar nudge check failed: $e');
     }
   }
 
-  void _showAvatarNudgeDialog(String userId) {
+  void _showAvatarNudgeDialog(
+    String userId, {
+    required bool needsPhoto,
+    required bool needsEmergencyContact,
+  }) {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.middenblauw.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.account_circle_outlined,
-                color: AppColors.middenblauw,
-                size: 28,
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Text('Montrez-vous au club'),
-            ),
-          ],
-        ),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Chez Calypso, on plonge en équipe. Ajoutez votre photo pour que les autres membres vous reconnaissent et se sentent à l\'aise avec vous, surtout les nouveaux.',
-              style: TextStyle(fontSize: 15, height: 1.35),
-            ),
-            SizedBox(height: 14),
-            _AvatarNudgeBullet(
-              icon: Icons.favorite_outline,
-              text: 'Un visage, c\'est un nom qu\'on retient',
-            ),
-            SizedBox(height: 8),
-            _AvatarNudgeBullet(
-              icon: Icons.groups_outlined,
-              text: 'On se retrouve plus vite dans sa palanquée',
-            ),
-            SizedBox(height: 8),
-            _AvatarNudgeBullet(
-              icon: Icons.waving_hand_outlined,
-              text: 'Accueillir les nouveaux devient plus facile',
-            ),
-            SizedBox(height: 14),
-            Text(
-              'Vous pouvez la changer ou la retirer quand vous voulez.',
-              style: TextStyle(fontSize: 12.5, color: Colors.black54),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              await AvatarNudgeService.markShown(userId);
-              if (!dialogContext.mounted) return;
-              Navigator.of(dialogContext).pop();
-            },
-            child: const Text('Plus tard'),
-          ),
-          ElevatedButton.icon(
-            onPressed: () async {
-              await AvatarNudgeService.markShown(userId);
-              if (!mounted || !dialogContext.mounted) return;
-              Navigator.of(dialogContext).pop();
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const IdentiteScreen()),
-              );
-            },
-            icon: const Icon(Icons.add_a_photo_outlined, size: 18),
-            label: const Text('Ajouter ma photo'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.middenblauw,
-              foregroundColor: Colors.white,
-            ),
-          ),
-        ],
+      builder: (dialogContext) => ProfileCompletionNudgeDialog(
+        needsPhoto: needsPhoto,
+        needsEmergencyContact: needsEmergencyContact,
+        onAddPhoto: () {
+          Navigator.of(dialogContext).pop();
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const IdentiteScreen()),
+          );
+        },
+        onAddEmergencyContact: () {
+          Navigator.of(dialogContext).pop();
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const MesInformationsScreen()),
+          );
+        },
+        onRemindLater: () async {
+          await AvatarNudgeService.markShown(userId);
+          if (!dialogContext.mounted) return;
+          Navigator.of(dialogContext).pop();
+        },
       ),
     );
   }
@@ -465,33 +424,6 @@ class _BoutiqueLandingTile extends StatelessWidget {
           onTap: onTap,
         );
       },
-    );
-  }
-}
-
-class _AvatarNudgeBullet extends StatelessWidget {
-  final IconData icon;
-  final String text;
-
-  const _AvatarNudgeBullet({
-    required this.icon,
-    required this.text,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 18, color: AppColors.middenblauw),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            text,
-            style: const TextStyle(fontSize: 14),
-          ),
-        ),
-      ],
     );
   }
 }

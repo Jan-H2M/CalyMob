@@ -9,7 +9,7 @@ class EmergencyInfo {
 
   const EmergencyInfo({
     this.contacts = const [],
-    this.shareWithStaff = false,
+    this.shareWithStaff = true,
     this.consentDate,
     this.updatedAt,
   });
@@ -23,7 +23,9 @@ class EmergencyInfo {
               EmergencyContact.fromMap(Map<String, dynamic>.from(contact)))
           .toList()
         ..sort((a, b) => a.priority.compareTo(b.priority)),
-      shareWithStaff: data['gdpr_share_emergency_with_staff'] == true,
+      // Sharing is the default for new/incomplete profiles. An explicitly
+      // stored false remains an opt-out and is always respected.
+      shareWithStaff: data['gdpr_share_emergency_with_staff'] != false,
       consentDate:
           (data['gdpr_consent_date_emergency'] as Timestamp?)?.toDate(),
       updatedAt: (data['updated_at'] as Timestamp?)?.toDate(),

@@ -13,7 +13,10 @@ import '../../services/profile_service.dart';
 import '../../services/compatibility_service.dart';
 import '../../services/app_update_service.dart';
 import '../../services/avatar_nudge_service.dart';
+import '../../services/sensitive_info_service.dart';
 import '../profile/identite_screen.dart';
+import '../profile/mes_informations_screen.dart';
+import '../../widgets/profile/profile_completion_nudge_dialog.dart';
 import '../../models/compatibility_settings.dart';
 import '../../utils/permission_helper.dart';
 import '../../widgets/operation_card.dart';
@@ -38,6 +41,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final SensitiveInfoService _sensitiveInfoService = SensitiveInfoService();
   final String _clubId = FirebaseConfig.defaultClubId;
   final ProfileService _profileService = ProfileService();
   int _currentIndex = 0;
@@ -78,105 +82,60 @@ class _HomeScreenState extends State<HomeScreen> {
       final memberProvider = context.read<MemberProvider>();
       final hasVisiblePhoto = (memberProvider.photoUrl ?? '').isNotEmpty &&
           memberProvider.consentInternalPhoto;
+      final emergency = await _sensitiveInfoService.getEmergency(
+        FirebaseConfig.defaultClubId,
+        userId,
+      );
+      if (!mounted) return;
+      final needsEmergencyContact =
+          AvatarNudgeService.needsEmergencyContact(emergency);
 
       final should = await AvatarNudgeService.shouldShow(
         userId: userId,
         hasVisiblePhoto: hasVisiblePhoto,
+        needsEmergencyContact: needsEmergencyContact,
         serverSnoozedUntil: memberProvider.avatarNudgeSnoozedUntil,
       );
       if (!should || !mounted) return;
 
-      _showAvatarNudgeDialog(userId);
+      _showAvatarNudgeDialog(
+        userId,
+        needsPhoto: !hasVisiblePhoto,
+        needsEmergencyContact: needsEmergencyContact,
+      );
     } catch (e) {
       print('⚠️ Avatar nudge check failed: $e');
     }
   }
 
-  void _showAvatarNudgeDialog(String userId) {
+  void _showAvatarNudgeDialog(
+    String userId, {
+    required bool needsPhoto,
+    required bool needsEmergencyContact,
+  }) {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.middenblauw.withOpacity(0.12),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.account_circle_outlined,
-                color: AppColors.middenblauw,
-                size: 28,
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Text('Montrez-vous au club \u{1F30A}'),
-            ),
-          ],
-        ),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Chez Calypso, on plonge en équipe. Ajoutez votre photo pour que les autres membres vous reconnaissent et se sentent à l\'aise avec vous — surtout les nouveaux !',
-              style: TextStyle(fontSize: 15, height: 1.35),
-            ),
-            SizedBox(height: 14),
-            _NudgeBullet(
-              icon: Icons.favorite_outline,
-              text: 'Un visage, c\'est un nom qu\'on retient',
-            ),
-            SizedBox(height: 8),
-            _NudgeBullet(
-              icon: Icons.groups_outlined,
-              text: 'On se retrouve plus vite dans sa palanquée',
-            ),
-            SizedBox(height: 8),
-            _NudgeBullet(
-              icon: Icons.waving_hand_outlined,
-              text: 'Accueillir les nouveaux devient plus facile',
-            ),
-            SizedBox(height: 14),
-            Text(
-              'Vous pouvez la changer ou la retirer quand vous voulez.',
-              style: TextStyle(fontSize: 12.5, color: Colors.black54),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              await AvatarNudgeService.markShown(userId);
-              if (mounted) Navigator.of(ctx).pop();
-            },
-            child: const Text('Plus tard'),
-          ),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.middenblauw,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () async {
-              await AvatarNudgeService.markShown(userId);
-              if (!mounted) return;
-              Navigator.of(ctx).pop();
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const IdentiteScreen(),
-                ),
-              );
-            },
-            icon: const Icon(Icons.add_a_photo_outlined, size: 18),
-            label: const Text('Ajouter ma photo'),
-          ),
-        ],
+      builder: (ctx) => ProfileCompletionNudgeDialog(
+        needsPhoto: needsPhoto,
+        needsEmergencyContact: needsEmergencyContact,
+        onAddPhoto: () {
+          Navigator.of(ctx).pop();
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const IdentiteScreen()),
+          );
+        },
+        onAddEmergencyContact: () {
+          Navigator.of(ctx).pop();
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const MesInformationsScreen()),
+          );
+        },
+        onRemindLater: () async {
+          await AvatarNudgeService.markShown(userId);
+          if (!ctx.mounted) return;
+          Navigator.of(ctx).pop();
+        },
       ),
     );
   }
@@ -720,31 +679,6 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         );
       },
-    );
-  }
-}
-
-/// Petit item à puce pour le dialog "Ajoutez votre photo".
-class _NudgeBullet extends StatelessWidget {
-  final IconData icon;
-  final String text;
-
-  const _NudgeBullet({required this.icon, required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 18, color: AppColors.middenblauw),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            text,
-            style: const TextStyle(fontSize: 13.5, height: 1.35),
-          ),
-        ),
-      ],
     );
   }
 }
