@@ -45,6 +45,9 @@ function validateManifest(manifest, context) {
   const code = manifest.codeReview;
   requireThat(code?.verdict === 'approved' && code.sourceCommit === head
     && typeof code.reviewer === 'string' && code.reviewer.trim() && evidence(code), 'code review missing or stale');
+  requireThat(manifest.testEvidence?.sourceCommit === head
+    && manifest.testEvidence?.result === 'passed' && evidence(manifest.testEvidence),
+  'passing automated test evidence missing or stale');
   const artifact = manifest.artifacts?.[platform];
   requireThat(artifact?.path === ARTIFACTS[platform] && artifactPath === ARTIFACTS[platform]
     && artifact.sourceCommit === head && artifact.version === version && String(artifact.build) === build,

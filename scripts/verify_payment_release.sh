@@ -7,6 +7,7 @@ flutter analyze --no-fatal-infos --no-fatal-warnings
 flutter test
 npm --prefix functions ci --ignore-scripts
 npm --prefix functions test -- --runInBand
+node --test scripts/verify_store_release.test.cjs
 git diff --exit-code -- pubspec.lock functions/package-lock.json
 echo "Payment release tests passed for working tree based on $(git rev-parse HEAD)."
 echo "This test run is not a clean-commit attestation. Upload requires separate reviewed provenance."

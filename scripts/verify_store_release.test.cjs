@@ -14,6 +14,7 @@ function fixture(platform = 'ios') {
       allowedActions: { [platform]: ['upload', 'submit', 'notes'] },
       sourceCommit: head, version: context.version, build: context.build, platforms: [platform], notesSha256: sha256(context.notes) },
     codeReview: { reviewer: 'independent synthetic reviewer', verdict: 'approved', sourceCommit: head, evidence: 'synthetic review' },
+    testEvidence: { sourceCommit: head, result: 'passed', evidence: 'synthetic CI fixture, not a real run' },
     nativeReview: { [platform]: { reviewer: 'synthetic tester', verdict: 'approved', sourceCommit: head, artifactSha256: hash, evidence: 'synthetic native check' } },
     artifacts: { [platform]: { path: ARTIFACTS[platform], sha256: hash, sourceCommit: head, version: context.version, build: context.build } },
     uploadedBuilds: { [platform]: { version: context.version, build: context.build, artifactSha256: hash, evidence: 'synthetic store response' } },
@@ -46,6 +47,8 @@ test('approval and both review records are mandatory and bound to release', () =
     (m) => { m.codeReview.verdict = 'pending'; }, (m) => { m.codeReview.sourceCommit = 'wrong'; },
     (m) => { delete m.nativeReview.ios; }, (m) => { m.nativeReview.ios.artifactSha256 = 'wrong'; },
     (m) => { m.artifacts.ios.sourceCommit = 'wrong'; }, (m) => { m.allowedActions.ios = []; },
+    (m) => { delete m.testEvidence; }, (m) => { m.testEvidence.result = 'failed'; },
+    (m) => { m.testEvidence.sourceCommit = 'wrong'; }, (m) => { m.testEvidence.evidence = ''; },
   ]) {
     const { manifest, context } = fixture();
     mutate(manifest);

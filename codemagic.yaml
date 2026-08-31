@@ -355,7 +355,8 @@ workflows:
       android_signing:
         - calycompta_keystore
 
-      flutter: 3.19.6
+      flutter: 3.38.9
+      node: 22
 
     # Manual trigger only (no automatic triggers)
     triggering:
@@ -387,6 +388,8 @@ workflows:
 
       - name: Build Android APK
         script: |
+          set -euo pipefail
+          bash scripts/verify_payment_release.sh
           echo "🏗️ Building Android APK (debug mode - no signing required)"
           flutter build apk --debug
           echo "✅ Debug APK Build completed!"
@@ -428,7 +431,8 @@ workflows:
         XCODE_SCHEME: "Runner"
 
       # Flutter Version
-      flutter: 3.19.6
+      flutter: 3.38.9
+      node: 22
       xcode: latest
       cocoapods: default
 
@@ -483,9 +487,14 @@ workflows:
 
       - name: Build iOS IPA
         script: |
+          set -euo pipefail
+          bash scripts/verify_payment_release.sh
           echo "🏗️ Building iOS IPA (release mode)"
           # Build using xcodebuild with explicit export options
           flutter build ipa --release --export-options-plist=$HOME/export_options.plist
+          # Blocks publishing unless exact artifact, source and human/reviewer
+          # evidence are supplied in an external release manifest. No auto-Go.
+          node scripts/verify_store_release.cjs --platform ios --action upload
           echo "✅ iOS build completed!"
           ls -lh build/ios/ipa/*.ipa
 
