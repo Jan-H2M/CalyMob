@@ -1,8 +1,20 @@
 default_platform(:ios)
 
+def verify_ios_store_release(action, options = {})
+  require 'json'
+  script = File.expand_path('../../scripts/verify_store_release.cjs', __dir__)
+  args = ['node', script, '--platform', 'ios', '--action', action]
+  if action == 'submit'
+    UI.user_error!('Explicit version and build are required') unless options[:version] && options[:build]
+    args += ['--version', options[:version].to_s, '--build', options[:build].to_s]
+  end
+  JSON.parse(sh(*args, log: false))
+end
+
 platform :ios do
   desc "Upload IPA to App Store Connect (TestFlight)"
   lane :deploy do
+    release = verify_ios_store_release('upload')
     api_key = app_store_connect_api_key(
       key_id: "BHUKT6FFGF",
       issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"] || "280e011a-f492-43fb-b0eb-727ddaa8c6c9",
@@ -13,6 +25,7 @@ platform :ios do
     upload_to_testflight(
       api_key: api_key,
       ipa: "../build/ios/ipa/calymob.ipa",
+      changelog: release['notes'],
       skip_waiting_for_build_processing: true,
       skip_submission: true
     )
@@ -20,6 +33,7 @@ platform :ios do
 
   desc "Upload IPA directly to App Store for review"
   lane :release do
+    release = verify_ios_store_release('upload')
     api_key = app_store_connect_api_key(
       key_id: "BHUKT6FFGF",
       issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"] || "280e011a-f492-43fb-b0eb-727ddaa8c6c9",
@@ -30,7 +44,8 @@ platform :ios do
     upload_to_app_store(
       api_key: api_key,
       ipa: "../build/ios/ipa/calymob.ipa",
-      skip_metadata: true,
+      skip_metadata: false,
+      release_notes: { 'fr-FR' => release['notes'] },
       skip_screenshots: true,
       submit_for_review: false,
       automatic_release: true,
@@ -40,6 +55,7 @@ platform :ios do
 
   desc "Submit uploaded build to App Store Review (uses existing build, no binary upload)"
   lane :submit do |options|
+    release = verify_ios_store_release('submit', options)
     api_key = app_store_connect_api_key(
       key_id: "BHUKT6FFGF",
       issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"] || "280e011a-f492-43fb-b0eb-727ddaa8c6c9",
@@ -47,8 +63,8 @@ platform :ios do
       in_house: false
     )
 
-    version = options[:version] || "1.12.2"
-    build = options[:build] || "184"
+    version = release['version']
+    build = release['build']
 
     deliver(
       api_key: api_key,
@@ -57,6 +73,7 @@ platform :ios do
       skip_binary_upload: true,
       skip_screenshots: true,
       skip_metadata: false,
+      release_notes: { 'fr-FR' => release['notes'] },
       submit_for_review: true,
       automatic_release: true,
       force: true,
@@ -73,6 +90,7 @@ platform :ios do
 
   desc "Update What's New (release notes) on the current editable version via ASC API"
   lane :update_notes do |options|
+    approved = verify_ios_store_release('notes')
     require "spaceship"
     Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
       key_id: "BHUKT6FFGF",
@@ -86,11 +104,12 @@ platform :ios do
       UI.message("No editable version — looking at in-review version")
       version = app.get_in_review_app_store_version
     end
+    UI.user_error!('Editable store version does not match approved release') unless version && version.version_string == approved['version']
     UI.message("Version: #{version.version_string} — state: #{version.app_store_state}")
     locs = version.get_app_store_version_localizations
     fr = locs.find { |l| l.locale == "fr-FR" }
     notes_path = File.join(File.dirname(__FILE__), "metadata", "fr-FR", "release_notes.txt")
-    notes = File.read(notes_path).strip
+    notes = approved['notes']
     UI.message("Reading notes from #{notes_path}")
     if fr
       fr.update(attributes: { whats_new: notes })

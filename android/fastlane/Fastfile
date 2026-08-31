@@ -1,8 +1,14 @@
 default_platform(:android)
 
+def verify_android_store_release(action = 'upload')
+  script = File.expand_path('../../scripts/verify_store_release.cjs', __dir__)
+  sh('node', script, '--platform', 'android', '--action', action)
+end
+
 platform :android do
   desc "Upload AAB to Google Play Store (Production track)"
   lane :deploy do
+    verify_android_store_release
     upload_to_play_store(
       track: 'production',
       aab: '../build/app/outputs/bundle/release/app-release.aab',
@@ -16,6 +22,7 @@ platform :android do
 
   desc "Upload AAB to Production and submit for review automatically (no Play Console needed)"
   lane :release do
+    verify_android_store_release('upload-and-submit')
     upload_to_play_store(
       track: 'production',
       aab: '../build/app/outputs/bundle/release/app-release.aab',
@@ -29,6 +36,7 @@ platform :android do
 
   desc "Upload AAB to internal testing track"
   lane :internal do
+    verify_android_store_release('upload-and-submit')
     upload_to_play_store(
       track: 'internal',
       aab: '../build/app/outputs/bundle/release/app-release.aab',
