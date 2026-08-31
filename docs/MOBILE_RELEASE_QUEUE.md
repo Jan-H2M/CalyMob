@@ -6,6 +6,14 @@ de app niet en wijzigt de Firestore-appversie niet.
 
 ## Volgende release
 
+**Actuele consolidatie:** COM-065, COM-070 en COM-068 zijn samen opgenomen in
+`codex/release-mobile-consolidation`, bovenop main 1.21.0+203. Voorstel1.21.0(204)
+wacht op Jans akkoord; nog geen build/upload. Zie
+[consolidatie en releaseblokkades](MOBILE_RELEASE_CONSOLIDATION_2026-08-31.md).
+De onderstaande per-issue vermeldingen beschrijven hun oorspronkelijke branches;
+oudere releasewachtrij-items zijn historische documentatie, geen bewijs dat zij
+nog niet in een storeversie zaten.
+
 ### Nog niet uitgebracht — lokale branch COM-065 (2026-08-31)
 
 - Automatisch voorgestelde duiknummers krijgen een expliciete voorlopige aanduiding,
