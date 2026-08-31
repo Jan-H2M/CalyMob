@@ -167,6 +167,47 @@ class MaterialLoanService {
     );
   }
 
+  /// Records a request without reserving inventory. Physical IDs are selected
+  /// only when staff confirms payment and hands the material over.
+  Future<String> createPendingTypeLoan({
+    required String clubId,
+    required MaterialLoanMember member,
+    required List<MaterialLoanRequestedLine> requestedLines,
+    required DateTime expectedReturnDate,
+    required String createdByUserId,
+    required String createdByName,
+    required String paymentMode,
+    String? notes,
+  }) {
+    if (!{'epc_qr_onsite', 'epc_qr_email'}.contains(paymentMode) ||
+        requestedLines.isEmpty ||
+        requestedLines.any((line) =>
+            line.quantity != 1 ||
+            line.typeName.trim().isEmpty ||
+            line.variant.trim().isEmpty)) {
+      throw ArgumentError('Demande de matériel invalide');
+    }
+    final types =
+        requestedLines.map((line) => line.typeId ?? line.typeName).toSet();
+    if (types.length != requestedLines.length) {
+      throw ArgumentError('Un seul article par type de matériel');
+    }
+    return _createLoan(
+        clubId: clubId,
+        member: member,
+        items: [],
+        requestedLines: requestedLines,
+        expectedReturnDate: expectedReturnDate,
+        createdByUserId: createdByUserId,
+        createdByName: createdByName,
+        loanStatus: 'attente_caution',
+        itemStatus: 'reserve',
+        cautionStatus: 'unpaid',
+        paymentMode: paymentMode,
+        handoverStatus: 'blocked',
+        notes: notes);
+  }
+
   Future<String> _createLoan({
     required String clubId,
     required MaterialLoanMember member,
@@ -179,9 +220,10 @@ class MaterialLoanService {
     required String cautionStatus,
     required String paymentMode,
     required String handoverStatus,
+    List<MaterialLoanRequestedLine> requestedLines = const [],
     String? notes,
   }) async {
-    if (items.isEmpty) {
+    if (items.isEmpty && requestedLines.isEmpty) {
       throw ArgumentError.value(
           items, 'items', 'Au moins un article est requis');
     }
@@ -270,6 +312,11 @@ class MaterialLoanService {
         'memberName': member.name,
         'itemIds': items.map((item) => item.id).toList(),
         'items_snapshot': itemSnapshots,
+        if (requestedLines.isNotEmpty) ...{
+          'requested_lines':
+              requestedLines.map((line) => line.toMap()).toList(),
+          'reservation_policy': 'none',
+        },
         'statut': loanStatus,
         'date_pret': now,
         'date_retour_prevue': Timestamp.fromDate(expectedReturnDate),
@@ -349,7 +396,12 @@ class MaterialLoanService {
     required String loanId,
     required String confirmedByUserId,
     required String confirmedByName,
+    List<String> selectedItemIds = const [],
+    bool paymentConfirmed = false,
   }) async {
+    if (!paymentConfirmed) {
+      throw StateError('Confirmez le paiement constaté avant la remise');
+    }
     final clubRef = _firestore.collection('clubs').doc(clubId);
     final loanRef = clubRef.collection('inventory_loans').doc(loanId);
     final auditRef = clubRef.collection('audit_logs').doc();
@@ -364,27 +416,79 @@ class MaterialLoanService {
       if (loan['statut'] != 'attente_caution') {
         throw StateError('Ce prêt n’attend plus de caution');
       }
-      final itemIds = (loan['itemIds'] as List<dynamic>? ?? const [])
+      final requestedLines = (loan['requested_lines'] as List<dynamic>? ?? [])
+          .whereType<Map>()
+          .map((line) => MaterialLoanRequestedLine.fromMap(
+              Map<String, dynamic>.from(line)))
+          .toList();
+      final isUnassignedRequest = requestedLines.isNotEmpty;
+      final itemIds = (isUnassignedRequest
+              ? selectedItemIds
+              : (loan['itemIds'] as List<dynamic>? ?? const []))
           .map((id) => id.toString())
           .where((id) => id.isNotEmpty)
           .toList();
+      if (itemIds.isEmpty ||
+          itemIds.toSet().length != itemIds.length ||
+          (isUnassignedRequest &&
+              itemIds.length !=
+                  requestedLines.fold<int>(
+                      0, (total, line) => total + line.quantity))) {
+        throw StateError('Sélectionnez un article réel par type demandé');
+      }
       final itemRefs = itemIds
           .map((id) => clubRef.collection('inventory_items').doc(id))
           .toList();
       final itemSnapshots = await Future.wait(itemRefs.map(transaction.get));
+      final selectedItems = <MaterialLoanItem>[];
       for (var index = 0; index < itemSnapshots.length; index++) {
         final item = itemSnapshots[index];
         final itemData = item.data() ?? const <String, dynamic>{};
-        if (!item.exists ||
-            itemData['statut'] != 'reserve' ||
-            itemData['current_loan_id'] != loanId) {
+        if (!item.exists) throw StateError('Matériel introuvable');
+        final physicalItem = MaterialLoanItem.fromFirestore(item);
+        selectedItems.add(physicalItem);
+        if (isUnassignedRequest
+            ? (!physicalItem.isBorrowable ||
+                (itemData['current_loan_id']?.toString().isNotEmpty ?? false))
+            : (itemData['statut'] != 'reserve' ||
+                itemData['current_loan_id'] != loanId)) {
           throw StateError('Réservation du matériel invalide');
         }
-        transaction
-            .update(itemRefs[index], {'statut': 'prete', 'updatedAt': now});
+      }
+      if (isUnassignedRequest) {
+        final remaining = [...selectedItems];
+        for (final line in requestedLines) {
+          final matches = remaining.where(line.matches).toList();
+          if (line.quantity < 1 || matches.length < line.quantity) {
+            throw StateError(
+                'Le matériel ne correspond pas au type ou à l’option demandée');
+          }
+          for (final item in matches.take(line.quantity)) {
+            remaining.remove(item);
+          }
+        }
+        if (remaining.isNotEmpty) throw StateError('Matériel non demandé');
+      }
+      for (var index = 0; index < itemRefs.length; index++) {
+        transaction.update(itemRefs[index],
+            {'statut': 'prete', 'current_loan_id': loanId, 'updatedAt': now});
       }
       transaction.update(loanRef, {
         'statut': 'actif',
+        if (isUnassignedRequest) ...{
+          'itemIds': itemIds,
+          'items_snapshot': selectedItems
+              .map((item) => {
+                    'id': item.id,
+                    'code': item.code,
+                    'nom': item.name,
+                    'numero_serie': item.serialNumber,
+                    'type_id': item.typeId,
+                    'type_name': item.typeLabel,
+                    'variant': item.variant,
+                  })
+              .toList(),
+        },
         'caution_payment_status': 'paid',
         'caution_paid_at': now,
         'payment_confirmed_by': confirmedByUserId,
@@ -398,6 +502,7 @@ class MaterialLoanService {
         'entity_type': 'inventory_loan',
         'entity_id': loanId,
         'loan_number': loan['loanNumber']?.toString(),
+        'item_ids': itemIds,
         'member_id': loan['memberId']?.toString(),
         'caution_amount': fixedCautionAmount,
         'actor_id': confirmedByUserId,

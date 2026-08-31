@@ -13,6 +13,7 @@ import '../../utils/club_role_utils.dart';
 import '../../widgets/empty_state_widget.dart';
 import '../../widgets/loading_widget.dart';
 import '../../widgets/material_payment_qr_dialog.dart';
+import '../../widgets/material_handover_dialog.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 
 class MaterialReturnsScreen extends StatefulWidget {
@@ -155,7 +156,7 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
                 if (visiblePending && pendingLoans.isNotEmpty) ...[
                   const _ListSectionTitle('Cautions à confirmer'),
                   const Text(
-                    'Le matériel est réservé, mais ne peut pas encore quitter le local.',
+                    'Les nouvelles demandes ne réservent aucun article. Attribution lors de la remise après paiement.',
                     style: TextStyle(color: Colors.white),
                   ),
                   const SizedBox(height: 10),
@@ -187,7 +188,8 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
                   const _LoanTabEmptyState(
                     icon: Icons.lock_open_outlined,
                     title: 'Aucune caution à confirmer',
-                    subtitle: 'Les prêts réservés apparaîtront ici.',
+                    subtitle:
+                        'Les demandes en attente de caution apparaîtront ici.',
                   ),
                 if (visibleReturns && loans.isNotEmpty) ...[
                   const _ListSectionTitle('Retours à contrôler'),
@@ -222,25 +224,39 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
     required String createdByUserId,
     required String createdByName,
   }) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Confirmer la caution ?'),
-        content: Text(
-          'Confirmez seulement après avoir constaté les ${loan.cautionAmount.toStringAsFixed(2)} EUR. Le matériel sera alors remis à ${loan.memberName}.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Paiement constaté'),
-          ),
-        ],
-      ),
-    );
+    List<String> selectedItemIds = const [];
+    if (loan.requestedLines.isNotEmpty) {
+      final selection = await showDialog<List<String>>(
+          context: context,
+          builder: (_) => MaterialHandoverDialog(
+              lines: loan.requestedLines,
+              availableItems: _service.watchBorrowableItems(_clubId),
+              cautionAmount: loan.cautionAmount));
+      if (selection == null) return;
+      selectedItemIds = selection;
+    }
+    if (!mounted) return;
+    final confirmed = loan.requestedLines.isNotEmpty ||
+        (await showDialog<bool>(
+              context: context,
+              builder: (dialogContext) => AlertDialog(
+                title: const Text('Confirmer la caution ?'),
+                content: Text(
+                  'Confirmez seulement après avoir constaté les ${loan.cautionAmount.toStringAsFixed(2)} EUR. Le matériel sera alors remis à ${loan.memberName}.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(false),
+                    child: const Text('Annuler'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(true),
+                    child: const Text('Paiement constaté'),
+                  ),
+                ],
+              ),
+            ) ??
+            false);
     if (confirmed != true) return;
     try {
       await _loanService.confirmPendingPaymentAndHandover(
@@ -248,6 +264,8 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
         loanId: loan.id,
         confirmedByUserId: createdByUserId,
         confirmedByName: createdByName,
+        selectedItemIds: selectedItemIds,
+        paymentConfirmed: true,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -723,10 +741,12 @@ class _PendingLoanCard extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             Text(
-              '${loan.itemIds.length} article(s) réservé(s) · caution ${loan.cautionAmount.toStringAsFixed(2)} EUR',
+              '${loan.requestedLines.isNotEmpty ? loan.requestedLines.length : loan.itemIds.length} article(s) · ${loan.requestedLines.isNotEmpty ? "sans réservation" : "réservation ancienne"} · caution ${loan.cautionAmount.toStringAsFixed(2)} EUR',
               style: const TextStyle(color: Colors.black87),
             ),
             const SizedBox(height: 10),
+            for (final line in loan.requestedLines)
+              Text(line.label, style: const TextStyle(color: Colors.black87)),
             if (loan.paymentMode == 'epc_qr_onsite') ...[
               SizedBox(
                 width: double.infinity,
@@ -1533,8 +1553,9 @@ class _DirectLoanSheet extends StatefulWidget {
 class _DirectLoanSheetState extends State<_DirectLoanSheet> {
   final _memberSearchController = TextEditingController();
   final _notesController = TextEditingController();
-  final Map<String, String?> _selectedInventoryByType = {};
   final Map<String, String> _selectedVariantByType = {};
+  final Map<String, String?> _selectedTypeIds = {};
+  late final Stream<List<MaterialLoanItem>> _requestCatalog;
   final Set<String> _disabledInventoryTypes = {};
   List<MaterialLoanMember> _members = const [];
   MaterialLoanMember? _member;
@@ -1542,11 +1563,13 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
   bool _loadingMembers = true;
   String _paymentMode = 'epc_qr_onsite';
   String? _pendingLoanId;
+  List<MaterialLoanRequestedLine>? _pendingLines;
   bool _submitting = false;
 
   @override
   void initState() {
     super.initState();
+    _requestCatalog = widget.service.watchRequestCatalog(widget.clubId);
     _loadMembers();
   }
 
@@ -1574,20 +1597,22 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
       child: SizedBox(
         height: MediaQuery.of(context).size.height * 0.9,
         child: StreamBuilder<List<MaterialLoanItem>>(
-          stream: widget.service.watchBorrowableItems(widget.clubId),
+          stream: _requestCatalog,
           builder: (context, snapshot) {
             final items = snapshot.data ?? const <MaterialLoanItem>[];
             final grouped = <String, List<MaterialLoanItem>>{};
             for (final item in items) {
               grouped.putIfAbsent(item.typeLabel, () => []).add(item);
             }
-            final selectedItems = items
-                .where(
-                  (item) => _selectedInventoryByType.values.contains(item.id),
-                )
+            final selectedLines = _selectedVariantByType.entries
+                .where((entry) => !_disabledInventoryTypes.contains(entry.key))
+                .map((entry) => MaterialLoanRequestedLine(
+                    typeId: _selectedTypeIds[entry.key],
+                    typeName: entry.key,
+                    variant: entry.value))
                 .toList();
             final canSubmit =
-                _member != null && selectedItems.isNotEmpty && !_submitting;
+                _member != null && selectedLines.isNotEmpty && !_submitting;
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1615,8 +1640,9 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                       ),
                     ),
                     IconButton(
-                      onPressed:
-                          _submitting ? null : () => Navigator.of(context).pop(),
+                      onPressed: _submitting
+                          ? null
+                          : () => Navigator.of(context).pop(),
                       icon: const Icon(Icons.close),
                       color: Colors.white,
                       tooltip: 'Annuler',
@@ -1625,109 +1651,118 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                 ),
                 const SizedBox(height: 12),
                 Expanded(
-                  child: ListView(
-                    children: [
-                      _buildMemberPicker(),
-                      const SizedBox(height: 14),
-                      OutlinedButton.icon(
-                        onPressed: _pickReturnDate,
-                        icon: const Icon(Icons.event_available_outlined),
-                        label: Text(
-                          'Retour prévu : ${_formatDate(_returnDate)}',
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          backgroundColor: Colors.white.withValues(alpha: 0.92),
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      const Text(
-                        'Matériel disponible',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      if (snapshot.connectionState == ConnectionState.waiting)
-                        const Padding(
-                          padding: EdgeInsets.all(20),
-                          child: Center(child: CircularProgressIndicator()),
-                        )
-                      else if (grouped.isEmpty)
-                        const _InlineNotice(
-                          text: 'Aucun matériel disponible pour le moment.',
-                        )
-                      else
-                        ...grouped.entries.map(
-                          (entry) =>
-                              _buildInventorySelector(entry.key, entry.value),
-                        ),
-                      const SizedBox(height: 14),
-                      TextField(
-                        controller: _notesController,
-                        minLines: 2,
-                        maxLines: 4,
-                        decoration: InputDecoration(
-                          labelText: 'Note de remise',
-                          filled: true,
-                          fillColor: Colors.white.withValues(alpha: 0.92),
-                          border: const OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.92),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Caution fixe : 100,00 EUR',
-                              style: TextStyle(
-                                color: AppColors.donkerblauw,
-                                fontWeight: FontWeight.w800,
-                              ),
+                  child: AbsorbPointer(
+                      absorbing: _submitting || _pendingLoanId != null,
+                      child: ListView(
+                        children: [
+                          if (_pendingLoanId != null)
+                            const _InlineNotice(
+                                text:
+                                    'Demande déjà enregistrée. Informations verrouillées ; le bouton reprend cette même demande sans en créer une autre.'),
+                          _buildMemberPicker(),
+                          const SizedBox(height: 14),
+                          OutlinedButton.icon(
+                            onPressed: _pickReturnDate,
+                            icon: const Icon(Icons.event_available_outlined),
+                            label: Text(
+                              'Retour prévu : ${_formatDate(_returnDate)}',
                             ),
-                            const SizedBox(height: 6),
-                            IgnorePointer(
-                              ignoring: _pendingLoanId != null,
-                              child: RadioGroup<String>(
-                                groupValue: _paymentMode,
-                                onChanged: (value) {
-                                  if (value == null) return;
-                                  setState(() => _paymentMode = value);
-                                },
-                                child: const Column(
-                                  children: [
-                                    RadioListTile<String>(
-                                      contentPadding: EdgeInsets.zero,
-                                      value: 'epc_qr_onsite',
-                                      title: Text('QR code sur place'),
-                                      subtitle: Text(
-                                        'Le responsable affiche le QR sur ce téléphone, puis confirme le paiement observé.',
-                                      ),
-                                    ),
-                                    RadioListTile<String>(
-                                      contentPadding: EdgeInsets.zero,
-                                      value: 'epc_qr_email',
-                                      title: Text('Envoyer le QR par e-mail'),
-                                      subtitle: Text(
-                                        'Le QR est envoyé uniquement à l’adresse e-mail enregistrée du membre. Le matériel reste réservé jusqu’à confirmation.',
-                                      ),
-                                    ),
-                                  ],
+                            style: OutlinedButton.styleFrom(
+                              backgroundColor:
+                                  Colors.white.withValues(alpha: 0.92),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          const Text(
+                            'Type et option demandés — sans réservation',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting)
+                            const Padding(
+                              padding: EdgeInsets.all(20),
+                              child: Center(child: CircularProgressIndicator()),
+                            )
+                          else if (grouped.isEmpty)
+                            const _InlineNotice(
+                              text: 'Aucun matériel disponible pour le moment.',
+                            )
+                          else
+                            ...grouped.entries.map(
+                              (entry) => _buildInventorySelector(
+                                  entry.key, entry.value),
+                            ),
+                          const SizedBox(height: 14),
+                          TextField(
+                            controller: _notesController,
+                            minLines: 2,
+                            maxLines: 4,
+                            decoration: InputDecoration(
+                              labelText: 'Note de remise',
+                              filled: true,
+                              fillColor: Colors.white.withValues(alpha: 0.92),
+                              border: const OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.92),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Caution fixe : 100,00 EUR',
+                                  style: TextStyle(
+                                    color: AppColors.donkerblauw,
+                                    fontWeight: FontWeight.w800,
+                                  ),
                                 ),
-                              ),
+                                const SizedBox(height: 6),
+                                IgnorePointer(
+                                  ignoring: _pendingLoanId != null,
+                                  child: RadioGroup<String>(
+                                    groupValue: _paymentMode,
+                                    onChanged: (value) {
+                                      if (value == null) return;
+                                      setState(() => _paymentMode = value);
+                                    },
+                                    child: const Column(
+                                      children: [
+                                        RadioListTile<String>(
+                                          contentPadding: EdgeInsets.zero,
+                                          value: 'epc_qr_onsite',
+                                          title: Text('QR code sur place'),
+                                          subtitle: Text(
+                                            'Le responsable affiche le QR sur ce téléphone, puis confirme le paiement observé.',
+                                          ),
+                                        ),
+                                        RadioListTile<String>(
+                                          contentPadding: EdgeInsets.zero,
+                                          value: 'epc_qr_email',
+                                          title:
+                                              Text('Envoyer le QR par e-mail'),
+                                          subtitle: Text(
+                                            'Le QR est envoyé uniquement à l’adresse e-mail enregistrée du membre. Aucun article réservé : attribution lors de la remise.',
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                          ),
+                        ],
+                      )),
                 ),
                 const SizedBox(height: 12),
                 Row(
@@ -1751,7 +1786,7 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                       flex: 2,
                       child: ElevatedButton.icon(
                         onPressed:
-                            canSubmit ? () => _submit(selectedItems) : null,
+                            canSubmit ? () => _submit(selectedLines) : null,
                         icon: _submitting
                             ? const SizedBox(
                                 width: 18,
@@ -1764,8 +1799,8 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                           _submitting
                               ? 'Création...'
                               : _paymentMode == 'epc_qr_email'
-                                  ? 'Réserver et envoyer le QR (${selectedItems.length})'
-                                  : 'Réserver et afficher le QR (${selectedItems.length})',
+                                  ? 'Demander et envoyer le QR (${selectedLines.length})'
+                                  : 'Demander et afficher le QR (${selectedLines.length})',
                         ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.middenblauw,
@@ -1846,33 +1881,16 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
   }
 
   Widget _buildInventorySelector(String type, List<MaterialLoanItem> items) {
-    final selectedId = _selectedInventoryByType[type];
     final uniqueItemsById = <String, MaterialLoanItem>{};
     for (final item in items) {
       uniqueItemsById[item.id] = item;
     }
     final uniqueItems = uniqueItemsById.values.toList();
-    MaterialLoanItem? selected;
-    for (final item in uniqueItems) {
-      if (item.id == selectedId) {
-        selected = item;
-        break;
-      }
-    }
     final variants =
         uniqueItems.map((item) => item.variantLabel).toSet().toList()..sort();
-    final selectedVariant = _selectedVariantByType[type] ??
-        selected?.variantLabel ??
-        variants.first;
-    final candidates = uniqueItems
-        .where((item) => item.variantLabel == selectedVariant)
-        .toList()
-      ..sort(
-        (left, right) => left.inventoryLabel.compareTo(right.inventoryLabel),
-      );
-    final isSelected = !_disabledInventoryTypes.contains(type);
-    final validSelectedId =
-        candidates.any((item) => item.id == selectedId) ? selectedId : null;
+    final selectedVariant = _selectedVariantByType[type] ?? variants.first;
+    final isSelected = _selectedVariantByType.containsKey(type) &&
+        !_disabledInventoryTypes.contains(type);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -1893,9 +1911,10 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
             onChanged: (value) => setState(() {
               if (value) {
                 _disabledInventoryTypes.remove(type);
+                _selectedVariantByType[type] = variants.first;
+                _selectedTypeIds[type] = uniqueItems.first.typeId;
               } else {
                 _disabledInventoryTypes.add(type);
-                _selectedInventoryByType.remove(type);
                 _selectedVariantByType.remove(type);
               }
             }),
@@ -1935,38 +1954,8 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                       if (variant == null) return;
                       setState(() {
                         _selectedVariantByType[type] = variant;
-                        _selectedInventoryByType[type] = null;
                       });
                     },
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: validSelectedId,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Inventaire',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    items: [
-                      const DropdownMenuItem<String>(
-                        value: null,
-                        child: Text('—'),
-                      ),
-                      ...candidates.map(
-                        (item) => DropdownMenuItem(
-                          value: item.id,
-                          child: Text(
-                            item.inventoryLabel,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                    ],
-                    onChanged: (itemId) =>
-                        setState(() => _selectedInventoryByType[type] = itemId),
                   ),
                 ),
               ],
@@ -1987,25 +1976,32 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
     if (picked != null) setState(() => _returnDate = picked);
   }
 
-  Future<void> _submit(List<MaterialLoanItem> items) async {
+  Future<void> _submit(List<MaterialLoanRequestedLine> lines) async {
     final member = _member;
     if (member == null) return;
+    final requestLines = List<MaterialLoanRequestedLine>.of(lines);
+    final paymentMode = _paymentMode;
+    final returnDate = _returnDate;
+    final notes = _notesController.text;
     setState(() => _submitting = true);
     try {
       final loanId = _pendingLoanId ??
-          await widget.loanService.createPendingQrLoan(
+          await widget.loanService.createPendingTypeLoan(
             clubId: widget.clubId,
             member: member,
-            items: items,
-            expectedReturnDate: _returnDate,
+            requestedLines: requestLines,
+            expectedReturnDate: returnDate,
             createdByUserId: widget.createdByUserId,
             createdByName: widget.createdByName,
-            paymentMode: _paymentMode,
-            notes: _notesController.text,
+            paymentMode: paymentMode,
+            notes: notes,
           );
-      _pendingLoanId ??= loanId;
       if (!mounted) return;
-      if (_paymentMode == 'epc_qr_email') {
+      setState(() {
+        _pendingLoanId ??= loanId;
+        _pendingLines ??= requestLines;
+      });
+      if (paymentMode == 'epc_qr_email') {
         await widget.loanService.sendPendingLoanPaymentQrEmail(
           clubId: widget.clubId,
           loanId: loanId,
@@ -2015,7 +2011,7 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'QR envoyé à l’adresse e-mail du membre. Le matériel reste réservé jusqu’au paiement.',
+              'QR envoyé au membre. Aucun matériel réservé : attribution lors de la remise.',
             ),
             backgroundColor: AppColors.success,
           ),
@@ -2040,11 +2036,22 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
         ),
       );
       if (confirmed != true) return;
+      if (!mounted) return;
+      final selectedIds = await showDialog<List<String>>(
+          context: context,
+          builder: (_) => MaterialHandoverDialog(
+              lines: _pendingLines!,
+              availableItems:
+                  widget.service.watchBorrowableItems(widget.clubId),
+              cautionAmount: qr.amount));
+      if (selectedIds == null) return;
       await widget.loanService.confirmPendingPaymentAndHandover(
         clubId: widget.clubId,
         loanId: loanId,
         confirmedByUserId: widget.createdByUserId,
         confirmedByName: widget.createdByName,
+        selectedItemIds: selectedIds,
+        paymentConfirmed: true,
       );
       if (!mounted) return;
       Navigator.of(context).pop();
