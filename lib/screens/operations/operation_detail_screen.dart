@@ -15,6 +15,7 @@ import '../../utils/date_formatter.dart';
 import '../../utils/currency_formatter.dart';
 import '../../utils/tariff_utils.dart';
 import '../../utils/permission_helper.dart';
+import '../../utils/payment_confirmation.dart';
 import '../../services/profile_service.dart';
 import '../../services/lifras_service.dart';
 import '../../services/dive_location_service.dart';
@@ -1366,6 +1367,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     required ParticipantOperation participant,
     required dynamic operation,
   }) async {
+    if (!_canConfirmPayment) return;
     // First, load bank settings from Firestore
     try {
       final bankDoc = await FirebaseFirestore.instance
@@ -1477,54 +1479,59 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         bic: bic,
         installmentLabel: openInstallment?.label,
         onMarkAsPaid: () async {
-          final inst = openInstallment;
-          if (hasPlan && inst != null) {
-            // Installment-bewust: ferme UNIQUEMENT la tranche du QR, pour le
-            // membre (si sa part était ouverte) et ses invités (parts
-            // ouvertes). `paye` global ne bascule que si tout est clos.
-            if (inst.amount > 0) {
-              await _operationService.markInstallmentAsPaid(
-                clubId: widget.clubId,
-                operationId: widget.operationId,
-                participantId: participant.id,
-                installmentId: inst.id,
-              );
-            }
-            for (final g in linkedGuests) {
-              final gp = g.installmentPayments[inst.id];
-              if (gp != null &&
-                  gp.amountDue > 0 &&
-                  gp.status != 'paid' &&
-                  gp.status != 'waived') {
-                await _operationService.markInstallmentAsPaid(
-                  clubId: widget.clubId,
-                  operationId: widget.operationId,
-                  participantId: g.id,
-                  installmentId: inst.id,
-                );
+          await confirmPaymentsAndRefresh(
+            confirm: () async {
+              final inst = openInstallment;
+              if (hasPlan && inst != null) {
+                // Installment-bewust: ferme UNIQUEMENT la tranche du QR, pour le
+                // membre (si sa part était ouverte) et ses invités (parts
+                // ouvertes). `paye` global ne bascule que si tout est clos.
+                if (inst.amount > 0) {
+                  await _operationService.markInstallmentAsPaid(
+                    clubId: widget.clubId,
+                    operationId: widget.operationId,
+                    participantId: participant.id,
+                    installmentId: inst.id,
+                  );
+                }
+                for (final g in linkedGuests) {
+                  final gp = g.installmentPayments[inst.id];
+                  if (gp != null &&
+                      gp.amountDue > 0 &&
+                      gp.status != 'paid' &&
+                      gp.status != 'waived') {
+                    await _operationService.markInstallmentAsPaid(
+                      clubId: widget.clubId,
+                      operationId: widget.operationId,
+                      participantId: g.id,
+                      installmentId: inst.id,
+                    );
+                  }
+                }
+              } else {
+                // Sans plan: comportement existant, mais uniquement pour les
+                // personnes encore non payées.
+                if (!participant.paye) {
+                  await _operationService.markParticipantAsPaid(
+                    clubId: widget.clubId,
+                    operationId: widget.operationId,
+                    participantId: participant.id,
+                  );
+                }
+                for (final g in linkedGuests.where((g) => !g.paye)) {
+                  await _operationService.markParticipantAsPaid(
+                    clubId: widget.clubId,
+                    operationId: widget.operationId,
+                    participantId: g.id,
+                  );
+                }
               }
-            }
-          } else {
-            // Sans plan: comportement existant, mais uniquement pour les
-            // personnes encore non payées.
-            if (!participant.paye) {
-              await _operationService.markParticipantAsPaid(
-                clubId: widget.clubId,
-                operationId: widget.operationId,
-                participantId: participant.id,
-              );
-            }
-            for (final g in linkedGuests.where((g) => !g.paye)) {
-              await _operationService.markParticipantAsPaid(
-                clubId: widget.clubId,
-                operationId: widget.operationId,
-                participantId: g.id,
-              );
-            }
-          }
-          // Refresh participant list
-          await operationProvider.reloadParticipants(
-              widget.clubId, widget.operationId);
+            },
+            refresh: () => operationProvider.reloadParticipants(
+              widget.clubId,
+              widget.operationId,
+            ),
+          );
         },
       );
 
@@ -1858,6 +1865,14 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           ),
         ],
       ),
+    );
+  }
+
+  bool get _canConfirmPayment {
+    final member = context.read<MemberProvider>();
+    return PermissionHelper.canConfirmEventPayment(
+      appRole: member.appRole,
+      clubStatuten: member.clubStatuten,
     );
   }
 
@@ -3148,7 +3163,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                         final hasParent = participant.isGuest &&
                             participant.parentInscriptionId != null &&
                             participant.parentInscriptionId!.isNotEmpty;
-                        final canShowPaymentCard = _canAddGuest &&
+                        final canShowPaymentCard = _canConfirmPayment &&
                             !participant.paye &&
                             participant.totalPrix > 0 &&
                             !hasParent;

@@ -386,14 +386,14 @@ Future<bool?> showParticipantPaymentCard({
   String instructionText = 'Le membre scanne ce QR code avec son app bancaire',
   String? installmentLabel,
 }) {
+  // Keep the lock across StatefulBuilder rebuilds (and rapid repeated taps).
+  bool isProcessing = false;
   return showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     builder: (context) => StatefulBuilder(
       builder: (context, setState) {
-        bool isProcessing = false;
-
         return ParticipantPaymentCard(
           participantFirstName: participantFirstName,
           participantLastName: participantLastName,
@@ -411,6 +411,7 @@ Future<bool?> showParticipantPaymentCard({
           instructionText: instructionText,
           installmentLabel: installmentLabel,
           onMarkAsPaid: () async {
+            if (isProcessing) return;
             setState(() => isProcessing = true);
             try {
               await onMarkAsPaid();
@@ -418,8 +419,8 @@ Future<bool?> showParticipantPaymentCard({
                 Navigator.of(context).pop(true);
               }
             } catch (e) {
-              setState(() => isProcessing = false);
               if (context.mounted) {
+                setState(() => isProcessing = false);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text('Erreur: ${e.toString()}'),

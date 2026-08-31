@@ -1,5 +1,14 @@
 /// Helper class for permission checking based on club statutes
 class PermissionHelper {
+  /// Exact role gate shared with recordOnSitePayment/recordInstallmentPayment.
+  /// Attendance, guest creation and event ownership do not grant this right.
+  static bool canConfirmEventPayment({
+    required String? appRole,
+    required List<String> clubStatuten,
+  }) =>
+      const ['admin', 'superadmin'].contains(appRole) ||
+      clubStatuten.any(const ['O', 'organisateur', 'Organisateur'].contains);
+
   /// LIFRAS Moniteur niveaux — mogen LIFRAS-oefeningen / examens valideren.
   /// Bewust ZONDER 'AM' (Assistant Moniteur): per LIFRAS valideert AM enkel
   /// onder supervisie van een MC+; tot we die supervisor-flow modelleren

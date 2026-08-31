@@ -819,154 +819,78 @@ class OperationService {
     }
   }
 
-  /// Mark a participant's payment as received (by organizer on site)
-  /// Sets paye=true with timestamp, updates payment_status for data consistency
+  /// Confirme un paiement sur place via la commande serveur autorisée.
+  /// Le serveur possède les écritures comptables et l'idempotence.
   Future<void> markParticipantAsPaid({
     required String clubId,
     required String operationId,
     required String participantId,
   }) async {
-    try {
-      await _firestore
-          .collection('clubs/$clubId/operations/$operationId/inscriptions')
-          .doc(participantId)
-          .update({
-        'paye': true,
-        'paye_at': FieldValue.serverTimestamp(),
-        'paye_method': 'epc_qr_onsite', // Payment collected on site via EPC QR
-        'payment_status':
-            'paid', // Sync payment_status with paye for data consistency
-        'date_paiement': FieldValue.serverTimestamp(),
-        'updated_at': FieldValue.serverTimestamp(),
-      });
-
-      debugPrint('✅ Participant $participantId marked as paid');
-    } catch (e) {
-      debugPrint('❌ Error marking participant as paid: $e');
-      rethrow;
-    }
+    await _functions.httpsCallable('recordOnSitePayment').call({
+      'clubId': clubId,
+      'operationId': operationId,
+      'participantId': participantId,
+    });
   }
 
-  /// Marque UNE tranche comme payée (encaissement sur place par
-  /// l'organisateur). Installment-bewust alternatief voor
-  /// [markParticipantAsPaid]: zet `paye` pas op true als ALLE tranches
-  /// gesloten zijn (paid/waived), zodat een QR voor Acompte 2 nooit het
-  /// Solde mee afsluit (cf. over-afsluit-bug 2026-06-24).
+  /// Confirme uniquement la tranche demandée; le serveur contrôle les soldes.
   Future<void> markInstallmentAsPaid({
     required String clubId,
     required String operationId,
     required String participantId,
     required String installmentId,
   }) async {
-    final ref = _firestore
-        .collection('clubs/$clubId/operations/$operationId/inscriptions')
-        .doc(participantId);
-
-    await _firestore.runTransaction((tx) async {
-      final snap = await tx.get(ref);
-      if (!snap.exists) {
-        throw Exception('Inscription introuvable');
-      }
-      final data = snap.data() as Map<String, dynamic>;
-      final payments = Map<String, dynamic>.from(
-          (data['installment_payments'] as Map<String, dynamic>?) ?? {});
-      final cur =
-          Map<String, dynamic>.from(payments[installmentId] as Map? ?? {});
-      if (cur['status'] == 'paid' || cur['status'] == 'waived') {
-        return; // déjà réglée — idempotent
-      }
-
-      cur['status'] = 'paid';
-      cur['amount_paid'] = (cur['amount_due'] as num?) ?? 0;
-      cur['paid_at'] = Timestamp.now();
-      payments[installmentId] = cur;
-
-      final allClosed = payments.isNotEmpty &&
-          payments.values.every((p) =>
-              p is Map && (p['status'] == 'paid' || p['status'] == 'waived'));
-
-      tx.update(ref, {
-        'installment_payments.$installmentId.status': 'paid',
-        'installment_payments.$installmentId.amount_paid':
-            (cur['amount_due'] as num?) ?? 0,
-        'installment_payments.$installmentId.paid_at':
-            FieldValue.serverTimestamp(),
-        if (allClosed) ...{
-          'paye': true,
-          'paye_at': FieldValue.serverTimestamp(),
-          'paye_method': 'epc_qr_onsite',
-          'payment_status': 'paid',
-          'date_paiement': FieldValue.serverTimestamp(),
-        },
-        'updated_at': FieldValue.serverTimestamp(),
-      });
+    await _functions.httpsCallable('recordInstallmentPayment').call({
+      'clubId': clubId,
+      'operationId': operationId,
+      'participantId': participantId,
+      'installmentId': installmentId,
     });
-
-    debugPrint(
-        '✅ Tranche $installmentId payée pour $participantId (installment-aware)');
   }
 
-  /// Update payment status for a participant
-  /// Used to track payment flow: qr_email_sent, qr_on_site, paid, etc.
+  /// Enregistre une communication QR, jamais un règlement comptable.
+  /// La vérification locale informe rapidement l'utilisateur; le serveur doit
+  /// revérifier les conditions et préserver un paiement déjà réglé.
   Future<void> updatePaymentStatus({
     required String clubId,
     required String operationId,
     required String participantId,
     required String status,
   }) async {
-    try {
-      final operationRef =
-          _firestore.doc('clubs/$clubId/operations/$operationId');
-      final participantRef = operationRef.collection('inscriptions').doc(
-            participantId,
-          );
-
-      await _firestore.runTransaction((transaction) async {
-        final operationSnapshot = await transaction.get(operationRef);
-        if (!operationSnapshot.exists) {
-          throw StateError('Activité introuvable.');
-        }
-
-        final operationData = operationSnapshot.data()!;
-        final requiredMethod = switch (status) {
-          'qr_on_site' => 'on_site',
-          'qr_email_sent' => 'qr_email',
-          _ => null,
-        };
-
-        if (requiredMethod != null) {
-          final paymentRequired = operationData.containsKey('payment_required')
-              ? operationData['payment_required'] == true
-              : ((operationData['prix_membre'] as num?) ?? 0) > 0 ||
-                  ((operationData['event_tariffs'] as List?) ?? const [])
-                      .whereType<Map>()
-                      .any(
-                        (tariff) => ((tariff['price'] as num?) ?? 0) > 0,
-                      );
-          final allowedMethods =
-              (operationData['allowed_payment_methods'] as List?)
-                      ?.whereType<String>()
-                      .toSet() ??
-                  const {'qr_immediate', 'qr_email', 'on_site'};
-
-          if (!paymentRequired || !allowedMethods.contains(requiredMethod)) {
-            throw const PaymentMethodNotAllowedException();
-          }
-        }
-
-        transaction.update(participantRef, {
-          'payment_status': status,
-          'payment_status_at': FieldValue.serverTimestamp(),
-          'updated_at': FieldValue.serverTimestamp(),
-        });
-      });
-
-      debugPrint(
-          '✅ Payment status updated to $status for participant $participantId');
-    } catch (e) {
-      debugPrint('❌ Error updating payment status: $e');
-      rethrow;
+    final requiredMethod = switch (status) {
+      'qr_on_site' => 'on_site',
+      'qr_email_sent' => 'qr_email',
+      _ => throw ArgumentError.value(
+          status,
+          'status',
+          'Communication QR invalide',
+        ),
+    };
+    final operationSnapshot =
+        await _firestore.doc('clubs/$clubId/operations/$operationId').get();
+    if (!operationSnapshot.exists) {
+      throw StateError('Activité introuvable.');
     }
+    final operationData = operationSnapshot.data()!;
+    final paymentRequired = operationData.containsKey('payment_required')
+        ? operationData['payment_required'] == true
+        : ((operationData['prix_membre'] as num?) ?? 0) > 0 ||
+            ((operationData['event_tariffs'] as List?) ?? const [])
+                .whereType<Map>()
+                .any((tariff) => ((tariff['price'] as num?) ?? 0) > 0);
+    final allowedMethods = (operationData['allowed_payment_methods'] as List?)
+            ?.whereType<String>()
+            .toSet() ??
+        const {'qr_immediate', 'qr_email', 'on_site'};
+    if (!paymentRequired || !allowedMethods.contains(requiredMethod)) {
+      throw const PaymentMethodNotAllowedException();
+    }
+    await _functions.httpsCallable('recordPaymentCommunication').call({
+      'clubId': clubId,
+      'operationId': operationId,
+      'participantId': participantId,
+      'status': status,
+    });
   }
 
   /// Créer une inscription pour un invité (non-membre)
