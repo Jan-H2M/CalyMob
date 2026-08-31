@@ -6,6 +6,16 @@ de app niet en wijzigt de Firestore-appversie niet.
 
 ## Volgende release
 
+### Nog niet uitgebracht — lokale branch COM-065 (2026-08-31)
+
+- Automatisch voorgestelde duiknummers krijgen een expliciete voorlopige aanduiding,
+  ook in het dictatieoverzicht; handmatige nummers behouden hun bestaande gedrag.
+- Branch `codex/bug-COM-065-provisional-number`; zie
+  [COM-065 dossier](bug-cycle/COM-065-2026-08-31.md).
+- Zes gerichte tests geslaagd; gerichte analyzer zonder issues. Visuele/functional
+  review op toestel en volledige batchvalidatie blijven vereist vóór store-release.
+- Geen persoonlijke tellers gerepareerd, geen backend/data aangepast, niet gemerged.
+
 Basisversie: `1.17.0+194`
 
 | Referentie | Wijziging | Platform | Validatie | Risico | Status |

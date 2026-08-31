@@ -2067,7 +2067,10 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
                 ? null
                 : _formatTime(derivedExitTime);
     final diveNumberValue = _diveNumber.text.trim().isNotEmpty
-        ? 'N°${_diveNumber.text.trim()}'
+        ? formatDiveNumberPreview(
+            _diveNumber.text.trim(),
+            isAutomaticSuggestion: _diveNumberIsAutomaticSuggestion,
+          )
         : parsed.diveNumber == null
             ? null
             : 'N°${parsed.diveNumber}';
@@ -3204,6 +3207,14 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
               ),
             ],
           ),
+          if (_diveNumberIsAutomaticSuggestion)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(
+                automaticDiveNumberNotice,
+                style: TextStyle(fontSize: 12, color: AppColors.donkerblauw),
+              ),
+            ),
           const Divider(height: 16),
           Row(
             children: [
@@ -3260,7 +3271,9 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'N° PLONGÉE',
+                  _diveNumberIsAutomaticSuggestion
+                      ? 'N° PROVISOIRE'
+                      : 'N° PLONGÉE',
                   style: TextStyle(
                     fontSize: 9.5,
                     fontWeight: FontWeight.bold,
@@ -3272,8 +3285,10 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
                 TextField(
                   controller: _diveNumber,
                   onChanged: (_) {
-                    _diveNumberIsAutomaticSuggestion = false;
-                    _manualFieldOverrides.add('dive_number');
+                    setState(() {
+                      _diveNumberIsAutomaticSuggestion = false;
+                      _manualFieldOverrides.add('dive_number');
+                    });
                   },
                   keyboardType: TextInputType.number,
                   // WP-19 finition — n° verrouillé par la source.

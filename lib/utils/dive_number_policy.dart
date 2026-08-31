@@ -1,3 +1,15 @@
+/// The client can estimate a number, but only the server allocates it.
+const automaticDiveNumberNotice =
+    'Numéro proposé à titre indicatif. Le numéro définitif est attribué après '
+    'l’enregistrement et peut être différent. Pour une plongée historique, '
+    'vous pouvez saisir un numéro non utilisé.';
+
+String formatDiveNumberPreview(
+  String number, {
+  required bool isAutomaticSuggestion,
+}) =>
+    'N°$number${isAutomaticSuggestion ? ' (provisoire)' : ''}';
+
 class DiveNumberResolution {
   final int? value;
   final bool conflict;
