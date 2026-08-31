@@ -6,6 +6,14 @@ de app niet en wijzigt de Firestore-appversie niet.
 
 ## Volgende release
 
+### Nog niet geïntegreerd — COM-068
+
+- `codex/bug-COM-068-no-reservation`: actieve mobiele leenaanvraag per type/optie,
+  geen voorraadreservatie; concrete stukken pas kiezen bij fysieke afgifte na
+  bevestiging van de vaste waarborg. 17 gerichte tests groen; echte gelijktijdige
+  afgifte nog met Firestore-emulator te verifiëren. Geen release/version bump.
+  Dossier: `docs/bug-cycle/COM-068-no-reservation.md`. Visuele controle met mobiele batch.
+
 Basisversie: `1.17.0+194`
 
 | Referentie | Wijziging | Platform | Validatie | Risico | Status |

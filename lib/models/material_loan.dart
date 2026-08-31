@@ -273,6 +273,42 @@ class MaterialLoanRequestLine {
   }
 }
 
+/// A request describes a type and option, never a physical inventory item.
+class MaterialLoanRequestedLine {
+  final String? typeId;
+  final String typeName;
+  final String variant;
+  final int quantity;
+
+  const MaterialLoanRequestedLine(
+      {this.typeId,
+      required this.typeName,
+      required this.variant,
+      this.quantity = 1});
+
+  factory MaterialLoanRequestedLine.fromMap(Map<String, dynamic> data) =>
+      MaterialLoanRequestedLine(
+          typeId: data['type_id'] as String?,
+          typeName: data['type_name']?.toString() ?? '',
+          variant: data['variant']?.toString() ?? 'Standard',
+          quantity: (data['quantity'] as num?)?.toInt() ?? 1);
+
+  Map<String, dynamic> toMap() => {
+        'type_id': typeId,
+        'type_name': typeName,
+        'variant': variant,
+        'quantity': quantity
+      };
+
+  bool matches(MaterialLoanItem item) =>
+      (typeId != null && typeId!.isNotEmpty
+          ? item.typeId == typeId
+          : item.typeLabel == typeName) &&
+      item.variantLabel == variant;
+
+  String get label => '$typeName · $variant × $quantity';
+}
+
 class MaterialLoan {
   final String id;
   final String loanNumber;
@@ -287,6 +323,7 @@ class MaterialLoan {
   final String status;
   final String? refundDemandId;
   final List<MaterialLoanItem> items;
+  final List<MaterialLoanRequestedLine> requestedLines;
 
   const MaterialLoan({
     required this.id,
@@ -302,6 +339,7 @@ class MaterialLoan {
     required this.status,
     this.refundDemandId,
     required this.items,
+    this.requestedLines = const [],
   });
 
   bool get hasRefundDemand =>
@@ -347,6 +385,11 @@ class MaterialLoan {
               data['caution_refund_demand_id'])
           ?.toString(),
       items: items,
+      requestedLines: (data['requested_lines'] as List<dynamic>? ?? [])
+          .whereType<Map>()
+          .map((line) => MaterialLoanRequestedLine.fromMap(
+              Map<String, dynamic>.from(line)))
+          .toList(),
     );
   }
 }

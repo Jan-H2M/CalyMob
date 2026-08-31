@@ -159,6 +159,7 @@ void main() {
       loanId: loanId,
       confirmedByUserId: 'encadrant-1',
       confirmedByName: 'Encadrant',
+      paymentConfirmed: true,
     );
 
     loan = await loan.reference.get();

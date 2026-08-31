@@ -112,6 +112,21 @@ class MaterialReturnService {
         });
   }
 
+  /// Catalog for non-reserving requests, including items currently on loan.
+  Stream<List<MaterialLoanItem>> watchRequestCatalog(String clubId) =>
+      _firestore
+          .collection('clubs')
+          .doc(clubId)
+          .collection('inventory_items')
+          .snapshots()
+          .asyncMap((snapshot) async {
+        final names = await _loadItemTypeNames(clubId);
+        return snapshot.docs.map((doc) {
+          final item = MaterialLoanItem.fromFirestore(doc);
+          return item.copyWithTypeName(names[item.typeId]);
+        }).toList();
+      });
+
   Stream<List<MaterialLoanItem>> watchBorrowableItems(String clubId) {
     final inventoryStream = _firestore
         .collection('clubs')
@@ -124,10 +139,9 @@ class MaterialReturnService {
         .doc(clubId)
         .collection('inventory_loans')
         .where(
-          'statut',
-          whereIn: ['actif', 'en_retard', 'en_cours', 'attente_caution'],
-        )
-        .snapshots();
+      'statut',
+      whereIn: ['actif', 'en_retard', 'en_cours', 'attente_caution'],
+    ).snapshots();
 
     return Rx.combineLatest2(
       inventoryStream,
