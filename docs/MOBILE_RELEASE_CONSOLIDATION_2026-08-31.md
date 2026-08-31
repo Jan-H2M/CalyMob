@@ -115,3 +115,31 @@ The fixture binds to 127.0.0.1:8087 and grants access only to the
 emulator and browser were shut down by emulators:exec after successful completion.
 The FakeFirestore concurrency test remains skipped because that package does
 not implement contention; the separate real emulator test now supplies the evidence.
+
+## Completed safe remote cleanup (2026-08-31)
+
+After the consolidation reached `origin/main` at
+`6228d505e34a5975eeba773b3c9c184588377fd4`, these eight remote branch refs were
+deleted. Each recorded tip was verified as an ancestor of that main commit,
+had no open PR, and was not an active local worktree branch. Deletion was atomic
+and guarded by an expected-SHA lease for every ref; any concurrent branch update
+would have prevented the operation. No commits or worktrees were deleted.
+
+| Removed remote branch | Preserved tip SHA |
+|---|---|
+| codex/bug-com-045-event-waitlist | 0ac6d37d66e996f4663a0975424d9a10b9e3cb26 |
+| codex/bug-com-059-material-loan | 393a2752072dab2296ef2eb2894f160da9b9c592 |
+| codex/bug-com-059-material-loan-incidents | 299c5bfd9719cff7025dfcf40eb37e247871f4d5 |
+| codex/bug-zeeland-payment-ledger | b39f79e3409f7862b4218b242c6797d886378c51 |
+| codex/calymob-feedback-fixes | ffd257fc8d4d7dcd779646aeb16ba38151649a5d |
+| codex/emergency-contacts-whoiswho | 1b52293b682380dd42ddebb540d72e46bf08133e |
+| codex/release-calymob-1.19.0 | 329831f78b6f4f9a847c2bf9e825679a6f9119bb |
+| feat/com-062-inscription-log | 88f3c4f938c9575055f1d47ad54398e43a0eb3ea |
+
+Recovery, if Jan requests it: recreate the chosen exact branch at its recorded
+SHA (`git branch <name> <sha>`), then push that exact ref. Every SHA remains
+reachable through main, so this is ref cleanup, not removal of code/history.
+
+All patch-only and unique remote branches remain preserved. Open PRs #7, #14,
+and #34 and their head branches were left unchanged. The three original local
+COM-065/068/070 worktrees and the consolidation worktree also remain intact.
