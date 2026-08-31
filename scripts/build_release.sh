@@ -1,13 +1,16 @@
 #!/bin/bash
 # Build release APK with automatic version naming
 # Usage: ./build_release.sh [--bump patch|minor|major]
+set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 # Optionally bump version first
-if [ "$1" == "--bump" ]; then
+if [ "${1:-}" == "--bump" ]; then
   ./scripts/bump_version.sh "${2:-patch}"
 fi
+
+bash scripts/verify_payment_release.sh
 
 # Read current version and build number
 FULL_VERSION=$(grep "^version:" pubspec.yaml | sed 's/version: //')

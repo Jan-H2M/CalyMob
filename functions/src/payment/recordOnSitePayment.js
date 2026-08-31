@@ -1,5 +1,6 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
+const { assertPaymentMethod, assertActive, positiveAmount } = require('./paymentConfirmationPolicy');
 
 function isAdmin(member) {
   return ['admin', 'superadmin'].includes(member?.app_role);
@@ -36,22 +37,25 @@ exports.recordOnSitePayment = onCall(
     const inscriptionRef = operationSnap.ref.collection('inscriptions').doc(participantId);
     const now = admin.firestore.Timestamp.now();
     await db.runTransaction(async (transaction) => {
+      const liveCaller = await transaction.get(clubRef.collection('members').doc(request.auth.uid));
+      const liveOperation = await transaction.get(operationSnap.ref);
+      if (!liveCaller.exists || (!isAdmin(liveCaller.data()) && !isOrganizer(liveCaller.data()))) {
+        throw new HttpsError('permission-denied', 'Autorisation de paiement retirée');
+      }
+      if (!liveOperation.exists) throw new HttpsError('not-found', 'Activité introuvable');
+      assertPaymentMethod(liveOperation.data(), 'on_site');
       const inscriptionSnap = await transaction.get(inscriptionRef);
       if (!inscriptionSnap.exists) throw new HttpsError('not-found', 'Inscription introuvable');
       const inscription = inscriptionSnap.data();
-      if (inscription.registration_status === 'canceled') {
-        throw new HttpsError('failed-precondition', 'Une inscription annulée ne peut pas être payée');
-      }
-      if (inscription.paye === true) return;
+      assertActive(inscription);
+      if (inscription.paye === true || ['paid', 'waived'].includes(inscription.payment_status)
+        || inscription.transaction_id || inscription.transaction_matched === true) return;
       const installmentPayments = inscription.installment_payments || {};
-      const openDue = Object.keys(installmentPayments).length > 0
-        ? Object.values(installmentPayments).reduce((sum, payment) => (
-          payment?.status === 'paid' || payment?.status === 'waived'
-            ? sum
-            : sum + Number(payment?.amount_due || 0)
-        ), 0)
-        : Number(inscription.prix || 0) + Number(inscription.supplement_total || 0);
-      if (openDue <= 0) throw new HttpsError('failed-precondition', 'Aucun openstaand bedrag gevonden');
+      if (Object.keys(installmentPayments).length > 0) {
+        throw new HttpsError('failed-precondition', 'Veuillez confirmer chaque tranche séparément');
+      }
+      const openDue = Number(inscription.prix || 0) + Number(inscription.supplement_total || 0);
+      positiveAmount(openDue);
       transaction.update(inscriptionRef, {
         paye: true,
         payment_status: 'paid',
@@ -65,6 +69,6 @@ exports.recordOnSitePayment = onCall(
       });
     });
 
-    return { success: true, participantId, settlementState: 'paid_pending_bank' };
+    return { success: true, participantId };
   },
 );

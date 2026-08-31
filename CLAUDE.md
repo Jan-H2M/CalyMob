@@ -12,7 +12,10 @@ CalyMob is a Flutter mobile application (iOS/Android) for the Calypso diving clu
 
 **When the user says**: "maak een nieuwe build", "nieuwe versie", "build de app", "release maken"
 
-**YOU (Claude) MUST run**:
+First obtain Jan's approval for version/platforms and exact store notes. Run the
+payment release test gate before any build; a failing test blocks release. Codex
+is workflow lead; independent Codex/Claude review must identify its exact commit.
+After approval, for example:
 ```bash
 cd CalyMob
 ./scripts/build_release.sh --bump patch
@@ -20,10 +23,11 @@ cd CalyMob
 
 This automatically:
 1. ✅ Bumps version in pubspec.yaml (1.0.22+83 → 1.0.23+84)
-2. ✅ Updates Firestore settings/app_version (1.0.23) via update_firestore_version.cjs
-3. ✅ Builds APK with version in filename: calymob-1.0.23-build84.apk
+2. Runs static analysis, Flutter tests and Cloud Function tests (fail-closed).
+3. Builds APK with version in filename: calymob-1.0.23-build84.apk
 
-**User doesn't need to remember "bump"** - you handle it automatically!
+Never update Firestore `settings/app_version` automatically. Jan publishes it
+manually after both stores are available. Building is not uploading/submitting.
 
 ### Manual Commands (for reference)
 
@@ -45,13 +49,9 @@ flutter analyze                      # Run static analysis
 ./scripts/bump_version.sh patch      # Alleen versie verhogen zonder te bouwen
 
 # Versie synchronisatie
-# bump_version.sh update automatisch de versie in:
+# bump_version.sh update alleen de versie in:
 # 1. pubspec.yaml (bijv. 1.0.22+83 → 1.0.23+84)
-# 2. Firestore settings/app_version (1.0.23) - zichtbaar in CalyCompta maintenance page
-# Gebruikt update_firestore_version.cjs die Firebase credentials vindt via:
-# - Hardcoded path (Jan's machine): /Users/jan/Documents/CALYPSO/calycompta-firebase-adminsdk-*.json
-# - GOOGLE_APPLICATION_CREDENTIALS environment variable
-# - Application Default Credentials (gcloud auth application-default login)
+# Firestore settings/app_version blijft ongewijzigd; alleen Jan publiceert deze.
 
 # iOS specific (from project root)
 cd ios && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install   # Install CocoaPods

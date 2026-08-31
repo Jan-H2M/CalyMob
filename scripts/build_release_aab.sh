@@ -1,13 +1,16 @@
 #!/bin/bash
 # Build AAB voor Play Store upload
 # Usage: ./build_release_aab.sh [--bump patch|minor|major]
+set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 # Optioneel versie bumpen
-if [ "$1" == "--bump" ]; then
+if [ "${1:-}" == "--bump" ]; then
   ./scripts/bump_version.sh "${2:-patch}"
 fi
+
+bash scripts/verify_payment_release.sh
 
 # Versie uitlezen
 FULL_VERSION=$(grep "^version:" pubspec.yaml | sed 's/version: //')

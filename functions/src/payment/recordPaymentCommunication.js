@@ -1,5 +1,6 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
+const { assertPaymentMethod, assertActive } = require('./paymentConfirmationPolicy');
 
 function isAdmin(member) {
   return ['admin', 'superadmin'].includes(member?.app_role);
@@ -41,9 +42,18 @@ exports.recordPaymentCommunication = onCall(
       throw new HttpsError('permission-denied', 'Vous ne pouvez pas modifier ce statut');
     }
     await db.runTransaction(async (transaction) => {
+      const liveCaller = await transaction.get(clubRef.collection('members').doc(request.auth.uid));
+      const liveOperation = await transaction.get(operationSnap.ref);
       const snap = await transaction.get(inscriptionRef);
       if (!snap.exists) throw new HttpsError('not-found', 'Inscription introuvable');
       const current = snap.data();
+      if (!liveCaller.exists || (!isAdmin(liveCaller.data()) && !isOrganizer(liveCaller.data())
+        && current.membre_id !== request.auth.uid)) {
+        throw new HttpsError('permission-denied', 'Vous ne pouvez pas modifier ce statut');
+      }
+      if (!liveOperation.exists) throw new HttpsError('not-found', 'Activité introuvable');
+      assertPaymentMethod(liveOperation.data(), status === 'qr_email_sent' ? 'qr_email' : 'on_site');
+      assertActive(current);
       const update = {
         payment_communication_status: status,
         payment_communication_status_at: admin.firestore.FieldValue.serverTimestamp(),
@@ -51,7 +61,8 @@ exports.recordPaymentCommunication = onCall(
       };
       // Keep the legacy UI field in sync only while the inscription is unpaid.
       // A paid/settled record must remain paid forever.
-      if (current.paye !== true && current.payment_status !== 'paid') {
+      if (current.paye !== true && !['paid', 'waived'].includes(current.payment_status)
+        && !current.transaction_id && current.transaction_matched !== true) {
         update.payment_status = status;
         update.payment_status_at = admin.firestore.FieldValue.serverTimestamp();
       }
