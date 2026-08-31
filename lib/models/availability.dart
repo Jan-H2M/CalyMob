@@ -4,7 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// Accueil, Encadrants en Gonflage kunnen aangeven wanneer ze beschikbaar zijn
 ///
 /// Pour encadrants: [timeSlots] contient '1ere_heure', '2eme_heure', ou les deux
-/// Pour gonflage: [timeSlots] contient '19h45', '20h15', '21h15' (un ou plusieurs)
+/// Pour gonflage: [timeSlots] contient '19h45', '20h15', '22h30' (un ou plusieurs).
+/// Les documents historiques peuvent encore contenir d'anciens créneaux.
 /// Pour accueil: [timeSlots] contient '20h15', '21h15' (un ou plusieurs)
 ///
 /// Rétrocompatibilité: si timeSlots est absent/null, available=true
@@ -54,10 +55,8 @@ class Availability {
       role: data['role'] ?? 'encadrant',
       available: data['available'] ?? false,
       timeSlots: timeSlots,
-      createdAt:
-          (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      updatedAt:
-          (data['updated_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      updatedAt: (data['updated_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
 

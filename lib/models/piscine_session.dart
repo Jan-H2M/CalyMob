@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../config/piscine_slots.dart';
 
 /// Assignment d'un membre à une fonction dans une séance
 class SessionAssignment {
@@ -56,7 +57,8 @@ class LevelCourse {
     required this.encadrants,
   });
 
-  factory LevelCourse.fromMap(Map<String, dynamic> map, String heure, int index) {
+  factory LevelCourse.fromMap(
+      Map<String, dynamic> map, String heure, int index) {
     return LevelCourse(
       id: map['id'] ?? 'legacy_${heure}_$index',
       heure: heure,
@@ -115,8 +117,8 @@ class LevelAssignment {
   });
 
   factory LevelAssignment.fromMap(Map<String, dynamic> map) {
-    final rawCoursesByHour =
-        (map['courses_by_hour'] ?? map['coursesByHour']) as Map<String, dynamic>?;
+    final rawCoursesByHour = (map['courses_by_hour'] ?? map['coursesByHour'])
+        as Map<String, dynamic>?;
     final coursesByHour = <String, List<LevelCourse>>{};
 
     if (rawCoursesByHour != null) {
@@ -128,7 +130,8 @@ class LevelAssignment {
               .toList()
               .asMap()
               .entries
-              .map((entry) => LevelCourse.fromMap(entry.value, heure, entry.key))
+              .map(
+                  (entry) => LevelCourse.fromMap(entry.value, heure, entry.key))
               .toList()
             ..sort((a, b) => a.order.compareTo(b.order));
         }
@@ -145,16 +148,19 @@ class LevelAssignment {
         .toList();
     final firstTheme1 = coursesByHour['1ere_heure']
         ?.cast<LevelCourse?>()
-        .firstWhere((course) => course?.theme?.isNotEmpty == true, orElse: () => null)
+        .firstWhere((course) => course?.theme?.isNotEmpty == true,
+            orElse: () => null)
         ?.theme;
     final firstTheme2 = coursesByHour['2eme_heure']
         ?.cast<LevelCourse?>()
-        .firstWhere((course) => course?.theme?.isNotEmpty == true, orElse: () => null)
+        .firstWhere((course) => course?.theme?.isNotEmpty == true,
+            orElse: () => null)
         ?.theme;
 
     return LevelAssignment(
-      encadrants:
-          flattenedCourseEncadrants.isNotEmpty ? flattenedCourseEncadrants : legacyEncadrants,
+      encadrants: flattenedCourseEncadrants.isNotEmpty
+          ? flattenedCourseEncadrants
+          : legacyEncadrants,
       theme: map['theme'] ?? firstTheme1 ?? firstTheme2,
       themeUpdatedBy: map['theme_updated_by'],
       themeUpdatedAt: (map['theme_updated_at'] as Timestamp?)?.toDate(),
@@ -166,10 +172,14 @@ class LevelAssignment {
 
   /// Obtenir le thème effectif: per-uur thema heeft voorrang op globaal thema
   String? getEffectiveTheme({String? heure}) {
-    if (heure == '1ere_heure' && theme1ereHeure != null && theme1ereHeure!.isNotEmpty) {
+    if (heure == '1ere_heure' &&
+        theme1ereHeure != null &&
+        theme1ereHeure!.isNotEmpty) {
       return theme1ereHeure;
     }
-    if (heure == '2eme_heure' && theme2emeHeure != null && theme2emeHeure!.isNotEmpty) {
+    if (heure == '2eme_heure' &&
+        theme2emeHeure != null &&
+        theme2emeHeure!.isNotEmpty) {
       return theme2emeHeure;
     }
     return theme;
@@ -219,7 +229,8 @@ class LevelAssignment {
       if (theme2emeHeure != null) 'theme_2eme_heure': theme2emeHeure,
       if (coursesByHour != null)
         'courses_by_hour': coursesByHour!.map(
-          (key, value) => MapEntry(key, value.map((course) => course.toMap()).toList()),
+          (key, value) =>
+              MapEntry(key, value.map((course) => course.toMap()).toList()),
         ),
     };
   }
@@ -320,7 +331,7 @@ class PiscineSessionStatus {
 /// Configuration complète d'une séance piscine (ou théorie)
 ///
 /// Le champ [type] distingue une séance piscine d'une séance théorie autonome.
-/// Le champ [gonflage] est un Map indexé par créneau horaire (19h45, 20h15, 21h30).
+/// Le champ [gonflage] est un Map indexé par créneau horaire (19h45, 20h15, 22h30).
 /// Le champ [theorie] est optionnel et contient les séances théorie par créneau.
 class PiscineSession {
   final String id;
@@ -332,9 +343,11 @@ class PiscineSession {
   final String horaireFin;
   final List<SessionAssignment> accueil;
   final List<SessionAssignment> baptemes;
-  final Map<String, List<SessionAssignment>> gonflage; // Indexé par slot horaire
+  final Map<String, List<SessionAssignment>>
+      gonflage; // Indexé par slot horaire
   final Map<String, LevelAssignment> niveaux;
-  final Map<String, LevelAssignment>? theorie; // Indexé par slot horaire (19h30, 21h45)
+  final Map<String, LevelAssignment>?
+      theorie; // Indexé par slot horaire (19h30, 21h45)
   final String statut;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -408,25 +421,21 @@ class PiscineSession {
       niveaux: niveaux,
       theorie: theorie,
       statut: data['statut'] ?? PiscineSessionStatus.brouillon,
-      createdAt:
-          (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      updatedAt:
-          (data['updated_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      createdAt: (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      updatedAt: (data['updated_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
       createdBy: data['created_by'] ?? '',
     );
   }
 
   /// Parse gonflage data avec rétrocompatibilité
   /// - Ancien format (Array): [{membre_id, ...}] → migré en Map vide par slot avec données legacy
-  /// - Nouveau format (Map): {19h45: [...], 20h15: [...], 21h30: [...]}
-  /// - Rétrocompatibilité: ancien slot '21h15' est lu et mappé vers '21h30'
+  /// - Nouveau format (Map): {19h45: [...], 20h15: [...], 22h30: [...]}
+  /// - Anciens slots: 21h30 puis 21h15, uniquement si 22h30 est vide.
   /// - Absent/null: slots vides
   static Map<String, List<SessionAssignment>> _parseGonflage(dynamic rawData) {
     // Créer les slots vides par défaut
     final defaultSlots = <String, List<SessionAssignment>>{
-      '19h45': [],
-      '20h15': [],
-      '21h30': [],
+      for (final slot in GonflageSlots.all) slot: [],
     };
 
     if (rawData == null) return defaultSlots;
@@ -446,7 +455,7 @@ class PiscineSession {
 
     // Nouveau format: Map par slot
     if (rawData is Map<String, dynamic>) {
-      for (final slot in ['19h45', '20h15', '21h30']) {
+      for (final slot in GonflageSlots.all) {
         final slotData = rawData[slot];
         if (slotData is List) {
           defaultSlots[slot] = slotData
@@ -455,12 +464,16 @@ class PiscineSession {
               .toList();
         }
       }
-      // Rétrocompatibilité: lire l'ancien slot '21h15' et le mapper vers '21h30'
-      if (rawData.containsKey('21h15') && rawData['21h15'] is List && defaultSlots['21h30']!.isEmpty) {
-        defaultSlots['21h30'] = (rawData['21h15'] as List)
-            .whereType<Map<String, dynamic>>()
-            .map((e) => SessionAssignment.fromMap(e))
-            .toList();
+      // Ne jamais remplacer des affectations actuelles par les anciennes.
+      for (final legacySlot in ['21h30', '21h15']) {
+        if (defaultSlots[GonflageSlots.h2230]!.isNotEmpty) break;
+        final legacyData = rawData[legacySlot];
+        if (legacyData is List) {
+          defaultSlots[GonflageSlots.h2230] = legacyData
+              .whereType<Map<String, dynamic>>()
+              .map((e) => SessionAssignment.fromMap(e))
+              .toList();
+        }
       }
     }
 
@@ -478,7 +491,8 @@ class PiscineSession {
       'accueil': accueil.map((e) => e.toMap()).toList(),
       'baptemes': baptemes.map((e) => e.toMap()).toList(),
       'gonflage': gonflage.map(
-        (slot, members) => MapEntry(slot, members.map((e) => e.toMap()).toList()),
+        (slot, members) =>
+            MapEntry(slot, members.map((e) => e.toMap()).toList()),
       ),
       'niveaux': niveaux.map((key, value) => MapEntry(key, value.toMap())),
       if (theorie != null)
@@ -567,10 +581,28 @@ class PiscineSession {
 
   /// Date formatée pour l'affichage
   String get formattedDate {
-    final weekdays = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+    final weekdays = [
+      'Lundi',
+      'Mardi',
+      'Mercredi',
+      'Jeudi',
+      'Vendredi',
+      'Samedi',
+      'Dimanche'
+    ];
     final months = [
-      'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
-      'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'
+      'janvier',
+      'février',
+      'mars',
+      'avril',
+      'mai',
+      'juin',
+      'juillet',
+      'août',
+      'septembre',
+      'octobre',
+      'novembre',
+      'décembre'
     ];
     return '${weekdays[date.weekday - 1]} ${date.day} ${months[date.month - 1]} ${date.year}';
   }

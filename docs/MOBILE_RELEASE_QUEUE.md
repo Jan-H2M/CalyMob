@@ -6,6 +6,14 @@ de app niet en wijzigt de Firestore-appversie niet.
 
 ## Volgende release
 
+### Nog niet geïntegreerd — geen release
+
+- **COM-070** (`codex/bug-COM-070-pool-slot`): gonflage om 22h30 met behoud van
+  oudere planningstoewijzingen; 9 regressietests geslaagd, analyzer/format groen.
+  Volledige suite: 420 geslaagd, 3 bestaande payment-testfouten bevestigd op main.
+  Nog lokale branch; onafhankelijke en gezamenlijke visuele review bij de volgende
+  mobiele versie. Geen versie/build/store-wijziging. Dossier: `docs/bug-cycle/COM-070-pool-slot.md`.
+
 Basisversie: `1.17.0+194`
 
 | Referentie | Wijziging | Platform | Validatie | Risico | Status |

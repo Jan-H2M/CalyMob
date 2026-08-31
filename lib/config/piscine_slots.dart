@@ -35,9 +35,9 @@ class SessionType {
 class GonflageSlots {
   static const String h1945 = '19h45';
   static const String h2015 = '20h15';
-  static const String h2130 = '21h30';
+  static const String h2230 = '22h30';
 
-  static const List<String> all = [h1945, h2015, h2130];
+  static const List<String> all = [h1945, h2015, h2230];
 
   static String displayName(String slot) {
     // Les noms de slots sont déjà lisibles
@@ -54,8 +54,15 @@ class EncadrantSlots {
 
   /// Niveaux qui ne font que le 1er créneau (20h15-21h15)
   static const List<String> levelsFirstHourOnly = ['1*'];
+
   /// Niveaux qui ne font que le 2e créneau (21h15-22h30)
-  static const List<String> levelsSecondHourOnly = ['2*', '3*', '4*', 'AM', 'MC'];
+  static const List<String> levelsSecondHourOnly = [
+    '2*',
+    '3*',
+    '4*',
+    'AM',
+    'MC'
+  ];
 
   /// Obtenir le créneau horaire d'un niveau (pour affichage)
   static String timeForLevel(String level) {
@@ -137,5 +144,8 @@ List<String> getSlotsForRole(String role) {
 
 /// Vérifier si un rôle supporte les créneaux horaires
 bool roleHasSlots(String role) {
-  return role == 'accueil' || role == 'gonflage' || role == 'encadrant' || role == 'theorie';
+  return role == 'accueil' ||
+      role == 'gonflage' ||
+      role == 'encadrant' ||
+      role == 'theorie';
 }
