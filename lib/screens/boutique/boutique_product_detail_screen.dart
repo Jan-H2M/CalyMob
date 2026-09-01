@@ -6,7 +6,6 @@ import '../../config/app_colors.dart';
 import '../../models/boutique/boutique_product.dart';
 import '../../providers/boutique_cart_provider.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
-import 'boutique_cart_screen.dart';
 
 class BoutiqueProductDetailScreen extends StatefulWidget {
   final BoutiqueProduct product;
@@ -310,19 +309,9 @@ class _BoutiqueProductDetailScreenState
     if (!context.mounted) return;
     navigator.pop();
     messenger.showSnackBar(
-      SnackBar(
-        content: const Text('Article ajouté au panier.'),
-        duration: const Duration(seconds: 3),
-        action: SnackBarAction(
-          label: 'Voir le panier',
-          onPressed: () {
-            navigator.push(
-              MaterialPageRoute(
-                builder: (_) => const BoutiqueCartScreen(),
-              ),
-            );
-          },
-        ),
+      const SnackBar(
+        content: Text('Article ajouté au panier.'),
+        duration: Duration(seconds: 3),
       ),
     );
   }

@@ -128,8 +128,8 @@ class BoutiqueCartScreen extends StatelessWidget {
                                   ),
                                 );
                               },
-                              icon: const Icon(Icons.check_circle_outline),
-                              label: const Text('Continuer'),
+                              icon: const Icon(Icons.payment_outlined),
+                              label: const Text('Payer'),
                             ),
                           ),
                         ],

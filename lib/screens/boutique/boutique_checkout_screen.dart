@@ -22,6 +22,7 @@ class BoutiqueCheckoutScreen extends StatefulWidget {
 class _BoutiqueCheckoutScreenState extends State<BoutiqueCheckoutScreen> {
   bool _submitting = false;
   bool _revalidated = false;
+  bool _paymentChoiceShown = false;
   final TextEditingController _addressNameController = TextEditingController();
   final TextEditingController _addressLine1Controller = TextEditingController();
   final TextEditingController _addressLine2Controller = TextEditingController();
@@ -61,6 +62,9 @@ class _BoutiqueCheckoutScreenState extends State<BoutiqueCheckoutScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(messages.join(' '))),
         );
+      }
+      if (!context.read<BoutiqueCartProvider>().requiresPostalAddress) {
+        await _choosePaymentMethod();
       }
     } catch (_) {
       // Catalogus tijdelijk onbereikbaar — de server blijft de eindcontrole.
@@ -265,24 +269,16 @@ class _BoutiqueCheckoutScreenState extends State<BoutiqueCheckoutScreen> {
                     ),
                     const SizedBox(height: 16),
                     FilledButton.icon(
-                      onPressed: _submitting
-                          ? null
-                          : () => _submitOrder(
-                                context,
-                                cart: cart,
-                                member: member,
-                                auth: auth,
-                              ),
+                      onPressed: _submitting ? null : _choosePaymentMethod,
                       icon: _submitting
                           ? const SizedBox(
                               width: 18,
                               height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.receipt_long_outlined),
-                      label: Text(
-                        _submitting ? 'Création...' : 'Commander',
-                      ),
+                              child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.payment_outlined),
+                      label: Text(_submitting
+                          ? 'Creation...'
+                          : 'Choisir le mode de paiement'),
                     ),
                   ],
                 ),
@@ -291,11 +287,77 @@ class _BoutiqueCheckoutScreenState extends State<BoutiqueCheckoutScreen> {
     );
   }
 
+  Future<void> _choosePaymentMethod() async {
+    if (_paymentChoiceShown || _submitting || !mounted) return;
+    final cart = context.read<BoutiqueCartProvider>();
+    final member = context.read<MemberProvider>();
+    final auth = context.read<AuthProvider>();
+    final payload = _buildOrderPayload(cart: cart, member: member, auth: auth);
+    if (!_validateBeforeSubmit(context, payload)) return;
+    _paymentChoiceShown = true;
+    final paymentMethod = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+        contentPadding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+        title: const Text('Choisissez votre paiement'),
+        content: SizedBox(
+          width: 360,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Comment souhaitez-vous payer votre commande ?',
+                style: TextStyle(height: 1.4),
+              ),
+              const SizedBox(height: 24),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(dialogContext).pop('email'),
+                icon: const Icon(Icons.email_outlined),
+                label: const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 14),
+                  child: Text('Recevoir le QR code par e-mail'),
+                ),
+              ),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: () => Navigator.of(dialogContext).pop('bank'),
+                icon: const Icon(Icons.account_balance_outlined),
+                label: const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 14),
+                  child: Text('Payer par virement bancaire'),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextButton.icon(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                icon: const Icon(Icons.arrow_back),
+                label: const Text('Retour au panier'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    _paymentChoiceShown = false;
+    if (!mounted) return;
+    if (paymentMethod == null) {
+      Navigator.of(context).pop();
+      return;
+    }
+    await _submitOrder(context,
+        cart: cart, member: member, auth: auth, paymentMethod: paymentMethod);
+  }
+
   Future<void> _submitOrder(
     BuildContext context, {
     required BoutiqueCartProvider cart,
     required MemberProvider member,
     required AuthProvider auth,
+    required String paymentMethod,
   }) async {
     final orderPayload = _buildOrderPayload(
       cart: cart,
@@ -304,6 +366,7 @@ class _BoutiqueCheckoutScreenState extends State<BoutiqueCheckoutScreen> {
     );
 
     if (!_validateBeforeSubmit(context, orderPayload)) return;
+    orderPayload['deferPaymentEmail'] = true;
 
     // Fix audit 2026-07-19 (K5): idempotency-key per mandje; een retry na
     // timeout/app-kill hergebruikt dezelfde key → server geeft de bestaande
@@ -336,6 +399,7 @@ class _BoutiqueCheckoutScreenState extends State<BoutiqueCheckoutScreen> {
             amount: _asDouble(data['total'] ?? payment['amount']),
             epcPayload: payment['epcPayload']?.toString(),
             emailSent: payment['emailStatus'] == 'sent',
+            paymentMethod: paymentMethod,
           ),
         ),
         (route) => route.isFirst,
