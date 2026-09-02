@@ -43,4 +43,29 @@ void main() {
       isTrue,
     );
   });
+
+  test('returns the FIFO position of a waiting member', () async {
+    final inscriptions = firestore.collection(
+      'clubs/$clubId/operations/$operationId/inscriptions',
+    );
+    await inscriptions.doc('first').set({
+      'membre_id': 'member-1',
+      'registration_status': 'waitlisted',
+      'requested_at': DateTime(2026, 8, 10, 9),
+    });
+    await inscriptions.doc('second').set({
+      'membre_id': 'member-2',
+      'registration_status': 'waitlisted',
+      'requested_at': DateTime(2026, 8, 10, 10),
+    });
+
+    expect(
+      await service.getWaitlistPosition(
+        clubId: clubId,
+        operationId: operationId,
+        userId: 'member-2',
+      ),
+      2,
+    );
+  });
 }

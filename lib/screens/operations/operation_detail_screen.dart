@@ -4591,12 +4591,22 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       );
     }
     if (isWaitlisted) {
+      final userId = context.read<AuthProvider>().currentUser?.uid ?? '';
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
-            'Vous êtes sur la liste d’attente.',
-            style: TextStyle(fontWeight: FontWeight.w600),
+          FutureBuilder<int?>(
+            future: _operationService.getWaitlistPosition(
+              clubId: widget.clubId,
+              operationId: widget.operationId,
+              userId: userId,
+            ),
+            builder: (context, snapshot) => Text(
+              snapshot.hasData
+                  ? 'Vous êtes n° ${snapshot.data} sur la liste d’attente.'
+                  : 'Vous êtes sur la liste d’attente.',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
           ),
           const SizedBox(height: 10),
           SizedBox(

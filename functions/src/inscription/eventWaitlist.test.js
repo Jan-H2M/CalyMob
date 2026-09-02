@@ -4,7 +4,13 @@ jest.mock('firebase-functions/v2/https', () => ({
 }));
 jest.mock('firebase-admin', () => ({ firestore: Object.assign(jest.fn(), { Timestamp: { now: jest.fn() }, FieldValue: {} }) }));
 
-const { waitlistReason, registrationStatusAfterPromotion, canManageWaitlist } = require('./eventWaitlist');
+const {
+  waitlistReason,
+  registrationStatusAfterPromotion,
+  canManageWaitlist,
+  oldestWaitlistEntry,
+  promotionCandidateAfterWithdrawal,
+} = require('./eventWaitlist');
 
 describe('event waitlist policy', () => {
   const now = new Date('2026-08-12T10:00:00Z');
@@ -28,5 +34,31 @@ describe('event waitlist policy', () => {
     expect(canManageWaitlist({ app_role: 'membre' }, 'organizer', { organisateur_id: 'organizer' })).toBe(true);
     expect(canManageWaitlist({ app_role: 'admin' }, 'admin', { organisateur_id: 'other' })).toBe(true);
     expect(canManageWaitlist({ app_role: 'membre' }, 'member', { organisateur_id: 'other' })).toBe(false);
+  });
+  test('automatic promotion selects the oldest waiting registration FIFO', () => {
+    const doc = (id, status, requestedAt) => ({
+      id,
+      data: () => ({ registration_status: status, requested_at: new Date(requestedAt) }),
+    });
+    const oldest = oldestWaitlistEntry([
+      doc('confirmed', 'confirmed', '2026-08-10T08:00:00Z'),
+      doc('second', 'waitlisted', '2026-08-10T10:00:00Z'),
+      doc('first', 'waitlisted', '2026-08-10T09:00:00Z'),
+    ]);
+    expect(oldest.id).toBe('first');
+  });
+  test('a withdrawal opens one place and promotes the oldest waiting member', () => {
+    const doc = (id, status, requestedAt) => ({
+      id,
+      data: () => ({ registration_status: status, requested_at: new Date(requestedAt) }),
+    });
+    const docs = [
+      doc('leaving', 'confirmed', '2026-08-10T08:00:00Z'),
+      doc('staying', 'confirmed', '2026-08-10T08:30:00Z'),
+      doc('first', 'waitlisted', '2026-08-10T09:00:00Z'),
+      doc('second', 'waitlisted', '2026-08-10T10:00:00Z'),
+    ];
+    expect(promotionCandidateAfterWithdrawal(base, docs, 'leaving', now).id).toBe('first');
+    expect(promotionCandidateAfterWithdrawal(base, docs, 'missing', now)).toBeNull();
   });
 });
