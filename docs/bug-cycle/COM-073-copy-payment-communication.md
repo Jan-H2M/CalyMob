@@ -28,6 +28,8 @@ de paiement ou donnée Firestore n’est modifié.
 
 - `flutter test test/widgets/payment_communication_copy_button_test.dart` :
   2 tests réussis (valeur exacte, confirmation/instruction, état désactivé).
+- Suite complète `flutter test` : 489 tests réussis, 1 test d’émulateur
+  explicitement ignoré.
 - Analyse ciblée : aucune erreur ni avertissement nouveau ; 13 remarques `info`
   préexistantes dans `participant_payment_card.dart`.
 - `git diff --check` : réussi.
@@ -35,7 +37,7 @@ de paiement ou donnée Firestore n’est modifié.
 ## Livraison
 
 - Branch : `codex/bug-COM-073-copy-communication-v2`
-- Commit code : `3abc0bc`
+- Commits code/documentation : `3abc0bc`, `97f67d0`.
 - Pas de push, déploiement, build de release, upload ou soumission store.
 
 ## Revue encore nécessaire
@@ -43,4 +45,3 @@ de paiement ou donnée Firestore n’est modifié.
 Sur la prochaine version groupée, vérifier visuellement sur un appareil que le
 bouton tient sur une ligne, reste lisible avec la taille de texte agrandie, et
 que le presse-papiers et la confirmation fonctionnent dans les quatre parcours.
-
