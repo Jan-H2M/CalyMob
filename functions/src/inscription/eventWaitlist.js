@@ -38,6 +38,39 @@ function registrationStatusAfterPromotion(operation) {
     : 'confirmed';
 }
 
+function timestampMillis(value) {
+  if (!value) return Number.MAX_SAFE_INTEGER;
+  if (typeof value.toMillis === 'function') return value.toMillis();
+  const date = asDate(value);
+  return date ? date.getTime() : Number.MAX_SAFE_INTEGER;
+}
+
+function oldestWaitlistEntry(docs) {
+  return docs
+    .filter(doc => doc.data().registration_status === 'waitlisted')
+    .sort((left, right) => {
+      const leftData = left.data();
+      const rightData = right.data();
+      const byRequestTime = timestampMillis(leftData.requested_at || leftData.date_inscription)
+        - timestampMillis(rightData.requested_at || rightData.date_inscription);
+      return byRequestTime || left.id.localeCompare(right.id);
+    })[0] || null;
+}
+
+function promotionCandidateAfterWithdrawal(operation, docs, withdrawnId, now = new Date()) {
+  const start = asDate(operation.date_debut);
+  if (operation.allow_waitlist !== true || operation.statut === 'annule' || (start && now >= start)) {
+    return null;
+  }
+  const capacity = Number(operation.capacite_max);
+  if (!Number.isFinite(capacity) || capacity <= 0) return null;
+  const activeAfterWithdrawal = docs.filter(doc => (
+    doc.id !== withdrawnId
+    && ACTIVE_STATUSES.has(doc.data().registration_status || 'confirmed')
+  )).length;
+  return activeAfterWithdrawal < capacity ? oldestWaitlistEntry(docs) : null;
+}
+
 function refs(clubId, operationId) {
   const operationRef = admin.firestore().doc(`clubs/${clubId}/operations/${operationId}`);
   return {
@@ -131,6 +164,84 @@ const leaveEventWaitlist = onCall({ region: REGION }, async request => {
   });
 });
 
+const unregisterFromEvent = onCall({ region: REGION }, async request => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Authentification requise.');
+  const { clubId, operationId } = request.data || {};
+  if (!clubId || !operationId) throw new HttpsError('invalid-argument', 'clubId et operationId requis.');
+  await requireMember(clubId, uid);
+  const { operationRef, inscriptionsRef, auditRef } = refs(clubId, operationId);
+  let promotionNotification = null;
+
+  const result = await admin.firestore().runTransaction(async transaction => {
+    const [operationSnap, inscriptionsSnap] = await Promise.all([
+      transaction.get(operationRef),
+      transaction.get(inscriptionsRef),
+    ]);
+    if (!operationSnap.exists) throw new HttpsError('not-found', 'Événement introuvable.');
+    const ownEntry = inscriptionsSnap.docs.find(doc => {
+      const data = doc.data();
+      return data.membre_id === uid && data.registration_status !== 'canceled';
+    });
+    if (!ownEntry) throw new HttpsError('not-found', 'Inscription introuvable.');
+
+    const operation = operationSnap.data();
+    const wasWaitlisted = ownEntry.data().registration_status === 'waitlisted';
+    const now = admin.firestore.Timestamp.now();
+    transaction.delete(ownEntry.ref);
+    transaction.set(auditRef.doc(), {
+      action: wasWaitlisted ? 'left' : 'unregistered',
+      membre_id: uid,
+      inscription_id: ownEntry.id,
+      at: now,
+      by: uid,
+    });
+
+    if (wasWaitlisted) {
+      return { status: 'removed', promoted: null };
+    }
+    const nextEntry = promotionCandidateAfterWithdrawal(
+      operation,
+      inscriptionsSnap.docs,
+      ownEntry.id,
+    );
+    if (!nextEntry) return { status: 'removed', promoted: null };
+    const promotedStatus = registrationStatusAfterPromotion(operation);
+    transaction.update(nextEntry.ref, {
+      registration_status: promotedStatus,
+      payment_status: operation.payment_required === true ? 'open' : null,
+      waitlist_promoted_at: now,
+      waitlist_promoted_by: 'automatic_after_withdrawal',
+      updated_at: now,
+    });
+    transaction.set(auditRef.doc(), {
+      action: 'promoted_after_withdrawal',
+      membre_id: nextEntry.data().membre_id,
+      inscription_id: nextEntry.id,
+      released_by: uid,
+      at: now,
+      by: 'system',
+      resulting_status: promotedStatus,
+    });
+    promotionNotification = { operation, memberId: nextEntry.data().membre_id };
+    return { status: 'removed', promoted: nextEntry.id, promotedStatus };
+  });
+
+  if (promotionNotification) {
+    try {
+      await sendPromotionNotification(
+        clubId,
+        operationId,
+        promotionNotification.operation,
+        promotionNotification.memberId,
+      );
+    } catch (error) {
+      console.error('Automatic waitlist promotion notification failed', { clubId, operationId, error });
+    }
+  }
+  return result;
+});
+
 async function sendPromotionNotification(clubId, operationId, operation, memberId) {
   const memberRef = admin.firestore().doc(`clubs/${clubId}/members/${memberId}`);
   const memberSnap = await memberRef.get();
@@ -208,8 +319,11 @@ module.exports = {
   effectiveDeadline,
   waitlistReason,
   registrationStatusAfterPromotion,
+  oldestWaitlistEntry,
+  promotionCandidateAfterWithdrawal,
   canManageWaitlist,
   joinEventWaitlist,
   leaveEventWaitlist,
+  unregisterFromEvent,
   promoteEventWaitlistEntry,
 };
