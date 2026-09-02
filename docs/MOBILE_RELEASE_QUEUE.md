@@ -43,7 +43,7 @@ nog niet in een storeversie zaten.
 - `codex/bug-COM-073-copy-communication-v2`: één gedeelde, duidelijk gelabelde
   knop **Copier la communication** op activiteitbetaling, Boutique-bevestiging,
   besteldetail en cotisatie. Bestaande betaalmethodes blijven ongewijzigd.
-- 2 gerichte clipboard-widgettests groen; gerichte analyzer zonder nieuwe
+- 489 Fluttertests groen en 1 emulator-test overgeslagen; gerichte analyzer zonder nieuwe
   waarschuwingen (13 bestaande info-meldingen in de deelnemersbetaalkaart).
 - Commit `3abc0bc`; nog niet gemerged of uitgebracht. Visuele controle op toestel
   volgt bij de gezamenlijke mobiele release.
