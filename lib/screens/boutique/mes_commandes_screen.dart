@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import '../../widgets/payment_communication_copy_button.dart';
 
 class MesCommandesScreen extends StatefulWidget {
   const MesCommandesScreen({super.key});
@@ -362,6 +363,10 @@ class _OrderDetailScreen extends StatelessWidget {
                           color: AppColors.middenblauw,
                           fontWeight: FontWeight.w900,
                         ),
+                      ),
+                      const SizedBox(height: 10),
+                      PaymentCommunicationCopyButton(
+                        communication: paymentCommunication,
                       ),
                     ],
                   ],

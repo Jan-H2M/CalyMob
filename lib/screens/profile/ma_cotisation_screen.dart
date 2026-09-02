@@ -12,6 +12,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/cotisation/cotisation_service.dart';
 import '../../services/profile_service.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import '../../widgets/payment_communication_copy_button.dart';
 
 class MaCotisationScreen extends StatefulWidget {
   final MemberProfile? profile;
@@ -466,7 +467,11 @@ class _PaymentQr extends StatelessWidget {
           value: formatter.format(payment.amount),
           highlight: true,
         ),
-        _CopyLine(label: 'Communication', value: payment.communication),
+        _InfoLine(label: 'Communication', value: payment.communication),
+        PaymentCommunicationCopyButton(
+          communication: payment.communication,
+        ),
+        const SizedBox(height: 8),
         if (payment.iban?.isNotEmpty == true)
           _CopyLine(label: 'IBAN', value: payment.iban!),
       ],
