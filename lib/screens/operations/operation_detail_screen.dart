@@ -1610,39 +1610,13 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     if (!mounted) return;
 
     try {
-      // 1. Handle the guests first, before deleting the parent inscription.
-      if (guestAction == 'delete' && myInscriptionId != null) {
-        await _operationService.deleteGuestsForParentInscription(
-          clubId: widget.clubId,
-          operationId: widget.operationId,
-          parentInscriptionId: myInscriptionId,
-        );
-      } else if (guestAction == 'transfer' &&
-          myInscriptionId != null &&
-          operation?.organisateurId != null) {
-        // Find organisateur's inscription. If they have one, link guests
-        // to it. Otherwise null out the parent and let guests be orphans.
-        final organisateurInscription =
-            await _operationService.findInscriptionForUser(
-          clubId: widget.clubId,
-          operationId: widget.operationId,
-          userId: operation!.organisateurId!,
-        );
-        await _operationService.transferGuestsToParent(
-          clubId: widget.clubId,
-          operationId: widget.operationId,
-          oldParentInscriptionId: myInscriptionId,
-          newParentInscriptionId: organisateurInscription?.id,
-          newParentUserId: operation.organisateurId,
-          newParentDisplayName: operation.organisateurNom,
-        );
-      }
-
-      // 2. Now delete the member's own inscription
+      // The callable handles the member, linked guests and every FIFO promotion
+      // in one Firestore transaction. No client-side partial write may precede it.
       await operationProvider.unregisterFromOperation(
         clubId: widget.clubId,
         operationId: widget.operationId,
         userId: userId,
+        guestAction: guestAction,
       );
 
       await operationProvider.reloadParticipants(
@@ -4591,12 +4565,22 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       );
     }
     if (isWaitlisted) {
+      final userId = context.read<AuthProvider>().currentUser?.uid ?? '';
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
-            'Vous êtes sur la liste d’attente.',
-            style: TextStyle(fontWeight: FontWeight.w600),
+          FutureBuilder<int?>(
+            future: _operationService.getWaitlistPosition(
+              clubId: widget.clubId,
+              operationId: widget.operationId,
+              userId: userId,
+            ),
+            builder: (context, snapshot) => Text(
+              snapshot.hasData
+                  ? 'Vous êtes n° ${snapshot.data} sur la liste d’attente.'
+                  : 'Vous êtes sur la liste d’attente.',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
           ),
           const SizedBox(height: 10),
           SizedBox(

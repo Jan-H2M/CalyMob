@@ -107,7 +107,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
     // Listeners pour détecter les changements
     _titreController.addListener(_markChanged);
     _descriptionController.addListener(_markChanged);
-    _capaciteController.addListener(_markChanged);
+    _capaciteController.addListener(_onCapacityChanged);
     _communicationController.addListener(_markChanged);
 
     // Preload the list of encadrants so the picker opens instantly.
@@ -307,6 +307,10 @@ class _EditEventScreenState extends State<EditEventScreen> {
 
   void _markChanged() {
     if (!_hasChanges) setState(() => _hasChanges = true);
+  }
+
+  void _onCapacityChanged() {
+    setState(() => _hasChanges = true);
   }
 
   // ============================================================
@@ -1393,6 +1397,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
   }
 
   Widget _buildAllowWaitlistSection() {
+    final hasCapacity = (int.tryParse(_capaciteController.text) ?? 0) > 0;
     return _buildSectionCard(children: [
       SwitchListTile.adaptive(
         contentPadding: EdgeInsets.zero,
@@ -1407,6 +1412,25 @@ class _EditEventScreenState extends State<EditEventScreen> {
         }),
         activeColor: AppColors.middenblauw,
       ),
+      if (_allowWaitlist && !hasCapacity)
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(top: 8),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.amber.shade50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.amber.shade300),
+          ),
+          child: Text(
+            'Définissez une capacité maximale pour que la liste d’attente puisse gérer les places disponibles.',
+            style: TextStyle(
+              color: Colors.amber.shade900,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
     ]);
   }
 

@@ -957,7 +957,7 @@ service cloud.firestore {
             'avatar_nudge_snoozed_until',
             'consent_internal_photo', 'consent_internal_photo_date',
             'consent_external_photo', 'consent_external_photo_date',
-            'share_email', 'share_phone', 'phone_number',
+            'share_email', 'share_phone', 'share_birthday', 'phone_number',
             'birth_date', 'date_naissance',
             'address_street', 'address_postcode', 'address_city', 'address_country',
             'adresse', 'code_postal', 'localite', 'pays',

@@ -30,6 +30,7 @@ function dateParts(value) {
 }
 
 function hasBirthdayToday(data, now = new Date()) {
+  if (data.share_birthday === false) return false;
   const birthDate = data.birth_date || data.date_naissance;
   if (!birthDate) return false;
   const birth = dateParts(birthDate);

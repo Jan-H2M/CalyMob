@@ -17,6 +17,7 @@ import '../../services/session_service.dart';
 import '../../utils/member_name.dart';
 import 'payment_rules_section.dart';
 import 'event_payment_defaults.dart';
+import 'event_waitlist_defaults.dart';
 
 /// Wizard de création d'événement en 2 étapes
 /// Identique fonctionnellement à CreateEventWizard de CalyCompta
@@ -83,6 +84,13 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
       EventPaymentDefaults.registrationConfirmationPolicy;
   int _paymentDeadlineDays = EventPaymentDefaults.paymentDeadlineDays;
   bool _autoCancelUnpaid = EventPaymentDefaults.autoCancelUnpaid;
+  bool? _allowWaitlistChoice;
+
+  bool get _allowWaitlist => EventWaitlistDefaults.effectiveValue(
+        eventCategory: widget.eventCategory,
+        capacityText: _capaciteController.text,
+        explicitChoice: _allowWaitlistChoice,
+      );
 
   @override
   void initState() {
@@ -514,6 +522,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
         if (_selectedLocation != null) 'lieu_id': _selectedLocation!.id,
         if (_capaciteController.text.isNotEmpty)
           'capacite_max': int.tryParse(_capaciteController.text),
+        'allow_waitlist': _allowWaitlist,
         // Écrire id + nom ensemble depuis le picker pour que le lookup du
         // numéro de téléphone (keyed sur organisateur_id) reste cohérent
         // avec le nom affiché. Fallback sur userId si le picker n'a pas
@@ -1172,7 +1181,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
                           controller: _capaciteController,
                           decoration: _inputDecoration('Illimité'),
                           keyboardType: TextInputType.number,
-                          onChanged: (_) => _recalculateBudget(),
+                          onChanged: (_) => setState(_recalculateBudget),
                         ),
                       ],
                     ),
@@ -1197,6 +1206,9 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
               ),
             ],
           ),
+          const SizedBox(height: 16),
+
+          _buildAllowWaitlistSection(),
           const SizedBox(height: 16),
 
           // Responsable (organisateur) — picker encadrants
@@ -1290,6 +1302,42 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
         ],
       ),
     );
+  }
+
+  Widget _buildAllowWaitlistSection() {
+    final hasCapacity =
+        (int.tryParse(_capaciteController.text.trim()) ?? 0) > 0;
+    return _buildSectionCard(children: [
+      SwitchListTile.adaptive(
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Autoriser la liste d’attente'),
+        subtitle: const Text(
+          'Les membres pourront rejoindre la liste quand l’événement est complet ou fermé.',
+        ),
+        value: _allowWaitlist,
+        onChanged: (value) => setState(() => _allowWaitlistChoice = value),
+        activeThumbColor: AppColors.middenblauw,
+      ),
+      if (_allowWaitlist && !hasCapacity)
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(top: 8),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.amber.shade50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.amber.shade300),
+          ),
+          child: Text(
+            'Définissez une capacité maximale pour que la liste d’attente puisse gérer les places disponibles.',
+            style: TextStyle(
+              color: Colors.amber.shade900,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+    ]);
   }
 
   // ============================================================

@@ -52,6 +52,29 @@ describe('member privacy projections', () => {
     expect(projected).not.toHaveProperty('date_naissance');
   });
 
+  test('birthday sharing remains enabled when the field is absent', () => {
+    const projected = buildMemberDirectoryProjection({
+      prenom: 'Anna',
+      nom: 'Plongeuse',
+      birth_date: new Date('1991-09-14T12:00:00'),
+    });
+    expect(projected.share_birthday).toBe(true);
+    expect(projected.birth_month).toBe(9);
+    expect(projected.birth_day).toBe(14);
+  });
+
+  test('birthday opt-out removes the directory birthday parts', () => {
+    const projected = buildMemberDirectoryProjection({
+      prenom: 'Anna',
+      nom: 'Plongeuse',
+      birth_date: new Date('1991-09-14T12:00:00'),
+      share_birthday: false,
+    });
+    expect(projected.share_birthday).toBe(false);
+    expect(projected.birth_month).toBeNull();
+    expect(projected.birth_day).toBeNull();
+  });
+
   test('contact sharing is opt-in in the projection', () => {
     const projected = buildMemberDirectoryProjection({
       prenom: 'Jean',

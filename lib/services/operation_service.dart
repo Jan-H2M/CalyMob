@@ -335,35 +335,53 @@ class OperationService {
     required String clubId,
     required String operationId,
     required String userId,
+    String? guestAction,
   }) async {
     try {
-      // Trouver le participant
-      final snapshot = await _firestore
-          .collection('clubs/$clubId/operations/$operationId/inscriptions')
-          .where('membre_id', isEqualTo: userId)
-          .get();
-
-      if (snapshot.docs.isEmpty) {
-        throw Exception('Inscription non trouvée');
-      }
-
-      final activeDocs = snapshot.docs
-          .where((doc) => doc.data()['registration_status'] != 'canceled');
-      if (activeDocs.isEmpty) throw Exception('Inscription non trouvée');
-      if (activeDocs.first.data()['registration_status'] == 'waitlisted') {
-        await _functions.httpsCallable('leaveEventWaitlist').call({
-          'clubId': clubId,
-          'operationId': operationId,
-        });
-      } else {
-        await activeDocs.first.reference.delete();
-      }
+      // Removing the registration and promoting the oldest waiting member
+      // must be atomic, otherwise two simultaneous cancellations can assign
+      // the same free place.
+      await _functions.httpsCallable('unregisterFromEvent').call({
+        'clubId': clubId,
+        'operationId': operationId,
+        if (guestAction != null) 'guestAction': guestAction,
+      });
 
       debugPrint('✅ Désinscription réussie: user $userId');
     } catch (e) {
       debugPrint('❌ Erreur désinscription: $e');
       rethrow;
     }
+  }
+
+  /// 1-based FIFO position of a member on the event waitlist.
+  Future<int?> getWaitlistPosition({
+    required String clubId,
+    required String operationId,
+    required String userId,
+  }) async {
+    final snapshot = await _firestore
+        .collection('clubs/$clubId/operations/$operationId/inscriptions')
+        .where('registration_status', isEqualTo: 'waitlisted')
+        .get();
+    final waiting = snapshot.docs.toList()
+      ..sort((left, right) {
+        int millis(dynamic value) {
+          if (value is Timestamp) return value.millisecondsSinceEpoch;
+          if (value is DateTime) return value.millisecondsSinceEpoch;
+          return 9223372036854775807;
+        }
+
+        final byTime = millis(
+                left.data()['requested_at'] ?? left.data()['date_inscription'])
+            .compareTo(millis(right.data()['requested_at'] ??
+                right.data()['date_inscription']));
+        return byTime != 0 ? byTime : left.id.compareTo(right.id);
+      });
+    final index = waiting.indexWhere(
+      (doc) => doc.data()['membre_id'] == userId,
+    );
+    return index < 0 ? null : index + 1;
   }
 
   /// Supprime tous les invités liés à une inscription parente.
