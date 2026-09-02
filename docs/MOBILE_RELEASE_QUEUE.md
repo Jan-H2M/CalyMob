@@ -53,8 +53,9 @@ nog niet in een storeversie zaten.
 - `codex/bug-COM-075-birthday-sharing`: leden kunnen het delen van hun
   verjaardagsdag en -maand en de verjaardagsmelding uitschakelen. Een ontbrekend
   veld blijft achterwaarts compatibel actief; er is geen bulkmigratie.
-- Gericht gevalideerd met 11 Cloud Function-tests, 8 modeltests en een groene
-  analyzer op de gewijzigde Dart-bestanden. Onafhankelijke code-/tekstcontrole
+- Gevalideerd met 173 Cloud Function-tests, 488 geslaagde Fluttertests (1
+  emulator-test overgeslagen) en een groene analyzer op de gewijzigde
+  Dart-bestanden. Onafhankelijke code-/tekstcontrole
   en visuele controle volgen in de gezamenlijke mobiele releasevoorbereiding.
 - Commit `bd70ba0`; nog niet gemerged, geen function-deploy, version bump, build,
   upload, store-inzending of Firestore-appversiewijziging.
