@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../utils/epc_qr_code.dart';
 import 'epc_qr_code_widget.dart';
+import 'payment_communication_copy_button.dart';
 
 /// Widget pour afficher la carte de paiement d'un participant
 ///
@@ -255,6 +256,11 @@ class ParticipantPaymentCard extends StatelessWidget {
                   ),
                 ],
               ),
+            ),
+
+            const SizedBox(height: 10),
+            PaymentCommunicationCopyButton(
+              communication: paymentCommunication,
             ),
 
             const SizedBox(height: 16),
