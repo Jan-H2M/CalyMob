@@ -15,8 +15,8 @@ class PaymentCommunicationCopyButton extends StatelessWidget {
   Future<void> _copy(BuildContext context) async {
     try {
       await Clipboard.setData(ClipboardData(text: communication));
-      onCopied?.call();
       if (!context.mounted) return;
+      onCopied?.call();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
