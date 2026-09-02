@@ -335,6 +335,7 @@ class OperationService {
     required String clubId,
     required String operationId,
     required String userId,
+    String? guestAction,
   }) async {
     try {
       // Removing the registration and promoting the oldest waiting member
@@ -343,6 +344,7 @@ class OperationService {
       await _functions.httpsCallable('unregisterFromEvent').call({
         'clubId': clubId,
         'operationId': operationId,
+        if (guestAction != null) 'guestAction': guestAction,
       });
 
       debugPrint('✅ Désinscription réussie: user $userId');
@@ -370,8 +372,10 @@ class OperationService {
           return 9223372036854775807;
         }
 
-        final byTime = millis(left.data()['requested_at'] ?? left.data()['date_inscription'])
-            .compareTo(millis(right.data()['requested_at'] ?? right.data()['date_inscription']));
+        final byTime = millis(
+                left.data()['requested_at'] ?? left.data()['date_inscription'])
+            .compareTo(millis(right.data()['requested_at'] ??
+                right.data()['date_inscription']));
         return byTime != 0 ? byTime : left.id.compareTo(right.id);
       });
     final index = waiting.indexWhere(

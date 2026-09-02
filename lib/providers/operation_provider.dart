@@ -141,7 +141,7 @@ class OperationProvider with ChangeNotifier {
         );
         _userRegistrationStatus[operationId] = isRegistered;
         final inscription = await _operationService.getUserInscription(
-          clubId: clubId, operationId: operationId, userId: userId);
+            clubId: clubId, operationId: operationId, userId: userId);
         _userWaitlistStatus[operationId] = inscription?.isWaitlisted ?? false;
       }
 
@@ -240,6 +240,7 @@ class OperationProvider with ChangeNotifier {
     required String clubId,
     required String operationId,
     required String userId,
+    String? guestAction,
   }) async {
     try {
       final wasRegistered = _userRegistrationStatus[operationId] ?? false;
@@ -250,6 +251,7 @@ class OperationProvider with ChangeNotifier {
         clubId: clubId,
         operationId: operationId,
         userId: userId,
+        guestAction: guestAction,
       );
 
       // Mettre à jour cache

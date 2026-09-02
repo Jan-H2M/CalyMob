@@ -1610,39 +1610,13 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     if (!mounted) return;
 
     try {
-      // 1. Handle the guests first, before deleting the parent inscription.
-      if (guestAction == 'delete' && myInscriptionId != null) {
-        await _operationService.deleteGuestsForParentInscription(
-          clubId: widget.clubId,
-          operationId: widget.operationId,
-          parentInscriptionId: myInscriptionId,
-        );
-      } else if (guestAction == 'transfer' &&
-          myInscriptionId != null &&
-          operation?.organisateurId != null) {
-        // Find organisateur's inscription. If they have one, link guests
-        // to it. Otherwise null out the parent and let guests be orphans.
-        final organisateurInscription =
-            await _operationService.findInscriptionForUser(
-          clubId: widget.clubId,
-          operationId: widget.operationId,
-          userId: operation!.organisateurId!,
-        );
-        await _operationService.transferGuestsToParent(
-          clubId: widget.clubId,
-          operationId: widget.operationId,
-          oldParentInscriptionId: myInscriptionId,
-          newParentInscriptionId: organisateurInscription?.id,
-          newParentUserId: operation.organisateurId,
-          newParentDisplayName: operation.organisateurNom,
-        );
-      }
-
-      // 2. Now delete the member's own inscription
+      // The callable handles the member, linked guests and every FIFO promotion
+      // in one Firestore transaction. No client-side partial write may precede it.
       await operationProvider.unregisterFromOperation(
         clubId: widget.clubId,
         operationId: widget.operationId,
         userId: userId,
+        guestAction: guestAction,
       );
 
       await operationProvider.reloadParticipants(
