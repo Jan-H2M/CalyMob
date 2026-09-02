@@ -5,6 +5,27 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('MemberProfile', () {
+    test('birthday sharing defaults to true and honours opt-out', () async {
+      final firestore = FakeFirebaseFirestore();
+      final legacyRef =
+          firestore.collection('clubs/club1/members').doc('legacy');
+      final optedOutRef =
+          firestore.collection('clubs/club1/members').doc('opted-out');
+      await legacyRef.set({'prenom': 'Legacy', 'nom': 'Member'});
+      await optedOutRef.set({
+        'prenom': 'Private',
+        'nom': 'Member',
+        'share_birthday': false,
+      });
+
+      final legacy = MemberProfile.fromFirestore(await legacyRef.get());
+      final optedOut = MemberProfile.fromFirestore(await optedOutRef.get());
+
+      expect(legacy.shareBirthday, isTrue);
+      expect(optedOut.shareBirthday, isFalse);
+      expect(optedOut.toFirestore(), containsPair('share_birthday', false));
+    });
+
     test('maps canonical snake_case member names', () async {
       final firestore = FakeFirebaseFirestore();
       final docRef =

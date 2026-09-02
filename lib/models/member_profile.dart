@@ -13,7 +13,7 @@ class MemberProfile {
   final String? plongeurCode; // Niveau de plongée (ex: "P2", "P4", "MC")
   final String? plongeurNiveau; // Niveau complet en texte
   final String?
-  fonctionDefaut; // Fonction par défaut: "membre", "encadrant", "ca"
+      fonctionDefaut; // Fonction par défaut: "membre", "encadrant", "ca"
   final List<String> clubStatuten; // Fonctions multiples dans le club
 
   // Photo de profil
@@ -23,20 +23,23 @@ class MemberProfile {
   // Consentements
   final bool consentInternalPhoto; // Consentement pour usage interne (REQUIS)
   final bool
-  consentExternalPhoto; // Consentement pour usage externe (OPTIONNEL)
+      consentExternalPhoto; // Consentement pour usage externe (OPTIONNEL)
   final DateTime? consentInternalPhotoDate; // Date du consentement interne
   final DateTime? consentExternalPhotoDate; // Date du consentement externe
 
   // Partage de contact
   final bool shareEmail; // Partager l'email dans "Who's Who"
   final bool sharePhone; // Partager le téléphone dans "Who's Who"
+  final bool shareBirthday; // Partager jour/mois et recevoir les vœux du club
   final String? phoneNumber; // Numéro de téléphone
 
   // Informations personnelles complémentaires
   final DateTime? birthDate;
+
   /// Directory-only birthday parts (no year). Used by Qui est qui.
   final int? birthMonth;
   final int? birthDay;
+
   /// Member wants logbook invites. Missing field = true.
   final bool usesCarnet;
   final String? addressStreet;
@@ -64,7 +67,7 @@ class MemberProfile {
   final String? membershipSeasonId;
   final String? lifrasId;
   final DateTime?
-  assuranceValidite; // Validité de l'assurance utilisée pour l'accès piscine/activités
+      assuranceValidite; // Validité de l'assurance utilisée pour l'accès piscine/activités
   final bool hasLifras; // Affilié à la LIFRAS
 
   // Métadonnées
@@ -88,6 +91,7 @@ class MemberProfile {
     this.consentExternalPhotoDate,
     this.shareEmail = true, // Par défaut, partager l'email
     this.sharePhone = true, // Par défaut, partager le téléphone
+    this.shareBirthday = true, // Absence du champ = partage maintenu
     this.phoneNumber,
     this.birthDate,
     this.birthMonth,
@@ -118,8 +122,7 @@ class MemberProfile {
   /// Convertir depuis Firestore
   factory MemberProfile.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
-    final lifrasId =
-        _stringOrNull(data['lifras_id']) ??
+    final lifrasId = _stringOrNull(data['lifras_id']) ??
         _stringOrNull(data['licence_lifras']);
 
     return MemberProfile(
@@ -140,6 +143,7 @@ class MemberProfile {
       consentExternalPhotoDate: _parseDate(data['consent_external_photo_date']),
       shareEmail: data['share_email'] ?? true,
       sharePhone: data['share_phone'] ?? true,
+      shareBirthday: data['share_birthday'] != false,
       phoneNumber: data['phone_number'],
       birthDate:
           _parseDate(data['birth_date']) ?? _parseDate(data['date_naissance']),
@@ -196,6 +200,7 @@ class MemberProfile {
       consentInternalPhoto: data['consent_internal_photo'] == true,
       shareEmail: data['share_email'] == true,
       sharePhone: data['share_phone'] == true,
+      shareBirthday: data['share_birthday'] != false,
       phoneNumber: _stringOrNull(data['phone_number']),
       birthMonth: _intOrNull(data['birth_month']),
       birthDay: _intOrNull(data['birth_day']),
@@ -259,9 +264,8 @@ class MemberProfile {
       'fonction_defaut': fonctionDefaut,
       'clubStatuten': clubStatuten,
       'photo_url': photoUrl,
-      'photo_uploaded_at': photoUploadedAt != null
-          ? Timestamp.fromDate(photoUploadedAt!)
-          : null,
+      'photo_uploaded_at':
+          photoUploadedAt != null ? Timestamp.fromDate(photoUploadedAt!) : null,
       'consent_internal_photo': consentInternalPhoto,
       'consent_external_photo': consentExternalPhoto,
       'consent_internal_photo_date': consentInternalPhotoDate != null
@@ -272,6 +276,7 @@ class MemberProfile {
           : null,
       'share_email': shareEmail,
       'share_phone': sharePhone,
+      'share_birthday': shareBirthday,
       'phone_number': phoneNumber,
       'birth_date': birthDate != null ? Timestamp.fromDate(birthDate!) : null,
       'address_street': addressStreet,
@@ -301,6 +306,7 @@ class MemberProfile {
     DateTime? consentExternalPhotoDate,
     bool? shareEmail,
     bool? sharePhone,
+    bool? shareBirthday,
     String? phoneNumber,
     DateTime? birthDate,
     int? birthMonth,
@@ -335,6 +341,7 @@ class MemberProfile {
           consentExternalPhotoDate ?? this.consentExternalPhotoDate,
       shareEmail: shareEmail ?? this.shareEmail,
       sharePhone: sharePhone ?? this.sharePhone,
+      shareBirthday: shareBirthday ?? this.shareBirthday,
       phoneNumber: phoneNumber ?? this.phoneNumber,
       birthDate: birthDate ?? this.birthDate,
       birthMonth: birthMonth ?? this.birthMonth,
