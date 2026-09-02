@@ -415,6 +415,7 @@ exports.createBoutiqueOrder = onCall(
     const db = admin.firestore();
     const clubId = typeof request.data?.clubId === 'string' ? request.data.clubId.trim() : '';
     const items = Array.isArray(request.data?.items) ? request.data.items : [];
+    const deferPaymentEmail = request.data?.deferPaymentEmail === true;
 
     if (!clubId || items.length === 0) {
       throw new HttpsError('invalid-argument', 'clubId ou items manquant', {
@@ -740,28 +741,30 @@ exports.createBoutiqueOrder = onCall(
       }
 
       let emailSentAt = null;
-      let emailStatus = 'failed';
-      try {
-        emailSentAt = await sendBoutiqueOrderEmail({
-          clubRef,
-          clubId,
-          orderRef,
-          order: {
-            ...result.orderData,
-            pricing: {
-              ...result.orderData.pricing,
-              total: result.total,
+      let emailStatus = deferPaymentEmail ? 'deferred' : 'failed';
+      if (!deferPaymentEmail) {
+        try {
+          emailSentAt = await sendBoutiqueOrderEmail({
+            clubRef,
+            clubId,
+            orderRef,
+            order: {
+              ...result.orderData,
+              pricing: {
+                ...result.orderData.pricing,
+                total: result.total,
+              },
             },
-          },
-        });
-        emailStatus = 'sent';
-      } catch (emailError) {
-        console.error(`[createBoutiqueOrder] Email failed for ${clubId}/${orderRef.id}:`, emailError);
-        await orderRef.update({
-          'payment.email_status': 'failed',
-          'payment.email_error': emailError.message || 'Email failed',
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
+          });
+          emailStatus = 'sent';
+        } catch (emailError) {
+          console.error(`[createBoutiqueOrder] Email failed for ${clubId}/${orderRef.id}:`, emailError);
+          await orderRef.update({
+            'payment.email_status': 'failed',
+            'payment.email_error': emailError.message || 'Email failed',
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
       }
 
       return {

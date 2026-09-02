@@ -17,6 +17,7 @@ class BoutiqueOrderConfirmationScreen extends StatelessWidget {
   final double amount;
   final String? epcPayload;
   final bool emailSent;
+  final String paymentMethod;
 
   const BoutiqueOrderConfirmationScreen({
     super.key,
@@ -28,6 +29,7 @@ class BoutiqueOrderConfirmationScreen extends StatelessWidget {
     required this.amount,
     this.epcPayload,
     this.emailSent = false,
+    this.paymentMethod = 'bank',
   });
 
   @override
@@ -86,28 +88,19 @@ class BoutiqueOrderConfirmationScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 18),
-                      _InfoBox(
-                        icon: emailSent
-                            ? Icons.mark_email_read_outlined
-                            : Icons.email_outlined,
-                        title: emailSent
-                            ? 'Email de paiement envoyé'
-                            : 'Email de paiement',
-                        text:
-                            'Le QR code de paiement est envoyé par email. Ouvrez ce mail sur ordinateur et scannez le QR avec votre application bancaire.',
-                      ),
+                      if (paymentMethod == 'email')
+                        _EmailPaymentDetails(
+                          orderId: orderId,
+                          instruction:
+                              "Ouvrez cet e-mail sur votre ordinateur, puis scannez le QR code avec l’application bancaire de votre téléphone.",
+                        )
+                      else
+                        _BankPaymentDetails(
+                          beneficiary: beneficiary,
+                          iban: iban,
+                          communication: ogmDisplay,
+                        ),
                       const SizedBox(height: 18),
-                      _PaymentLine(label: 'Bénéficiaire', value: beneficiary),
-                      _PaymentLine(
-                        label: 'IBAN',
-                        value: formatIbanDisplay(iban),
-                        copyValue: iban,
-                      ),
-                      _PaymentLine(
-                        label: 'Communication',
-                        value: ogmDisplay,
-                        copyValue: ogmDisplay,
-                      ),
                       if (orderId != null && orderId!.isNotEmpty) ...[
                         const SizedBox(height: 10),
                         SizedBox(
@@ -179,15 +172,144 @@ class BoutiqueOrderConfirmationScreen extends StatelessWidget {
   }
 }
 
+class _EmailPaymentDetails extends StatefulWidget {
+  final String? orderId;
+  final String instruction;
+  const _EmailPaymentDetails(
+      {required this.orderId, required this.instruction});
+
+  @override
+  State<_EmailPaymentDetails> createState() => _EmailPaymentDetailsState();
+}
+
+class _EmailPaymentDetailsState extends State<_EmailPaymentDetails> {
+  bool sending = false;
+
+  Future<void> _send() async {
+    if (widget.orderId == null || sending) return;
+    setState(() => sending = true);
+    try {
+      await FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('sendBoutiqueOrderPaymentEmail')
+          .call({
+        'clubId': FirebaseConfig.defaultClubId,
+        'orderId': widget.orderId
+      });
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => sending = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Impossible d'envoyer l'e-mail.")),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+        children: [
+          _InfoBox(
+              icon: Icons.email_outlined,
+              title: 'Paiement par e-mail',
+              text: widget.instruction),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: sending ? null : _send,
+              icon: sending
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.send_outlined),
+              label: const Text("Envoyer l'e-mail"),
+            ),
+          ),
+        ],
+      );
+}
+
+class _BankPaymentDetails extends StatefulWidget {
+  final String beneficiary;
+  final String iban;
+  final String communication;
+  const _BankPaymentDetails(
+      {required this.beneficiary,
+      required this.iban,
+      required this.communication});
+
+  @override
+  State<_BankPaymentDetails> createState() => _BankPaymentDetailsState();
+}
+
+class _BankPaymentDetailsState extends State<_BankPaymentDetails> {
+  bool communicationCopied = false;
+
+  Future<void> _copy(String value, {bool communication = false}) async {
+    try {
+      await Clipboard.setData(ClipboardData(text: value));
+      if (!mounted) return;
+      if (communication) setState(() => communicationCopied = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(communication ? 'Communication copiée' : 'IBAN copié'),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Impossible de copier. Réessayez.'),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+        children: [
+          const _InfoBox(
+            icon: Icons.account_balance_outlined,
+            title: 'Virement bancaire',
+            text:
+                "Copiez l’IBAN et la communication séparément, puis collez-les dans votre application bancaire.",
+          ),
+          const SizedBox(height: 16),
+          _PaymentLine(label: 'Bénéficiaire', value: widget.beneficiary),
+          _PaymentLine(
+              label: 'IBAN',
+              value: formatIbanDisplay(widget.iban),
+              onCopy: () => _copy(widget.iban)),
+          _PaymentLine(
+              label: 'Communication',
+              value: widget.communication,
+              onCopy: () => _copy(widget.communication, communication: true)),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: communicationCopied
+                  ? () =>
+                      Navigator.of(context).popUntil((route) => route.isFirst)
+                  : null,
+              child: const Text('Fermer'),
+            ),
+          ),
+        ],
+      );
+}
+
 class _PaymentLine extends StatelessWidget {
   final String label;
   final String value;
-  final String? copyValue;
+  final VoidCallback? onCopy;
 
   const _PaymentLine({
     required this.label,
     required this.value,
-    this.copyValue,
+    this.onCopy,
   });
 
   @override
@@ -216,16 +338,10 @@ class _PaymentLine extends StatelessWidget {
               ),
             ),
           ),
-          if (copyValue != null)
+          if (onCopy != null)
             IconButton(
               tooltip: 'Copier',
-              onPressed: () async {
-                await Clipboard.setData(ClipboardData(text: copyValue!));
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Copié')),
-                );
-              },
+              onPressed: onCopy,
               icon: const Icon(Icons.copy, size: 18),
             ),
         ],

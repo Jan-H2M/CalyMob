@@ -15,7 +15,6 @@ import 'boutique_cart_screen.dart';
 import 'boutique_product_detail_screen.dart';
 import 'mes_commandes_screen.dart';
 import '../stock/material_returns_screen.dart';
-import '../stock/material_finance_mockup_screen.dart';
 import '../profile/ma_cotisation_screen.dart';
 
 class BoutiqueScreen extends StatefulWidget {
@@ -80,7 +79,6 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
               bool showSection(String key) =>
                   _sectionVisible(visibility, key, canSeeTesteurs);
               final showMaterialLoans = showSection('pretsMateriel');
-              final showMaterialReturns = showMaterialLoans && canOpenReturns;
               return ListView(
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
                 children: [
@@ -186,22 +184,6 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                       },
                     ),
                   ],
-                  if (showMaterialReturns) ...[
-                    const SizedBox(height: 12),
-                    _BoutiqueHomeCard(
-                      icon: Icons.account_balance_outlined,
-                      title: 'COM-059 · Flux financier (mock-up)',
-                      subtitle:
-                          'Tester les QR-paiements, remises et remboursements sans écriture réelle.',
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const MaterialFinanceMockupScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
                 ],
               );
             },
@@ -247,6 +229,48 @@ class _BoutiqueProductsScreenState extends State<BoutiqueProductsScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          Consumer<BoutiqueCartProvider>(
+            builder: (context, cart, _) => Stack(
+              alignment: Alignment.center,
+              children: [
+                IconButton(
+                  tooltip: 'Panier',
+                  icon: const Icon(Icons.shopping_cart_outlined),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const BoutiqueCartScreen(),
+                    ),
+                  ),
+                ),
+                if (cart.itemCount > 0)
+                  Positioned(
+                    right: 5,
+                    top: 5,
+                    child: IgnorePointer(
+                      child: Container(
+                        constraints: const BoxConstraints(minWidth: 18),
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.oranje,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${cart.itemCount}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
       body: OceanGradientBackground(
         creatures: CreatureSet.fishAndBubbles,
