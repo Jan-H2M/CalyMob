@@ -438,46 +438,36 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
     final currentUser = authProvider.currentUser;
     if (currentUser == null) return;
 
-    final result = await showDialog<Map<String, dynamic>>(
+    final result = await showDialog<ManualAttendeeSelection>(
       context: context,
       builder: (context) => AddAttendeeDialog(clubId: widget.clubId),
     );
 
     if (result != null && mounted) {
       try {
-        if (widget.isPiscine) {
-          await _piscineService.addAttendee(
-            clubId: widget.clubId,
-            sessionId: widget.operationId,
-            memberId: result['memberId'] as String,
-            memberName: result['memberName'] as String,
-            scannedBy: currentUser.uid,
-            isGuest: result['isGuest'] as bool,
-          );
-        } else {
-          // Walk-in flow disabled — only mark presence on existing inscriptions.
-          final memberId = result['memberId'] as String;
-          final inscription = await _operationService.getUserInscription(
-            clubId: widget.clubId,
-            operationId: widget.operationId,
-            userId: memberId,
-          );
-          if (inscription == null) {
-            _showErrorToast(
-              '${result['memberName']} — pas inscrit·e. Doit d\'abord s\'inscrire dans l\'app.',
+        await routeManualAttendeeSelection(
+          result,
+          // Same canonical path as QR and manual search: profile lookup,
+          // duplicate detection and all eligibility checks before attendance.
+          onMember: _processScannedMember,
+          onGuest: (guest) async {
+            if (!widget.isPiscine) {
+              _showErrorToast(
+                '${guest.memberName} — pas inscrit·e. Doit d\'abord s\'inscrire dans l\'app.',
+              );
+              return;
+            }
+            await _piscineService.addAttendee(
+              clubId: widget.clubId,
+              sessionId: widget.operationId,
+              memberId: guest.memberId,
+              memberName: guest.memberName,
+              scannedBy: currentUser.uid,
+              isGuest: true,
             );
-            return;
-          }
-          final displayName = authProvider.displayName ?? 'Inconnu';
-          await _operationService.markAsPresent(
-            clubId: widget.clubId,
-            operationId: widget.operationId,
-            memberId: memberId,
-            markedByUserId: currentUser.uid,
-            markedByUserName: displayName,
-          );
-        }
-        _showSuccessToast(result['memberName'] as String);
+            _showSuccessToast(guest.memberName);
+          },
+        );
       } catch (e) {
         _showErrorToast(e.toString());
       }
