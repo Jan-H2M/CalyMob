@@ -38,6 +38,16 @@ nog niet in een storeversie zaten.
   afgifte nog met Firestore-emulator te verifiëren. Geen release/version bump.
   Dossier: `docs/bug-cycle/COM-068-no-reservation.md`. Visuele controle met mobiele batch.
 
+### Nog niet geïntegreerd — COM-073 aanvulling
+
+- `codex/bug-COM-073-copy-communication-v2`: één gedeelde, duidelijk gelabelde
+  knop **Copier la communication** op activiteitbetaling, Boutique-bevestiging,
+  besteldetail en cotisatie. Bestaande betaalmethodes blijven ongewijzigd.
+- 2 gerichte clipboard-widgettests groen; gerichte analyzer zonder nieuwe
+  waarschuwingen (13 bestaande info-meldingen in de deelnemersbetaalkaart).
+- Commit `3abc0bc`; nog niet gemerged of uitgebracht. Visuele controle op toestel
+  volgt bij de gezamenlijke mobiele release.
+
 Basisversie: `1.17.0+194`
 
 | Referentie | Wijziging | Platform | Validatie | Risico | Status |
