@@ -37,6 +37,9 @@ function asDate(value) {
 }
 
 function birthdayParts(data) {
+  if (data.share_birthday === false) {
+    return { birth_month: null, birth_day: null };
+  }
   const date = asDate(data.birth_date) || asDate(data.date_naissance);
   if (!date) return { birth_month: null, birth_day: null };
   return { birth_month: date.getMonth() + 1, birth_day: date.getDate() };
@@ -75,6 +78,7 @@ function buildMemberDirectoryProjection(data) {
     is_test_account: data.is_test_account === true,
     share_email: shareEmail,
     share_phone: sharePhone,
+    share_birthday: data.share_birthday !== false,
     consent_internal_photo: consentInternalPhoto,
     email: shareEmail ? nonEmptyString(data.email) : null,
     phone_number: sharePhone ? nonEmptyString(data.phone_number) : null,

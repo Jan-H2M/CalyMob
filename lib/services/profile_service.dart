@@ -247,6 +247,26 @@ class ProfileService {
     }
   }
 
+  /// Mettre à jour le partage de l'anniversaire avec le club.
+  /// Seuls le jour et le mois sont projetés dans l'annuaire public interne.
+  Future<void> updateBirthdaySharing(
+    String clubId,
+    String userId, {
+    required bool shareBirthday,
+  }) async {
+    try {
+      await _firestore.collection('clubs/$clubId/members').doc(userId).update({
+        'share_birthday': shareBirthday,
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      debugPrint('✅ Préférence partage anniversaire mise à jour');
+    } catch (e) {
+      debugPrint('❌ Erreur mise à jour partage anniversaire: $e');
+      rethrow;
+    }
+  }
+
   /// Mettre à jour le numéro de téléphone
   Future<void> updatePhoneNumber(
     String clubId,
@@ -378,13 +398,11 @@ class ProfileService {
   /// Never use private `members` documents for a club-wide list.
   Future<List<MemberProfile>> getAllProfiles(String clubId) async {
     try {
-      final snapshot = await _firestore
-          .collection('clubs/$clubId/member_directory')
-          .get();
+      final snapshot =
+          await _firestore.collection('clubs/$clubId/member_directory').get();
 
-      final profiles = snapshot.docs
-          .map((doc) => MemberProfile.fromDirectory(doc))
-          .toList();
+      final profiles =
+          snapshot.docs.map((doc) => MemberProfile.fromDirectory(doc)).toList();
 
       profiles.sort((a, b) {
         final lastNameCompare =

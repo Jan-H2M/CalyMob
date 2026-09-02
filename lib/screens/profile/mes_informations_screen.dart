@@ -130,6 +130,18 @@ class _MesInformationsScreenState extends State<MesInformationsScreen> {
             onPressed: () => _editPhone(profile),
           ),
         ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: profile.shareBirthday,
+          title: const Text('Partager mon anniversaire'),
+          subtitle: const Text(
+            'Seuls le jour et le mois sont visibles dans Who’s Who. Ce choix active aussi les vœux du club.',
+          ),
+          onChanged: (value) => _updateBirthdaySharing(
+            userId: profile.id,
+            shareBirthday: value,
+          ),
+        ),
         _InfoRow(
           label: 'Date de naissance',
           value: _formatDate(profile.birthDate) ?? 'Non renseignée',
@@ -691,6 +703,17 @@ class _MesInformationsScreenState extends State<MesInformationsScreen> {
           userId,
           shareEmail: shareEmail,
           sharePhone: sharePhone,
+        ));
+  }
+
+  Future<void> _updateBirthdaySharing({
+    required String userId,
+    required bool shareBirthday,
+  }) {
+    return _runSave(() => _profileService.updateBirthdaySharing(
+          _clubId,
+          userId,
+          shareBirthday: shareBirthday,
         ));
   }
 

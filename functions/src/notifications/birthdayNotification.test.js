@@ -16,6 +16,15 @@ describe('birthdayNotification helpers', () => {
     expect(_test.hasBirthdayToday({ birth_date: new Date('1990-08-08T00:00:00Z') }, now)).toBe(false);
   });
 
+  test('keeps legacy sharing enabled but honours an explicit opt-out', () => {
+    const now = new Date('2026-08-07T05:00:00Z');
+    expect(_test.hasBirthdayToday({ birth_date: new Date('1990-08-07T00:00:00Z') }, now)).toBe(true);
+    expect(_test.hasBirthdayToday({
+      birth_date: new Date('1990-08-07T00:00:00Z'),
+      share_birthday: false,
+    }, now)).toBe(false);
+  });
+
   test('only treats explicit active statuses as active', () => {
     expect(_test.isActiveMember({ member_status: 'active' })).toBe(true);
     expect(_test.isActiveMember({ status: 'ACTIVE' })).toBe(true);
