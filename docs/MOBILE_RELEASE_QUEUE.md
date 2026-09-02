@@ -38,6 +38,17 @@ nog niet in een storeversie zaten.
   afgifte nog met Firestore-emulator te verifiëren. Geen release/version bump.
   Dossier: `docs/bug-cycle/COM-068-no-reservation.md`. Visuele controle met mobiele batch.
 
+### Nog niet geïntegreerd — COM-075
+
+- `codex/bug-COM-075-birthday-sharing`: leden kunnen het delen van hun
+  verjaardagsdag en -maand en de verjaardagsmelding uitschakelen. Een ontbrekend
+  veld blijft achterwaarts compatibel actief; er is geen bulkmigratie.
+- Gericht gevalideerd met 11 Cloud Function-tests, 8 modeltests en een groene
+  analyzer op de gewijzigde Dart-bestanden. Onafhankelijke code-/tekstcontrole
+  en visuele controle volgen in de gezamenlijke mobiele releasevoorbereiding.
+- Commit `bd70ba0`; nog niet gemerged, geen function-deploy, version bump, build,
+  upload, store-inzending of Firestore-appversiewijziging.
+
 Basisversie: `1.17.0+194`
 
 | Referentie | Wijziging | Platform | Validatie | Risico | Status |
@@ -67,6 +78,7 @@ Basisversie: `1.17.0+194`
 - Un mode de paiement désactivé ne peut plus être enregistré depuis un écran resté ouvert.
 - Votre choix de désactiver les notifications reste désormais respecté après le retour dans l’application.
 - Les liens dans les discussions d’événements s’ouvrent à nouveau correctement.
+- Vous pouvez choisir de ne plus partager votre anniversaire avec le club.
 - Vous pouvez désormais rejoindre la liste d’attente lorsqu’une activité est complète ou que les inscriptions sont clôturées.
 - Diverses améliorations de stabilité et de suivi des signalements.
 
