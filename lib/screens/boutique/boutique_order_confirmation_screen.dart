@@ -7,6 +7,7 @@ import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../utils/epc_qr_code.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import '../../widgets/payment_communication_copy_button.dart';
 
 class BoutiqueOrderConfirmationScreen extends StatelessWidget {
   final String? orderId;
@@ -284,8 +285,11 @@ class _BankPaymentDetailsState extends State<_BankPaymentDetails> {
               onCopy: () => _copy(widget.iban)),
           _PaymentLine(
               label: 'Communication',
-              value: widget.communication,
-              onCopy: () => _copy(widget.communication, communication: true)),
+              value: widget.communication),
+          PaymentCommunicationCopyButton(
+            communication: widget.communication,
+            onCopied: () => setState(() => communicationCopied = true),
+          ),
           const SizedBox(height: 10),
           SizedBox(
             width: double.infinity,

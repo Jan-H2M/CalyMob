@@ -3,6 +3,35 @@ import 'package:flutter/material.dart';
 import '../../config/app_colors.dart';
 import '../../services/member_service.dart';
 
+/// Explicit result of the manual participant dialog.
+class ManualAttendeeSelection {
+  final String memberId;
+  final String memberName;
+  final bool isGuest;
+
+  const ManualAttendeeSelection.member({
+    required this.memberId,
+    required this.memberName,
+  }) : isGuest = false;
+
+  const ManualAttendeeSelection.guest({
+    required this.memberId,
+    required this.memberName,
+  }) : isGuest = true;
+}
+
+/// Existing members must use the eligibility-aware scan/search path. Only a
+/// genuine guest may use the separate guest write path.
+Future<void> routeManualAttendeeSelection(
+  ManualAttendeeSelection selection, {
+  required Future<void> Function(String memberId) onMember,
+  required Future<void> Function(ManualAttendeeSelection guest) onGuest,
+}) {
+  return selection.isGuest
+      ? onGuest(selection)
+      : onMember(selection.memberId);
+}
+
 /// Simple member data class for the dialog
 class _SimpleMember {
   final String id;
@@ -93,11 +122,10 @@ class _AddAttendeeDialogState extends State<AddAttendeeDialog> {
   }
 
   void _selectMember(_SimpleMember member) {
-    Navigator.of(context).pop({
-      'memberId': member.id,
-      'memberName': member.fullName,
-      'isGuest': false,
-    });
+    Navigator.of(context).pop(ManualAttendeeSelection.member(
+      memberId: member.id,
+      memberName: member.fullName,
+    ));
   }
 
   void _addGuest() {
@@ -116,11 +144,10 @@ class _AddAttendeeDialogState extends State<AddAttendeeDialog> {
 
     // Gebruik timestamp + random suffix om ID collisions te voorkomen
     final random = Random().nextInt(999999).toString().padLeft(6, '0');
-    Navigator.of(context).pop({
-      'memberId': 'guest_${DateTime.now().millisecondsSinceEpoch}_$random',
-      'memberName': '$prenom $nom',
-      'isGuest': true,
-    });
+    Navigator.of(context).pop(ManualAttendeeSelection.guest(
+      memberId: 'guest_${DateTime.now().millisecondsSinceEpoch}_$random',
+      memberName: '$prenom $nom',
+    ));
   }
 
   @override
