@@ -626,12 +626,19 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   }
 
   Future<void> _handleDeleteEvent(Operation operation) async {
+    final authProvider = context.read<AuthProvider>();
+    final actorId = authProvider.currentUser?.uid ?? '';
+    final actorName = _userProfile?.fullName.isNotEmpty == true
+        ? _userProfile!.fullName
+        : authProvider.displayName ??
+            authProvider.currentUser?.email ??
+            'Organisateur';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Supprimer cette plongée ?'),
+        title: const Text('Annuler cette plongée ?'),
         content: Text(
-          'L\'événement "${operation.titre}" sera supprimé avec ses inscriptions, messages et palanquées.',
+          'L\'événement "${operation.titre}" sera annulé. Ses inscriptions, paiements, messages, palanquées et tout le journal resteront conservés.',
         ),
         actions: [
           TextButton(
@@ -642,7 +649,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             onPressed: () => Navigator.pop(dialogContext, true),
             icon: const Icon(Icons.delete_outline, color: Colors.red),
             label: const Text(
-              'Supprimer',
+              'Annuler la plongée',
               style: TextStyle(color: Colors.red),
             ),
           ),
@@ -656,12 +663,14 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       await _operationService.deleteOperation(
         clubId: widget.clubId,
         operationId: widget.operationId,
+        actorId: actorId,
+        actorName: actorName,
       );
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Plongée supprimée'),
+          content: Text('Plongée annulée — historique conservé'),
           backgroundColor: Colors.green,
         ),
       );
@@ -670,7 +679,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Erreur suppression: $e'),
+          content: Text('Erreur annulation: $e'),
           backgroundColor: Colors.red,
         ),
       );

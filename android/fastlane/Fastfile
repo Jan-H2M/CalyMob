@@ -50,7 +50,7 @@ platform :android do
   desc "Validate that the service account can connect to Play Store"
   lane :validate do
     validate_play_store_json_key(
-      json_key: "~/.private_keys/google-play-deploy.json"
+      json_key: ENV.fetch('SUPPLY_JSON_KEY', File.expand_path('~/.private_keys/google-play-deploy.json'))
     )
   end
 end

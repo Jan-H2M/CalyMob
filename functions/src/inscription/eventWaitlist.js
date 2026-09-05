@@ -3,6 +3,47 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 
 const REGION = 'europe-west1';
 const ACTIVE_STATUSES = new Set(['confirmed', 'pending_payment']);
+const ELEVATED_ROLES = new Set(['admin', 'superadmin', 'validateur']);
+
+function cleanAuditText(value, fallback = null, maxLength = 160) {
+  if (typeof value !== 'string') return fallback;
+  const cleaned = value.trim().slice(0, maxLength);
+  return cleaned || fallback;
+}
+
+function actorName(member, uid) {
+  const firstName = cleanAuditText(member.prenom || member.firstName, '', 80);
+  const lastName = cleanAuditText(member.nom || member.lastName, '', 80);
+  return `${firstName} ${lastName}`.trim() || cleanAuditText(member.display_name, uid, 160);
+}
+
+function actionMetadata({ member, uid, source, appVersion, reason, action, now }) {
+  return {
+    last_action: action,
+    last_action_at: now,
+    last_action_by: uid,
+    last_action_by_name: actorName(member, uid),
+    last_action_by_role: cleanAuditText(member.app_role, 'member', 40),
+    last_action_source: cleanAuditText(source, 'unknown', 40),
+    last_action_app_version: cleanAuditText(appVersion, null, 40),
+    last_action_reason: cleanAuditText(reason, null, 240),
+  };
+}
+
+function cancellationPatch(input) {
+  return {
+    registration_status: 'canceled',
+    canceled_at: input.now,
+    canceled_by: input.uid,
+    canceled_by_name: actorName(input.member, input.uid),
+    canceled_by_role: cleanAuditText(input.member.app_role, 'member', 40),
+    canceled_source: cleanAuditText(input.source, 'unknown', 40),
+    canceled_app_version: cleanAuditText(input.appVersion, null, 40),
+    canceled_reason: cleanAuditText(input.reason, 'withdrawal', 240),
+    updated_at: input.now,
+    ...actionMetadata(input),
+  };
+}
 
 function asDate(value) {
   if (!value) return null;
@@ -108,7 +149,7 @@ async function requireMember(clubId, uid) {
 }
 
 function canManageWaitlist(member, uid, operation) {
-  return ['admin', 'superadmin', 'validateur'].includes(member.app_role)
+  return ELEVATED_ROLES.has(member.app_role)
     || operation.organisateur_id === uid;
 }
 
@@ -120,7 +161,7 @@ async function activeCount(transaction, inscriptionsRef) {
 const joinEventWaitlist = onCall({ region: REGION }, async request => {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Authentification requise.');
-  const { clubId, operationId } = request.data || {};
+  const { clubId, operationId, source = 'calymob', appVersion = null } = request.data || {};
   if (!clubId || !operationId) throw new HttpsError('invalid-argument', 'clubId et operationId requis.');
 
   const member = await requireMember(clubId, uid);
@@ -158,8 +199,31 @@ const joinEventWaitlist = onCall({ region: REGION }, async request => {
       date_inscription: now,
       created_at: now,
       updated_at: now,
+      created_by: uid,
+      created_by_name: actorName(memberData, uid),
+      created_source: cleanAuditText(source, 'calymob', 40),
+      created_app_version: cleanAuditText(appVersion, null, 40),
+      ...actionMetadata({
+        member: memberData,
+        uid,
+        source,
+        appVersion,
+        reason: reason === 'full' ? 'waitlist_full' : `waitlist_${reason}`,
+        action: 'waitlisted',
+        now,
+      }),
     });
-    transaction.set(auditRef.doc(), { action: 'joined', membre_id: uid, inscription_id: waitlistRef.id, reason, at: now, by: uid });
+    transaction.set(auditRef.doc(), {
+      action: 'joined',
+      membre_id: uid,
+      inscription_id: waitlistRef.id,
+      reason,
+      at: now,
+      by: uid,
+      by_name: actorName(memberData, uid),
+      source: cleanAuditText(source, 'calymob', 40),
+      app_version: cleanAuditText(appVersion, null, 40),
+    });
     return { status: 'waitlisted', reason };
   });
 });
@@ -167,9 +231,15 @@ const joinEventWaitlist = onCall({ region: REGION }, async request => {
 const leaveEventWaitlist = onCall({ region: REGION }, async request => {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Authentification requise.');
-  const { clubId, operationId } = request.data || {};
+  const {
+    clubId,
+    operationId,
+    source = 'calymob',
+    appVersion = null,
+    reason = 'left_waitlist',
+  } = request.data || {};
   if (!clubId || !operationId) throw new HttpsError('invalid-argument', 'clubId et operationId requis.');
-  await requireMember(clubId, uid);
+  const member = await requireMember(clubId, uid);
   const { operationRef, inscriptionsRef, auditRef } = refs(clubId, operationId);
   return admin.firestore().runTransaction(async transaction => {
     const operationSnap = await transaction.get(operationRef);
@@ -178,21 +248,48 @@ const leaveEventWaitlist = onCall({ region: REGION }, async request => {
     const entry = matches.docs.find(doc => doc.data().registration_status === 'waitlisted');
     if (!entry) throw new HttpsError('not-found', 'Entrée de liste d’attente introuvable.');
     const now = admin.firestore.Timestamp.now();
-    transaction.delete(entry.ref);
-    transaction.set(auditRef.doc(), { action: 'left', membre_id: uid, inscription_id: entry.id, at: now, by: uid });
-    return { status: 'removed' };
+    transaction.update(entry.ref, cancellationPatch({
+      member: member.data(),
+      uid,
+      source,
+      appVersion,
+      reason,
+      action: 'left_waitlist',
+      now,
+    }));
+    transaction.set(auditRef.doc(), {
+      action: 'left',
+      membre_id: uid,
+      inscription_id: entry.id,
+      at: now,
+      by: uid,
+      by_name: actorName(member.data(), uid),
+      source: cleanAuditText(source, 'calymob', 40),
+      app_version: cleanAuditText(appVersion, null, 40),
+      reason: cleanAuditText(reason, 'left_waitlist', 240),
+    });
+    return { status: 'canceled' };
   });
 });
 
 const unregisterFromEvent = onCall({ region: REGION }, async request => {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Authentification requise.');
-  const { clubId, operationId, guestAction = null } = request.data || {};
+  const {
+    clubId,
+    operationId,
+    inscriptionId = null,
+    guestAction = null,
+    source = 'calymob',
+    appVersion = null,
+    reason = null,
+  } = request.data || {};
   if (!clubId || !operationId) throw new HttpsError('invalid-argument', 'clubId et operationId requis.');
   if (![null, 'delete', 'transfer'].includes(guestAction)) {
     throw new HttpsError('invalid-argument', 'Gestion des invités invalide.');
   }
-  await requireMember(clubId, uid);
+  const member = await requireMember(clubId, uid);
+  const memberData = member.data();
   const { operationRef, inscriptionsRef, auditRef } = refs(clubId, operationId);
 
   const result = await admin.firestore().runTransaction(async transaction => {
@@ -203,24 +300,42 @@ const unregisterFromEvent = onCall({ region: REGION }, async request => {
     if (!operationSnap.exists) throw new HttpsError('not-found', 'Événement introuvable.');
     const ownEntry = inscriptionsSnap.docs.find(doc => {
       const data = doc.data();
-      return data.membre_id === uid && data.registration_status !== 'canceled';
+      if (data.registration_status === 'canceled') return false;
+      return inscriptionId ? doc.id === inscriptionId : data.membre_id === uid;
     });
     if (!ownEntry) throw new HttpsError('not-found', 'Inscription introuvable.');
 
+    const ownData = ownEntry.data();
+    const isElevated = ELEVATED_ROLES.has(memberData.app_role);
+    const ownsRegistration = ownData.membre_id === uid;
+    const ownsGuest = ownData.is_guest === true && ownData.added_by === uid;
+    if (!isElevated && !ownsRegistration && !ownsGuest) {
+      throw new HttpsError('permission-denied', 'Vous ne pouvez pas annuler cette inscription.');
+    }
+
     const operation = operationSnap.data();
-    const wasWaitlisted = ownEntry.data().registration_status === 'waitlisted';
+    const wasWaitlisted = ownData.registration_status === 'waitlisted';
     const now = admin.firestore.Timestamp.now();
     const guests = inscriptionsSnap.docs.filter(doc => (
       doc.data().parent_inscription_id === ownEntry.id
       && doc.data().registration_status !== 'canceled'
     ));
-    if (guests.length > 0 && guestAction === null) {
+    const effectiveGuestAction = guestAction || (isElevated ? 'transfer' : null);
+    if (guests.length > 0 && effectiveGuestAction === null) {
       throw new HttpsError('failed-precondition', 'Choisissez le traitement des invités.');
     }
     const removedEntries = [ownEntry];
-    if (guestAction === 'delete') {
+    if (effectiveGuestAction === 'delete') {
       for (const guest of guests) {
-        transaction.delete(guest.ref);
+        transaction.update(guest.ref, cancellationPatch({
+          member: memberData,
+          uid,
+          source,
+          appVersion,
+          reason: 'parent_withdrawal',
+          action: 'guest_unregistered',
+          now,
+        }));
         removedEntries.push(guest);
         transaction.set(auditRef.doc(), {
           action: 'guest_removed_after_withdrawal',
@@ -228,12 +343,16 @@ const unregisterFromEvent = onCall({ region: REGION }, async request => {
           released_by: uid,
           at: now,
           by: uid,
+          by_name: actorName(memberData, uid),
+          source: cleanAuditText(source, 'calymob', 40),
+          app_version: cleanAuditText(appVersion, null, 40),
         });
       }
-    } else if (guestAction === 'transfer') {
+    } else if (effectiveGuestAction === 'transfer') {
       const organizerEntry = inscriptionsSnap.docs.find(doc => {
         const data = doc.data();
-        return data.membre_id === operation.organisateur_id
+        return doc.id !== ownEntry.id
+          && data.membre_id === operation.organisateur_id
           && data.registration_status !== 'canceled'
           && data.is_guest !== true;
       });
@@ -243,27 +362,49 @@ const unregisterFromEvent = onCall({ region: REGION }, async request => {
           ...(operation.organisateur_id ? { added_by: operation.organisateur_id } : {}),
           ...(operation.organisateur_nom ? { added_by_name: operation.organisateur_nom } : {}),
           updated_at: now,
+          ...actionMetadata({
+            member: memberData,
+            uid,
+            source,
+            appVersion,
+            reason: 'parent_withdrawal_transfer',
+            action: 'guest_transferred',
+            now,
+          }),
         });
       }
     }
-    transaction.delete(ownEntry.ref);
+    transaction.update(ownEntry.ref, cancellationPatch({
+      member: memberData,
+      uid,
+      source,
+      appVersion,
+      reason: reason || (isElevated && !ownsRegistration ? 'admin_cancellation' : 'self_withdrawal'),
+      action: wasWaitlisted ? 'left_waitlist' : 'unregistered',
+      now,
+    }));
     transaction.set(auditRef.doc(), {
       action: wasWaitlisted ? 'left' : 'unregistered',
-      membre_id: uid,
+      membre_id: ownData.membre_id || null,
       inscription_id: ownEntry.id,
       at: now,
       by: uid,
+      by_name: actorName(memberData, uid),
+      by_role: cleanAuditText(memberData.app_role, 'member', 40),
+      source: cleanAuditText(source, 'calymob', 40),
+      app_version: cleanAuditText(appVersion, null, 40),
+      reason: cleanAuditText(reason, isElevated && !ownsRegistration ? 'admin_cancellation' : 'self_withdrawal', 240),
     });
 
     if (wasWaitlisted) {
-      return { status: 'removed', promoted: [], notifications: [] };
+      return { status: 'canceled', promoted: [], notifications: [] };
     }
     const nextEntries = promotionCandidatesAfterWithdrawal(
       operation,
       inscriptionsSnap.docs,
       removedEntries.map(entry => entry.id),
     );
-    if (nextEntries.length === 0) return { status: 'removed', promoted: [], notifications: [] };
+    if (nextEntries.length === 0) return { status: 'canceled', promoted: [], notifications: [] };
     const promotedStatus = registrationStatusAfterPromotion(operation);
     for (const nextEntry of nextEntries) {
       transaction.update(nextEntry.ref, {
@@ -272,6 +413,15 @@ const unregisterFromEvent = onCall({ region: REGION }, async request => {
         waitlist_promoted_at: now,
         waitlist_promoted_by: 'automatic_after_withdrawal',
         updated_at: now,
+        ...actionMetadata({
+          member: { prenom: 'Système', app_role: 'system' },
+          uid: 'system',
+          source: 'cloud_function',
+          appVersion: null,
+          reason: 'automatic_after_withdrawal',
+          action: 'waitlist_promoted',
+          now,
+        }),
       });
       transaction.set(auditRef.doc(), {
         action: 'promoted_after_withdrawal',
@@ -284,7 +434,7 @@ const unregisterFromEvent = onCall({ region: REGION }, async request => {
       });
     }
     return {
-      status: 'removed',
+      status: 'canceled',
       promoted: nextEntries.map(entry => entry.id),
       promotedStatus,
       notifications: nextEntries.map(entry => ({ operation, memberId: entry.data().membre_id })),
@@ -335,7 +485,13 @@ async function sendPromotionNotification(clubId, operationId, operation, memberI
 const promoteEventWaitlistEntry = onCall({ region: REGION }, async request => {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Authentification requise.');
-  const { clubId, operationId, inscriptionId } = request.data || {};
+  const {
+    clubId,
+    operationId,
+    inscriptionId,
+    source = 'calymob',
+    appVersion = null,
+  } = request.data || {};
   if (!clubId || !operationId || !inscriptionId) throw new HttpsError('invalid-argument', 'Paramètres incomplets.');
   const { operationRef, inscriptionsRef, auditRef } = refs(clubId, operationId);
   const organizer = await requireMember(clubId, uid);
@@ -365,6 +521,15 @@ const promoteEventWaitlistEntry = onCall({ region: REGION }, async request => {
       waitlist_promoted_at: now,
       waitlist_promoted_by: uid,
       updated_at: now,
+      ...actionMetadata({
+        member: organizer.data(),
+        uid,
+        source,
+        appVersion,
+        reason: 'manual_waitlist_promotion',
+        action: 'waitlist_promoted',
+        now,
+      }),
     });
     transaction.set(auditRef.doc(), { action: 'promoted', membre_id: entrySnap.data().membre_id, inscription_id: entrySnap.id, at: now, by: uid, resulting_status: status });
     return { status, notification: { operation, memberId: entrySnap.data().membre_id } };
@@ -379,6 +544,8 @@ const promoteEventWaitlistEntry = onCall({ region: REGION }, async request => {
 
 module.exports = {
   ACTIVE_STATUSES,
+  actionMetadata,
+  cancellationPatch,
   effectiveDeadline,
   waitlistReason,
   registrationStatusAfterPromotion,

@@ -14,7 +14,7 @@ import 'package:calymob/services/operation_service.dart';
 /// Scenarios:
 /// 1. Unpaid inscription, supplement change — no refund needed
 /// 2. Paid inscription, price decrease — refund fire-and-forget
-/// 3. Cancel guest on paid inscription — guest deleted, history written
+/// 3. Cancel guest on paid inscription — guest preserved, history written
 /// 4. Edit history: written on every update
 /// 5. Guest with supplements: delta reflects guest price + supplement
 void main() {
@@ -23,8 +23,7 @@ void main() {
   const userId = 'user1';
   const inscriptionId = 'ins1';
   const guestId = 'guest_initial_001';
-  final inscriptionsPath =
-      'clubs/$clubId/operations/$operationId/inscriptions';
+  final inscriptionsPath = 'clubs/$clubId/operations/$operationId/inscriptions';
 
   late FakeFirebaseFirestore firestore;
   late OperationService service;
@@ -38,7 +37,8 @@ void main() {
       'titre': 'Test Event',
       'type': 'evenement',
       'statut': 'actif',
-      'date_debut': Timestamp.fromDate(DateTime.now().add(const Duration(days: 14))),
+      'date_debut':
+          Timestamp.fromDate(DateTime.now().add(const Duration(days: 14))),
       'created_at': Timestamp.now(),
       'updated_at': Timestamp.now(),
     });
@@ -53,7 +53,8 @@ void main() {
       'titre': 'Test Event',
       'type': 'evenement',
       'statut': 'actif',
-      'date_debut': Timestamp.fromDate(DateTime.now().add(const Duration(days: 14))),
+      'date_debut':
+          Timestamp.fromDate(DateTime.now().add(const Duration(days: 14))),
       if (deadline != null)
         'registration_deadline': Timestamp.fromDate(deadline),
       'created_at': Timestamp.now(),
@@ -145,7 +146,9 @@ void main() {
         clubId: clubId,
         operationId: operationId,
         inscriptionId: inscriptionId,
-        selectedSupplements: [SelectedSupplement(id: 'sup2', name: 'Remplacement', price: 5.0)],
+        selectedSupplements: [
+          SelectedSupplement(id: 'sup2', name: 'Remplacement', price: 5.0)
+        ],
         supplementTotal: newTotal,
       );
 
@@ -156,16 +159,16 @@ void main() {
       expect(delta, 5.0);
 
       // Assert: Firestore was updated correctly
-      final doc = await firestore
-          .collection(inscriptionsPath)
-          .doc(inscriptionId)
-          .get();
+      final doc =
+          await firestore.collection(inscriptionsPath).doc(inscriptionId).get();
       final data = doc.data()!;
       expect((data['supplement_total'] as num).toDouble(), newTotal);
       expect(data['paye'], isFalse);
       expect(
         data['selected_supplements'],
-        [{'id': 'sup2', 'name': 'Remplacement', 'price': 5.0}],
+        [
+          {'id': 'sup2', 'name': 'Remplacement', 'price': 5.0}
+        ],
       );
 
       // Assert: edit_history subcollection has 1 entry
@@ -202,10 +205,8 @@ void main() {
 
       // Assert: even though delta=20 (price decreased), the inscription
       // is unpaid so no refund was needed — the update succeeded.
-      final doc = await firestore
-          .collection(inscriptionsPath)
-          .doc(inscriptionId)
-          .get();
+      final doc =
+          await firestore.collection(inscriptionsPath).doc(inscriptionId).get();
       expect((doc.data()!['supplement_total'] as num).toDouble(), 0.0);
     });
   });
@@ -243,10 +244,8 @@ void main() {
       expect(delta, 10.0);
 
       // Assert: Firestore updated
-      final doc = await firestore
-          .collection(inscriptionsPath)
-          .doc(inscriptionId)
-          .get();
+      final doc =
+          await firestore.collection(inscriptionsPath).doc(inscriptionId).get();
       expect((doc.data()!['supplement_total'] as num).toDouble(), 0.0);
       expect(doc.data()!['selected_supplements'], isEmpty);
     });
@@ -266,7 +265,9 @@ void main() {
         clubId: clubId,
         operationId: operationId,
         inscriptionId: inscriptionId,
-        selectedSupplements: [SelectedSupplement(id: 'sup1', name: 'Add-on', price: 15.0)],
+        selectedSupplements: [
+          SelectedSupplement(id: 'sup1', name: 'Add-on', price: 15.0)
+        ],
         supplementTotal: 15.0,
       );
 
@@ -274,21 +275,21 @@ void main() {
       expect(delta, -15.0);
 
       // Firestore updated
-      final doc = await firestore
-          .collection(inscriptionsPath)
-          .doc(inscriptionId)
-          .get();
+      final doc =
+          await firestore.collection(inscriptionsPath).doc(inscriptionId).get();
       expect((doc.data()!['supplement_total'] as num).toDouble(), 15.0);
     });
   });
 
   // ================================================================
   // Scenario 3: Cancel 1 guest on paid inscription
-  //   The service deletes the guest doc and writes edit_history.
+  //   The service preserves the guest as canceled and writes edit_history.
   //   Refund CF call fails silently in tests (no CF emulator).
   // ================================================================
   group('Scenario 3 — Cancel guest on paid inscription', () {
-    test('removing one guest: guest doc deleted, edit_history written', () async {
+    test(
+        'removing one guest: guest preserved as canceled, edit_history written',
+        () async {
       // Arrange: paid parent + 2 guests
       await seedInscription(
         prix: 50.0,
@@ -342,16 +343,26 @@ void main() {
       //   delta = 110 - 50 = 60
       expect(delta, 60.0);
 
-      // Guest 1 doc deleted
+      // Guest 1 is never deleted: accounting and audit data remain intact.
       final g1Snap = await g1Ref.get();
-      expect(g1Snap.exists, isFalse);
+      expect(g1Snap.exists, isTrue);
+      expect(g1Snap.data()?['registration_status'], 'canceled');
+      expect(g1Snap.data()?['paye'], isTrue);
+      expect(g1Snap.data()?['amount_paid'], 30.0);
+      expect(g1Snap.data()?['canceled_reason'],
+          'guest_removed_during_registration_edit');
 
       // Guest 2 still exists
       final guestsAfter = await firestore
           .collection(inscriptionsPath)
           .where('parent_inscription_id', isEqualTo: inscriptionId)
           .get();
-      expect(guestsAfter.docs.length, 1);
+      expect(
+        guestsAfter.docs
+            .where((doc) => doc.data()['registration_status'] != 'canceled')
+            .length,
+        1,
+      );
 
       // Assert: edit_history written
       final historySnap = await firestore
@@ -381,7 +392,10 @@ void main() {
         clubId: clubId,
         operationId: operationId,
         inscriptionId: inscriptionId,
-        selectedSupplements: [SelectedSupplement(id: 'sup2', name: 'Extra 1', price: 10.0), SelectedSupplement(id: 'sup3', name: 'Extra 2', price: 5.0)],
+        selectedSupplements: [
+          SelectedSupplement(id: 'sup2', name: 'Extra 1', price: 10.0),
+          SelectedSupplement(id: 'sup3', name: 'Extra 2', price: 5.0)
+        ],
         supplementTotal: 15.0,
       );
 
@@ -437,7 +451,9 @@ void main() {
             nom: 'Dupont',
             prix: 25.0,
             tariffId: null,
-            selectedSupplements: [SelectedSupplement(id: 'sup_palmes', name: 'Palmes', price: 5.0)],
+            selectedSupplements: [
+              SelectedSupplement(id: 'sup_palmes', name: 'Palmes', price: 5.0)
+            ],
             supplementTotal: 5.0,
           ),
         ],
@@ -456,7 +472,9 @@ void main() {
       expect(guest['paye'], isFalse); // new guests start unpaid
       expect(
         guest['selected_supplements'],
-        [{'id': 'sup_palmes', 'name': 'Palmes', 'price': 5.0}],
+        [
+          {'id': 'sup_palmes', 'name': 'Palmes', 'price': 5.0}
+        ],
       );
     });
   });
