@@ -37,7 +37,12 @@ function changedFields(before = {}, after = {}) {
 
 function classifyEvent(before, after) {
   if (!after) return 'hard_deleted';
-  if (!before) return after.registration_status === 'waitlisted' ? 'waitlisted' : 'registered';
+  if (!before) {
+    if (after.historical_reconstructed === true || after.last_action === 'historical_restored') {
+      return 'historical_restored';
+    }
+    return after.registration_status === 'waitlisted' ? 'waitlisted' : 'registered';
+  }
   if (before.registration_status !== 'canceled' && after.registration_status === 'canceled') {
     return after.last_action === 'left_waitlist' ? 'left_waitlist' : 'unregistered';
   }

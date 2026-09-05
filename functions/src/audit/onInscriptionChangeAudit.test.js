@@ -23,6 +23,14 @@ describe('registration audit classification', () => {
     )).toBe('unregistered');
   });
 
+  test('classifies a reconstructed historical deletion explicitly', () => {
+    expect(classifyEvent(null, {
+      registration_status: 'canceled',
+      historical_reconstructed: true,
+      last_action: 'historical_restored',
+    })).toBe('historical_restored');
+  });
+
   test('flags every unexpected document deletion as a hard-delete incident', () => {
     expect(classifyEvent({ registration_status: 'confirmed' }, null)).toBe('hard_deleted');
     expect(actorMetadata(
