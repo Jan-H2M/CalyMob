@@ -10,6 +10,6 @@ void main() {
       'after_payment',
     );
     expect(EventPaymentDefaults.paymentDeadlineDays, 3);
-    expect(EventPaymentDefaults.autoCancelUnpaid, isTrue);
+    expect(EventPaymentDefaults.autoCancelUnpaid, isFalse);
   });
 }

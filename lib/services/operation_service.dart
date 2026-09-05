@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../models/operation.dart';
 import '../models/member_profile.dart';
 import '../models/participant_operation.dart';
@@ -32,6 +33,64 @@ class OperationService {
   FirebaseFunctions get _functions =>
       _injectedFunctions ??
       FirebaseFunctions.instanceFor(region: 'europe-west1');
+
+  Future<String?> _appVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      return '${info.version}+${info.buildNumber}';
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Map<String, dynamic> _actionMetadata({
+    required String action,
+    required String actorId,
+    required String actorName,
+    required String source,
+    required String reason,
+    String actorRole = 'member',
+    String? appVersion,
+  }) =>
+      {
+        'last_action': action,
+        'last_action_at': FieldValue.serverTimestamp(),
+        'last_action_by': actorId,
+        'last_action_by_name': actorName,
+        'last_action_by_role': actorRole,
+        'last_action_source': source,
+        if (appVersion != null) 'last_action_app_version': appVersion,
+        'last_action_reason': reason,
+      };
+
+  Map<String, dynamic> _cancellationMetadata({
+    required String actorId,
+    required String actorName,
+    required String source,
+    required String reason,
+    String actorRole = 'member',
+    String? appVersion,
+  }) =>
+      {
+        'registration_status': 'canceled',
+        'canceled_at': FieldValue.serverTimestamp(),
+        'canceled_by': actorId,
+        'canceled_by_name': actorName,
+        'canceled_by_role': actorRole,
+        'canceled_source': source,
+        if (appVersion != null) 'canceled_app_version': appVersion,
+        'canceled_reason': reason,
+        'updated_at': FieldValue.serverTimestamp(),
+        ..._actionMetadata(
+          action: 'unregistered',
+          actorId: actorId,
+          actorName: actorName,
+          actorRole: actorRole,
+          source: source,
+          reason: reason,
+          appVersion: appVersion,
+        ),
+      };
 
   /// Remove diacritics for locale-aware sorting (é→e, è→e, ü→u, etc.)
   static String _removeDiacritics(String str) {
@@ -105,9 +164,11 @@ class OperationService {
           .get();
 
       final count = snapshot.docs
-          .where((doc) =>
-              doc.data()['registration_status'] != 'canceled' &&
-              doc.data()['registration_status'] != 'waitlisted')
+          .where(
+            (doc) =>
+                doc.data()['registration_status'] != 'canceled' &&
+                doc.data()['registration_status'] != 'waitlisted',
+          )
           .length;
       debugPrint('👥 $count participants pour opération $operationId');
       return count;
@@ -134,9 +195,11 @@ class OperationService {
         final status = doc.data()['registration_status'];
         return status != 'canceled' && status != 'waitlisted';
       });
-      debugPrint(isRegistered
-          ? '✅ Utilisateur $userId déjà inscrit à $operationId'
-          : '❌ Utilisateur $userId NON inscrit à $operationId');
+      debugPrint(
+        isRegistered
+            ? '✅ Utilisateur $userId déjà inscrit à $operationId'
+            : '❌ Utilisateur $userId NON inscrit à $operationId',
+      );
 
       return isRegistered;
     } catch (e) {
@@ -161,13 +224,18 @@ class OperationService {
       userId: userId,
     );
     if (existing != null) {
-      throw Exception(existing.isWaitlisted
-          ? 'Vous êtes déjà sur la liste d’attente'
-          : 'Vous êtes déjà inscrit à cet événement');
+      throw Exception(
+        existing.isWaitlisted
+            ? 'Vous êtes déjà sur la liste d’attente'
+            : 'Vous êtes déjà inscrit à cet événement',
+      );
     }
+    final appVersion = await _appVersion();
     await _functions.httpsCallable('joinEventWaitlist').call({
       'clubId': clubId,
       'operationId': operationId,
+      'source': 'calymob',
+      if (appVersion != null) 'appVersion': appVersion,
     });
   }
 
@@ -188,11 +256,16 @@ class OperationService {
       await _assertOperationAcceptsRegistration(clubId, operationId);
       // Vérifier si déjà inscrit
       final existing = await getUserInscription(
-          clubId: clubId, operationId: operationId, userId: userId);
+        clubId: clubId,
+        operationId: operationId,
+        userId: userId,
+      );
       if (existing != null) {
-        throw Exception(existing.isWaitlisted
-            ? 'Vous êtes déjà sur la liste d’attente'
-            : 'Vous êtes déjà inscrit à cet événement');
+        throw Exception(
+          existing.isWaitlisted
+              ? 'Vous êtes déjà sur la liste d’attente'
+              : 'Vous êtes déjà inscrit à cet événement',
+        );
       }
 
       // Vérifier capacité
@@ -214,7 +287,8 @@ class OperationService {
         );
         appliedTariff = _findTariffByPrice(operation, prix);
         debugPrint(
-            '💰 Prix calculé: $prix€ pour fonction ${TariffUtils.getFunctionLabel(memberProfile)}');
+          '💰 Prix calculé: $prix€ pour fonction ${TariffUtils.getFunctionLabel(memberProfile)}',
+        );
       } else {
         // Fallback si pas de profil
         prix = operation.prixMembre ?? 0.0;
@@ -238,7 +312,7 @@ class OperationService {
             : 'confirmed',
         paymentExpiresAt: operation.paymentRequired &&
                 operation.registrationConfirmationPolicy == 'after_payment' &&
-                operation.autoCancelUnpaid
+                operation.paymentDeadlineDays > 0
             ? DateTime.now().add(Duration(days: operation.paymentDeadlineDays))
             : null,
         dateInscription: DateTime.now(),
@@ -259,13 +333,29 @@ class OperationService {
 
       // Sauvegarder dans Firestore (subcollection under operation)
       await _assertOperationAcceptsRegistration(clubId, operationId);
+      final appVersion = await _appVersion();
       await _firestore
           .collection('clubs/$clubId/operations/$operationId/inscriptions')
-          .add(participant.toFirestore());
+          .add({
+        ...participant.toFirestore(),
+        'created_by': userId,
+        'created_by_name': userName,
+        'created_source': 'calymob',
+        if (appVersion != null) 'created_app_version': appVersion,
+        ..._actionMetadata(
+          action: 'registered',
+          actorId: userId,
+          actorName: userName,
+          source: 'calymob',
+          reason: 'self_registration',
+          appVersion: appVersion,
+        ),
+      });
 
       final totalPrix = prix + (supplementTotal ?? 0);
       debugPrint(
-          '✅ Inscription réussie: $userName → ${operation.titre} (total: $totalPrix€)');
+        '✅ Inscription réussie: $userName → ${operation.titre} (total: $totalPrix€)',
+      );
     } catch (e) {
       debugPrint('❌ Erreur inscription: $e');
       rethrow;
@@ -341,10 +431,14 @@ class OperationService {
       // Removing the registration and promoting the oldest waiting member
       // must be atomic, otherwise two simultaneous cancellations can assign
       // the same free place.
+      final appVersion = await _appVersion();
       await _functions.httpsCallable('unregisterFromEvent').call({
         'clubId': clubId,
         'operationId': operationId,
         if (guestAction != null) 'guestAction': guestAction,
+        'source': 'calymob',
+        if (appVersion != null) 'appVersion': appVersion,
+        'reason': 'self_withdrawal',
       });
 
       debugPrint('✅ Désinscription réussie: user $userId');
@@ -373,9 +467,12 @@ class OperationService {
         }
 
         final byTime = millis(
-                left.data()['requested_at'] ?? left.data()['date_inscription'])
-            .compareTo(millis(right.data()['requested_at'] ??
-                right.data()['date_inscription']));
+          left.data()['requested_at'] ?? left.data()['date_inscription'],
+        ).compareTo(
+          millis(
+            right.data()['requested_at'] ?? right.data()['date_inscription'],
+          ),
+        );
         return byTime != 0 ? byTime : left.id.compareTo(right.id);
       });
     final index = waiting.indexWhere(
@@ -384,14 +481,24 @@ class OperationService {
     return index < 0 ? null : index + 1;
   }
 
-  /// Supprime tous les invités liés à une inscription parente.
-  /// Utilisé quand un membre se désinscrit et veut emmener ses invités.
+  /// Annule tous les invités liés à une inscription parente sans effacer leur
+  /// historique, leur paiement ou leur transaction.
   Future<int> deleteGuestsForParentInscription({
     required String clubId,
     required String operationId,
     required String parentInscriptionId,
   }) async {
     try {
+      final parent = await _firestore
+          .collection('clubs/$clubId/operations/$operationId/inscriptions')
+          .doc(parentInscriptionId)
+          .get();
+      final parentData = parent.data() ?? <String, dynamic>{};
+      final actorId = parentData['membre_id'] as String? ?? 'unknown-member';
+      final actorName =
+          '${parentData['membre_prenom'] ?? ''} ${parentData['membre_nom'] ?? ''}'
+              .trim();
+      final appVersion = await _appVersion();
       final snapshot = await _firestore
           .collection('clubs/$clubId/operations/$operationId/inscriptions')
           .where('parent_inscription_id', isEqualTo: parentInscriptionId)
@@ -399,10 +506,22 @@ class OperationService {
 
       final batch = _firestore.batch();
       for (final doc in snapshot.docs) {
-        batch.delete(doc.reference);
+        if (doc.data()['registration_status'] == 'canceled') continue;
+        batch.update(
+          doc.reference,
+          _cancellationMetadata(
+            actorId: actorId,
+            actorName: actorName.isEmpty ? actorId : actorName,
+            source: 'calymob',
+            reason: 'parent_withdrawal',
+            appVersion: appVersion,
+          ),
+        );
       }
       await batch.commit();
-      debugPrint('✅ ${snapshot.docs.length} invité(s) supprimé(s)');
+      debugPrint(
+        '✅ ${snapshot.docs.length} invité(s) désinscrit(s) avec historique',
+      );
       return snapshot.docs.length;
     } catch (e) {
       debugPrint('❌ Erreur deleteGuestsForParentInscription: $e');
@@ -427,6 +546,7 @@ class OperationService {
     required String? newParentDisplayName,
   }) async {
     try {
+      final appVersion = await _appVersion();
       final snapshot = await _firestore
           .collection('clubs/$clubId/operations/$operationId/inscriptions')
           .where('parent_inscription_id', isEqualTo: oldParentInscriptionId)
@@ -434,16 +554,33 @@ class OperationService {
 
       final batch = _firestore.batch();
       for (final doc in snapshot.docs) {
+        if (doc.data()['registration_status'] == 'canceled') continue;
+        final actorId = doc.data()['added_by'] as String? ??
+            newParentUserId ??
+            'unknown-member';
+        final actorName = doc.data()['added_by_name'] as String? ??
+            newParentDisplayName ??
+            actorId;
         batch.update(doc.reference, {
           'parent_inscription_id': newParentInscriptionId,
           if (newParentUserId != null) 'added_by': newParentUserId,
           if (newParentDisplayName != null)
             'added_by_name': newParentDisplayName,
+          'updated_at': FieldValue.serverTimestamp(),
+          ..._actionMetadata(
+            action: 'guest_transferred',
+            actorId: actorId,
+            actorName: actorName,
+            source: 'calymob',
+            reason: 'parent_withdrawal_transfer',
+            appVersion: appVersion,
+          ),
         });
       }
       await batch.commit();
       debugPrint(
-          '✅ ${snapshot.docs.length} invité(s) transféré(s) vers $newParentInscriptionId');
+        '✅ ${snapshot.docs.length} invité(s) transféré(s) vers $newParentInscriptionId',
+      );
       return snapshot.docs.length;
     } catch (e) {
       debugPrint('❌ Erreur transferGuestsToParent: $e');
@@ -463,10 +600,12 @@ class OperationService {
       final snapshot = await _firestore
           .collection('clubs/$clubId/operations/$operationId/inscriptions')
           .where('membre_id', isEqualTo: userId)
-          .limit(1)
           .get();
-      if (snapshot.docs.isEmpty) return null;
-      return ParticipantOperation.fromFirestore(snapshot.docs.first);
+      for (final document in snapshot.docs) {
+        final inscription = ParticipantOperation.fromFirestore(document);
+        if (inscription.registrationStatus != 'canceled') return inscription;
+      }
+      return null;
     } catch (e) {
       debugPrint('❌ Erreur findInscriptionForUser: $e');
       return null;
@@ -481,14 +620,29 @@ class OperationService {
     required List<SelectedSupplement> selectedSupplements,
     required double supplementTotal,
   }) async {
-    await _firestore
+    final reference = _firestore
         .collection('clubs/$clubId/operations/$operationId/inscriptions')
-        .doc(inscriptionDocId)
-        .update({
+        .doc(inscriptionDocId);
+    final snapshot = await reference.get();
+    if (!snapshot.exists) throw Exception('Inscription non trouvée');
+    final data = snapshot.data()!;
+    final actorId = data['membre_id'] as String? ?? 'unknown-member';
+    final actorName =
+        '${data['membre_prenom'] ?? ''} ${data['membre_nom'] ?? ''}'.trim();
+    final appVersion = await _appVersion();
+    await reference.update({
       'selected_supplements':
           selectedSupplements.map((s) => s.toMap()).toList(),
       'supplement_total': supplementTotal,
       'updated_at': FieldValue.serverTimestamp(),
+      ..._actionMetadata(
+        action: 'updated',
+        actorId: actorId,
+        actorName: actorName.isEmpty ? actorId : actorName,
+        source: 'calymob',
+        reason: 'supplements_updated',
+        appVersion: appVersion,
+      ),
     });
   }
 
@@ -500,7 +654,8 @@ class OperationService {
   ) async {
     try {
       debugPrint(
-          '🔍 Recherche participants dans subcollection inscriptions pour operation_id: $operationId');
+        '🔍 Recherche participants dans subcollection inscriptions pour operation_id: $operationId',
+      );
 
       final snapshot = await _firestore
           .collection('clubs/$clubId/operations/$operationId/inscriptions')
@@ -508,16 +663,19 @@ class OperationService {
 
       final participants = snapshot.docs
           .map((doc) => ParticipantOperation.fromFirestore(doc))
-          .where((participant) =>
-              participant.registrationStatus != 'canceled' &&
-              !participant.isWaitlisted)
+          .where(
+            (participant) =>
+                participant.registrationStatus != 'canceled' &&
+                !participant.isWaitlisted,
+          )
           .toList();
 
       // Sort by first name (prénom), then last name — diacritics-insensitive
       sortParticipantsByName(participants);
 
       debugPrint(
-          '👥 ${participants.length} participants chargés pour $operationId');
+        '👥 ${participants.length} participants chargés pour $operationId',
+      );
       return participants;
     } catch (e) {
       debugPrint('❌ Erreur chargement participants: $e');
@@ -537,16 +695,19 @@ class OperationService {
         .map((snapshot) {
       final participants = snapshot.docs
           .map((doc) => ParticipantOperation.fromFirestore(doc))
-          .where((participant) =>
-              participant.registrationStatus != 'canceled' &&
-              !participant.isWaitlisted)
+          .where(
+            (participant) =>
+                participant.registrationStatus != 'canceled' &&
+                !participant.isWaitlisted,
+          )
           .toList();
 
       // Sort by first name (prénom), then last name — diacritics-insensitive
       sortParticipantsByName(participants);
 
       debugPrint(
-          '👥 [Stream] ${participants.length} participants mis à jour pour $operationId');
+        '👥 [Stream] ${participants.length} participants mis à jour pour $operationId',
+      );
       return participants;
     });
   }
@@ -559,6 +720,7 @@ class OperationService {
     required List<String> exercices,
   }) async {
     try {
+      final appVersion = await _appVersion();
       // Trouver l'inscription
       final snapshot = await _firestore
           .collection('clubs/$clubId/operations/$operationId/inscriptions')
@@ -569,10 +731,25 @@ class OperationService {
         throw Exception('Inscription non trouvée');
       }
 
+      final registration = snapshot.docs.firstWhere(
+        (candidate) => candidate.data()['registration_status'] != 'canceled',
+        orElse: () => throw Exception('Inscription active non trouvée'),
+      );
+      final data = registration.data();
+      final actorName =
+          '${data['membre_prenom'] ?? ''} ${data['membre_nom'] ?? ''}'.trim();
       // Mettre à jour les exercices
-      await snapshot.docs.first.reference.update({
+      await registration.reference.update({
         'exercices': exercices,
         'updated_at': FieldValue.serverTimestamp(),
+        ..._actionMetadata(
+          action: 'updated',
+          actorId: userId,
+          actorName: actorName.isEmpty ? userId : actorName,
+          source: 'calymob',
+          reason: 'exercises_updated',
+          appVersion: appVersion,
+        ),
       });
 
       debugPrint('✅ Exercices mis à jour: ${exercices.length} exercices');
@@ -624,6 +801,7 @@ class OperationService {
     required String markedByUserName,
   }) async {
     try {
+      final appVersion = await _appVersion();
       // Find the inscription
       final snapshot = await _firestore
           .collection('clubs/$clubId/operations/$operationId/inscriptions')
@@ -635,16 +813,30 @@ class OperationService {
       }
 
       // Update the inscription with present info
-      await snapshot.docs.first.reference.update({
+      final registration = snapshot.docs.firstWhere(
+        (candidate) => candidate.data()['registration_status'] != 'canceled',
+        orElse: () => throw Exception('Inscription active non trouvée'),
+      );
+      await registration.reference.update({
         'present': true,
         'present_at': FieldValue.serverTimestamp(),
         'present_by': markedByUserId,
         'present_by_name': markedByUserName,
         'updated_at': FieldValue.serverTimestamp(),
+        ..._actionMetadata(
+          action: 'updated',
+          actorId: markedByUserId,
+          actorName: markedByUserName,
+          source: 'calymob_scanner',
+          reason: 'presence_marked',
+          actorRole: 'scanner',
+          appVersion: appVersion,
+        ),
       });
 
       debugPrint(
-          '✅ Membre $memberId marqué présent pour opération $operationId');
+        '✅ Membre $memberId marqué présent pour opération $operationId',
+      );
     } catch (e) {
       debugPrint('❌ Erreur marquage présent: $e');
       rethrow;
@@ -662,6 +854,7 @@ class OperationService {
     required String markedByUserName,
   }) async {
     try {
+      final appVersion = await _appVersion();
       // Load the operation to compute the correct tariff for this member.
       // Falling back to 0 silently leaves treasurer cleanup work — better
       // to write the proper price upfront whenever we can.
@@ -706,6 +899,19 @@ class OperationService {
         'walk_in': true,
         'created_at': FieldValue.serverTimestamp(),
         'updated_at': FieldValue.serverTimestamp(),
+        'created_by': markedByUserId,
+        'created_by_name': markedByUserName,
+        'created_source': 'calymob_scanner',
+        if (appVersion != null) 'created_app_version': appVersion,
+        ..._actionMetadata(
+          action: 'registered',
+          actorId: markedByUserId,
+          actorName: markedByUserName,
+          source: 'calymob_scanner',
+          reason: 'walk_in_scan',
+          actorRole: 'scanner',
+          appVersion: appVersion,
+        ),
       };
 
       await _firestore
@@ -713,7 +919,8 @@ class OperationService {
           .add(inscriptionData);
 
       debugPrint(
-          '✅ Inscription walk-in créée: ${member.fullName} → $operationTitle ($prix€)');
+        '✅ Inscription walk-in créée: ${member.fullName} → $operationTitle ($prix€)',
+      );
     } catch (e) {
       debugPrint('❌ Erreur création inscription walk-in: $e');
       rethrow;
@@ -724,8 +931,7 @@ class OperationService {
   ///
   /// Stratégie :
   /// - Si l'inscription est un walk-in créé par le scanner ET non payée → on
-  ///   supprime complètement l'inscription (elle n'existait que parce qu'on
-  ///   a scanné le membre).
+  ///   la marque annulée, sans jamais effacer l'inscription ni sa trace.
   /// - Sinon (inscription pré-existante ou déjà payée) → on réinitialise
   ///   uniquement les champs de présence (`present`, `present_at`,
   ///   `present_by`, `present_by_name`). L'inscription elle-même reste.
@@ -747,15 +953,35 @@ class OperationService {
         throw Exception('Inscription non trouvée');
       }
 
-      final doc = snapshot.docs.first;
+      final doc = snapshot.docs.firstWhere(
+        (candidate) => candidate.data()['registration_status'] != 'canceled',
+        orElse: () => throw Exception('Inscription active non trouvée'),
+      );
       final data = doc.data();
       final isWalkIn = data['walk_in'] == true;
       final isPaid = data['paye'] == true;
 
       if (isWalkIn && !isPaid) {
-        // Safe to delete - inscription only existed because of the scan
-        await doc.reference.delete();
-        debugPrint('✅ Walk-in inscription supprimée: member $memberId');
+        final actorId = data['present_by'] as String? ?? 'unknown-scanner';
+        final actorName = data['present_by_name'] as String? ?? actorId;
+        final appVersion = await _appVersion();
+        await doc.reference.update({
+          ..._cancellationMetadata(
+            actorId: actorId,
+            actorName: actorName,
+            source: 'calymob_scanner',
+            reason: 'walk_in_scan_undo',
+            actorRole: 'scanner',
+            appVersion: appVersion,
+          ),
+          'present': false,
+          'present_at': FieldValue.delete(),
+          'present_by': FieldValue.delete(),
+          'present_by_name': FieldValue.delete(),
+        });
+        debugPrint(
+          '✅ Walk-in inscription annulée avec historique: member $memberId',
+        );
         return UnmarkPresentResult(
           deletedInscription: true,
           inscriptionId: doc.id,
@@ -768,6 +994,9 @@ class OperationService {
       final previousPresentAt = data['present_at'];
       final previousPresentBy = data['present_by'];
       final previousPresentByName = data['present_by_name'];
+      final actorId = previousPresentBy as String? ?? 'unknown-scanner';
+      final actorName = previousPresentByName as String? ?? actorId;
+      final appVersion = await _appVersion();
 
       await doc.reference.update({
         'present': false,
@@ -775,10 +1004,20 @@ class OperationService {
         'present_by': FieldValue.delete(),
         'present_by_name': FieldValue.delete(),
         'updated_at': FieldValue.serverTimestamp(),
+        ..._actionMetadata(
+          action: 'updated',
+          actorId: actorId,
+          actorName: actorName,
+          source: 'calymob_scanner',
+          reason: 'presence_unmarked',
+          actorRole: 'scanner',
+          appVersion: appVersion,
+        ),
       });
 
       debugPrint(
-          '✅ Présence annulée pour member $memberId (inscription conservée)');
+        '✅ Présence annulée pour member $memberId (inscription conservée)',
+      );
       return UnmarkPresentResult(
         deletedInscription: false,
         inscriptionId: doc.id,
@@ -803,20 +1042,65 @@ class OperationService {
     required UnmarkPresentResult result,
   }) async {
     try {
-      final inscriptionsRef = _firestore
-          .collection('clubs/$clubId/operations/$operationId/inscriptions');
+      final inscriptionsRef = _firestore.collection(
+        'clubs/$clubId/operations/$operationId/inscriptions',
+      );
 
       if (result.deletedInscription) {
-        // Re-create the deleted walk-in document with the same ID
-        await inscriptionsRef
-            .doc(result.inscriptionId)
-            .set(result.previousData);
+        // Restore the preserved walk-in instead of recreating a deleted doc.
+        final actorId =
+            result.previousData['present_by'] as String? ?? 'unknown-scanner';
+        final actorName =
+            result.previousData['present_by_name'] as String? ?? actorId;
+        final appVersion = await _appVersion();
+        await inscriptionsRef.doc(result.inscriptionId).update({
+          'registration_status':
+              result.previousData['registration_status'] ?? 'confirmed',
+          'present': result.previousData['present'] ?? true,
+          if (result.previousData['present_at'] != null)
+            'present_at': result.previousData['present_at'],
+          if (result.previousData['present_by'] != null)
+            'present_by': result.previousData['present_by'],
+          if (result.previousData['present_by_name'] != null)
+            'present_by_name': result.previousData['present_by_name'],
+          'canceled_at': FieldValue.delete(),
+          'canceled_by': FieldValue.delete(),
+          'canceled_by_name': FieldValue.delete(),
+          'canceled_by_role': FieldValue.delete(),
+          'canceled_source': FieldValue.delete(),
+          'canceled_app_version': FieldValue.delete(),
+          'canceled_reason': FieldValue.delete(),
+          'updated_at': FieldValue.serverTimestamp(),
+          ..._actionMetadata(
+            action: 're_registered',
+            actorId: actorId,
+            actorName: actorName,
+            source: 'calymob_scanner',
+            reason: 'walk_in_scan_undo_reverted',
+            actorRole: 'scanner',
+            appVersion: appVersion,
+          ),
+        });
         debugPrint('↩️ Walk-in inscription restaurée: ${result.inscriptionId}');
       } else {
         // Restore the present fields on the existing inscription
+        final actorId =
+            result.previousData['present_by'] as String? ?? 'unknown-scanner';
+        final actorName =
+            result.previousData['present_by_name'] as String? ?? actorId;
+        final appVersion = await _appVersion();
         final update = <String, dynamic>{
           'present': result.previousData['present'] ?? true,
           'updated_at': FieldValue.serverTimestamp(),
+          ..._actionMetadata(
+            action: 'updated',
+            actorId: actorId,
+            actorName: actorName,
+            source: 'calymob_scanner',
+            reason: 'presence_unmark_reverted',
+            actorRole: 'scanner',
+            appVersion: appVersion,
+          ),
         };
         if (result.previousData['present_at'] != null) {
           update['present_at'] = result.previousData['present_at'];
@@ -829,7 +1113,8 @@ class OperationService {
         }
         await inscriptionsRef.doc(result.inscriptionId).update(update);
         debugPrint(
-            '↩️ Présence restaurée pour inscription ${result.inscriptionId}');
+          '↩️ Présence restaurée pour inscription ${result.inscriptionId}',
+        );
       }
     } catch (e) {
       debugPrint('❌ Erreur restauration: $e');
@@ -944,6 +1229,7 @@ class OperationService {
     double? supplementTotal,
   }) async {
     try {
+      final appVersion = await _appVersion();
       // Generate unique guest ID (timestamp + random suffix to avoid collisions)
       final random =
           (DateTime.now().microsecond * 1000 + DateTime.now().millisecond)
@@ -968,12 +1254,15 @@ class OperationService {
             operation.paymentInstallments.isNotEmpty) {
           Tariff? guestTariff;
           if (tariffId != null) {
-            guestTariff = operation.eventTariffs
-                .cast<Tariff?>()
-                .firstWhere((t) => t?.id == tariffId, orElse: () => null);
+            guestTariff = operation.eventTariffs.cast<Tariff?>().firstWhere(
+                  (t) => t?.id == tariffId,
+                  orElse: () => null,
+                );
           }
-          final tariffSum = guestTariff?.installmentAmounts.values
-                  .fold<double>(0, (s, v) => s + v) ??
+          final tariffSum = guestTariff?.installmentAmounts.values.fold<double>(
+                0,
+                (s, v) => s + v,
+              ) ??
               0;
           if (guestTariff != null && (tariffSum - prix).abs() < 0.01) {
             installments = _buildInstallmentPayments(
@@ -1032,11 +1321,7 @@ class OperationService {
         // `supplements` here would make the choice invisible everywhere.
         if (selectedSupplements != null && selectedSupplements.isNotEmpty)
           'selected_supplements': selectedSupplements
-              .map((s) => {
-                    'id': s.id,
-                    'name': s.name,
-                    'price': s.price,
-                  })
+              .map((s) => {'id': s.id, 'name': s.name, 'price': s.price})
               .toList(),
         if (supplementTotal != null && supplementTotal > 0)
           'supplement_total': supplementTotal,
@@ -1046,6 +1331,18 @@ class OperationService {
           ),
         'created_at': FieldValue.serverTimestamp(),
         'updated_at': FieldValue.serverTimestamp(),
+        'created_by': addedByUserId,
+        'created_by_name': addedByUserName,
+        'created_source': 'calymob',
+        if (appVersion != null) 'created_app_version': appVersion,
+        ..._actionMetadata(
+          action: 'registered',
+          actorId: addedByUserId,
+          actorName: addedByUserName,
+          source: 'calymob',
+          reason: 'guest_registration',
+          appVersion: appVersion,
+        ),
       };
 
       await _firestore
@@ -1053,7 +1350,8 @@ class OperationService {
           .add(inscriptionData);
 
       debugPrint(
-          '✅ Inscription invité créée: $guestPrenom $guestNom → $operationTitle (parent=$parentInscriptionId, tariff=$tariffId, supps=${selectedSupplements?.length ?? 0})');
+        '✅ Inscription invité créée: $guestPrenom $guestNom → $operationTitle (parent=$parentInscriptionId, tariff=$tariffId, supps=${selectedSupplements?.length ?? 0})',
+      );
     } catch (e) {
       debugPrint('❌ Erreur création inscription invité: $e');
       rethrow;
@@ -1063,7 +1361,9 @@ class OperationService {
   /// Stream van alle inscriptions van een gebruiker met bijbehorende Operation data
   /// Uses collectionGroup query to find all inscriptions across all operations
   Stream<List<UserEventRegistration>> getUserRegistrationsStream(
-      String clubId, String userId) {
+    String clubId,
+    String userId,
+  ) {
     return _firestore
         .collectionGroup('inscriptions')
         .where('membre_id', isEqualTo: userId)
@@ -1078,6 +1378,7 @@ class OperationService {
           if (!path.startsWith('clubs/$clubId/')) continue;
 
           final participant = ParticipantOperation.fromFirestore(doc);
+          if (participant.registrationStatus == 'canceled') continue;
 
           // Get parent operation document
           final operationRef = doc.reference.parent.parent;
@@ -1088,10 +1389,12 @@ class OperationService {
 
           final operation = Operation.fromFirestore(operationDoc);
 
-          registrations.add(UserEventRegistration(
-            operation: operation,
-            participant: participant,
-          ));
+          registrations.add(
+            UserEventRegistration(
+              operation: operation,
+              participant: participant,
+            ),
+          );
         } catch (e) {
           debugPrint('⚠️ Erreur parsing registration: $e');
           // Continue with next registration
@@ -1106,7 +1409,8 @@ class OperationService {
       });
 
       debugPrint(
-          '📋 ${registrations.length} inscriptions chargées pour user $userId');
+        '📋 ${registrations.length} inscriptions chargées pour user $userId',
+      );
       return registrations;
     });
   }
@@ -1124,6 +1428,7 @@ class OperationService {
         .map((snapshot) {
       final participants = snapshot.docs
           .map((doc) => ParticipantOperation.fromFirestore(doc))
+          .where((participant) => participant.registrationStatus != 'canceled')
           .toList();
 
       // Sort by presentAt descending (newest first)
@@ -1151,10 +1456,7 @@ class OperationService {
       await _firestore
           .collection('clubs/$clubId/operations')
           .doc(operationId)
-          .update({
-        ...data,
-        'updated_at': FieldValue.serverTimestamp(),
-      });
+          .update({...data, 'updated_at': FieldValue.serverTimestamp()});
       debugPrint('✅ Opération mise à jour: $operationId');
     } catch (e) {
       debugPrint('❌ Erreur mise à jour opération: $e');
@@ -1162,47 +1464,33 @@ class OperationService {
     }
   }
 
-  /// Supprimer une opération et ses sous-collections connues.
-  ///
-  /// Firestore ne supprime pas automatiquement les sous-collections quand le
-  /// document parent est supprimé; on nettoie donc les données liées avant de
-  /// retirer l'événement lui-même.
+  /// Annuler une opération sans supprimer son contexte ni ses sous-collections.
+  /// Les inscriptions et leurs journaux restent ainsi toujours consultables.
   Future<void> deleteOperation({
     required String clubId,
     required String operationId,
+    required String actorId,
+    required String actorName,
   }) async {
     try {
       final operationRef =
           _firestore.collection('clubs/$clubId/operations').doc(operationId);
-
-      for (final subcollection in const [
-        'inscriptions',
-        'messages',
-        'palanquees',
-      ]) {
-        await _deleteCollection(operationRef.collection(subcollection));
-      }
-
-      await operationRef.delete();
-      debugPrint('✅ Opération supprimée: $operationId');
+      final appVersion = await _appVersion();
+      await operationRef.update({
+        'statut': 'annule',
+        'updated_at': FieldValue.serverTimestamp(),
+        'canceled_at': FieldValue.serverTimestamp(),
+        'canceled_by': actorId,
+        'canceled_by_name': actorName,
+        'canceled_by_role': 'organizer',
+        'canceled_source': 'calymob',
+        if (appVersion != null) 'canceled_app_version': appVersion,
+        'canceled_reason': 'explicit_event_removal',
+      });
+      debugPrint('✅ Opération annulée, historique conservé: $operationId');
     } catch (e) {
-      debugPrint('❌ Erreur suppression opération: $e');
+      debugPrint('❌ Erreur annulation opération: $e');
       rethrow;
-    }
-  }
-
-  Future<void> _deleteCollection(CollectionReference collection) async {
-    const batchSize = 450;
-
-    while (true) {
-      final snapshot = await collection.limit(batchSize).get();
-      if (snapshot.docs.isEmpty) return;
-
-      final batch = _firestore.batch();
-      for (final doc in snapshot.docs) {
-        batch.delete(doc.reference);
-      }
-      await batch.commit();
     }
   }
 
@@ -1291,7 +1579,8 @@ class OperationService {
 
   /// Copy tariffs from a location with new unique IDs
   static List<Map<String, dynamic>> copyTariffsFromLocation(
-      List<Tariff> locationTariffs) {
+    List<Tariff> locationTariffs,
+  ) {
     final ts = DateTime.now().millisecondsSinceEpoch;
     return locationTariffs.asMap().entries.map((entry) {
       final index = entry.key;
@@ -1317,7 +1606,9 @@ class OperationService {
 
   /// Async variant voor refresh (one-time load)
   Future<List<UserEventRegistration>> getUserRegistrations(
-      String clubId, String userId) async {
+    String clubId,
+    String userId,
+  ) async {
     try {
       final snapshot = await _firestore
           .collectionGroup('inscriptions')
@@ -1333,6 +1624,7 @@ class OperationService {
           if (!path.startsWith('clubs/$clubId/')) continue;
 
           final participant = ParticipantOperation.fromFirestore(doc);
+          if (participant.registrationStatus == 'canceled') continue;
 
           // Get parent operation document
           final operationRef = doc.reference.parent.parent;
@@ -1343,10 +1635,12 @@ class OperationService {
 
           final operation = Operation.fromFirestore(operationDoc);
 
-          registrations.add(UserEventRegistration(
-            operation: operation,
-            participant: participant,
-          ));
+          registrations.add(
+            UserEventRegistration(
+              operation: operation,
+              participant: participant,
+            ),
+          );
         } catch (e) {
           debugPrint('⚠️ Erreur parsing registration: $e');
           // Continue with next registration
@@ -1361,7 +1655,8 @@ class OperationService {
       });
 
       debugPrint(
-          '📋 ${registrations.length} inscriptions chargées pour user $userId');
+        '📋 ${registrations.length} inscriptions chargées pour user $userId',
+      );
       return registrations;
     } catch (e) {
       debugPrint('❌ Erreur chargement inscriptions utilisateur: $e');
@@ -1388,8 +1683,10 @@ class OperationService {
       final snapshot = await _firestore
           .collection('clubs/$clubId/operations')
           .where('type', isEqualTo: 'evenement')
-          .where('date_debut',
-              isGreaterThanOrEqualTo: Timestamp.fromDate(cutoff))
+          .where(
+            'date_debut',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(cutoff),
+          )
           .where('date_debut', isLessThanOrEqualTo: Timestamp.fromDate(now))
           .orderBy('date_debut', descending: true)
           .get();
@@ -1412,7 +1709,10 @@ class OperationService {
                 .where('present', isEqualTo: true)
                 .limit(1)
                 .get();
-            return inscriptionSnap.docs.isNotEmpty ? op : null;
+            return inscriptionSnap.docs.any((document) =>
+                    document.data()['registration_status'] != 'canceled')
+                ? op
+                : null;
           } catch (_) {
             // Fallback if composite index missing: filter client-side
             final all = await _firestore
@@ -1421,14 +1721,19 @@ class OperationService {
                 .limit(1)
                 .get();
             if (all.docs.isEmpty) return null;
-            return all.docs.first.data()['present'] == true ? op : null;
+            return all.docs.any((document) =>
+                    document.data()['present'] == true &&
+                    document.data()['registration_status'] != 'canceled')
+                ? op
+                : null;
           }
         }),
       );
 
       final attended = checks.whereType<Operation>().toList();
       debugPrint(
-          '📅 ${attended.length}/${operations.length} évènements attendus par $memberId');
+        '📅 ${attended.length}/${operations.length} évènements attendus par $memberId',
+      );
       return attended;
     } catch (e) {
       debugPrint('❌ Erreur getRecentAttendedOperations: $e');
@@ -1495,6 +1800,7 @@ class OperationService {
     double oldGuestsTotal = 0;
     for (final guestDoc in existingGuestsSnap.docs) {
       final g = guestDoc.data();
+      if (g['registration_status'] == 'canceled') continue;
       oldGuestsTotal +=
           (g['prix'] ?? 0).toDouble() + (g['supplement_total'] ?? 0).toDouble();
     }
@@ -1520,6 +1826,11 @@ class OperationService {
       }
 
       final existingData = inscriptionSnap.data()!;
+      final actorId = existingData['membre_id'] as String? ?? 'unknown-member';
+      final actorName =
+          '${existingData['membre_prenom'] ?? ''} ${existingData['membre_nom'] ?? ''}'
+              .trim();
+      final appVersion = await _appVersion();
       final existingSupplements = existingData['selected_supplements'] ?? [];
       final existingSupplementTotal =
           (existingData['supplement_total'] ?? 0.0).toDouble();
@@ -1537,6 +1848,14 @@ class OperationService {
             selectedSupplements.map((s) => s.toMap()).toList(),
         'supplement_total': supplementTotal,
         'updated_at': FieldValue.serverTimestamp(),
+        ..._actionMetadata(
+          action: 'updated',
+          actorId: actorId,
+          actorName: actorName.isEmpty ? actorId : actorName,
+          source: 'calymob',
+          reason: 'registration_details_updated',
+          appVersion: appVersion,
+        ),
       };
       if (deliveryAddress != null) {
         updateData['delivery_address'] = deliveryAddress;
@@ -1546,8 +1865,9 @@ class OperationService {
       // 3. Handle guest updates (upsert new + update existing)
       final addedGuestIds = <String>[];
       if (guests != null && guests.isNotEmpty) {
-        final inscriptionsRef = _firestore
-            .collection('clubs/$clubId/operations/$operationId/inscriptions');
+        final inscriptionsRef = _firestore.collection(
+          'clubs/$clubId/operations/$operationId/inscriptions',
+        );
 
         for (final guest in guests) {
           final now = DateTime.now();
@@ -1576,6 +1896,18 @@ class OperationService {
               if (guest.tariffId != null) 'tariff_id': guest.tariffId,
               'created_at': FieldValue.serverTimestamp(),
               'updated_at': FieldValue.serverTimestamp(),
+              'created_by': actorId,
+              'created_by_name': actorName.isEmpty ? actorId : actorName,
+              'created_source': 'calymob',
+              if (appVersion != null) 'created_app_version': appVersion,
+              ..._actionMetadata(
+                action: 'registered',
+                actorId: actorId,
+                actorName: actorName.isEmpty ? actorId : actorName,
+                source: 'calymob',
+                reason: 'guest_added_during_registration_edit',
+                appVersion: appVersion,
+              ),
             };
             final newGuestRef = inscriptionsRef.doc(guestId);
             batch.set(newGuestRef, guestData);
@@ -1591,6 +1923,14 @@ class OperationService {
               'supplement_total': guest.supplementTotal,
               if (guest.tariffId != null) 'tariff_id': guest.tariffId,
               'updated_at': FieldValue.serverTimestamp(),
+              ..._actionMetadata(
+                action: 'updated',
+                actorId: actorId,
+                actorName: actorName.isEmpty ? actorId : actorName,
+                source: 'calymob',
+                reason: 'guest_details_updated',
+                appVersion: appVersion,
+              ),
             });
           }
         }
@@ -1598,10 +1938,20 @@ class OperationService {
 
       // 4. Handle guest removals
       if (guestIdsToRemove != null && guestIdsToRemove.isNotEmpty) {
-        final inscriptionsRef = _firestore
-            .collection('clubs/$clubId/operations/$operationId/inscriptions');
+        final inscriptionsRef = _firestore.collection(
+          'clubs/$clubId/operations/$operationId/inscriptions',
+        );
         for (final guestId in guestIdsToRemove) {
-          batch.delete(inscriptionsRef.doc(guestId));
+          batch.update(
+            inscriptionsRef.doc(guestId),
+            _cancellationMetadata(
+              actorId: actorId,
+              actorName: actorName.isEmpty ? actorId : actorName,
+              source: 'calymob',
+              reason: 'guest_removed_during_registration_edit',
+              appVersion: appVersion,
+            ),
+          );
         }
       }
 
@@ -1654,8 +2004,10 @@ class OperationService {
                 '${newTotal.toStringAsFixed(2)} €).',
             unverifiedPayment: unverifiedPayment,
           );
-          debugPrint('✅ Refund requested for inscription $inscriptionId '
-              '(delta=$delta, unverified=$unverifiedPayment)');
+          debugPrint(
+            '✅ Refund requested for inscription $inscriptionId '
+            '(delta=$delta, unverified=$unverifiedPayment)',
+          );
         } catch (refundError) {
           // Log refund failure — the inscription update already succeeded
           debugPrint('⚠️ Refund creation failed (non-blocking): $refundError');
@@ -1683,12 +2035,26 @@ class OperationService {
       final inscriptionRef = _firestore
           .collection('clubs/$clubId/operations/$operationId/inscriptions')
           .doc(guestInscriptionId);
+      final snapshot = await inscriptionRef.get();
+      if (!snapshot.exists) throw Exception('Inscription invité introuvable');
+      final data = snapshot.data()!;
+      final actorId = data['added_by'] as String? ?? 'unknown-member';
+      final actorName = data['added_by_name'] as String? ?? actorId;
+      final appVersion = await _appVersion();
 
       batch.update(inscriptionRef, {
         'selected_supplements':
             selectedSupplements.map((s) => s.toMap()).toList(),
         'supplement_total': supplementTotal,
         'updated_at': FieldValue.serverTimestamp(),
+        ..._actionMetadata(
+          action: 'updated',
+          actorId: actorId,
+          actorName: actorName,
+          source: 'calymob',
+          reason: 'guest_supplements_updated',
+          appVersion: appVersion,
+        ),
       });
 
       // Write edit_history entry
@@ -1709,10 +2075,7 @@ class OperationService {
     }
   }
 
-  /// Remove exactly 1 guest inscription — NO cascade.
-  ///
-  /// Deletes the specified guest inscription document without affecting
-  /// other guests or the parent member's inscription.
+  /// Annule exactement 1 invité — sans cascade et sans effacer son historique.
   Future<void> removeOneGuest({
     required String clubId,
     required String operationId,
@@ -1723,10 +2086,25 @@ class OperationService {
       final inscriptionRef = _firestore
           .collection('clubs/$clubId/operations/$operationId/inscriptions')
           .doc(guestInscriptionId);
+      final snapshot = await inscriptionRef.get();
+      if (!snapshot.exists) throw Exception('Inscription invité introuvable');
+      final data = snapshot.data()!;
+      final actorId = data['added_by'] as String? ?? 'unknown-member';
+      final actorName = data['added_by_name'] as String? ?? actorId;
+      final appVersion = await _appVersion();
 
-      batch.delete(inscriptionRef);
+      batch.update(
+        inscriptionRef,
+        _cancellationMetadata(
+          actorId: actorId,
+          actorName: actorName,
+          source: 'calymob',
+          reason: 'guest_removed',
+          appVersion: appVersion,
+        ),
+      );
 
-      // Write edit_history entry on the guest doc before deletion
+      // Keep the existing edit history alongside the preserved guest doc.
       final editHistoryRef = inscriptionRef.collection('edit_history').doc();
       batch.set(editHistoryRef, {
         'action': 'guest_removed',
@@ -1735,7 +2113,9 @@ class OperationService {
       });
 
       await batch.commit();
-      debugPrint('✅ Guest inscription $guestInscriptionId removed');
+      debugPrint(
+        '✅ Guest inscription $guestInscriptionId annulée avec historique',
+      );
     } catch (e) {
       debugPrint('❌ Erreur removeOneGuest: $e');
       rethrow;
@@ -1771,9 +2151,10 @@ class GuestUpdate {
 
 /// Résultat d'un [OperationService.unmarkAsPresent] utilisé pour l'undo.
 ///
-/// - `deletedInscription == true`  → l'inscription a été supprimée (walk-in
-///   non payée). `previousData` contient toutes les données du document
-///   pour le recréer à l'identique via [OperationService.restoreFromUnmark].
+/// - `deletedInscription == true`  → compatibilité UI: le walk-in non payé a
+///   été désinscrit, mais son document est conservé avec statut `canceled`.
+///   `previousData` permet de rétablir son état via
+///   [OperationService.restoreFromUnmark].
 /// - `deletedInscription == false` → seuls les champs `present*` ont été
 ///   réinitialisés. `previousData` contient uniquement ces champs.
 class UnmarkPresentResult {

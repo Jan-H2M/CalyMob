@@ -83,7 +83,6 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
   String _registrationConfirmationPolicy =
       EventPaymentDefaults.registrationConfirmationPolicy;
   int _paymentDeadlineDays = EventPaymentDefaults.paymentDeadlineDays;
-  bool _autoCancelUnpaid = EventPaymentDefaults.autoCancelUnpaid;
   bool? _allowWaitlistChoice;
 
   bool get _allowWaitlist => EventWaitlistDefaults.effectiveValue(
@@ -356,14 +355,23 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
   Widget _buildLocationSyncBanner() {
     switch (_locationLoadState) {
       case DiveLocationLoadState.offline:
-        return _buildLocationStatusBanner(Icons.cloud_off,
-            'Hors connexion : les lieux affichés viennent du cache local.', Colors.orange.shade50, Colors.orange.shade900);
+        return _buildLocationStatusBanner(
+            Icons.cloud_off,
+            'Hors connexion : les lieux affichés viennent du cache local.',
+            Colors.orange.shade50,
+            Colors.orange.shade900);
       case DiveLocationLoadState.cached:
-        return _buildLocationStatusBanner(Icons.history,
-            'Catalogue en cache — il sera actualisé dès la reconnexion.', Colors.blue.shade50, Colors.blue.shade900);
+        return _buildLocationStatusBanner(
+            Icons.history,
+            'Catalogue en cache — il sera actualisé dès la reconnexion.',
+            Colors.blue.shade50,
+            Colors.blue.shade900);
       case DiveLocationLoadState.error:
-        return _buildLocationStatusBanner(Icons.error_outline,
-            'Impossible de charger le catalogue. Réessaie quand la connexion est disponible.', Colors.red.shade50, Colors.red.shade900);
+        return _buildLocationStatusBanner(
+            Icons.error_outline,
+            'Impossible de charger le catalogue. Réessaie quand la connexion est disponible.',
+            Colors.red.shade50,
+            Colors.red.shade900);
       default:
         return const SizedBox.shrink();
     }
@@ -384,7 +392,9 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
           children: [
             Icon(icon, size: 18, color: foreground),
             const SizedBox(width: 8),
-            Expanded(child: Text(message, style: TextStyle(color: foreground, fontSize: 12))),
+            Expanded(
+                child: Text(message,
+                    style: TextStyle(color: foreground, fontSize: 12))),
           ],
         ),
       ),
@@ -544,7 +554,7 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
         'allowed_payment_methods': _allowedPaymentMethods.toList(),
         'registration_confirmation_policy': _registrationConfirmationPolicy,
         'payment_deadline_days': _paymentDeadlineDays,
-        'auto_cancel_unpaid': _autoCancelUnpaid,
+        'auto_cancel_unpaid': false,
       };
 
       await _operationService.createOperation(clubId: _clubId, data: data);
@@ -890,10 +900,14 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
 
   Widget _buildEmptyLocations() {
     final message = switch (_locationLoadState) {
-      DiveLocationLoadState.offline => 'Connexion indisponible et aucun cache local',
-      DiveLocationLoadState.error => 'Le catalogue est temporairement indisponible',
-      DiveLocationLoadState.empty => _searchQuery.isNotEmpty ? 'Aucun lieu trouvé' : 'Aucun lieu configuré',
-      _ => _searchQuery.isNotEmpty ? 'Aucun lieu trouvé' : 'Aucun lieu configuré',
+      DiveLocationLoadState.offline =>
+        'Connexion indisponible et aucun cache local',
+      DiveLocationLoadState.error =>
+        'Le catalogue est temporairement indisponible',
+      DiveLocationLoadState.empty =>
+        _searchQuery.isNotEmpty ? 'Aucun lieu trouvé' : 'Aucun lieu configuré',
+      _ =>
+        _searchQuery.isNotEmpty ? 'Aucun lieu trouvé' : 'Aucun lieu configuré',
     };
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 48),
@@ -906,7 +920,8 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
             message,
             style: TextStyle(color: Colors.grey[600], fontSize: 16),
           ),
-          if (_searchQuery.isEmpty && _locationLoadState != DiveLocationLoadState.error) ...[
+          if (_searchQuery.isEmpty &&
+              _locationLoadState != DiveLocationLoadState.error) ...[
             const SizedBox(height: 12),
             TextButton(
               onPressed: _loadLocations,
@@ -1230,13 +1245,11 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
             allowedMethods: _allowedPaymentMethods,
             confirmationPolicy: _registrationConfirmationPolicy,
             deadlineDays: _paymentDeadlineDays,
-            autoCancelUnpaid: _autoCancelUnpaid,
             onChanged: (
                     {paymentRequired,
                     allowedMethods,
                     confirmationPolicy,
-                    deadlineDays,
-                    autoCancelUnpaid}) =>
+                    deadlineDays}) =>
                 setState(() {
               if (paymentRequired != null) _paymentRequired = paymentRequired;
               if (allowedMethods != null)
@@ -1244,8 +1257,6 @@ class _CreateEventWizardState extends State<CreateEventWizard> {
               if (confirmationPolicy != null)
                 _registrationConfirmationPolicy = confirmationPolicy;
               if (deadlineDays != null) _paymentDeadlineDays = deadlineDays;
-              if (autoCancelUnpaid != null)
-                _autoCancelUnpaid = autoCancelUnpaid;
             }),
           ),
           const SizedBox(height: 16),

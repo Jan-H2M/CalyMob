@@ -1,2 +1,2 @@
-json_key_file("~/.private_keys/google-play-deploy.json")
+json_key_file(ENV.fetch("SUPPLY_JSON_KEY", File.expand_path("~/.private_keys/google-play-deploy.json")))
 package_name("club.caly.calymob")

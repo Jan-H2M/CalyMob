@@ -144,7 +144,7 @@ class Operation {
     this.allowedPaymentMethods = const ['qr_immediate', 'qr_email', 'on_site'],
     this.registrationConfirmationPolicy = 'immediate',
     this.paymentDeadlineDays = 3,
-    this.autoCancelUnpaid = true,
+    this.autoCancelUnpaid = false,
     this.allowGuests = false,
     this.allowWaitlist = false,
     this.organisateurId,
@@ -198,7 +198,9 @@ class Operation {
           data['registration_confirmation_policy'] as String? ?? 'immediate',
       paymentDeadlineDays:
           (data['payment_deadline_days'] as num?)?.toInt() ?? 3,
-      autoCancelUnpaid: data['auto_cancel_unpaid'] != false,
+      // Legacy documents may still contain auto_cancel_unpaid=true. The
+      // behavior has been retired: unpaid registrations stay registered.
+      autoCancelUnpaid: false,
       allowGuests: data['allow_guests'] == true,
       allowWaitlist: data['allow_waitlist'] == true,
       organisateurId: data['organisateur_id'],

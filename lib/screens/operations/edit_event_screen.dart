@@ -54,7 +54,6 @@ class _EditEventScreenState extends State<EditEventScreen> {
   late Set<String> _allowedPaymentMethods;
   late String _registrationConfirmationPolicy;
   late int _paymentDeadlineDays;
-  late bool _autoCancelUnpaid;
   bool _saving = false;
   bool _hasChanges = false;
 
@@ -94,7 +93,6 @@ class _EditEventScreenState extends State<EditEventScreen> {
     _allowedPaymentMethods = op.allowedPaymentMethods.toSet();
     _registrationConfirmationPolicy = op.registrationConfirmationPolicy;
     _paymentDeadlineDays = op.paymentDeadlineDays;
-    _autoCancelUnpaid = op.autoCancelUnpaid;
 
     // Copier les tarifs existants en version éditable
     _tariffs =
@@ -440,7 +438,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
         'allowed_payment_methods': _allowedPaymentMethods.toList(),
         'registration_confirmation_policy': _registrationConfirmationPolicy,
         'payment_deadline_days': _paymentDeadlineDays,
-        'auto_cancel_unpaid': _autoCancelUnpaid,
+        'auto_cancel_unpaid': false,
         'montant_prevu': budget,
         'communication': _communicationController.text.trim().isNotEmpty
             ? _communicationController.text.trim()
@@ -703,13 +701,11 @@ class _EditEventScreenState extends State<EditEventScreen> {
                   allowedMethods: _allowedPaymentMethods,
                   confirmationPolicy: _registrationConfirmationPolicy,
                   deadlineDays: _paymentDeadlineDays,
-                  autoCancelUnpaid: _autoCancelUnpaid,
                   onChanged: (
                           {paymentRequired,
                           allowedMethods,
                           confirmationPolicy,
-                          deadlineDays,
-                          autoCancelUnpaid}) =>
+                          deadlineDays}) =>
                       setState(() {
                     if (paymentRequired != null)
                       _paymentRequired = paymentRequired;
@@ -719,8 +715,6 @@ class _EditEventScreenState extends State<EditEventScreen> {
                       _registrationConfirmationPolicy = confirmationPolicy;
                     if (deadlineDays != null)
                       _paymentDeadlineDays = deadlineDays;
-                    if (autoCancelUnpaid != null)
-                      _autoCancelUnpaid = autoCancelUnpaid;
                     _hasChanges = true;
                   }),
                 ),

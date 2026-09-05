@@ -113,13 +113,6 @@ service cloud.firestore {
       return hasClubStatut(clubId, ['gonflage', 'Gonflage', 'G']);
     }
 
-    // Material may only be handed over and returned by trusted operational
-    // staff. This mirrors the Boutique visibility check in CalyMob.
-    function canManageMaterialLoans(clubId) {
-      return isAdmin(clubId) || isEncadrantForClub(clubId) ||
-        hasCARole(clubId) || hasGonflageRole(clubId);
-    }
-
     function hasBureauRole(clubId) {
       return hasClubStatut(clubId, [
         'BS', 'bs', 'Banque Signature', 'banque signature',
@@ -187,6 +180,14 @@ service cloud.firestore {
       );
     }
 
+    // Operational staff who may hand over or receive physical equipment in
+    // CalyMob. This is intentionally independent of a CalyCompta web
+    // session: the flow happens on the staff member's mobile phone.
+    function canManageMaterialLoans(clubId) {
+      return isAdmin(clubId) || isEncadrantForClub(clubId) ||
+        hasCARole(clubId) || hasGonflageRole(clubId);
+    }
+
     // Organisateurs (O-badge) and admins can manage event logistics —
     // palanquée assignments and attendance records — for events they organize.
     // Separate from encadrant status (which is tariff/pedagogical only).
@@ -243,8 +244,9 @@ service cloud.firestore {
     }
 
     // Accounting facts are server-owned. Client registrations may edit their
-    // event fields, but may never change payment, price, allocation, lifecycle
-    // or refund fields directly.
+    // profile/event fields, but may never change payment, price, allocation,
+    // lifecycle or refund fields directly. Payment commands use Admin SDK and
+    // therefore bypass these client rules.
     function changedInscriptionAccountingFields() {
       return request.resource.data.diff(resource.data).affectedKeys().hasAny([
         'paye', 'payment_status', 'payment_source', 'payment_status_at',
@@ -252,10 +254,41 @@ service cloud.firestore {
         'mode_paiement', 'date_paiement', 'paye_at', 'paye_method',
         'installment_payments', 'amount_paid', 'prix', 'supplement_total',
         'selected_supplements', 'tariff_id', 'tariff_name',
-        'registration_status', 'payment_expires_at', 'refund_demande_id',
+        'payment_expires_at', 'refund_demande_id',
         'refund_montant', 'refund_status', 'refund_created_at',
         'payment_confirmed_by', 'payment_confirmed_at',
       ]);
+    }
+
+    // Client-side lifecycle changes are limited to a fully attributed soft
+    // cancellation (or an admin undo). Server callables use the Admin SDK and
+    // bypass this rule. This blocks legacy clients from making a person vanish
+    // by changing only registration_status.
+    function hasValidInscriptionLifecycleChange(clubId) {
+      let affected = request.resource.data.diff(resource.data).affectedKeys();
+      let lifecycleChanged = affected.hasAny([
+        'registration_status', 'canceled_at', 'canceled_by',
+        'canceled_by_name', 'canceled_by_role', 'canceled_source',
+        'canceled_app_version', 'canceled_reason'
+      ]);
+      return !lifecycleChanged || (
+        resource.data.get('registration_status', 'confirmed') != 'canceled'
+        && request.resource.data.get('registration_status', '') == 'canceled'
+        && request.resource.data.get('canceled_by', '') == request.auth.uid
+        && request.resource.data.get('last_action_by', '') == request.auth.uid
+        && request.resource.data.get('last_action_source', '') in ['calymob', 'calymob_scanner']
+      ) || (
+        resource.data.get('registration_status', '') == 'canceled'
+        && request.resource.data.get('registration_status', '') in ['confirmed', 'pending_payment', 'waitlisted']
+        && request.resource.data.get('last_action_by', '') == request.auth.uid
+        && (
+          (isAdmin(clubId) && hasValidSession(clubId))
+          || (
+            resource.data.get('canceled_by', '') == request.auth.uid
+            && request.resource.data.get('last_action_source', '') == 'calymob_scanner'
+          )
+        )
+      );
     }
 
     // Check if fiscal year data can be modified based on its status
@@ -482,6 +515,16 @@ service cloud.firestore {
         allow write: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
+      // Raw SSI reference records are queried only by trusted Cloud Functions.
+      // They are intentionally not visible in the client catalogue.
+      match /reference_dive_sites/{siteId} {
+        allow read, write: if false;
+      }
+
+      match /reference_dive_site_import_runs/{runId} {
+        allow read, write: if false;
+      }
+
       // LIFRAS exercises - can be read by club members (mobile + web), written by admins only
       match /exercices_lifras/{exerciceId} {
         allow read: if isMember(clubId);
@@ -587,6 +630,15 @@ service cloud.firestore {
             )
           )
         );
+      }
+
+      // Bank balance control. Written exclusively by the Admin SDK (Ponto sync
+      // and scripts/check-bank-balance.cjs); clients read the latest verdict to
+      // render the dashboard badge.
+      match /balance_checks/{checkId} {
+        allow read: if isAuthenticated()
+          && getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'];
+        allow write: if false;
       }
 
       // Immutable accounting allocations. Admin SDK payment commands are the
@@ -724,14 +776,9 @@ service cloud.firestore {
           )
           && canModifyFiscalYearData(clubId, request.resource.data.get('fiscal_year_id', null));
 
-        // Delete: owner-only for non-admin tiers, admin+ can delete any.
-        allow delete: if isAuthenticated()
-          && hasValidSession(clubId)
-          && (
-            getUserData(clubId).app_role in ['superadmin', 'admin', 'validateur'] ||
-            (getUserData(clubId).app_role == 'user' && resource.data.organisateur_id == request.auth.uid) ||
-            (isOrganisateurForClub(clubId) && resource.data.organisateur_id == request.auth.uid)
-          );
+        // Operations remain as the permanent parent of their accounting and
+        // registration history. Removing one is a status=annule update.
+        allow delete: if false;
 
         // Inscriptions subcollection (web + mobile app)
         match /inscriptions/{inscriptionId} {
@@ -779,36 +826,33 @@ service cloud.firestore {
               )
             );
 
-          // Delete: members unregister themselves OR delete their own guests
-          // — both gated by the effective deadline so members can't bail
-          // late and force a refund. Admins (any path) always pass.
-          allow delete: if isMember(clubId)
-            && (
-              isAdmin(clubId)
-              || (
-                resource.data.membre_id == request.auth.uid
-                && request.time <= effectiveDeadline(
-                  get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)).data
-                )
-              )
-              || (
-                resource.data.get('is_guest', false) == true
-                && resource.data.get('added_by', '') == request.auth.uid
-                && request.time <= effectiveDeadline(
-                  get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)).data
-                )
-              )
-            );
+          // Registration documents are accounting and audit records. They may
+          // never be hard-deleted by a web/mobile client. Withdrawals go through
+          // unregisterFromEvent (Admin SDK) and remain as status=canceled.
+          allow delete: if false;
 
           // Update: own inscription (mobile), session (web), or own guest.
           // Deadline check: members (not admins) cannot update after the effective deadline.
           // Admins with valid session bypass the deadline check.
+          //
+          // ORDRE IMPORTANT — hasValidSession() vient EN PREMIER.
+          // Une inscription d'invité n'a pas de champ `membre_id`. Lire
+          // `resource.data.membre_id` sur un document où le champ est absent ne
+          // renvoie pas null: la règle ÉCHOUE, et tout le `||` avec elle, même
+          // si une autre branche aurait autorisé l'écriture. C'est exactement le
+          // piège signalé plus haut pour `categorie` dans la règle create.
+          // Conséquence observée le 28/07/2026: la ventilation d'un virement
+          // pouvait solder la tranche du membre payeur mais pas celle de son
+          // invitée — la tranche restait « payée » sans transaction rattachée.
+          // On teste donc d'abord la session, et on lit `membre_id` via
+          // .get(..., '') pour qu'un champ absent ne puisse plus faire échouer.
           allow update: if isMember(clubId)
+            && hasValidInscriptionLifecycleChange(clubId)
             && (
               (isAdmin(clubId) && hasValidSession(clubId))
               || (
                 !changedInscriptionAccountingFields()
-                && request.auth.uid == resource.data.membre_id
+                && resource.data.get('membre_id', '') == request.auth.uid
                 && request.time <= effectiveDeadline(
                   get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)).data
                 )
@@ -828,15 +872,31 @@ service cloud.firestore {
           // Alleen de inscription-owner en admins met valid session mogen
           // lezen of schrijven. Geen update/delete: log is immutable.
           match /edit_history/{historyId} {
+            // Même piège que ci-dessus: sur l'inscription d'un invité,
+            // `membre_id` n'existe pas. Session d'abord, puis .get(..., '').
             allow read: if isMember(clubId) && (
-              get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)/inscriptions/$(inscriptionId)).data.membre_id == request.auth.uid
-              || hasValidSession(clubId)
+              hasValidSession(clubId)
+              || get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)/inscriptions/$(inscriptionId)).data.get('membre_id', '') == request.auth.uid
             );
             allow create: if isMember(clubId) && (
-              get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)/inscriptions/$(inscriptionId)).data.membre_id == request.auth.uid
-              || hasValidSession(clubId)
+              hasValidSession(clubId)
+              || get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)/inscriptions/$(inscriptionId)).data.get('membre_id', '') == request.auth.uid
             );
           }
+
+        }
+
+        // COM-062 — Registration audit log. This is a sibling of inscriptions,
+        // not a child of one inscription document.
+        match /inscription_logs/{logId} {
+          allow read: if isMember(clubId) && hasValidSession(clubId) && isAdmin(clubId);
+          allow create, update, delete: if false;
+        }
+
+        // COM-045 — Immutable waitlist audit, also beside inscriptions.
+        match /waitlist_audit/{auditId} {
+          allow read: if isMember(clubId) && hasValidSession(clubId) && isAdmin(clubId);
+          allow create, update, delete: if false;
         }
 
         // Palanquées subcollection (drag & drop palanquée assignments)
@@ -891,6 +951,8 @@ service cloud.firestore {
         // OR an admin with a valid session creates the projection on behalf of
         // someone else — notably for guests (membre_id = guest_xxx), whose
         // projection can never match the admin's uid. Mirrors the update rule.
+        // This is a server-owned read projection. New writes are only allowed
+        // from the accounting/admin command layer (Admin SDK in production).
         allow create: if isAdmin(clubId) && hasValidSession(clubId);
 
         // Delete: Club members can unregister themselves (mobile app)
@@ -1172,26 +1234,25 @@ service cloud.firestore {
 
       // Inventory items (matériel unitaire)
       // Read: tous les membres (CalyMob — choix du matériel à emprunter).
-      // Write: admin (gestion inventaire web + validation retour CalyMob qui
-      // repasse l'item en 'disponible').
+      // Admins manage the catalogue. Operational loan staff can only move an
+      // item through the loan lifecycle and append a return-condition record;
+      // they cannot alter stock, prices or accounting data.
       match /inventory_items/{itemId} {
         allow read: if isMember(clubId);
         // Write requires fiscal year check if fiscal_year_id is present
         allow create: if isAdmin(clubId)
           && hasValidSession(clubId)
           && (!('fiscal_year_id' in request.resource.data) || canModifyFiscalYearData(clubId, request.resource.data.fiscal_year_id));
-        // Loan staff may only move a physical item between available and lent
-        // and attach/remove its current-loan pointer. They cannot edit stock
-        // attributes, prices or accounting data.
         allow update: if (
           isAdmin(clubId)
           && hasValidSession(clubId)
           && (!('fiscal_year_id' in request.resource.data) || canModifyFiscalYearData(clubId, request.resource.data.fiscal_year_id))
         ) || (
           canManageMaterialLoans(clubId)
-          && hasValidSession(clubId)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'statut', 'current_loan_id', 'updatedAt'
+            'statut', 'current_loan_id', 'last_return_condition',
+            'last_return_note', 'last_return_photo_urls',
+            'condition_history', 'updatedAt'
           ])
           && request.resource.data.statut in ['disponible', 'reserve', 'prete', 'en_maintenance']
         );
@@ -1203,40 +1264,44 @@ service cloud.firestore {
       // Collection inventory_members was empty and has been migrated
 
       // Inventory loans (prêts de matériel) - full name used by services
-      // Read: tous les membres (écran Prêts matériel dans CalyMob).
-      // Write: admin (le responsable valide les retours et déclenche le
-      // remboursement de caution). Prêts gratuits → pas de fiscal_year_id.
+      // A member sees only their own loan; operational staff sees the return
+      // queue. Those staff may create and validate a direct loan in CalyMob.
       match /inventory_loans/{loanId} {
         allow read: if isMember(clubId) && (
           resource.data.memberId == request.auth.uid ||
           resource.data.member_id == request.auth.uid ||
           canManageMaterialLoans(clubId)
         );
-        allow create, update: if canManageMaterialLoans(clubId)
-          && hasValidSession(clubId);
+        allow create, update: if canManageMaterialLoans(clubId);
         allow delete: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
-      // Dedicated counter so encadrants do not receive write access to the
-      // general settings collection when issuing a loan.
+      // Dedicated counter: an encadrant does not receive write access to the
+      // generic settings collection only to allocate a loan number.
       match /inventory_loan_counters/{year} {
-        allow read, write: if canManageMaterialLoans(clubId)
-          && hasValidSession(clubId);
+        allow read, write: if canManageMaterialLoans(clubId);
       }
 
-      // A return creates a request for the treasurer; it is deliberately not
-      // an executed payment. Only finance staff can update its decision or
-      // mark it paid afterwards.
+      // A completed return creates a treasurer task. This is not an executed
+      // payment; finance staff makes the later bank-side decision.
       match /material_refund_requests/{requestId} {
         allow read: if isMember(clubId) && (
           canManageMaterialLoans(clubId) ||
           canManageExpenses(clubId) ||
           resource.data.member_id == request.auth.uid
         );
-        allow create: if canManageMaterialLoans(clubId)
-          && hasValidSession(clubId);
-        allow update: if canManageExpenses(clubId)
-          && hasValidSession(clubId);
+        allow create: if canManageMaterialLoans(clubId);
+        allow update: if canManageExpenses(clubId);
+        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
+      }
+
+      // Incident data carries evidence for one exact physical item. It is
+      // intentionally separate from a generic loan note so repair/absence can
+      // be followed in CalyCompta without losing the audit trail.
+      match /material_incidents/{incidentId} {
+        allow read: if canManageMaterialLoans(clubId) || canManageExpenses(clubId);
+        allow create: if canManageMaterialLoans(clubId);
+        allow update: if canManageMaterialLoans(clubId) || canManageExpenses(clubId);
         allow delete: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
@@ -2013,6 +2078,15 @@ service cloud.firestore {
     match /email_inbound_events/{eventId} {
       allow read: if hasValidAdminSessionForClubId(resource.data.club_id);
       allow create, update, delete: if false;
+    }
+
+    // --- dive_sites_ref (club-independent dive-site reference) ---------------
+    // Shared reference layer (OSM import + curated aliases) used to resolve
+    // GPS coordinates for logbook location names. Readable by any
+    // authenticated club member; writes only via server (Admin SDK) scripts.
+    match /dive_sites_ref/{siteId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
     }
   }
 }

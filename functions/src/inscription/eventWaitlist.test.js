@@ -107,7 +107,7 @@ describe('unregisterFromEvent callable', () => {
     return { id, ref: { id, path: `inscriptions/${id}` }, data: () => data };
   }
 
-  function setupDb(attemptDocs) {
+  function setupDb(attemptDocs, actorRole = 'membre') {
     const notifications = [];
     const operationRef = {
       path: 'clubs/calypso/operations/event-1',
@@ -128,7 +128,12 @@ describe('unregisterFromEvent callable', () => {
             path,
             get: jest.fn(async () => ({
               exists: true,
-              data: () => ({ app_role: 'membre', notifications_enabled: false }),
+              data: () => ({
+                app_role: actorRole,
+                prenom: 'Test',
+                nom: 'Actor',
+                notifications_enabled: false,
+              }),
             })),
             collection: jest.fn(() => ({
               add: jest.fn(async payload => notifications.push({ path, payload })),
@@ -185,7 +190,7 @@ describe('unregisterFromEvent callable', () => {
     expect(admin.firestore).not.toHaveBeenCalled();
   });
 
-  test('deletes member and guests atomically and promotes every freed place FIFO', async () => {
+  test('soft-cancels member and guests atomically and promotes every freed place FIFO', async () => {
     const docs = [
       makeDoc('member', { membre_id: 'member-1', registration_status: 'confirmed' }),
       makeDoc('guest-1', { membre_id: 'guest-1', registration_status: 'confirmed', is_guest: true, parent_inscription_id: 'member' }),
@@ -198,15 +203,38 @@ describe('unregisterFromEvent callable', () => {
 
     const result = await unregisterFromEvent({
       auth: { uid: 'member-1' },
-      data: { clubId: 'calypso', operationId: 'event-1', guestAction: 'delete' },
+      data: {
+        clubId: 'calypso',
+        operationId: 'event-1',
+        guestAction: 'delete',
+        source: 'calymob',
+        appVersion: '1.21.0+204',
+      },
     });
 
     expect(result.promoted).toEqual(['wait-1', 'wait-2', 'wait-3']);
+    expect(result.status).toBe('canceled');
     const transaction = db.transactions[0];
-    expect(transaction.delete.mock.calls.map(([ref]) => ref.id).sort())
-      .toEqual(['guest-1', 'guest-2', 'member']);
-    expect(transaction.update.mock.calls.map(([ref]) => ref.id))
-      .toEqual(['wait-1', 'wait-2', 'wait-3']);
+    expect(transaction.delete).not.toHaveBeenCalled();
+    const canceledIds = transaction.update.mock.calls
+      .filter(([, update]) => update.registration_status === 'canceled')
+      .map(([ref]) => ref.id)
+      .sort();
+    expect(canceledIds).toEqual(['guest-1', 'guest-2', 'member']);
+    expect(transaction.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'member' }),
+      expect.objectContaining({
+        registration_status: 'canceled',
+        canceled_by: 'member-1',
+        canceled_source: 'calymob',
+        canceled_app_version: '1.21.0+204',
+      }),
+    );
+    const memberPatch = transaction.update.mock.calls.find(([ref]) => ref.id === 'member')[1];
+    expect(memberPatch).not.toHaveProperty('paye');
+    expect(memberPatch).not.toHaveProperty('transaction_id');
+    expect(transaction.update.mock.calls.filter(([, update]) => update.waitlist_promoted_at))
+      .toHaveLength(3);
     expect(notifications.map(item => item.path)).toEqual([
       'clubs/calypso/members/waiting-1',
       'clubs/calypso/members/waiting-2',
@@ -253,7 +281,11 @@ describe('unregisterFromEvent callable', () => {
 
     expect(result.promoted).toEqual(['wait-1']);
     const transaction = db.transactions[0];
-    expect(transaction.delete.mock.calls.map(([ref]) => ref.id)).toEqual(['member']);
+    expect(transaction.delete).not.toHaveBeenCalled();
+    expect(transaction.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'member' }),
+      expect.objectContaining({ registration_status: 'canceled' }),
+    );
     expect(transaction.update).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'guest-1' }),
       expect.objectContaining({
@@ -266,5 +298,50 @@ describe('unregisterFromEvent callable', () => {
     expect(notifications.map(item => item.path)).toEqual([
       'clubs/calypso/members/waiting-1',
     ]);
+  });
+
+  test('lets an admin cancel another registration while preserving its payment data', async () => {
+    const docs = [
+      makeDoc('paid-member', {
+        membre_id: 'member-2',
+        registration_status: 'confirmed',
+        paye: true,
+        transaction_id: 'transaction-1',
+      }),
+    ];
+    const { db } = setupDb([docs], 'admin');
+
+    const result = await unregisterFromEvent({
+      auth: { uid: 'admin-1' },
+      data: {
+        clubId: 'calypso',
+        operationId: 'event-1',
+        inscriptionId: 'paid-member',
+        source: 'calycompta',
+        reason: 'admin_cancellation',
+      },
+    });
+
+    expect(result.status).toBe('canceled');
+    const transaction = db.transactions[0];
+    expect(transaction.delete).not.toHaveBeenCalled();
+    const patch = transaction.update.mock.calls.find(([ref]) => ref.id === 'paid-member')[1];
+    expect(patch).toEqual(expect.objectContaining({
+      registration_status: 'canceled',
+      canceled_by: 'admin-1',
+      canceled_source: 'calycompta',
+    }));
+    expect(patch).not.toHaveProperty('paye');
+    expect(patch).not.toHaveProperty('transaction_id');
+  });
+
+  test('blocks a member from cancelling somebody else', async () => {
+    const docs = [makeDoc('other', { membre_id: 'member-2', registration_status: 'confirmed' })];
+    setupDb([docs]);
+
+    await expect(unregisterFromEvent({
+      auth: { uid: 'member-1' },
+      data: { clubId: 'calypso', operationId: 'event-1', inscriptionId: 'other' },
+    })).rejects.toMatchObject({ code: 'permission-denied' });
   });
 });

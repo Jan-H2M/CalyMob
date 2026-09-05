@@ -8,20 +8,17 @@ class PaymentRulesSection extends StatelessWidget {
       required this.allowedMethods,
       required this.confirmationPolicy,
       required this.deadlineDays,
-      required this.autoCancelUnpaid,
       required this.onChanged});
 
   final bool paymentRequired;
   final Set<String> allowedMethods;
   final String confirmationPolicy;
   final int deadlineDays;
-  final bool autoCancelUnpaid;
   final void Function(
       {bool? paymentRequired,
       Set<String>? allowedMethods,
       String? confirmationPolicy,
-      int? deadlineDays,
-      bool? autoCancelUnpaid}) onChanged;
+      int? deadlineDays}) onChanged;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -93,13 +90,11 @@ class PaymentRulesSection extends StatelessWidget {
                     labelText: 'Délai de paiement',
                     border: OutlineInputBorder()),
               ),
-              CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  value: autoCancelUnpaid,
-                  onChanged: (value) => onChanged(autoCancelUnpaid: value),
-                  title: const Text('Annuler automatiquement si impayé',
-                      style: TextStyle(fontSize: 13)),
-                  controlAffinity: ListTileControlAffinity.leading),
+              const SizedBox(height: 8),
+              Text(
+                'Un impayé reste inscrit et visible. Seule une désinscription explicite peut annuler sa place.',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
             ],
           ],
         ]),

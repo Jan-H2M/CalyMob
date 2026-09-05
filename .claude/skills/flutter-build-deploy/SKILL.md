@@ -82,7 +82,7 @@ This skill automates the CalyMob Flutter app build and deployment to both Google
   - `ndk/27.0.12077973`
   - `cmake/3.22.1`
 - **Java** bundled with Android Studio (JBR)
-- **fastlane** at `/opt/homebrew/bin/fastlane`
+- **fastlane** via `scripts/run_fastlane.sh`, using the Bundler version pinned in `android/Gemfile.lock`
 - **Google Play service account key** at `~/.private_keys/google-play-deploy.json`
   - Service account: `google-play-deploy@calycompta.iam.gserviceaccount.com`
   - Linked to CalyMob (club.caly.calymob) in Play Console with release permissions
@@ -91,7 +91,7 @@ This skill automates the CalyMob Flutter app build and deployment to both Google
 - **Xcode** (currently 26.2) with iOS SDK
 - **CocoaPods** (`pod` command available)
 - **Apple Developer Account** with signing identity
-- **App Store Connect API Key** (.p8 file) at `~/.private_keys/AuthKey_BHUKT6FFGF.p8`
+- **App Store Connect API Key** (.p8 file) at `~/.private_keys/AuthKey_ZK62KYKA4T.p8`
 
 ### Signing & API Credentials
 
@@ -107,9 +107,9 @@ This skill automates the CalyMob Flutter app build and deployment to both Google
 - Deployment Target: iOS 15.5
 - App Store Connect API Key:
   - Issuer ID: `280e011a-f492-43fb-b0eb-727ddaa8c6c9`
-  - Key ID: `BHUKT6FFGF`
-  - P8 file: `~/.private_keys/AuthKey_BHUKT6FFGF.p8`
-  - Backup: `/Users/jan/Documents/GitHub/Vet-Genius-Mobile-App/ios/fastlane/keys/AuthKey_BHUKT6FFGF.p8`
+  - Key ID: `ZK62KYKA4T`
+  - P8 file: `~/.private_keys/AuthKey_ZK62KYKA4T.p8`
+  - Never reuse or copy a key from another product or account.
 
 ## Environment Variables
 
@@ -471,11 +471,9 @@ Upload uses `xcrun altool` with the App Store Connect API key. **This is fully a
 
 ```bash
 # Check the .p8 key file exists
-ls -la ~/.private_keys/AuthKey_BHUKT6FFGF.p8
+ls -la ~/.private_keys/AuthKey_ZK62KYKA4T.p8
 
-# If missing, copy from backup location
-mkdir -p ~/.private_keys
-cp /Users/jan/Documents/GitHub/Vet-Genius-Mobile-App/ios/fastlane/keys/AuthKey_BHUKT6FFGF.p8 ~/.private_keys/
+# If missing, restore only the verified CalyMob key from the approved secret backup.
 ```
 
 ### Step 2: Validate + Upload (combined script, recommended)
@@ -484,7 +482,7 @@ cp /Users/jan/Documents/GitHub/Vet-Genius-Mobile-App/ios/fastlane/keys/AuthKey_B
 cat > /tmp/upload_ios.sh << 'SCRIPT'
 #!/bin/bash
 IPA_PATH="/Users/jan/Documents/GitHub/Calypso/CalyMob/build/ios/ipa/calymob.ipa"
-KEY_ID="BHUKT6FFGF"
+KEY_ID="ZK62KYKA4T"
 ISSUER_ID="280e011a-f492-43fb-b0eb-727ddaa8c6c9"
 
 echo "=== Validating IPA ==="
@@ -590,9 +588,8 @@ open /Users/jan/Documents/GitHub/Calypso/CalyMob/ios/Runner.xcworkspace
 ### Missing .p8 Key
 If `xcrun altool` fails with authentication error:
 ```bash
-# Ensure key is in the right place
-mkdir -p ~/.private_keys
-cp /Users/jan/Documents/GitHub/Vet-Genius-Mobile-App/ios/fastlane/keys/AuthKey_BHUKT6FFGF.p8 ~/.private_keys/
+# Ensure the verified CalyMob key is present; never copy a key from another product.
+ls -la ~/.private_keys/AuthKey_ZK62KYKA4T.p8
 ```
 
 ### Build Processing Stuck
@@ -614,14 +611,14 @@ cd /Users/jan/Documents/GitHub/Calypso/CalyMob
 
 # 2. Build Android AAB (in Terminal via AppleScript, wait for completion)
 # 3. Upload Android to Play Store
-cd android && /opt/homebrew/bin/fastlane deploy
+./scripts/run_fastlane.sh android deploy
 
 # 4. Build iOS IPA (in Terminal via AppleScript, wait for completion)
 # 5. Upload iOS to App Store Connect
-xcrun altool --upload-app -f build/ios/ipa/calymob.ipa --apiKey BHUKT6FFGF --apiIssuer 280e011a-f492-43fb-b0eb-727ddaa8c6c9
+./scripts/run_fastlane.sh ios release
 
 # 6. Submit iOS for review (browser automation in App Store Connect)
 ```
 
-**Android**: Build + upload automated via CLI; Play Console review submission via browser automation
-**iOS**: Build + upload automated via CLI; App Store Connect review submission via browser automation
+**Android**: Build, upload and review submission are automated via Fastlane.
+**iOS**: Build, upload and review submission are automated via Fastlane.

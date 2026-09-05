@@ -1,5 +1,31 @@
 default_platform(:ios)
 
+def calymob_app_store_connect_config
+  key_id = ENV.fetch('APP_STORE_CONNECT_KEY_ID', 'ZK62KYKA4T')
+  {
+    key_id: key_id,
+    issuer_id: ENV.fetch('APP_STORE_CONNECT_ISSUER_ID', '280e011a-f492-43fb-b0eb-727ddaa8c6c9'),
+    key_filepath: File.expand_path(
+      ENV.fetch('APP_STORE_CONNECT_KEY_PATH', "~/.private_keys/AuthKey_#{key_id}.p8")
+    ),
+    in_house: false
+  }
+end
+
+def calymob_app_store_connect_api_key
+  app_store_connect_api_key(**calymob_app_store_connect_config)
+end
+
+def calymob_connect_api_token
+  require 'spaceship'
+  config = calymob_app_store_connect_config
+  Spaceship::ConnectAPI::Token.create(
+    key_id: config[:key_id],
+    issuer_id: config[:issuer_id],
+    filepath: config[:key_filepath]
+  )
+end
+
 def verify_ios_store_release(action, options = {})
   require 'json'
   script = File.expand_path('../../scripts/verify_store_release.cjs', __dir__)
@@ -15,12 +41,7 @@ platform :ios do
   desc "Upload IPA to App Store Connect (TestFlight)"
   lane :deploy do
     release = verify_ios_store_release('upload')
-    api_key = app_store_connect_api_key(
-      key_id: "BHUKT6FFGF",
-      issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"] || "280e011a-f492-43fb-b0eb-727ddaa8c6c9",
-      key_filepath: "~/.private_keys/AuthKey_BHUKT6FFGF.p8",
-      in_house: false
-    )
+    api_key = calymob_app_store_connect_api_key
 
     upload_to_testflight(
       api_key: api_key,
@@ -34,12 +55,7 @@ platform :ios do
   desc "Upload IPA directly to App Store for review"
   lane :release do
     release = verify_ios_store_release('upload')
-    api_key = app_store_connect_api_key(
-      key_id: "BHUKT6FFGF",
-      issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"] || "280e011a-f492-43fb-b0eb-727ddaa8c6c9",
-      key_filepath: "~/.private_keys/AuthKey_BHUKT6FFGF.p8",
-      in_house: false
-    )
+    api_key = calymob_app_store_connect_api_key
 
     upload_to_app_store(
       api_key: api_key,
@@ -56,12 +72,7 @@ platform :ios do
   desc "Submit uploaded build to App Store Review (uses existing build, no binary upload)"
   lane :submit do |options|
     release = verify_ios_store_release('submit', options)
-    api_key = app_store_connect_api_key(
-      key_id: "BHUKT6FFGF",
-      issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"] || "280e011a-f492-43fb-b0eb-727ddaa8c6c9",
-      key_filepath: "~/.private_keys/AuthKey_BHUKT6FFGF.p8",
-      in_house: false
-    )
+    api_key = calymob_app_store_connect_api_key
 
     version = release['version']
     build = release['build']
@@ -92,11 +103,7 @@ platform :ios do
   lane :update_notes do |options|
     approved = verify_ios_store_release('notes')
     require "spaceship"
-    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
-      key_id: "BHUKT6FFGF",
-      issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"] || "280e011a-f492-43fb-b0eb-727ddaa8c6c9",
-      filepath: File.expand_path("~/.private_keys/AuthKey_BHUKT6FFGF.p8")
-    )
+    Spaceship::ConnectAPI.token = calymob_connect_api_token
     app = Spaceship::ConnectAPI::App.find("be.calypsodc.calymob")
     UI.message("App: #{app.name} (id=#{app.id})")
     version = app.get_edit_app_store_version
@@ -123,11 +130,7 @@ platform :ios do
   desc "Show App Store review status (editable + in-review + live versions)"
   lane :status do
     require "spaceship"
-    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
-      key_id: "BHUKT6FFGF",
-      issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"] || "280e011a-f492-43fb-b0eb-727ddaa8c6c9",
-      filepath: File.expand_path("~/.private_keys/AuthKey_BHUKT6FFGF.p8")
-    )
+    Spaceship::ConnectAPI.token = calymob_connect_api_token
     app = Spaceship::ConnectAPI::App.find("be.calypsodc.calymob")
     UI.important("App: #{app.name} (id=#{app.id})")
 
@@ -151,12 +154,7 @@ platform :ios do
 
   desc "Validate API key connection"
   lane :validate do
-    api_key = app_store_connect_api_key(
-      key_id: "BHUKT6FFGF",
-      issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"] || "280e011a-f492-43fb-b0eb-727ddaa8c6c9",
-      key_filepath: "~/.private_keys/AuthKey_BHUKT6FFGF.p8",
-      in_house: false
-    )
+    api_key = calymob_app_store_connect_api_key
 
     # Probeer app info op te halen als validatie
     deliver(
