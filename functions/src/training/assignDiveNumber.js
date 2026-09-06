@@ -34,6 +34,61 @@ const { FieldValue } = require('firebase-admin/firestore');
 
 const FUNCTION_REGION = 'europe-west1';
 
+function positiveDiveNumber(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : null;
+}
+
+function shouldSkipDiveNumberAssignment(data = {}) {
+  return !data
+    || data.source === 'piscine'
+    || positiveDiveNumber(data.dive_number) != null;
+}
+
+function highestDiveNumberFromDocs(docs = [], excludedEntryId = null) {
+  let highest = 0;
+  for (const doc of docs) {
+    if (excludedEntryId && doc.id === excludedEntryId) continue;
+    const data = doc.data();
+    if (data.source === 'piscine') continue;
+    const n = positiveDiveNumber(data.dive_number);
+    if (n != null && n > highest) highest = n;
+  }
+  return highest;
+}
+
+function nextDiveNumber(counterNext, highestExisting) {
+  const current = positiveDiveNumber(counterNext) || 1;
+  return Math.max(current, highestExisting + 1);
+}
+
+function diveNumberAllocationPatch(assigned, source) {
+  return {
+    dive_number: assigned,
+    dive_number_source: source,
+    dive_number_allocated_at: FieldValue.serverTimestamp(),
+    updated_at: FieldValue.serverTimestamp(),
+  };
+}
+
+function planBackfillDiveNumbers(docs = []) {
+  let highest = 0;
+  const pending = [];
+  for (const doc of docs) {
+    const data = doc.data();
+    // WP-22 (D3) — les entrées piscine ne consomment PAS de n° de plongée.
+    if (data.source === 'piscine') continue;
+    const n = positiveDiveNumber(data.dive_number);
+    if (n != null) {
+      if (n > highest) highest = n;
+    } else {
+      pending.push(doc);
+    }
+  }
+  return { highest, pending };
+}
+
 const assignDiveNumber = onDocumentCreated(
   {
     region: FUNCTION_REGION,
@@ -47,10 +102,9 @@ const assignDiveNumber = onDocumentCreated(
     if (!data) return;
 
     // Pool sessions are training artefacts, not numbered dive-log entries.
-    if (data.source === 'piscine') return;
-
-    // Already numbered (Excel import flow, manual override, …) — leave it.
-    if (typeof data.dive_number === 'number' && data.dive_number > 0) return;
+    // Already numbered entries (Excel import/manual override/older server pass)
+    // are left untouched.
+    if (shouldSkipDiveNumberAssignment(data)) return;
 
     const memberId = data.member_id;
     if (!memberId) {
@@ -80,26 +134,19 @@ const assignDiveNumber = onDocumentCreated(
           (counterSnap.exists && typeof counterSnap.data().next === 'number')
             ? counterSnap.data().next
             : 1;
-        let highestExisting = 0;
-        entriesSnap.forEach((doc) => {
-          if (doc.id === entryId) return;
-          const n = doc.data().dive_number;
-          if (typeof n === 'number' && n > highestExisting) {
-            highestExisting = n;
-          }
-        });
+        const highestExisting = highestDiveNumberFromDocs(entriesSnap.docs, entryId);
         // If the member counter is stale/reset, recover from the actual
         // highest known dive number before assigning the next one.
-        const assigned = Math.max(current, highestExisting + 1);
+        const assigned = nextDiveNumber(current, highestExisting);
         tx.set(
           counterRef,
           { next: assigned + 1, updated_at: FieldValue.serverTimestamp() },
           { merge: true }
         );
-        tx.update(entryRef, {
-          dive_number: assigned,
-          updated_at: FieldValue.serverTimestamp(),
-        });
+        tx.update(
+          entryRef,
+          diveNumberAllocationPatch(assigned, 'assignDiveNumber')
+        );
         return assigned;
       });
       console.log(
@@ -158,18 +205,9 @@ const backfillMyDiveNumbers = onCall(
       .where('member_id', '==', uid)
       .orderBy('date', 'asc').get();
 
-    let highest = 0;
-    const pending = []; // entries that need a number assigned now
-    for (const doc of snap.docs) {
-      const d = doc.data();
-      // WP-22 (D3) — les entrées piscine ne consomment PAS de n° de plongée.
-      if (d.source === 'piscine') continue;
-      if (typeof d.dive_number === 'number' && d.dive_number > 0) {
-        if (d.dive_number > highest) highest = d.dive_number;
-      } else {
-        pending.push(doc);
-      }
-    }
+    const plan = planBackfillDiveNumbers(snap.docs);
+    const highest = plan.highest;
+    const pending = [...plan.pending];
 
     if (pending.length === 0) {
       // Nothing to do. Make sure the counter doc reflects the highest known
@@ -189,10 +227,10 @@ const backfillMyDiveNumbers = onCall(
       const slice = pending.splice(0, BATCH_SIZE);
       const batch = db.batch();
       for (const doc of slice) {
-        batch.update(doc.ref, {
-          dive_number: cursor,
-          updated_at: FieldValue.serverTimestamp(),
-        });
+        batch.update(
+          doc.ref,
+          diveNumberAllocationPatch(cursor, 'backfillMyDiveNumbers')
+        );
         cursor++;
         backfilled++;
       }
@@ -216,4 +254,10 @@ const backfillMyDiveNumbers = onCall(
 module.exports = {
   assignDiveNumber,
   backfillMyDiveNumbers,
+  positiveDiveNumber,
+  shouldSkipDiveNumberAssignment,
+  highestDiveNumberFromDocs,
+  nextDiveNumber,
+  diveNumberAllocationPatch,
+  planBackfillDiveNumbers,
 };

@@ -31,7 +31,27 @@ const {
   sanitizeSnapshotForTarget,
   buildCopyPayload,
   buildReplaceUpdate,
+  createsLogbookEntryForConfirmationAction,
 } = require('./logbookDiveConfirmations');
+
+describe('COM-085 confirmation actions and carnet numbering', () => {
+  test('only an explicit copy action can create a new carnet entry', () => {
+    const actions = [
+      'confirm_copy',
+      'confirm_existing_identical',
+      'confirm_merge_notes',
+      'confirm_keep_existing',
+      'confirm_replace_existing',
+      'confirm_no_import',
+      'decline',
+    ];
+
+    expect(actions.filter(createsLogbookEntryForConfirmationAction))
+      .toEqual(['confirm_copy']);
+    expect(createsLogbookEntryForConfirmationAction('decline')).toBe(false);
+    expect(createsLogbookEntryForConfirmationAction('confirm_no_import')).toBe(false);
+  });
+});
 
 describe('COM-055 duplicate and shared-note handling', () => {
   test('recognises a specific site name inside a longer location label', () => {

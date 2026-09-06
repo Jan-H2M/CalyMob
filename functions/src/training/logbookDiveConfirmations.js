@@ -40,6 +40,11 @@ const { usesCarnet } = require('./carnetPreference');
 
 const FUNCTION_REGION = 'europe-west1';
 const CONFIRMATIONS = 'logbook_dive_confirmations';
+const LOGBOOK_ENTRY_CREATING_CONFIRMATION_ACTIONS = new Set(['confirm_copy']);
+
+function createsLogbookEntryForConfirmationAction(action) {
+  return LOGBOOK_ENTRY_CREATING_CONFIRMATION_ACTIONS.has(action);
+}
 
 // WP-28 — counters shared by the whole palanquée (conditions / profile).
 // Everything else in `counters` is personal per diver. `deco` is shared —
@@ -898,7 +903,7 @@ const respondToLogbookDiveConfirmation = onCall(
 
     if (action === 'decline') {
       status = 'declined';
-    } else if (action === 'confirm_copy') {
+    } else if (createsLogbookEntryForConfirmationAction(action)) {
       // Recheck immediately before writing. A matching entry can have been
       // added after the request was created, or an older request can carry an
       // incomplete match result. Never create a second carnet entry then.
@@ -1027,4 +1032,5 @@ module.exports = {
   buildCopyPayload,
   buildReplaceUpdate,
   compareDive,
+  createsLogbookEntryForConfirmationAction,
 };

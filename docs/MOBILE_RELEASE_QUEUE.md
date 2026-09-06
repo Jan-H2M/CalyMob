@@ -14,6 +14,19 @@ De onderstaande per-issue vermeldingen beschrijven hun oorspronkelijke branches;
 oudere releasewachtrij-items zijn historische documentatie, geen bewijs dat zij
 nog niet in een storeversie zaten.
 
+### Nog niet geïntegreerd — COM-085
+
+- `codex/bug-COM-085-carnet-numbering`: verrouillage backend de la numérotation
+  carnet. Les allocations automatiques indiquent leur source
+  (`assignDiveNumber` ou `backfillMyDiveNumbers`), les artefacts piscine sont
+  ignorés dans la politique de numérotation, et seuls les choix explicites
+  `confirm_copy` peuvent créer une entrée carnet depuis une confirmation binôme.
+- Validation: syntax checks functions, 195 tests Cloud Functions, et 6 tests
+  Flutter `dive_number_policy` verts.
+- Pas d’audit/renumérotation live, pas de deploy functions, pas de version bump,
+  pas de build/upload store. PR draft: https://github.com/Jan-H2M/CalyMob/pull/62.
+  Dossier: `docs/bug-cycle/COM-085-carnet-numbering.md`.
+
 ### Nog niet uitgebracht — lokale branch COM-065 (2026-08-31)
 
 - Automatisch voorgestelde duiknummers krijgen een expliciete voorlopige aanduiding,
