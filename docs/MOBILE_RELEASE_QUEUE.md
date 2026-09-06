@@ -14,6 +14,18 @@ De onderstaande per-issue vermeldingen beschrijven hun oorspronkelijke branches;
 oudere releasewachtrij-items zijn historische documentatie, geen bewijs dat zij
 nog niet in een storeversie zaten.
 
+### Nog niet geïntegreerd — MOB-024
+
+- `codex/bug-MOB-024-exercices-empty-save`: le bouton d’enregistrement des
+  exercices souhaités suit maintenant l’état modifié, pas seulement une liste non
+  vide. Décocher le dernier exercice reste donc sauvegardable.
+- Validation: 5 tests Flutter ciblés verts, analyzer ciblé des nouveaux fichiers
+  sans problème, analyzer du grand écran exécuté avec warnings/infos non fatals
+  à cause de 105 lints historiques.
+- Pas de donnée live, pas de version bump, pas de build/upload store. PR draft:
+  https://github.com/Jan-H2M/CalyMob/pull/63. Dossier:
+  `docs/bug-cycle/MOB-024-exercices-empty-save.md`.
+
 ### Nog niet uitgebracht — lokale branch COM-065 (2026-08-31)
 
 - Automatisch voorgestelde duiknummers krijgen een expliciete voorlopige aanduiding,

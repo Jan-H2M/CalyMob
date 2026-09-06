@@ -13,6 +13,7 @@ import '../../providers/event_message_provider.dart';
 import '../../widgets/loading_widget.dart';
 import '../../utils/date_formatter.dart';
 import '../../utils/currency_formatter.dart';
+import '../../utils/exercice_selection_policy.dart';
 import '../../utils/tariff_utils.dart';
 import '../../utils/permission_helper.dart';
 import '../../utils/payment_confirmation.dart';
@@ -77,6 +78,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   Map<String, Map<String, MemberObservation>> _exerciceObservations =
       {}; // memberId -> exerciceCode -> observation
   List<String> _selectedExercices = [];
+  List<String> _initialSelectedExercices = [];
   bool _isLoadingExercices = false;
   ParticipantOperation? _userInscription;
 
@@ -93,6 +95,16 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   final Map<String, _MemberInfo?> _memberInfoCache = {};
   bool _memberInfoLoading = false;
   String? _memberInfoLoadedForOperation;
+
+  bool get _hasExerciceSelectionChanges => hasExerciceSelectionChanges(
+        initial: _initialSelectedExercices,
+        selected: _selectedExercices,
+      );
+
+  String get _exerciceSelectionSaveLabel => exerciceSelectionSaveLabel(
+        initial: _initialSelectedExercices,
+        selected: _selectedExercices,
+      );
 
   /// Check if the current user is the creator (organisateur) of the event.
   /// Uses the new `creator_user_id` field when present; falls back to
@@ -300,10 +312,13 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     );
 
     if (mounted) {
+      final exercices = inscription == null
+          ? <String>[]
+          : List<String>.from(inscription.exercices);
       setState(() {
         _userInscription = inscription;
-        _selectedExercices =
-            inscription == null ? [] : List<String>.from(inscription.exercices);
+        _selectedExercices = List<String>.from(exercices);
+        _initialSelectedExercices = List<String>.from(exercices);
       });
     }
   }
@@ -389,9 +404,16 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       );
 
       if (mounted) {
+        setState(() {
+          _initialSelectedExercices = List<String>.from(_selectedExercices);
+        });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Exercices enregistrés'),
+          SnackBar(
+            content: Text(
+              _selectedExercices.isEmpty
+                  ? 'Exercices souhaités supprimés'
+                  : 'Exercices enregistrés',
+            ),
             backgroundColor: Colors.green,
           ),
         );
@@ -5031,7 +5053,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                       onChanged: (value) {
                         setState(() {
                           if (value == true) {
-                            _selectedExercices.add(exercice.id);
+                            if (!_selectedExercices.contains(exercice.id)) {
+                              _selectedExercices.add(exercice.id);
+                            }
                           } else {
                             _selectedExercices.remove(exercice.id);
                           }
@@ -5056,15 +5080,17 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
                     child: SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: _selectedExercices.isNotEmpty
+                        onPressed: _hasExerciceSelectionChanges
                             ? _saveExercices
                             : null,
-                        icon: const Icon(Icons.save, size: 18),
-                        label: Text(
-                          _selectedExercices.isEmpty
-                              ? 'Sélectionnez des exercices'
-                              : 'Enregistrer (${_selectedExercices.length})',
+                        icon: Icon(
+                          _selectedExercices.isEmpty &&
+                                  _hasExerciceSelectionChanges
+                              ? Icons.delete_outline
+                              : Icons.save,
+                          size: 18,
                         ),
+                        label: Text(_exerciceSelectionSaveLabel),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.blue,
                           foregroundColor: Colors.white,
