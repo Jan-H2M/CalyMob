@@ -15,8 +15,8 @@
  *        c. first member id in `completion.moniteurIds`
  *        d. first encadrant from `session.niveaux[level].courses_by_hour`
  *   4. Merge `groupAssignment`, `personalNotes`, `outcome`, and
- *      `checkinCompletedAt` onto
- *      `piscine_sessions/{sessionId}/attendees/{userId}`.
+ *      `checkinCompletedAt` onto the original attendee document referenced by
+ *      `context.attendee_id` (fallback: existing member attendee, then userId).
  *
  * Outcome semantics
  *   - 'training'      : student joined a Formation group; a logbook entry
@@ -154,16 +154,11 @@ const onPoolCheckinCompleted = onDocumentUpdated(
         };
       }
 
-      const attendeeRef = db
-        .collection('clubs')
-        .doc(clubId)
-        .collection('piscine_sessions')
-        .doc(sessionId)
-        .collection('attendees')
-        .doc(userId);
+      const attendeeRef = await resolveAttendeeRef(db, clubId, sessionId, after);
 
       await attendeeRef.set(
         {
+          ...buildAttendeeIdentityPatch(after),
           groupAssignment,
           encadrantReport,
           hoursReport,
@@ -175,7 +170,7 @@ const onPoolCheckinCompleted = onDocumentUpdated(
       );
 
       console.log(
-        `[${FUNCTION_NAME}] task ${taskId} → attendee ${userId} (v4 hours) ` +
+        `[${FUNCTION_NAME}] task ${taskId} → attendee ${attendeeRef.id} (v4 hours) ` +
           `outcome=${outcome || 'n/a'} enc_groups=${encGroupsRaw.length} ` +
           `eleve_group=${(groupAssignment && groupAssignment.groupKey) || 'n/a'}`
       );
@@ -233,16 +228,11 @@ const onPoolCheckinCompleted = onDocumentUpdated(
       };
     }
 
-    const attendeeRef = db
-      .collection('clubs')
-      .doc(clubId)
-      .collection('piscine_sessions')
-      .doc(sessionId)
-      .collection('attendees')
-      .doc(userId);
+    const attendeeRef = await resolveAttendeeRef(db, clubId, sessionId, after);
 
     await attendeeRef.set(
       {
+        ...buildAttendeeIdentityPatch(after),
         groupAssignment,
         encadrantReport,
         personalNotes: completion.personalNotes || null,
@@ -253,12 +243,54 @@ const onPoolCheckinCompleted = onDocumentUpdated(
     );
 
     console.log(
-      `[${FUNCTION_NAME}] task ${taskId} → attendee ${userId} ` +
+      `[${FUNCTION_NAME}] task ${taskId} → attendee ${attendeeRef.id} ` +
         `(outcome=${outcome || 'n/a'}, group=${(groupAssignment && groupAssignment.groupKey) || 'n/a'}` +
         `${encadrantReport ? `, encadrant_groups=${encadrantReport.groups.length}` : ''})`
     );
   }
 );
+
+function buildAttendeeIdentityPatch(task) {
+  const memberId = task && task.member_id;
+  const memberName = task && (task.member_name || task.memberName);
+  const patch = {};
+  if (memberId) patch.memberId = memberId;
+  if (memberName) patch.memberName = memberName;
+  return patch;
+}
+
+async function resolveAttendeeRef(db, clubId, sessionId, task) {
+  const clubRef = db.collection('clubs').doc(clubId);
+  const attendeesRef = clubRef
+    .collection('piscine_sessions')
+    .doc(sessionId)
+    .collection('attendees');
+
+  const context = (task && task.context) || {};
+  const contextAttendeeId = context.attendee_id || context.attendeeId;
+  if (contextAttendeeId) {
+    return attendeesRef.doc(String(contextAttendeeId));
+  }
+
+  const memberId = task && task.member_id;
+  if (memberId) {
+    const byMemberId = await attendeesRef
+      .where('memberId', '==', memberId)
+      .limit(1)
+      .get();
+    if (!byMemberId.empty) return byMemberId.docs[0].ref;
+
+    const byLegacyMemberId = await attendeesRef
+      .where('membre_id', '==', memberId)
+      .limit(1)
+      .get();
+    if (!byLegacyMemberId.empty) return byLegacyMemberId.docs[0].ref;
+
+    return attendeesRef.doc(String(memberId));
+  }
+
+  return attendeesRef.doc();
+}
 
 /**
  * Reconcile the encadrant's reported groups against the session planning.
@@ -470,4 +502,6 @@ module.exports = {
   // Exported for tests
   resolveValidator,
   reconcileEncadrantGroups,
+  buildAttendeeIdentityPatch,
+  resolveAttendeeRef,
 };

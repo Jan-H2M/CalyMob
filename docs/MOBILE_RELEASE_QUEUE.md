@@ -14,6 +14,19 @@ De onderstaande per-issue vermeldingen beschrijven hun oorspronkelijke branches;
 oudere releasewachtrij-items zijn historische documentatie, geen bewijs dat zij
 nog niet in een storeversie zaten.
 
+### Nog niet geïntegreerd — COM-086
+
+- `codex/bug-COM-086-piscine-attendee-identity`: présence piscine avec identité
+  unique par membre/séance. Les nouveaux scans utilisent `attendees/{memberId}`;
+  la lecture/suppression mobile tolère les doublons legacy; `onPoolCheckinCompleted`
+  complète le document attendee original via `context.attendee_id` au lieu de créer
+  un second document `{userId}`.
+- Validation: 6 Flutter-tests ciblés, analyzer ciblé sans problème, 8 function-tests
+  ciblés, syntax check function et `git diff --check` verts.
+- Pas de dédoublonnage live, pas de deploy functions, pas de version bump, pas de
+  build/upload store. PR draft: https://github.com/Jan-H2M/CalyMob/pull/61.
+  Dossier: `docs/bug-cycle/COM-086-piscine-attendee-identity.md`.
+
 ### Nog niet uitgebracht — lokale branch COM-065 (2026-08-31)
 
 - Automatisch voorgestelde duiknummers krijgen een expliciete voorlopige aanduiding,

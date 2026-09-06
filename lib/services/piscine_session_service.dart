@@ -5,7 +5,10 @@ import '../models/piscine_attendee.dart';
 
 /// Service voor het beheren van piscine sessies
 class PiscineSessionService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFirestore _firestore;
+
+  PiscineSessionService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
 
   /// Collectie referentie voor piscine sessies
   CollectionReference<Map<String, dynamic>> _sessionsCollection(String clubId) {
@@ -240,9 +243,8 @@ class PiscineSessionService {
     return _attendeesCollection(clubId, sessionId)
         .orderBy('scannedAt', descending: false)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => PiscineAttendee.fromFirestore(doc))
-            .toList());
+        .map((snapshot) => _dedupeAttendees(
+            snapshot.docs.map((doc) => PiscineAttendee.fromFirestore(doc))));
   }
 
   /// Voeg een aanwezige toe
@@ -265,13 +267,24 @@ class PiscineSessionService {
       throw Exception('Ce membre est déjà marqué présent');
     }
 
-    await _attendeesCollection(clubId, sessionId).add({
+    final data = {
       'memberId': memberId,
       'memberName': memberName,
       'scannedAt': Timestamp.fromDate(DateTime.now()),
       'scannedBy': scannedBy,
       'isGuest': isGuest,
-    });
+    };
+
+    final attendees = _attendeesCollection(clubId, sessionId);
+    if (isGuest) {
+      await attendees.add(data);
+      return;
+    }
+
+    // Canonical identity: one member = one attendee document per session.
+    // Older sessions may still contain random-id legacy docs; read/delete paths
+    // below remain tolerant so we do not need an immediate live migration.
+    await attendees.doc(memberId).set(data, SetOptions(merge: true));
   }
 
   /// Verwijder een aanwezige
@@ -280,7 +293,51 @@ class PiscineSessionService {
     required String sessionId,
     required String attendeeId,
   }) async {
-    await _attendeesCollection(clubId, sessionId).doc(attendeeId).delete();
+    final attendees = _attendeesCollection(clubId, sessionId);
+    final refsByPath = <String, DocumentReference<Map<String, dynamic>>>{};
+
+    void remember(DocumentReference<Map<String, dynamic>> ref) {
+      refsByPath[ref.path] = ref;
+    }
+
+    final targetRef = attendees.doc(attendeeId);
+    remember(targetRef);
+
+    String memberId;
+    final targetSnap = await targetRef.get();
+    if (targetSnap.exists) {
+      final data = targetSnap.data() ?? const <String, dynamic>{};
+      if (data['isGuest'] == true) {
+        await targetRef.delete();
+        return;
+      }
+      memberId = _memberIdFromData(data, attendeeId);
+    } else {
+      memberId = attendeeId;
+    }
+
+    if (memberId.trim().isNotEmpty) {
+      final normalizedMemberId = memberId.trim();
+      remember(attendees.doc(normalizedMemberId));
+
+      Future<void> collect(String field) async {
+        final snapshot = await attendees
+            .where(field, isEqualTo: normalizedMemberId)
+            .get();
+        for (final doc in snapshot.docs) {
+          remember(doc.reference);
+        }
+      }
+
+      await collect('memberId');
+      await collect('membre_id');
+    }
+
+    final batch = _firestore.batch();
+    for (final ref in refsByPath.values) {
+      batch.delete(ref);
+    }
+    await batch.commit();
   }
 
   /// Restaure un participant supprimé par erreur (undo après [removeAttendee]).
@@ -303,15 +360,26 @@ class PiscineSessionService {
     required String sessionId,
     required String memberId,
   }) async {
+    final attendees = _attendeesCollection(clubId, sessionId);
+    final canonical = await attendees.doc(memberId).get();
+    if (canonical.exists) return true;
+
     try {
-      final existing = await _attendeesCollection(clubId, sessionId)
-          .where('memberId', isEqualTo: memberId)
-          .get();
-      return existing.docs.isNotEmpty;
+      final byMemberId =
+          await attendees.where('memberId', isEqualTo: memberId).get();
+      if (byMemberId.docs.isNotEmpty) return true;
+
+      final byLegacyMemberId =
+          await attendees.where('membre_id', isEqualTo: memberId).get();
+      return byLegacyMemberId.docs.isNotEmpty;
     } catch (e) {
-      // Fallback: fetch all attendees and filter in memory if index missing
-      final all = await _attendeesCollection(clubId, sessionId).get();
-      return all.docs.any((doc) => doc.data()['memberId'] == memberId);
+      // Fallback: fetch all attendees and filter in memory if an index/rules
+      // nuance prevents one of the precise queries.
+      final all = await attendees.get();
+      return all.docs.any((doc) {
+        final data = doc.data();
+        return _memberIdFromData(data, doc.id) == memberId;
+      });
     }
   }
 
@@ -321,11 +389,76 @@ class PiscineSessionService {
     required String sessionId,
     required String memberId,
   }) async {
-    final snapshot = await _attendeesCollection(clubId, sessionId)
-        .where('memberId', isEqualTo: memberId)
-        .get();
-    if (snapshot.docs.isEmpty) return null;
-    return PiscineAttendee.fromFirestore(snapshot.docs.first);
+    final attendees = _attendeesCollection(clubId, sessionId);
+    final candidatesByPath = <String, DocumentSnapshot<Map<String, dynamic>>>{};
+
+    void remember(DocumentSnapshot<Map<String, dynamic>> doc) {
+      if (doc.exists) candidatesByPath[doc.reference.path] = doc;
+    }
+
+    remember(await attendees.doc(memberId).get());
+
+    Future<void> collect(String field) async {
+      final snapshot = await attendees.where(field, isEqualTo: memberId).get();
+      for (final doc in snapshot.docs) {
+        candidatesByPath[doc.reference.path] = doc;
+      }
+    }
+
+    await collect('memberId');
+    await collect('membre_id');
+
+    if (candidatesByPath.isEmpty) return null;
+    return _preferredAttendee(
+      candidatesByPath.values.map((doc) => PiscineAttendee.fromFirestore(doc)),
+    );
+  }
+
+  static String _memberIdFromData(Map<String, dynamic> data, String fallbackId) {
+    return (data['memberId'] ?? data['membre_id'] ?? fallbackId).toString();
+  }
+
+  static List<PiscineAttendee> _dedupeAttendees(
+      Iterable<PiscineAttendee> attendees) {
+    final byMember = <String, PiscineAttendee>{};
+    for (final attendee in attendees) {
+      final key = attendee.memberId.trim().isNotEmpty
+          ? attendee.memberId.trim()
+          : attendee.id;
+      final current = byMember[key];
+      if (current == null ||
+          _attendeeScore(attendee) > _attendeeScore(current) ||
+          (_attendeeScore(attendee) == _attendeeScore(current) &&
+              attendee.scannedAt.isBefore(current.scannedAt))) {
+        byMember[key] = attendee;
+      }
+    }
+    return byMember.values.toList()
+      ..sort((a, b) => a.scannedAt.compareTo(b.scannedAt));
+  }
+
+  static PiscineAttendee _preferredAttendee(Iterable<PiscineAttendee> attendees) {
+    return _dedupeAttendees(attendees).reduce((best, attendee) {
+      final bestScore = _attendeeScore(best);
+      final attendeeScore = _attendeeScore(attendee);
+      if (attendeeScore > bestScore) return attendee;
+      if (attendeeScore == bestScore &&
+          attendee.scannedAt.isBefore(best.scannedAt)) {
+        return attendee;
+      }
+      return best;
+    });
+  }
+
+  static int _attendeeScore(PiscineAttendee attendee) {
+    var score = 0;
+    if (attendee.memberName.trim().isNotEmpty) score += 4;
+    if (attendee.scannedBy.trim().isNotEmpty) score += 2;
+    if (attendee.id == attendee.memberId) score += 1;
+    if (attendee.assignedLevel != null) score += 1;
+    if (attendee.assignedCourseId != null) score += 1;
+    if (attendee.remarks != null) score += 1;
+    return score;
   }
 
   /// Récupère les sessions de piscine où ce membre était présent (scanné)
