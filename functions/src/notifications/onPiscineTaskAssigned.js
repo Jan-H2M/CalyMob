@@ -41,7 +41,10 @@ function extractAssignedMembers(sessionData) {
   if (sessionData.gonflage && typeof sessionData.gonflage === 'object') {
     for (const [slot, assignees] of Object.entries(sessionData.gonflage)) {
       (assignees || []).forEach(g => {
-        addMember(g.membre_id, `Gonflage ${slot}`);
+        const task = slot === '22h30'
+          ? 'Rangement 22h30'
+          : `Gonflage ${slot}`;
+        addMember(g.membre_id, task);
       });
     }
   }
@@ -53,6 +56,19 @@ function extractAssignedMembers(sessionData) {
         data.encadrants.forEach(e => {
           addMember(e.membre_id, `Encadrant ${level}`);
         });
+      }
+
+      const coursesByHour = data?.courses_by_hour || data?.coursesByHour;
+      if (coursesByHour && typeof coursesByHour === 'object') {
+        for (const courses of Object.values(coursesByHour)) {
+          if (!Array.isArray(courses)) continue;
+          courses.forEach(course => {
+            if (!Array.isArray(course?.encadrants)) return;
+            course.encadrants.forEach(encadrant => {
+              addMember(encadrant.membre_id, `Encadrant ${level}`);
+            });
+          });
+        }
       }
     }
   }
@@ -263,7 +279,7 @@ exports.onPiscineTaskAssigned = onDocumentUpdated(
             }
           });
 
-          console.log(`✅ Task notification sent to ${memberId}: ${taskList}`);
+          console.log(`✅ Task notification sent to ${memberId}: ${lines.join(' · ')}`);
         } catch (error) {
           console.error(`Error sending task notification to ${memberId}: ${error.message}`);
           totalFailure += memberTokens.length;
@@ -279,3 +295,5 @@ exports.onPiscineTaskAssigned = onDocumentUpdated(
     }
   }
 );
+
+exports.extractAssignedMembers = extractAssignedMembers;
