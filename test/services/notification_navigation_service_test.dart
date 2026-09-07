@@ -24,6 +24,7 @@ void main() {
 
       expect(value.formationTaskId, 'task-123');
       expect(value.routeKind, NotificationRouteKind.formationTask);
+      expect(value.prefersActionsInbox, isFalse);
     });
 
     test('explicit task id works without the legacy deeplink field', () {
@@ -37,7 +38,20 @@ void main() {
       expect(value.routeKind, NotificationRouteKind.formationTask);
     });
 
-    test('multi-task reminder opens the inbox, never an arbitrary task', () {
+    test('multi-task reminder opens the Actions inbox, never an arbitrary task', () {
+      final value = request({
+        'type': 'formation_reminder',
+        'task_count': '3',
+        'deeplink': 'communication:actions',
+        'target_tab': 'actions',
+      });
+
+      expect(value.formationTaskId, isNull);
+      expect(value.routeKind, NotificationRouteKind.communicationInbox);
+      expect(value.prefersActionsInbox, isTrue);
+    });
+
+    test('legacy multi-task reminder also lands on Actions', () {
       final value = request({
         'type': 'formation_reminder',
         'task_count': '3',
@@ -46,6 +60,7 @@ void main() {
 
       expect(value.formationTaskId, isNull);
       expect(value.routeKind, NotificationRouteKind.communicationInbox);
+      expect(value.prefersActionsInbox, isTrue);
     });
 
     test('claim rejection opens the exact retry task', () {

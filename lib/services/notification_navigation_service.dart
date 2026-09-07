@@ -76,6 +76,9 @@ class NotificationNavigationRequest {
   int? get taskCount =>
       int.tryParse(_firstValue(const ['task_count', 'taskCount']) ?? '');
 
+  String? get deeplink => _value('deeplink');
+  String? get targetTab => _value('target_tab') ?? _value('tab');
+
   String? get formationTaskId {
     final direct = _firstValue(
       const ['formation_task_id', 'formationTaskId', 'task_id', 'taskId'],
@@ -88,6 +91,18 @@ class NotificationNavigationRequest {
       return _clean(deepLink.substring(prefix.length));
     }
     return null;
+  }
+
+  bool get prefersActionsInbox {
+    final tab = targetTab;
+    if (tab == 'actions' || tab == 'formation_actions') {
+      return true;
+    }
+    final link = deeplink;
+    if (link == 'communication:actions' || link == 'actions') {
+      return true;
+    }
+    return type == 'formation_reminder' && formationTaskId == null;
   }
 
   NotificationRouteKind get routeKind {
