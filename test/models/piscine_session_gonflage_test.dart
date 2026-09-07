@@ -16,7 +16,18 @@ void main() {
       () {
     expect(GonflageSlots.all, ['19h45', '20h15', '22h30']);
     expect(getSlotsForRole('gonflage'), GonflageSlots.all);
-    expect(getSlotLabel('gonflage', GonflageSlots.all.last), '22h30');
+    expect(
+      getSlotLabel('gonflage', GonflageSlots.all.last),
+      'Rangement 22h30',
+    );
+    expect(
+      GonflageSlots.assignmentDisplayName(GonflageSlots.h2230),
+      'Rangement 22h30',
+    );
+    expect(
+      GonflageSlots.assignmentDisplayName(GonflageSlots.h1945),
+      'Gonflage 19h45',
+    );
     expect(EncadrantSlots.displayName(EncadrantSlots.deuxiemeHeure), '21h15');
     expect(EncadrantSlots.timeForLevel('2*'), '21h15');
   });

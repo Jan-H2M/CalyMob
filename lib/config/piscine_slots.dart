@@ -40,8 +40,12 @@ class GonflageSlots {
   static const List<String> all = [h1945, h2015, h2230];
 
   static String displayName(String slot) {
-    // Les noms de slots sont déjà lisibles
-    return slot;
+    return slot == h2230 ? 'Rangement 22h30' : slot;
+  }
+
+  static String assignmentDisplayName(String slot) {
+    final label = displayName(slot);
+    return slot == h2230 ? label : 'Gonflage $label';
   }
 }
 
