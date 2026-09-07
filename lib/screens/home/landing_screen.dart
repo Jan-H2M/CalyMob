@@ -21,7 +21,7 @@ import '../profile/identite_screen.dart';
 import '../profile/mes_informations_screen.dart';
 import '../../widgets/profile/profile_completion_nudge_dialog.dart';
 import '../profile/who_is_who_screen.dart';
-import '../training/mon_carnet_screen.dart';
+import '../training/parcours_hub_screen.dart';
 import '../../services/boutique/boutique_access_service.dart';
 
 /// Landing page avec thème maritime animé et boutons ronds
@@ -332,12 +332,12 @@ class _LandingScreenState extends State<LandingScreen> {
                           ),
                         ),
                         ProfileTile.large(
-                          title: 'Mon carnet',
-                          icon: Icons.menu_book,
+                          title: 'Parcours',
+                          icon: Icons.route_outlined,
                           onTap: () => Navigator.push(
                             context,
                             MaterialPageRoute(
-                                builder: (_) => const MonCarnetScreen()),
+                                builder: (_) => const ParcoursHubScreen()),
                           ),
                         ),
                       ],
