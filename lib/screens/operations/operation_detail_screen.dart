@@ -32,6 +32,7 @@ import '../../models/supplement.dart';
 import '../../widgets/participant_payment_card.dart';
 import '../../widgets/scanner_modal_sheet.dart';
 import '../../widgets/documents_accordion.dart';
+import '../../widgets/operation_unregister_button.dart';
 import 'add_guest_dialog.dart';
 import 'edit_my_inscription_dialog.dart';
 import 'register_with_guests_dialog.dart';
@@ -1572,12 +1573,23 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
     // Find guests this user brought along
     final myInscriptionId = _userInscription?.id;
+    if (myInscriptionId == null || myInscriptionId.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Inscription introuvable. Actualisez l’événement puis réessayez.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
     final allParticipants = operationProvider.selectedOperationParticipants;
-    final myGuests = (myInscriptionId != null)
-        ? allParticipants
-            .where((p) => p.isGuest && p.parentInscriptionId == myInscriptionId)
-            .toList()
-        : <ParticipantOperation>[];
+    final myGuests = allParticipants
+        .where((p) => p.isGuest && p.parentInscriptionId == myInscriptionId)
+        .toList();
 
     // Decide flow based on whether the member has guests + an organisateur
     String? guestAction; // null=cancel, 'delete', 'transfer'
@@ -1624,6 +1636,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       await operationProvider.unregisterFromOperation(
         clubId: widget.clubId,
         operationId: widget.operationId,
+        inscriptionId: myInscriptionId,
         userId: userId,
         guestAction: guestAction,
       );
@@ -4664,29 +4677,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               // Firestore rule blocks the delete anyway; greying out the
               // button mirrors that and avoids a confusing error toast.
               Expanded(
-                child: SizedBox(
-                  height: 50,
-                  child: ElevatedButton.icon(
-                    onPressed: deadlinePassed ? null : _handleUnregister,
-                    icon: const Icon(Icons.cancel, color: Colors.white),
-                    label: const FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        'Annuler',
-                        style: TextStyle(fontSize: 16, color: Colors.white),
-                      ),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      disabledBackgroundColor: Colors.grey.shade400,
-                      disabledForegroundColor: Colors.white70,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      elevation: 8,
-                      shadowColor: Colors.red.withOpacity(0.5),
-                    ),
-                  ),
+                child: OperationUnregisterButton(
+                  deadlinePassed: deadlinePassed,
+                  onPressed: _handleUnregister,
                 ),
               ),
             ],
