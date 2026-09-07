@@ -3,10 +3,13 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/calendar_feed.dart';
+import '../config/qa_firebase_config.dart';
 
 /// Service pour la gestion du calendrier iCal
 class CalendarService {
-  static const String _baseUrl = 'https://caly.club';
+  static String get _baseUrl => QaFirebaseConfig.enabled
+      ? 'http://${QaFirebaseConfig.emulatorHost()}:4174'
+      : 'https://caly.club';
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
 

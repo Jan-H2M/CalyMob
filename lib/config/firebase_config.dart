@@ -4,10 +4,14 @@
 /// et GoogleService-Info.plist (iOS) automatiquement par Firebase SDK
 ///
 /// Pas besoin de hardcoder les clés API ici !
+import 'qa_firebase_config.dart';
+
 class FirebaseConfig {
   static const String defaultClubId = 'calypso';
 
   // Ces valeurs sont utilisées uniquement pour référence
   // Firebase les charge automatiquement depuis les fichiers de config
   static const String projectId = 'calycompta';
+  static String get activeProjectId =>
+      QaFirebaseConfig.enabled ? QaFirebaseConfig.projectId : projectId;
 }

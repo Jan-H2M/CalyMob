@@ -98,6 +98,7 @@ lerna-debug.log*
 # Testing
 # ===================
 coverage/
+.qa-artifacts/
 .nyc_output/
 
 # ===================
