@@ -14,6 +14,18 @@ De onderstaande per-issue vermeldingen beschrijven hun oorspronkelijke branches;
 oudere releasewachtrij-items zijn historische documentatie, geen bewijs dat zij
 nog niet in een storeversie zaten.
 
+### Nog niet geïntegreerd — COM-082/COM-083 Boutique polish (2026-09-07)
+
+- `codex/bug-COM-082-COM-083-boutique-polish`: clublogo staat in CalyMob
+  standaard aangevinkt wanneer het product dat toelaat; CalyCompta krijgt een
+  expliciete toggle om dit per product uit te zetten.
+- De dubbele feedback na “Ajouter au panier” is vereenvoudigd: alleen de korte
+  groene overlay blijft, de zwarte SnackBar onderaan verdwijnt zodat de
+  betaalknoppen niet geblokkeerd worden.
+- Gevalideerd met gerichte Fluttertests en analyzer op de gewijzigde bestanden.
+  Nog niet gemerged, geen version bump, build, upload, store-inzending of
+  Firestore-appversiewijziging.
+
 ### Nog niet uitgebracht — lokale branch COM-065 (2026-08-31)
 
 - Automatisch voorgestelde duiknummers krijgen een expliciete voorlopige aanduiding,
