@@ -202,7 +202,10 @@ class BoutiquePersonalizationConfig {
       productionConstraints: BoutiqueProductionConstraints.fromMap(
         data['productionConstraints'],
       ),
-      clubLogo: BoutiquePersonalizationOption.fromMap(data['clubLogo']),
+      clubLogo: BoutiquePersonalizationOption.fromMap(
+        data['clubLogo'],
+        defaultSelectedWhenMissing: true,
+      ),
       name: BoutiqueNameOption.fromMap(data['name']),
       certification: BoutiqueCertificationOption.fromMap(data['certification']),
     );
@@ -240,21 +243,30 @@ class BoutiquePersonalizationOption {
   final bool enabled;
   final List<String> zones;
   final double surcharge;
+  final bool defaultSelected;
 
   const BoutiquePersonalizationOption({
     required this.enabled,
     required this.zones,
     required this.surcharge,
+    this.defaultSelected = false,
   });
 
   bool get canChoose => enabled && zones.isNotEmpty;
 
-  factory BoutiquePersonalizationOption.fromMap(dynamic value) {
+  factory BoutiquePersonalizationOption.fromMap(
+    dynamic value, {
+    bool defaultSelectedWhenMissing = false,
+  }) {
     final data = value is Map ? Map<String, dynamic>.from(value) : {};
+    final enabled = data['enabled'] == true;
+    final rawDefault = data['defaultSelected'];
     return BoutiquePersonalizationOption(
-      enabled: data['enabled'] == true,
+      enabled: enabled,
       zones: _stringList(data['zones']),
       surcharge: _asDouble(data['surcharge']),
+      defaultSelected: enabled &&
+          (rawDefault is bool ? rawDefault : defaultSelectedWhenMissing),
     );
   }
 }
@@ -322,6 +334,20 @@ class BoutiquePersonalizationSelection {
     this.certification,
     this.certificationZone,
   });
+
+  factory BoutiquePersonalizationSelection.initial(
+    BoutiquePersonalizationConfig? config,
+  ) {
+    if (config?.clubLogo.canChoose == true &&
+        config!.clubLogo.defaultSelected) {
+      final zones = config.clubLogo.zones;
+      return BoutiquePersonalizationSelection(
+        clubLogo: true,
+        clubLogoZone: zones.length == 1 ? zones.first : null,
+      );
+    }
+    return const BoutiquePersonalizationSelection();
+  }
 
   bool get hasName => (nameText ?? '').trim().isNotEmpty;
 
