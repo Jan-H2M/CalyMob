@@ -12,6 +12,7 @@ class QaFirebaseConfig {
   static const String projectId = 'demo-calycompta-qa';
   static const String loopbackHost = '127.0.0.1';
   static const String androidEmulatorHost = '10.0.2.2';
+  static const String transportFunctionName = 'qaCaptureSideEffect';
 
   static const FirebaseOptions options = FirebaseOptions(
     apiKey: 'demo-only-api-key',
@@ -61,7 +62,14 @@ class QaFirebaseConfig {
     await FirebaseAuth.instance.useAuthEmulator(host, 9099);
     FirebaseFirestore.instance.useFirestoreEmulator(host, 8080);
     await FirebaseStorage.instance.useStorageEmulator(host, 9199);
-    FirebaseFunctions.instanceFor(region: 'europe-west1')
-        .useFunctionsEmulator(host, 5001);
+    final functions = FirebaseFunctions.instanceFor(region: 'europe-west1');
+    functions.useFunctionsEmulator(host, 5001);
+    await functions.httpsCallable(transportFunctionName).call({
+      'kind': 'fcm',
+      'payload': {
+        'action': 'external-notifications-disabled',
+        'client': 'calymob',
+      },
+    });
   }
 }

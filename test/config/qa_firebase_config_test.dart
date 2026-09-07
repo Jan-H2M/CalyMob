@@ -8,6 +8,7 @@ void main() {
     expect(QaFirebaseConfig.options.projectId, 'demo-calycompta-qa');
     expect(QaFirebaseConfig.options.authDomain, '127.0.0.1');
     expect(FirebaseConfig.projectId, isNot(QaFirebaseConfig.options.projectId));
+    expect(QaFirebaseConfig.transportFunctionName, 'qaCaptureSideEffect');
   });
 
   test('QA host mapping is loopback-only', () {
