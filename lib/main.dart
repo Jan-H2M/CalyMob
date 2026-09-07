@@ -527,7 +527,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
         case NotificationRouteKind.communicationInbox:
           await navigator.push(MaterialPageRoute(
-            builder: (_) => const CommunicationHubScreen(),
+            builder: (_) => CommunicationHubScreen(
+              initialActionsOnly: request.prefersActionsInbox,
+            ),
           ));
           break;
 
