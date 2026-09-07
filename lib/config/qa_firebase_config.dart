@@ -13,6 +13,13 @@ class QaFirebaseConfig {
   static const String loopbackHost = '127.0.0.1';
   static const String androidEmulatorHost = '10.0.2.2';
   static const String transportFunctionName = 'qaCaptureSideEffect';
+  static const Map<String, Object> transportProbeData = {
+    'kind': 'fcm',
+    'payload': {
+      'action': 'external-notifications-disabled',
+      'client': 'calymob',
+    },
+  };
 
   static const FirebaseOptions options = FirebaseOptions(
     apiKey: 'demo-only-api-key',
@@ -64,12 +71,8 @@ class QaFirebaseConfig {
     await FirebaseStorage.instance.useStorageEmulator(host, 9199);
     final functions = FirebaseFunctions.instanceFor(region: 'europe-west1');
     functions.useFunctionsEmulator(host, 5001);
-    await functions.httpsCallable(transportFunctionName).call({
-      'kind': 'fcm',
-      'payload': {
-        'action': 'external-notifications-disabled',
-        'client': 'calymob',
-      },
-    });
+    await functions
+        .httpsCallable(transportFunctionName)
+        .call(transportProbeData);
   }
 }

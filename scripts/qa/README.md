@@ -18,9 +18,11 @@ Sentry, Crashlytics, FCM token registration, store update checks and deep-link
 initialization are disabled in QA mode. Email, SMS, FCM, Ponto, bank and other
 outbound effects must be routed to the local side-effect capture; its records
 are redacted and written only below the run artifact directory.
-At startup the app calls the emulator-only `qaCaptureSideEffect` function, which
-loads this repository's capture module through the explicit CalyMob worktree
-path. Failure to reach that local capture aborts QA initialization.
+At startup the app calls the emulator-only `qaCaptureSideEffect` Firebase
+callable with a fixed synthetic probe. The local-origin CORS and `{data: ...}`
+callable contract are enforced by the QA Functions handler, which loads this
+repository's capture module through the explicit CalyMob worktree path. Failure
+to reach that local capture aborts QA initialization.
 
 This bootstrap is local-only. It must never be deployed or used for a release
 build.

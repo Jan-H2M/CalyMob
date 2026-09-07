@@ -9,6 +9,13 @@ void main() {
     expect(QaFirebaseConfig.options.authDomain, '127.0.0.1');
     expect(FirebaseConfig.projectId, isNot(QaFirebaseConfig.options.projectId));
     expect(QaFirebaseConfig.transportFunctionName, 'qaCaptureSideEffect');
+    expect(QaFirebaseConfig.transportProbeData, {
+      'kind': 'fcm',
+      'payload': {
+        'action': 'external-notifications-disabled',
+        'client': 'calymob',
+      },
+    });
   });
 
   test('QA host mapping is loopback-only', () {

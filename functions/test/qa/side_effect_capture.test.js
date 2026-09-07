@@ -64,4 +64,24 @@ describe('QA side-effect capture', () => {
       fs.rmSync(artifactRoot, {recursive: true, force: true});
     }
   });
+
+  test('exports a Firebase callable handler with local browser CORS', async () => {
+    const artifactRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'calymob-qa-callable-'));
+    const keys = {...qaEnvironment, CALYPSO_QA_ROOT: artifactRoot, CALYPSO_QA_RUN_ID: 'com094-callable'};
+    const previous = Object.fromEntries(Object.keys(keys).map((key) => [key, process.env[key]]));
+    try {
+      Object.assign(process.env, keys);
+      jest.resetModules();
+      const callable = require('../../qa/index').qaCaptureSideEffect;
+      expect(callable.__endpoint.callableTrigger).toBeDefined();
+      await expect(callable.run({data: {kind: 'fcm', payload: {fixture: true}}}))
+        .resolves.toEqual({captured: true, kind: 'fcm'});
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      fs.rmSync(artifactRoot, {recursive: true, force: true});
+    }
+  });
 });
