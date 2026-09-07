@@ -24,8 +24,7 @@ class _BoutiqueProductDetailScreenState
     extends State<BoutiqueProductDetailScreen> {
   BoutiqueVariant? _selectedVariant;
   late BoutiqueDeliveryMode _selectedDeliveryMode;
-  BoutiquePersonalizationSelection _personalization =
-      const BoutiquePersonalizationSelection();
+  late BoutiquePersonalizationSelection _personalization;
   int _quantity = 1;
 
   @override
@@ -35,6 +34,8 @@ class _BoutiqueProductDetailScreenState
         ? widget.product.variants.first
         : null;
     _selectedDeliveryMode = widget.product.deliveryModes.first;
+    _personalization =
+        BoutiquePersonalizationSelection.initial(widget.product.personalization);
     _quantity = _minimumQuantity;
   }
 
@@ -272,7 +273,6 @@ class _BoutiqueProductDetailScreenState
   Future<void> _addToCart(BuildContext context, double unitPrice) async {
     final navigator = Navigator.of(context);
     final rootNavigator = Navigator.of(context, rootNavigator: true);
-    final messenger = ScaffoldMessenger.of(context);
     final variant = _selectedVariant;
     final personalizationPayload =
         _personalization.toOrderPayload(widget.product.personalization);
@@ -308,12 +308,6 @@ class _BoutiqueProductDetailScreenState
     await Future<void>.delayed(const Duration(milliseconds: 120));
     if (!context.mounted) return;
     navigator.pop();
-    messenger.showSnackBar(
-      const SnackBar(
-        content: Text('Article ajouté au panier.'),
-        duration: Duration(seconds: 3),
-      ),
-    );
   }
 
   void _showAddedToCartToast(BuildContext context) {
