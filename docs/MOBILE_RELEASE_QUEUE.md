@@ -72,6 +72,18 @@ nog niet in een storeversie zaten.
 - Commit `3abc0bc`; nog niet gemerged of uitgebracht. Visuele controle op toestel
   volgt bij de gezamenlijke mobiele release.
 
+
+### Nog niet geïntegreerd — COM-084
+
+- `codex/bug-COM-084-parcours-hub`: centrale mobiele `Parcours`-hub voor
+  carnet, open duikbevestigingen, oefeningen, aanvragen, acties/evaluaties,
+  statistieken en papieren-kaartovername. `Mon carnet` wordt daardoor opnieuw
+  een zuiver logboekscherm zonder losse header-shortcuts.
+- Gevalideerd met gerichte Flutter-analyse en `parcours_hub_screen_test.dart`.
+  Geen backenddeploy, version bump, build, upload, store-inzending of
+  Firestore-appversiewijziging.
+- Dossier: `docs/bug-cycle/COM-084-parcours-hub.md`.
+
 ### Nog niet geïntegreerd — COM-075
 
 - `codex/bug-COM-075-birthday-sharing`: leden kunnen het delen van hun

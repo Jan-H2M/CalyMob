@@ -1,6 +1,6 @@
 /// Phase C (2026-05-13) — Mon Carnet : the diver's personal logbook list.
 ///
-/// Triggered from the LandingScreen "Mon carnet" tile (3+2 layout, row 1).
+/// Opened from the Parcours hub.
 /// Lists `student_logbook_entries` for the signed-in member, filterable by
 /// year, with cards that summarise date / lieu / profondeur / durée / counters
 /// and indicate the entry's source (piscine / sortie Calypso / manuel).
@@ -20,14 +20,10 @@ import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
-import '../exercises/member_exercises_screen.dart';
-import '../../providers/member_provider.dart';
-import 'historical_claims_screen.dart';
 import 'logbook_add_choice_screen.dart';
 import 'logbook_dive_confirmation_screen.dart';
 import 'logbook_entry_detail_screen.dart';
 import 'logbook_entry_screen.dart';
-import 'stats_screen.dart';
 
 class MonCarnetScreen extends StatefulWidget {
   const MonCarnetScreen({super.key});
@@ -357,102 +353,8 @@ class _MonCarnetScreenState extends State<MonCarnetScreen> {
                 ),
               ),
             ),
-          _pendingConfirmationsButton(context),
-          IconButton(
-            icon: const Icon(Icons.school_outlined, color: Colors.white),
-            tooltip: 'Ma progression LIFRAS',
-            onPressed: () {
-              final auth = context.read<AuthProvider>();
-              final memberProvider = context.read<MemberProvider>();
-              final userId = auth.currentUser?.uid;
-              if (userId == null) return;
-              final memberName = ('${memberProvider.prenom ?? ''} '
-                      '${memberProvider.nom ?? ''}')
-                  .trim();
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => MemberExercisesScreen(
-                    memberId: userId,
-                    memberName: memberName.isEmpty ? 'Moi' : memberName,
-                    isOwnProfile: true,
-                  ),
-                ),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.history_edu_outlined, color: Colors.white),
-            tooltip: 'Reprendre ma carte papier',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const HistoricalClaimsScreen(),
-              ),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.bar_chart, color: Colors.white),
-            tooltip: 'Stats & cartes',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const StatsScreen()),
-            ),
-          ),
         ],
       ),
-    );
-  }
-
-  Widget _pendingConfirmationsButton(BuildContext context) {
-    final userId = context.watch<AuthProvider>().currentUser?.uid;
-    if (userId == null) {
-      return IconButton(
-        icon: const Icon(Icons.task_alt_outlined, color: Colors.white),
-        tooltip: 'Plongées à confirmer',
-        onPressed: () => _openPendingConfirmations(context),
-      );
-    }
-
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _pendingConfirmationsStream(userId),
-      builder: (context, snap) {
-        final count = snap.data?.docs.length ?? 0;
-        return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.task_alt_outlined, color: Colors.white),
-              tooltip: 'Plongées à confirmer',
-              onPressed: () => _openPendingConfirmations(context),
-            ),
-            if (count > 0)
-              Positioned(
-                right: 5,
-                top: 5,
-                child: Container(
-                  constraints:
-                      const BoxConstraints(minWidth: 17, minHeight: 17),
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade600,
-                    borderRadius: BorderRadius.circular(9),
-                    border: Border.all(color: Colors.white, width: 1),
-                  ),
-                  child: Text(
-                    count > 9 ? '9+' : '$count',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
     );
   }
 
