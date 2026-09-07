@@ -428,9 +428,17 @@ class OperationService {
   Future<void> unregisterFromOperation({
     required String clubId,
     required String operationId,
+    required String inscriptionId,
     required String userId,
     String? guestAction,
   }) async {
+    if (inscriptionId.isEmpty) {
+      throw ArgumentError.value(
+        inscriptionId,
+        'inscriptionId',
+        'L’identifiant de l’inscription est requis.',
+      );
+    }
     try {
       // Removing the registration and promoting the oldest waiting member
       // must be atomic, otherwise two simultaneous cancellations can assign
@@ -439,6 +447,7 @@ class OperationService {
       await _functions.httpsCallable('unregisterFromEvent').call({
         'clubId': clubId,
         'operationId': operationId,
+        'inscriptionId': inscriptionId,
         if (guestAction != null) 'guestAction': guestAction,
         'source': 'calymob',
         if (appVersion != null) 'appVersion': appVersion,
