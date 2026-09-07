@@ -57,24 +57,32 @@ class NotificationNavigationRequest {
   }
 
   String? get type => _value('type');
-  String? get clubId => _value('club_id');
-  String? get operationId => _value('operation_id');
-  String? get announcementId => _value('announcement_id');
-  String? get channelId => _value('channel_id');
-  String? get sessionId => _value('session_id');
-  String? get confirmationId => _value('confirmation_id');
-  String? get memberId => _value('member_id');
-  String? get exerciceValideId => _value('exercice_valide_id');
+  String? get clubId => _firstValue(const ['club_id', 'clubId']);
+  String? get operationId => _firstValue(const ['operation_id', 'operationId']);
+  String? get announcementId =>
+      _firstValue(const ['announcement_id', 'announcementId']);
+  String? get channelId => _firstValue(const ['channel_id', 'channelId']);
+  String? get sessionId => _firstValue(const ['session_id', 'sessionId']);
+  String? get confirmationId =>
+      _firstValue(const ['confirmation_id', 'confirmationId']);
+  String? get memberId => _firstValue(const ['member_id', 'memberId']);
+  String? get exerciceValideId =>
+      _firstValue(const ['exercice_valide_id', 'exerciceValideId']);
   String? get exerciseCode =>
-      _value('exercice_code') ?? _value('exercise_code');
+      _firstValue(const ['exercice_code', 'exercise_code', 'exerciseCode']);
+  String? get groupType => _firstValue(const ['group_type', 'groupType']);
+  String? get groupLevel => _firstValue(const ['group_level', 'groupLevel']);
 
-  int? get taskCount => int.tryParse(_value('task_count') ?? '');
+  int? get taskCount =>
+      int.tryParse(_firstValue(const ['task_count', 'taskCount']) ?? '');
 
   String? get formationTaskId {
-    final direct = _value('formation_task_id') ?? _value('task_id');
+    final direct = _firstValue(
+      const ['formation_task_id', 'formationTaskId', 'task_id', 'taskId'],
+    );
     if (direct != null) return direct;
 
-    final deepLink = _value('deeplink');
+    final deepLink = _firstValue(const ['deeplink', 'deepLink']);
     const prefix = 'formation_task:';
     if (deepLink != null && deepLink.startsWith(prefix)) {
       return _clean(deepLink.substring(prefix.length));
@@ -126,6 +134,36 @@ class NotificationNavigationRequest {
     }
   }
 
+  /// Whether this request contains every identifier required by its route.
+  ///
+  /// Keeping this policy next to the payload normalisation makes invalid
+  /// destinations testable without mounting the application navigator.
+  bool get hasValidDestination {
+    switch (routeKind) {
+      case NotificationRouteKind.operation:
+        return operationId != null;
+      case NotificationRouteKind.announcement:
+        return announcementId != null;
+      case NotificationRouteKind.teamChat:
+        return channelId != null;
+      case NotificationRouteKind.sessionChat:
+      case NotificationRouteKind.sessionDetail:
+        return sessionId != null;
+      case NotificationRouteKind.exerciseDeclaration:
+        return memberId != null && exerciceValideId != null;
+      case NotificationRouteKind.logbookConfirmation:
+        return confirmationId != null;
+      case NotificationRouteKind.formationTask:
+        return formationTaskId != null;
+      case NotificationRouteKind.birthday:
+      case NotificationRouteKind.communicationInbox:
+      case NotificationRouteKind.medicalCertificate:
+        return true;
+      case NotificationRouteKind.unsupported:
+        return false;
+    }
+  }
+
   /// Stable key used to ignore double taps and duplicate OS callbacks.
   String get deduplicationKey {
     final stableMessageId = _clean(messageId);
@@ -146,6 +184,14 @@ class NotificationNavigationRequest {
 
   String? _value(String key) => _clean(data[key]);
 
+  String? _firstValue(List<String> keys) {
+    for (final key in keys) {
+      final value = _value(key);
+      if (value != null) return value;
+    }
+    return null;
+  }
+
   static String? _clean(String? value) {
     final cleaned = value?.trim();
     return cleaned == null || cleaned.isEmpty ? null : cleaned;
@@ -157,6 +203,7 @@ class NotificationNavigationRequest {
 class NotificationNavigationQueue {
   final Duration duplicateWindow;
   final Queue<NotificationNavigationRequest> _pending = Queue();
+  final Set<String> _inFlight = {};
   final Map<String, DateTime> _recentlyHandled = {};
 
   NotificationNavigationQueue({
@@ -165,14 +212,12 @@ class NotificationNavigationQueue {
 
   int get pendingCount => _pending.length;
 
-  bool enqueue(
-    NotificationNavigationRequest request, {
-    DateTime? now,
-  }) {
+  bool enqueue(NotificationNavigationRequest request, {DateTime? now}) {
     final timestamp = now ?? DateTime.now();
     _removeExpired(timestamp);
     final key = request.deduplicationKey;
     if (_recentlyHandled.containsKey(key) ||
+        _inFlight.contains(key) ||
         _pending.any((item) => item.deduplicationKey == key)) {
       return false;
     }
@@ -182,23 +227,25 @@ class NotificationNavigationQueue {
 
   NotificationNavigationRequest? takeNext() {
     if (_pending.isEmpty) return null;
-    return _pending.removeFirst();
+    final request = _pending.removeFirst();
+    _inFlight.add(request.deduplicationKey);
+    return request;
   }
 
   void putBack(NotificationNavigationRequest request) {
-    if (_pending
-        .any((item) => item.deduplicationKey == request.deduplicationKey)) {
+    _inFlight.remove(request.deduplicationKey);
+    if (_pending.any(
+      (item) => item.deduplicationKey == request.deduplicationKey,
+    )) {
       return;
     }
     _pending.addFirst(request);
   }
 
-  void markHandled(
-    NotificationNavigationRequest request, {
-    DateTime? now,
-  }) {
+  void markHandled(NotificationNavigationRequest request, {DateTime? now}) {
     final timestamp = now ?? DateTime.now();
     _removeExpired(timestamp);
+    _inFlight.remove(request.deduplicationKey);
     _recentlyHandled[request.deduplicationKey] = timestamp;
   }
 
