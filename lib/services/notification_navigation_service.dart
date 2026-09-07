@@ -166,9 +166,6 @@ class NotificationNavigationRequest {
 
   /// Stable key used to ignore double taps and duplicate OS callbacks.
   String get deduplicationKey {
-    final stableMessageId = _clean(messageId);
-    if (stableMessageId != null) return 'message:$stableMessageId';
-
     final objectId = formationTaskId ??
         confirmationId ??
         operationId ??
@@ -179,6 +176,18 @@ class NotificationNavigationRequest {
         memberId ??
         _value('deeplink') ??
         'generic';
+
+    // Background/cold-start callbacks expose the globally unique FCM transport
+    // ID directly. Foreground notifications are restored from local JSON and
+    // therefore fall back to the originating document ID in the data payload.
+    final transportMessageId = _clean(messageId);
+    if (transportMessageId != null) return 'message:$transportMessageId';
+    final payloadMessageId =
+        _firstValue(const ['message_id', 'messageId']);
+    if (payloadMessageId != null) {
+      return 'payload-message:${type ?? 'unknown'}|${clubId ?? ''}|$objectId|$payloadMessageId';
+    }
+
     return '${type ?? 'unknown'}|${clubId ?? ''}|$objectId';
   }
 
