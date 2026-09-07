@@ -284,5 +284,38 @@ void main() {
       queue.markHandled(first);
       expect(queue.enqueue(duplicate), isFalse);
     });
+
+    test(
+        'allows distinct foreground messages in the same session while suppressing a duplicate',
+        () {
+      final queue = NotificationNavigationQueue();
+      final p2Message = request({
+        'type': 'session_message',
+        'session_id': 'session-1',
+        'group_type': 'niveau',
+        'group_level': 'P2',
+        'message_id': 'message-p2',
+      }, origin: NotificationTapOrigin.foreground);
+      final p3Message = request({
+        'type': 'session_message',
+        'session_id': 'session-1',
+        'group_type': 'niveau',
+        'group_level': 'P3',
+        'messageId': 'message-p3',
+      }, origin: NotificationTapOrigin.foreground);
+      final duplicateP2Message = request({
+        'type': 'session_message',
+        'session_id': 'session-1',
+        'group_type': 'niveau',
+        'group_level': 'P2',
+        'messageId': 'message-p2',
+      }, origin: NotificationTapOrigin.foreground);
+
+      expect(queue.enqueue(p2Message), isTrue);
+      expect(queue.takeNext(), same(p2Message));
+
+      expect(queue.enqueue(p3Message), isTrue);
+      expect(queue.enqueue(duplicateP2Message), isFalse);
+    });
   });
 }

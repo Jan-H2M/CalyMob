@@ -18,7 +18,10 @@ nog niet in een storeversie zaten.
 
 - `codex/bug-COM-046-notification-regression-v2`: volledige telling voor
   relevante event- en sessiechats, afzonderlijke read-status per sessieniveau en
-  uniforme pushrouting voor foreground, background en cold start.
+  uniforme pushrouting voor foreground, background en cold start. De round-3-
+  correctie gebruikt ook het payload-`message_id` voor deduplicatie, zodat een
+  tweede afzonderlijk foregroundbericht in dezelfde sessie niet wordt
+  onderdrukt terwijl echte dubbele callbacks wel genegeerd blijven.
 - Geen datamigratie of backenddeploy. App-icoonsynchronisatie en echte pushtaps
   blijven onderdeel van de gezamenlijke Android-/iOS-release-QA.
 - Dossier: `docs/bugs/COM-046.md`. Geen version bump, build-upload of
