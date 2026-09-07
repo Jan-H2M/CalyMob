@@ -15,6 +15,7 @@ jest.mock('firebase-admin/firestore', () => ({
 const {
   isDueForReminder,
   buildReminderPayload,
+  buildReminderNotification,
 } = require('./processFormationTaskReminders');
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -76,7 +77,7 @@ describe('notification deep-link payload', () => {
     });
   });
 
-  test('a digest routes to the inbox and never claims one arbitrary task', () => {
+  test('a digest routes to the Actions tab and never claims one arbitrary task', () => {
     expect(buildReminderPayload('calypso', [
       { id: 'task-1' },
       { id: 'task-2' },
@@ -84,8 +85,31 @@ describe('notification deep-link payload', () => {
       type: 'formation_reminder',
       club_id: 'calypso',
       task_count: '2',
-      deeplink: 'communication:inbox',
+      deeplink: 'communication:actions',
+      target_tab: 'actions',
       click_action: 'FLUTTER_NOTIFICATION_CLICK',
     });
+  });
+});
+
+describe('notification wording', () => {
+  test('one task keeps its exact title', () => {
+    expect(buildReminderNotification([{ title: 'Valider la palanquée' }])).toEqual({
+      title: 'Valider la palanquée',
+      body: 'Ouvre Calypso pour la traiter',
+    });
+  });
+
+  test('multi-task reminder avoids a misleading exact visible count', () => {
+    const notification = buildReminderNotification([
+      { title: 'Action A' },
+      { title: 'Action B' },
+    ]);
+
+    expect(notification).toEqual({
+      title: "Des actions t'attendent",
+      body: "Ouvre l'onglet Actions pour les retrouver",
+    });
+    expect(notification.title).not.toContain('2');
   });
 });
