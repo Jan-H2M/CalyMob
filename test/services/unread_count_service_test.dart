@@ -17,6 +17,29 @@ import 'package:calymob/services/unread_count_service.dart';
 void main() {
   const clubId = 'calypso';
 
+  group('Notification badge regression policy', () {
+    test('closed-event registrations remain countable', () {
+      expect(isCountableRegistration({'registration_status': 'confirmed'}),
+          isTrue);
+      expect(
+          isCountableRegistration({'registration_status': 'pending_payment'}),
+          isTrue);
+      expect(isCountableRegistration({'registration_status': 'canceled'}),
+          isFalse);
+      expect(isCountableRegistration({'registration_status': 'waitlisted'}),
+          isFalse);
+    });
+
+    test('niveau chats have independent read keys', () {
+      expect(unreadSessionReadKey('session-1', 'niveau', 'P2'),
+          'session_session-1_niveau_P2');
+      expect(unreadSessionReadKey('session-1', 'encadrants'),
+          'session_session-1_encadrants');
+      expect(unreadSessionReadKey('session-1', 'niveau', 'P3'),
+          isNot('session_session-1_niveau_P2'));
+    });
+  });
+
   group('LocalReadTracker', () {
     setUp(() {
       // Mock SharedPreferences

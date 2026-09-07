@@ -25,6 +25,16 @@ nog niet in een storeversie zaten.
 - Nog niet gemerged of uitgebracht; onafhankelijke review en gebundelde mobiele
   releasepoorten blijven verplicht.
 
+### Nog niet geïntegreerd — COM-046
+
+- `codex/bug-COM-046-notification-regression-v2`: volledige telling voor
+  relevante event- en sessiechats, afzonderlijke read-status per sessieniveau en
+  uniforme pushrouting voor foreground, background en cold start.
+- Geen datamigratie of backenddeploy. App-icoonsynchronisatie en echte pushtaps
+  blijven onderdeel van de gezamenlijke Android-/iOS-release-QA.
+- Dossier: `docs/bugs/COM-046.md`. Geen version bump, build-upload of
+  storehandeling uitgevoerd.
+
 ### Nog niet uitgebracht — lokale branch COM-065 (2026-08-31)
 
 - Automatisch voorgestelde duiknummers krijgen een expliciete voorlopige aanduiding,
