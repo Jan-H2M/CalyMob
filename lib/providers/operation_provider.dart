@@ -239,6 +239,7 @@ class OperationProvider with ChangeNotifier {
   Future<void> unregisterFromOperation({
     required String clubId,
     required String operationId,
+    required String inscriptionId,
     required String userId,
     String? guestAction,
   }) async {
@@ -250,6 +251,7 @@ class OperationProvider with ChangeNotifier {
       await _operationService.unregisterFromOperation(
         clubId: clubId,
         operationId: operationId,
+        inscriptionId: inscriptionId,
         userId: userId,
         guestAction: guestAction,
       );
