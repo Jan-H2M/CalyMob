@@ -275,7 +275,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                       ),
                       const SizedBox(width: 10),
                       Text(
-                        'Gonflage $slot',
+                        GonflageSlots.assignmentDisplayName(slot),
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
