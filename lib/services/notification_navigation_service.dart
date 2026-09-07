@@ -87,9 +87,13 @@ class NotificationNavigationRequest {
 
   bool get prefersActionsInbox {
     final tab = targetTab;
-    if (tab == 'actions' || tab == 'formation_actions') return true;
+    if (tab == 'actions' || tab == 'formation_actions') {
+      return true;
+    }
     final link = deeplink;
-    if (link == 'communication:actions' || link == 'actions') return true;
+    if (link == 'communication:actions' || link == 'actions') {
+      return true;
+    }
     return type == 'formation_reminder' && formationTaskId == null;
   }
 

@@ -38,13 +38,24 @@ void main() {
       expect(value.routeKind, NotificationRouteKind.formationTask);
     });
 
-    test('multi-task reminder opens the Actions inbox, never an arbitrary task',
-        () {
+    test('multi-task reminder opens the Actions inbox, never an arbitrary task', () {
       final value = request({
         'type': 'formation_reminder',
         'task_count': '3',
         'deeplink': 'communication:actions',
         'target_tab': 'actions',
+      });
+
+      expect(value.formationTaskId, isNull);
+      expect(value.routeKind, NotificationRouteKind.communicationInbox);
+      expect(value.prefersActionsInbox, isTrue);
+    });
+
+    test('legacy multi-task reminder also lands on Actions', () {
+      final value = request({
+        'type': 'formation_reminder',
+        'task_count': '3',
+        'deeplink': 'communication:inbox',
       });
 
       expect(value.formationTaskId, isNull);

@@ -125,15 +125,11 @@ const processFormationTaskReminders = onSchedule(
           continue;
         }
 
-        // Send a single push covering N tasks.
-        const pushTitle =
-          dueForPush.length === 1
-            ? dueForPush[0].title
-            : `${dueForPush.length} actions t'attendent`;
-        const pushBody =
-          dueForPush.length === 1
-            ? 'Ouvre Calypso pour la traiter'
-            : 'Ouvre Calypso pour voir tes actions';
+        // Send a single push covering reminders due in this cycle. For a
+        // multi-task reminder, do not title the push with dueForPush.length:
+        // the app opens the full visible Actions inbox, which can contain
+        // older open tasks that were not due for a reminder in this pass.
+        const pushNotification = buildReminderNotification(dueForPush);
 
         const tokens = collectFcmTokens(member);
         if (tokens.length === 0) {
@@ -145,7 +141,7 @@ const processFormationTaskReminders = onSchedule(
         try {
           await admin.messaging().sendEachForMulticast({
             tokens,
-            notification: { title: pushTitle, body: pushBody },
+            notification: pushNotification,
             data: buildReminderPayload(clubId, dueForPush),
             android: { priority: 'high' },
             apns: { payload: { aps: { sound: 'default' } } },
@@ -256,9 +252,24 @@ function buildReminderPayload(clubId, dueTasks) {
     task_count: String(dueTasks.length),
     deeplink: singleTaskId
       ? `formation_task:${singleTaskId}`
-      : 'communication:inbox',
+      : 'communication:actions',
     ...(singleTaskId ? { formation_task_id: String(singleTaskId) } : {}),
+    ...(singleTaskId ? {} : { target_tab: 'actions' }),
     click_action: 'FLUTTER_NOTIFICATION_CLICK',
+  };
+}
+
+function buildReminderNotification(dueTasks) {
+  if (dueTasks.length === 1) {
+    const title = String(dueTasks[0]?.title || '').trim();
+    return {
+      title: title || 'Action à traiter',
+      body: 'Ouvre Calypso pour la traiter',
+    };
+  }
+  return {
+    title: "Des actions t'attendent",
+    body: "Ouvre l'onglet Actions pour les retrouver",
   };
 }
 
@@ -307,4 +318,5 @@ module.exports = {
   processFormationTaskReminders,
   isDueForReminder,
   buildReminderPayload,
+  buildReminderNotification,
 };
