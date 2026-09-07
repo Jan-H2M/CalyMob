@@ -1,6 +1,8 @@
 'use strict';
 
 const fs = require('fs');
+const express = require('express');
+const {once} = require('events');
 const os = require('os');
 const path = require('path');
 const {
@@ -76,6 +78,41 @@ describe('QA side-effect capture', () => {
       expect(callable.__endpoint.callableTrigger).toBeDefined();
       await expect(callable.run({data: {kind: 'fcm', payload: {fixture: true}}}))
         .resolves.toEqual({captured: true, kind: 'fcm'});
+
+      const app = express();
+      app.use(express.json());
+      app.all('/callable', callable);
+      const server = app.listen(0, '127.0.0.1');
+      await once(server, 'listening');
+      try {
+        const address = server.address();
+        const url = `http://127.0.0.1:${address.port}/callable`;
+        const origin = 'http://127.0.0.1:5174';
+        const preflight = await fetch(url, {
+          method: 'OPTIONS',
+          headers: {
+            Origin: origin,
+            'Access-Control-Request-Method': 'POST',
+            'Access-Control-Request-Headers': 'content-type',
+          },
+        });
+        expect(preflight.ok).toBe(true);
+        expect(preflight.headers.get('access-control-allow-origin')).toBe(origin);
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json', Origin: origin},
+          body: JSON.stringify({data: {kind: 'fcm', payload: {fixture: true}}}),
+        });
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({
+          result: {captured: true, kind: 'fcm'},
+        });
+      } finally {
+        if (server.listening) {
+          await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        }
+      }
     } finally {
       for (const [key, value] of Object.entries(previous)) {
         if (value === undefined) delete process.env[key];
