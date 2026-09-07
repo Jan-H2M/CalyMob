@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../config/qa_firebase_config.dart';
 
 /// Status van een app update check
 class AppUpdateStatus {
@@ -113,6 +114,9 @@ class AppUpdateService {
   /// Bij timeout/offline wordt de lokale cache gebruikt als fallback.
   static Future<AppUpdateStatus> checkForUpdate(
       {bool forceCheck = false}) async {
+    if (QaFirebaseConfig.enabled) {
+      return AppUpdateStatus.upToDate('qa-emulator');
+    }
     // Return in-memory cache als die nog geldig is
     if (!forceCheck &&
         _cachedStatus != null &&

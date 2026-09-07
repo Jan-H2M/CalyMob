@@ -9,6 +9,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:app_badge_plus/app_badge_plus.dart';
 import 'crashlytics_service.dart';
+import '../config/qa_firebase_config.dart';
 
 // Import dart:io only on non-web platforms
 import 'notification_service_io.dart'
@@ -46,6 +47,10 @@ class NotificationService {
   /// Initialiser les notifications
   Future<void> initialize(
       {void Function(String? payload)? onNotificationTap}) async {
+    if (QaFirebaseConfig.enabled) {
+      debugPrint('🧪 FCM initialization captured/disabled in QA Emulator');
+      return;
+    }
     onLocalNotificationTap = onNotificationTap;
     // Skip initialization on web - not supported
     if (kIsWeb) {
@@ -124,6 +129,7 @@ class NotificationService {
   /// Configurer les handlers pour les messages foreground
   /// Doit être appelé après initialize()
   void setupForegroundNotifications() {
+    if (QaFirebaseConfig.enabled) return;
     // Écouter les messages quand l'app est au premier plan
     FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
     debugPrint('✅ Foreground notification handler configuré');
@@ -133,7 +139,7 @@ class NotificationService {
   /// Quand iOS/Android rotent le token (après update OS, app update, ou périodiquement),
   /// le nouveau token doit être sauvegardé dans Firestore sinon les notifications arrêtent.
   void listenForTokenRefresh(String clubId, String userId) {
-    if (kIsWeb) return;
+    if (kIsWeb || QaFirebaseConfig.enabled) return;
 
     // Annuler l'ancienne subscription si elle existe
     _tokenRefreshSubscription?.cancel();
@@ -355,6 +361,7 @@ class NotificationService {
 
   /// Obtenir le token FCM actuel
   Future<String?> getToken() async {
+    if (QaFirebaseConfig.enabled) return null;
     try {
       return await _messaging.getToken();
     } catch (e, stack) {
@@ -610,7 +617,7 @@ class NotificationService {
     // A browser session has no CalyMob FCM token. It must not wait for web
     // messaging, nor delete the token fields that belong to the member's
     // iOS/Android installation.
-    if (kIsWeb) {
+    if (kIsWeb || QaFirebaseConfig.enabled) {
       debugPrint('ℹ️ Suppression FCM ignorée sur web');
       return;
     }
@@ -646,6 +653,7 @@ class NotificationService {
     required Function(RemoteMessage) onMessageReceived,
     required Function(RemoteMessage) onMessageOpened,
   }) {
+    if (QaFirebaseConfig.enabled) return;
     // Message reçu quand l'app est au premier plan
     FirebaseMessaging.onMessage.listen(onMessageReceived);
 
@@ -662,6 +670,7 @@ class NotificationService {
 
   /// Souscrire à un topic
   Future<void> subscribeToTopic(String topic) async {
+    if (QaFirebaseConfig.enabled) return;
     try {
       await _messaging.subscribeToTopic(topic);
       debugPrint('✅ Souscrit au topic: $topic');
@@ -673,6 +682,7 @@ class NotificationService {
 
   /// Se désabonner d'un topic
   Future<void> unsubscribeFromTopic(String topic) async {
+    if (QaFirebaseConfig.enabled) return;
     try {
       await _messaging.unsubscribeFromTopic(topic);
       debugPrint('✅ Désabonné du topic: $topic');
@@ -685,6 +695,7 @@ class NotificationService {
 
   /// Vérifier si les notifications sont autorisées
   Future<bool> areNotificationsEnabled() async {
+    if (QaFirebaseConfig.enabled) return false;
     try {
       final settings = await _messaging.getNotificationSettings();
       return settings.authorizationStatus == AuthorizationStatus.authorized;
@@ -698,6 +709,7 @@ class NotificationService {
 
   /// Demander la permission pour les notifications
   Future<bool> requestPermission() async {
+    if (QaFirebaseConfig.enabled) return false;
     try {
       final settings = await _messaging.requestPermission(
         alert: true,

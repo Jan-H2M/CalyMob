@@ -66,6 +66,7 @@ import 'models/formation_task.dart';
 // Config
 import 'config/app_colors.dart';
 import 'config/firebase_config.dart';
+import 'config/qa_firebase_config.dart';
 
 // Firestore (pour fetch depuis notifications)
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -77,13 +78,14 @@ import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 void main() async {
+  QaFirebaseConfig.assertSafe();
   // Initialize Sentry FIRST — all other init happens inside appRunner
   // to ensure WidgetsFlutterBinding and runApp share the same zone.
   // SentryFlutter.init calls ensureInitialized() internally in its zone,
   // so we must NOT call it before — that causes a zone mismatch on web.
   await SentryFlutter.init(
     (options) {
-      options.dsn = kDebugMode
+      options.dsn = QaFirebaseConfig.enabled || kDebugMode
           ? '' // Désactivé en debug — pas d'envoi vers Sentry
           : 'https://c6c7e5f63f5700bf5cb4f2b02a6ea0b5@o4510996349386752.ingest.de.sentry.io/4510996559429712';
       options.tracesSampleRate =
@@ -127,8 +129,8 @@ void main() async {
       };
 
       // Session Replay — pour bug reporting (capture vidéo des sessions)
-      options.replay.sessionSampleRate = 0.1; // 10% des sessions normales
-      options.replay.onErrorSampleRate = 1.0; // 100% des sessions avec erreur
+      options.replay.sessionSampleRate = QaFirebaseConfig.enabled ? 0 : 0.1;
+      options.replay.onErrorSampleRate = QaFirebaseConfig.enabled ? 0 : 1.0;
     },
     appRunner: () async {
       debugPrint('✅ Sentry initialisé');
@@ -142,15 +144,18 @@ void main() async {
         // Initialiser Firebase avec les options de configuration
         if (Firebase.apps.isEmpty) {
           await Firebase.initializeApp(
-            options: DefaultFirebaseOptions.currentPlatform,
+            options: QaFirebaseConfig.enabled
+                ? QaFirebaseConfig.options
+                : DefaultFirebaseOptions.currentPlatform,
           );
           debugPrint('✅ Firebase initialisé');
         } else {
           debugPrint('ℹ️ Firebase déjà initialisé');
         }
+        await QaFirebaseConfig.configureEmulators();
 
         // Initialiser Firebase Crashlytics (pas sur web)
-        if (!kIsWeb) {
+        if (!kIsWeb && !QaFirebaseConfig.enabled) {
           FlutterError.onError = (FlutterErrorDetails details) {
             FirebaseCrashlytics.instance.recordFlutterFatalError(details);
             Sentry.captureException(details.exception,
@@ -169,25 +174,32 @@ void main() async {
         debugPrint('✅ Locale initialisée (fr_FR)');
 
         // Initialiser le service de notifications (pas sur web)
-        if (!kIsWeb) {
+        if (!kIsWeb && !QaFirebaseConfig.enabled) {
           FirebaseMessaging.onBackgroundMessage(
               firebaseMessagingBackgroundHandler);
         }
 
-        final notificationService = NotificationService();
-        await notificationService.initialize();
-        if (!kIsWeb) {
-          notificationService.setupForegroundNotifications();
+        if (!QaFirebaseConfig.enabled) {
+          final notificationService = NotificationService();
+          await notificationService.initialize();
+          if (!kIsWeb) {
+            notificationService.setupForegroundNotifications();
+          }
+          debugPrint('✅ Notifications initialisées');
+        } else {
+          debugPrint('🧪 Notifications externes désactivées en QA Emulator');
         }
-        debugPrint('✅ Notifications initialisées');
 
         // Initialiser le service de deep links (pour les retours de paiement Mollie)
-        final deepLinkService = DeepLinkService();
-        await deepLinkService.initialize();
-        debugPrint('✅ Deep links initialisés');
+        if (!QaFirebaseConfig.enabled) {
+          final deepLinkService = DeepLinkService();
+          await deepLinkService.initialize();
+          debugPrint('✅ Deep links initialisés');
+        }
       } catch (e) {
         debugPrint('❌ Erreur initialisation: $e');
         debugPrint('Stack trace: ${StackTrace.current}');
+        if (QaFirebaseConfig.enabled) rethrow;
       }
 
       // appRunner already executes inside Sentry's zone. Wrapping runApp in an
@@ -227,8 +239,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       onNavigationChanged: _scheduleNotificationDrain,
     );
     WidgetsBinding.instance.addObserver(this);
-    _setupDeepLinkListener();
-    _setupNotificationTapHandlers();
+    if (!QaFirebaseConfig.enabled) {
+      _setupDeepLinkListener();
+      _setupNotificationTapHandlers();
+    }
     // Connecter le callback pour les taps sur notifications locales (foreground)
     _notificationService.onLocalNotificationTap = _handleLocalNotificationTap;
     // Mettre à jour le badge au démarrage avec le nombre réel de non-lus

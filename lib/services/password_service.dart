@@ -2,13 +2,16 @@ import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../config/qa_firebase_config.dart';
 
 /// Service for password management
 ///
 /// Provides password change functionality via the Vercel API.
 /// Used for both forced first-time password change and voluntary changes.
 class PasswordService {
-  static const String _baseUrl = 'https://caly.club/api';
+  static String get _baseUrl => QaFirebaseConfig.enabled
+      ? 'http://${QaFirebaseConfig.emulatorHost()}:4174/api'
+      : 'https://caly.club/api';
 
   /// Change user's own password via backend API
   ///
