@@ -15,6 +15,20 @@ typedef QaBrowserCommandHandler = Future<Map<String, Object?>> Function(
 /// no-op conditional implementation.
 class QaBrowserBridge {
   static const _origin = 'http://127.0.0.1:5174';
+  static const _stages = <String>{
+    'command_received',
+    'auth_start',
+    'auth_ready',
+    'member_start',
+    'member_ready',
+    'fixture_start',
+    'fixture_ready',
+    'navigation_start',
+    'navigation_ready',
+    'side_effect_start',
+    'side_effect_ready',
+    'result_ready',
+  };
   StreamSubscription<html.MessageEvent>? _subscription;
   final Set<String> _usedCommandIds = <String>{};
 
@@ -89,10 +103,18 @@ class QaBrowserBridge {
     );
   }
 
+  void setStage(String stage) {
+    if (_subscription == null || !_stages.contains(stage)) {
+      throw StateError('CalyMob QA browser stage is invalid.');
+    }
+    html.document.documentElement?.dataset['calypsoQaStage'] = stage;
+  }
+
   void dispose() {
     _subscription?.cancel();
     _subscription = null;
     _usedCommandIds.clear();
     html.document.documentElement?.attributes.remove('data-calypso-qa-bridge');
+    html.document.documentElement?.attributes.remove('data-calypso-qa-stage');
   }
 }

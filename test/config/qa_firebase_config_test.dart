@@ -76,4 +76,29 @@ void main() {
     expect(sentryInit, greaterThan(qaRunner));
     expect(source.substring(qaBranch, sentryInit), contains('return;'));
   });
+
+  test('QA browser progress exposes only a closed diagnostic stage set', () {
+    final bridge =
+        File('lib/config/qa_browser_bridge_web.dart').readAsStringSync();
+    final main = File('lib/main.dart').readAsStringSync();
+    for (final stage in <String>[
+      'command_received',
+      'auth_start',
+      'auth_ready',
+      'member_start',
+      'member_ready',
+      'fixture_start',
+      'fixture_ready',
+      'navigation_start',
+      'navigation_ready',
+      'side_effect_start',
+      'side_effect_ready',
+      'result_ready',
+    ]) {
+      expect(bridge, contains("'$stage'"));
+      expect(main, contains("setStage('$stage')"));
+    }
+    expect(bridge, contains("_stages.contains(stage)"));
+    expect(bridge, contains("dataset['calypsoQaStage'] = stage"));
+  });
 }

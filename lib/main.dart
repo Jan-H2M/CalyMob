@@ -743,6 +743,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   Future<Map<String, Object?>> _handleQaBrowserCommand(
     Map<String, Object?> command,
   ) async {
+    _qaBrowserBridge.setStage('command_received');
     if (!QaFirebaseConfig.enabled || !kIsWeb) {
       throw StateError('CalyMob browser QA is unavailable.');
     }
@@ -778,6 +779,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     }
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final memberProvider = Provider.of<MemberProvider>(context, listen: false);
+    _qaBrowserBridge.setStage('auth_start');
     if (authProvider.currentUser?.uid != _qaMemberUid) {
       if (authProvider.currentUser != null) await authProvider.logout();
       await authProvider.login(
@@ -789,6 +791,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (authProvider.currentUser?.uid != _qaMemberUid) {
       throw StateError('CalyMob QA Firebase Auth identity mismatch.');
     }
+    _qaBrowserBridge.setStage('auth_ready');
+    _qaBrowserBridge.setStage('member_start');
     await memberProvider.loadMemberData(
       FirebaseConfig.defaultClubId,
       _qaMemberUid,
@@ -799,7 +803,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         memberProvider.plongeurCode != 'P2') {
       throw StateError('CalyMob QA member role contract mismatch.');
     }
+    _qaBrowserBridge.setStage('member_ready');
 
+    _qaBrowserBridge.setStage('fixture_start');
     late final String marker;
     late final String assertion;
     final sideEffects = <String>[];
@@ -847,8 +853,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         initialActionsOnly: request.prefersActionsInbox,
       );
     }
+    _qaBrowserBridge.setStage('fixture_ready');
 
     final routeName = 'qa:$destination';
+    _qaBrowserBridge.setStage('navigation_start');
     navigator.pushReplacement(MaterialPageRoute<void>(
       settings: RouteSettings(name: routeName),
       builder: (_) => screen,
@@ -858,7 +866,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         routeName) {
       throw StateError('CalyMob QA Navigator destination mismatch.');
     }
+    _qaBrowserBridge.setStage('navigation_ready');
     if (scenarioId == 'notification_actions') {
+      _qaBrowserBridge.setStage('side_effect_start');
       final callable =
           await FirebaseFunctions.instanceFor(region: 'europe-west1')
               .httpsCallable(QaFirebaseConfig.transportFunctionName)
@@ -877,6 +887,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         throw StateError('MOB-023 notification capture was not recorded.');
       }
       sideEffects.add('notification_capture');
+      _qaBrowserBridge.setStage('side_effect_ready');
     }
     if (!mounted) throw StateError('CalyMob QA app was disposed.');
     setState(() {
@@ -886,6 +897,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       };
     });
     await WidgetsBinding.instance.endOfFrame;
+    _qaBrowserBridge.setStage('result_ready');
 
     return {
       'schemaVersion': 1,
