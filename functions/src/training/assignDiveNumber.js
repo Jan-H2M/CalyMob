@@ -35,9 +35,17 @@ const { FieldValue } = require('firebase-admin/firestore');
 const FUNCTION_REGION = 'europe-west1';
 
 function positiveDiveNumber(value) {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0
+  return Number.isSafeInteger(value) && value > 0
     ? value
     : null;
+}
+
+function incrementDiveNumber(value) {
+  const safe = positiveDiveNumber(value);
+  if (safe == null || safe >= Number.MAX_SAFE_INTEGER) {
+    throw new Error('No safe positive dive number remains');
+  }
+  return safe + 1;
 }
 
 function shouldSkipDiveNumberAssignment(data = {}) {
@@ -60,7 +68,23 @@ function highestDiveNumberFromDocs(docs = [], excludedEntryId = null) {
 
 function nextDiveNumber(counterNext, highestExisting) {
   const current = positiveDiveNumber(counterNext) || 1;
-  return Math.max(current, highestExisting + 1);
+  const highest = highestExisting === 0 ? 0 : positiveDiveNumber(highestExisting);
+  if (highestExisting !== 0 && highest == null) {
+    throw new Error('Invalid highest existing dive number');
+  }
+  const afterHighest = highest === 0 ? 1 : incrementDiveNumber(highest);
+  const assigned = Math.max(current, afterHighest);
+  if (positiveDiveNumber(assigned) == null) {
+    throw new Error('Invalid allocated dive number');
+  }
+  return assigned;
+}
+
+function monotonicCounterNext(currentNext, proposedNext) {
+  const proposed = positiveDiveNumber(proposedNext);
+  if (proposed == null) throw new Error('Invalid proposed counter value');
+  const current = positiveDiveNumber(currentNext);
+  return current == null ? proposed : Math.max(current, proposed);
 }
 
 function diveNumberAllocationPatch(assigned, source) {
@@ -89,6 +113,77 @@ function planBackfillDiveNumbers(docs = []) {
   return { highest, pending };
 }
 
+function entryDateMillis(doc) {
+  const value = doc.data().date;
+  if (value && typeof value.toMillis === 'function') return value.toMillis();
+  if (value && typeof value.toDate === 'function') return value.toDate().getTime();
+  if (value instanceof Date) return value.getTime();
+  return 0;
+}
+
+function sortBackfillDocs(docs = []) {
+  return [...docs].sort((left, right) => {
+    const byDate = entryDateMillis(left) - entryDateMillis(right);
+    return byDate || left.id.localeCompare(right.id);
+  });
+}
+
+function memberEntriesQuery(db, clubId, memberId) {
+  return db.collection('clubs').doc(clubId)
+    .collection('student_logbook_entries')
+    .where('member_id', '==', memberId);
+}
+
+function memberCounterRef(db, clubId, memberId) {
+  return db.collection('clubs').doc(clubId)
+    .collection('members').doc(memberId)
+    .collection('settings').doc('logbook_counter');
+}
+
+function counterPatch(next) {
+  if (positiveDiveNumber(next) == null) throw new Error('Invalid counter value');
+  return {
+    next,
+    allocator_version: 1,
+    updated_at: FieldValue.serverTimestamp(),
+  };
+}
+
+async function allocateCreatedEntry({ db, clubId, entryId, entryRef }) {
+  const result = await db.runTransaction(async (tx) => {
+    // The event snapshot is only a delivery hint. A retry must always re-read
+    // the authoritative entry inside the same transaction that owns the
+    // member counter.
+    const liveEntrySnap = await tx.get(entryRef);
+    if (!liveEntrySnap.exists) return { outcome: 'missing', assigned: null };
+    const liveEntry = liveEntrySnap.data();
+    if (shouldSkipDiveNumberAssignment(liveEntry)) {
+      return {
+        outcome: positiveDiveNumber(liveEntry.dive_number) == null ? 'skipped' : 'already_numbered',
+        assigned: positiveDiveNumber(liveEntry.dive_number),
+      };
+    }
+
+    const memberId = liveEntry.member_id;
+    if (!memberId) return { outcome: 'missing_member', assigned: null };
+    const counterRef = memberCounterRef(db, clubId, memberId);
+    const entriesQuery = memberEntriesQuery(db, clubId, memberId);
+    const [counterSnap, entriesSnap] = await Promise.all([
+      tx.get(counterRef),
+      tx.get(entriesQuery),
+    ]);
+    const counterNext = counterSnap.exists ? counterSnap.data().next : null;
+    const highestExisting = highestDiveNumberFromDocs(entriesSnap.docs, entryId);
+    const assigned = nextDiveNumber(counterNext, highestExisting);
+    const next = monotonicCounterNext(counterNext, incrementDiveNumber(assigned));
+
+    tx.set(counterRef, counterPatch(next), { merge: true });
+    tx.update(entryRef, diveNumberAllocationPatch(assigned, 'assignDiveNumber'));
+    return { outcome: 'assigned', assigned, memberId, next };
+  });
+  return result;
+}
+
 const assignDiveNumber = onDocumentCreated(
   {
     region: FUNCTION_REGION,
@@ -98,64 +193,24 @@ const assignDiveNumber = onDocumentCreated(
   },
   async (event) => {
     const { clubId, entryId } = event.params;
-    const data = event.data?.data();
-    if (!data) return;
-
-    // Pool sessions are training artefacts, not numbered dive-log entries.
-    // Already numbered entries (Excel import/manual override/older server pass)
-    // are left untouched.
-    if (shouldSkipDiveNumberAssignment(data)) return;
-
-    const memberId = data.member_id;
-    if (!memberId) {
-      console.warn(
-        `[assignDiveNumber] entry ${entryId} has no member_id, skipping`
-      );
-      return;
-    }
+    if (!event.data?.ref) return;
 
     const db = admin.firestore();
-    const entriesCol = db
-      .collection('clubs').doc(clubId)
-      .collection('student_logbook_entries');
-    const counterRef = db
-      .collection('clubs').doc(clubId)
-      .collection('members').doc(memberId)
-      .collection('settings').doc('logbook_counter');
     const entryRef = event.data.ref;
 
     try {
-      const next = await db.runTransaction(async (tx) => {
-        const [counterSnap, entriesSnap] = await Promise.all([
-          tx.get(counterRef),
-          tx.get(entriesCol.where('member_id', '==', memberId)),
-        ]);
-        const current =
-          (counterSnap.exists && typeof counterSnap.data().next === 'number')
-            ? counterSnap.data().next
-            : 1;
-        const highestExisting = highestDiveNumberFromDocs(entriesSnap.docs, entryId);
-        // If the member counter is stale/reset, recover from the actual
-        // highest known dive number before assigning the next one.
-        const assigned = nextDiveNumber(current, highestExisting);
-        tx.set(
-          counterRef,
-          { next: assigned + 1, updated_at: FieldValue.serverTimestamp() },
-          { merge: true }
-        );
-        tx.update(
-          entryRef,
-          diveNumberAllocationPatch(assigned, 'assignDiveNumber')
-        );
-        return assigned;
-      });
-      console.log(
-        `[assignDiveNumber] entry ${entryId} member=${memberId} → N°${next}`
-      );
+      const result = await allocateCreatedEntry({ db, clubId, entryId, entryRef });
+      if (result.outcome === 'missing_member') {
+        console.warn(`[assignDiveNumber] entry ${entryId} has no member_id, skipping`);
+      } else if (result.outcome === 'assigned') {
+        console.log(`[assignDiveNumber] entry ${entryId} member=${result.memberId} → N°${result.assigned}`);
+      }
+      return result;
     } catch (err) {
       console.error(
         `[assignDiveNumber] failed for ${entryId}: ${err.message}`
       );
+      throw err;
     }
   }
 );
@@ -172,6 +227,56 @@ const assignDiveNumber = onDocumentCreated(
  */
 const MAX_PASSES = 10;
 const BATCH_SIZE = 400;
+
+async function runBackfillPass({ db, clubId, memberId }) {
+  const counterRef = memberCounterRef(db, clubId, memberId);
+  const entriesQuery = memberEntriesQuery(db, clubId, memberId);
+  return db.runTransaction(async (tx) => {
+    const [counterSnap, entriesSnap] = await Promise.all([
+      tx.get(counterRef),
+      tx.get(entriesQuery),
+    ]);
+    const counterNext = counterSnap.exists ? counterSnap.data().next : null;
+    const docs = sortBackfillDocs(entriesSnap.docs);
+    const plan = planBackfillDiveNumbers(docs);
+    const pending = plan.pending.slice(0, BATCH_SIZE);
+
+    if (pending.length === 0) {
+      const floor = plan.highest === 0 ? 1 : incrementDiveNumber(plan.highest);
+      const next = monotonicCounterNext(counterNext, floor);
+      if (!counterSnap.exists || positiveDiveNumber(counterNext) !== next) {
+        tx.set(counterRef, counterPatch(next), { merge: true });
+      }
+      return { backfilled: 0, total: docs.length, highest: plan.highest, next };
+    }
+
+    let cursor = nextDiveNumber(counterNext, plan.highest);
+    let highestAssigned = plan.highest;
+    for (const doc of pending) {
+      const assigned = cursor;
+      tx.update(doc.ref, diveNumberAllocationPatch(assigned, 'backfillMyDiveNumbers'));
+      highestAssigned = Math.max(highestAssigned, assigned);
+      cursor = incrementDiveNumber(assigned);
+    }
+    const next = monotonicCounterNext(counterNext, cursor);
+    tx.set(counterRef, counterPatch(next), { merge: true });
+    return { backfilled: pending.length, total: docs.length, highest: highestAssigned, next };
+  });
+}
+
+async function backfillMemberDiveNumbers({ db, clubId, memberId }) {
+  let backfilled = 0;
+  let total = 0;
+  let highest = 0;
+  for (let passes = 0; passes < MAX_PASSES; passes += 1) {
+    const result = await runBackfillPass({ db, clubId, memberId });
+    backfilled += result.backfilled;
+    total = result.total;
+    highest = result.highest;
+    if (result.backfilled === 0) return { backfilled, total, highest };
+  }
+  throw new Error(`Backfill exceeded ${MAX_PASSES} passes`);
+}
 
 const backfillMyDiveNumbers = onCall(
   {
@@ -190,64 +295,13 @@ const backfillMyDiveNumbers = onCall(
         : '') || 'calypso';
 
     const db = admin.firestore();
-    const entriesCol = db
-      .collection('clubs').doc(clubId)
-      .collection('student_logbook_entries');
-    const counterRef = db
-      .collection('clubs').doc(clubId)
-      .collection('members').doc(uid)
-      .collection('settings').doc('logbook_counter');
-
-    // Fetch all entries for this member sorted by date ASC. Member carnets
-    // typically stay under a few thousand entries — well within Firestore
-    // single-query limits.
-    const snap = await entriesCol
-      .where('member_id', '==', uid)
-      .orderBy('date', 'asc').get();
-
-    const plan = planBackfillDiveNumbers(snap.docs);
-    const highest = plan.highest;
-    const pending = [...plan.pending];
-
-    if (pending.length === 0) {
-      // Nothing to do. Make sure the counter doc reflects the highest known
-      // number so future creates don't collide.
-      await counterRef.set(
-        { next: highest + 1, updated_at: FieldValue.serverTimestamp() },
-        { merge: true }
-      );
-      return { backfilled: 0, total: snap.size, highest };
-    }
-
-    // Assign monotonic numbers to the pending entries, in date order.
-    let cursor = highest + 1;
-    let backfilled = 0;
-    let passes = 0;
-    while (pending.length > 0 && passes < MAX_PASSES) {
-      const slice = pending.splice(0, BATCH_SIZE);
-      const batch = db.batch();
-      for (const doc of slice) {
-        batch.update(
-          doc.ref,
-          diveNumberAllocationPatch(cursor, 'backfillMyDiveNumbers')
-        );
-        cursor++;
-        backfilled++;
-      }
-      await batch.commit();
-      passes++;
-    }
-
-    await counterRef.set(
-      { next: cursor, updated_at: FieldValue.serverTimestamp() },
-      { merge: true }
-    );
+    const result = await backfillMemberDiveNumbers({ db, clubId, memberId: uid });
 
     console.log(
-      `[backfillMyDiveNumbers] member=${uid} backfilled=${backfilled} total=${snap.size} highest=${cursor - 1}`
+      `[backfillMyDiveNumbers] member=${uid} backfilled=${result.backfilled} total=${result.total} highest=${result.highest}`
     );
 
-    return { backfilled, total: snap.size, highest: cursor - 1 };
+    return result;
   }
 );
 
@@ -255,9 +309,17 @@ module.exports = {
   assignDiveNumber,
   backfillMyDiveNumbers,
   positiveDiveNumber,
+  incrementDiveNumber,
   shouldSkipDiveNumberAssignment,
   highestDiveNumberFromDocs,
   nextDiveNumber,
+  monotonicCounterNext,
   diveNumberAllocationPatch,
   planBackfillDiveNumbers,
+  sortBackfillDocs,
+  memberEntriesQuery,
+  memberCounterRef,
+  allocateCreatedEntry,
+  runBackfillPass,
+  backfillMemberDiveNumbers,
 };

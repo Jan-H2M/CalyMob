@@ -20,6 +20,8 @@ const {
   shouldSkipDiveNumberAssignment,
   highestDiveNumberFromDocs,
   nextDiveNumber,
+  monotonicCounterNext,
+  incrementDiveNumber,
   diveNumberAllocationPatch,
   planBackfillDiveNumbers,
 } = require('./assignDiveNumber');
@@ -33,12 +35,14 @@ describe('COM-085 dive number allocation policy', () => {
     expect(shouldSkipDiveNumberAssignment({ source: 'manual', member_id: 'm1' })).toBe(false);
   });
 
-  test('uses only positive finite dive numbers', () => {
+  test('uses only positive safe integer dive numbers', () => {
     expect(positiveDiveNumber(12)).toBe(12);
     expect(positiveDiveNumber(0)).toBeNull();
     expect(positiveDiveNumber(-1)).toBeNull();
     expect(positiveDiveNumber('12')).toBeNull();
     expect(positiveDiveNumber(Number.NaN)).toBeNull();
+    expect(positiveDiveNumber(12.5)).toBeNull();
+    expect(positiveDiveNumber(Number.MAX_SAFE_INTEGER + 1)).toBeNull();
   });
 
   test('highest existing number ignores the current create event and piscine artefacts', () => {
@@ -70,6 +74,15 @@ describe('COM-085 dive number allocation policy', () => {
     expect(nextDiveNumber(5, 12)).toBe(13);
     expect(nextDiveNumber(20, 12)).toBe(20);
     expect(nextDiveNumber(undefined, 0)).toBe(1);
+  });
+
+  test('never lowers a safe counter and refuses unsafe rollover', () => {
+    expect(monotonicCounterNext(50, 14)).toBe(50);
+    expect(monotonicCounterNext(10, 14)).toBe(14);
+    expect(monotonicCounterNext(12.5, 14)).toBe(14);
+    expect(() => incrementDiveNumber(Number.MAX_SAFE_INTEGER)).toThrow(
+      'No safe positive dive number remains'
+    );
   });
 
   test('server-created numbers carry explicit allocation metadata', () => {
