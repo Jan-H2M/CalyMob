@@ -17,6 +17,7 @@ import '../../utils/club_role_utils.dart';
 import '../../utils/permission_helper.dart';
 import '../../utils/roster_session_label.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import '../../widgets/communication_filter_semantics.dart';
 import '../announcements/announcements_screen.dart';
 import '../teams/team_chat_screen.dart';
 import '../training/logbook_dive_confirmation_screen.dart';
@@ -380,11 +381,10 @@ class _CommunicationFilterBar extends StatelessWidget {
           return Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 2.5),
-              child: Semantics(
-                button: true,
+              child: CommunicationFilterSemantics(
+                label: filter.label,
                 selected: selected,
-                label: 'Filtre ${filter.label}',
-                excludeSemantics: true,
+                onTap: () => onSelected(filter),
                 child: GestureDetector(
                   onTap: () => onSelected(filter),
                   child: AnimatedContainer(
