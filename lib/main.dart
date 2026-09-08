@@ -848,6 +848,24 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           !titles.contains('Action QA à vérifier B')) {
         throw StateError('MOB-023 action fixtures are unavailable.');
       }
+      assertion = 'notification_action_is_available';
+      marker = 'MOB-023 · Action QA à vérifier · notification capturée';
+      screen = CommunicationHubScreen(
+        initialActionsOnly: request.prefersActionsInbox,
+      );
+    }
+
+    final routeName = 'qa:$destination';
+    navigator.pushReplacement(MaterialPageRoute<void>(
+      settings: RouteSettings(name: routeName),
+      builder: (_) => screen,
+    ));
+    await Future<void>.delayed(const Duration(milliseconds: 800));
+    if (_notificationNavigatorObserver.currentRoute?.settings.name !=
+        routeName) {
+      throw StateError('CalyMob QA Navigator destination mismatch.');
+    }
+    if (scenarioId == 'notification_actions') {
       final callable =
           await FirebaseFunctions.instanceFor(region: 'europe-west1')
               .httpsCallable(QaFirebaseConfig.transportFunctionName)
@@ -865,23 +883,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           callableData['kind'] != 'fcm') {
         throw StateError('MOB-023 notification capture was not recorded.');
       }
-      assertion = 'notification_action_is_available';
       sideEffects.add('notification_capture');
-      marker = 'MOB-023 · Action QA à vérifier · notification capturée';
-      screen = CommunicationHubScreen(
-        initialActionsOnly: request.prefersActionsInbox,
-      );
-    }
-
-    final routeName = 'qa:$destination';
-    navigator.pushReplacement(MaterialPageRoute<void>(
-      settings: RouteSettings(name: routeName),
-      builder: (_) => screen,
-    ));
-    await Future<void>.delayed(const Duration(milliseconds: 800));
-    if (_notificationNavigatorObserver.currentRoute?.settings.name !=
-        routeName) {
-      throw StateError('CalyMob QA Navigator destination mismatch.');
     }
     if (!mounted) throw StateError('CalyMob QA app was disposed.');
     setState(() {
