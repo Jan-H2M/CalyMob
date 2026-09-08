@@ -258,7 +258,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         throw StateError('CalyMob Emulator QA requires CALYPSO_QA_RUN_ID.');
       }
       _qaSemanticsHandle = RendererBinding.instance.ensureSemantics();
-      _qaBrowserBridge.install(_handleQaBrowserCommand);
+      _qaBrowserBridge.install(_handleQaBrowserCommand, runId: _qaRunId);
     }
     if (!QaFirebaseConfig.enabled) {
       _setupDeepLinkListener();

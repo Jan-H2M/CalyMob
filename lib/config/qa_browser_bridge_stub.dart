@@ -3,7 +3,7 @@ typedef QaBrowserCommandHandler = Future<Map<String, Object?>> Function(
 );
 
 class QaBrowserBridge {
-  void install(QaBrowserCommandHandler handler) {}
+  void install(QaBrowserCommandHandler handler, {required String runId}) {}
 
   void dispose() {}
 }

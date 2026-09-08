@@ -18,9 +18,12 @@ class QaBrowserBridge {
   StreamSubscription<html.MessageEvent>? _subscription;
   final Set<String> _usedCommandIds = <String>{};
 
-  void install(QaBrowserCommandHandler handler) {
+  void install(QaBrowserCommandHandler handler, {required String runId}) {
     if (_subscription != null) {
       throw StateError('CalyMob QA browser bridge already installed.');
+    }
+    if (runId.isEmpty) {
+      throw StateError('CalyMob QA browser bridge requires its run binding.');
     }
     _subscription = html.window.onMessage.listen((event) async {
       if (event.origin != _origin || event.source != html.window) return;
@@ -76,6 +79,7 @@ class QaBrowserBridge {
         );
       }
     });
+    html.document.documentElement?.dataset['calypsoQaBridge'] = runId;
     html.window.postMessage(
       jsonEncode({
         'schemaVersion': 1,
@@ -89,5 +93,6 @@ class QaBrowserBridge {
     _subscription?.cancel();
     _subscription = null;
     _usedCommandIds.clear();
+    html.document.documentElement?.attributes.remove('data-calypso-qa-bridge');
   }
 }
