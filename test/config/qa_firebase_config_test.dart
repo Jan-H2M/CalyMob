@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:calymob/config/firebase_config.dart';
 import 'package:calymob/config/qa_firebase_config.dart';
 import 'package:flutter/foundation.dart';
@@ -62,5 +64,16 @@ void main() {
       ),
       throwsStateError,
     );
+  });
+
+  test('QA bootstrap skips external telemetry initialization', () {
+    final source = File('lib/main.dart').readAsStringSync();
+    final qaBranch = source.indexOf('if (QaFirebaseConfig.enabled) {');
+    final qaRunner = source.indexOf('await _runCalyMobApp();', qaBranch);
+    final sentryInit = source.indexOf('await SentryFlutter.init(');
+    expect(qaBranch, greaterThanOrEqualTo(0));
+    expect(qaRunner, greaterThan(qaBranch));
+    expect(sentryInit, greaterThan(qaRunner));
+    expect(source.substring(qaBranch, sentryInit), contains('return;'));
   });
 }

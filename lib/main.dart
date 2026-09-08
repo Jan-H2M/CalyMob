@@ -83,6 +83,11 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 
 void main() async {
   QaFirebaseConfig.assertSafe();
+  if (QaFirebaseConfig.enabled) {
+    WidgetsFlutterBinding.ensureInitialized();
+    await _runCalyMobApp();
+    return;
+  }
   // Initialize Sentry FIRST — all other init happens inside appRunner
   // to ensure WidgetsFlutterBinding and runApp share the same zone.
   // SentryFlutter.init calls ensureInitialized() internally in its zone,
@@ -136,82 +141,70 @@ void main() async {
       options.replay.sessionSampleRate = QaFirebaseConfig.enabled ? 0 : 0.1;
       options.replay.onErrorSampleRate = QaFirebaseConfig.enabled ? 0 : 1.0;
     },
-    appRunner: () async {
-      debugPrint('✅ Sentry initialisé');
-
-      // Register Syncfusion license
-      // ignore: deprecated_member_use
-      SyncfusionLicense.registerLicense(
-          'Ngo9BigBOggjHTQxAR8/V1JFaF1cXGFCf1FpRGpGfV5ycUVHYVZQRXxeQE0SNHVRdkdmWH1fcnVUR2FdU0J+W0pWYEg=');
-
-      try {
-        // Initialiser Firebase avec les options de configuration
-        if (Firebase.apps.isEmpty) {
-          await Firebase.initializeApp(
-            options: QaFirebaseConfig.enabled
-                ? QaFirebaseConfig.options
-                : DefaultFirebaseOptions.currentPlatform,
-          );
-          debugPrint('✅ Firebase initialisé');
-        } else {
-          debugPrint('ℹ️ Firebase déjà initialisé');
-        }
-        await QaFirebaseConfig.configureEmulators();
-
-        // Initialiser Firebase Crashlytics (pas sur web)
-        if (!kIsWeb && !QaFirebaseConfig.enabled) {
-          FlutterError.onError = (FlutterErrorDetails details) {
-            FirebaseCrashlytics.instance.recordFlutterFatalError(details);
-            Sentry.captureException(details.exception,
-                stackTrace: details.stack);
-          };
-          debugPrint('✅ Crashlytics initialisé');
-        }
-
-        // Pré-initialiser LocalReadTracker (SharedPreferences) pour éviter ANR
-        await LocalReadTracker().init();
-        debugPrint('✅ LocalReadTracker pré-initialisé');
-
-        // Initialiser les données de locale pour le français
-        await initializeDateFormatting('fr_FR', null);
-        Intl.defaultLocale = 'fr_FR';
-        debugPrint('✅ Locale initialisée (fr_FR)');
-
-        // Initialiser le service de notifications (pas sur web)
-        if (!kIsWeb && !QaFirebaseConfig.enabled) {
-          FirebaseMessaging.onBackgroundMessage(
-              firebaseMessagingBackgroundHandler);
-        }
-
-        if (!QaFirebaseConfig.enabled) {
-          final notificationService = NotificationService();
-          await notificationService.initialize();
-          if (!kIsWeb) {
-            notificationService.setupForegroundNotifications();
-          }
-          debugPrint('✅ Notifications initialisées');
-        } else {
-          debugPrint('🧪 Notifications externes désactivées en QA Emulator');
-        }
-
-        // Initialiser le service de deep links (pour les retours de paiement Mollie)
-        if (!QaFirebaseConfig.enabled) {
-          final deepLinkService = DeepLinkService();
-          await deepLinkService.initialize();
-          debugPrint('✅ Deep links initialisés');
-        }
-      } catch (e) {
-        debugPrint('❌ Erreur initialisation: $e');
-        debugPrint('Stack trace: ${StackTrace.current}');
-        if (QaFirebaseConfig.enabled) rethrow;
-      }
-
-      // appRunner already executes inside Sentry's zone. Wrapping runApp in an
-      // extra runZonedGuarded creates a different zone and triggers a web
-      // "Zone mismatch" assertion at startup.
-      runApp(const MyApp());
-    },
+    appRunner: _runCalyMobApp,
   );
+}
+
+Future<void> _runCalyMobApp() async {
+  debugPrint('✅ Application bootstrap started');
+  // ignore: deprecated_member_use
+  SyncfusionLicense.registerLicense(
+      'Ngo9BigBOggjHTQxAR8/V1JFaF1cXGFCf1FpRGpGfV5ycUVHYVZQRXxeQE0SNHVRdkdmWH1fcnVUR2FdU0J+W0pWYEg=');
+
+  try {
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(
+        options: QaFirebaseConfig.enabled
+            ? QaFirebaseConfig.options
+            : DefaultFirebaseOptions.currentPlatform,
+      );
+      debugPrint('✅ Firebase initialisé');
+    } else {
+      debugPrint('ℹ️ Firebase déjà initialisé');
+    }
+    await QaFirebaseConfig.configureEmulators();
+
+    if (!kIsWeb && !QaFirebaseConfig.enabled) {
+      FlutterError.onError = (FlutterErrorDetails details) {
+        FirebaseCrashlytics.instance.recordFlutterFatalError(details);
+        Sentry.captureException(details.exception, stackTrace: details.stack);
+      };
+      debugPrint('✅ Crashlytics initialisé');
+    }
+
+    await LocalReadTracker().init();
+    debugPrint('✅ LocalReadTracker pré-initialisé');
+    await initializeDateFormatting('fr_FR', null);
+    Intl.defaultLocale = 'fr_FR';
+    debugPrint('✅ Locale initialisée (fr_FR)');
+
+    if (!kIsWeb && !QaFirebaseConfig.enabled) {
+      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    }
+
+    if (!QaFirebaseConfig.enabled) {
+      final notificationService = NotificationService();
+      await notificationService.initialize();
+      if (!kIsWeb) notificationService.setupForegroundNotifications();
+      debugPrint('✅ Notifications initialisées');
+    } else {
+      debugPrint('🧪 Notifications externes désactivées en QA Emulator');
+    }
+
+    if (!QaFirebaseConfig.enabled) {
+      final deepLinkService = DeepLinkService();
+      await deepLinkService.initialize();
+      debugPrint('✅ Deep links initialisés');
+    }
+  } catch (e) {
+    debugPrint('❌ Erreur initialisation: $e');
+    debugPrint('Stack trace: ${StackTrace.current}');
+    if (QaFirebaseConfig.enabled) rethrow;
+  }
+
+  // Production executes in Sentry's appRunner zone. Emulator QA deliberately
+  // skips the external telemetry SDK and uses this same application bootstrap.
+  runApp(const MyApp());
 }
 
 class MyApp extends StatefulWidget {
