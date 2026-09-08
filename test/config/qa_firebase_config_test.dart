@@ -101,4 +101,15 @@ void main() {
     expect(bridge, contains("_stages.contains(stage)"));
     expect(bridge, contains("dataset['calypsoQaStage'] = stage"));
   });
+
+  test('communication QA assertions use exact real UI semantics', () {
+    final source =
+        File('lib/screens/communication/communication_hub_screen.dart')
+            .readAsStringSync();
+    expect(source, contains("label: 'Filtre \${filter.label}'"));
+    expect(source, contains('selected: selected'));
+    expect(source, contains('label: title'));
+    expect(source, contains('container: true'));
+    expect(source, contains('excludeSemantics: true'));
+  });
 }

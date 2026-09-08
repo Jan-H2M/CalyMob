@@ -384,6 +384,7 @@ class _CommunicationFilterBar extends StatelessWidget {
                 button: true,
                 selected: selected,
                 label: 'Filtre ${filter.label}',
+                excludeSemantics: true,
                 child: GestureDetector(
                   onTap: () => onSelected(filter),
                   child: AnimatedContainer(
@@ -576,20 +577,25 @@ class _CommunicationChatRow extends StatelessWidget {
                     Row(
                       children: [
                         Expanded(
-                          child: Text.rich(
-                            TextSpan(
-                              children: _highlightSpans(
-                                title,
-                                searchQuery,
-                                const TextStyle(
-                                  color: AppColors.donkerblauw,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w900,
+                          child: Semantics(
+                            container: true,
+                            label: title,
+                            excludeSemantics: true,
+                            child: Text.rich(
+                              TextSpan(
+                                children: _highlightSpans(
+                                  title,
+                                  searchQuery,
+                                  const TextStyle(
+                                    color: AppColors.donkerblauw,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w900,
+                                  ),
                                 ),
                               ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         if (tag != null) ...[
