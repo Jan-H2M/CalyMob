@@ -12,6 +12,7 @@ import '../services/biometric_service.dart';
 import '../services/crashlytics_service.dart';
 import '../services/local_read_tracker.dart';
 import '../config/firebase_config.dart';
+import '../config/qa_firebase_config.dart';
 import '../utils/member_name.dart';
 
 /// Provider pour l'état d'authentification
@@ -49,6 +50,12 @@ class AuthProvider with ChangeNotifier {
       _currentUser = user;
       if (user != null) {
         _loadUserDisplayName(user.uid);
+        if (QaFirebaseConfig.enabled) {
+          // Emulator browser QA exercises real Firebase Auth and member data,
+          // but must not start device-session or notification side effects.
+          notifyListeners();
+          return;
+        }
         // Enregistrer/mettre à jour le token FCM et les infos appareil à chaque ouverture
         _notificationService.saveTokenToFirestore(
           FirebaseConfig.defaultClubId,
@@ -205,16 +212,20 @@ class AuthProvider with ChangeNotifier {
       // écritures n'est nécessaire pour entrer dans l'app.
 
       // 4. Identifier l'utilisateur dans Crashlytics pour le suivi
-      CrashlyticsService.setUserContext(
-        userId: user.uid,
-        email: email,
-      );
-      CrashlyticsService.log('Login réussi pour $email');
+      if (!QaFirebaseConfig.enabled) {
+        CrashlyticsService.setUserContext(
+          userId: user.uid,
+          email: email,
+        );
 
-      // 5. Configurer BiometricService avec l'ID utilisateur pour les diagnostics Firestore
-      _biometricService.setUserId(user.uid);
+        CrashlyticsService.log('Login réussi pour $email');
 
-      debugPrint('✅ Login OK (session + FCM token via listener, en arrière-plan)');
+        // 5. Configurer BiometricService avec l'ID utilisateur pour les diagnostics Firestore
+        _biometricService.setUserId(user.uid);
+      }
+
+      debugPrint(
+          '✅ Login OK (session + FCM token via listener, en arrière-plan)');
 
       _isLoading = false;
       notifyListeners();

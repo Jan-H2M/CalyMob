@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode, kReleaseMode;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -24,6 +25,7 @@ import 'services/app_update_service.dart';
 import 'services/formation_task_service.dart';
 import 'services/formation_task_navigation_service.dart';
 import 'services/lifras_service.dart';
+import 'services/operation_service.dart';
 
 // Providers
 import 'providers/auth_provider.dart';
@@ -67,9 +69,11 @@ import 'models/formation_task.dart';
 import 'config/app_colors.dart';
 import 'config/firebase_config.dart';
 import 'config/qa_firebase_config.dart';
+import 'config/qa_browser_bridge.dart';
 
 // Firestore (pour fetch depuis notifications)
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 // hide AuthProvider — firebase_auth exports its own AuthProvider class which
 // clashes with our providers/auth_provider.dart.
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
@@ -231,7 +235,17 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   MemberProvider? _notificationMemberProvider;
   bool _notificationDrainScheduled = false;
   bool _notificationDrainInProgress = false;
+  final QaBrowserBridge _qaBrowserBridge = QaBrowserBridge();
+  SemanticsHandle? _qaSemanticsHandle;
+  Map<String, Object?>? _qaBrowserStatus;
 
+  static const String _qaRunId =
+      String.fromEnvironment('CALYPSO_QA_RUN_ID', defaultValue: '');
+  static const String _qaMemberEmail = 'codex.qa.member@calypso.test';
+  static const String _qaMemberPassword = 'qa-demo-member-only';
+  static const String _qaMemberUid = 'qa-com094-v1-member';
+  static const String _qaWaitlistOperationId =
+      'qa-com094-v1-event-waitlist-waitlist';
   @override
   void initState() {
     super.initState();
@@ -239,6 +253,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       onNavigationChanged: _scheduleNotificationDrain,
     );
     WidgetsBinding.instance.addObserver(this);
+    if (QaFirebaseConfig.enabled) {
+      if (_qaRunId.isEmpty) {
+        throw StateError('CalyMob Emulator QA requires CALYPSO_QA_RUN_ID.');
+      }
+      _qaSemanticsHandle = RendererBinding.instance.ensureSemantics();
+      _qaBrowserBridge.install(_handleQaBrowserCommand);
+    }
     if (!QaFirebaseConfig.enabled) {
       _setupDeepLinkListener();
       _setupNotificationTapHandlers();
@@ -541,7 +562,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
         case NotificationRouteKind.communicationInbox:
           await navigator.push(MaterialPageRoute(
-            builder: (_) => const CommunicationHubScreen(),
+            builder: (_) => CommunicationHubScreen(
+              initialActionsOnly: request.prefersActionsInbox,
+            ),
           ));
           break;
 
@@ -715,11 +738,176 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _qaBrowserBridge.dispose();
+    _qaSemanticsHandle?.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _notificationOpenedSubscription?.cancel();
     _notificationAuthProvider?.removeListener(_scheduleNotificationDrain);
     _notificationMemberProvider?.removeListener(_scheduleNotificationDrain);
     super.dispose();
+  }
+
+  Future<Map<String, Object?>> _handleQaBrowserCommand(
+    Map<String, Object?> command,
+  ) async {
+    if (!QaFirebaseConfig.enabled || !kIsWeb) {
+      throw StateError('CalyMob browser QA is unavailable.');
+    }
+    const keys = <String>{
+      'schemaVersion',
+      'kind',
+      'commandId',
+      'runId',
+      'scenarioId',
+      'destination',
+    };
+    if (command.keys.toSet().length != keys.length ||
+        !command.keys.toSet().containsAll(keys) ||
+        command['schemaVersion'] != 1 ||
+        command['kind'] != 'calypso-mobile-qa-command' ||
+        command['runId'] != _qaRunId) {
+      throw StateError('CalyMob QA command is not bound to this run.');
+    }
+    final destination = command['destination'];
+    final scenarioId = command['scenarioId'];
+    final allowed = (scenarioId == 'notification_actions' &&
+            destination == 'communication_inbox') ||
+        (scenarioId == 'waitlist_sentinel_js_boundary' &&
+            destination == 'event_waitlist_detail');
+    if (!allowed) {
+      throw StateError('CalyMob QA destination is not registered.');
+    }
+
+    final context = _navigatorKey.currentContext;
+    final navigator = _navigatorKey.currentState;
+    if (context == null || navigator == null) {
+      throw StateError('CalyMob Navigator is not ready.');
+    }
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final memberProvider = Provider.of<MemberProvider>(context, listen: false);
+    if (authProvider.currentUser?.uid != _qaMemberUid) {
+      if (authProvider.currentUser != null) await authProvider.logout();
+      await authProvider.login(
+        email: _qaMemberEmail,
+        password: _qaMemberPassword,
+        clubId: FirebaseConfig.defaultClubId,
+      );
+    }
+    if (authProvider.currentUser?.uid != _qaMemberUid) {
+      throw StateError('CalyMob QA Firebase Auth identity mismatch.');
+    }
+    await memberProvider.loadMemberData(
+      FirebaseConfig.defaultClubId,
+      _qaMemberUid,
+    );
+    if (!memberProvider.isLoaded ||
+        memberProvider.appRole != 'user' ||
+        memberProvider.clubStatuten.isNotEmpty ||
+        memberProvider.plongeurCode != 'P2') {
+      throw StateError('CalyMob QA member role contract mismatch.');
+    }
+
+    late final String marker;
+    late final String assertion;
+    final sideEffects = <String>[];
+    late final Widget screen;
+    if (destination == 'event_waitlist_detail') {
+      final position = await OperationService().getWaitlistPosition(
+        clubId: FirebaseConfig.defaultClubId,
+        operationId: _qaWaitlistOperationId,
+        userId: _qaMemberUid,
+      );
+      if (position != 2) {
+        throw StateError('MOB-025 waitlist sentinel assertion failed.');
+      }
+      assertion = 'waitlist_sentinel_survives_js_boundary';
+      marker = 'MOB-025 · liste d’attente n° 2 · JS-safe 9007199254740991';
+      screen = const OperationDetailScreen(
+        operationId: _qaWaitlistOperationId,
+        clubId: FirebaseConfig.defaultClubId,
+      );
+    } else {
+      final request = NotificationNavigationRequest.fromData({
+        'type': 'formation_reminder',
+        'task_count': '2',
+        'deeplink': 'communication:actions',
+        'target_tab': 'actions',
+        'club_id': FirebaseConfig.defaultClubId,
+      }, origin: NotificationTapOrigin.foreground);
+      if (request.routeKind != NotificationRouteKind.communicationInbox ||
+          !request.prefersActionsInbox ||
+          request.formationTaskId != null) {
+        throw StateError('MOB-023 notification route contract is invalid.');
+      }
+      final tasks = await FormationTaskService().fetchUserInbox(
+        FirebaseConfig.defaultClubId,
+        _qaMemberUid,
+      );
+      final titles = tasks.map((task) => task.title).toSet();
+      if (!titles.contains('Action QA à vérifier A') ||
+          !titles.contains('Action QA à vérifier B')) {
+        throw StateError('MOB-023 action fixtures are unavailable.');
+      }
+      final callable =
+          await FirebaseFunctions.instanceFor(region: 'europe-west1')
+              .httpsCallable(QaFirebaseConfig.transportFunctionName)
+              .call({
+        'kind': 'fcm',
+        'payload': {
+          'action': 'notification_capture',
+          'client': 'calymob',
+          'runId': _qaRunId,
+        },
+      });
+      final callableData = callable.data;
+      if (callableData is! Map ||
+          callableData['captured'] != true ||
+          callableData['kind'] != 'fcm') {
+        throw StateError('MOB-023 notification capture was not recorded.');
+      }
+      assertion = 'notification_action_is_available';
+      sideEffects.add('notification_capture');
+      marker = 'MOB-023 · Action QA à vérifier · notification capturée';
+      screen = CommunicationHubScreen(
+        initialActionsOnly: request.prefersActionsInbox,
+      );
+    }
+
+    final routeName = 'qa:$destination';
+    navigator.pushReplacement(MaterialPageRoute<void>(
+      settings: RouteSettings(name: routeName),
+      builder: (_) => screen,
+    ));
+    await Future<void>.delayed(const Duration(milliseconds: 800));
+    if (_notificationNavigatorObserver.currentRoute?.settings.name !=
+        routeName) {
+      throw StateError('CalyMob QA Navigator destination mismatch.');
+    }
+    if (!mounted) throw StateError('CalyMob QA app was disposed.');
+    setState(() {
+      _qaBrowserStatus = {
+        'destination': destination,
+        'marker': marker,
+      };
+    });
+    await WidgetsBinding.instance.endOfFrame;
+
+    return {
+      'schemaVersion': 1,
+      'targetApp': 'calymob',
+      'destination': destination,
+      'marker': marker,
+      'qaContext': {
+        'uid': _qaMemberUid,
+        'appRole': memberProvider.appRole!,
+        'clubStatuten': memberProvider.clubStatuten,
+        'plongeurCode': memberProvider.plongeurCode!,
+        'clubId': FirebaseConfig.defaultClubId,
+        'ready': true,
+      },
+      'assertions': [assertion],
+      'sideEffects': sideEffects,
+    };
   }
 
   @override
@@ -825,12 +1013,43 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           // BugReportOverlay est maintenant DANS le MaterialApp via builder,
           // pour avoir accès au Navigator, MediaQuery, et Theme.
           builder: (context, child) {
-            return RepaintBoundary(
-              key: repaintBoundaryKey,
-              child: BugReportOverlay(
-                navigatorKey: _navigatorKey,
-                child: child ?? const SizedBox(),
-              ),
+            return Stack(
+              children: [
+                RepaintBoundary(
+                  key: repaintBoundaryKey,
+                  child: BugReportOverlay(
+                    navigatorKey: _navigatorKey,
+                    child: child ?? const SizedBox(),
+                  ),
+                ),
+                if (QaFirebaseConfig.enabled && _qaBrowserStatus != null)
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    top: 12,
+                    child: IgnorePointer(
+                      child: Semantics(
+                        label: _qaBrowserStatus!['marker'] as String,
+                        child: Material(
+                          color: const Color(0xff073b4c),
+                          elevation: 8,
+                          borderRadius: BorderRadius.circular(10),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Text(
+                              _qaBrowserStatus!['marker'] as String,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             );
           },
           title: 'CalyMob',

@@ -37,14 +37,19 @@ enum _CommunicationFilter {
 }
 
 class CommunicationHubScreen extends StatefulWidget {
-  const CommunicationHubScreen({super.key});
+  final bool initialActionsOnly;
+
+  const CommunicationHubScreen({
+    super.key,
+    this.initialActionsOnly = false,
+  });
 
   @override
   State<CommunicationHubScreen> createState() => _CommunicationHubScreenState();
 }
 
 class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
-  _CommunicationFilter _selectedFilter = _CommunicationFilter.all;
+  late _CommunicationFilter _selectedFilter;
   String _searchQuery = '';
   List<String> _stableRoles = const [];
   bool _stableIncludeAllChannels = false;
@@ -52,6 +57,14 @@ class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
   String? _stableTargetFormationLevel;
   bool _stableFormationActive = false;
   bool _hasStableMemberContext = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedFilter = widget.initialActionsOnly
+        ? _CommunicationFilter.actions
+        : _CommunicationFilter.all;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -367,32 +380,38 @@ class _CommunicationFilterBar extends StatelessWidget {
           return Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 2.5),
-              child: GestureDetector(
-                onTap: () => onSelected(filter),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 160),
-                  alignment: Alignment.center,
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  decoration: BoxDecoration(
-                    color: selected
-                        ? AppColors.middenblauw
-                        : const Color(0xFFEEF6FB),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
+              child: Semantics(
+                button: true,
+                selected: selected,
+                label: 'Filtre ${filter.label}',
+                child: GestureDetector(
+                  onTap: () => onSelected(filter),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    decoration: BoxDecoration(
                       color: selected
                           ? AppColors.middenblauw
-                          : const Color(0xFFE0EDF5),
+                          : const Color(0xFFEEF6FB),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: selected
+                            ? AppColors.middenblauw
+                            : const Color(0xFFE0EDF5),
+                      ),
                     ),
-                  ),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(
-                      filter.label,
-                      maxLines: 1,
-                      style: TextStyle(
-                        color: selected ? Colors.white : AppColors.donkerblauw,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        filter.label,
+                        maxLines: 1,
+                        style: TextStyle(
+                          color:
+                              selected ? Colors.white : AppColors.donkerblauw,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
                   ),

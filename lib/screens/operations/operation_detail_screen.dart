@@ -4584,12 +4584,21 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               operationId: widget.operationId,
               userId: userId,
             ),
-            builder: (context, snapshot) => Text(
-              snapshot.hasData
+            builder: (context, snapshot) {
+              final label = snapshot.hasData
                   ? 'Vous êtes n° ${snapshot.data} sur la liste d’attente.'
-                  : 'Vous êtes sur la liste d’attente.',
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
+                  : 'Vous êtes sur la liste d’attente.';
+              return Semantics(
+                container: true,
+                label: label,
+                child: ExcludeSemantics(
+                  child: Text(
+                    label,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              );
+            },
           ),
           const SizedBox(height: 10),
           SizedBox(
