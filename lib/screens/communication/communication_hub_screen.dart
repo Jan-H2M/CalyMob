@@ -18,6 +18,7 @@ import '../../utils/permission_helper.dart';
 import '../../utils/roster_session_label.dart';
 import '../../widgets/communication_filter_semantics.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import '../../widgets/communication_filter_semantics.dart';
 import '../announcements/announcements_screen.dart';
 import '../teams/team_chat_screen.dart';
 import '../training/logbook_dive_confirmation_screen.dart';
