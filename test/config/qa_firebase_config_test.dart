@@ -100,6 +100,8 @@ void main() {
     }
     expect(bridge, contains("_stages.contains(stage)"));
     expect(bridge, contains("dataset['calypsoQaStage'] = stage"));
+    expect(bridge, contains("command['runId'] != runId"));
+    expect(bridge, contains("'runId': runId"));
   });
 
   test('communication task titles use exact real UI semantics', () {

@@ -56,12 +56,17 @@ class QaBrowserBridge {
         (key, value) => MapEntry(key.toString(), value as Object?),
       );
       final commandId = command['commandId'];
-      if (commandId is! String || commandId.isEmpty) return;
+      if (command['runId'] != runId ||
+          commandId is! String ||
+          commandId.isEmpty) {
+        return;
+      }
       if (!_usedCommandIds.add(commandId)) {
         html.window.postMessage(
           jsonEncode({
             'schemaVersion': 1,
             'kind': 'calypso-mobile-qa-result',
+            'runId': runId,
             'commandId': commandId,
             'ok': false,
           }),
@@ -75,6 +80,7 @@ class QaBrowserBridge {
           jsonEncode({
             'schemaVersion': 1,
             'kind': 'calypso-mobile-qa-result',
+            'runId': runId,
             'commandId': commandId,
             'ok': true,
             'result': result,
@@ -86,6 +92,7 @@ class QaBrowserBridge {
           jsonEncode({
             'schemaVersion': 1,
             'kind': 'calypso-mobile-qa-result',
+            'runId': runId,
             'commandId': commandId,
             'ok': false,
           }),
