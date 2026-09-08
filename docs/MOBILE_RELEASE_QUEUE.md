@@ -14,6 +14,17 @@ De onderstaande per-issue vermeldingen beschrijven hun oorspronkelijke branches;
 oudere releasewachtrij-items zijn historische documentatie, geen bewijs dat zij
 nog niet in een storeversie zaten.
 
+### Nog niet geïntegreerd — MOB-025
+
+- `codex/bug-MOB-025-js-safe-waitlist`: de wachtlijstsorteersleutel voor een
+  ontbrekende of ongeldige datum is nu exact voorstelbaar in JavaScript, zonder
+  de FIFO-volgorde op Android/iOS te wijzigen.
+- Vier gerichte regressietests slagen op de Dart VM en in Chrome; de gerichte
+  analyzer, de volledige suite (506 geslaagd, 1 overgeslagen) en een volledige
+  Flutter Web-build zijn groen. Dossier: `docs/bugs/MOB-025.md`.
+- Nog niet gemerged of uitgebracht; onafhankelijke review en gebundelde mobiele
+  releasepoorten blijven verplicht.
+
 ### Nog niet uitgebracht — lokale branch COM-065 (2026-08-31)
 
 - Automatisch voorgestelde duiknummers krijgen een expliciete voorlopige aanduiding,

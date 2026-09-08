@@ -13,6 +13,10 @@ import '../models/user_event_registration.dart';
 import '../utils/tariff_utils.dart';
 import 'refund_service.dart';
 
+// Number.MAX_SAFE_INTEGER. It sorts invalid/missing waitlist dates last while
+// remaining exactly representable when this service is compiled with dart2js.
+const int _missingWaitlistDateSortKey = 9007199254740991;
+
 class PaymentMethodNotAllowedException implements Exception {
   const PaymentMethodNotAllowedException();
 
@@ -448,6 +452,14 @@ class OperationService {
     }
   }
 
+  /// Convert a waitlist date to a cross-platform FIFO sort key.
+  @visibleForTesting
+  static int waitlistDateSortKey(dynamic value) {
+    if (value is Timestamp) return value.millisecondsSinceEpoch;
+    if (value is DateTime) return value.millisecondsSinceEpoch;
+    return _missingWaitlistDateSortKey;
+  }
+
   /// 1-based FIFO position of a member on the event waitlist.
   Future<int?> getWaitlistPosition({
     required String clubId,
@@ -460,16 +472,10 @@ class OperationService {
         .get();
     final waiting = snapshot.docs.toList()
       ..sort((left, right) {
-        int millis(dynamic value) {
-          if (value is Timestamp) return value.millisecondsSinceEpoch;
-          if (value is DateTime) return value.millisecondsSinceEpoch;
-          return 9223372036854775807;
-        }
-
-        final byTime = millis(
+        final byTime = waitlistDateSortKey(
           left.data()['requested_at'] ?? left.data()['date_inscription'],
         ).compareTo(
-          millis(
+          waitlistDateSortKey(
             right.data()['requested_at'] ?? right.data()['date_inscription'],
           ),
         );
