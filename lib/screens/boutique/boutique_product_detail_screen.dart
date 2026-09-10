@@ -479,24 +479,19 @@ class _PersonalizationSection extends StatelessWidget {
           ],
           const SizedBox(height: 14),
           if (config.clubLogo.canChoose) ...[
-            SwitchListTile(
+            ListTile(
               contentPadding: EdgeInsets.zero,
-              title: Text(
-                'Logo club (${formatter.format(config.clubLogo.surcharge)})',
-                style: const TextStyle(fontWeight: FontWeight.w800),
+              leading: const Icon(
+                Icons.verified_rounded,
+                color: AppColors.middenblauw,
               ),
-              value: selection.clubLogo,
-              onChanged: (enabled) {
-                onChanged(
-                  selection.copyWith(
-                    clubLogo: enabled,
-                    clubLogoZone: enabled ? config.clubLogo.zones.first : null,
-                    clearClubLogoZone: !enabled,
-                  ),
-                );
-              },
+              title: const Text(
+                'Logo club inclus',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              subtitle: Text(formatter.format(config.clubLogo.surcharge)),
             ),
-            if (selection.clubLogo)
+            if (config.clubLogo.zones.length > 1)
               _ZoneDropdown(
                 label: 'Position logo',
                 zones: config.clubLogo.zones,
