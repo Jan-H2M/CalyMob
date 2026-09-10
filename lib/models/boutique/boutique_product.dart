@@ -309,31 +309,38 @@ class BoutiqueCertificationOption extends BoutiquePersonalizationOption {
 class BoutiquePersonalizationSelection {
   final bool clubLogo;
   final String? clubLogoZone;
+  final bool nameEnabled;
   final String? nameText;
   final String? nameZone;
+  final bool certificationEnabled;
   final String? certification;
   final String? certificationZone;
 
   const BoutiquePersonalizationSelection({
     this.clubLogo = false,
     this.clubLogoZone,
+    this.nameEnabled = false,
     this.nameText,
     this.nameZone,
+    this.certificationEnabled = false,
     this.certification,
     this.certificationZone,
   });
 
-  bool get hasName => (nameText ?? '').trim().isNotEmpty;
+  bool get hasName => nameEnabled && (nameText ?? '').trim().isNotEmpty;
 
-  bool get hasCertification => (certification ?? '').trim().isNotEmpty;
+  bool get hasCertification =>
+      certificationEnabled && (certification ?? '').trim().isNotEmpty;
 
   BoutiquePersonalizationSelection copyWith({
     bool? clubLogo,
     String? clubLogoZone,
     bool clearClubLogoZone = false,
+    bool? nameEnabled,
     String? nameText,
     String? nameZone,
     bool clearNameZone = false,
+    bool? certificationEnabled,
     String? certification,
     String? certificationZone,
     bool clearCertificationZone = false,
@@ -342,8 +349,10 @@ class BoutiquePersonalizationSelection {
       clubLogo: clubLogo ?? this.clubLogo,
       clubLogoZone:
           clearClubLogoZone ? null : clubLogoZone ?? this.clubLogoZone,
+      nameEnabled: nameEnabled ?? this.nameEnabled,
       nameText: nameText ?? this.nameText,
       nameZone: clearNameZone ? null : nameZone ?? this.nameZone,
+      certificationEnabled: certificationEnabled ?? this.certificationEnabled,
       certification: certification ?? this.certification,
       certificationZone: clearCertificationZone
           ? null

@@ -36,6 +36,13 @@ class _BoutiqueProductDetailScreenState
         : null;
     _selectedDeliveryMode = widget.product.deliveryModes.first;
     _quantity = _minimumQuantity;
+    final personalization = widget.product.personalization;
+    if (personalization?.clubLogo.canChoose == true) {
+      _personalization = BoutiquePersonalizationSelection(
+        clubLogo: true,
+        clubLogoZone: personalization!.clubLogo.zones.first,
+      );
+    }
   }
 
   @override
@@ -470,8 +477,8 @@ class _PersonalizationSection extends StatelessWidget {
               ),
             ),
           ],
+          const SizedBox(height: 14),
           if (config.clubLogo.canChoose) ...[
-            const SizedBox(height: 14),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: Text(
@@ -483,9 +490,7 @@ class _PersonalizationSection extends StatelessWidget {
                 onChanged(
                   selection.copyWith(
                     clubLogo: enabled,
-                    clubLogoZone: enabled && config.clubLogo.zones.length == 1
-                        ? config.clubLogo.zones.first
-                        : null,
+                    clubLogoZone: enabled ? config.clubLogo.zones.first : null,
                     clearClubLogoZone: !enabled,
                   ),
                 );
@@ -502,37 +507,52 @@ class _PersonalizationSection extends StatelessWidget {
           ],
           if (config.name.canChoose) ...[
             const SizedBox(height: 12),
-            TextField(
-              maxLength: config.name.maxLength,
-              decoration: const InputDecoration(
-                labelText: 'Nom à personnaliser',
-                counterText: '',
-                border: OutlineInputBorder(),
-              ),
-              onChanged: (value) {
-                onChanged(
-                  selection.copyWith(
-                    nameText: value,
-                    nameZone:
-                        value.trim().isNotEmpty && config.name.zones.length == 1
-                            ? config.name.zones.first
-                            : selection.nameZone,
-                    clearNameZone: value.trim().isEmpty,
-                  ),
-                );
-              },
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Nom à personnaliser',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+              value: selection.nameEnabled,
+              onChanged: (enabled) => onChanged(selection.copyWith(
+                nameEnabled: enabled,
+                nameText: enabled ? selection.nameText : null,
+                clearNameZone: !enabled,
+              )),
             ),
-            Padding(
-              padding: const EdgeInsets.only(left: 4, top: 6),
-              child: Text(
-                '${formatter.format(config.name.pricePerCharacter)} par lettre',
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+            if (selection.nameEnabled) ...[
+              TextField(
+                maxLength: config.name.maxLength,
+                decoration: const InputDecoration(
+                  labelText: 'Nom à personnaliser',
+                  counterText: '',
+                  border: OutlineInputBorder(),
                 ),
+                onChanged: (value) {
+                  onChanged(
+                    selection.copyWith(
+                      nameText: value,
+                      nameZone: value.trim().isNotEmpty &&
+                              config.name.zones.length == 1
+                          ? config.name.zones.first
+                          : selection.nameZone,
+                      clearNameZone: value.trim().isEmpty,
+                    ),
+                  );
+                },
               ),
-            ),
+              Row(children: [
+                Text(
+                    '${(selection.nameText ?? '').trim().length}/${config.name.maxLength ?? '∞'} lettres',
+                    style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600)),
+                const Spacer(),
+                Text(
+                    '+ ${formatter.format((selection.nameText ?? '').trim().length * config.name.pricePerCharacter)}',
+                    style: const TextStyle(
+                        color: AppColors.oranje, fontWeight: FontWeight.w900)),
+              ]),
+            ],
             if (selection.hasName) ...[
               const SizedBox(height: 10),
               _ZoneDropdown(
@@ -546,43 +566,56 @@ class _PersonalizationSection extends StatelessWidget {
           ],
           if (config.certification.canChoose) ...[
             const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              initialValue: selection.certification,
-              decoration: InputDecoration(
-                labelText:
-                    'Brevet (${formatter.format(config.certification.surcharge)})',
-                border: const OutlineInputBorder(),
-              ),
-              items: config.certification.allowedValues
-                  .map(
-                    (value) => DropdownMenuItem(
-                      value: value,
-                      child: Text(value),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (value) {
-                onChanged(
-                  selection.copyWith(
-                    certification: value,
-                    certificationZone:
-                        value != null && config.certification.zones.length == 1
-                            ? config.certification.zones.first
-                            : selection.certificationZone,
-                    clearCertificationZone: value == null,
-                  ),
-                );
-              },
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Brevet',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+              value: selection.certificationEnabled,
+              onChanged: (enabled) => onChanged(selection.copyWith(
+                certificationEnabled: enabled,
+                certification: enabled ? selection.certification : null,
+                clearCertificationZone: !enabled,
+              )),
             ),
-            if (selection.hasCertification) ...[
-              const SizedBox(height: 10),
-              _ZoneDropdown(
-                label: 'Position brevet',
-                zones: config.certification.zones,
-                value: selection.certificationZone,
-                onChanged: (zone) =>
-                    onChanged(selection.copyWith(certificationZone: zone)),
+            if (selection.certificationEnabled) ...[
+              DropdownButtonFormField<String>(
+                initialValue: selection.certification,
+                decoration: InputDecoration(
+                  labelText:
+                      'Brevet (${formatter.format(config.certification.surcharge)})',
+                  border: const OutlineInputBorder(),
+                ),
+                items: config.certification.allowedValues
+                    .map(
+                      (value) => DropdownMenuItem(
+                        value: value,
+                        child: Text(value),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  onChanged(
+                    selection.copyWith(
+                      certification: value,
+                      certificationZone: value != null &&
+                              config.certification.zones.length == 1
+                          ? config.certification.zones.first
+                          : selection.certificationZone,
+                      clearCertificationZone: value == null,
+                    ),
+                  );
+                },
               ),
+              if (selection.hasCertification) ...[
+                const SizedBox(height: 10),
+                _ZoneDropdown(
+                  label: 'Position brevet',
+                  zones: config.certification.zones,
+                  value: selection.certificationZone,
+                  onChanged: (zone) =>
+                      onChanged(selection.copyWith(certificationZone: zone)),
+                ),
+              ],
             ],
           ],
         ],
