@@ -18,6 +18,7 @@ import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/user_qr_card.dart';
 import '../expenses/financial_screen.dart';
 import '../piscine/availability_screen.dart';
+import 'identite_screen.dart';
 import 'medical_certification_screen.dart';
 import 'ma_cotisation_screen.dart';
 import 'mes_informations_screen.dart';
@@ -146,7 +147,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _IdentityHeader(profile: profile),
+                    ProfileIdentityHeader(
+                      profile: profile,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const IdentiteScreen(),
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 16),
                     UserQRCard(profile: profile),
                     if (showMesAcces) ...[
@@ -217,8 +226,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           _divider(),
                           StreamBuilder<MedicalCertification?>(
-                            stream: _certService.watchCurrentCertification(
-                                _clubId, userId),
+                            stream: _certService
+                                .watchCurrentCertification(_clubId, userId),
                             builder: (context, certSnap) {
                               final cert = certSnap.data;
                               return _TileRow(
@@ -336,9 +345,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
 // Compact identity header (avatar + name + niveau pill)
 // ---------------------------------------------------------------------------
 
-class _IdentityHeader extends StatelessWidget {
+class ProfileIdentityHeader extends StatelessWidget {
   final MemberProfile profile;
-  const _IdentityHeader({required this.profile});
+  final VoidCallback onTap;
+
+  const ProfileIdentityHeader({
+    super.key,
+    required this.profile,
+    required this.onTap,
+  });
 
   Color _niveauColor(String? code) {
     if (code == null) return Colors.grey;
@@ -367,82 +382,126 @@ class _IdentityHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.18),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 64,
-            height: 64,
+    return Semantics(
+      button: true,
+      excludeSemantics: true,
+      label: 'Modifier ma photo de profil',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white.withValues(alpha: 0.2),
-              border: Border.all(color: Colors.white, width: 2),
+              color: Colors.white.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
             ),
-            child: ClipOval(
-              child: profile.hasPhoto
-                  ? CachedNetworkImage(
-                      imageUrl: profile.photoUrl!,
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) => const Center(
-                        child: SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
+            child: Row(
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withValues(alpha: 0.2),
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                      child: ClipOval(
+                        child: profile.hasPhoto
+                            ? CachedNetworkImage(
+                                imageUrl: profile.photoUrl!,
+                                fit: BoxFit.cover,
+                                placeholder: (_, __) => const Center(
+                                  child: SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                errorWidget: (_, __, ___) => const Icon(
+                                  Icons.person,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.person,
+                                color: Colors.white,
+                                size: 32,
+                              ),
+                      ),
+                    ),
+                    Positioned(
+                      right: -4,
+                      bottom: -4,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.edit,
+                          size: 14,
+                          color: AppColors.middenblauw,
                         ),
                       ),
-                      errorWidget: (_, __, ___) =>
-                          const Icon(Icons.person, color: Colors.white),
-                    )
-                  : const Icon(Icons.person, color: Colors.white, size: 32),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  profile.fullName,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        profile.fullName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      const Text(
+                        'Modifier ma photo',
+                        style: TextStyle(color: Colors.white70, fontSize: 13),
+                      ),
+                      if (profile.plongeurNiveau != null) ...[
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _niveauColor(profile.plongeurCode),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Text(
+                            profile.plongeurNiveau!,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-                if (profile.plongeurNiveau != null) ...[
-                  const SizedBox(height: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _niveauColor(profile.plongeurCode),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Text(
-                      profile.plongeurNiveau!,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
