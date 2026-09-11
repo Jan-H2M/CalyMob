@@ -1,7 +1,7 @@
 default_platform(:ios)
 
 def calymob_app_store_connect_config
-  key_id = ENV.fetch('APP_STORE_CONNECT_KEY_ID', 'ZK62KYKA4T')
+  key_id = ENV.fetch('APP_STORE_CONNECT_KEY_ID', 'RH75BJ54V4')
   {
     key_id: key_id,
     issuer_id: ENV.fetch('APP_STORE_CONNECT_ISSUER_ID', '280e011a-f492-43fb-b0eb-727ddaa8c6c9'),
