@@ -2318,7 +2318,7 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                             OutlinedButton.icon(
                               onPressed: () => _addExtraMaterial(items),
                               icon: const Icon(Icons.add_circle_outline),
-                              label: const Text('Extra materiaal meegeven'),
+                              label: const Text('Ajouter du matériel'),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: Colors.white,
                                 side: const BorderSide(color: Colors.white),
@@ -2327,7 +2327,7 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                             if (_extraLines.isNotEmpty) ...[
                               const SizedBox(height: 14),
                               const Text(
-                                'Extra materiaal bij de remise',
+                                'Matériel supplémentaire remis',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 16,
@@ -2783,51 +2783,101 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
         : strictCandidates;
     final selectedId = _selectedItemIdsByLine[_lineKey(line)];
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.94),
+        color: AppColors.middenblauw.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppColors.middenblauw.withValues(alpha: 0.45),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('${line.typeName} · ${line.variant}',
-              style: const TextStyle(
-                  color: AppColors.donkerblauw, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<String>(
-            initialValue: candidates.any((item) => item.id == selectedId)
-                ? selectedId
-                : null,
-            isExpanded: true,
-            onChanged: candidates.isEmpty
-                ? null
-                : (itemId) => setState(
-                      () => _selectedItemIdsByLine[_lineKey(line)] = itemId,
-                    ),
-            decoration: const InputDecoration(
-              labelText: 'NR. CDC à remettre',
-              prefixIcon: Icon(Icons.qr_code_2_outlined),
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            hint: Text(candidates.isEmpty
-                ? 'Aucun article disponible'
-                : 'Choisir le matériel'),
-            items: candidates
-                .map(
-                  (item) => DropdownMenuItem<String>(
-                    value: item.id,
-                    child: Text(
-                      _cdcLabel(item),
-                      overflow: TextOverflow.ellipsis,
-                    ),
+          Row(
+            children: [
+              Icon(
+                _inventoryTypeIcon(line.typeName),
+                color: AppColors.middenblauw,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  line.typeName,
+                  style: const TextStyle(
+                    color: AppColors.donkerblauw,
+                    fontWeight: FontWeight.w800,
                   ),
-                )
-                .toList(),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Taille / option',
+                        style: TextStyle(fontSize: 12)),
+                    const SizedBox(height: 4),
+                    InputDecorator(
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      child: Text(line.variant),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('N° CDC', style: TextStyle(fontSize: 12)),
+                    const SizedBox(height: 4),
+                    DropdownButtonFormField<String>(
+                      initialValue:
+                          candidates.any((item) => item.id == selectedId)
+                              ? selectedId
+                              : null,
+                      isExpanded: true,
+                      onChanged: candidates.isEmpty
+                          ? null
+                          : (itemId) => setState(
+                                () => _selectedItemIdsByLine[lineKey] = itemId,
+                              ),
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.qr_code_2_outlined),
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      hint: Text(candidates.isEmpty
+                          ? 'Aucun article disponible'
+                          : 'Choisir le matériel'),
+                      items: candidates
+                          .map(
+                            (item) => DropdownMenuItem<String>(
+                              value: item.id,
+                              child: Text(
+                                _cdcLabel(item),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
           if (strictCandidates.isEmpty && !alternativesAllowed)
             Align(
               alignment: Alignment.centerLeft,
@@ -2836,7 +2886,7 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                   () => _alternativeAllowedByLine.add(lineKey),
                 ),
                 icon: const Icon(Icons.swap_horiz_outlined),
-                label: const Text('Andere maat / variant meegeven'),
+                label: const Text('Remettre une autre taille / option'),
                 style: TextButton.styleFrom(foregroundColor: AppColors.error),
               ),
             ),
@@ -2844,20 +2894,10 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
             const Padding(
               padding: EdgeInsets.only(bottom: 6),
               child: Text(
-                'Afwijking van de aanvraag: de werkelijk meegegeven maat of variant wordt geregistreerd.',
+                'Écart par rapport à la demande : la taille ou l’option réellement remise sera enregistrée.',
                 style: TextStyle(color: AppColors.error, fontSize: 12),
               ),
             ),
-          Text(
-            candidates.isEmpty
-                ? 'Geen uitleenbaar materiaal dat met deze aanvraag overeenkomt.'
-                : '${candidates.length} beschikbaar ${candidates.length == 1 ? 'CDC-nummer' : 'CDC-nummers'}',
-            style: TextStyle(
-              color: candidates.isEmpty ? AppColors.error : Colors.black54,
-              fontSize: 12,
-              fontWeight: FontWeight.normal,
-            ),
-          ),
         ],
       ),
     );
@@ -2883,7 +2923,7 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Extra materiaal meegeven',
+              const Text('Ajouter du matériel',
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
               const SizedBox(height: 8),
               const Text(
