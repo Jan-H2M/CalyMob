@@ -158,7 +158,7 @@ void main() {
     );
   });
 
-  test('prevents a reimbursement while a missing item awaits a decision',
+  test('prevents a reimbursement while a lost item awaits a decision',
       () async {
     final firestore = FakeFirebaseFirestore();
     final service = MaterialReturnService(firestore: firestore);
@@ -185,8 +185,8 @@ void main() {
         itemChecks: const [
           MaterialReturnItemCheck(
             itemId: 'pal-042',
-            condition: MaterialReturnItemCondition.missing,
-            note: 'Non rapporté.',
+            condition: MaterialReturnItemCondition.lost,
+            note: 'Déclaré perdu.',
             photoUrls: ['https://example.test/pal-042.jpg'],
           ),
         ],

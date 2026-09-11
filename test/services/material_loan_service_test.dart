@@ -33,6 +33,14 @@ void main() {
     );
   }
 
+  MaterialLoanHandoverReceipt handoverReceipt() => MaterialLoanHandoverReceipt(
+        termsVersion: '2026-09',
+        termsText: 'Conditions de prêt acceptées.',
+        signatureUrl: 'https://example.test/signature.png',
+        signedByName: 'Alice DUPONT',
+        signedAt: DateTime.utc(2026, 8, 14, 10, 30),
+      );
+
   Future<void> seedItem(MaterialLoanItem item, {String status = 'disponible'}) {
     return firestore
         .collection('clubs')
@@ -51,8 +59,7 @@ void main() {
     });
   }
 
-  test('creates one atomic direct loan with the fixed EUR 100 caution',
-      () async {
+  test('creates one atomic signed direct loan without a caution', () async {
     final gilet = item(id: 'gilet-036', code: 'GILET-036', variant: 'XL');
     final computer = item(id: 'ord-006', code: 'ORD-006', variant: 'CRESSI');
     await seedItem(gilet);
@@ -65,6 +72,7 @@ void main() {
       expectedReturnDate: DateTime(2026, 8, 21),
       createdByUserId: 'encadrant-1',
       createdByName: 'Encadrant',
+      handoverReceipt: handoverReceipt(),
     );
 
     final loan = await firestore
@@ -74,8 +82,8 @@ void main() {
         .doc(loanId)
         .get();
     expect(loan.data()?['statut'], 'actif');
-    expect(loan.data()?['caution_amount'], 100);
-    expect(loan.data()?['caution_payment_status'], 'paid');
+    expect(loan.data()?['caution_amount'], 0);
+    expect(loan.data()?['caution_payment_status'], 'not_required');
     expect(loan.data()?['itemIds'], ['gilet-036', 'ord-006']);
     expect((loan.data()?['items_snapshot'] as List).length, 2);
 
@@ -109,6 +117,7 @@ void main() {
         expectedReturnDate: DateTime(2026, 8, 21),
         createdByUserId: 'encadrant-1',
         createdByName: 'Encadrant',
+        handoverReceipt: handoverReceipt(),
       ),
       throwsA(isA<StateError>()),
     );
