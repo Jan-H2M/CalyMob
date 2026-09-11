@@ -5,10 +5,8 @@ import '../models/material_loan.dart';
 
 /// Production service for the direct material-loan flow.
 ///
-/// The transaction is intentionally all-or-nothing: a loan, its inventory
-/// reservation and its audit entry are created together. The caller must only
-/// invoke [createDirectLoan] after the organizer has confirmed the fixed
-/// caution of EUR 100 was received.
+/// The transaction is intentionally all-or-nothing: the selected physical
+/// articles, the loan and its audit entry are created together at handover.
 class MaterialLoanService {
   static const double fixedCautionAmount = 100;
 
@@ -109,8 +107,7 @@ class MaterialLoanService {
     return members;
   }
 
-  /// Creates a handed-over loan after an organizer manually confirmed that the
-  /// EUR 100 caution was paid on site.
+  /// Creates a handed-over loan. Cautions are not collected in this flow.
   Future<String> createDirectLoan({
     required String clubId,
     required MaterialLoanMember member,
@@ -130,8 +127,8 @@ class MaterialLoanService {
         notes: notes,
         loanStatus: 'actif',
         itemStatus: 'prete',
-        cautionStatus: 'paid',
-        paymentMode: 'epc_qr_onsite_confirmed',
+        cautionStatus: 'not_required',
+        paymentMode: 'none',
         handoverStatus: 'handed_over',
       );
 
@@ -320,10 +317,8 @@ class MaterialLoanService {
         'statut': loanStatus,
         'date_pret': now,
         'date_retour_prevue': Timestamp.fromDate(expectedReturnDate),
-        'caution_amount': fixedCautionAmount,
-        'caution_reference': '+++$loanNumber+++',
+        'caution_amount': 0,
         'caution_payment_status': cautionStatus,
-        if (cautionStatus == 'paid') 'caution_paid_at': now,
         'payment_mode': paymentMode,
         'handover_status': handoverStatus,
         'notes': notes?.trim(),
@@ -343,7 +338,7 @@ class MaterialLoanService {
         'member_id': member.id,
         'member_name': member.name,
         'item_ids': items.map((item) => item.id).toList(),
-        'caution_amount': fixedCautionAmount,
+        'caution_amount': 0,
         'actor_id': createdByUserId,
         'actor_name': createdByName,
         'createdAt': now,
@@ -397,6 +392,7 @@ class MaterialLoanService {
     required String confirmedByUserId,
     required String confirmedByName,
     List<String> selectedItemIds = const [],
+    Map<String, double> leadKgByItemId = const {},
     bool paymentConfirmed = false,
   }) async {
     if (!paymentConfirmed) {
@@ -454,6 +450,11 @@ class MaterialLoanService {
                 itemData['current_loan_id'] != loanId)) {
           throw StateError('Réservation du matériel invalide');
         }
+        if (isUnassignedRequest &&
+            physicalItem.isPocketWeightBelt &&
+            (leadKgByItemId[physicalItem.id] ?? 0) <= 0) {
+          throw StateError('Indiquez le lest remis avec la ceinture à poches');
+        }
       }
       if (isUnassignedRequest) {
         final remaining = [...selectedItems];
@@ -495,6 +496,7 @@ class MaterialLoanService {
         'payment_confirmed_by_name': confirmedByName,
         'handover_status': 'handed_over',
         'handover_at': now,
+        if (leadKgByItemId.isNotEmpty) 'lead_kg_by_item_id': leadKgByItemId,
         'updatedAt': now,
       });
       transaction.set(auditRef, {

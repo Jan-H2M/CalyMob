@@ -27,12 +27,8 @@ function normalizeRoles(value) {
 }
 
 function isMaterialLoanManager(member = {}) {
-  const appRole = String(member.app_role || member.appRole || '').toLowerCase();
-  if (appRole === 'admin' || appRole === 'superadmin') return true;
   const roles = normalizeRoles(member.clubStatuten);
-  return roles.some((role) => [
-    'encadrant', 'encadrants', 'e', 'ca', 'comite', 'comité', 'gonflage', 'g',
-  ].includes(role));
+  return roles.some((role) => ['gonflage', 'g'].includes(role));
 }
 
 function formatAmount(amount) {

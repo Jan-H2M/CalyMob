@@ -206,13 +206,36 @@ class MaterialReturnService {
     required String clubId,
     required String memberId,
   }) {
-    return _firestore
-        .collection('clubs')
-        .doc(clubId)
-        .collection('inventory_loan_requests')
-        .where('memberId', isEqualTo: memberId)
-        .snapshots()
-        .asyncMap((snapshot) async {
+    return _watchLoanRequests(
+      clubId: clubId,
+      snapshots: _firestore
+          .collection('clubs')
+          .doc(clubId)
+          .collection('inventory_loan_requests')
+          .where('memberId', isEqualTo: memberId)
+          .snapshots(),
+    );
+  }
+
+  /// Open requests for the Gonflage team, ordered by the requested start date.
+  Stream<List<MaterialLoanRequest>> watchOpenLoanRequests({
+    required String clubId,
+  }) {
+    return _watchLoanRequests(
+      clubId: clubId,
+      snapshots: _firestore
+          .collection('clubs')
+          .doc(clubId)
+          .collection('inventory_loan_requests')
+          .snapshots(),
+    );
+  }
+
+  Stream<List<MaterialLoanRequest>> _watchLoanRequests({
+    required String clubId,
+    required Stream<QuerySnapshot<Map<String, dynamic>>> snapshots,
+  }) {
+    return snapshots.asyncMap((snapshot) async {
       final requests = <MaterialLoanRequest>[];
       for (final doc in snapshot.docs) {
         final rawRequest = MaterialLoanRequest.fromFirestore(doc);
@@ -221,8 +244,6 @@ class MaterialReturnService {
           'approved',
           'validated',
           'ready',
-          'handed_over',
-          'refused',
         }.contains(rawRequest.status)) {
           continue;
         }
@@ -233,9 +254,11 @@ class MaterialReturnService {
       }
 
       requests.sort((a, b) {
-        final aDate = a.createdAt ?? DateTime(1900);
-        final bDate = b.createdAt ?? DateTime(1900);
-        return bDate.compareTo(aDate);
+        // A member needs to see the next requested loan first, not the last
+        // request they happened to create.
+        final aDate = a.requestedStartDate ?? a.createdAt ?? DateTime(9999);
+        final bDate = b.requestedStartDate ?? b.createdAt ?? DateTime(9999);
+        return aDate.compareTo(bDate);
       });
       return requests;
     });
@@ -247,6 +270,7 @@ class MaterialReturnService {
     required String memberName,
     required String memberEmail,
     required List<MaterialLoanItem> items,
+    DateTime? requestedStartDate,
     required DateTime expectedReturnDate,
     String? notes,
   }) async {
@@ -279,6 +303,8 @@ class MaterialReturnService {
       'memberEmail': memberEmail,
       'itemIds': items.map((item) => item.id).toList(),
       'items_snapshot': itemSnapshots,
+      if (requestedStartDate != null)
+        'date_pret_souhaitee': Timestamp.fromDate(requestedStartDate),
       'date_retour_prevue': Timestamp.fromDate(expectedReturnDate),
       'status': 'submitted',
       'notes': notes?.trim(),
@@ -297,6 +323,7 @@ class MaterialReturnService {
     required String memberName,
     required String memberEmail,
     required List<MaterialLoanRequestLine> lines,
+    required DateTime requestedStartDate,
     required DateTime expectedReturnDate,
     String? notes,
   }) async {
@@ -317,6 +344,7 @@ class MaterialReturnService {
       'lines': lines.map((line) => line.toMap()).toList(),
       'itemIds': const <String>[],
       'assignedItemIds': const <String>[],
+      'date_pret_souhaitee': Timestamp.fromDate(requestedStartDate),
       'date_retour_prevue': Timestamp.fromDate(expectedReturnDate),
       'status': 'submitted',
       'notes': notes?.trim(),
@@ -328,6 +356,55 @@ class MaterialReturnService {
 
     return requestRef.id;
   }
+
+  /// A member may amend their own request while it has not yet been handled.
+  /// Firestore rules enforce the same restriction server-side.
+  Future<void> updateLoanRequestLines({
+    required String clubId,
+    required String requestId,
+    required List<MaterialLoanRequestLine> lines,
+    required DateTime requestedStartDate,
+    required DateTime expectedReturnDate,
+    String? notes,
+  }) async {
+    if (lines.isEmpty) {
+      throw Exception('Choisissez au moins un materiel');
+    }
+
+    await _firestore
+        .collection('clubs')
+        .doc(clubId)
+        .collection('inventory_loan_requests')
+        .doc(requestId)
+        .update({
+      'lines': lines.map((line) => line.toMap()).toList(),
+      'date_pret_souhaitee': Timestamp.fromDate(requestedStartDate),
+      'date_retour_prevue': Timestamp.fromDate(expectedReturnDate),
+      'notes': notes?.trim(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Closes the request only after the concrete, numbered material was handed
+  /// over. This prevents the same request appearing again in the Gonflage
+  /// queue while keeping the request history intact.
+  Future<void> markLoanRequestHandedOver({
+    required String clubId,
+    required String requestId,
+    required String loanId,
+    required List<String> assignedItemIds,
+  }) =>
+      _firestore
+          .collection('clubs')
+          .doc(clubId)
+          .collection('inventory_loan_requests')
+          .doc(requestId)
+          .update({
+        'status': 'handed_over',
+        'assignedItemIds': assignedItemIds,
+        'loanId': loanId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
 
   Future<List<MaterialLoanItem>> _loadLoanItems(
     String clubId,

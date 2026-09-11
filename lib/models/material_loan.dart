@@ -9,6 +9,7 @@ class MaterialLoanItem {
   final String? serialNumber;
   final String? variant;
   final String status;
+  final bool loanEligible;
   final String? typeId;
   final String? typeName;
 
@@ -21,6 +22,7 @@ class MaterialLoanItem {
     this.serialNumber,
     this.variant,
     required this.status,
+    this.loanEligible = true,
     this.typeId,
     this.typeName,
   });
@@ -84,10 +86,16 @@ class MaterialLoanItem {
 
   bool get isBorrowable {
     final normalized = status.trim().toLowerCase();
-    return normalized == 'disponible' ||
-        normalized == 'available' ||
-        normalized == 'en_stock' ||
-        normalized == 'libre';
+    return loanEligible &&
+        (normalized == 'disponible' ||
+            normalized == 'available' ||
+            normalized == 'en_stock' ||
+            normalized == 'libre');
+  }
+
+  bool get isPocketWeightBelt {
+    final label = '${typeName ?? ''} $name'.toLowerCase();
+    return label.contains('ceinture') && label.contains('poche');
   }
 
   MaterialLoanItem copyWithTypeName(String? value) {
@@ -100,6 +108,7 @@ class MaterialLoanItem {
       serialNumber: serialNumber,
       variant: variant,
       status: status,
+      loanEligible: loanEligible,
       typeId: typeId,
       typeName: value ?? typeName,
     );
@@ -121,6 +130,7 @@ class MaterialLoanItem {
           data['status']?.toString() ??
           data['etat_stock']?.toString() ??
           'disponible',
+      loanEligible: data['loan_eligible'] != false,
       typeId: data['typeId']?.toString() ?? data['type_id']?.toString(),
       typeName: data['typeName']?.toString() ?? data['type_name']?.toString(),
     );
@@ -168,6 +178,7 @@ class MaterialLoanRequest {
   final List<String> itemIds;
   final List<MaterialLoanRequestLine> lines;
   final List<String> assignedItemIds;
+  final DateTime? requestedStartDate;
   final DateTime? expectedReturnDate;
   final String status;
   final String? notes;
@@ -182,6 +193,7 @@ class MaterialLoanRequest {
     required this.itemIds,
     this.lines = const [],
     this.assignedItemIds = const [],
+    this.requestedStartDate,
     this.expectedReturnDate,
     required this.status,
     this.notes,
@@ -220,6 +232,9 @@ class MaterialLoanRequest {
               .where((item) => item.trim().isNotEmpty)
               .toList() ??
           const [],
+      requestedStartDate: _dateFromValue(
+        data['date_pret_souhaitee'] ?? data['requestedStartDate'],
+      ),
       expectedReturnDate: _dateFromValue(
         data['date_retour_prevue'] ?? data['expectedReturnDate'],
       ),
