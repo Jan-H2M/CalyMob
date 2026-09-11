@@ -95,11 +95,13 @@ describe('member privacy projections', () => {
       cotisation_validite: 'membership-date',
       certificat_medical_validite: 'medical-date',
       assurance_validite: 'insurance-date',
+      membership_category_code: 'membre_autre_federation',
       email: 'private@example.test',
       iban: 'BE00 PRIVATE',
     });
     expect(projected.cotisation_validite).toBe('membership-date');
     expect(projected.certificat_medical_validite).toBe('medical-date');
+    expect(projected.membership_category_code).toBe('membre_autre_federation');
     expect(projected).not.toHaveProperty('email');
     expect(projected).not.toHaveProperty('iban');
   });

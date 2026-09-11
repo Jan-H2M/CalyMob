@@ -80,13 +80,6 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
   String? _lastAddedName;
   String? _scannerError;
 
-  // Manual search state
-  bool _showSearch = false;
-  bool _isSearching = false;
-  List<MemberProfile> _searchResults = [];
-  final TextEditingController _searchController = TextEditingController();
-  final FocusNode _searchFocusNode = FocusNode();
-
   @override
   void initState() {
     super.initState();
@@ -106,8 +99,6 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
     unawaited(_barcodeSubscription?.cancel());
     _barcodeSubscription = null;
     unawaited(_scannerController.dispose());
-    _searchController.dispose();
-    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -116,7 +107,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
     final action = scannerLifecycleAction(
       state: state,
       hasCameraPermission: _scannerController.value.hasCameraPermission,
-      showingManualSearch: _showSearch,
+      showingManualSearch: false,
     );
     switch (action) {
       case ScannerLifecycleAction.start:
@@ -129,7 +120,7 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
   }
 
   Future<void> _startScanner() async {
-    if (!mounted || _showSearch) return;
+    if (!mounted) return;
 
     await _barcodeSubscription?.cancel();
     _barcodeSubscription = _scannerController.barcodes.listen(_handleBarcode);
@@ -255,13 +246,14 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
     final cotisationStatus = member.cotisationStatus;
     final certificatStatus = member.certificatStatus;
     final assuranceStatus = member.assuranceStatus;
+    final requiresExternalInsurance = member.requiresExternalInsurance;
 
     final hasBlocking = isBlocking(cotisationStatus) ||
         isBlocking(certificatStatus) ||
-        isBlocking(assuranceStatus);
+        (requiresExternalInsurance && isBlocking(assuranceStatus));
     final hasWarning = isWarning(cotisationStatus) ||
         isWarning(certificatStatus) ||
-        isWarning(assuranceStatus);
+        (requiresExternalInsurance && isWarning(assuranceStatus));
 
     if (hasBlocking) {
       // Red ACCÈS REFUSÉ overlay — blocks entry.
@@ -377,66 +369,10 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
     );
   }
 
-  void _toggleSearch() {
-    setState(() {
-      _showSearch = !_showSearch;
-      if (_showSearch) {
-        _searchController.clear();
-        _searchResults.clear();
-        // Pause scanner when searching
-        unawaited(_stopScanner());
-        Future.microtask(() => _searchFocusNode.requestFocus());
-      } else {
-        _searchFocusNode.unfocus();
-        unawaited(_startScanner());
-      }
-    });
-  }
-
-  Future<void> _searchMembers(String query) async {
-    if (query.length < 2) {
-      setState(() => _searchResults = []);
-      return;
-    }
-
-    setState(() => _isSearching = true);
-
-    try {
-      final results = await _memberService.searchMembers(widget.clubId, query);
-      if (mounted) {
-        setState(() {
-          _searchResults = results;
-          _isSearching = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) setState(() => _isSearching = false);
-    }
-  }
-
-  Future<void> _selectMember(MemberProfile member) async {
-    setState(() {
-      _showSearch = false;
-      _isProcessing = true;
-    });
-
-    try {
-      await _processScannedMember(member.id);
-    } catch (e) {
-      _showErrorToast(e.toString());
-    } finally {
-      if (mounted) {
-        setState(() => _isProcessing = false);
-        unawaited(_startScanner());
-      }
-    }
-  }
-
   /// Ouvrir le dialog pour ajouter un invité (non-membre)
   Future<void> _showAddAttendeeDialog() async {
     final authProvider = context.read<AuthProvider>();
     final currentUser = authProvider.currentUser;
-    if (currentUser == null) return;
 
     final result = await showDialog<ManualAttendeeSelection>(
       context: context,
@@ -451,6 +387,12 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
           // duplicate detection and all eligibility checks before attendance.
           onMember: _processScannedMember,
           onGuest: (guest) async {
+            if (currentUser == null) {
+              _showErrorToast(
+                'Veuillez vous reconnecter avant d’ajouter un invité.',
+              );
+              return;
+            }
             if (!widget.isPiscine) {
               _showErrorToast(
                 '${guest.memberName} — pas inscrit·e. Doit d\'abord s\'inscrire dans l\'app.',
@@ -648,10 +590,10 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
           // Header with close button and title
           _buildHeader(),
 
-          // Compact Scanner or Manual Search (~35%)
+          // Compact scanner; member search now lives in the manual-add dialog.
           Expanded(
             flex: 35,
-            child: _showSearch ? _buildSearchView() : _buildCompactScanner(),
+            child: _buildCompactScanner(),
           ),
 
           // Divider with count
@@ -669,74 +611,55 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
 
   Widget _buildHeader() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+      padding: const EdgeInsets.fromLTRB(8, 12, 8, 10),
       decoration: BoxDecoration(
         color: AppColors.middenblauw,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      child: Row(
+      child: Column(
         children: [
-          // Close button
-          IconButton(
-            onPressed: () => Navigator.of(context).pop(),
-            icon: const Icon(Icons.close, color: Colors.white, size: 28),
-            tooltip: 'Fermer',
+          SizedBox(
+            height: 48,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                const Text(
+                  'Scanner Présence',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Row(
+                  children: [
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close,
+                          color: Colors.white, size: 28),
+                      tooltip: 'Fermer',
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-
-          // Title (centered)
-          Expanded(
-            child: Text(
-              'Scanner Présence',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+          const SizedBox(height: 6),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: FilledButton.icon(
+              onPressed: _showAddAttendeeDialog,
+              icon: const Icon(Icons.person_add_rounded),
+              label: const Text('Ajouter manuellement'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.oranje,
+                foregroundColor: Colors.white,
+                textStyle:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
               ),
             ),
-          ),
-
-          // Manual search toggle
-          IconButton(
-            onPressed: _toggleSearch,
-            icon: Icon(
-              _showSearch ? Icons.qr_code_scanner : Icons.search,
-              color: _showSearch ? AppColors.oranje : Colors.white,
-              size: 28,
-            ),
-            tooltip: _showSearch ? 'Scanner' : 'Recherche manuelle',
-          ),
-
-          // Ajouter un participant (membre ou invité)
-          IconButton(
-            onPressed: _showAddAttendeeDialog,
-            icon: const Icon(Icons.person_add, color: Colors.white, size: 26),
-            tooltip: 'Ajouter un participant',
-          ),
-
-          // Torch toggle
-          ValueListenableBuilder<MobileScannerState>(
-            valueListenable: _scannerController,
-            builder: (context, state, child) {
-              final torchOn = state.torchState == TorchState.on;
-              return IconButton(
-                onPressed: () => _scannerController.toggleTorch(),
-                icon: Icon(
-                  torchOn ? Icons.flash_on : Icons.flash_off,
-                  color: torchOn ? AppColors.oranje : Colors.white70,
-                  size: 28,
-                ),
-                tooltip: 'Lampe',
-              );
-            },
-          ),
-
-          // Always available as an operational escape hatch when a native
-          // camera preview is visible but barcode detection has gone silent.
-          IconButton(
-            onPressed: _showSearch ? null : _restartScanner,
-            icon: const Icon(Icons.refresh, color: Colors.white70, size: 27),
-            tooltip: 'Redémarrer le scanner',
           ),
         ],
       ),
@@ -904,138 +827,6 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
             ),
           ),
       ],
-    );
-  }
-
-  Widget _buildSearchView() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          // Search field
-          TextField(
-            controller: _searchController,
-            focusNode: _searchFocusNode,
-            onChanged: _searchMembers,
-            decoration: InputDecoration(
-              hintText: 'Rechercher un membre...',
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: _searchController.text.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear),
-                      onPressed: () {
-                        _searchController.clear();
-                        _searchMembers('');
-                      },
-                    )
-                  : null,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              filled: true,
-              fillColor: Colors.grey[100],
-              contentPadding: const EdgeInsets.symmetric(vertical: 12),
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // Results
-          Expanded(
-            child: _isSearching
-                ? const Center(child: CircularProgressIndicator())
-                : _searchResults.isEmpty
-                    ? Center(
-                        child: Text(
-                          _searchController.text.length < 2
-                              ? 'Tapez au moins 2 caractères'
-                              : 'Aucun résultat',
-                          style:
-                              TextStyle(color: Colors.grey[500], fontSize: 14),
-                        ),
-                      )
-                    : ListView.builder(
-                        itemCount: _searchResults.length,
-                        itemBuilder: (context, index) {
-                          final member = _searchResults[index];
-                          final cotisationOk =
-                              member.cotisationStatus == ValidationStatus.valid;
-                          final certificatOk =
-                              member.certificatStatus == ValidationStatus.valid;
-                          final assuranceOk =
-                              member.assuranceStatus == ValidationStatus.valid;
-                          return ListTile(
-                            dense: true,
-                            leading: CircleAvatar(
-                              backgroundColor: AppColors.middenblauw,
-                              radius: 18,
-                              child: Text(
-                                member.fullName.isNotEmpty
-                                    ? member.fullName[0].toUpperCase()
-                                    : '?',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                            title: Text(
-                              member.fullName,
-                              style: const TextStyle(
-                                  fontSize: 14, fontWeight: FontWeight.w500),
-                            ),
-                            subtitle: Row(
-                              children: [
-                                Icon(
-                                  cotisationOk
-                                      ? Icons.check_circle
-                                      : Icons.cancel,
-                                  size: 14,
-                                  color: cotisationOk
-                                      ? AppColors.success
-                                      : Colors.red,
-                                ),
-                                const SizedBox(width: 4),
-                                Text('Cotisation',
-                                    style: TextStyle(
-                                        fontSize: 11, color: Colors.grey[600])),
-                                const SizedBox(width: 10),
-                                Icon(
-                                  certificatOk
-                                      ? Icons.check_circle
-                                      : Icons.cancel,
-                                  size: 14,
-                                  color: certificatOk
-                                      ? AppColors.success
-                                      : Colors.red,
-                                ),
-                                const SizedBox(width: 4),
-                                Text('Certificat',
-                                    style: TextStyle(
-                                        fontSize: 11, color: Colors.grey[600])),
-                                const SizedBox(width: 10),
-                                Icon(
-                                  assuranceOk
-                                      ? Icons.check_circle
-                                      : Icons.cancel,
-                                  size: 14,
-                                  color: assuranceOk
-                                      ? AppColors.success
-                                      : Colors.red,
-                                ),
-                                const SizedBox(width: 4),
-                                Text('Assurance',
-                                    style: TextStyle(
-                                        fontSize: 11, color: Colors.grey[600])),
-                              ],
-                            ),
-                            onTap: () => _selectMember(member),
-                          );
-                        },
-                      ),
-          ),
-        ],
-      ),
     );
   }
 

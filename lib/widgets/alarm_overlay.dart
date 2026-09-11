@@ -247,13 +247,15 @@ class _AlarmOverlayState extends State<AlarmOverlay>
                           ),
                         ),
 
-                      if (assuranceStatus != ValidationStatus.valid &&
+                      if (widget.member.requiresExternalInsurance &&
+                          assuranceStatus != ValidationStatus.valid &&
                           (cotisationStatus != ValidationStatus.valid ||
                               certificatStatus != ValidationStatus.valid))
                         const SizedBox(height: 16),
 
                       // Assurance status
-                      if (assuranceStatus != ValidationStatus.valid)
+                      if (widget.member.requiresExternalInsurance &&
+                          assuranceStatus != ValidationStatus.valid)
                         _buildErrorRow(
                           icon: Icons.shield,
                           message: _getAssuranceMessage(

@@ -94,6 +94,7 @@ function buildOperationalStatusProjection(data) {
     cotisation_validite: data.cotisation_validite || null,
     certificat_medical_validite: data.certificat_medical_validite || null,
     assurance_validite: data.assurance_validite || null,
+    membership_category_code: nonEmptyString(data.membership_category_code),
     has_pending_medical: data.has_pending_medical === true,
     updated_at: FieldValue.serverTimestamp(),
   };
