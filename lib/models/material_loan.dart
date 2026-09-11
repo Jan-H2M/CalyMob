@@ -1,5 +1,68 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// One immutable observation on one physical item. Open observations remain
+/// visible at every handover until a repair explicitly closes them.
+class MaterialItemDefect {
+  final String id;
+  final String severity;
+  final String note;
+  final List<String> photoUrls;
+  final bool isOpen;
+
+  const MaterialItemDefect({
+    required this.id,
+    required this.severity,
+    required this.note,
+    this.photoUrls = const [],
+    this.isOpen = true,
+  });
+
+  factory MaterialItemDefect.fromMap(Map<String, dynamic> data) =>
+      MaterialItemDefect(
+        id: data['id']?.toString() ?? '',
+        severity: data['severity']?.toString() ?? 'information',
+        note: data['note']?.toString() ?? '',
+        photoUrls: (data['photo_urls'] as List<dynamic>? ?? const [])
+            .map((url) => url.toString())
+            .where((url) => url.isNotEmpty)
+            .toList(),
+        isOpen: data['status']?.toString() != 'resolved',
+      );
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'severity': severity,
+        'note': note,
+        'photo_urls': photoUrls,
+        'status': isOpen ? 'open' : 'resolved',
+      };
+}
+
+/// Immutable evidence accepted by the borrower at physical handover.
+class MaterialLoanHandoverReceipt {
+  final String termsVersion;
+  final String termsText;
+  final String signatureUrl;
+  final String signedByName;
+  final DateTime signedAt;
+
+  const MaterialLoanHandoverReceipt({
+    required this.termsVersion,
+    required this.termsText,
+    required this.signatureUrl,
+    required this.signedByName,
+    required this.signedAt,
+  });
+
+  Map<String, dynamic> toMap() => {
+        'terms_version': termsVersion,
+        'terms_text': termsText,
+        'signature_url': signatureUrl,
+        'signed_by_name': signedByName,
+        'signed_at': Timestamp.fromDate(signedAt),
+      };
+}
+
 class MaterialLoanItem {
   final String id;
   final String code;
@@ -12,6 +75,7 @@ class MaterialLoanItem {
   final bool loanEligible;
   final String? typeId;
   final String? typeName;
+  final List<MaterialItemDefect> openDefects;
 
   const MaterialLoanItem({
     required this.id,
@@ -25,6 +89,7 @@ class MaterialLoanItem {
     this.loanEligible = true,
     this.typeId,
     this.typeName,
+    this.openDefects = const [],
   });
 
   String get typeLabel {
@@ -111,6 +176,7 @@ class MaterialLoanItem {
       loanEligible: loanEligible,
       typeId: typeId,
       typeName: value ?? typeName,
+      openDefects: openDefects,
     );
   }
 
@@ -133,6 +199,12 @@ class MaterialLoanItem {
       loanEligible: data['loan_eligible'] != false,
       typeId: data['typeId']?.toString() ?? data['type_id']?.toString(),
       typeName: data['typeName']?.toString() ?? data['type_name']?.toString(),
+      openDefects: (data['defects'] as List<dynamic>? ?? const [])
+          .whereType<Map>()
+          .map((defect) =>
+              MaterialItemDefect.fromMap(Map<String, dynamic>.from(defect)))
+          .where((defect) => defect.isOpen)
+          .toList(),
     );
   }
 }
@@ -146,6 +218,11 @@ String? _variantFromData(Map<String, dynamic> data) {
     'volume',
     'contenance',
     'capacity',
+    // A lead belt is selected by its supplied weight, not a clothing size.
+    'poids',
+    'gewicht',
+    'weight',
+    'kg',
   ];
   for (final key in directKeys) {
     final value = data[key]?.toString().trim();
@@ -160,7 +237,11 @@ String? _variantFromData(Map<String, dynamic> data) {
           !key.contains('size') &&
           !key.contains('volume') &&
           !key.contains('contenance') &&
-          !key.contains('capacity')) {
+          !key.contains('capacity') &&
+          !key.contains('poids') &&
+          !key.contains('gewicht') &&
+          !key.contains('weight') &&
+          !key.contains('kg')) {
         continue;
       }
       final value = entry.value?.toString().trim();
@@ -295,24 +376,30 @@ class MaterialLoanRequestedLine {
   final String variant;
   final int quantity;
 
+  /// Lead is handed over with a belt but is not a physical CDC article.
+  final double? leadKg;
+
   const MaterialLoanRequestedLine(
       {this.typeId,
       required this.typeName,
       required this.variant,
-      this.quantity = 1});
+      this.quantity = 1,
+      this.leadKg});
 
   factory MaterialLoanRequestedLine.fromMap(Map<String, dynamic> data) =>
       MaterialLoanRequestedLine(
           typeId: data['type_id'] as String?,
           typeName: data['type_name']?.toString() ?? '',
           variant: data['variant']?.toString() ?? 'Standard',
-          quantity: (data['quantity'] as num?)?.toInt() ?? 1);
+          quantity: (data['quantity'] as num?)?.toInt() ?? 1,
+          leadKg: (data['lead_kg'] as num?)?.toDouble());
 
   Map<String, dynamic> toMap() => {
         'type_id': typeId,
         'type_name': typeName,
         'variant': variant,
-        'quantity': quantity
+        'quantity': quantity,
+        if (leadKg != null) 'lead_kg': leadKg,
       };
 
   bool matches(MaterialLoanItem item) =>

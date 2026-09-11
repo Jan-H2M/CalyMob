@@ -16,7 +16,7 @@ enum MaterialReturnDecision {
 ///
 /// Incidents belong to the physical item, not merely to the loan. This makes
 /// its history available to CalyCompta when staff repair or replace equipment.
-enum MaterialReturnItemCondition { good, damaged, missing }
+enum MaterialReturnItemCondition { good, damaged, notReturned, lost }
 
 class MaterialReturnItemCheck {
   final String itemId;
@@ -84,6 +84,57 @@ class MaterialReturnService {
       SettableMetadata(contentType: contentType ?? 'image/jpeg'),
     );
     return reference.getDownloadURL();
+  }
+
+  /// Stores a photo with the physical CDC article, independently of a loan.
+  /// This makes an observation visible again at every later handover.
+  Future<String> uploadItemDefectPhoto({
+    required String clubId,
+    required String itemId,
+    required Uint8List bytes,
+    required String fileName,
+    String? contentType,
+  }) async {
+    if (bytes.isEmpty) throw ArgumentError.value(bytes, 'bytes', 'Photo vide');
+    final safeName = fileName.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    final timestamp = DateTime.now().microsecondsSinceEpoch;
+    final reference = _storageInstance.ref().child(
+        'clubs/$clubId/inventory_defects/$itemId/${timestamp}_${safeName.isEmpty ? 'photo.jpg' : safeName}');
+    await reference.putData(
+        bytes, SettableMetadata(contentType: contentType ?? 'image/jpeg'));
+    return reference.getDownloadURL();
+  }
+
+  /// Adds an observation without replacing older defects. A repair must close
+  /// the individual entry explicitly; until then it remains visible on loan.
+  Future<void> addItemDefect({
+    required String clubId,
+    required String itemId,
+    required String severity,
+    required String note,
+    required String recordedByUserId,
+    required String recordedByName,
+    List<String> photoUrls = const [],
+  }) {
+    final defect = {
+      'id': _firestore.collection('_ids').doc().id,
+      'severity': severity,
+      'note': note.trim(),
+      'photo_urls': photoUrls,
+      'status': 'open',
+      'recorded_by': recordedByUserId,
+      'recorded_by_name': recordedByName,
+      'recorded_at': Timestamp.now(),
+    };
+    return _firestore
+        .collection('clubs')
+        .doc(clubId)
+        .collection('inventory_items')
+        .doc(itemId)
+        .update({
+      'defects': FieldValue.arrayUnion([defect]),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 
   Stream<List<MaterialLoan>> watchReturnableLoans(String clubId) {
@@ -453,12 +504,12 @@ class MaterialReturnService {
       for (final check in itemChecks)
         if (loan.itemIds.contains(check.itemId)) check.itemId: check,
     };
-    final hasMissingItem = checksByItemId.values.any(
-      (check) => check.condition == MaterialReturnItemCondition.missing,
+    final hasLostItem = checksByItemId.values.any(
+      (check) => check.condition == MaterialReturnItemCondition.lost,
     );
-    if (hasMissingItem && refundAmount > 0) {
+    if (hasLostItem && refundAmount > 0) {
       throw ArgumentError(
-        'Un article manquant doit d’abord être examiné dans CalyCompta. '
+        'Un article déclaré perdu doit d’abord être examiné dans CalyCompta. '
         'Aucun remboursement ne peut être demandé à ce stade.',
       );
     }
@@ -504,19 +555,30 @@ class MaterialReturnService {
           .toDouble();
       final cautionStatus = _cautionStatusFor(decision, refundAmount);
       final normalizedChecks = <Map<String, dynamic>>[];
+      final notReturnedIds = <String>[];
 
       for (final itemId in loan.itemIds) {
         final check =
             checksByItemId[itemId] ?? MaterialReturnItemCheck(itemId: itemId);
         normalizedChecks.add(check.toMap());
+        if (check.condition == MaterialReturnItemCondition.notReturned) {
+          notReturnedIds.add(itemId);
+        }
       }
 
       transaction.update(loanRef, {
-        'statut': 'rendu',
-        'date_retour_reel': now,
+        'statut': notReturnedIds.isEmpty ? 'rendu' : 'actif',
+        if (notReturnedIds.isEmpty) 'date_retour_reel': now,
         'return_validated_at': now,
         'return_validated_by': validatedByUserId,
         'return_validated_by_name': validatedByName,
+        // An immutable operational trace: the borrower returns the loan and
+        // the logged-in Gonflage responsible physically checks it.
+        'returned_by_member_id': loan.memberId,
+        'returned_by_member_name': loan.memberName,
+        'return_checked_by': validatedByUserId,
+        'return_checked_by_name': validatedByName,
+        'return_checked_at': now,
         'return_decision': decision.name,
         'return_notes': notes?.trim(),
         'notes_retour': notes?.trim(),
@@ -524,17 +586,28 @@ class MaterialReturnService {
         'caution_non_rendue': retainedAmount,
         'caution_payment_status': cautionStatus,
         'return_item_checks': normalizedChecks,
+        'returned_item_ids':
+            loan.itemIds.where((id) => !notReturnedIds.contains(id)).toList(),
+        'pending_return_item_ids': notReturnedIds,
+        // The active part of a partial return contains only physical articles
+        // still with the member; the immutable snapshot keeps the full loan.
+        if (notReturnedIds.isNotEmpty) 'itemIds': notReturnedIds,
         if (refundAmount > 0) 'caution_refund_request_id': refundRequestId,
         'updatedAt': now,
       });
 
       transaction.set(auditRef, {
         'event_type': 'material_loan_return_validated',
+        'movement_direction': 'incoming',
         'entity_type': 'inventory_loan',
         'entity_id': loan.id,
         'loan_number': loan.loanNumber,
         'member_id': loan.memberId,
         'member_name': loan.memberName,
+        'returned_by_member_id': loan.memberId,
+        'returned_by_member_name': loan.memberName,
+        'checked_by_user_id': validatedByUserId,
+        'checked_by_name': validatedByName,
         'item_ids': loan.itemIds,
         'return_decision': decision.name,
         'refund_amount': refundAmount,
@@ -551,6 +624,9 @@ class MaterialReturnService {
       for (final itemId in loan.itemIds) {
         final check =
             checksByItemId[itemId] ?? MaterialReturnItemCheck(itemId: itemId);
+        if (check.condition == MaterialReturnItemCondition.notReturned) {
+          continue;
+        }
         final hasIncident = check.condition != MaterialReturnItemCondition.good;
         transaction.update(itemsRef.doc(itemId), {
           'statut': hasIncident ? 'en_maintenance' : 'disponible',
@@ -583,7 +659,7 @@ class MaterialReturnService {
             'member_name': loan.memberName,
             'item_id': itemId,
             'condition': check.condition.name,
-            'status': check.condition == MaterialReturnItemCondition.missing
+            'status': check.condition == MaterialReturnItemCondition.lost
                 ? 'decision_required'
                 : 'pending_maintenance',
             'note': check.note?.trim(),

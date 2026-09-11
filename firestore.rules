@@ -1251,7 +1251,7 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'statut', 'current_loan_id', 'last_return_condition',
             'last_return_note', 'last_return_photo_urls',
-            'condition_history', 'updatedAt'
+            'condition_history', 'defects', 'updatedAt'
           ])
           && request.resource.data.statut in ['disponible', 'reserve', 'prete', 'en_maintenance']
         );

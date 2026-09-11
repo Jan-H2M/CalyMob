@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/material_loan.dart';
 
@@ -12,15 +14,51 @@ class MaterialLoanService {
 
   final FirebaseFirestore _firestore;
   FirebaseFunctions? _functions;
+  FirebaseStorage? _storage;
 
   MaterialLoanService({
     FirebaseFirestore? firestore,
     FirebaseFunctions? functions,
+    FirebaseStorage? storage,
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
-        _functions = functions;
+        _functions = functions,
+        _storage = storage;
 
   FirebaseFunctions get _functionsInstance =>
       _functions ??= FirebaseFunctions.instanceFor(region: 'europe-west1');
+  FirebaseStorage get _storageInstance => _storage ??= FirebaseStorage.instance;
+
+  /// Signature image is stored before the transaction so Firestore holds only
+  /// an immutable Storage URL, never a caller supplied URL.
+  Future<String> uploadHandoverSignature({
+    required String clubId,
+    required String memberId,
+    required Uint8List bytes,
+  }) async {
+    if (bytes.isEmpty)
+      throw ArgumentError.value(bytes, 'bytes', 'Signature vide');
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    final ref = _storageInstance
+        .ref()
+        .child('clubs/$clubId/loan_signatures/${memberId}_${stamp}.png');
+    await ref.putData(bytes, SettableMetadata(contentType: 'image/png'));
+    return ref.getDownloadURL();
+  }
+
+  /// Email generation is server-authoritative: it reads the signed loan and
+  /// its canonical member address, never a client-controlled recipient.
+  Future<void> sendHandoverReceiptEmail({
+    required String clubId,
+    required String loanId,
+  }) async {
+    final result = await _functionsInstance
+        .httpsCallable('sendMaterialLoanHandoverReceipt')
+        .call({'clubId': clubId, 'loanId': loanId});
+    final data = Map<String, dynamic>.from(result.data as Map);
+    if (data['success'] != true) {
+      throw StateError('La copie du prêt n’a pas pu être envoyée.');
+    }
+  }
 
   Stream<List<MaterialLoan>> watchMyActiveLoans({
     required String clubId,
@@ -101,6 +139,8 @@ class MaterialLoanService {
       return MaterialLoanMember(
         id: document.id,
         name: name.isEmpty ? 'Membre' : name,
+        email: (data['email'] ?? data['email_address'] ?? data['emailAddress'])
+            ?.toString(),
       );
     }).toList();
     members.sort((left, right) => left.name.compareTo(right.name));
@@ -115,6 +155,8 @@ class MaterialLoanService {
     required DateTime expectedReturnDate,
     required String createdByUserId,
     required String createdByName,
+    required MaterialLoanHandoverReceipt handoverReceipt,
+    List<MaterialLoanRequestedLine> nonTrackedLines = const [],
     String? notes,
   }) =>
       _createLoan(
@@ -124,6 +166,8 @@ class MaterialLoanService {
         expectedReturnDate: expectedReturnDate,
         createdByUserId: createdByUserId,
         createdByName: createdByName,
+        handoverReceipt: handoverReceipt,
+        nonTrackedLines: nonTrackedLines,
         notes: notes,
         loanStatus: 'actif',
         itemStatus: 'prete',
@@ -217,10 +261,12 @@ class MaterialLoanService {
     required String cautionStatus,
     required String paymentMode,
     required String handoverStatus,
+    MaterialLoanHandoverReceipt? handoverReceipt,
+    List<MaterialLoanRequestedLine> nonTrackedLines = const [],
     List<MaterialLoanRequestedLine> requestedLines = const [],
     String? notes,
   }) async {
-    if (items.isEmpty && requestedLines.isEmpty) {
+    if (items.isEmpty && requestedLines.isEmpty && nonTrackedLines.isEmpty) {
       throw ArgumentError.value(
           items, 'items', 'Au moins un article est requis');
     }
@@ -283,6 +329,9 @@ class MaterialLoanService {
           'type_id': data['typeId']?.toString() ?? requestedItem.typeId,
           'type_name': requestedItem.typeName,
           'variant': requestedItem.variant,
+          // Evidence at handover: later repairs must not rewrite the state
+          // which the borrower saw and accepted for this specific loan.
+          'open_defects': data['defects'] ?? const <dynamic>[],
         });
       }
 
@@ -307,8 +356,13 @@ class MaterialLoanService {
         'loanNumber': loanNumber,
         'memberId': member.id,
         'memberName': member.name,
+        if (member.email != null && member.email!.trim().isNotEmpty)
+          'memberEmail': member.email!.trim(),
         'itemIds': items.map((item) => item.id).toList(),
         'items_snapshot': itemSnapshots,
+        if (nonTrackedLines.isNotEmpty)
+          'non_tracked_lines':
+              nonTrackedLines.map((line) => line.toMap()).toList(),
         if (requestedLines.isNotEmpty) ...{
           'requested_lines':
               requestedLines.map((line) => line.toMap()).toList(),
@@ -321,6 +375,8 @@ class MaterialLoanService {
         'caution_payment_status': cautionStatus,
         'payment_mode': paymentMode,
         'handover_status': handoverStatus,
+        if (handoverReceipt != null)
+          'handover_receipt': handoverReceipt.toMap(),
         'notes': notes?.trim(),
         'createdBy': createdByUserId,
         'createdByName': createdByName,
@@ -332,11 +388,14 @@ class MaterialLoanService {
         'event_type': loanStatus == 'actif'
             ? 'material_loan_created'
             : 'material_loan_payment_pending',
+        'movement_direction': loanStatus == 'actif' ? 'outgoing' : 'pending',
         'entity_type': 'inventory_loan',
         'entity_id': loanRef.id,
         'loan_number': loanNumber,
         'member_id': member.id,
         'member_name': member.name,
+        'handed_over_to_member_id': member.id,
+        'handed_over_to_member_name': member.name,
         'item_ids': items.map((item) => item.id).toList(),
         'caution_amount': 0,
         'actor_id': createdByUserId,
@@ -537,8 +596,9 @@ class MaterialLoanService {
 class MaterialLoanMember {
   final String id;
   final String name;
+  final String? email;
 
-  const MaterialLoanMember({required this.id, required this.name});
+  const MaterialLoanMember({required this.id, required this.name, this.email});
 }
 
 class MaterialLoanPaymentQr {

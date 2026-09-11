@@ -38,6 +38,9 @@ const {
 exports.getMaterialLoanPaymentQr = getMaterialLoanPaymentQr;
 exports.sendMaterialLoanPaymentQrEmail = sendMaterialLoanPaymentQrEmail;
 
+const { sendMaterialLoanHandoverReceipt } = require('./src/loans/sendMaterialLoanHandoverReceipt');
+exports.sendMaterialLoanHandoverReceipt = sendMaterialLoanHandoverReceipt;
+
 // Payment reminder — called by CalyCompta to send QR emails + post message in event chat
 const { sendPaymentReminder } = require('./src/payment/sendPaymentReminder');
 exports.sendPaymentReminder = sendPaymentReminder;
