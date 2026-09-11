@@ -229,6 +229,31 @@ class BoutiqueCartProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Replaces one cart line after its size, delivery mode or personalization
+  /// was edited. If the new configuration already exists, quantities merge.
+  Future<void> replaceItem(
+      String originalKey, BoutiqueCartItem replacement) async {
+    final originalIndex = _items.indexWhere((item) => item.key == originalKey);
+    if (originalIndex < 0) return;
+
+    _items.removeAt(originalIndex);
+    final matchingIndex =
+        _items.indexWhere((item) => item.key == replacement.key);
+    if (matchingIndex >= 0) {
+      final matching = _items[matchingIndex];
+      _items[matchingIndex] = matching.copyWith(
+        qty: matching.qty + replacement.qty,
+        unitPrice: replacement.unitPrice,
+        deliverySurcharge: replacement.deliverySurcharge,
+        productName: replacement.productName,
+      );
+    } else {
+      _items.insert(originalIndex, replacement);
+    }
+    await _persist();
+    notifyListeners();
+  }
+
   Future<void> clear() async {
     _items.clear();
     await _persist();
@@ -319,8 +344,7 @@ class BoutiqueCartProvider extends ChangeNotifier {
       total += config.clubLogo.surcharge;
     }
     final name = personalization['name'];
-    final nameText =
-        name is Map ? (name['text']?.toString().trim() ?? '') : '';
+    final nameText = name is Map ? (name['text']?.toString().trim() ?? '') : '';
     if (nameText.isNotEmpty) {
       total += config.name.surcharge +
           nameText.length * config.name.pricePerCharacter;
@@ -347,7 +371,8 @@ class BoutiqueCartProvider extends ChangeNotifier {
     }
     final random = Random.secure();
     final bytes = List<int>.generate(20, (_) => random.nextInt(256));
-    final key = 'chk-${bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join()}';
+    final key =
+        'chk-${bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join()}';
     await prefs.setString(_idempotencyStorageKey, key);
     return key;
   }

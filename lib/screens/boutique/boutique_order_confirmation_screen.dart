@@ -1,6 +1,5 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../../config/app_colors.dart';
@@ -68,7 +67,7 @@ class BoutiqueOrderConfirmationScreen extends StatelessWidget {
                       const Icon(
                         Icons.check_circle_outline,
                         color: AppColors.middenblauw,
-                        size: 54,
+                        size: 44,
                       ),
                       const SizedBox(height: 10),
                       Text(
@@ -76,7 +75,7 @@ class BoutiqueOrderConfirmationScreen extends StatelessWidget {
                         style: const TextStyle(
                           color: AppColors.donkerblauw,
                           fontWeight: FontWeight.w900,
-                          fontSize: 24,
+                          fontSize: 19,
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -85,7 +84,7 @@ class BoutiqueOrderConfirmationScreen extends StatelessWidget {
                         style: const TextStyle(
                           color: AppColors.oranje,
                           fontWeight: FontWeight.w900,
-                          fontSize: 22,
+                          fontSize: 20,
                         ),
                       ),
                       const SizedBox(height: 18),
@@ -100,6 +99,7 @@ class BoutiqueOrderConfirmationScreen extends StatelessWidget {
                           beneficiary: beneficiary,
                           iban: iban,
                           communication: ogmDisplay,
+                          amount: amount,
                         ),
                       const SizedBox(height: 18),
                       if (orderId != null && orderId!.isNotEmpty) ...[
@@ -236,10 +236,12 @@ class _BankPaymentDetails extends StatefulWidget {
   final String beneficiary;
   final String iban;
   final String communication;
+  final double amount;
   const _BankPaymentDetails(
       {required this.beneficiary,
       required this.iban,
-      required this.communication});
+      required this.communication,
+      required this.amount});
 
   @override
   State<_BankPaymentDetails> createState() => _BankPaymentDetailsState();
@@ -248,26 +250,6 @@ class _BankPaymentDetails extends StatefulWidget {
 class _BankPaymentDetailsState extends State<_BankPaymentDetails> {
   bool communicationCopied = false;
 
-  Future<void> _copy(String value, {bool communication = false}) async {
-    try {
-      await Clipboard.setData(ClipboardData(text: value));
-      if (!mounted) return;
-      if (communication) setState(() => communicationCopied = true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(communication ? 'Communication copiée' : 'IBAN copié'),
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Impossible de copier. Réessayez.'),
-        ),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) => Column(
         children: [
@@ -275,17 +257,34 @@ class _BankPaymentDetailsState extends State<_BankPaymentDetails> {
             icon: Icons.account_balance_outlined,
             title: 'Virement bancaire',
             text:
-                "Copiez l’IBAN et la communication séparément, puis collez-les dans votre application bancaire.",
+                "Dans votre application bancaire, effectuez le virement en utilisant l’IBAN ci-dessous. Copiez aussi la communication libre : elle est indispensable pour identifier correctement votre paiement.",
           ),
           const SizedBox(height: 16),
-          _PaymentLine(label: 'Bénéficiaire', value: widget.beneficiary),
-          _PaymentLine(
-              label: 'IBAN',
-              value: formatIbanDisplay(widget.iban),
-              onCopy: () => _copy(widget.iban)),
-          _PaymentLine(
-              label: 'Communication',
-              value: widget.communication),
+          _TransferDetailsCard(
+            beneficiary: widget.beneficiary,
+            iban: formatIbanDisplay(widget.iban),
+            communication: widget.communication,
+            amount: widget.amount,
+          ),
+          const SizedBox(height: 12),
+          PaymentCopyButton(
+            value: widget.iban,
+            label: 'Copier l’IBAN',
+            successMessage:
+                'IBAN copié. Collez-le dans votre application bancaire.',
+            icon: Icons.account_balance_outlined,
+            buttonKey: const Key('copy-payment-iban'),
+          ),
+          const SizedBox(height: 8),
+          PaymentCopyButton(
+            value: widget.amount.toStringAsFixed(2),
+            label: 'Copier le montant',
+            successMessage:
+                'Montant copié. Collez-le dans votre application bancaire.',
+            icon: Icons.euro_outlined,
+            buttonKey: const Key('copy-payment-amount'),
+          ),
+          const SizedBox(height: 8),
           PaymentCommunicationCopyButton(
             communication: widget.communication,
             onCopied: () => setState(() => communicationCopied = true),
@@ -293,12 +292,18 @@ class _BankPaymentDetailsState extends State<_BankPaymentDetails> {
           const SizedBox(height: 10),
           SizedBox(
             width: double.infinity,
-            child: FilledButton(
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.donkerblauw,
+                side: const BorderSide(color: Color(0xFF9AB8D4)),
+                textStyle: const TextStyle(fontWeight: FontWeight.w800),
+              ),
               onPressed: communicationCopied
                   ? () =>
                       Navigator.of(context).popUntil((route) => route.isFirst)
                   : null,
-              child: const Text('Fermer'),
+              icon: const Icon(Icons.close_rounded),
+              label: const Text('Fermer'),
             ),
           ),
         ],
@@ -308,12 +313,10 @@ class _BankPaymentDetailsState extends State<_BankPaymentDetails> {
 class _PaymentLine extends StatelessWidget {
   final String label;
   final String value;
-  final VoidCallback? onCopy;
 
   const _PaymentLine({
     required this.label,
     required this.value,
-    this.onCopy,
   });
 
   @override
@@ -342,12 +345,70 @@ class _PaymentLine extends StatelessWidget {
               ),
             ),
           ),
-          if (onCopy != null)
-            IconButton(
-              tooltip: 'Copier',
-              onPressed: onCopy,
-              icon: const Icon(Icons.copy, size: 18),
+        ],
+      ),
+    );
+  }
+}
+
+class _TransferDetailsCard extends StatelessWidget {
+  final String beneficiary;
+  final String iban;
+  final String communication;
+  final double amount;
+
+  const _TransferDetailsCard({
+    required this.beneficiary,
+    required this.iban,
+    required this.communication,
+    required this.amount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final formatter = NumberFormat.currency(
+      locale: 'fr_BE',
+      symbol: '€',
+      decimalDigits: 2,
+    );
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F9FD),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFD7E8F7)),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              children: [
+                const Text(
+                  'Montant',
+                  style: TextStyle(
+                    color: AppColors.donkerblauw,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  formatter.format(amount),
+                  style: const TextStyle(
+                    color: AppColors.oranje,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
             ),
+          ),
+          const Divider(height: 1, color: Color(0xFFD7E8F7)),
+          const SizedBox(height: 12),
+          _PaymentLine(label: 'Bénéficiaire', value: beneficiary),
+          _PaymentLine(label: 'IBAN', value: iban),
+          _PaymentLine(label: 'Communication', value: communication),
         ],
       ),
     );
@@ -369,15 +430,15 @@ class _InfoBox extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFFE3F2FD),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
-          Icon(icon, color: AppColors.donkerblauw),
-          const SizedBox(width: 10),
+          Icon(icon, color: AppColors.donkerblauw, size: 27),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -387,6 +448,7 @@ class _InfoBox extends StatelessWidget {
                   style: const TextStyle(
                     color: AppColors.donkerblauw,
                     fontWeight: FontWeight.w900,
+                    fontSize: 16,
                   ),
                 ),
                 const SizedBox(height: 3),
@@ -394,8 +456,9 @@ class _InfoBox extends StatelessWidget {
                   text,
                   style: const TextStyle(
                     color: AppColors.donkerblauw,
-                    fontWeight: FontWeight.w700,
-                    height: 1.25,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    height: 1.35,
                   ),
                 ),
               ],

@@ -50,7 +50,9 @@ void main() {
       ),
     );
 
-    final button = tester.widget<OutlinedButton>(find.byType(OutlinedButton));
+    final button = tester.widget<ButtonStyleButton>(
+      find.byKey(const Key('copy-payment-communication')),
+    );
     expect(button.onPressed, isNull);
   });
 

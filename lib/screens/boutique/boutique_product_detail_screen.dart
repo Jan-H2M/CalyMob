@@ -9,10 +9,12 @@ import '../../widgets/ocean/ocean_gradient_background.dart';
 
 class BoutiqueProductDetailScreen extends StatefulWidget {
   final BoutiqueProduct product;
+  final BoutiqueCartItem? editingItem;
 
   const BoutiqueProductDetailScreen({
     super.key,
     required this.product,
+    this.editingItem,
   });
 
   @override
@@ -31,13 +33,29 @@ class _BoutiqueProductDetailScreenState
   @override
   void initState() {
     super.initState();
-    _selectedVariant = widget.product.variants.isNotEmpty
+    final editingItem = widget.editingItem;
+    _selectedVariant = editingItem == null
+        ? (widget.product.variants.isNotEmpty
+            ? widget.product.variants.first
+            : null)
+        : widget.product.variants
+            .where((variant) => variant.id == editingItem.variantId)
+            .firstOrNull;
+    _selectedVariant ??= widget.product.variants.isNotEmpty
         ? widget.product.variants.first
         : null;
-    _selectedDeliveryMode = widget.product.deliveryModes.first;
-    _quantity = _minimumQuantity;
+    _selectedDeliveryMode = editingItem == null
+        ? widget.product.deliveryModes.first
+        : widget.product.deliveryModes.firstWhere(
+            (mode) =>
+                boutiqueDeliveryModeWireValue(mode) == editingItem.deliveryMode,
+            orElse: () => widget.product.deliveryModes.first,
+          );
+    _quantity = editingItem?.qty ?? _minimumQuantity;
     final personalization = widget.product.personalization;
-    if (personalization?.clubLogo.canChoose == true) {
+    if (editingItem != null) {
+      _personalization = _personalizationFromCart(editingItem.personalization);
+    } else if (personalization?.clubLogo.canChoose == true) {
       _personalization = BoutiquePersonalizationSelection(
         clubLogo: true,
         clubLogoZone: personalization!.clubLogo.zones.first,
@@ -165,6 +183,7 @@ class _BoutiqueProductDetailScreenState
                         _PersonalizationSection(
                           config: widget.product.personalization!,
                           selection: _personalization,
+                          articleTotal: orderTotal,
                           onChanged: (selection) {
                             setState(() => _personalization = selection);
                           },
@@ -219,11 +238,11 @@ class _BoutiqueProductDetailScreenState
                         width: double.infinity,
                         child: FilledButton.icon(
                           onPressed: _canPrepareOrder
-                              ? () => _addToCart(context, unitPrice)
+                              ? () => _saveToCart(context, unitPrice)
                               : null,
                           icon: const Icon(Icons.shopping_bag_outlined),
                           label: Text(
-                            'Ajouter au panier · ${formatter.format(orderTotal)}',
+                            '${widget.editingItem == null ? 'Ajouter au panier' : 'Mettre à jour le panier'} · ${formatter.format(orderTotal)}',
                           ),
                         ),
                       ),
@@ -276,7 +295,7 @@ class _BoutiqueProductDetailScreenState
     return variant?.stockCount;
   }
 
-  Future<void> _addToCart(BuildContext context, double unitPrice) async {
+  Future<void> _saveToCart(BuildContext context, double unitPrice) async {
     final navigator = Navigator.of(context);
     final rootNavigator = Navigator.of(context, rootNavigator: true);
     final messenger = ScaffoldMessenger.of(context);
@@ -305,8 +324,21 @@ class _BoutiqueProductDetailScreenState
       personalization: personalizationPayload,
     );
 
-    await context.read<BoutiqueCartProvider>().addItem(item);
+    final cart = context.read<BoutiqueCartProvider>();
+    if (widget.editingItem case final editingItem?) {
+      await cart.replaceItem(editingItem.key, item);
+    } else {
+      await cart.addItem(item);
+    }
     if (!context.mounted) return;
+
+    if (widget.editingItem != null) {
+      Navigator.of(context).pop();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Article modifié dans le panier.')),
+      );
+      return;
+    }
 
     _showAddedToCartToast(context);
     await Future<void>.delayed(const Duration(milliseconds: 850));
@@ -320,6 +352,28 @@ class _BoutiqueProductDetailScreenState
         content: Text('Article ajouté au panier.'),
         duration: Duration(seconds: 3),
       ),
+    );
+  }
+
+  BoutiquePersonalizationSelection _personalizationFromCart(
+    Map<String, dynamic> payload,
+  ) {
+    final logo = payload['clubLogo'];
+    final name = payload['name'];
+    final certification = payload['certification'];
+    return BoutiquePersonalizationSelection(
+      clubLogo: logo is Map && logo['enabled'] == true,
+      clubLogoZone: logo is Map ? logo['zone']?.toString() : null,
+      nameEnabled:
+          name is Map && (name['text']?.toString().trim().isNotEmpty ?? false),
+      nameText: name is Map ? name['text']?.toString() : null,
+      nameZone: name is Map ? name['zone']?.toString() : null,
+      certificationEnabled: certification is Map &&
+          (certification['value']?.toString().trim().isNotEmpty ?? false),
+      certification:
+          certification is Map ? certification['value']?.toString() : null,
+      certificationZone:
+          certification is Map ? certification['zone']?.toString() : null,
     );
   }
 
@@ -409,11 +463,13 @@ class _AddedToCartToast extends StatelessWidget {
 class _PersonalizationSection extends StatelessWidget {
   final BoutiquePersonalizationConfig config;
   final BoutiquePersonalizationSelection selection;
+  final double articleTotal;
   final ValueChanged<BoutiquePersonalizationSelection> onChanged;
 
   const _PersonalizationSection({
     required this.config,
     required this.selection,
+    required this.articleTotal,
     required this.onChanged,
   });
 
@@ -444,21 +500,12 @@ class _PersonalizationSection extends StatelessWidget {
                 size: 20,
               ),
               const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  config.techniqueLabel,
-                  style: const TextStyle(
-                    color: AppColors.donkerblauw,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 16,
-                  ),
-                ),
-              ),
               Text(
-                '+ ${formatter.format(selection.surcharge(config))}',
+                config.techniqueLabel,
                 style: const TextStyle(
-                  color: AppColors.oranje,
+                  color: AppColors.donkerblauw,
                   fontWeight: FontWeight.w900,
+                  fontSize: 16,
                 ),
               ),
             ],
@@ -479,17 +526,16 @@ class _PersonalizationSection extends StatelessWidget {
           ],
           const SizedBox(height: 14),
           if (config.clubLogo.canChoose) ...[
-            ListTile(
+            const ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(
+              leading: Icon(
                 Icons.verified_rounded,
                 color: AppColors.middenblauw,
               ),
-              title: const Text(
+              title: Text(
                 'Logo club inclus',
                 style: TextStyle(fontWeight: FontWeight.w800),
               ),
-              subtitle: Text(formatter.format(config.clubLogo.surcharge)),
             ),
             if (config.clubLogo.zones.length > 1)
               _ZoneDropdown(
@@ -502,10 +548,13 @@ class _PersonalizationSection extends StatelessWidget {
           ],
           if (config.name.canChoose) ...[
             const SizedBox(height: 12),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Nom à personnaliser',
-                  style: TextStyle(fontWeight: FontWeight.w800)),
+            _PersonalizationToggle(
+              label: 'Nom à personnaliser',
+              price: selection.hasName
+                  ? (config.name.surcharge +
+                      (selection.nameText ?? '').trim().length *
+                          config.name.pricePerCharacter)
+                  : null,
               value: selection.nameEnabled,
               onChanged: (enabled) => onChanged(selection.copyWith(
                 nameEnabled: enabled,
@@ -541,11 +590,6 @@ class _PersonalizationSection extends StatelessWidget {
                         color: Colors.grey.shade600,
                         fontSize: 12,
                         fontWeight: FontWeight.w600)),
-                const Spacer(),
-                Text(
-                    '+ ${formatter.format((selection.nameText ?? '').trim().length * config.name.pricePerCharacter)}',
-                    style: const TextStyle(
-                        color: AppColors.oranje, fontWeight: FontWeight.w900)),
               ]),
             ],
             if (selection.hasName) ...[
@@ -561,10 +605,11 @@ class _PersonalizationSection extends StatelessWidget {
           ],
           if (config.certification.canChoose) ...[
             const SizedBox(height: 12),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Brevet',
-                  style: TextStyle(fontWeight: FontWeight.w800)),
+            _PersonalizationToggle(
+              label: 'Brevet',
+              price: selection.hasCertification
+                  ? config.certification.surcharge
+                  : null,
               value: selection.certificationEnabled,
               onChanged: (enabled) => onChanged(selection.copyWith(
                 certificationEnabled: enabled,
@@ -613,6 +658,31 @@ class _PersonalizationSection extends StatelessWidget {
               ],
             ],
           ],
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              children: [
+                _PriceSummaryRow(
+                  label:
+                      'Suppléments de ${config.techniqueLabel.toLowerCase()}',
+                  value: formatter.format(selection.surcharge(config)),
+                  emphasize: false,
+                ),
+                const SizedBox(height: 5),
+                _PriceSummaryRow(
+                  label: 'Total de l’article',
+                  value: formatter.format(articleTotal),
+                  emphasize: true,
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -634,6 +704,83 @@ class _PersonalizationSection extends StatelessWidget {
     }
     return parts.join(' · ');
   }
+}
+
+class _PersonalizationToggle extends StatelessWidget {
+  final String label;
+  final double? price;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _PersonalizationToggle({
+    required this.label,
+    required this.price,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final formatter = NumberFormat.currency(
+      locale: 'fr_BE',
+      symbol: '€',
+      decimalDigits: 2,
+    );
+    return Row(
+      children: [
+        Expanded(
+          child:
+              Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
+        ),
+        if (price != null) ...[
+          Text(
+            '+ ${formatter.format(price)}',
+            style: const TextStyle(
+              color: AppColors.oranje,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
+        Switch(value: value, onChanged: onChanged),
+      ],
+    );
+  }
+}
+
+class _PriceSummaryRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool emphasize;
+
+  const _PriceSummaryRow({
+    required this.label,
+    required this.value,
+    required this.emphasize,
+  });
+
+  @override
+  Widget build(BuildContext context) => Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: AppColors.donkerblauw,
+                fontWeight: emphasize ? FontWeight.w900 : FontWeight.w700,
+              ),
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              color: AppColors.oranje,
+              fontWeight: FontWeight.w900,
+              fontSize: emphasize ? 16 : 14,
+            ),
+          ),
+        ],
+      );
 }
 
 class _DeliverySection extends StatelessWidget {

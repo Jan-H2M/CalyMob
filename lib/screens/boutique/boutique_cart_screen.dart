@@ -3,9 +3,13 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/app_colors.dart';
+import '../../config/firebase_config.dart';
+import '../../models/boutique/boutique_product.dart';
 import '../../providers/boutique_cart_provider.dart';
+import '../../services/boutique/boutique_service.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'boutique_checkout_screen.dart';
+import 'boutique_product_detail_screen.dart';
 
 class BoutiqueCartScreen extends StatelessWidget {
   const BoutiqueCartScreen({super.key});
@@ -72,6 +76,7 @@ class BoutiqueCartScreen extends StatelessWidget {
                             cart,
                             item,
                           ),
+                          onEdit: () => _editItem(context, item),
                         );
                       },
                       separatorBuilder: (_, __) => const SizedBox(height: 12),
@@ -145,6 +150,40 @@ class BoutiqueCartScreen extends StatelessWidget {
     );
   }
 
+  Future<void> _editItem(
+    BuildContext context,
+    BoutiqueCartItem item,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final products = await BoutiqueService()
+        .watchPublishedProducts(FirebaseConfig.defaultClubId)
+        .first;
+    if (!context.mounted) return;
+    BoutiqueProduct? product;
+    for (final candidate in products) {
+      if (candidate.id == item.productId) {
+        product = candidate;
+        break;
+      }
+    }
+    if (product == null) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Cet article n’est plus disponible à la modification.'),
+        ),
+      );
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => BoutiqueProductDetailScreen(
+          product: product!,
+          editingItem: item,
+        ),
+      ),
+    );
+  }
+
   Future<void> _confirmClearCart(
     BuildContext context,
     BoutiqueCartProvider cart,
@@ -204,12 +243,14 @@ class _CartItemCard extends StatelessWidget {
   final NumberFormat formatter;
   final ValueChanged<int> onQtyChanged;
   final VoidCallback onDelete;
+  final VoidCallback onEdit;
 
   const _CartItemCard({
     required this.item,
     required this.formatter,
     required this.onQtyChanged,
     required this.onDelete,
+    required this.onEdit,
   });
 
   @override
@@ -261,6 +302,18 @@ class _CartItemCard extends StatelessWidget {
                           ),
                         ),
                       ),
+                      IconButton(
+                        tooltip: 'Modifier',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 32,
+                          height: 32,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: onEdit,
+                        icon: const Icon(Icons.edit_outlined, size: 20),
+                      ),
+                      const SizedBox(width: 4),
                       IconButton(
                         tooltip: 'Supprimer',
                         padding: EdgeInsets.zero,
