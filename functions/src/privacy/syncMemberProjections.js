@@ -13,6 +13,12 @@ const { memberDisplayName } = require('../utils/memberName');
 const { resolveMemberStatus } = require('../utils/memberStatus');
 
 const FUNCTION_REGION = 'europe-west1';
+const CLUB_TIME_ZONE = 'Europe/Brussels';
+const birthdayDateFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: CLUB_TIME_ZONE,
+  month: '2-digit',
+  day: '2-digit',
+});
 
 function nonEmptyString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
@@ -42,7 +48,12 @@ function birthdayParts(data) {
   }
   const date = asDate(data.birth_date) || asDate(data.date_naissance);
   if (!date) return { birth_month: null, birth_day: null };
-  return { birth_month: date.getMonth() + 1, birth_day: date.getDate() };
+  const parts = Object.fromEntries(
+    birthdayDateFormatter.formatToParts(date)
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value]),
+  );
+  return { birth_month: Number(parts.month), birth_day: Number(parts.day) };
 }
 
 function resolvedMemberStatus(data) {
@@ -132,5 +143,6 @@ module.exports = {
   syncMemberProjections,
   buildMemberDirectoryProjection,
   buildOperationalStatusProjection,
+  birthdayParts,
   resolvedMemberStatus,
 };
