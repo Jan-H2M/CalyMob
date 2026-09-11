@@ -10,6 +10,7 @@ import '../../services/member_service.dart';
 import '../../services/attendance_service.dart';
 import '../../services/operation_service.dart';
 import '../../services/piscine_session_service.dart';
+import '../../utils/member_search_request_gate.dart';
 import 'member_validation_card.dart';
 
 /// Scanner page for member check-in with QR code scanning
@@ -62,9 +63,11 @@ class _ScanPageState extends State<ScanPage> {
   List<MemberProfile> _searchResults = [];
   bool _isSearching = false;
   bool _showSearch = false;
+  final MemberSearchRequestGate _searchRequestGate = MemberSearchRequestGate();
 
   @override
   void dispose() {
+    _searchRequestGate.invalidate();
     _scannerController.dispose();
     _searchController.dispose();
     super.dispose();
@@ -136,7 +139,8 @@ class _ScanPageState extends State<ScanPage> {
       // Check if cotisation, certificat AND assurance are valid for auto-registration
       final cotisationValid = member.cotisationStatus == ValidationStatus.valid;
       final certificatValid = member.certificatStatus == ValidationStatus.valid;
-      final assuranceValid = member.assuranceStatus == ValidationStatus.valid;
+      final assuranceValid = !member.requiresExternalInsurance ||
+          member.assuranceStatus == ValidationStatus.valid;
       final allValid = cotisationValid && certificatValid && assuranceValid;
 
       debugPrint('🟢 Auto-register check: cotisation=$cotisationValid, certificat=$certificatValid, assurance=$assuranceValid, allValid=$allValid, alreadyPresent=$alreadyPresent');
@@ -527,6 +531,7 @@ class _ScanPageState extends State<ScanPage> {
   }
 
   void _resetScanner() {
+    _searchRequestGate.invalidate();
     setState(() {
       _isScanning = true;
       _scannedMember = null;
@@ -540,9 +545,11 @@ class _ScanPageState extends State<ScanPage> {
   }
 
   Future<void> _searchMembers(String query) async {
+    final request = _searchRequestGate.begin(query);
     if (query.length < 2) {
       setState(() {
         _searchResults = [];
+        _isSearching = false;
       });
       return;
     }
@@ -553,18 +560,25 @@ class _ScanPageState extends State<ScanPage> {
 
     try {
       final results = await _memberService.searchMembers(widget.clubId, query);
-      setState(() {
-        _searchResults = results;
-        _isSearching = false;
-      });
+      if (mounted &&
+          _searchRequestGate.accepts(request, _searchController.text)) {
+        setState(() {
+          _searchResults = results;
+          _isSearching = false;
+        });
+      }
     } catch (e) {
-      setState(() {
-        _isSearching = false;
-      });
+      if (mounted &&
+          _searchRequestGate.accepts(request, _searchController.text)) {
+        setState(() {
+          _isSearching = false;
+        });
+      }
     }
   }
 
   void _selectMember(MemberProfile member) async {
+    _searchRequestGate.invalidate();
     setState(() {
       _showSearch = false;
       _isLoading = true;

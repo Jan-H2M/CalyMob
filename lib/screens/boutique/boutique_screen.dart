@@ -9,7 +9,6 @@ import '../../providers/boutique_cart_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../services/boutique/boutique_service.dart';
 import '../../services/feature_flag_service.dart';
-import '../../utils/club_role_utils.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'boutique_cart_screen.dart';
 import 'boutique_product_detail_screen.dart';
@@ -169,11 +168,11 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                     _BoutiqueHomeCard(
                       icon: Icons.assignment_return_outlined,
                       title: canOpenReturns
-                          ? 'Prêts matériel'
+                          ? 'Prêts de matériel'
                           : 'Mon matériel emprunté',
                       subtitle: canOpenReturns
-                          ? 'Créer un prêt, contrôler les retours et suivre les cautions.'
-                          : 'Consulter le matériel que vous devez rapporter à la séance piscine.',
+                          ? 'Créer un prêt, enregistrer la remise et suivre les retours.'
+                          : 'Consultez le matériel emprunté et sa date de retour.',
                       emphasized: true,
                       onTap: () {
                         Navigator.of(context).push(
@@ -194,15 +193,7 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
   }
 
   bool _canOpenMaterialReturns(MemberProvider memberProvider) {
-    final role = memberProvider.appRole?.toLowerCase();
-    if (role == 'admin' || role == 'superadmin') {
-      return true;
-    }
-
-    final roles = ClubRoleUtils.normalizeRoles(memberProvider.clubStatuten);
-    return roles.contains('gonflage') ||
-        roles.contains('ca') ||
-        roles.contains('encadrant');
+    return memberProvider.isGonflage;
   }
 }
 

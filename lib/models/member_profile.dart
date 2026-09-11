@@ -205,6 +205,10 @@ class MemberProfile {
       birthMonth: _intOrNull(data['birth_month']),
       birthDay: _intOrNull(data['birth_day']),
       memberStatus: resolveMemberStatus(data),
+      membershipCategoryCode: _stringOrNull(
+        operationalStatus?['membership_category_code'] ??
+            data['membership_category_code'],
+      ),
       cotisationValidite: _parseDate(operationalStatus?['cotisation_validite']),
       certificatMedicalValidite: _parseDate(
         operationalStatus?['certificat_medical_validite'],
@@ -460,6 +464,12 @@ class MemberProfile {
   /// Validité d'assurance effective pour l'accès.
   /// L'accès piscine/activités ne dépend que du champ visible dans CalyCompta.
   DateTime? get assuranceValiditeEffective => assuranceValidite;
+
+  /// External-federation members carry their own insurance. LIFRAS and the
+  /// other Calypso membership types are covered through their membership and
+  /// must not be refused merely because this manual date is empty.
+  bool get requiresExternalInsurance =>
+      membershipCategoryCode == 'membre_autre_federation';
 
   /// Statut de validation de l'assurance
   ValidationStatus get assuranceStatus {

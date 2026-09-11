@@ -8,6 +8,7 @@ jest.mock('firebase-functions/v2/firestore', () => ({
 const {
   buildMemberDirectoryProjection,
   buildOperationalStatusProjection,
+  birthdayParts,
 } = require('./syncMemberProjections');
 
 describe('member privacy projections', () => {
@@ -50,6 +51,14 @@ describe('member privacy projections', () => {
     expect(projected.birth_day).toBe(14);
     expect(projected).not.toHaveProperty('birth_date');
     expect(projected).not.toHaveProperty('date_naissance');
+  });
+
+  test('keeps the club-local birthday when its stored instant is before UTC midnight', () => {
+    // A date selected as 7 July in Belgium is stored as 6 July 22:00 UTC
+    // during CEST. Projecting with the server timezone used to expose 6 July.
+    expect(birthdayParts({
+      birth_date: new Date('1991-07-06T22:00:00.000Z'),
+    })).toEqual({ birth_month: 7, birth_day: 7 });
   });
 
   test('birthday sharing remains enabled when the field is absent', () => {
@@ -95,11 +104,13 @@ describe('member privacy projections', () => {
       cotisation_validite: 'membership-date',
       certificat_medical_validite: 'medical-date',
       assurance_validite: 'insurance-date',
+      membership_category_code: 'membre_autre_federation',
       email: 'private@example.test',
       iban: 'BE00 PRIVATE',
     });
     expect(projected.cotisation_validite).toBe('membership-date');
     expect(projected.certificat_medical_validite).toBe('medical-date');
+    expect(projected.membership_category_code).toBe('membre_autre_federation');
     expect(projected).not.toHaveProperty('email');
     expect(projected).not.toHaveProperty('iban');
   });

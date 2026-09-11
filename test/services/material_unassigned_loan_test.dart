@@ -62,7 +62,7 @@ void main() {
     expect(loan['itemIds'], isEmpty);
     expect(loan['items_snapshot'], isEmpty);
     expect(loan['requested_lines'], [line.toMap()]);
-    expect(loan['caution_amount'], 100);
+    expect(loan['caution_amount'], 0);
     expect(loan['reservation_policy'], 'none');
     expect(loan['caution_payment_status'], 'unpaid');
   });

@@ -1,19 +1,23 @@
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
 import '../../models/material_loan.dart';
+import '../../models/member_profile.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../services/material_loan_service.dart';
 import '../../services/material_return_service.dart';
-import '../../utils/club_role_utils.dart';
+import '../../services/member_service.dart';
+import 'equipment_camera_capture.dart';
 import '../../widgets/empty_state_widget.dart';
 import '../../widgets/loading_widget.dart';
-import '../../widgets/material_payment_qr_dialog.dart';
-import '../../widgets/material_handover_dialog.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 
 class MaterialReturnsScreen extends StatefulWidget {
@@ -23,14 +27,15 @@ class MaterialReturnsScreen extends StatefulWidget {
   State<MaterialReturnsScreen> createState() => _MaterialReturnsScreenState();
 }
 
-enum _MaterialLoanTab { pending, returns, all }
+enum _MaterialLoanTab { requests, returns }
 
 class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
   final _service = MaterialReturnService();
   final _loanService = MaterialLoanService();
   final _clubId = FirebaseConfig.defaultClubId;
-  String _search = '';
-  _MaterialLoanTab? _activeTab = _MaterialLoanTab.pending;
+  _MaterialLoanTab _activeTab = _MaterialLoanTab.requests;
+  String? _selectedRequestMemberId;
+  String? _selectedReturnMemberId;
 
   @override
   Widget build(BuildContext context) {
@@ -42,8 +47,8 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text(
-          'Prets materiel',
+        title: Text(
+          canValidate ? 'Prêts de matériel' : 'Mon matériel emprunté',
           style: TextStyle(color: Colors.white),
         ),
         backgroundColor: Colors.transparent,
@@ -55,47 +60,13 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              if (canValidate)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
-                  child: _NewLoanCard(
-                    onTap: userId == null
-                        ? null
-                        : () => _openLoanSheet(
-                              createdByUserId: userId,
-                              createdByName: memberProvider.displayName,
-                            ),
-                  ),
-                ),
-              if (canValidate)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                  child: TextField(
-                    onChanged: (value) => setState(() => _search = value),
-                    style: const TextStyle(color: AppColors.donkerblauw),
-                    decoration: InputDecoration(
-                      filled: true,
-                      fillColor: Colors.white,
-                      hintText: 'Rechercher un membre, un code PRET...',
-                      prefixIcon: const Icon(Icons.search),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 12,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                  ),
-                ),
               Expanded(
                 child: canValidate
-                    ? _buildReturnValidationList(
+                    ? _buildGonflageDashboard(
                         createdByUserId: userId,
                         createdByName: memberProvider.displayName,
                       )
-                    : _buildMemberLoans(userId),
+                    : _buildMemberLoans(userId, memberProvider),
               ),
             ],
           ),
@@ -104,14 +75,15 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
     );
   }
 
-  Widget _buildReturnValidationList({
+  Widget _buildGonflageDashboard({
     required String? createdByUserId,
     required String createdByName,
   }) {
-    return StreamBuilder<List<MaterialLoan>>(
-      stream: _loanService.watchPendingPaymentLoans(_clubId),
-      builder: (context, pendingSnapshot) {
-        return StreamBuilder<List<MaterialLoan>>(
+    return StreamBuilder<List<MaterialLoanRequest>>(
+      stream: _service.watchOpenLoanRequests(clubId: _clubId),
+      builder: (context, requestSnapshot) => StreamBuilder<List<MaterialLoan>>(
+        stream: _loanService.watchPendingPaymentLoans(_clubId),
+        builder: (context, _) => StreamBuilder<List<MaterialLoan>>(
           stream: _service.watchReturnableLoans(_clubId),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
@@ -128,215 +100,187 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
               );
             }
 
-            final pendingLoans = _filterLoans(pendingSnapshot.data ?? const []);
+            final requests =
+                requestSnapshot.data ?? const <MaterialLoanRequest>[];
+            final requestGroups = _groupRequestsByMember(requests);
+            final matchingGroups = requestGroups
+                .where((group) => group.memberId == _selectedRequestMemberId)
+                .toList();
+            final selectedGroup =
+                matchingGroups.isEmpty ? null : matchingGroups.first;
             final loans = _filterLoans(snapshot.data ?? const []);
-            if (pendingLoans.isEmpty && loans.isEmpty) {
-              return const EmptyStateWidget(
-                icon: Icons.inventory_2_outlined,
-                title: 'Aucun retour en attente',
-                subtitle:
-                    'Utilisez le bouton ci-dessus pour encoder une demande de pret.',
-              );
+            final loansByMember = <String, List<MaterialLoan>>{};
+            for (final loan in loans) {
+              loansByMember.putIfAbsent(loan.memberId, () => []).add(loan);
             }
-
-            final activeTab = _activeTab ?? _MaterialLoanTab.pending;
-            final visiblePending = activeTab != _MaterialLoanTab.returns;
-            final visibleReturns = activeTab != _MaterialLoanTab.pending;
+            final returnGroups = _groupLoansByMember(loans);
+            final matchingReturnGroups = returnGroups
+                .where((group) => group.memberId == _selectedReturnMemberId)
+                .toList();
+            final selectedReturnGroup = matchingReturnGroups.isEmpty
+                ? null
+                : matchingReturnGroups.first;
+            final activeTab = _activeTab;
 
             return ListView(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
               children: [
-                _MaterialLoanTabs(
+                _GonflageActionBar(
                   activeTab: activeTab,
-                  pendingCount: pendingLoans.length,
-                  returnCount: loans.length,
+                  requestCount: requestGroups.length,
+                  returnCount: returnGroups.length,
                   onChanged: (tab) => setState(() => _activeTab = tab),
+                  onDirectLoan: createdByUserId == null
+                      ? null
+                      : () => _openLoanSheet(
+                            createdByUserId: createdByUserId,
+                            createdByName: createdByName,
+                          ),
                 ),
                 const SizedBox(height: 12),
-                if (visiblePending && pendingLoans.isNotEmpty) ...[
-                  const _ListSectionTitle('Cautions à confirmer'),
-                  const Text(
-                    'Les nouvelles demandes ne réservent aucun article. Attribution lors de la remise après paiement.',
-                    style: TextStyle(color: Colors.white),
-                  ),
+                if (activeTab == _MaterialLoanTab.requests) ...[
+                  if (selectedGroup == null)
+                    const _ListSectionTitle('Demandes par membre')
+                  else
+                    _SelectedRequestMemberHeader(
+                      group: selectedGroup,
+                      onBack: () =>
+                          setState(() => _selectedRequestMemberId = null),
+                    ),
                   const SizedBox(height: 10),
-                  ...pendingLoans.map(
-                    (loan) => Padding(
+                  if (requestGroups.isEmpty)
+                    const _LoanTabEmptyState(
+                      icon: Icons.inbox_outlined,
+                      title: 'Aucune demande en attente',
+                      subtitle: 'Les demandes des membres apparaîtront ici.',
+                    ),
+                  ...(selectedGroup == null ? requestGroups : [selectedGroup])
+                      .map(
+                    (group) => Padding(
                       padding: const EdgeInsets.only(bottom: 12),
-                      child: _PendingLoanCard(
-                        loan: loan,
-                        onShowQr: loan.paymentMode == 'epc_qr_onsite'
-                            ? () => _showPendingLoanQr(loan)
-                            : null,
-                        onSendEmail: loan.paymentMode == 'epc_qr_email'
-                            ? () => _sendPendingLoanPaymentEmail(loan)
-                            : null,
-                        onConfirm: createdByUserId == null
-                            ? null
-                            : () => _confirmPendingLoan(
-                                  loan,
-                                  createdByUserId: createdByUserId,
-                                  createdByName: createdByName,
-                                ),
-                      ),
+                      child: selectedGroup == null
+                          ? _GonflageMemberRequestCard(
+                              group: group,
+                              clubId: _clubId,
+                              currentLoans:
+                                  loansByMember[group.memberId] ?? const [],
+                              onTap: () => setState(
+                                () => _selectedRequestMemberId = group.memberId,
+                              ),
+                            )
+                          : Column(
+                              children: group.requests
+                                  .map(
+                                    (request) => Padding(
+                                      padding:
+                                          const EdgeInsets.only(bottom: 12),
+                                      child: _GonflageRequestCard(
+                                        request: request,
+                                        currentLoans:
+                                            loansByMember[request.memberId] ??
+                                                const [],
+                                        onPrepare: createdByUserId == null
+                                            ? null
+                                            : () => _openLoanForRequest(
+                                                  request: request,
+                                                  currentLoans: loansByMember[
+                                                          request.memberId] ??
+                                                      const [],
+                                                  createdByUserId:
+                                                      createdByUserId,
+                                                  createdByName: createdByName,
+                                                ),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
                     ),
                   ),
                 ],
-                if (visiblePending &&
-                    pendingLoans.isEmpty &&
-                    activeTab == _MaterialLoanTab.pending)
-                  const _LoanTabEmptyState(
-                    icon: Icons.lock_open_outlined,
-                    title: 'Aucune caution à confirmer',
-                    subtitle:
-                        'Les demandes en attente de caution apparaîtront ici.',
-                  ),
-                if (visibleReturns && loans.isNotEmpty) ...[
-                  const _ListSectionTitle('Retours à contrôler'),
-                  ...loans.map(
-                    (loan) => Padding(
+                if (activeTab == _MaterialLoanTab.returns) ...[
+                  if (selectedReturnGroup == null)
+                    const _ListSectionTitle('Retours par membre')
+                  else
+                    _SelectedReturnMemberHeader(
+                      group: selectedReturnGroup,
+                      onBack: () =>
+                          setState(() => _selectedReturnMemberId = null),
+                    ),
+                  const SizedBox(height: 10),
+                  if (returnGroups.isEmpty)
+                    const _LoanTabEmptyState(
+                      icon: Icons.assignment_turned_in_outlined,
+                      title: 'Aucun retour à contrôler',
+                      subtitle: 'Les prêts remis au membre apparaîtront ici.',
+                    ),
+                  ...(selectedReturnGroup == null
+                          ? returnGroups
+                          : [selectedReturnGroup])
+                      .map(
+                    (group) => Padding(
                       padding: const EdgeInsets.only(bottom: 12),
-                      child: _LoanReturnCard(
-                        loan: loan,
-                        onValidate: () => _openReturnSheet(loan),
-                      ),
+                      child: selectedReturnGroup == null
+                          ? _GonflageMemberReturnCard(
+                              group: group,
+                              clubId: _clubId,
+                              onTap: () => setState(
+                                () => _selectedReturnMemberId = group.memberId,
+                              ),
+                            )
+                          : Column(
+                              children: group.loans
+                                  .map(
+                                    (loan) => Padding(
+                                      padding:
+                                          const EdgeInsets.only(bottom: 12),
+                                      child: _LoanReturnCard(
+                                        loan: loan,
+                                        onValidate: () =>
+                                            _openReturnSheet(loan),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
                     ),
                   ),
                 ],
-                if (visibleReturns &&
-                    loans.isEmpty &&
-                    activeTab == _MaterialLoanTab.returns)
-                  const _LoanTabEmptyState(
-                    icon: Icons.assignment_turned_in_outlined,
-                    title: 'Aucun retour à contrôler',
-                    subtitle: 'Les prêts remis au membre apparaîtront ici.',
-                  ),
               ],
             );
           },
-        );
-      },
+        ),
+      ),
     );
   }
 
-  Future<void> _confirmPendingLoan(
-    MaterialLoan loan, {
-    required String createdByUserId,
-    required String createdByName,
-  }) async {
-    List<String> selectedItemIds = const [];
-    if (loan.requestedLines.isNotEmpty) {
-      final selection = await showDialog<List<String>>(
-          context: context,
-          builder: (_) => MaterialHandoverDialog(
-              lines: loan.requestedLines,
-              availableItems: _service.watchBorrowableItems(_clubId),
-              cautionAmount: loan.cautionAmount));
-      if (selection == null) return;
-      selectedItemIds = selection;
-    }
-    if (!mounted) return;
-    final confirmed = loan.requestedLines.isNotEmpty ||
-        (await showDialog<bool>(
-              context: context,
-              builder: (dialogContext) => AlertDialog(
-                title: const Text('Confirmer la caution ?'),
-                content: Text(
-                  'Confirmez seulement après avoir constaté les ${loan.cautionAmount.toStringAsFixed(2)} EUR. Le matériel sera alors remis à ${loan.memberName}.',
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(false),
-                    child: const Text('Annuler'),
-                  ),
-                  FilledButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(true),
-                    child: const Text('Paiement constaté'),
-                  ),
-                ],
-              ),
-            ) ??
-            false);
-    if (confirmed != true) return;
-    try {
-      await _loanService.confirmPendingPaymentAndHandover(
+  Future<void> _openMemberRequestSheet({
+    required String memberId,
+    required MemberProvider memberProvider,
+    MaterialLoanRequest? request,
+  }) {
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (_) => _MaterialRequestSheet(
+        service: _service,
         clubId: _clubId,
-        loanId: loan.id,
-        confirmedByUserId: createdByUserId,
-        confirmedByName: createdByName,
-        selectedItemIds: selectedItemIds,
-        paymentConfirmed: true,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Caution confirmée. Matériel remis.'),
-          backgroundColor: AppColors.success,
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Impossible de confirmer la caution : $error'),
-          backgroundColor: AppColors.error,
-        ),
-      );
-    }
+        memberId: memberId,
+        memberName: memberProvider.displayName,
+        memberEmail: memberProvider.email ?? '',
+        request: request,
+      ),
+    );
   }
 
-  Future<void> _showPendingLoanQr(MaterialLoan loan) async {
-    try {
-      final qr = await _loanService.getPendingLoanPaymentQr(
-        clubId: _clubId,
-        loanId: loan.id,
-      );
-      if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        useRootNavigator: true,
-        builder: (dialogContext) => MaterialPaymentQrDialog(
-          payload: qr.epcPayload,
-          reference: qr.reference,
-          amount: qr.amount,
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Impossible d’afficher le QR : $error'),
-          backgroundColor: AppColors.error,
-        ),
-      );
-    }
-  }
-
-  Future<void> _sendPendingLoanPaymentEmail(MaterialLoan loan) async {
-    try {
-      await _loanService.sendPendingLoanPaymentQrEmail(
-        clubId: _clubId,
-        loanId: loan.id,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('QR envoyé à l’adresse e-mail enregistrée du membre.'),
-          backgroundColor: AppColors.success,
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Impossible d’envoyer le QR : $error'),
-          backgroundColor: AppColors.error,
-        ),
-      );
-    }
-  }
-
-  Widget _buildMemberLoans(String? userId) {
+  Widget _buildMemberLoans(
+    String? userId,
+    MemberProvider memberProvider,
+  ) {
     if (userId == null) {
       return const EmptyStateWidget(
         icon: Icons.login_outlined,
@@ -345,72 +289,199 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
       );
     }
 
-    return StreamBuilder<List<MaterialLoan>>(
-      stream: _loanService.watchMyActiveLoans(
-        clubId: _clubId,
-        memberId: userId,
-      ),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const LoadingWidget(
-            message: 'Chargement de votre matériel...',
-          );
-        }
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+          child: _MemberMaterialRequestCard(
+            onTap: () => _openMemberRequestSheet(
+              memberId: userId,
+              memberProvider: memberProvider,
+            ),
+          ),
+        ),
+        Expanded(
+          child: StreamBuilder<List<MaterialLoanRequest>>(
+            stream: _service.watchMyLoanRequests(
+              clubId: _clubId,
+              memberId: userId,
+            ),
+            builder: (context, requestSnapshot) =>
+                StreamBuilder<List<MaterialLoan>>(
+              stream: _loanService.watchMyActiveLoans(
+                clubId: _clubId,
+                memberId: userId,
+              ),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const LoadingWidget(
+                    message: 'Chargement de votre matériel...',
+                  );
+                }
 
-        if (snapshot.hasError) {
-          return EmptyStateWidget(
-            icon: Icons.error_outline,
-            title: 'Impossible de charger vos prêts',
-            subtitle: snapshot.error.toString(),
-          );
-        }
+                if (snapshot.hasError) {
+                  return EmptyStateWidget(
+                    icon: Icons.error_outline,
+                    title: 'Impossible de charger vos prêts',
+                    subtitle: snapshot.error.toString(),
+                  );
+                }
 
-        final loans = snapshot.data ?? const [];
-        if (loans.isEmpty) {
-          return const EmptyStateWidget(
-            icon: Icons.inventory_2_outlined,
-            title: 'Aucun matériel emprunté',
-            subtitle:
-                'Lorsqu’un encadrant vous remet du matériel, il apparaîtra ici.',
-          );
-        }
+                final loans = snapshot.data ?? const [];
+                final requests =
+                    requestSnapshot.data ?? const <MaterialLoanRequest>[];
+                if (loans.isEmpty && requests.isEmpty) {
+                  return const EmptyStateWidget(
+                    icon: Icons.inventory_2_outlined,
+                    title: 'Aucun matériel emprunté',
+                    subtitle:
+                        'Lorsqu’un encadrant vous remet du matériel, il apparaîtra ici.',
+                  );
+                }
 
-        return ListView.separated(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-          itemCount: loans.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 12),
-          itemBuilder: (context, index) => _MemberLoanCard(loan: loans[index]),
-        );
-      },
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 2, 16, 24),
+                  children: [
+                    if (loans.isNotEmpty) ...[
+                      const _ListSectionTitle('Mon matériel emprunté'),
+                      const SizedBox(height: 8),
+                      ...loans.map(
+                        (loan) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _MemberLoanCard(loan: loan),
+                        ),
+                      ),
+                    ],
+                    if (requests.isNotEmpty) ...[
+                      if (loans.isNotEmpty) const SizedBox(height: 4),
+                      const _ListSectionTitle('Mes demandes'),
+                      const SizedBox(height: 8),
+                      ...requests.map(
+                        (request) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _MemberLoanRequestCard(
+                            request: request,
+                            onEdit: request.status == 'submitted'
+                                ? () => _openMemberRequestSheet(
+                                      memberId: userId,
+                                      memberProvider: memberProvider,
+                                      request: request,
+                                    )
+                                : null,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ],
     );
   }
 
   bool _canValidateReturns(MemberProvider memberProvider) {
-    final role = memberProvider.appRole?.toLowerCase();
-    if (role == 'admin' || role == 'superadmin') {
-      return true;
-    }
-
-    final normalized = ClubRoleUtils.normalizeRoles(
-      memberProvider.clubStatuten,
-    );
-    return normalized.contains('gonflage') ||
-        normalized.contains('ca') ||
-        normalized.contains('encadrant');
+    return memberProvider.isGonflage;
   }
 
   List<MaterialLoan> _filterLoans(List<MaterialLoan> loans) {
-    final term = _search.trim().toLowerCase();
-    if (term.isEmpty) return loans;
+    return loans;
+  }
 
-    return loans.where((loan) {
-      final haystack = [
-        loan.loanNumber,
-        loan.memberName,
-        ...loan.items.map((item) => '${item.code} ${item.name}'),
-      ].join(' ').toLowerCase();
-      return haystack.contains(term);
-    }).toList();
+  List<_LoanRequestMemberGroup> _groupRequestsByMember(
+    List<MaterialLoanRequest> requests,
+  ) {
+    final grouped = <String, List<MaterialLoanRequest>>{};
+    for (final request in requests) {
+      grouped.putIfAbsent(request.memberId, () => []).add(request);
+    }
+    final result = grouped.entries
+        .map(
+          (entry) => _LoanRequestMemberGroup(
+            memberId: entry.key,
+            memberName: entry.value.first.memberName,
+            requests: entry.value,
+          ),
+        )
+        .toList();
+    result.sort((left, right) {
+      final leftDate = left.nextStartDate ?? DateTime(9999);
+      final rightDate = right.nextStartDate ?? DateTime(9999);
+      return leftDate.compareTo(rightDate);
+    });
+    return result;
+  }
+
+  List<_LoanReturnMemberGroup> _groupLoansByMember(
+    List<MaterialLoan> loans,
+  ) {
+    final grouped = <String, List<MaterialLoan>>{};
+    for (final loan in loans) {
+      grouped.putIfAbsent(loan.memberId, () => []).add(loan);
+    }
+    final result = grouped.entries
+        .map(
+          (entry) => _LoanReturnMemberGroup(
+            memberId: entry.key,
+            memberName: entry.value.first.memberName,
+            loans: entry.value,
+          ),
+        )
+        .toList();
+    result.sort((left, right) {
+      final leftDate = left.nextReturnDate ?? DateTime(9999);
+      final rightDate = right.nextReturnDate ?? DateTime(9999);
+      return leftDate.compareTo(rightDate);
+    });
+    return result;
+  }
+
+  Future<void> _openLoanForRequest({
+    required MaterialLoanRequest request,
+    required List<MaterialLoan> currentLoans,
+    required String createdByUserId,
+    required String createdByName,
+  }) async {
+    if (currentLoans.isNotEmpty) {
+      final hasLateLoan = currentLoans.any(_isLoanLate);
+      final continueLoan = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              icon: Icon(
+                hasLateLoan ? Icons.warning_amber_rounded : Icons.info_outline,
+                color: hasLateLoan ? AppColors.error : Colors.orange,
+              ),
+              title: Text(
+                  hasLateLoan ? 'Retour en retard' : 'Matériel déjà emprunté'),
+              content: Text(
+                '${request.memberName} a déjà ${currentLoans.length} prêt(s) actif(s)${hasLateLoan ? ', dont au moins un retour est en retard' : ''}. Vérifiez la situation avant de remettre du nouveau matériel.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Annuler'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Continuer'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+      if (!continueLoan || !mounted) return;
+    }
+    await _openLoanSheet(
+      createdByUserId: createdByUserId,
+      createdByName: createdByName,
+      initialMemberId: request.memberId,
+      initialMemberName: request.memberName,
+      initialReturnDate: request.expectedReturnDate,
+      initialRequestId: request.id,
+      initialRequestLines: request.lines,
+    );
   }
 
   Future<void> _openReturnSheet(MaterialLoan loan) async {
@@ -433,6 +504,11 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
   Future<void> _openLoanSheet({
     required String createdByUserId,
     required String createdByName,
+    String? initialMemberId,
+    String? initialMemberName,
+    DateTime? initialReturnDate,
+    String? initialRequestId,
+    List<MaterialLoanRequestLine>? initialRequestLines,
   }) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -450,6 +526,11 @@ class _MaterialReturnsScreenState extends State<MaterialReturnsScreen> {
           clubId: _clubId,
           createdByUserId: createdByUserId,
           createdByName: createdByName,
+          initialMemberId: initialMemberId,
+          initialMemberName: initialMemberName,
+          initialReturnDate: initialReturnDate,
+          initialRequestId: initialRequestId,
+          initialRequestLines: initialRequestLines,
         ),
       ),
     );
@@ -522,22 +603,23 @@ class _ListSectionTitle extends StatelessWidget {
       );
 }
 
-class _MaterialLoanTabs extends StatelessWidget {
+class _GonflageActionBar extends StatelessWidget {
   final _MaterialLoanTab activeTab;
-  final int pendingCount;
+  final int requestCount;
   final int returnCount;
   final ValueChanged<_MaterialLoanTab> onChanged;
+  final VoidCallback? onDirectLoan;
 
-  const _MaterialLoanTabs({
+  const _GonflageActionBar({
     required this.activeTab,
-    required this.pendingCount,
+    required this.requestCount,
     required this.returnCount,
     required this.onChanged,
+    required this.onDirectLoan,
   });
 
   @override
   Widget build(BuildContext context) {
-    final totalCount = pendingCount + returnCount;
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
@@ -548,22 +630,24 @@ class _MaterialLoanTabs extends StatelessWidget {
       child: Row(
         children: [
           _MaterialLoanTabButton(
-            label: 'À confirmer',
-            count: pendingCount,
-            selected: activeTab == _MaterialLoanTab.pending,
-            onTap: () => onChanged(_MaterialLoanTab.pending),
+            icon: Icons.inbox_outlined,
+            label: 'Demandes',
+            count: requestCount,
+            selected: activeTab == _MaterialLoanTab.requests,
+            onTap: () => onChanged(_MaterialLoanTab.requests),
           ),
           _MaterialLoanTabButton(
+            icon: Icons.add_box_outlined,
+            label: 'Prêt direct',
+            selected: false,
+            onTap: onDirectLoan,
+          ),
+          _MaterialLoanTabButton(
+            icon: Icons.assignment_return_outlined,
             label: 'Retours',
             count: returnCount,
             selected: activeTab == _MaterialLoanTab.returns,
             onTap: () => onChanged(_MaterialLoanTab.returns),
-          ),
-          _MaterialLoanTabButton(
-            label: 'Tous',
-            count: totalCount,
-            selected: activeTab == _MaterialLoanTab.all,
-            onTap: () => onChanged(_MaterialLoanTab.all),
           ),
         ],
       ),
@@ -572,14 +656,16 @@ class _MaterialLoanTabs extends StatelessWidget {
 }
 
 class _MaterialLoanTabButton extends StatelessWidget {
+  final IconData icon;
   final String label;
-  final int count;
+  final int? count;
   final bool selected;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   const _MaterialLoanTabButton({
+    required this.icon,
     required this.label,
-    required this.count,
+    this.count,
     required this.selected,
     required this.onTap,
   });
@@ -602,6 +688,8 @@ class _MaterialLoanTabButton extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
+              Icon(icon, size: 17, color: foreground),
+              const SizedBox(width: 5),
               Flexible(
                 child: Text(
                   label,
@@ -614,26 +702,29 @@ class _MaterialLoanTabButton extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 6),
-              Container(
-                constraints: const BoxConstraints(minWidth: 22),
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: selected
-                      ? AppColors.middenblauw.withValues(alpha: 0.12)
-                      : Colors.white.withValues(alpha: 0.20),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  '$count',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: foreground,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
+              if (count != null) ...[
+                const SizedBox(width: 6),
+                Container(
+                  constraints: const BoxConstraints(minWidth: 22),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? AppColors.middenblauw.withValues(alpha: 0.12)
+                        : Colors.white.withValues(alpha: 0.20),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '$count',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: foreground,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
@@ -686,102 +777,6 @@ class _LoanTabEmptyState extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _PendingLoanCard extends StatelessWidget {
-  final MaterialLoan loan;
-  final VoidCallback? onShowQr;
-  final VoidCallback? onSendEmail;
-  final VoidCallback? onConfirm;
-
-  const _PendingLoanCard({
-    required this.loan,
-    this.onShowQr,
-    this.onSendEmail,
-    this.onConfirm,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final emailSent = loan.cautionStatus == 'email_sent';
-    return Material(
-      color: Colors.amber.shade50,
-      borderRadius: BorderRadius.circular(14),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const _LoanActionIcon(icon: Icons.lock_clock_outlined),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        loan.memberName,
-                        style: const TextStyle(
-                          color: AppColors.donkerblauw,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      Text(loan.loanNumber),
-                    ],
-                  ),
-                ),
-                _StatusPill(
-                  label: emailSent ? 'QR e-mail envoyé' : 'QR à montrer',
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              '${loan.requestedLines.isNotEmpty ? loan.requestedLines.length : loan.itemIds.length} article(s) · ${loan.requestedLines.isNotEmpty ? "sans réservation" : "réservation ancienne"} · caution ${loan.cautionAmount.toStringAsFixed(2)} EUR',
-              style: const TextStyle(color: Colors.black87),
-            ),
-            const SizedBox(height: 10),
-            for (final line in loan.requestedLines)
-              Text(line.label, style: const TextStyle(color: Colors.black87)),
-            if (loan.paymentMode == 'epc_qr_onsite') ...[
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: onShowQr,
-                  icon: const Icon(Icons.qr_code_2_outlined),
-                  label: const Text('Afficher le QR sur place'),
-                ),
-              ),
-              const SizedBox(height: 8),
-            ] else ...[
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: onSendEmail,
-                  icon: const Icon(Icons.email_outlined),
-                  label: Text(
-                    emailSent
-                        ? 'Renvoyer le QR au membre'
-                        : 'Envoyer le QR au membre',
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: onConfirm,
-                icon: const Icon(Icons.verified_outlined),
-                label: const Text('Paiement constaté : remettre le matériel'),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -909,10 +904,10 @@ class _LoanReturnCard extends StatelessWidget {
   }
 }
 
-class _NewLoanCard extends StatelessWidget {
-  final VoidCallback? onTap;
+class _MemberMaterialRequestCard extends StatelessWidget {
+  final VoidCallback onTap;
 
-  const _NewLoanCard({required this.onTap});
+  const _MemberMaterialRequestCard({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -933,7 +928,7 @@ class _NewLoanCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Nouveau prêt',
+                      'Demander du matériel',
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w800,
@@ -942,7 +937,7 @@ class _NewLoanCard extends StatelessWidget {
                     ),
                     SizedBox(height: 3),
                     Text(
-                      'Choisir le membre, le matériel et confirmer la caution.',
+                      'Envoyez une demande à l’équipe Gonflage.',
                       style: TextStyle(color: Colors.black54, fontSize: 13.5),
                     ),
                   ],
@@ -1074,6 +1069,567 @@ class _MemberLoanCard extends StatelessWidget {
   }
 }
 
+class _MemberLoanRequestCard extends StatelessWidget {
+  final MaterialLoanRequest request;
+  final VoidCallback? onEdit;
+
+  const _MemberLoanRequestCard({required this.request, this.onEdit});
+
+  @override
+  Widget build(BuildContext context) {
+    final start = request.requestedStartDate;
+    final end = request.expectedReturnDate;
+    final requestedItems = request.lines.isNotEmpty
+        ? request.lines.map((line) => line.label).toList()
+        : request.items.map((item) => item.inventoryLabel).toList();
+    return Material(
+      // A request is not yet a physical loan: it deliberately has its own
+      // warm background, while active loans remain white (or red when late).
+      color: const Color(0xFFFFF4D8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: Color(0xFFF0C766), width: 1.2),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const _LoanActionIcon(icon: Icons.pending_actions_outlined),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Demande de matériel',
+                    style: TextStyle(
+                      color: AppColors.donkerblauw,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                _StatusPill(label: _requestStatusLabel(request.status)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              start == null || end == null
+                  ? 'Période à confirmer par l’équipe Gonflage'
+                  : 'Du ${_formatDate(start)} au ${_formatDate(end)}',
+              style: const TextStyle(
+                color: AppColors.donkerblauw,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            if (requestedItems.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                requestedItems.join(' · '),
+                style: const TextStyle(color: Colors.black87),
+              ),
+            ],
+            if (onEdit != null) ...[
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: onEdit,
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('Modifier la demande'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _requestStatusLabel(String status) {
+    switch (status) {
+      case 'approved':
+      case 'validated':
+      case 'ready':
+        return 'Acceptée';
+      case 'handed_over':
+        return 'Remise effectuée';
+      case 'refused':
+        return 'Refusée';
+      default:
+        return 'En attente';
+    }
+  }
+}
+
+/// Compact operational card for Gonflage: one member and their requested kit.
+class _GonflageRequestCard extends StatelessWidget {
+  final MaterialLoanRequest request;
+  final List<MaterialLoan> currentLoans;
+  final VoidCallback? onPrepare;
+
+  const _GonflageRequestCard({
+    required this.request,
+    this.currentLoans = const [],
+    this.onPrepare,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final requestedItems = request.lines.isNotEmpty
+        ? request.lines.map((line) => line.label).toList()
+        : request.items.map((item) => item.inventoryLabel).toList();
+    final start = request.requestedStartDate;
+    final end = request.expectedReturnDate;
+    return Material(
+      color: const Color(0xFFFFF4D8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: Color(0xFFF0C766), width: 1.2),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const _LoanActionIcon(icon: Icons.person_outline),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    request.memberName,
+                    style: const TextStyle(
+                      color: AppColors.donkerblauw,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const _StatusPill(label: 'En attente'),
+              ],
+            ),
+            if (start != null || end != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                start != null && end != null
+                    ? 'Du ${_formatDate(start)} au ${_formatDate(end)}'
+                    : 'Période à confirmer',
+                style: const TextStyle(
+                  color: AppColors.donkerblauw,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+            if (requestedItems.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                requestedItems.join(' · '),
+                style: const TextStyle(color: Colors.black87),
+              ),
+            ],
+            if (currentLoans.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              _ExistingLoanWarning(loans: currentLoans),
+            ],
+            if (request.notes?.trim().isNotEmpty == true) ...[
+              const SizedBox(height: 8),
+              Text(
+                request.notes!.trim(),
+                style: const TextStyle(color: Colors.black54, fontSize: 13),
+              ),
+            ],
+            if (onPrepare != null) ...[
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton.icon(
+                  onPressed: onPrepare,
+                  icon: const Icon(Icons.inventory_2_outlined, size: 18),
+                  label: const Text('Préparer le prêt'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LoanRequestMemberGroup {
+  final String memberId;
+  final String memberName;
+  final List<MaterialLoanRequest> requests;
+
+  const _LoanRequestMemberGroup({
+    required this.memberId,
+    required this.memberName,
+    required this.requests,
+  });
+
+  DateTime? get nextStartDate {
+    final dates = requests
+        .map((request) => request.requestedStartDate)
+        .whereType<DateTime>()
+        .toList()
+      ..sort();
+    return dates.isEmpty ? null : dates.first;
+  }
+}
+
+class _GonflageMemberRequestCard extends StatefulWidget {
+  final _LoanRequestMemberGroup group;
+  final String clubId;
+  final List<MaterialLoan> currentLoans;
+  final VoidCallback onTap;
+
+  const _GonflageMemberRequestCard({
+    required this.group,
+    required this.clubId,
+    required this.currentLoans,
+    required this.onTap,
+  });
+
+  @override
+  State<_GonflageMemberRequestCard> createState() =>
+      _GonflageMemberRequestCardState();
+}
+
+class _GonflageMemberRequestCardState
+    extends State<_GonflageMemberRequestCard> {
+  late final Future<MemberProfile?> _memberProfile;
+
+  @override
+  void initState() {
+    super.initState();
+    _memberProfile = MemberService().getMemberById(
+      widget.clubId,
+      widget.group.memberId,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<MemberProfile?>(
+      future: _memberProfile,
+      builder: (context, snapshot) {
+        final profile = snapshot.data;
+        final photoUrl =
+            profile?.hasPhoto == true && profile?.consentInternalPhoto == true
+                ? profile!.photoUrl
+                : null;
+        final requestCount = widget.group.requests.length;
+        final startDate = widget.group.nextStartDate;
+        return Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          child: InkWell(
+            onTap: widget.onTap,
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 29,
+                    backgroundColor:
+                        AppColors.middenblauw.withValues(alpha: 0.15),
+                    foregroundImage:
+                        photoUrl == null ? null : NetworkImage(photoUrl),
+                    child: photoUrl == null
+                        ? Text(
+                            _initials(widget.group.memberName),
+                            style: const TextStyle(
+                              color: AppColors.donkerblauw,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.group.memberName,
+                          style: const TextStyle(
+                            color: AppColors.donkerblauw,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          requestCount == 1
+                              ? '1 demande à traiter'
+                              : '$requestCount demandes à traiter',
+                          style: const TextStyle(color: Colors.black54),
+                        ),
+                        if (startDate != null) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            'Prochain prêt : ${_formatDate(startDate)}',
+                            style: const TextStyle(
+                              color: AppColors.middenblauw,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                        if (widget.currentLoans.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          _ExistingLoanWarning(loans: widget.currentLoans),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, color: AppColors.middenblauw),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ExistingLoanWarning extends StatelessWidget {
+  final List<MaterialLoan> loans;
+
+  const _ExistingLoanWarning({required this.loans});
+
+  @override
+  Widget build(BuildContext context) {
+    final hasLateLoan = loans.any(_isLoanLate);
+    final color = hasLateLoan ? AppColors.error : Colors.orange.shade800;
+    final background = hasLateLoan ? Colors.red.shade50 : Colors.orange.shade50;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.warning_amber_rounded, size: 17, color: color),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              hasLateLoan
+                  ? 'Attention : retour en retard'
+                  : '${loans.length} prêt actif déjà en cours',
+              style: TextStyle(color: color, fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoanReturnMemberGroup {
+  final String memberId;
+  final String memberName;
+  final List<MaterialLoan> loans;
+
+  const _LoanReturnMemberGroup({
+    required this.memberId,
+    required this.memberName,
+    required this.loans,
+  });
+
+  DateTime? get nextReturnDate {
+    final dates = loans
+        .map((loan) => loan.expectedReturnDate)
+        .whereType<DateTime>()
+        .toList()
+      ..sort();
+    return dates.isEmpty ? null : dates.first;
+  }
+}
+
+class _GonflageMemberReturnCard extends StatefulWidget {
+  final _LoanReturnMemberGroup group;
+  final String clubId;
+  final VoidCallback onTap;
+
+  const _GonflageMemberReturnCard({
+    required this.group,
+    required this.clubId,
+    required this.onTap,
+  });
+
+  @override
+  State<_GonflageMemberReturnCard> createState() =>
+      _GonflageMemberReturnCardState();
+}
+
+class _GonflageMemberReturnCardState extends State<_GonflageMemberReturnCard> {
+  late final Future<MemberProfile?> _memberProfile;
+
+  @override
+  void initState() {
+    super.initState();
+    _memberProfile = MemberService().getMemberById(
+      widget.clubId,
+      widget.group.memberId,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<MemberProfile?>(
+      future: _memberProfile,
+      builder: (context, snapshot) {
+        final profile = snapshot.data;
+        final photoUrl =
+            profile?.hasPhoto == true && profile?.consentInternalPhoto == true
+                ? profile!.photoUrl
+                : null;
+        final hasLateLoan = widget.group.loans.any(_isLoanLate);
+        final nextReturn = widget.group.nextReturnDate;
+        return Material(
+          color: hasLateLoan ? Colors.red.shade50 : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          child: InkWell(
+            onTap: widget.onTap,
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 29,
+                    backgroundColor:
+                        AppColors.middenblauw.withValues(alpha: 0.15),
+                    foregroundImage:
+                        photoUrl == null ? null : NetworkImage(photoUrl),
+                    child: photoUrl == null
+                        ? Text(
+                            _initials(widget.group.memberName),
+                            style: const TextStyle(
+                              color: AppColors.donkerblauw,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.group.memberName,
+                          style: const TextStyle(
+                            color: AppColors.donkerblauw,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          hasLateLoan
+                              ? 'Retour en retard'
+                              : '${widget.group.loans.length} retour(s) à contrôler',
+                          style: TextStyle(
+                            color:
+                                hasLateLoan ? AppColors.error : Colors.black54,
+                            fontWeight: hasLateLoan
+                                ? FontWeight.w800
+                                : FontWeight.normal,
+                          ),
+                        ),
+                        if (nextReturn != null) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            'Retour prévu : ${_formatDate(nextReturn)}',
+                            style: const TextStyle(
+                              color: AppColors.middenblauw,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, color: AppColors.middenblauw),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SelectedRequestMemberHeader extends StatelessWidget {
+  final _LoanRequestMemberGroup group;
+  final VoidCallback onBack;
+
+  const _SelectedRequestMemberHeader({
+    required this.group,
+    required this.onBack,
+  });
+
+  @override
+  Widget build(BuildContext context) => Row(
+        children: [
+          IconButton(
+            onPressed: onBack,
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            tooltip: 'Toutes les demandes',
+          ),
+          Expanded(
+            child: Text(
+              group.memberName,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      );
+}
+
+class _SelectedReturnMemberHeader extends StatelessWidget {
+  final _LoanReturnMemberGroup group;
+  final VoidCallback onBack;
+
+  const _SelectedReturnMemberHeader({
+    required this.group,
+    required this.onBack,
+  });
+
+  @override
+  Widget build(BuildContext context) => Row(
+        children: [
+          IconButton(
+            onPressed: onBack,
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            tooltip: 'Tous les retours',
+          ),
+          Expanded(
+            child: Text(
+              group.memberName,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      );
+}
+
 class _ReturnValidationSheet extends StatefulWidget {
   final MaterialLoan loan;
   final String clubId;
@@ -1098,18 +1654,19 @@ class _ReturnValidationSheet extends StatefulWidget {
 }
 
 class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
+  // Kept behind one switch for the later reactivation of cautions/refunds.
+  // A material return must never be blocked by a financial workflow meanwhile.
+  static const bool _refundsEnabled = false;
   final _notesController = TextEditingController();
   late final TextEditingController _refundController;
   late final List<_ReturnItemDraft> _itemDrafts;
-  MaterialReturnDecision _decision = MaterialReturnDecision.fullRefund;
+  MaterialReturnDecision _decision = MaterialReturnDecision.decideLater;
   bool _submitting = false;
 
   @override
   void initState() {
     super.initState();
-    _refundController = TextEditingController(
-      text: widget.loan.cautionAmount.toStringAsFixed(2),
-    );
+    _refundController = TextEditingController(text: '0.00');
     _itemDrafts =
         widget.loan.items.map((item) => _ReturnItemDraft(item: item)).toList();
   }
@@ -1187,64 +1744,66 @@ class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
             else
               ..._itemDrafts.map(_buildItemCheck),
             const SizedBox(height: 10),
-            DropdownButtonFormField<MaterialReturnDecision>(
-              initialValue: _decision,
-              decoration: const InputDecoration(
-                labelText: 'Decision caution',
-                border: OutlineInputBorder(),
+            if (_refundsEnabled) ...[
+              DropdownButtonFormField<MaterialReturnDecision>(
+                initialValue: _decision,
+                decoration: const InputDecoration(
+                  labelText: 'Decision caution',
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: MaterialReturnDecision.fullRefund,
+                    child: Text('Materiel OK - rembourser toute la caution'),
+                  ),
+                  DropdownMenuItem(
+                    value: MaterialReturnDecision.partialRefund,
+                    child: Text('Remboursement partiel'),
+                  ),
+                  DropdownMenuItem(
+                    value: MaterialReturnDecision.retainCaution,
+                    child: Text('Ne pas rembourser'),
+                  ),
+                  DropdownMenuItem(
+                    value: MaterialReturnDecision.decideLater,
+                    child: Text('Retour OK - decision financiere plus tard'),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    _decision = value;
+                    if (value == MaterialReturnDecision.fullRefund) {
+                      _refundController.text =
+                          widget.loan.cautionAmount.toStringAsFixed(2);
+                    } else if (value == MaterialReturnDecision.retainCaution ||
+                        value == MaterialReturnDecision.decideLater) {
+                      _refundController.text = '0.00';
+                    }
+                  });
+                },
               ),
-              items: const [
-                DropdownMenuItem(
-                  value: MaterialReturnDecision.fullRefund,
-                  child: Text('Materiel OK - rembourser toute la caution'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _refundController,
+                enabled: _decision == MaterialReturnDecision.partialRefund,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
                 ),
-                DropdownMenuItem(
-                  value: MaterialReturnDecision.partialRefund,
-                  child: Text('Remboursement partiel'),
+                decoration: const InputDecoration(
+                  labelText: 'Montant a rembourser',
+                  suffixText: 'EUR',
+                  border: OutlineInputBorder(),
                 ),
-                DropdownMenuItem(
-                  value: MaterialReturnDecision.retainCaution,
-                  child: Text('Ne pas rembourser'),
-                ),
-                DropdownMenuItem(
-                  value: MaterialReturnDecision.decideLater,
-                  child: Text('Retour OK - decision financiere plus tard'),
-                ),
-              ],
-              onChanged: (value) {
-                if (value == null) return;
-                setState(() {
-                  _decision = value;
-                  if (value == MaterialReturnDecision.fullRefund) {
-                    _refundController.text =
-                        widget.loan.cautionAmount.toStringAsFixed(2);
-                  } else if (value == MaterialReturnDecision.retainCaution ||
-                      value == MaterialReturnDecision.decideLater) {
-                    _refundController.text = '0.00';
-                  }
-                });
-              },
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _refundController,
-              enabled: _decision == MaterialReturnDecision.partialRefund,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
               ),
-              decoration: const InputDecoration(
-                labelText: 'Montant a rembourser',
-                suffixText: 'EUR',
-                border: OutlineInputBorder(),
-              ),
-            ),
+            ],
             if (_itemDrafts.any(
-              (draft) => draft.condition == MaterialReturnItemCondition.missing,
+              (draft) => draft.condition == MaterialReturnItemCondition.lost,
             )) ...[
               const SizedBox(height: 10),
               const _InlineNotice(
                 text:
-                    'Article manquant : aucune caution n’est remboursée maintenant. La décision de compensation sera traitée dans CaliCompta.',
+                    'Article déclaré perdu : aucune caution n’est remboursée maintenant. La décision sera traitée dans CalyCompta.',
               ),
             ],
             const SizedBox(height: 12),
@@ -1307,8 +1866,11 @@ class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
 
   Widget _buildItemCheck(_ReturnItemDraft draft) {
     final item = draft.item;
+    // "Pas encore restitué" is an operational status, like a good return:
+    // it keeps the item on the open loan without creating a new incident.
     final requiresEvidence =
-        draft.condition != MaterialReturnItemCondition.good;
+        draft.condition == MaterialReturnItemCondition.damaged ||
+            draft.condition == MaterialReturnItemCondition.lost;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
@@ -1359,8 +1921,12 @@ class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
                 child: Text('Endommagé · à réparer'),
               ),
               DropdownMenuItem(
-                value: MaterialReturnItemCondition.missing,
-                child: Text('Manquant · décision requise'),
+                value: MaterialReturnItemCondition.notReturned,
+                child: Text('Pas encore restitué'),
+              ),
+              DropdownMenuItem(
+                value: MaterialReturnItemCondition.lost,
+                child: Text('Déclaré perdu · procédure requise'),
               ),
             ],
             onChanged: _submitting
@@ -1369,7 +1935,7 @@ class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
                     if (value == null) return;
                     setState(() {
                       draft.condition = value;
-                      if (value == MaterialReturnItemCondition.missing) {
+                      if (value == MaterialReturnItemCondition.lost) {
                         _decision = MaterialReturnDecision.decideLater;
                         _refundController.text = '0.00';
                       }
@@ -1433,8 +1999,8 @@ class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
     try {
       final photo = await ImagePicker().pickImage(
         source: source,
-        imageQuality: 82,
-        maxWidth: 1800,
+        imageQuality: 70,
+        maxWidth: 1280,
       );
       if (photo != null && mounted) {
         setState(() => draft.photos.add(photo));
@@ -1451,11 +2017,13 @@ class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
   }
 
   Future<void> _submit() async {
-    final refundAmount =
-        double.tryParse(_refundController.text.trim().replaceAll(',', '.')) ??
-            0;
+    final refundAmount = _refundsEnabled
+        ? double.tryParse(_refundController.text.trim().replaceAll(',', '.')) ??
+            0
+        : 0.0;
 
-    if (refundAmount < 0 || refundAmount > widget.loan.cautionAmount) {
+    if (_refundsEnabled &&
+        (refundAmount < 0 || refundAmount > widget.loan.cautionAmount)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Montant de remboursement invalide'),
@@ -1466,7 +2034,10 @@ class _ReturnValidationSheetState extends State<_ReturnValidationSheet> {
     }
 
     for (final draft in _itemDrafts) {
-      if (draft.condition == MaterialReturnItemCondition.good) continue;
+      final requiresEvidence =
+          draft.condition == MaterialReturnItemCondition.damaged ||
+              draft.condition == MaterialReturnItemCondition.lost;
+      if (!requiresEvidence) continue;
       if (draft.noteController.text.trim().isEmpty || draft.photos.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1537,6 +2108,11 @@ class _DirectLoanSheet extends StatefulWidget {
   final String clubId;
   final String createdByUserId;
   final String createdByName;
+  final String? initialMemberId;
+  final String? initialMemberName;
+  final DateTime? initialReturnDate;
+  final String? initialRequestId;
+  final List<MaterialLoanRequestLine>? initialRequestLines;
 
   const _DirectLoanSheet({
     required this.service,
@@ -1544,6 +2120,11 @@ class _DirectLoanSheet extends StatefulWidget {
     required this.clubId,
     required this.createdByUserId,
     required this.createdByName,
+    this.initialMemberId,
+    this.initialMemberName,
+    this.initialReturnDate,
+    this.initialRequestId,
+    this.initialRequestLines,
   });
 
   @override
@@ -1557,19 +2138,24 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
   final Map<String, String?> _selectedTypeIds = {};
   late final Stream<List<MaterialLoanItem>> _requestCatalog;
   final Set<String> _disabledInventoryTypes = {};
+  final Set<String> _alternativeAllowedByLine = {};
+  final List<MaterialLoanRequestedLine> _extraLines = [];
   List<MaterialLoanMember> _members = const [];
   MaterialLoanMember? _member;
   DateTime _returnDate = DateTime.now().add(const Duration(days: 7));
   bool _loadingMembers = true;
-  String _paymentMode = 'epc_qr_onsite';
-  String? _pendingLoanId;
-  List<MaterialLoanRequestedLine>? _pendingLines;
+  final Map<String, String?> _selectedItemIdsByLine = {};
+  final Map<String, double> _leadKgByLine = {};
+  bool _initialRequestApplied = false;
   bool _submitting = false;
+  bool _directLeadBeltSelected = false;
+  double? _directLeadKg;
 
   @override
   void initState() {
     super.initState();
     _requestCatalog = widget.service.watchRequestCatalog(widget.clubId);
+    _returnDate = widget.initialReturnDate ?? _returnDate;
     _loadMembers();
   }
 
@@ -1583,7 +2169,26 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
   Future<void> _loadMembers() async {
     try {
       final members = await widget.loanService.loadActiveMembers(widget.clubId);
-      if (mounted) setState(() => _members = members);
+      if (mounted) {
+        setState(() {
+          _members = members;
+          if (widget.initialMemberId != null) {
+            final matchingMembers = members
+                .where((member) => member.id == widget.initialMemberId)
+                .toList();
+            // A prepared request is authoritative, including requests created
+            // by a test account. The general member search deliberately hides
+            // those accounts, but it must never prevent staff handing over the
+            // material explicitly requested for that member.
+            _member = matchingMembers.isEmpty
+                ? MaterialLoanMember(
+                    id: widget.initialMemberId!,
+                    name: widget.initialMemberName ?? 'Membre',
+                  )
+                : matchingMembers.first;
+          }
+        });
+      }
     } finally {
       if (mounted) setState(() => _loadingMembers = false);
     }
@@ -1604,15 +2209,39 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
             for (final item in items) {
               grouped.putIfAbsent(item.typeLabel, () => []).add(item);
             }
-            final selectedLines = _selectedVariantByType.entries
-                .where((entry) => !_disabledInventoryTypes.contains(entry.key))
-                .map((entry) => MaterialLoanRequestedLine(
-                    typeId: _selectedTypeIds[entry.key],
-                    typeName: entry.key,
-                    variant: entry.value))
+            _applyInitialRequestLines(grouped);
+            final isPreparedRequest = widget.initialRequestLines != null &&
+                widget.initialRequestLines!.isNotEmpty;
+            final requestedLines = isPreparedRequest
+                ? _preparedRequestLines(grouped)
+                : [
+                    ..._selectedVariantByType.entries
+                        .where((entry) =>
+                            !_disabledInventoryTypes.contains(entry.key))
+                        .map((entry) => MaterialLoanRequestedLine(
+                              typeId: _selectedTypeIds[entry.key],
+                              typeName: entry.key,
+                              variant: entry.value,
+                            )),
+                    if (_directLeadBeltSelected)
+                      MaterialLoanRequestedLine(
+                        typeName: 'Ceinture de plomb',
+                        variant: 'Standard',
+                        leadKg: _directLeadKg,
+                      ),
+                  ];
+            final selectedLines = isPreparedRequest
+                ? [...requestedLines, ..._extraLines]
+                : requestedLines;
+            final assignedItems = _assignedItems(selectedLines, items);
+            final physicalLines = selectedLines
+                .where(
+                    (line) => _canonicalLoanType(line.typeName) != 'ceinture')
                 .toList();
-            final canSubmit =
-                _member != null && selectedLines.isNotEmpty && !_submitting;
+            final canSubmit = _member != null &&
+                selectedLines.isNotEmpty &&
+                assignedItems.length == physicalLines.length &&
+                !_submitting;
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1632,7 +2261,9 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                   children: [
                     Expanded(
                       child: Text(
-                        'Nouveau prêt',
+                        isPreparedRequest
+                            ? 'Préparer le prêt'
+                            : 'Nouveau prêt direct',
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
                               fontWeight: FontWeight.bold,
                               color: Colors.white,
@@ -1652,29 +2283,36 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                 const SizedBox(height: 12),
                 Expanded(
                   child: AbsorbPointer(
-                      absorbing: _submitting || _pendingLoanId != null,
+                      absorbing: _submitting,
                       child: ListView(
                         children: [
-                          if (_pendingLoanId != null)
-                            const _InlineNotice(
-                                text:
-                                    'Demande déjà enregistrée. Informations verrouillées ; le bouton reprend cette même demande sans en créer une autre.'),
-                          _buildMemberPicker(),
+                          if (isPreparedRequest)
+                            _PreparedLoanMemberSummary(
+                              memberName: widget.initialMemberName ??
+                                  _member?.name ??
+                                  'Membre',
+                              returnDate: _returnDate,
+                            )
+                          else
+                            _buildMemberPicker(),
                           const SizedBox(height: 14),
-                          OutlinedButton.icon(
-                            onPressed: _pickReturnDate,
-                            icon: const Icon(Icons.event_available_outlined),
-                            label: Text(
-                              'Retour prévu : ${_formatDate(_returnDate)}',
+                          if (!isPreparedRequest)
+                            OutlinedButton.icon(
+                              onPressed: _pickReturnDate,
+                              icon: const Icon(Icons.event_available_outlined),
+                              label: Text(
+                                'Retour prévu : ${_formatDate(_returnDate)}',
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                backgroundColor:
+                                    Colors.white.withValues(alpha: 0.92),
+                              ),
                             ),
-                            style: OutlinedButton.styleFrom(
-                              backgroundColor:
-                                  Colors.white.withValues(alpha: 0.92),
-                            ),
-                          ),
                           const SizedBox(height: 14),
-                          const Text(
-                            'Type et option demandés — sans réservation',
+                          Text(
+                            isPreparedRequest
+                                ? 'Matériel demandé'
+                                : 'Matériel à remettre',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 16,
@@ -1682,6 +2320,14 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                             ),
                           ),
                           const SizedBox(height: 10),
+                          if (!isPreparedRequest)
+                            const Padding(
+                              padding: EdgeInsets.only(bottom: 10),
+                              child: Text(
+                                'Choisissez le type, l’option et le numéro CDC dans chaque fiche.',
+                                style: TextStyle(color: Colors.white70),
+                              ),
+                            ),
                           if (snapshot.connectionState ==
                               ConnectionState.waiting)
                             const Padding(
@@ -1692,73 +2338,89 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                             const _InlineNotice(
                               text: 'Aucun matériel disponible pour le moment.',
                             )
+                          else if (isPreparedRequest)
+                            ...requestedLines.map(
+                              (line) => _buildCdcAssignmentCard(line, items),
+                            )
                           else
                             ...grouped.entries.map(
                               (entry) => _buildInventorySelector(
                                   entry.key, entry.value),
                             ),
+                          if (!isPreparedRequest)
+                            _MaterialChoiceCard(
+                              icon: Icons.fitness_center_outlined,
+                              label: 'Ceinture de plomb',
+                              choices: const ['Standard'],
+                              selectedChoice:
+                                  _directLeadBeltSelected ? 'Standard' : null,
+                              onSelected: (selected) => setState(() {
+                                _directLeadBeltSelected = selected;
+                                if (!selected) _directLeadKg = null;
+                              }),
+                              onChoiceChanged: (_) {},
+                              additionalField: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Lest remis',
+                                      style: TextStyle(fontSize: 12)),
+                                  const SizedBox(height: 4),
+                                  DropdownButtonFormField<double>(
+                                    initialValue: _directLeadKg,
+                                    decoration: const InputDecoration(
+                                        border: OutlineInputBorder(),
+                                        isDense: true),
+                                    hint: const Text('Kilogrammes'),
+                                    items: List.generate(12, (i) => i + 1)
+                                        .map((kg) => DropdownMenuItem(
+                                            value: kg.toDouble(),
+                                            child: Text('$kg kg')))
+                                        .toList(),
+                                    onChanged: !_directLeadBeltSelected
+                                        ? null
+                                        : (kg) =>
+                                            setState(() => _directLeadKg = kg),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          if (isPreparedRequest) ...[
+                            const SizedBox(height: 4),
+                            OutlinedButton.icon(
+                              onPressed: () => _addExtraMaterial(items),
+                              icon: const Icon(Icons.add_circle_outline),
+                              label: const Text('Ajouter du matériel'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                side: const BorderSide(color: Colors.white),
+                              ),
+                            ),
+                            if (_extraLines.isNotEmpty) ...[
+                              const SizedBox(height: 14),
+                              const Text(
+                                'Matériel supplémentaire remis',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              ..._extraLines.map(
+                                (line) => _buildCdcAssignmentCard(line, items),
+                              ),
+                            ],
+                          ],
                           const SizedBox(height: 14),
                           TextField(
                             controller: _notesController,
                             minLines: 2,
                             maxLines: 4,
                             decoration: InputDecoration(
-                              labelText: 'Note de remise',
+                              labelText: 'Note de remise (optionnelle)',
                               filled: true,
                               fillColor: Colors.white.withValues(alpha: 0.92),
                               border: const OutlineInputBorder(),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.92),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Caution fixe : 100,00 EUR',
-                                  style: TextStyle(
-                                    color: AppColors.donkerblauw,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                IgnorePointer(
-                                  ignoring: _pendingLoanId != null,
-                                  child: RadioGroup<String>(
-                                    groupValue: _paymentMode,
-                                    onChanged: (value) {
-                                      if (value == null) return;
-                                      setState(() => _paymentMode = value);
-                                    },
-                                    child: const Column(
-                                      children: [
-                                        RadioListTile<String>(
-                                          contentPadding: EdgeInsets.zero,
-                                          value: 'epc_qr_onsite',
-                                          title: Text('QR code sur place'),
-                                          subtitle: Text(
-                                            'Le responsable affiche le QR sur ce téléphone, puis confirme le paiement observé.',
-                                          ),
-                                        ),
-                                        RadioListTile<String>(
-                                          contentPadding: EdgeInsets.zero,
-                                          value: 'epc_qr_email',
-                                          title:
-                                              Text('Envoyer le QR par e-mail'),
-                                          subtitle: Text(
-                                            'Le QR est envoyé uniquement à l’adresse e-mail enregistrée du membre. Aucun article réservé : attribution lors de la remise.',
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ],
                             ),
                           ),
                         ],
@@ -1785,8 +2447,9 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                     Expanded(
                       flex: 2,
                       child: ElevatedButton.icon(
-                        onPressed:
-                            canSubmit ? () => _submit(selectedLines) : null,
+                        onPressed: canSubmit
+                            ? () => _submit(selectedLines, items)
+                            : null,
                         icon: _submitting
                             ? const SizedBox(
                                 width: 18,
@@ -1798,9 +2461,7 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
                         label: Text(
                           _submitting
                               ? 'Création...'
-                              : _paymentMode == 'epc_qr_email'
-                                  ? 'Demander et envoyer le QR (${selectedLines.length})'
-                                  : 'Demander et afficher le QR (${selectedLines.length})',
+                              : 'Remettre le matériel (${selectedLines.length})',
                         ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.middenblauw,
@@ -1880,90 +2541,229 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
     );
   }
 
+  void _applyInitialRequestLines(
+    Map<String, List<MaterialLoanItem>> grouped,
+  ) {
+    final requestLines = widget.initialRequestLines;
+    if (_initialRequestApplied ||
+        requestLines == null ||
+        requestLines.isEmpty) {
+      return;
+    }
+    _initialRequestApplied = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        for (final line in requestLines) {
+          final category = _normalizeRequestType(line.category);
+          final matchingType = grouped.keys.where((type) {
+            final normalizedType = _normalizeRequestType(type);
+            return _canonicalLoanType(type) ==
+                    _canonicalLoanType(line.category) ||
+                normalizedType.contains(category) ||
+                category.contains(normalizedType);
+          }).toList();
+          if (matchingType.isEmpty) continue;
+          final type = matchingType.first;
+          final items = grouped[type]!;
+          final variants = items.map((item) => item.variantLabel).toSet();
+          final requestedVariant = line.attributes['option']?.toString();
+          _selectedVariantByType[type] = variants.contains(requestedVariant)
+              ? requestedVariant!
+              : items.first.variantLabel;
+          _selectedTypeIds[type] = items.first.typeId;
+          _disabledInventoryTypes.remove(type);
+        }
+      });
+    });
+  }
+
+  String _normalizeRequestType(String value) => value
+      .toLowerCase()
+      .replaceAll('é', 'e')
+      .replaceAll('è', 'e')
+      .replaceAll('ê', 'e')
+      .replaceAll(RegExp(r'[^a-z0-9]'), '');
+
+  /// Inventory and requests use slightly different French labels (e.g.
+  /// `Ceinture à poche` vs `Ceinture de plomb`). They still identify the
+  /// same loan family, while the CDC selector keeps the physical unit exact.
+  String _canonicalLoanType(String value) {
+    final normalized = _normalizeRequestType(value);
+    if (normalized.contains('ordinateur')) return 'ordinateur';
+    if (normalized.contains('ceinture') || normalized.contains('plomb')) {
+      return 'ceinture';
+    }
+    if (normalized.contains('detendeur')) return 'detendeur';
+    if (normalized.contains('gilet') || normalized.contains('bcd')) {
+      return 'gilet';
+    }
+    if (normalized.contains('bouteille')) return 'bouteille';
+    if (normalized.contains('palme')) return 'palmes';
+    return normalized;
+  }
+
+  List<MaterialLoanRequestedLine> _preparedRequestLines(
+    Map<String, List<MaterialLoanItem>> grouped,
+  ) {
+    return widget.initialRequestLines!.map((line) {
+      final category = _normalizeRequestType(line.category);
+      final matchingTypes = grouped.keys.where((type) {
+        final normalizedType = _normalizeRequestType(type);
+        return _canonicalLoanType(type) == _canonicalLoanType(line.category) ||
+            normalizedType.contains(category) ||
+            category.contains(normalizedType);
+      }).toList();
+      if (matchingTypes.isEmpty) {
+        return MaterialLoanRequestedLine(
+          typeName: line.attributes['label']?.toString() ?? line.category,
+          variant: _canonicalLoanType(line.category) == 'ceinture'
+              ? 'Standard'
+              : line.attributes['option']?.toString() ?? 'Standard',
+          leadKg: (line.attributes['lead_kg'] as num?)?.toDouble(),
+        );
+      }
+      final type = matchingTypes.first;
+      final items = grouped[type]!;
+      final requestedVariant = line.attributes['option']?.toString();
+      // Keep the option the member asked for. Picking the first inventory
+      // item here used to silently turn e.g. a 12 L DIN request into 10 L.
+      // The actual physical item is only resolved from its CDC number below.
+      return MaterialLoanRequestedLine(
+        typeId: items.first.typeId,
+        typeName: type,
+        variant: _canonicalLoanType(line.category) == 'ceinture'
+            ? 'Standard'
+            : requestedVariant?.trim().isNotEmpty == true
+                ? requestedVariant!
+                : 'Standard',
+        leadKg: (line.attributes['lead_kg'] as num?)?.toDouble(),
+      );
+    }).toList();
+  }
+
   Widget _buildInventorySelector(String type, List<MaterialLoanItem> items) {
     final uniqueItemsById = <String, MaterialLoanItem>{};
     for (final item in items) {
-      uniqueItemsById[item.id] = item;
+      if (item.isBorrowable) uniqueItemsById[item.id] = item;
     }
     final uniqueItems = uniqueItemsById.values.toList();
+    if (uniqueItems.isEmpty) return const SizedBox.shrink();
     final variants =
         uniqueItems.map((item) => item.variantLabel).toSet().toList()..sort();
     final selectedVariant = _selectedVariantByType[type] ?? variants.first;
     final isSelected = _selectedVariantByType.containsKey(type) &&
         !_disabledInventoryTypes.contains(type);
+    final line = MaterialLoanRequestedLine(
+      typeId: _selectedTypeIds[type] ?? uniqueItems.first.typeId,
+      typeName: type,
+      variant: selectedVariant,
+    );
+    final lineKey = _lineKey(line);
+    final candidates = _availableItemsForLine(line, uniqueItems);
+    final selectedItemId = _selectedItemIdsByLine[lineKey];
+    final selectedMatches =
+        candidates.where((item) => item.id == selectedItemId).toList();
+    final selectedItem = selectedMatches.isEmpty ? null : selectedMatches.first;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: isSelected ? 0.94 : 0.82),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isSelected ? AppColors.middenblauw : Colors.grey.shade200,
-        ),
+    return _MaterialChoiceCard(
+      icon: _inventoryTypeIcon(type),
+      label: type,
+      choices: variants,
+      selectedChoice: isSelected ? selectedVariant : null,
+      onSelected: (value) => setState(() {
+        if (value) {
+          _disabledInventoryTypes.remove(type);
+          _selectedVariantByType[type] = variants.first;
+          _selectedTypeIds[type] = uniqueItems.first.typeId;
+        } else {
+          _disabledInventoryTypes.add(type);
+          _selectedVariantByType.remove(type);
+        }
+      }),
+      onChoiceChanged: (variant) => setState(
+        () => _selectedVariantByType[type] = variant,
       ),
-      child: Column(
-        children: [
-          SwitchListTile.adaptive(
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            value: isSelected,
-            onChanged: (value) => setState(() {
-              if (value) {
-                _disabledInventoryTypes.remove(type);
-                _selectedVariantByType[type] = variants.first;
-                _selectedTypeIds[type] = uniqueItems.first.typeId;
-              } else {
-                _disabledInventoryTypes.add(type);
-                _selectedVariantByType.remove(type);
-              }
-            }),
-            title: Text(
-              type,
-              style: const TextStyle(
-                color: AppColors.donkerblauw,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-          if (isSelected) ...[
-            Row(
+      choiceFieldLabel: 'Taille / option',
+      additionalField: isSelected
+          ? Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: selectedVariant,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Taille',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    items: variants
-                        .map(
-                          (variant) => DropdownMenuItem(
-                            value: variant,
-                            child: Text(
-                              variant,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                const Text('N° CDC', style: TextStyle(fontSize: 12)),
+                const SizedBox(height: 4),
+                DropdownButtonFormField<String>(
+                  initialValue:
+                      candidates.any((item) => item.id == selectedItemId)
+                          ? selectedItemId
+                          : null,
+                  isExpanded: true,
+                  onChanged: candidates.isEmpty
+                      ? null
+                      : (itemId) => setState(
+                            () => _selectedItemIdsByLine[lineKey] = itemId,
                           ),
-                        )
-                        .toList(),
-                    onChanged: (variant) {
-                      if (variant == null) return;
-                      setState(() {
-                        _selectedVariantByType[type] = variant;
-                      });
-                    },
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.qr_code_2_outlined),
+                    border: OutlineInputBorder(),
+                    isDense: true,
                   ),
+                  hint: Text(candidates.isEmpty
+                      ? 'Aucun article disponible'
+                      : 'Choisir le matériel'),
+                  items: candidates
+                      .map(
+                        (item) => DropdownMenuItem<String>(
+                          value: item.id,
+                          child: Text(
+                            _cdcLabel(item),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(),
                 ),
+                if (selectedItem != null && selectedItem.openDefects.isNotEmpty)
+                  _OpenDefectsNotice(
+                    defects: selectedItem.openDefects,
+                    onAdd: () => _addDefect(selectedItem),
+                  )
+                else if (selectedItem != null)
+                  TextButton.icon(
+                    onPressed: () => _addDefect(selectedItem),
+                    icon: const Icon(Icons.add_a_photo_outlined),
+                    label: const Text('Ajouter une constatation'),
+                  ),
               ],
-            ),
-          ],
-        ],
+            )
+          : null,
+    );
+  }
+
+  Future<void> _addDefect(MaterialLoanItem item) async {
+    final recorded = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AddItemDefectSheet(
+        service: widget.service,
+        clubId: widget.clubId,
+        item: item,
+        recordedByUserId: widget.createdByUserId,
+        recordedByName: widget.createdByName,
       ),
     );
+    if (recorded == true && mounted) setState(() {});
+  }
+
+  IconData _inventoryTypeIcon(String type) {
+    final normalized = _normalizeRequestType(type);
+    if (normalized.contains('bouteille')) return Icons.propane_tank_outlined;
+    if (normalized.contains('gilet')) return Icons.checkroom_outlined;
+    if (normalized.contains('detendeur')) return Icons.air;
+    if (normalized.contains('ordinateur')) return Icons.watch_outlined;
+    if (normalized.contains('palmes')) return Icons.directions_run_outlined;
+    if (normalized.contains('lampe')) return Icons.flashlight_on_outlined;
+    return Icons.inventory_2_outlined;
   }
 
   Future<void> _pickReturnDate() async {
@@ -1976,88 +2776,502 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
     if (picked != null) setState(() => _returnDate = picked);
   }
 
-  Future<void> _submit(List<MaterialLoanRequestedLine> lines) async {
+  String _lineKey(MaterialLoanRequestedLine line) =>
+      '${line.typeId ?? line.typeName}|${line.variant}';
+
+  String _normaliseCdc(String value) =>
+      value.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+
+  String _normaliseRequestedVariant(String value) {
+    switch (_normaliseCdc(value)) {
+      case 'SMALL':
+        return 'S';
+      case 'MEDIUM':
+        return 'M';
+      case 'LARGE':
+        return 'L';
+      default:
+        return _normaliseCdc(value);
+    }
+  }
+
+  bool _matchesRequestedLine(
+      MaterialLoanRequestedLine line, MaterialLoanItem item) {
+    final lineType = _normalizeRequestType(line.typeName);
+    final itemType = _normalizeRequestType(item.typeLabel);
+    final canonicalTypeMatches =
+        _canonicalLoanType(line.typeName) == _canonicalLoanType(item.typeLabel);
+    final isComputer = _canonicalLoanType(line.typeName) == 'ordinateur';
+    final typeMatches =
+        (line.typeId?.isNotEmpty == true && item.typeId == line.typeId) ||
+            canonicalTypeMatches ||
+            lineType.contains(itemType) ||
+            itemType.contains(lineType);
+    final requestedVariant = _normaliseRequestedVariant(line.variant);
+    final itemVariant = _normaliseRequestedVariant(item.variantLabel);
+    // Some old/mobile requests store the product label itself as the option
+    // (`Ordinateur` for an `Ordinateur de plongée`). It is not a physical
+    // variant and must therefore behave exactly like `Standard`.
+    final genericProductOption =
+        _canonicalLoanType(line.variant) == _canonicalLoanType(line.typeName);
+    final requestedNumbers = RegExp(r'\d+')
+        .allMatches(line.variant)
+        .map((match) => match.group(0))
+        .whereType<String>()
+        .toList();
+    final itemNumbers = RegExp(r'\d+')
+        .allMatches(item.variantLabel)
+        .map((match) => match.group(0))
+        .whereType<String>()
+        .toList();
+    final hasSamePrimaryNumber = requestedNumbers.isNotEmpty &&
+        itemNumbers.isNotEmpty &&
+        requestedNumbers.first == itemNumbers.first;
+    final variantMatches = isComputer ||
+        genericProductOption ||
+        requestedVariant.isEmpty ||
+        requestedVariant == 'STANDARD' ||
+        itemVariant.contains(requestedVariant) ||
+        requestedVariant.contains(itemVariant) ||
+        hasSamePrimaryNumber;
+    return typeMatches && variantMatches;
+  }
+
+  List<MaterialLoanItem> _availableItemsForLine(
+    MaterialLoanRequestedLine line,
+    List<MaterialLoanItem> items,
+  ) =>
+      items
+          .where(
+            (item) => item.isBorrowable && _matchesRequestedLine(line, item),
+          )
+          .toList()
+        ..sort((left, right) => left.code.compareTo(right.code));
+
+  List<MaterialLoanItem> _alternativeItemsForLine(
+    MaterialLoanRequestedLine line,
+    List<MaterialLoanItem> items,
+  ) {
+    final lineType = _normalizeRequestType(line.typeName);
+    final canonicalLineType = _canonicalLoanType(line.typeName);
+    return items
+        .where(
+          (item) =>
+              item.isBorrowable &&
+              ((line.typeId?.isNotEmpty == true &&
+                      item.typeId == line.typeId) ||
+                  _canonicalLoanType(item.typeLabel) == canonicalLineType ||
+                  _normalizeRequestType(item.typeLabel).contains(lineType) ||
+                  lineType.contains(_normalizeRequestType(item.typeLabel))),
+        )
+        .toList()
+      ..sort((left, right) => left.code.compareTo(right.code));
+  }
+
+  List<MaterialLoanItem> _assignedItems(
+    List<MaterialLoanRequestedLine> lines,
+    List<MaterialLoanItem> items,
+  ) {
+    final assigned = <MaterialLoanItem>[];
+    for (final line in lines) {
+      if (_canonicalLoanType(line.typeName) == 'ceinture') continue;
+      final selectedId = _selectedItemIdsByLine[_lineKey(line)];
+      final matches = _availableItemsForLine(line, items)
+          .where((item) => item.id == selectedId)
+          .toList();
+      if (matches.length == 1) assigned.add(matches.single);
+    }
+    return assigned.map((item) => item.id).toSet().length == assigned.length
+        ? assigned
+        : const <MaterialLoanItem>[];
+  }
+
+  String _cdcLabel(MaterialLoanItem item) {
+    final code = item.code.trim();
+    final cdc = code.toUpperCase().startsWith('CDC') ? code : 'CDC $code';
+    final type = _normalizeRequestType(item.typeLabel);
+    final details = <String>[];
+
+    // A bottle is identified first by its usable volume; a BCD by its brand.
+    // For computers and all other groups, brand/model is the clearest staff
+    // identifier. Never repeat the inventory code as the second value.
+    if (type.contains('bouteille')) {
+      if (item.variantLabel != 'Standard') {
+        details.add(item.variantLabel);
+      }
+    } else {
+      if (item.brand?.trim().isNotEmpty == true) {
+        details.add(item.brand!.trim());
+      }
+      if (item.model?.trim().isNotEmpty == true) {
+        details.add(item.model!.trim());
+      }
+      if (details.isEmpty && item.variantLabel != 'Standard') {
+        details.add(item.variantLabel);
+      }
+    }
+    return details.isEmpty ? cdc : '$cdc · ${details.join(' · ')}';
+  }
+
+  Widget _buildCdcAssignmentCard(
+    MaterialLoanRequestedLine line,
+    List<MaterialLoanItem> items,
+  ) {
+    final lineKey = _lineKey(line);
+    if (_canonicalLoanType(line.typeName) == 'ceinture') {
+      return _buildLeadBeltHandoverCard(line, lineKey);
+    }
+    final strictCandidates = _availableItemsForLine(line, items);
+    final alternativesAllowed = _alternativeAllowedByLine.contains(lineKey);
+    final candidates = alternativesAllowed
+        ? _alternativeItemsForLine(line, items)
+        : strictCandidates;
+    final selectedId = _selectedItemIdsByLine[_lineKey(line)];
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      decoration: BoxDecoration(
+        color: AppColors.middenblauw.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppColors.middenblauw.withValues(alpha: 0.45),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                _inventoryTypeIcon(line.typeName),
+                color: AppColors.middenblauw,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  line.typeName,
+                  style: const TextStyle(
+                    color: AppColors.donkerblauw,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Taille / option',
+                        style: TextStyle(fontSize: 12)),
+                    const SizedBox(height: 4),
+                    InputDecorator(
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      child: Text(line.variant),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('N° CDC', style: TextStyle(fontSize: 12)),
+                    const SizedBox(height: 4),
+                    DropdownButtonFormField<String>(
+                      initialValue:
+                          candidates.any((item) => item.id == selectedId)
+                              ? selectedId
+                              : null,
+                      isExpanded: true,
+                      onChanged: candidates.isEmpty
+                          ? null
+                          : (itemId) => setState(
+                                () => _selectedItemIdsByLine[lineKey] = itemId,
+                              ),
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.qr_code_2_outlined),
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      hint: Text(candidates.isEmpty
+                          ? 'Aucun article disponible'
+                          : 'Choisir le matériel'),
+                      items: candidates
+                          .map(
+                            (item) => DropdownMenuItem<String>(
+                              value: item.id,
+                              child: Text(
+                                _cdcLabel(item),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (strictCandidates.isEmpty && !alternativesAllowed)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => setState(
+                  () => _alternativeAllowedByLine.add(lineKey),
+                ),
+                icon: const Icon(Icons.swap_horiz_outlined),
+                label: const Text('Remettre une autre taille / option'),
+                style: TextButton.styleFrom(foregroundColor: AppColors.error),
+              ),
+            ),
+          if (alternativesAllowed)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 6),
+              child: Text(
+                'Écart par rapport à la demande : la taille ou l’option réellement remise sera enregistrée.',
+                style: TextStyle(color: AppColors.error, fontSize: 12),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLeadBeltHandoverCard(
+    MaterialLoanRequestedLine line,
+    String lineKey,
+  ) {
+    final selectedKg = _leadKgByLine[lineKey] ?? line.leadKg;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      decoration: BoxDecoration(
+        color: AppColors.middenblauw.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border:
+            Border.all(color: AppColors.middenblauw.withValues(alpha: 0.45)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Ceinture de plomb',
+            style: TextStyle(
+                color: AppColors.donkerblauw, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 10),
+        Row(children: [
+          const Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text('Taille / option', style: TextStyle(fontSize: 12)),
+                SizedBox(height: 4),
+                InputDecorator(
+                    decoration: InputDecoration(
+                        border: OutlineInputBorder(), isDense: true),
+                    child: Text('Standard'))
+              ])),
+          const SizedBox(width: 10),
+          Expanded(
+              flex: 2,
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Lest remis', style: TextStyle(fontSize: 12)),
+                    const SizedBox(height: 4),
+                    DropdownButtonFormField<double>(
+                        initialValue: selectedKg,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                            prefixIcon: Icon(Icons.fitness_center_outlined),
+                            border: OutlineInputBorder(),
+                            isDense: true),
+                        hint: const Text('Choisir les kilogrammes'),
+                        items: List.generate(12, (i) => i + 1)
+                            .map((kg) => DropdownMenuItem(
+                                value: kg.toDouble(), child: Text('$kg kg')))
+                            .toList(),
+                        onChanged: (kg) {
+                          if (kg != null)
+                            setState(() => _leadKgByLine[lineKey] = kg);
+                        }),
+                  ])),
+        ]),
+      ]),
+    );
+  }
+
+  Future<void> _addExtraMaterial(List<MaterialLoanItem> items) async {
+    final grouped = <String, List<MaterialLoanItem>>{};
+    for (final item in items.where((item) => item.isBorrowable)) {
+      grouped.putIfAbsent(item.typeLabel, () => []).add(item);
+    }
+    if (grouped.isEmpty) return;
+    String selectedType = grouped.keys.first;
+    final extra = await showModalBottomSheet<MaterialLoanRequestedLine>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Ajouter du matériel',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 8),
+              const Text(
+                  'Kies eerst de productgroep; daarna kies je het concrete CDC-nummer.'),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                initialValue: selectedType,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                    labelText: 'Productgroep', border: OutlineInputBorder()),
+                items: grouped.keys
+                    .map((type) =>
+                        DropdownMenuItem(value: type, child: Text(type)))
+                    .toList(),
+                onChanged: (type) {
+                  if (type != null) setSheetState(() => selectedType = type);
+                },
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () => Navigator.of(context).pop(
+                    MaterialLoanRequestedLine(
+                      typeId: grouped[selectedType]!.first.typeId,
+                      typeName: selectedType,
+                      variant: 'Standard',
+                    ),
+                  ),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Toevoegen'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (extra != null && mounted) {
+      setState(() {
+        if (!_extraLines.any((line) => line.typeId == extra.typeId)) {
+          _extraLines.add(extra);
+        }
+      });
+    }
+  }
+
+  Future<void> _submit(
+    List<MaterialLoanRequestedLine> lines,
+    List<MaterialLoanItem> catalogItems,
+  ) async {
     final member = _member;
     if (member == null) return;
-    final requestLines = List<MaterialLoanRequestedLine>.of(lines);
-    final paymentMode = _paymentMode;
-    final returnDate = _returnDate;
-    final notes = _notesController.text;
+    final assignedItems = _assignedItems(lines, catalogItems);
+    final nonTrackedLines = lines
+        .where((line) => _canonicalLoanType(line.typeName) == 'ceinture')
+        .map((line) => MaterialLoanRequestedLine(
+              typeId: line.typeId,
+              typeName: 'Ceinture de plomb',
+              variant: 'Standard',
+              leadKg: _leadKgByLine[_lineKey(line)] ?? line.leadKg,
+            ))
+        .toList();
+    final physicalLines = lines
+        .where((line) => _canonicalLoanType(line.typeName) != 'ceinture')
+        .toList();
+    if (assignedItems.length != physicalLines.length) return;
+    if (nonTrackedLines
+        .any((line) => line.leadKg == null || line.leadKg! <= 0)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Indiquez le nombre de kilogrammes de lest remis.'),
+        backgroundColor: AppColors.error,
+      ));
+      return;
+    }
+    final receipt = await showModalBottomSheet<MaterialLoanHandoverReceipt>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _LoanSignatureSheet(
+        memberName: member.name,
+        expectedReturnDate: _returnDate,
+        items: assignedItems,
+        nonTrackedLines: nonTrackedLines,
+        clubId: widget.clubId,
+        memberId: member.id,
+        loanService: widget.loanService,
+      ),
+    );
+    if (receipt == null || !mounted) return;
+    final finish = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Terminer la remise ?'),
+        content: const Text(
+          'La signature et le matériel seront enregistrés. Une copie sera envoyée par e-mail au membre.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Retour'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Terminer la remise'),
+          ),
+        ],
+      ),
+    );
+    if (finish != true || !mounted) return;
     setState(() => _submitting = true);
     try {
-      final loanId = _pendingLoanId ??
-          await widget.loanService.createPendingTypeLoan(
-            clubId: widget.clubId,
-            member: member,
-            requestedLines: requestLines,
-            expectedReturnDate: returnDate,
-            createdByUserId: widget.createdByUserId,
-            createdByName: widget.createdByName,
-            paymentMode: paymentMode,
-            notes: notes,
-          );
-      if (!mounted) return;
-      setState(() {
-        _pendingLoanId ??= loanId;
-        _pendingLines ??= requestLines;
-      });
-      if (paymentMode == 'epc_qr_email') {
-        await widget.loanService.sendPendingLoanPaymentQrEmail(
+      final loanId = await widget.loanService.createDirectLoan(
+        clubId: widget.clubId,
+        member: member,
+        items: assignedItems,
+        expectedReturnDate: _returnDate,
+        createdByUserId: widget.createdByUserId,
+        createdByName: widget.createdByName,
+        handoverReceipt: receipt,
+        nonTrackedLines: nonTrackedLines,
+        notes: _notesController.text,
+      );
+      if (widget.initialRequestId != null) {
+        await widget.service.markLoanRequestHandedOver(
           clubId: widget.clubId,
+          requestId: widget.initialRequestId!,
           loanId: loanId,
+          assignedItemIds: assignedItems.map((item) => item.id).toList(),
         );
-        if (!mounted) return;
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'QR envoyé au membre. Aucun matériel réservé : attribution lors de la remise.',
-            ),
-            backgroundColor: AppColors.success,
-          ),
-        );
-        return;
       }
-
-      final qr = await widget.loanService.getPendingLoanPaymentQr(
-        clubId: widget.clubId,
-        loanId: loanId,
-      );
-      if (!mounted) return;
-      final confirmed = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        useRootNavigator: true,
-        builder: (dialogContext) => MaterialPaymentQrDialog(
-          payload: qr.epcPayload,
-          reference: qr.reference,
-          amount: qr.amount,
-          canConfirmPayment: true,
-        ),
-      );
-      if (confirmed != true) return;
-      if (!mounted) return;
-      final selectedIds = await showDialog<List<String>>(
-          context: context,
-          builder: (_) => MaterialHandoverDialog(
-              lines: _pendingLines!,
-              availableItems:
-                  widget.service.watchBorrowableItems(widget.clubId),
-              cautionAmount: qr.amount));
-      if (selectedIds == null) return;
-      await widget.loanService.confirmPendingPaymentAndHandover(
-        clubId: widget.clubId,
-        loanId: loanId,
-        confirmedByUserId: widget.createdByUserId,
-        confirmedByName: widget.createdByName,
-        selectedItemIds: selectedIds,
-        paymentConfirmed: true,
-      );
+      // A failed e-mail must be visible and retriable in CalyCompta, but may
+      // never undo a physical handover that was already signed and recorded.
+      try {
+        await widget.loanService
+            .sendHandoverReceiptEmail(clubId: widget.clubId, loanId: loanId);
+      } catch (_) {}
       if (!mounted) return;
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Paiement confirmé. Le matériel est remis.'),
+          content: Text('Matériel remis et prêt enregistré.'),
           backgroundColor: AppColors.success,
         ),
       );
@@ -2073,6 +3287,47 @@ class _DirectLoanSheetState extends State<_DirectLoanSheet> {
       if (mounted) setState(() => _submitting = false);
     }
   }
+}
+
+class _PreparedLoanMemberSummary extends StatelessWidget {
+  final String memberName;
+  final DateTime returnDate;
+
+  const _PreparedLoanMemberSummary({
+    required this.memberName,
+    required this.returnDate,
+  });
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(13),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.94),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            const _LoanActionIcon(icon: Icons.person_outline),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    memberName,
+                    style: const TextStyle(
+                      color: AppColors.donkerblauw,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text('Retour prévu : ${_formatDate(returnDate)}'),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
 }
 
 class _InlineNotice extends StatelessWidget {
@@ -2093,12 +3348,536 @@ class _InlineNotice extends StatelessWidget {
   }
 }
 
+const _loanTermsVersion = '2026-09-11';
+const _loanTermsText = '''Conditions de prêt et reconnaissance de remise
+
+Je reconnais avoir reçu le matériel décrit ci-dessous, dans son état apparent, sous réserve des constatations explicitement indiquées. Je m'engage à en prendre soin, à l'utiliser conformément à sa destination et à ne pas le prêter à un tiers.
+
+Je m'engage à restituer tout le matériel à la date convenue. En cas d'incident, de perte, de vol ou de dommage, j'avertis sans délai le club. Le club peut suspendre les prêts et demander une indemnisation proportionnée au dommage effectivement constaté, pouvant aller jusqu'au coût de remplacement neuf d'un matériel équivalent. Toute décision est prise par le conseil d'administration après que le membre a pu donner ses explications.
+
+Ma signature électronique confirme que j'ai lu et accepté ces conditions. Une copie de cette remise me sera envoyée par e-mail après validation par le responsable.''';
+
+class _LoanSignatureSheet extends StatefulWidget {
+  final String memberName;
+  final DateTime expectedReturnDate;
+  final List<MaterialLoanItem> items;
+  final List<MaterialLoanRequestedLine> nonTrackedLines;
+  final String clubId;
+  final String memberId;
+  final MaterialLoanService loanService;
+  const _LoanSignatureSheet({
+    required this.memberName,
+    required this.expectedReturnDate,
+    required this.items,
+    this.nonTrackedLines = const [],
+    required this.clubId,
+    required this.memberId,
+    required this.loanService,
+  });
+  @override
+  State<_LoanSignatureSheet> createState() => _LoanSignatureSheetState();
+}
+
+class _LoanSignatureSheetState extends State<_LoanSignatureSheet> {
+  final _signatureKey = GlobalKey();
+  final _points = <Offset?>[];
+  bool _accepted = false;
+  bool _saving = false;
+  String? _signatureError;
+
+  bool get _hasSignature => _points.whereType<Offset>().isNotEmpty;
+
+  Future<void> _sign() async {
+    if (!_accepted || !_hasSignature || _saving) return;
+    setState(() {
+      _saving = true;
+      _signatureError = null;
+    });
+    try {
+      final boundary = _signatureKey.currentContext!.findRenderObject()
+          as RenderRepaintBoundary;
+      final image = await boundary.toImage(pixelRatio: 2);
+      final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (bytes == null) throw StateError('Signature illisible');
+      final url = await widget.loanService.uploadHandoverSignature(
+        clubId: widget.clubId,
+        memberId: widget.memberId,
+        bytes: bytes.buffer.asUint8List(),
+      );
+      if (!mounted) return;
+      Navigator.pop(
+        context,
+        MaterialLoanHandoverReceipt(
+          termsVersion: _loanTermsVersion,
+          termsText: _loanTermsText,
+          signatureUrl: url,
+          signedByName: widget.memberName,
+          signedAt: DateTime.now(),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        setState(() => _signatureError =
+            'La signature ne peut pas être enregistrée : $error');
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+        child: Container(
+          height: MediaQuery.sizeOf(context).height * .9,
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(children: [
+            Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.circular(4))),
+            const SizedBox(height: 14),
+            Row(children: [
+              const Expanded(
+                  child: Text('Signature du prêt',
+                      style: TextStyle(
+                          fontSize: 21,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.donkerblauw))),
+              IconButton(
+                  onPressed: _saving ? null : () => Navigator.pop(context),
+                  icon: const Icon(Icons.close)),
+            ]),
+            Expanded(
+                child: ListView(children: [
+              Text(widget.memberName,
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+              Text('Retour prévu : ${_formatDate(widget.expectedReturnDate)}'),
+              const SizedBox(height: 14),
+              const Text('Matériel remis',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+              ...widget.items.map((item) => Padding(
+                    padding: const EdgeInsets.only(top: 5),
+                    child: Text('• ${_itemDescription(item)}'),
+                  )),
+              ...widget.nonTrackedLines.map((line) => Padding(
+                    padding: const EdgeInsets.only(top: 5),
+                    child: Text(
+                        '• Ceinture de plomb standard · ${line.leadKg?.toStringAsFixed(0) ?? '?'} kg de lest'),
+                  )),
+              const SizedBox(height: 16),
+              const Text('À lire avant de signer',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                    color: Colors.blueGrey.shade50,
+                    borderRadius: BorderRadius.circular(12)),
+                child:
+                    const Text(_loanTermsText, style: TextStyle(height: 1.35)),
+              ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _accepted,
+                onChanged: _saving
+                    ? null
+                    : (v) => setState(() => _accepted = v ?? false),
+                title:
+                    const Text('J’ai lu et j’accepte les conditions de prêt.'),
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+              const Text('Signature du membre',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 6),
+              RepaintBoundary(
+                key: _signatureKey,
+                child: GestureDetector(
+                  onPanStart: (d) =>
+                      setState(() => _points.add(d.localPosition)),
+                  onPanUpdate: (d) =>
+                      setState(() => _points.add(d.localPosition)),
+                  onPanEnd: (_) => _points.add(null),
+                  child: Container(
+                    height: 160,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: AppColors.middenblauw),
+                        borderRadius: BorderRadius.circular(12)),
+                    child: CustomPaint(painter: _SignaturePainter(_points)),
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                  onPressed: _saving ? null : () => setState(_points.clear),
+                  icon: const Icon(Icons.restart_alt),
+                  label: const Text('Effacer la signature')),
+              if (_signatureError != null)
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.shade200),
+                  ),
+                  child: Text(_signatureError!,
+                      style: TextStyle(color: Colors.red.shade800)),
+                ),
+            ])),
+            SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed:
+                      _accepted && _hasSignature && !_saving ? _sign : null,
+                  icon: const Icon(Icons.verified_outlined),
+                  label: Text(_saving
+                      ? 'Enregistrement…'
+                      : 'Signer et préparer la remise'),
+                )),
+          ]),
+        ),
+      );
+}
+
+String _itemDescription(MaterialLoanItem item) {
+  final parts = <String>[
+    'CDC ${item.inventoryLabel}',
+    item.typeLabel,
+    if (item.brand?.trim().isNotEmpty == true) item.brand!.trim(),
+    if (item.model?.trim().isNotEmpty == true) item.model!.trim(),
+    if (item.variantLabel != 'Standard') item.variantLabel,
+    if (item.serialNumber?.trim().isNotEmpty == true)
+      'n° série ${item.serialNumber!.trim()}',
+  ];
+  final defects = item.openDefects
+      .map((defect) => defect.note.trim())
+      .where((note) => note.isNotEmpty)
+      .toList();
+  return '${parts.join(' · ')}${defects.isEmpty ? '' : ' — constatation : ${defects.join('; ')}'}';
+}
+
+class _SignaturePainter extends CustomPainter {
+  final List<Offset?> points;
+  const _SignaturePainter(this.points);
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = AppColors.donkerblauw
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    Offset? previous;
+    for (final point in points) {
+      if (point == null) {
+        previous = null;
+        continue;
+      }
+      if (previous != null) canvas.drawLine(previous, point, paint);
+      previous = point;
+    }
+  }
+
+  @override
+  // The active signature list is intentionally mutated during a drag. The
+  // painter must therefore repaint even though the list identity stays the
+  // same; otherwise desktop mouse strokes (and touch strokes) remain blank.
+  bool shouldRepaint(covariant _SignaturePainter old) => true;
+}
+
+class _AddItemDefectSheet extends StatefulWidget {
+  final MaterialReturnService service;
+  final String clubId;
+  final MaterialLoanItem item;
+  final String? recordedByUserId;
+  final String recordedByName;
+  const _AddItemDefectSheet(
+      {required this.service,
+      required this.clubId,
+      required this.item,
+      required this.recordedByUserId,
+      required this.recordedByName});
+  @override
+  State<_AddItemDefectSheet> createState() => _AddItemDefectSheetState();
+}
+
+class _AddItemDefectSheetState extends State<_AddItemDefectSheet> {
+  final _note = TextEditingController();
+  final _photos = <XFile>[];
+  String _severity = 'information';
+  bool _saving = false;
+  @override
+  void dispose() {
+    _note.dispose();
+    super.dispose();
+  }
+
+  Future<void> _photo(ImageSource source) async {
+    if (source == ImageSource.camera) {
+      final bytes = await Navigator.of(context).push<Uint8List>(
+        MaterialPageRoute(builder: (_) => const EquipmentCameraCapture()),
+      );
+      if (bytes != null && mounted) {
+        setState(() => _photos.add(XFile.fromData(
+              bytes,
+              name: 'constatation_${DateTime.now().millisecondsSinceEpoch}.jpg',
+              mimeType: 'image/jpeg',
+            )));
+      }
+      return;
+    }
+    final file = await ImagePicker()
+        .pickImage(source: source, imageQuality: 70, maxWidth: 1280);
+    if (file != null && mounted) setState(() => _photos.add(file));
+  }
+
+  Future<void> _save() async {
+    if (_note.text.trim().isEmpty) return;
+    setState(() => _saving = true);
+    try {
+      final urls = <String>[];
+      for (final photo in _photos) {
+        urls.add(await widget.service.uploadItemDefectPhoto(
+            clubId: widget.clubId,
+            itemId: widget.item.id,
+            bytes: await photo.readAsBytes(),
+            fileName: photo.name,
+            contentType: photo.mimeType));
+      }
+      await widget.service.addItemDefect(
+          clubId: widget.clubId,
+          itemId: widget.item.id,
+          severity: _severity,
+          note: _note.text,
+          photoUrls: urls,
+          recordedByUserId: widget.recordedByUserId ?? '',
+          recordedByName: widget.recordedByName);
+      if (mounted) Navigator.pop(context, true);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: Material(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+          child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                        'Nouvelle constatation · ${widget.item.inventoryLabel}',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 18)),
+                    const SizedBox(height: 14),
+                    DropdownButtonFormField<String>(
+                        initialValue: _severity,
+                        decoration: const InputDecoration(
+                            labelText: 'Niveau', border: OutlineInputBorder()),
+                        items: const [
+                          DropdownMenuItem(
+                              value: 'information',
+                              child: Text('Information / usure')),
+                          DropdownMenuItem(
+                              value: 'to_check', child: Text('À contrôler')),
+                          DropdownMenuItem(
+                              value: 'out_of_service',
+                              child: Text('Hors service'))
+                        ],
+                        onChanged: (v) =>
+                            setState(() => _severity = v ?? 'information')),
+                    const SizedBox(height: 10),
+                    TextField(
+                        controller: _note,
+                        minLines: 2,
+                        maxLines: 4,
+                        decoration: const InputDecoration(
+                            labelText: 'Description',
+                            border: OutlineInputBorder())),
+                    const SizedBox(height: 8),
+                    Wrap(spacing: 8, children: [
+                      OutlinedButton.icon(
+                          onPressed:
+                              _saving ? null : () => _photo(ImageSource.camera),
+                          icon: const Icon(Icons.photo_camera_outlined),
+                          label: const Text('Prendre une photo')),
+                      OutlinedButton.icon(
+                          onPressed: _saving
+                              ? null
+                              : () => _photo(ImageSource.gallery),
+                          icon: const Icon(Icons.photo_library_outlined),
+                          label: const Text('Galerie')),
+                      if (_photos.isNotEmpty)
+                        Chip(label: Text('${_photos.length} photo(s)'))
+                    ]),
+                    const SizedBox(height: 14),
+                    FilledButton.icon(
+                        onPressed: _saving ? null : _save,
+                        icon: const Icon(Icons.save_outlined),
+                        label: Text(_saving
+                            ? 'Enregistrement...'
+                            : 'Enregistrer la constatation'))
+                  ]))));
+}
+
+class _OpenDefectsNotice extends StatelessWidget {
+  final List<MaterialItemDefect> defects;
+  final VoidCallback onAdd;
+
+  const _OpenDefectsNotice({required this.defects, required this.onAdd});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        margin: const EdgeInsets.only(top: 10),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.orange.shade50,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.orange.shade200),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Constatations ouvertes',
+                style: TextStyle(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 4),
+            ...defects.map((defect) => Padding(
+                  padding: const EdgeInsets.only(bottom: 3),
+                  child: Text('• ${defect.note}'),
+                )),
+            TextButton.icon(
+              onPressed: onAdd,
+              icon: const Icon(Icons.add_a_photo_outlined),
+              label: const Text('Ajouter une constatation'),
+            ),
+          ],
+        ),
+      );
+}
+
+/// Shared product-and-option picker used by both a member reservation and a
+/// direct handover. Keeping this in one place prevents the two flows drifting.
+class _MaterialChoiceCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final List<String> choices;
+  final String? selectedChoice;
+  final ValueChanged<bool> onSelected;
+  final ValueChanged<String> onChoiceChanged;
+  final Widget? additionalField;
+  final String choiceFieldLabel;
+
+  const _MaterialChoiceCard({
+    required this.icon,
+    required this.label,
+    required this.choices,
+    required this.selectedChoice,
+    required this.onSelected,
+    required this.onChoiceChanged,
+    this.additionalField,
+    this.choiceFieldLabel = 'Option',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = selectedChoice != null;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+      decoration: BoxDecoration(
+        color: selected
+            ? AppColors.middenblauw.withValues(alpha: 0.08)
+            : Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: selected
+              ? AppColors.middenblauw.withValues(alpha: 0.45)
+              : Colors.grey.shade200,
+        ),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: AppColors.middenblauw),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: AppColors.donkerblauw,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Switch.adaptive(value: selected, onChanged: onSelected),
+            ],
+          ),
+          if (selected) ...[
+            const SizedBox(height: 10),
+            if (additionalField == null)
+              _buildChoiceField()
+            else
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: _buildChoiceField()),
+                  const SizedBox(width: 10),
+                  Expanded(flex: 2, child: additionalField!),
+                ],
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChoiceField() => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(choiceFieldLabel, style: const TextStyle(fontSize: 12)),
+          const SizedBox(height: 4),
+          DropdownButtonFormField<String>(
+            initialValue: selectedChoice,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            items: choices
+                .map(
+                  (option) => DropdownMenuItem(
+                    value: option,
+                    child: Text(option, overflow: TextOverflow.ellipsis),
+                  ),
+                )
+                .toList(),
+            onChanged: (value) {
+              if (value != null) onChoiceChanged(value);
+            },
+          ),
+        ],
+      );
+}
+
 class _MaterialRequestSheet extends StatefulWidget {
   final MaterialReturnService service;
   final String clubId;
   final String memberId;
   final String memberName;
   final String memberEmail;
+  final MaterialLoanRequest? request;
 
   const _MaterialRequestSheet({
     required this.service,
@@ -2106,6 +3885,7 @@ class _MaterialRequestSheet extends StatefulWidget {
     required this.memberId,
     required this.memberName,
     required this.memberEmail,
+    this.request,
   });
 
   @override
@@ -2115,7 +3895,9 @@ class _MaterialRequestSheet extends StatefulWidget {
 class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
   final _notesController = TextEditingController();
   final Map<String, String?> _selectedChoices = {};
-  DateTime _expectedReturnDate = DateTime.now().add(const Duration(days: 7));
+  final Map<String, double> _leadKgByCategory = {};
+  late DateTime _requestedStartDate;
+  late DateTime _expectedReturnDate;
   bool _submitting = false;
 
   static const _categories = <_MaterialRequestCategory>[
@@ -2153,7 +3935,7 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
       id: 'palmes',
       label: 'Palmes réglables',
       icon: Icons.directions_run_outlined,
-      choices: ['S (36-40)', 'M (40-44)', 'XL (44-48)'],
+      choices: ['Small', 'Medium', 'XL'],
     ),
     _MaterialRequestCategory(
       id: 'ordinateur',
@@ -2165,7 +3947,7 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
       id: 'ceinture',
       label: 'Ceinture de plomb',
       icon: Icons.fitness_center_outlined,
-      choices: ['4 kg', '5 kg', '6 kg', '7 kg', '8 kg'],
+      choices: ['Standard'],
     ),
     _MaterialRequestCategory(
       id: 'parachute',
@@ -2174,6 +3956,33 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
       choices: ['Parachute'],
     ),
   ];
+
+  bool get _isEditing => widget.request != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _requestedStartDate = widget.request?.requestedStartDate ?? now;
+    _expectedReturnDate = widget.request?.expectedReturnDate ??
+        _requestedStartDate.add(const Duration(days: 7));
+    _notesController.text = widget.request?.notes ?? '';
+    for (final line
+        in widget.request?.lines ?? const <MaterialLoanRequestLine>[]) {
+      final category = _categories.where((item) => item.id == line.category);
+      if (category.isNotEmpty) {
+        final option = line.attributes['option']?.toString();
+        _selectedChoices[line.category] =
+            category.first.choices.contains(option)
+                ? option
+                : category.first.choices.first;
+        if (line.category == 'ceinture') {
+          _leadKgByCategory[line.category] =
+              (line.attributes['lead_kg'] as num?)?.toDouble() ?? 0;
+        }
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -2203,7 +4012,7 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
             ),
             const SizedBox(height: 16),
             Text(
-              'Demande de pret',
+              _isEditing ? 'Modifier ma demande' : 'Demande de pret',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.bold,
                     color: AppColors.donkerblauw,
@@ -2215,10 +4024,24 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
               style: TextStyle(color: Colors.grey.shade700),
             ),
             const SizedBox(height: 14),
-            OutlinedButton.icon(
-              onPressed: _pickReturnDate,
-              icon: const Icon(Icons.event_available),
-              label: Text('Retour prevu: ${_formatDate(_expectedReturnDate)}'),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _pickStartDate,
+                    icon: const Icon(Icons.event_available),
+                    label: Text('Du ${_formatDate(_requestedStartDate)}'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _pickReturnDate,
+                    icon: const Icon(Icons.event_busy),
+                    label: Text('Au ${_formatDate(_expectedReturnDate)}'),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 10),
             TextField(
@@ -2238,71 +4061,44 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemBuilder: (context, index) {
                   final category = _categories[index];
-                  final selected = _selectedChoices.containsKey(category.id);
                   final choice = _selectedChoices[category.id];
-
-                  return Container(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-                    decoration: BoxDecoration(
-                      color: selected
-                          ? AppColors.middenblauw.withValues(alpha: 0.08)
-                          : Colors.grey.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: selected
-                            ? AppColors.middenblauw.withValues(alpha: 0.45)
-                            : Colors.grey.shade200,
-                      ),
+                  return _MaterialChoiceCard(
+                    icon: category.icon,
+                    label: category.label,
+                    choices: category.choices,
+                    selectedChoice: choice,
+                    onSelected: (selected) =>
+                        _toggleCategory(category, selected),
+                    onChoiceChanged: (value) => setState(
+                      () => _selectedChoices[category.id] = value,
                     ),
-                    child: Column(
-                      children: [
-                        SwitchListTile.adaptive(
-                          contentPadding: EdgeInsets.zero,
-                          value: selected,
-                          onChanged: (value) =>
-                              _toggleCategory(category, value),
-                          secondary: Icon(
-                            category.icon,
-                            color: AppColors.middenblauw,
-                          ),
-                          title: Text(
-                            category.label,
-                            style: const TextStyle(
-                              color: AppColors.donkerblauw,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          subtitle: selected && choice != null
-                              ? Text(choice)
-                              : const Text('Non sélectionné'),
-                        ),
-                        if (selected) ...[
-                          DropdownButtonFormField<String>(
-                            initialValue: choice,
-                            isExpanded: true,
-                            decoration: const InputDecoration(
-                              labelText: 'Option',
-                              border: OutlineInputBorder(),
-                            ),
-                            items: category.choices
-                                .map(
-                                  (option) => DropdownMenuItem(
-                                    value: option,
-                                    child: Text(option),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (value) {
-                              if (value != null) {
-                                setState(
-                                  () => _selectedChoices[category.id] = value,
-                                );
-                              }
-                            },
-                          ),
-                        ],
-                      ],
-                    ),
+                    additionalField: category.id == 'ceinture'
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Kilogrammes',
+                                  style: TextStyle(fontSize: 12)),
+                              const SizedBox(height: 4),
+                              DropdownButtonFormField<double>(
+                                initialValue: _leadKgByCategory[category.id],
+                                decoration: const InputDecoration(
+                                    border: OutlineInputBorder(),
+                                    isDense: true),
+                                hint: const Text('Lest'),
+                                items: List.generate(12, (i) => i + 1)
+                                    .map((kg) => DropdownMenuItem(
+                                        value: kg.toDouble(),
+                                        child: Text('$kg kg')))
+                                    .toList(),
+                                onChanged: choice == null
+                                    ? null
+                                    : (kg) => setState(() =>
+                                        _leadKgByCategory[category.id] =
+                                            kg ?? 0),
+                              ),
+                            ],
+                          )
+                        : null,
                   );
                 },
               ),
@@ -2325,7 +4121,9 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
                 label: Text(
                   _submitting
                       ? 'Envoi...'
-                      : 'Envoyer la demande (${_selectedLines.length})',
+                      : _isEditing
+                          ? 'Enregistrer les modifications'
+                          : 'Envoyer la demande (${_selectedLines.length})',
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.middenblauw,
@@ -2348,6 +4146,8 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
           attributes: {
             'label': category.label,
             'option': _selectedChoices[category.id],
+            if (category.id == 'ceinture')
+              'lead_kg': _leadKgByCategory[category.id],
           },
           quantity: 1,
         ),
@@ -2368,11 +4168,26 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
     final picked = await showDatePicker(
       context: context,
       initialDate: _expectedReturnDate,
-      firstDate: DateTime.now(),
+      firstDate: _requestedStartDate,
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
     if (picked != null) {
       setState(() => _expectedReturnDate = picked);
+    }
+  }
+
+  Future<void> _pickStartDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _requestedStartDate,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null) {
+      setState(() {
+        _requestedStartDate = picked;
+        _expectedReturnDate = picked.add(const Duration(days: 7));
+      });
     }
   }
 
@@ -2389,21 +4204,35 @@ class _MaterialRequestSheetState extends State<_MaterialRequestSheet> {
 
     setState(() => _submitting = true);
     try {
-      await widget.service.submitLoanRequestLines(
-        clubId: widget.clubId,
-        memberId: widget.memberId,
-        memberName: widget.memberName,
-        memberEmail: widget.memberEmail,
-        lines: _selectedLines,
-        expectedReturnDate: _expectedReturnDate,
-        notes: _notesController.text,
-      );
+      if (_isEditing) {
+        await widget.service.updateLoanRequestLines(
+          clubId: widget.clubId,
+          requestId: widget.request!.id,
+          lines: _selectedLines,
+          requestedStartDate: _requestedStartDate,
+          expectedReturnDate: _expectedReturnDate,
+          notes: _notesController.text,
+        );
+      } else {
+        await widget.service.submitLoanRequestLines(
+          clubId: widget.clubId,
+          memberId: widget.memberId,
+          memberName: widget.memberName,
+          memberEmail: widget.memberEmail,
+          lines: _selectedLines,
+          requestedStartDate: _requestedStartDate,
+          expectedReturnDate: _expectedReturnDate,
+          notes: _notesController.text,
+        );
+      }
 
       if (!mounted) return;
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Demande envoyee au responsable materiel.'),
+        SnackBar(
+          content: Text(_isEditing
+              ? 'Demande modifiée.'
+              : 'Demande envoyee au responsable materiel.'),
           backgroundColor: AppColors.success,
         ),
       );
@@ -2490,4 +4319,18 @@ String _formatDate(DateTime date) {
   return '${date.day.toString().padLeft(2, '0')}/'
       '${date.month.toString().padLeft(2, '0')}/'
       '${date.year}';
+}
+
+bool _isLoanLate(MaterialLoan loan) {
+  final dueDate = loan.expectedReturnDate;
+  if (dueDate == null) return false;
+  final today = DateTime.now();
+  return DateTime(dueDate.year, dueDate.month, dueDate.day)
+      .isBefore(DateTime(today.year, today.month, today.day));
+}
+
+String _initials(String name) {
+  final parts =
+      name.trim().split(RegExp(r'\s+')).where((part) => part.isNotEmpty);
+  return parts.take(2).map((part) => part[0].toUpperCase()).join();
 }

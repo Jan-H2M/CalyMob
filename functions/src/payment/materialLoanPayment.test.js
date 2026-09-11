@@ -22,9 +22,9 @@ describe('material loan payment helpers', () => {
     ]));
   });
 
-  test('allows only operational material-loan roles', () => {
-    expect(isMaterialLoanManager({ app_role: 'admin' })).toBe(true);
-    expect(isMaterialLoanManager({ clubStatuten: ['Encadrant'] })).toBe(true);
+  test('allows only gonflage members to manage material loans', () => {
+    expect(isMaterialLoanManager({ app_role: 'admin' })).toBe(false);
+    expect(isMaterialLoanManager({ clubStatuten: ['Encadrant'] })).toBe(false);
     expect(isMaterialLoanManager({ clubStatuten: ['gonflage'] })).toBe(true);
     expect(isMaterialLoanManager({ clubStatuten: ['membre'] })).toBe(false);
   });

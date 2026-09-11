@@ -180,12 +180,11 @@ service cloud.firestore {
       );
     }
 
-    // Operational staff who may hand over or receive physical equipment in
-    // CalyMob. This is intentionally independent of a CalyCompta web
-    // session: the flow happens on the staff member's mobile phone.
+    // Only members with the Gonflage club status may hand over or receive
+    // physical equipment in CalyMob. The rule is enforced server-side as
+    // well as in the application UI.
     function canManageMaterialLoans(clubId) {
-      return isAdmin(clubId) || isEncadrantForClub(clubId) ||
-        hasCARole(clubId) || hasGonflageRole(clubId);
+      return hasGonflageRole(clubId);
     }
 
     // Organisateurs (O-badge) and admins can manage event logistics —
@@ -1252,7 +1251,7 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'statut', 'current_loan_id', 'last_return_condition',
             'last_return_note', 'last_return_photo_urls',
-            'condition_history', 'updatedAt'
+            'condition_history', 'defects', 'updatedAt'
           ])
           && request.resource.data.statut in ['disponible', 'reserve', 'prete', 'en_maintenance']
         );
@@ -1312,16 +1311,21 @@ service cloud.firestore {
       }
 
       // Inventory loan requests (demandes de prêt envoyées depuis CalyMob)
-      // Le membre crée et consulte SES PROPRES demandes ("Demander du
-      // matériel"). L'admin gère tout : approbation → création du prêt
-      // correspondant dans inventory_loans.
+      // A member creates and consults their own request. Only the Gonflage
+      // team may process it and create the corresponding physical loan.
       match /inventory_loan_requests/{requestId} {
         allow read: if isMember(clubId)
-          && (resource.data.memberId == request.auth.uid || isAdmin(clubId));
+          && (resource.data.memberId == request.auth.uid || canManageMaterialLoans(clubId));
         allow create: if isMember(clubId)
           && request.resource.data.memberId == request.auth.uid
           && request.resource.data.status == 'submitted';
-        allow update, delete: if isAdmin(clubId) && hasValidSession(clubId);
+        allow update: if canManageMaterialLoans(clubId)
+          || (isMember(clubId)
+            && resource.data.memberId == request.auth.uid
+            && resource.data.status == 'submitted'
+            && request.resource.data.memberId == resource.data.memberId
+            && request.resource.data.status == 'submitted');
+        allow delete: if isAdmin(clubId) && hasValidSession(clubId);
       }
 
       // ========== INVENTORY AUDITS (Contrôle annuel) ==========

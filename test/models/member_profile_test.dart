@@ -152,6 +152,27 @@ void main() {
       expect(profile.assuranceStatus, ValidationStatus.valid);
     });
 
+    test('requires the manual insurance date only for another federation', () async {
+      final firestore = FakeFirebaseFirestore();
+      final externalRef =
+          firestore.collection('clubs/club1/members').doc('external');
+      final lifrasRef =
+          firestore.collection('clubs/club1/members').doc('lifras');
+      await externalRef.set({
+        'membership_category_code': 'membre_autre_federation',
+        'assurance_validite': Timestamp.fromDate(DateTime(2099, 1, 30)),
+      });
+      await lifrasRef.set({'membership_category_code': 'membre_1ere'});
+
+      final external = MemberProfile.fromFirestore(await externalRef.get());
+      final lifras = MemberProfile.fromFirestore(await lifrasRef.get());
+
+      expect(external.requiresExternalInsurance, isTrue);
+      expect(external.assuranceStatus, ValidationStatus.valid);
+      expect(lifras.requiresExternalInsurance, isFalse);
+      expect(lifras.assuranceStatus, ValidationStatus.missing);
+    });
+
     test('joins only the restricted operational status onto directory data',
         () {
       final validUntil = Timestamp.fromDate(DateTime(2099, 1, 30));
@@ -167,6 +188,7 @@ void main() {
           'cotisation_validite': validUntil,
           'certificat_medical_validite': validUntil,
           'assurance_validite': validUntil,
+          'membership_category_code': 'membre_autre_federation',
         },
       );
 
@@ -176,6 +198,26 @@ void main() {
       expect(profile.cotisationStatus, ValidationStatus.valid);
       expect(profile.certificatStatus, ValidationStatus.valid);
       expect(profile.assuranceStatus, ValidationStatus.valid);
+      expect(profile.requiresExternalInsurance, isTrue);
+    });
+
+    test('uses the projected club-local birthday parts for directory members',
+        () {
+      final profile = MemberProfile.fromDirectoryData(
+        'bertrand',
+        {
+          'first_name': 'Bertrand',
+          'last_name': 'JOORIS',
+          'birth_month': 7,
+          'birth_day': 7,
+        },
+      );
+
+      // The directory deliberately has no full timestamp: Flutter must show
+      // exactly the day/month projected in the club timezone.
+      expect(profile.birthDate, isNull);
+      expect(profile.birthMonth, 7);
+      expect(profile.birthDay, 7);
     });
   });
 }

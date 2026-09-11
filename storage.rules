@@ -41,6 +41,15 @@ service firebase.storage {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    function canManageMaterialLoans(clubId) {
+      return hasRole(clubId, ['admin', 'superadmin']) || (
+        isAuthenticated() &&
+        firestore.exists(/databases/(default)/documents/clubs/$(clubId)/members/$(request.auth.uid)) &&
+        firestore.get(/databases/(default)/documents/clubs/$(clubId)/members/$(request.auth.uid)).data
+          .get('clubStatuten', []).hasAny(['G', 'Gonflage', 'gonflage'])
+      );
+    }
+
     function isFormationReviewer(clubId) {
       return hasRole(clubId, ['admin', 'superadmin']) || (
         isAuthenticated() &&
@@ -146,6 +155,21 @@ service firebase.storage {
                       isValidFileType('(application/pdf|image/.*)');
       allow update: if hasRole(clubId, ['admin', 'validateur']);
       allow delete: if hasRole(clubId, ['admin']);
+    }
+
+    // Evidence created while a Gonflage responsible hands over or checks an
+    // exact physical CDC item. The member may read their signed receipt.
+    match /clubs/{clubId}/loan_signatures/{fileName} {
+      allow read: if isClubMember(clubId);
+      allow create: if canManageMaterialLoans(clubId) &&
+        isValidImageSize() && isValidFileType('image/png');
+      allow update, delete: if false;
+    }
+    match /clubs/{clubId}/inventory_defects/{itemId}/{fileName} {
+      allow read: if isClubMember(clubId);
+      allow create: if canManageMaterialLoans(clubId) &&
+        isValidImageSize() && isValidFileType('image/.*');
+      allow update, delete: if false;
     }
 
     // Inbound email attachments stored server-side from Resend/Gmail replies
