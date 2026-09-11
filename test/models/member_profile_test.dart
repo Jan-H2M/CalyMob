@@ -200,5 +200,24 @@ void main() {
       expect(profile.assuranceStatus, ValidationStatus.valid);
       expect(profile.requiresExternalInsurance, isTrue);
     });
+
+    test('uses the projected club-local birthday parts for directory members',
+        () {
+      final profile = MemberProfile.fromDirectoryData(
+        'bertrand',
+        {
+          'first_name': 'Bertrand',
+          'last_name': 'JOORIS',
+          'birth_month': 7,
+          'birth_day': 7,
+        },
+      );
+
+      // The directory deliberately has no full timestamp: Flutter must show
+      // exactly the day/month projected in the club timezone.
+      expect(profile.birthDate, isNull);
+      expect(profile.birthMonth, 7);
+      expect(profile.birthDay, 7);
+    });
   });
 }

@@ -8,6 +8,7 @@ jest.mock('firebase-functions/v2/firestore', () => ({
 const {
   buildMemberDirectoryProjection,
   buildOperationalStatusProjection,
+  birthdayParts,
 } = require('./syncMemberProjections');
 
 describe('member privacy projections', () => {
@@ -50,6 +51,14 @@ describe('member privacy projections', () => {
     expect(projected.birth_day).toBe(14);
     expect(projected).not.toHaveProperty('birth_date');
     expect(projected).not.toHaveProperty('date_naissance');
+  });
+
+  test('keeps the club-local birthday when its stored instant is before UTC midnight', () => {
+    // A date selected as 7 July in Belgium is stored as 6 July 22:00 UTC
+    // during CEST. Projecting with the server timezone used to expose 6 July.
+    expect(birthdayParts({
+      birth_date: new Date('1991-07-06T22:00:00.000Z'),
+    })).toEqual({ birth_month: 7, birth_day: 7 });
   });
 
   test('birthday sharing remains enabled when the field is absent', () => {
