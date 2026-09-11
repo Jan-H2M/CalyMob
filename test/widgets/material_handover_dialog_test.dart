@@ -18,13 +18,13 @@ void main() {
   testWidgets(
       'requires physical selection and payment before returning handover IDs',
       (tester) async {
-    List<String>? result;
+    MaterialHandoverResult? result;
     await tester.pumpWidget(MaterialApp(
         home: Builder(
             builder: (context) => Scaffold(
                   body: TextButton(
                       onPressed: () async {
-                        result = await showDialog<List<String>>(
+                        result = await showDialog<MaterialHandoverResult>(
                             context: context,
                             builder: (_) => MaterialHandoverDialog(
                                 lines: const [line],
@@ -42,10 +42,8 @@ void main() {
             .onPressed,
         isNull);
     expect(
-        find.textContaining('Aucun article n’a été réservé'), findsOneWidget);
-    await tester.tap(find.byType(DropdownButtonFormField<String>));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('G-001 · SER-001').last);
+        find.textContaining('Saisissez ou scannez le NR. CDC'), findsOneWidget);
+    await tester.enterText(find.byType(TextFormField).first, 'G-001');
     await tester.pumpAndSettle();
     expect(
         tester
@@ -57,7 +55,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Confirmer la remise'));
     await tester.pumpAndSettle();
-    expect(result, ['real-id']);
+    expect(result?.itemIds, ['real-id']);
     expect(tester.takeException(), isNull);
   });
 
