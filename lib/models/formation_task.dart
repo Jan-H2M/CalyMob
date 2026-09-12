@@ -342,6 +342,16 @@ class FormationTask {
     return original == null || original.isEmpty ? null : original;
   }
 
+  /// Buddy dive confirmations have their own dedicated inbox and must not be
+  /// repeated in the generic Actions list.
+  bool get belongsInGenericActions =>
+      type != FormationTaskType.buddyConfirmation;
+
+  bool get isClosed =>
+      status == FormationTaskStatus.done ||
+      status == FormationTaskStatus.dismissed ||
+      status == FormationTaskStatus.expired;
+
   static FormationTaskType _parseType(String? s) {
     switch (s) {
       case 'pool_checkin':

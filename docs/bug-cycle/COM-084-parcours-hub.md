@@ -46,6 +46,19 @@ Deze wijziging staat in de mobiele releasewachtrij. Er is geen version bump,
 geen Android/iOS build, geen upload naar stores en geen Firestore
 `app_version`-wijziging uitgevoerd.
 
+## Integratiecontrole — 12 september 2026
+
+- De oorspronkelijke wijziging is opnieuw toegepast op mobiele `main`
+  `c0ace3e`, na de recente communicatie- en notificatieverbeteringen.
+- `CommunicationHubScreen(initialActionsOnly: true)` bestond inmiddels al op
+  `main`; de actuele filtertabs en notificatiehistoriek zijn ongewijzigd
+  behouden.
+- Gerichte Flutter-analyse en de Parcours-, formation-, oefeningen- en
+  communicatiefiltertests slagen samen.
+- De onafhankelijke herreview gaf een merge-GO na reparatie van een dubbele
+  buddybevestiging in de generieke Actions-lijst; visuele browser-QA blijft de
+  laatste poort vóór samenvoegen naar `main`.
+
 ## Nieuwe bugs gescand tijdens deze ronde
 
 Jan vroeg tijdens COM-084 om ook nieuwe bugs te bekijken. De nieuwe tickets
