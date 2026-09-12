@@ -28,10 +28,12 @@ class PiscineAttendee {
 
   factory PiscineAttendee.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
+    final memberId = (data['memberId'] ?? data['membre_id'] ?? doc.id)
+        .toString();
     return PiscineAttendee(
       id: doc.id,
-      memberId: data['memberId'] ?? '',
-      memberName: data['memberName'] ?? '',
+      memberId: memberId,
+      memberName: (data['memberName'] ?? data['member_name'] ?? '').toString(),
       scannedAt: (data['scannedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       scannedBy: data['scannedBy'] ?? '',
       isGuest: data['isGuest'] ?? false,

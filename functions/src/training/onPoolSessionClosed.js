@@ -75,13 +75,9 @@ const onPoolSessionClosed = onDocumentUpdated(
     // groupAssignment that must still produce a logbook entry. So select on
     // groupAssignment presence instead of outcome=='training' only.
     const attendeesSnap = await sessionRef.collection('attendees').get();
-    const trainingDocs = attendeesSnap.docs.filter((d) => {
-      const a = d.data();
-      if (!a.groupAssignment) return false;
-      return a.outcome === 'training' || a.outcome === 'encadrant';
-    });
+    const trainingAttendees = selectCanonicalTrainingAttendees(attendeesSnap.docs);
 
-    if (trainingDocs.length === 0) {
+    if (trainingAttendees.length === 0) {
       console.log(`[${FUNCTION_NAME}] session ${sessionId} closed — no training attendees`);
       return;
     }
@@ -104,20 +100,7 @@ const onPoolSessionClosed = onDocumentUpdated(
     // logbook entry can carry a snapshot of who else was in their group.
     // We prefer (level + groupNumber) over groupKey because production
     // sessions usually don't have an explicit groups subcollection yet.
-    const groupPeers = new Map();
-    const peerKey = (level, groupNumber) =>
-      `${level || ''}#${groupNumber == null ? '' : groupNumber}`;
-    for (const attDoc of trainingDocs) {
-      const att = attDoc.data();
-      const ga = att.groupAssignment || null;
-      if (!ga) continue;
-      const k = peerKey(ga.level, ga.groupNumber);
-      if (!groupPeers.has(k)) groupPeers.set(k, []);
-      groupPeers.get(k).push({
-        member_id: att.memberId || att.membre_id || attDoc.id,
-        displayName: att.memberName || att.member_name || 'Membre',
-      });
-    }
+    const groupPeers = buildGroupPeers(trainingAttendees);
 
     // Pre-resolve display names for every validator + moniteur referenced
     // across the session. Snapshotting names on the logbook entry means the
@@ -125,8 +108,8 @@ const onPoolSessionClosed = onDocumentUpdated(
     // has since left the club. Names are resolved once per CF run rather
     // than per-attendee to avoid quadratic Firestore reads on busy sessions.
     const monitorIdSet = new Set();
-    for (const attDoc of trainingDocs) {
-      const ga = attDoc.data().groupAssignment || null;
+    for (const attendee of trainingAttendees) {
+      const ga = attendee.data.groupAssignment || null;
       if (!ga) continue;
       if (ga.validatorId) monitorIdSet.add(ga.validatorId);
       if (Array.isArray(ga.moniteurIds)) {
@@ -155,16 +138,15 @@ const onPoolSessionClosed = onDocumentUpdated(
     let batch = db.batch();
     let batchOps = 0;
 
-    for (const attDoc of trainingDocs) {
-      const att = attDoc.data();
-      const memberId = att.memberId || att.membre_id || attDoc.id;
-      const memberName = att.memberName || att.member_name || 'Membre';
+    for (const attendee of trainingAttendees) {
+      const att = attendee.data;
+      const memberId = attendee.memberId;
+      const memberName = attendee.memberName;
       const ga = att.groupAssignment || null;
       if (!ga) continue;
 
       // Peers in the same group (level + groupNumber), excluding self.
-      const peers = (groupPeers.get(peerKey(ga.level, ga.groupNumber)) || [])
-        .filter((p) => p.member_id !== memberId);
+      const peers = peersForAttendee(groupPeers, ga, memberId);
 
       // ---- Idempotency: existing logbook entry? ----
       const existingLogbook = await db
@@ -189,10 +171,9 @@ const onPoolSessionClosed = onDocumentUpdated(
             .get()
         : null;
 
-      let logbookEntryId = existingLogbook.empty
-        ? null
-        : existingLogbook.docs[0].id;
-      if (!existingLogbook.empty) {
+      const creationPlan = buildArtifactCreationPlan(existingLogbook, existingTask);
+      let logbookEntryId = creationPlan.existingLogbookEntryId;
+      if (!creationPlan.createLogbook) {
         skippedExistingLogbook++;
         const existingEntry = existingLogbook.docs[0];
         if (!sameTimestamp(existingEntry.data().date, sessionDate)) {
@@ -271,7 +252,7 @@ const onPoolSessionClosed = onDocumentUpdated(
             'personal logbook only'
         );
         skippedNoValidator++;
-      } else if (existingTask && !existingTask.empty) {
+      } else if (!creationPlan.createTask) {
         skippedExistingTask++;
       } else {
         plannedTaskCreates++;
@@ -339,6 +320,132 @@ const onPoolSessionClosed = onDocumentUpdated(
   }
 );
 
+function memberIdForAttendee(doc) {
+  const data = doc.data() || {};
+  const raw = data.memberId || data.membre_id || doc.id;
+  return raw == null ? '' : String(raw).trim();
+}
+
+function memberNameForAttendee(data) {
+  const raw = data.memberName || data.member_name || '';
+  return raw == null ? '' : String(raw).trim();
+}
+
+function isTrainingAttendee(data) {
+  if (!data || data.isGuest === true || !data.groupAssignment) return false;
+  return data.outcome === 'training' || data.outcome === 'encadrant';
+}
+
+function trainingAttendeeScore(doc, data, memberId) {
+  let score = 0;
+  // A usable validator assignment is more important than the storage id:
+  // historical duplicates may hold the completed assignment only on the
+  // random-id document while an incomplete canonical document also exists.
+  if (data.groupAssignment && data.groupAssignment.validatorId) score += 16;
+  if (String(doc.id) === memberId) score += 4;
+  if (data.checkinCompletedAt) score += 2;
+  if (data.personalNotes) score += 1;
+  return score;
+}
+
+/**
+ * Collapse historical random-id and canonical attendee documents before any
+ * peer-map, logbook or task work. Only an explicitly eligible training record
+ * can represent the member; identity fields may be enriched from its legacy
+ * duplicate without importing stale outcome/group data.
+ */
+function selectCanonicalTrainingAttendees(attendeeDocs) {
+  const byMember = new Map();
+
+  for (const doc of attendeeDocs || []) {
+    const data = doc.data() || {};
+    const memberId = memberIdForAttendee(doc);
+    if (!memberId) continue;
+
+    let aggregate = byMember.get(memberId);
+    if (!aggregate) {
+      aggregate = { memberId, memberName: '', selected: null };
+      byMember.set(memberId, aggregate);
+    }
+
+    const candidateName = memberNameForAttendee(data);
+    if (!aggregate.memberName && candidateName) {
+      aggregate.memberName = candidateName;
+    }
+
+    if (!isTrainingAttendee(data)) continue;
+
+    const candidate = {
+      sourceId: String(doc.id),
+      data,
+      score: trainingAttendeeScore(doc, data, memberId),
+    };
+    const current = aggregate.selected;
+    if (
+      !current ||
+      candidate.score > current.score ||
+      (candidate.score === current.score &&
+        candidate.sourceId.localeCompare(current.sourceId) < 0)
+    ) {
+      aggregate.selected = candidate;
+    }
+  }
+
+  return Array.from(byMember.values())
+    .filter((aggregate) => aggregate.selected)
+    .map((aggregate) => {
+      const selectedData = aggregate.selected.data;
+      const selectedName = memberNameForAttendee(selectedData);
+      const memberName = selectedName || aggregate.memberName || 'Membre';
+      return {
+        sourceId: aggregate.selected.sourceId,
+        memberId: aggregate.memberId,
+        memberName,
+        data: {
+          ...selectedData,
+          memberId: aggregate.memberId,
+          memberName,
+        },
+      };
+    })
+    .sort((a, b) => a.memberId.localeCompare(b.memberId));
+}
+
+const peerKey = (level, groupNumber) =>
+  `${level || ''}#${groupNumber == null ? '' : groupNumber}`;
+
+function buildGroupPeers(trainingAttendees) {
+  const groupPeers = new Map();
+  for (const attendee of trainingAttendees) {
+    const ga = attendee.data.groupAssignment;
+    const key = peerKey(ga.level, ga.groupNumber);
+    if (!groupPeers.has(key)) groupPeers.set(key, []);
+    groupPeers.get(key).push({
+      member_id: attendee.memberId,
+      displayName: attendee.memberName,
+    });
+  }
+  return groupPeers;
+}
+
+function peersForAttendee(groupPeers, groupAssignment, memberId) {
+  return (
+    groupPeers.get(
+      peerKey(groupAssignment.level, groupAssignment.groupNumber)
+    ) || []
+  ).filter((peer) => peer.member_id !== memberId);
+}
+
+function buildArtifactCreationPlan(existingLogbook, existingTask) {
+  return {
+    createLogbook: existingLogbook.empty,
+    createTask: existingTask != null && existingTask.empty,
+    existingLogbookEntryId: existingLogbook.empty
+      ? null
+      : existingLogbook.docs[0].id,
+  };
+}
+
 function composeTaskTitle(memberName, ga) {
   const level = ga.level || '';
   const theme = ga.themeSnapshot || '';
@@ -387,4 +494,8 @@ module.exports = {
   shouldProcessSessionUpdate,
   composeTaskTitle,
   buildRosterKey,
+  selectCanonicalTrainingAttendees,
+  buildGroupPeers,
+  peersForAttendee,
+  buildArtifactCreationPlan,
 };
