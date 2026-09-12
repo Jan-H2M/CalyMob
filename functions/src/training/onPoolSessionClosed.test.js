@@ -11,6 +11,7 @@ jest.mock('firebase-admin/firestore', () => ({
 }));
 
 const {
+  artifactDocumentId,
   buildArtifactCreationPlan,
   buildGroupPeers,
   buildRosterKey,
@@ -362,6 +363,15 @@ describe('pool session roster construction helpers', () => {
     });
   });
 
+  test('builds stable distinct artifact ids per member and session', () => {
+    expect(artifactDocumentId('logbook', '2026-09-01', 'member-a'))
+      .toBe(artifactDocumentId('logbook', '2026-09-01', 'member-a'));
+    expect(artifactDocumentId('logbook', '2026-09-01', 'member-a'))
+      .not.toBe(artifactDocumentId('observation', '2026-09-01', 'member-a'));
+    expect(artifactDocumentId('logbook', '2026-09-01', 'member-a'))
+      .not.toBe(artifactDocumentId('logbook', '2026-09-01', 'member-b'));
+  });
+
   test('a real close queries existing artifacts once for legacy duplicates', async () => {
     const attendeeDocs = [
       attendeeDoc('legacy-random', {
@@ -399,5 +409,134 @@ describe('pool session roster construction helpers', () => {
       q.collectionName === 'formation_tasks')).toHaveLength(1);
     expect(queries.every((q) => q.filters.some((filter) =>
       filter.field === 'member_id' && filter.value === 'member-a'))).toBe(true);
+  });
+});
+
+function makeConcurrentCloseDb(attendeeDocs) {
+  const logbooks = new Map();
+  const tasks = new Map();
+
+  const documentRef = (collectionName, id) => ({ collectionName, id });
+  const artifactCollection = (collectionName, store) => {
+    const filters = [];
+    const query = {
+      where: (field, _op, value) => {
+        filters.push({ field, value });
+        return query;
+      },
+      limit: () => query,
+      get: async () => {
+        const docs = Array.from(store.entries())
+          .filter(([, data]) => filters.every(({ field, value }) => {
+            const parts = field.split('.');
+            let actual = data;
+            for (const part of parts) actual = actual && actual[part];
+            return actual === value;
+          }))
+          .map(([id, data]) => ({ id, data: () => data }));
+        return { empty: docs.length === 0, docs };
+      },
+      doc: (id) => documentRef(collectionName, id),
+    };
+    return query;
+  };
+
+  const sessionRef = {
+    collection: (name) => {
+      if (name !== 'attendees') throw new Error(`unexpected session collection ${name}`);
+      return { get: async () => ({ docs: attendeeDocs }) };
+    },
+  };
+  const clubRef = {
+    collection: (name) => {
+      if (name === 'piscine_sessions') return { doc: () => sessionRef };
+      if (name === 'members') {
+        return {
+          doc: (id) => ({
+            get: async () => ({
+              exists: true,
+              data: () => ({ prenom: id, nom: 'Monitor' }),
+            }),
+          }),
+        };
+      }
+      if (name === 'student_logbook_entries') {
+        return artifactCollection(name, logbooks);
+      }
+      if (name === 'formation_tasks') return artifactCollection(name, tasks);
+      throw new Error(`unexpected club collection ${name}`);
+    },
+  };
+  const db = {
+    collection: (name) => {
+      if (name !== 'clubs') throw new Error(`unexpected root collection ${name}`);
+      return { doc: () => clubRef };
+    },
+    batch: () => {
+      const writes = [];
+      return {
+        set: (ref, data) => writes.push({ ref, data }),
+        commit: async () => {
+          // Yield so two close handlers can both finish their existence reads
+          // before either batch is applied.
+          await Promise.resolve();
+          for (const { ref, data } of writes) {
+            const store = ref.collectionName === 'student_logbook_entries'
+              ? logbooks
+              : tasks;
+            store.set(ref.id, data);
+          }
+        },
+      };
+    },
+  };
+  return { db, logbooks, tasks };
+}
+
+describe('pool close concurrent idempotency', () => {
+  test('parallel close handlers materialize exactly one artifact pair', async () => {
+    const { db, logbooks, tasks } = makeConcurrentCloseDb([
+      attendeeDoc('member-a', training({
+        memberId: 'member-a',
+        memberName: 'Alice',
+        groupAssignment: {
+          level: '2*',
+          groupNumber: 2,
+          groupKey: '2star_groupe2',
+          validatorId: 'validator-2',
+          moniteurIds: ['validator-2'],
+        },
+      })),
+    ]);
+    const admin = require('firebase-admin');
+    admin.firestore.mockReturnValue(db);
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const event = {
+      params: { clubId: 'club', sessionId: '2026-09-01' },
+      data: {
+        before: { data: () => ({ status: 'open' }) },
+        after: { data: () => ({ status: 'closed', pool_name: 'Piscine test' }) },
+      },
+    };
+
+    try {
+      await Promise.all([onPoolSessionClosed(event), onPoolSessionClosed(event)]);
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    expect(logbooks.size).toBe(1);
+    expect(tasks.size).toBe(1);
+    const logbookId = artifactDocumentId('logbook', '2026-09-01', 'member-a');
+    const taskId = artifactDocumentId('observation', '2026-09-01', 'member-a');
+    expect(logbooks.has(logbookId)).toBe(true);
+    expect(tasks.has(taskId)).toBe(true);
+    expect(tasks.get(taskId).context.logbook_entry_id).toBe(logbookId);
+    expect(logbooks.get(logbookId)).toMatchObject({
+      member_id: 'member-a',
+      session_id: '2026-09-01',
+      group_number: 2,
+      validator_id: 'validator-2',
+    });
   });
 });

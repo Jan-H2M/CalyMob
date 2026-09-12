@@ -28,6 +28,7 @@
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const { FieldValue, Timestamp } = require('firebase-admin/firestore');
+const { createHash } = require('crypto');
 const { memberDisplayName } = require('../utils/memberName');
 
 const FUNCTION_NAME = 'onPoolSessionClosed';
@@ -44,6 +45,14 @@ function shouldProcessSessionUpdate(before, after) {
   return (
     afterVersion >= CARNET_PROCESSING_VERSION && afterVersion > beforeVersion
   );
+}
+
+function artifactDocumentId(kind, sessionId, memberId) {
+  const digest = createHash('sha256')
+    .update(`${sessionId}\u0000${memberId}`)
+    .digest('hex')
+    .slice(0, 32);
+  return `pool_${kind}_${digest}`;
 }
 
 const onPoolSessionClosed = onDocumentUpdated(
@@ -193,7 +202,7 @@ const onPoolSessionClosed = onDocumentUpdated(
             .collection('clubs')
             .doc(clubId)
             .collection('student_logbook_entries')
-            .doc();
+            .doc(artifactDocumentId('logbook', sessionId, memberId));
           logbookEntryId = logbookRef.id;
           const moniteurIds = Array.isArray(ga.moniteurIds) ? ga.moniteurIds : [];
           const moniteurNames = moniteurIds
@@ -261,7 +270,7 @@ const onPoolSessionClosed = onDocumentUpdated(
             .collection('clubs')
             .doc(clubId)
             .collection('formation_tasks')
-            .doc();
+            .doc(artifactDocumentId('observation', sessionId, memberId));
           const rosterKey = buildRosterKey(
             sessionId,
             ga.groupKey,
@@ -498,4 +507,5 @@ module.exports = {
   buildGroupPeers,
   peersForAttendee,
   buildArtifactCreationPlan,
+  artifactDocumentId,
 };

@@ -152,15 +152,81 @@ void main() {
         'isGuest': false,
       });
 
-      await service.removeAttendee(
+      final removed = await service.removeAttendee(
         clubId: clubId,
         sessionId: sessionId,
         attendeeId: 'legacy-random',
       );
 
+      expect(removed.documents.map((document) => document.id),
+          ['legacy-french', 'legacy-random', memberId]);
       expect((await attendees.doc('legacy-random').get()).exists, isFalse);
       expect((await attendees.doc(memberId).get()).exists, isFalse);
       expect((await attendees.doc('legacy-french').get()).exists, isFalse);
+    });
+
+    test('undo restores every duplicate with completion evidence losslessly',
+        () async {
+      final completedAt = Timestamp.fromDate(DateTime.utc(2026, 9, 1, 21));
+      await attendees.doc('legacy-random').set({
+        'memberId': memberId,
+        'memberName': 'Alice Exemple',
+        'scannedAt': Timestamp.fromDate(DateTime.utc(2026, 9, 1, 19)),
+        'outcome': 'training',
+        'groupAssignment': {
+          'level': '2*',
+          'groupNumber': 2,
+          'groupKey': '2star_groupe2',
+          'validatorId': 'validator-2',
+          'moniteurIds': ['monitor-2'],
+        },
+        'checkinCompletedAt': completedAt,
+        'completion_proof': {'source': 'legacy-task', 'kept': true},
+      });
+      await attendees.doc(memberId).set({
+        'memberId': memberId,
+        'memberName': '',
+        'scannedAt': Timestamp.fromDate(DateTime.utc(2026, 9, 1, 20)),
+        'assignedLevel': '2*',
+        'assignedCourseId': 'course-2',
+      });
+      await attendees.doc('legacy-french').set({
+        'membre_id': memberId,
+        'member_name': 'Alice Héritage',
+        'scannedAt': Timestamp.fromDate(DateTime.utc(2026, 9, 1, 18)),
+        'validator_override': 'validator-historical',
+      });
+
+      final before = {
+        for (final document in (await attendees.get()).docs)
+          document.id: document.data(),
+      };
+      final removed = await service.removeAttendee(
+        clubId: clubId,
+        sessionId: sessionId,
+        attendeeId: 'legacy-random',
+      );
+
+      expect((await attendees.get()).docs, isEmpty);
+
+      await service.restoreRemovedAttendee(
+        clubId: clubId,
+        sessionId: sessionId,
+        snapshot: removed,
+      );
+
+      final after = {
+        for (final document in (await attendees.get()).docs)
+          document.id: document.data(),
+      };
+      expect(after, before);
+      expect(
+        (after['legacy-random']!['groupAssignment'] as Map)['validatorId'],
+        'validator-2',
+      );
+      expect(after['legacy-random']!['checkinCompletedAt'], completedAt);
+      expect(after['legacy-random']!['completion_proof'],
+          {'source': 'legacy-task', 'kept': true});
     });
   });
 }

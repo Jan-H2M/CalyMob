@@ -10,6 +10,8 @@ jest.mock('firebase-admin/firestore', () => ({
 const {
   buildAttendeeIdentityPatch,
   resolveAttendeeRef,
+  resolveGroupSupervision,
+  selectedGroupContract,
 } = require('./onPoolCheckinCompleted');
 
 function makeDb({ memberIdDocs = [], legacyMemberIdDocs = [] } = {}) {
@@ -97,5 +99,130 @@ describe('onPoolCheckinCompleted attendee identity', () => {
       member_id: 'member-a', context: {},
     });
     expect(ref.id).toBe('member-a');
+  });
+});
+
+function makeSupervisionDb(sessionData, groupData = null) {
+  const sessionRef = {
+    get: async () => ({ exists: true, data: () => sessionData }),
+    collection: (name) => {
+      if (name !== 'groups') throw new Error(`unexpected collection ${name}`);
+      return {
+        doc: () => ({
+          get: async () => ({
+            exists: groupData != null,
+            data: () => groupData,
+          }),
+        }),
+      };
+    },
+  };
+  return {
+    collection: () => ({
+      doc: () => ({
+        collection: () => ({
+          doc: () => sessionRef,
+        }),
+      }),
+    }),
+  };
+}
+
+describe('onPoolCheckinCompleted selected group supervision', () => {
+  const session = {
+    niveaux: {
+      '2*': {
+        courses_by_hour: {
+          '1ere_heure': [
+            {
+              order: 0,
+              theme: 'Groupe un',
+              encadrants: [{ membre_id: 'validator-group-1' }],
+            },
+            {
+              order: 1,
+              theme: 'Groupe deux',
+              encadrants: [
+                { membre_id: 'validator-group-2' },
+                { membreId: 'monitor-group-2-b' },
+              ],
+            },
+          ],
+        },
+      },
+    },
+  };
+
+  test('normalizes current and production legacy completion contracts', () => {
+    expect(selectedGroupContract({
+      level: '2*',
+      groupNumber: 2,
+      groupKey: '2star_groupe2',
+      moniteurIds: ['validator-group-2'],
+    })).toMatchObject({
+      level: '2*',
+      groupNumber: 2,
+      groupKey: '2star_groupe2',
+      monitorIds: ['validator-group-2'],
+    });
+
+    expect(selectedGroupContract(null, {
+      level: '2*',
+      group_number: 2,
+      group_key: '2*-2',
+      moniteur_ids: ['validator-group-2'],
+    })).toMatchObject({
+      level: '2*',
+      groupNumber: 2,
+      groupKey: '2star_groupe2',
+      monitorIds: ['validator-group-2'],
+    });
+  });
+
+  test('resolves group 2 to group 2 monitors, never the first level course', async () => {
+    const resolved = await resolveGroupSupervision(
+      makeSupervisionDb(session),
+      'calypso',
+      'session-a',
+      selectedGroupContract({
+        level: '2*',
+        groupNumber: 2,
+        groupKey: '2star_groupe2',
+        // Stale client data must not override the authoritative planning.
+        moniteurIds: ['validator-group-1'],
+      }, {}, '1ere_heure'),
+    );
+
+    expect(resolved).toEqual({
+      validatorId: 'validator-group-2',
+      monitorIds: ['validator-group-2', 'monitor-group-2-b'],
+      themeSnapshot: 'Groupe deux',
+    });
+  });
+
+  test('retains the one-group production legacy level shape', async () => {
+    const resolved = await resolveGroupSupervision(
+      makeSupervisionDb({
+        niveaux: {
+          '1*': {
+            theme: 'Legacy theme',
+            encadrants: [{ membre_id: 'legacy-validator' }],
+          },
+        },
+      }),
+      'calypso',
+      'session-a',
+      selectedGroupContract(null, {
+        level: '1*',
+        group_number: 1,
+        group_key: '1*-1',
+      }),
+    );
+
+    expect(resolved).toEqual({
+      validatorId: 'legacy-validator',
+      monitorIds: ['legacy-validator'],
+      themeSnapshot: 'Legacy theme',
+    });
   });
 });

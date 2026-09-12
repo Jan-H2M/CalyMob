@@ -3,6 +3,29 @@ import 'package:flutter/foundation.dart';
 import '../models/piscine_session.dart';
 import '../models/piscine_attendee.dart';
 
+class PiscineAttendeeRemovalDocument {
+  final String id;
+  final Map<String, dynamic> data;
+
+  const PiscineAttendeeRemovalDocument({
+    required this.id,
+    required this.data,
+  });
+}
+
+/// Exact Firestore state removed by [PiscineSessionService.removeAttendee].
+///
+/// Historical sessions can contain several physical attendee documents for
+/// one member. Keeping every document (including fields unknown to the mobile
+/// model) makes Undo lossless instead of rebuilding one lossy model snapshot.
+class PiscineAttendeeRemovalSnapshot {
+  final List<PiscineAttendeeRemovalDocument> documents;
+
+  const PiscineAttendeeRemovalSnapshot(this.documents);
+
+  bool get isEmpty => documents.isEmpty;
+}
+
 /// Service voor het beheren van piscine sessies
 class PiscineSessionService {
   final FirebaseFirestore _firestore;
@@ -288,28 +311,30 @@ class PiscineSessionService {
   }
 
   /// Verwijder een aanwezige
-  Future<void> removeAttendee({
+  Future<PiscineAttendeeRemovalSnapshot> removeAttendee({
     required String clubId,
     required String sessionId,
     required String attendeeId,
   }) async {
     final attendees = _attendeesCollection(clubId, sessionId);
-    final refsByPath = <String, DocumentReference<Map<String, dynamic>>>{};
+    final docsByPath = <String, DocumentSnapshot<Map<String, dynamic>>>{};
 
-    void remember(DocumentReference<Map<String, dynamic>> ref) {
-      refsByPath[ref.path] = ref;
+    void remember(DocumentSnapshot<Map<String, dynamic>> snapshot) {
+      if (snapshot.exists) docsByPath[snapshot.reference.path] = snapshot;
     }
 
     final targetRef = attendees.doc(attendeeId);
-    remember(targetRef);
 
     String memberId;
     final targetSnap = await targetRef.get();
+    remember(targetSnap);
     if (targetSnap.exists) {
       final data = targetSnap.data() ?? const <String, dynamic>{};
       if (data['isGuest'] == true) {
-        await targetRef.delete();
-        return;
+        final snapshot = _removalSnapshot(docsByPath.values);
+        final batch = _firestore.batch()..delete(targetRef);
+        await batch.commit();
+        return snapshot;
       }
       memberId = _memberIdFromData(data, attendeeId);
     } else {
@@ -318,14 +343,13 @@ class PiscineSessionService {
 
     if (memberId.trim().isNotEmpty) {
       final normalizedMemberId = memberId.trim();
-      remember(attendees.doc(normalizedMemberId));
+      remember(await attendees.doc(normalizedMemberId).get());
 
       Future<void> collect(String field) async {
-        final snapshot = await attendees
-            .where(field, isEqualTo: normalizedMemberId)
-            .get();
+        final snapshot =
+            await attendees.where(field, isEqualTo: normalizedMemberId).get();
         for (final doc in snapshot.docs) {
-          remember(doc.reference);
+          remember(doc);
         }
       }
 
@@ -333,11 +357,27 @@ class PiscineSessionService {
       await collect('membre_id');
     }
 
+    final snapshot = _removalSnapshot(docsByPath.values);
     final batch = _firestore.batch();
-    for (final ref in refsByPath.values) {
-      batch.delete(ref);
+    for (final doc in docsByPath.values) {
+      batch.delete(doc.reference);
     }
     await batch.commit();
+    return snapshot;
+  }
+
+  PiscineAttendeeRemovalSnapshot _removalSnapshot(
+      Iterable<DocumentSnapshot<Map<String, dynamic>>> documents) {
+    final removed = documents
+        .where((document) => document.exists)
+        .map((document) => PiscineAttendeeRemovalDocument(
+              id: document.id,
+              data: Map<String, dynamic>.from(
+                  document.data() ?? const <String, dynamic>{}),
+            ))
+        .toList()
+      ..sort((a, b) => a.id.compareTo(b.id));
+    return PiscineAttendeeRemovalSnapshot(removed);
   }
 
   /// Restaure un participant supprimé par erreur (undo après [removeAttendee]).
@@ -352,6 +392,22 @@ class PiscineSessionService {
     required Map<String, dynamic> data,
   }) async {
     await _attendeesCollection(clubId, sessionId).doc(attendeeId).set(data);
+  }
+
+  /// Restores every physical document captured by [removeAttendee] in one
+  /// atomic batch. This preserves legacy-only completion and validator fields.
+  Future<void> restoreRemovedAttendee({
+    required String clubId,
+    required String sessionId,
+    required PiscineAttendeeRemovalSnapshot snapshot,
+  }) async {
+    if (snapshot.isEmpty) return;
+    final attendees = _attendeesCollection(clubId, sessionId);
+    final batch = _firestore.batch();
+    for (final document in snapshot.documents) {
+      batch.set(attendees.doc(document.id), document.data);
+    }
+    await batch.commit();
   }
 
   /// Check of een lid al aanwezig is gemarkeerd
@@ -414,7 +470,8 @@ class PiscineSessionService {
     );
   }
 
-  static String _memberIdFromData(Map<String, dynamic> data, String fallbackId) {
+  static String _memberIdFromData(
+      Map<String, dynamic> data, String fallbackId) {
     return (data['memberId'] ?? data['membre_id'] ?? fallbackId).toString();
   }
 
@@ -437,7 +494,8 @@ class PiscineSessionService {
       ..sort((a, b) => a.scannedAt.compareTo(b.scannedAt));
   }
 
-  static PiscineAttendee _preferredAttendee(Iterable<PiscineAttendee> attendees) {
+  static PiscineAttendee _preferredAttendee(
+      Iterable<PiscineAttendee> attendees) {
     return _dedupeAttendees(attendees).reduce((best, attendee) {
       final bestScore = _attendeeScore(best);
       final attendeeScore = _attendeeScore(attendee);

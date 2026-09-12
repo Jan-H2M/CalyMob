@@ -90,6 +90,27 @@ String _activityKey(_HourActivity a) => switch (a) {
       _HourActivity.absent => 'absent',
     };
 
+/// Stable completion contract consumed by `onPoolCheckinCompleted`.
+///
+/// The group number/key identify the exact planned course; monitor IDs are a
+/// compatibility snapshot for older or manually completed session planning.
+Map<String, dynamic> buildPoolStudentGroupCompletion({
+  required String level,
+  required int groupNumber,
+  Iterable<String> monitorIds = const <String>[],
+}) {
+  final uniqueMonitorIds = <String>{
+    for (final id in monitorIds)
+      if (id.trim().isNotEmpty) id.trim(),
+  }.toList();
+  return {
+    'level': level,
+    'groupNumber': groupNumber,
+    'groupKey': '${level.replaceAll('*', 'star')}_groupe$groupNumber',
+    'moniteurIds': uniqueMonitorIds,
+  };
+}
+
 /// One group line in the encadré section — seeded from the planning,
 /// re-added from another planned course, or entered manually.
 class _EncGroup {
@@ -97,6 +118,7 @@ class _EncGroup {
   final int? groupNumber;
   final String? theme;
   final String? courseId; // null ⇒ hors planning
+  final List<String> monitorIds;
   final String source; // 'planning' | 'planning_other' | 'manual'
   bool confirmed;
 
@@ -105,6 +127,7 @@ class _EncGroup {
     required this.groupNumber,
     required this.theme,
     required this.courseId,
+    this.monitorIds = const <String>[],
     required this.source,
     this.confirmed = true,
   });
@@ -114,6 +137,7 @@ class _EncGroup {
         groupNumber: groupNumber,
         theme: theme,
         courseId: courseId,
+        monitorIds: List<String>.from(monitorIds),
         source: source,
         confirmed: confirmed,
       );
@@ -181,7 +205,7 @@ class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
   void initState() {
     super.initState();
     _hours = _freshHours();
-    if (_isEncadrant) _loadPlannedCourses();
+    _loadPlannedCourses();
   }
 
   List<_HourState> _freshHours() {
@@ -244,6 +268,7 @@ class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
               groupNumber: 1,
               theme: 'Vidage de masque',
               courseId: '1star_1ere_heure_0',
+              monitorIds: const ['monitor-preview-1'],
               source: 'planning_other',
             ),
           ],
@@ -253,6 +278,7 @@ class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
               groupNumber: 1,
               theme: null,
               courseId: '3star_2eme_heure_0',
+              monitorIds: const ['monitor-preview-2'],
               source: 'planning_other',
             ),
           ],
@@ -284,13 +310,22 @@ class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
             final course = rawCourses[i];
             if (course is! Map<String, dynamic>) continue;
             final order = course['order'];
+            final encadrants = course['encadrants'];
+            final monitorIds = encadrants is List
+                ? encadrants
+                    .whereType<Map>()
+                    .map((entry) => entry['membre_id'] ?? entry['membreId'])
+                    .whereType<String>()
+                    .where((id) => id.trim().isNotEmpty)
+                    .map((id) => id.trim())
+                    .toList()
+                : const <String>[];
             byHour.putIfAbsent(heure, () => []).add(_EncGroup(
                   level: level,
-                  groupNumber:
-                      order is num ? order.toInt() + 1 : i + 1,
+                  groupNumber: order is num ? order.toInt() + 1 : i + 1,
                   theme: course['theme'] as String?,
-                  courseId:
-                      (course['id'] as String?) ?? '${level}_${heure}_$i',
+                  courseId: (course['id'] as String?) ?? '${level}_${heure}_$i',
+                  monitorIds: monitorIds,
                   source: 'planning_other',
                 ));
           }
@@ -344,9 +379,6 @@ class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
 
   bool get _canSubmit => !_submitting && _hours.every(_hourComplete);
 
-  String _groupKeyFor(String level, int groupNumber) =>
-      '${level.replaceAll('*', 'star')}_groupe$groupNumber';
-
   Map<String, dynamic> _buildCompletionData() {
     var anyEnc = false;
     var anyTrain = false;
@@ -375,11 +407,19 @@ class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
           } else {
             anyTrain = true;
             e['role'] = 'eleve';
-            final group = <String, dynamic>{
-              'level': h.elLevel,
-              'groupNumber': h.elGroupNumber,
-              'groupKey': _groupKeyFor(h.elLevel!, h.elGroupNumber),
-            };
+            final matchingPlannedGroups = _plannedByHour[h.key]
+                    ?.where((group) =>
+                        group.level == h.elLevel &&
+                        group.groupNumber == h.elGroupNumber)
+                    .toList() ??
+                const <_EncGroup>[];
+            final group = buildPoolStudentGroupCompletion(
+              level: h.elLevel!,
+              groupNumber: h.elGroupNumber,
+              monitorIds: matchingPlannedGroups.isEmpty
+                  ? const <String>[]
+                  : matchingPlannedGroups.first.monitorIds,
+            );
             e['group'] = group;
             firstTrainingGroup ??= group;
           }
@@ -756,8 +796,8 @@ class _PoolCheckinScreenState extends State<PoolCheckinScreen> {
   Widget _buildEncadreSection(_HourState h) {
     final others = [
       for (final c in _plannedByHour[h.key] ?? const <_EncGroup>[])
-        if (!h.groups.any(
-            (g) => g.courseId != null && g.courseId == c.courseId))
+        if (!h.groups
+            .any((g) => g.courseId != null && g.courseId == c.courseId))
           c,
     ];
     return Column(
