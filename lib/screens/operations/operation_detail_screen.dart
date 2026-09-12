@@ -599,8 +599,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
       if (result == null) return; // User cancelled
 
-      final totalPrice = basePrice + (result['supplementTotal'] as double);
-
       if (mounted) {
         try {
           // Register first
@@ -620,24 +618,20 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
           if (mounted) {
             await _loadUserInscription();
+            final payment = registrationPaymentInstruction(registrationResult);
 
             // If there's a price, show payment options dialog.
             // Skip when priceTbd — the organiser will bill later.
-            if (operation.paymentRequired &&
-                totalPrice > 0 &&
-                !operation.priceTbd &&
-                _userInscription != null) {
-              final openInstallment =
-                  _firstOpenInstallment(operation, _userInscription);
+            if (payment.amount > 0 && !operation.priceTbd) {
               await _showPaymentOptionsDialog(
                 operation: operation,
-                amount: openInstallment?.aggregatedAmount ?? totalPrice,
-                participantId: _userInscription!.id,
+                amount: payment.amount,
+                participantId: payment.participantId,
                 memberEmail: userEmail,
                 memberFirstName: memberProvider.prenom ?? '',
                 memberLastName: memberProvider.nom ?? '',
-                installmentId: openInstallment?.id,
-                installmentLabel: openInstallment?.label,
+                installmentId: payment.installmentId,
+                installmentLabel: payment.installmentLabel,
               );
             } else {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -709,24 +703,20 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
           if (mounted) {
             await _loadUserInscription();
+            final payment = registrationPaymentInstruction(registrationResult);
 
             // If there's a price, show payment options dialog.
             // Skip when priceTbd — the organiser will bill later.
-            if (operation.paymentRequired &&
-                basePrice > 0 &&
-                !operation.priceTbd &&
-                _userInscription != null) {
-              final openInstallment =
-                  _firstOpenInstallment(operation, _userInscription);
+            if (payment.amount > 0 && !operation.priceTbd) {
               await _showPaymentOptionsDialog(
                 operation: operation,
-                amount: openInstallment?.aggregatedAmount ?? basePrice,
-                participantId: _userInscription!.id,
+                amount: payment.amount,
+                participantId: payment.participantId,
                 memberEmail: userEmail,
                 memberFirstName: memberProvider.prenom ?? '',
                 memberLastName: memberProvider.nom ?? '',
-                installmentId: openInstallment?.id,
-                installmentLabel: openInstallment?.label,
+                installmentId: payment.installmentId,
+                installmentLabel: payment.installmentLabel,
               );
             } else {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -913,7 +903,6 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
     if (result == null || !mounted) return;
 
-    final totalPrice = result['totalPrice'] as double;
     final selectedSupplements =
         (result['supplements'] as List).cast<SelectedSupplement>();
     final supplementTotal = result['supplementTotal'] as double;
@@ -947,33 +936,21 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           widget.clubId, widget.operationId);
       if (!mounted) return;
       await _loadUserInscription();
-      if (_userInscription == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                "Inscription faite mais impossible de récupérer la référence de paiement"),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-
       if (!mounted) return;
+      final payment = registrationPaymentInstruction(registrationResult);
 
       // Payment options dialog with grand total.
       // (skip when priceTbd — organiser will bill later)
-      if (operation.paymentRequired && totalPrice > 0 && !operation.priceTbd) {
-        final openInstallment =
-            _firstOpenInstallment(operation, _userInscription);
+      if (payment.amount > 0 && !operation.priceTbd) {
         await _showPaymentOptionsDialog(
           operation: operation,
-          amount: openInstallment?.aggregatedAmount ?? totalPrice,
-          participantId: _userInscription!.id,
+          amount: payment.amount,
+          participantId: payment.participantId,
           memberEmail: userEmail,
           memberFirstName: prenom,
           memberLastName: nom,
-          installmentId: openInstallment?.id,
-          installmentLabel: openInstallment?.label,
+          installmentId: payment.installmentId,
+          installmentLabel: payment.installmentLabel,
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -5745,6 +5722,36 @@ bool canAddGuestFromOperationDetail({
   if (staff) return true;
   if (!allowGuests || !hasActiveRegistration) return false;
   return capacity == null || currentCount < capacity;
+}
+
+@visibleForTesting
+class RegistrationPaymentInstruction {
+  const RegistrationPaymentInstruction({
+    required this.participantId,
+    required this.amount,
+    this.installmentId,
+    this.installmentLabel,
+  });
+
+  final String participantId;
+  final double amount;
+  final String? installmentId;
+  final String? installmentLabel;
+}
+
+/// The only post-registration source used by the dialog, the on-device EPC QR
+/// and the email flow. In particular, no pre-submit tariff estimate or freshly
+/// reloaded participant document is allowed to replace this callable receipt.
+@visibleForTesting
+RegistrationPaymentInstruction registrationPaymentInstruction(
+  EventRegistrationResult result,
+) {
+  return RegistrationPaymentInstruction(
+    participantId: result.inscriptionId,
+    amount: result.nextPayment.amount,
+    installmentId: result.nextPayment.installmentId,
+    installmentLabel: result.nextPayment.installmentLabel,
+  );
 }
 
 @visibleForTesting

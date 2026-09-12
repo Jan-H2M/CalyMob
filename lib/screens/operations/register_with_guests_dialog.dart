@@ -3,6 +3,7 @@ import '../../config/app_colors.dart';
 import '../../models/tariff.dart';
 import '../../models/operation.dart';
 import '../../models/supplement.dart';
+import '../../services/operation_service.dart';
 
 /// Dialog that lets a member register themselves AND add guests in one
 /// go, with a single aggregated total. Used when the event has
@@ -124,7 +125,12 @@ class _RegisterWithGuestsDialogState extends State<RegisterWithGuestsDialog> {
 
   bool _validate() {
     for (final g in _guests) {
-      if (g.prenom.trim().isEmpty || g.nom.trim().isEmpty) return false;
+      try {
+        canonicalRegistrationGuestName(g.prenom);
+        canonicalRegistrationGuestName(g.nom);
+      } on FormatException {
+        return false;
+      }
     }
     return true;
   }
@@ -142,8 +148,8 @@ class _RegisterWithGuestsDialogState extends State<RegisterWithGuestsDialog> {
 
     final guestsResult = _guests
         .map((g) => {
-              'prenom': g.prenom.trim(),
-              'nom': g.nom.trim(),
+              'prenom': canonicalRegistrationGuestName(g.prenom),
+              'nom': canonicalRegistrationGuestName(g.nom),
               'prix': g.tariff.price,
               'tariffId': widget.guestTariffs.isEmpty ? null : g.tariff.id,
               'supplements': g.selectedSupplements.values.toList(),
@@ -454,6 +460,7 @@ class _RegisterWithGuestsDialogState extends State<RegisterWithGuestsDialog> {
                 child: TextFormField(
                   initialValue: guest.prenom,
                   onChanged: (v) => guest.prenom = v,
+                  maxLength: registrationGuestNameMaxLength,
                   textCapitalization: TextCapitalization.words,
                   style: const TextStyle(
                     fontSize: 14,
@@ -467,6 +474,7 @@ class _RegisterWithGuestsDialogState extends State<RegisterWithGuestsDialog> {
                 child: TextFormField(
                   initialValue: guest.nom,
                   onChanged: (v) => guest.nom = v,
+                  maxLength: registrationGuestNameMaxLength,
                   textCapitalization: TextCapitalization.words,
                   style: const TextStyle(
                     fontSize: 14,

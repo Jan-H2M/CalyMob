@@ -78,6 +78,11 @@ void main() {
         inscriptionId: 'member-1',
         guestInscriptionIds: [],
         idempotent: true,
+        groupTotal: 0,
+        memberAmount:
+            RegistrationAmountBreakdown(base: 0, supplements: 0, total: 0),
+        guestAmounts: [],
+        nextPayment: RegistrationNextPayment(amount: 0),
       )),
       'Inscription déjà enregistrée.',
     );
@@ -87,9 +92,51 @@ void main() {
         inscriptionId: 'member-1',
         guestInscriptionIds: ['guest-1'],
         idempotent: false,
+        groupTotal: 10,
+        memberAmount:
+            RegistrationAmountBreakdown(base: 0, supplements: 0, total: 0),
+        guestAmounts: [
+          RegistrationGuestAmount(
+            inscriptionId: 'guest-1',
+            base: 10,
+            supplements: 0,
+            total: 10,
+          ),
+        ],
+        nextPayment: RegistrationNextPayment(amount: 10),
       )),
       'Inscription enregistrée — paiement en attente.',
     );
+  });
+
+  test('QR and email payment instruction uses only the callable receipt', () {
+    const receipt = EventRegistrationResult(
+      status: 'pending_payment',
+      inscriptionId: 'server-member-id',
+      guestInscriptionIds: ['server-guest-id'],
+      idempotent: false,
+      groupTotal: 65,
+      memberAmount:
+          RegistrationAmountBreakdown(base: 20, supplements: 4, total: 24),
+      guestAmounts: [
+        RegistrationGuestAmount(
+          inscriptionId: 'server-guest-id',
+          base: 35,
+          supplements: 6,
+          total: 41,
+        ),
+      ],
+      nextPayment: RegistrationNextPayment(
+        amount: 27,
+        installmentId: 'deposit',
+        installmentLabel: 'Acompte',
+      ),
+    );
+    final instruction = registrationPaymentInstruction(receipt);
+    expect(instruction.participantId, 'server-member-id');
+    expect(instruction.amount, 27);
+    expect(instruction.installmentId, 'deposit');
+    expect(instruction.installmentLabel, 'Acompte');
   });
 
   testWidgets('initial free guest registration emits no synthetic tariff id',
@@ -127,11 +174,16 @@ void main() {
     await tester.tap(find.text('Ajouter un invité'));
     await tester.pump();
     final fields = find.byType(TextFormField);
-    await tester.enterText(fields.at(0), 'Bob');
-    await tester.enterText(fields.at(1), 'Guest');
+    final textFields = find.byType(TextField);
+    expect(tester.widget<TextField>(textFields.at(0)).maxLength, 80);
+    expect(tester.widget<TextField>(textFields.at(1)).maxLength, 80);
+    await tester.enterText(fields.at(0), '  Zoë\t李 ');
+    await tester.enterText(fields.at(1), ' Van   Dam ');
     await tester.tap(find.text("S'inscrire"));
     await tester.pumpAndSettle();
     final guest = (result!['guests'] as List).single as Map<String, dynamic>;
+    expect(guest['prenom'], 'Zoë 李');
+    expect(guest['nom'], 'Van Dam');
     expect(guest['prix'], 0);
     expect(guest['tariffId'], isNull);
   });
@@ -155,6 +207,9 @@ void main() {
     expect(find.text('Invité gratuit'), findsOneWidget);
     expect(find.widgetWithText(TextFormField, 'Prix (€)'), findsNothing);
     final fields = find.byType(TextFormField);
+    final textFields = find.byType(TextField);
+    expect(tester.widget<TextField>(textFields.at(0)).maxLength, 80);
+    expect(tester.widget<TextField>(textFields.at(1)).maxLength, 80);
     await tester.enterText(fields.at(0), 'Bob');
     await tester.enterText(fields.at(1), 'Guest');
     await tester.tap(find.text('Ajouter'));

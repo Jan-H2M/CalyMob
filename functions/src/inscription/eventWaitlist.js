@@ -12,6 +12,22 @@ function cleanAuditText(value, fallback = null, maxLength = 160) {
   return cleaned || fallback;
 }
 
+function canonicalGuestName(value) {
+  if (typeof value !== 'string') {
+    throw new HttpsError('invalid-argument', 'Nom invité invalide.');
+  }
+  // Deliberately normalize ASCII whitespace only. JavaScript and Dart both
+  // count UTF-16 code units, so this contract is identical on the callable and
+  // in CalyMob while preserving the user's Unicode spelling byte-for-byte.
+  const canonical = value
+    .replace(/[ \t\r\n\f]+/g, ' ')
+    .replace(/^ +| +$/g, '');
+  if (!canonical || canonical.length > 80) {
+    throw new HttpsError('invalid-argument', 'Nom invité invalide (80 caractères maximum).');
+  }
+  return canonical;
+}
+
 function actorName(member, uid) {
   const firstName = cleanAuditText(member.prenom || member.firstName, '', 80);
   const lastName = cleanAuditText(member.nom || member.lastName, '', 80);
@@ -359,8 +375,8 @@ function requestedGuests(value) {
     if (!guest || typeof guest !== 'object' || Array.isArray(guest)) {
       throw new HttpsError('invalid-argument', 'Invité invalide.');
     }
-    const firstName = cleanAuditText(guest.firstName, '', 80);
-    const lastName = cleanAuditText(guest.lastName, '', 80);
+    const firstName = canonicalGuestName(guest.firstName);
+    const lastName = canonicalGuestName(guest.lastName);
     const tariffId = guest.tariffId ?? null;
     if (!firstName || !lastName
       || (tariffId !== null && (typeof tariffId !== 'string' || !tariffId))) {
@@ -373,6 +389,144 @@ function requestedGuests(value) {
       selectedSupplementIds: guest.selectedSupplementIds ?? [],
     };
   });
+}
+
+function monetaryAmount(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new HttpsError('failed-precondition', 'Montant d’inscription invalide.');
+  }
+  return Math.round((amount + Number.EPSILON) * 100) / 100;
+}
+
+function amountBreakdown(base, supplements) {
+  const baseAmount = monetaryAmount(base);
+  const supplementAmount = monetaryAmount(supplements);
+  return {
+    base: baseAmount,
+    supplements: supplementAmount,
+    total: monetaryAmount(baseAmount + supplementAmount),
+  };
+}
+
+function registrationReceipt({
+  operation,
+  status,
+  registrationId,
+  guestRefs,
+  price,
+  supplementTotal,
+  tariff,
+  guestPricings,
+}) {
+  const member = amountBreakdown(price, supplementTotal);
+  const guests = guestPricings.map((pricing, index) => ({
+    inscriptionId: guestRefs[index].id,
+    ...amountBreakdown(pricing.price, pricing.supplementTotal),
+  }));
+  const groupTotal = monetaryAmount(
+    member.total + guests.reduce((sum, guest) => sum + guest.total, 0),
+  );
+  const memberInstallments = installmentPayments(operation, tariff, supplementTotal);
+  const guestInstallments = guestPricings.map(pricing => installmentPayments(
+    operation,
+    pricing.tariff,
+    pricing.supplementTotal,
+  ));
+  const paymentRequired = paymentRequiredForOperation(operation);
+  let nextPayment = {
+    amount: paymentRequired ? groupTotal : 0,
+    installmentId: null,
+    installmentLabel: null,
+  };
+  if (paymentRequired && operation.payment_plan_enabled === true
+    && Array.isArray(operation.payment_installments)) {
+    for (const installment of operation.payment_installments) {
+      if (!installment || typeof installment.id !== 'string' || !installment.id) continue;
+      const memberAmount = Number(memberInstallments[installment.id]?.amount_due || 0);
+      const guestAmount = guestInstallments.reduce(
+        (sum, payments) => sum + Number(payments[installment.id]?.amount_due || 0),
+        0,
+      );
+      const amount = monetaryAmount(memberAmount + guestAmount);
+      if (amount > 0) {
+        nextPayment = {
+          amount,
+          installmentId: installment.id,
+          installmentLabel: cleanAuditText(installment.label, null, 160),
+        };
+        break;
+      }
+    }
+  }
+  return {
+    version: 1,
+    status,
+    inscriptionId: registrationId,
+    guestInscriptionIds: guestRefs.map(ref => ref.id),
+    amounts: {
+      currency: 'EUR',
+      groupTotal,
+      member,
+      guests,
+      nextPayment,
+    },
+  };
+}
+
+function storedRegistrationReceipt(value) {
+  if (!value || typeof value !== 'object' || value.version !== 1
+    || typeof value.status !== 'string' || typeof value.inscriptionId !== 'string'
+    || !Array.isArray(value.guestInscriptionIds)
+    || !value.amounts || typeof value.amounts !== 'object'
+    || value.amounts.currency !== 'EUR'
+    || !value.amounts.member || typeof value.amounts.member !== 'object'
+    || Array.isArray(value.amounts.member)
+    || !Array.isArray(value.amounts.guests)
+    || value.amounts.guests.some(guest => (
+      !guest || typeof guest !== 'object' || Array.isArray(guest)
+    ))
+    || !value.amounts.nextPayment) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Reçu d’inscription incomplet; vérification manuelle requise.',
+    );
+  }
+  const amounts = value.amounts;
+  const allNumbers = [
+    amounts.groupTotal,
+    amounts.member.base,
+    amounts.member.supplements,
+    amounts.member.total,
+    amounts.nextPayment.amount,
+    ...amounts.guests.flatMap(guest => [guest.base, guest.supplements, guest.total]),
+  ];
+  const cents = number => Math.round(number * 100);
+  const breakdowns = [amounts.member, ...amounts.guests];
+  const calculatedGroupTotal = breakdowns.reduce(
+    (sum, breakdown) => sum + cents(breakdown.total),
+    0,
+  );
+  if (value.guestInscriptionIds.some(id => typeof id !== 'string')
+    || amounts.guests.length !== value.guestInscriptionIds.length
+    || amounts.guests.some((guest, index) => (
+      !guest || guest.inscriptionId !== value.guestInscriptionIds[index]
+    ))
+    || allNumbers.some(number => !Number.isFinite(number) || number < 0)
+    || breakdowns.some(breakdown => (
+      cents(breakdown.base) + cents(breakdown.supplements) !== cents(breakdown.total)
+    ))
+    || calculatedGroupTotal !== cents(amounts.groupTotal)
+    || (amounts.nextPayment.installmentId !== null
+      && typeof amounts.nextPayment.installmentId !== 'string')
+    || (amounts.nextPayment.installmentLabel !== null
+      && typeof amounts.nextPayment.installmentLabel !== 'string')) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Reçu d’inscription invalide; vérification manuelle requise.',
+    );
+  }
+  return value;
 }
 
 function guestPricing(operation, guest) {
@@ -465,7 +619,6 @@ const registerForEvent = onCall({ region: REGION }, async request => {
     clubId,
     operationId,
     requestId: rawRequestId,
-    payloadFingerprint: suppliedPayloadFingerprint = null,
     selectedSupplementIds = [],
     guests: rawGuests = [],
     source = 'calymob',
@@ -486,11 +639,6 @@ const registerForEvent = onCall({ region: REGION }, async request => {
     selectedSupplementIds,
     guests,
   });
-  if (suppliedPayloadFingerprint !== null
-    && suppliedPayloadFingerprint !== payloadFingerprint) {
-    throw new HttpsError('invalid-argument', 'Empreinte de demande invalide.');
-  }
-
   const member = await requireMember(clubId, uid);
   const memberData = member.data();
   const { operationRef, inscriptionsRef } = refs(clubId, operationId);
@@ -518,12 +666,17 @@ const registerForEvent = onCall({ region: REGION }, async request => {
           'Cet identifiant de demande a déjà été utilisé pour une autre inscription.',
         );
       }
-      return {
-        status: previous.registration_status,
-        inscriptionId: previous.inscription_id,
-        guestInscriptionIds: previous.guest_inscription_ids || [],
-        idempotent: true,
-      };
+      const receipt = storedRegistrationReceipt(previous.registration_receipt);
+      if (receipt.status !== previous.registration_status
+        || receipt.inscriptionId !== previous.inscription_id
+        || JSON.stringify(receipt.guestInscriptionIds)
+          !== JSON.stringify(previous.guest_inscription_ids || [])) {
+        throw new HttpsError(
+          'failed-precondition',
+          'Reçu d’inscription incohérent; vérification manuelle requise.',
+        );
+      }
+      return { ...receipt, idempotent: true };
     }
     const duplicate = inscriptionsSnap.docs.find(doc => {
       const data = doc.data();
@@ -563,6 +716,16 @@ const registerForEvent = onCall({ region: REGION }, async request => {
     // would roll a thrown transaction back either way, but this ordering also
     // makes the all-or-nothing contract explicit and directly testable.
     const guestPricings = guests.map(guest => guestPricing(operation, guest));
+    const receipt = registrationReceipt({
+      operation,
+      status: registrationStatus,
+      registrationId: registrationRef.id,
+      guestRefs,
+      price,
+      supplementTotal,
+      tariff,
+      guestPricings,
+    });
 
     transaction.set(registrationRef, {
       operation_id: operationId,
@@ -641,6 +804,7 @@ const registerForEvent = onCall({ region: REGION }, async request => {
       guest_inscription_ids: guestRefs.map(ref => ref.id),
       payload_fingerprint: payloadFingerprint,
       registration_status: registrationStatus,
+      registration_receipt: receipt,
       created_at: now,
     });
     // Every successful registration writes the same operation document. This
@@ -649,12 +813,7 @@ const registerForEvent = onCall({ region: REGION }, async request => {
     transaction.update(operationRef, {
       registration_capacity_revision: Number(operation.registration_capacity_revision || 0) + 1,
     });
-    return {
-      status: registrationStatus,
-      inscriptionId: registrationRef.id,
-      guestInscriptionIds: guestRefs.map(ref => ref.id),
-      idempotent: false,
-    };
+    return { ...receipt, idempotent: false };
   });
 });
 
@@ -666,7 +825,6 @@ const addGuestToEvent = onCall({ region: REGION }, async request => {
     operationId,
     parentInscriptionId: rawParentInscriptionId = null,
     requestId: rawRequestId,
-    payloadFingerprint: suppliedPayloadFingerprint = null,
     guest: rawGuest,
     source = 'calymob',
     appVersion = null,
@@ -683,10 +841,6 @@ const addGuestToEvent = onCall({ region: REGION }, async request => {
   const payloadFingerprint = guestPayloadFingerprint({
     clubId, operationId, parentInscriptionId, guest,
   });
-  if (suppliedPayloadFingerprint !== null
-    && suppliedPayloadFingerprint !== payloadFingerprint) {
-    throw new HttpsError('invalid-argument', 'Empreinte de demande invité invalide.');
-  }
   const member = await requireMember(clubId, uid);
   const memberData = member.data();
   const { operationRef, inscriptionsRef } = refs(clubId, operationId);
@@ -1190,9 +1344,12 @@ module.exports = {
   promotionCandidatesAfterWithdrawal,
   canManageWaitlist,
   canAddStandaloneGuest,
+  canonicalGuestName,
   memberRegistrationPrice,
   guestPayloadFingerprint,
   registrationPayloadFingerprint,
+  registrationReceipt,
+  storedRegistrationReceipt,
   guestPricing,
   joinEventWaitlist,
   registerForEvent,

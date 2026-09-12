@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../../config/app_colors.dart';
 import '../../models/supplement.dart';
 import '../../models/tariff.dart';
+import '../../services/operation_service.dart';
 
 /// Dialog to add a guest (non-member) to an operation.
 ///
@@ -110,8 +111,8 @@ class _AddGuestDialogState extends State<AddGuestDialog> {
         .toList();
 
     Navigator.of(context).pop({
-      'prenom': _prenomController.text.trim(),
-      'nom': _nomController.text.trim(),
+      'prenom': canonicalRegistrationGuestName(_prenomController.text),
+      'nom': canonicalRegistrationGuestName(_nomController.text),
       'prix': prix,
       'tariffId': tariffId,
       'selectedSupplements': selectedSupplements,
@@ -397,7 +398,7 @@ class _AddGuestDialogState extends State<AddGuestDialog> {
                         fontWeight: FontWeight.w500,
                       ),
                       decoration: _buildInputDecoration('Prénom'),
-                      maxLength: 50,
+                      maxLength: registrationGuestNameMaxLength,
                       textInputAction: TextInputAction.next,
                       textCapitalization: TextCapitalization.words,
                       onFieldSubmitted: (_) {
@@ -422,7 +423,7 @@ class _AddGuestDialogState extends State<AddGuestDialog> {
                         fontWeight: FontWeight.w500,
                       ),
                       decoration: _buildInputDecoration('Nom'),
-                      maxLength: 50,
+                      maxLength: registrationGuestNameMaxLength,
                       textInputAction:
                           _hasGuestTariffs || widget.serverPricedFreeGuest
                               ? TextInputAction.done

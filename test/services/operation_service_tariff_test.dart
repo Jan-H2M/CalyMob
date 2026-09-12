@@ -8,13 +8,54 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  Map<String, dynamic> registrationResponse({int guestCount = 0}) => {
-        'status': 'confirmed',
-        'inscriptionId': 'inscription-1',
-        'guestInscriptionIds':
-            List.generate(guestCount, (index) => 'guest-${index + 1}'),
-        'idempotent': false,
-      };
+  Map<String, dynamic> registrationResponse({
+    int guestCount = 0,
+    double memberBase = 0,
+    double memberSupplements = 0,
+    List<double>? guestBases,
+    List<double>? guestSupplements,
+    double? nextPaymentAmount,
+    String? installmentId,
+    String? installmentLabel,
+  }) {
+    final ids = List.generate(guestCount, (index) => 'guest-${index + 1}');
+    final bases = guestBases ?? List.filled(guestCount, 0);
+    final supplements = guestSupplements ?? List.filled(guestCount, 0);
+    final memberTotal = memberBase + memberSupplements;
+    final guests = List.generate(
+        guestCount,
+        (index) => {
+              'inscriptionId': ids[index],
+              'base': bases[index],
+              'supplements': supplements[index],
+              'total': bases[index] + supplements[index],
+            });
+    final groupTotal = memberTotal +
+        List.generate(guestCount, (index) => bases[index] + supplements[index])
+            .fold<double>(0, (sum, value) => sum + value);
+    return {
+      'version': 1,
+      'status': 'confirmed',
+      'inscriptionId': 'inscription-1',
+      'guestInscriptionIds': ids,
+      'idempotent': false,
+      'amounts': {
+        'currency': 'EUR',
+        'groupTotal': groupTotal,
+        'member': {
+          'base': memberBase,
+          'supplements': memberSupplements,
+          'total': memberTotal,
+        },
+        'guests': guests,
+        'nextPayment': {
+          'amount': nextPaymentAmount ?? groupTotal,
+          'installmentId': installmentId,
+          'installmentLabel': installmentLabel,
+        },
+      },
+    };
+  }
 
   test(
     'registration delegates automatic tariff selection to the server',
@@ -332,6 +373,116 @@ void main() {
     expect(
       fingerprint,
       '7b65c15b49215846b2a1c4f73397db35032d96d4594de41e72dd404e909adbfd',
+    );
+  });
+
+  test('guest names share the 80-unit Unicode and whitespace contract', () {
+    expect(
+        canonicalRegistrationGuestName('  Zoë\t李\nDupont  '), 'Zoë 李 Dupont');
+    expect(
+        canonicalRegistrationGuestName(List.filled(80, 'é').join()).length, 80);
+    expect(
+      () => canonicalRegistrationGuestName(List.filled(81, 'é').join()),
+      throwsFormatException,
+    );
+    expect(
+      () => const RegistrationGuestRequest(
+        firstName: 'Bob',
+        lastName: '',
+      ).toCallablePayload(),
+      throwsFormatException,
+    );
+  });
+
+  test('Unicode and whitespace use the server canonical fingerprint', () {
+    final fingerprint = OperationService.registrationRequestPayloadFingerprint(
+      clubId: 'club-1',
+      operationId: 'event-1',
+      selectedSupplements: [
+        SelectedSupplement(id: 'tank', name: 'Bloc', price: 5),
+        SelectedSupplement(id: 'meal', name: 'Repas', price: 20),
+      ],
+      guests: [
+        RegistrationGuestRequest(
+          firstName: '  Zoë\t李 ',
+          lastName: ' Van   Dam ',
+          tariffId: 'adult',
+          selectedSupplements: [
+            SelectedSupplement(id: 'meal', name: 'Repas', price: 20),
+            SelectedSupplement(id: 'air', name: 'Air', price: 1),
+          ],
+        ),
+      ],
+    );
+    expect(
+      fingerprint,
+      'c6694e3aadcb411259f36ceb8cad6f9fb8ba5016831091165bb0eff42fea5abe',
+    );
+  });
+
+  test('receipt is the only authoritative price and tranche source', () async {
+    final service = OperationService(
+      firestore: FakeFirebaseFirestore(),
+      registerForEventInvoker: (_) async => registrationResponse(
+        guestCount: 1,
+        memberBase: 20,
+        memberSupplements: 4,
+        guestBases: [35],
+        guestSupplements: [6],
+        nextPaymentAmount: 27,
+        installmentId: 'deposit',
+        installmentLabel: 'Acompte',
+      ),
+    );
+    final now = DateTime(2026, 8, 13);
+    final result = await service.registerToOperation(
+      clubId: 'club-1',
+      operationId: 'event-1',
+      userId: 'member-1',
+      userName: 'Alice',
+      operation: Operation(
+        id: 'event-1',
+        type: 'evenement',
+        titre: 'Tarif client périmé',
+        montantPrevu: 0,
+        statut: 'ouvert',
+        prixMembre: 999,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      selectedTariff: Tariff(
+        id: 'stale',
+        label: 'Périmé',
+        category: 'membre',
+        price: 999,
+      ),
+      supplementTotal: 999,
+      guests: const [
+        RegistrationGuestRequest(firstName: 'Bob', lastName: 'Guest'),
+      ],
+    );
+
+    expect(result.groupTotal, 65);
+    expect(result.memberAmount.total, 24);
+    expect(result.guestAmounts.single.total, 41);
+    expect(result.nextPayment.amount, 27);
+    expect(result.nextPayment.installmentId, 'deposit');
+  });
+
+  test('malformed or missing authoritative receipt fails closed', () {
+    expect(
+      () => EventRegistrationResult.fromCallable({
+        'status': 'confirmed',
+        'inscriptionId': 'member-1',
+        'guestInscriptionIds': const [],
+      }),
+      throwsFormatException,
+    );
+    final malformed = registrationResponse();
+    (malformed['amounts'] as Map<String, dynamic>)['groupTotal'] = 99;
+    expect(
+      () => EventRegistrationResult.fromCallable(malformed),
+      throwsFormatException,
     );
   });
 

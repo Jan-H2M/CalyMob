@@ -25,6 +25,20 @@ typedef RegisterForEventInvoker = Future<Map<String, dynamic>> Function(
 typedef AddGuestToEventInvoker = Future<void> Function(
     Map<String, dynamic> payload);
 
+const int registrationGuestNameMaxLength = 80;
+
+String canonicalRegistrationGuestName(String value) {
+  final canonical = value
+      .replaceAll(RegExp(r'[ \t\r\n\f]+'), ' ')
+      .replaceAll(RegExp(r'^ +| +$'), '');
+  if (canonical.isEmpty || canonical.length > registrationGuestNameMaxLength) {
+    throw const FormatException(
+      'Le nom de l’invité doit contenir entre 1 et 80 caractères.',
+    );
+  }
+  return canonical;
+}
+
 class RegistrationGuestRequest {
   const RegistrationGuestRequest({
     required this.firstName,
@@ -39,12 +53,47 @@ class RegistrationGuestRequest {
   final List<SelectedSupplement> selectedSupplements;
 
   Map<String, dynamic> toCallablePayload() => {
-        'firstName': firstName,
-        'lastName': lastName,
+        'firstName': canonicalRegistrationGuestName(firstName),
+        'lastName': canonicalRegistrationGuestName(lastName),
         if (tariffId != null) 'tariffId': tariffId,
         'selectedSupplementIds':
             selectedSupplements.map((supplement) => supplement.id).toList(),
       };
+}
+
+class RegistrationAmountBreakdown {
+  const RegistrationAmountBreakdown({
+    required this.base,
+    required this.supplements,
+    required this.total,
+  });
+
+  final double base;
+  final double supplements;
+  final double total;
+}
+
+class RegistrationGuestAmount extends RegistrationAmountBreakdown {
+  const RegistrationGuestAmount({
+    required this.inscriptionId,
+    required super.base,
+    required super.supplements,
+    required super.total,
+  });
+
+  final String inscriptionId;
+}
+
+class RegistrationNextPayment {
+  const RegistrationNextPayment({
+    required this.amount,
+    this.installmentId,
+    this.installmentLabel,
+  });
+
+  final double amount;
+  final String? installmentId;
+  final String? installmentLabel;
 }
 
 class EventRegistrationResult {
@@ -53,24 +102,144 @@ class EventRegistrationResult {
     required this.inscriptionId,
     required this.guestInscriptionIds,
     required this.idempotent,
+    required this.groupTotal,
+    required this.memberAmount,
+    required this.guestAmounts,
+    required this.nextPayment,
   });
 
   final String status;
   final String inscriptionId;
   final List<String> guestInscriptionIds;
   final bool idempotent;
+  final double groupTotal;
+  final RegistrationAmountBreakdown memberAmount;
+  final List<RegistrationGuestAmount> guestAmounts;
+  final RegistrationNextPayment nextPayment;
 
   factory EventRegistrationResult.fromCallable(Object? value) {
-    final data = Map<String, dynamic>.from(value as Map);
+    if (value is! Map) {
+      throw const FormatException('Reçu d’inscription absent.');
+    }
+    final data = Map<String, dynamic>.from(value);
+    final status = _requiredReceiptString(data, 'status');
+    final inscriptionId = _requiredReceiptString(data, 'inscriptionId');
+    final guestIdsValue = data['guestInscriptionIds'];
+    if (data['version'] != 1 ||
+        guestIdsValue is! List ||
+        data['idempotent'] is! bool) {
+      throw const FormatException('Reçu d’inscription incomplet.');
+    }
+    final guestInscriptionIds = guestIdsValue.map((value) {
+      if (value is! String || value.isEmpty) {
+        throw const FormatException('Référence invité invalide.');
+      }
+      return value;
+    }).toList(growable: false);
+    final amounts = _requiredReceiptMap(data, 'amounts');
+    if (amounts['currency'] != 'EUR') {
+      throw const FormatException('Devise du reçu invalide.');
+    }
+    final member = _receiptBreakdown(_requiredReceiptMap(amounts, 'member'));
+    final guestsValue = amounts['guests'];
+    if (guestsValue is! List ||
+        guestsValue.length != guestInscriptionIds.length) {
+      throw const FormatException('Montants invités incomplets.');
+    }
+    final guests = <RegistrationGuestAmount>[];
+    for (var index = 0; index < guestsValue.length; index++) {
+      final guest = Map<String, dynamic>.from(guestsValue[index] as Map);
+      final breakdown = _receiptBreakdown(guest);
+      final id = _requiredReceiptString(guest, 'inscriptionId');
+      if (id != guestInscriptionIds[index]) {
+        throw const FormatException('Ordre des montants invités invalide.');
+      }
+      guests.add(RegistrationGuestAmount(
+        inscriptionId: id,
+        base: breakdown.base,
+        supplements: breakdown.supplements,
+        total: breakdown.total,
+      ));
+    }
+    final groupTotal = _receiptAmount(amounts['groupTotal']);
+    final computedTotal = member.total +
+        guests.fold<double>(0, (total, guest) => total + guest.total);
+    if ((groupTotal * 100).round() != (computedTotal * 100).round()) {
+      throw const FormatException('Total du reçu incohérent.');
+    }
+    final nextPaymentData = _requiredReceiptMap(amounts, 'nextPayment');
+    final installmentId = _nullableReceiptString(
+      nextPaymentData,
+      'installmentId',
+    );
+    final installmentLabel = _nullableReceiptString(
+      nextPaymentData,
+      'installmentLabel',
+    );
     return EventRegistrationResult(
-      status: data['status'] as String,
-      inscriptionId: data['inscriptionId'] as String,
-      guestInscriptionIds: (data['guestInscriptionIds'] as List? ?? const [])
-          .map((id) => id as String)
-          .toList(growable: false),
-      idempotent: data['idempotent'] == true,
+      status: status,
+      inscriptionId: inscriptionId,
+      guestInscriptionIds: guestInscriptionIds,
+      idempotent: data['idempotent'] as bool,
+      groupTotal: groupTotal,
+      memberAmount: member,
+      guestAmounts: List.unmodifiable(guests),
+      nextPayment: RegistrationNextPayment(
+        amount: _receiptAmount(nextPaymentData['amount']),
+        installmentId: installmentId,
+        installmentLabel: installmentLabel,
+      ),
     );
   }
+}
+
+Map<String, dynamic> _requiredReceiptMap(
+  Map<String, dynamic> data,
+  String key,
+) {
+  final value = data[key];
+  if (value is! Map) {
+    throw const FormatException('Reçu d’inscription invalide.');
+  }
+  return Map<String, dynamic>.from(value);
+}
+
+String _requiredReceiptString(Map<String, dynamic> data, String key) {
+  final value = data[key];
+  if (value is! String || value.isEmpty) {
+    throw const FormatException('Reçu d’inscription invalide.');
+  }
+  return value;
+}
+
+String? _nullableReceiptString(Map<String, dynamic> data, String key) {
+  final value = data[key];
+  if (value == null) return null;
+  if (value is! String || value.isEmpty) {
+    throw const FormatException('Reçu d’inscription invalide.');
+  }
+  return value;
+}
+
+double _receiptAmount(Object? value) {
+  if (value is! num || !value.isFinite || value < 0) {
+    throw const FormatException('Montant du reçu invalide.');
+  }
+  return value.toDouble();
+}
+
+RegistrationAmountBreakdown _receiptBreakdown(Map<String, dynamic> data) {
+  final base = _receiptAmount(data['base']);
+  final supplements = _receiptAmount(data['supplements']);
+  final total = _receiptAmount(data['total']);
+  if ((total * 100).round() != ((base + supplements) * 100).round()) {
+    throw const FormatException('Détail du montant incohérent.');
+  }
+  return RegistrationAmountBreakdown(
+    base: base,
+    supplements: supplements,
+    total: total,
+  );
 }
 
 class PaymentMethodNotAllowedException implements Exception {
@@ -385,8 +554,8 @@ class OperationService {
           .toList()
         ..sort();
       return <String, dynamic>{
-        'firstName': guest.firstName.trim(),
-        'lastName': guest.lastName.trim(),
+        'firstName': canonicalRegistrationGuestName(guest.firstName),
+        'lastName': canonicalRegistrationGuestName(guest.lastName),
         'tariffId': guest.tariffId,
         'selectedSupplementIds': guestSupplementIds,
       };
@@ -430,8 +599,8 @@ class OperationService {
       'clubId': clubId,
       'operationId': operationId,
       'parentInscriptionId': parentInscriptionId,
-      'firstName': guestPrenom.trim(),
-      'lastName': guestNom.trim(),
+      'firstName': canonicalRegistrationGuestName(guestPrenom),
+      'lastName': canonicalRegistrationGuestName(guestNom),
       'tariffId': tariffId,
       'selectedSupplementIds': supplementIds,
     });
@@ -1331,8 +1500,8 @@ class OperationService {
         'requestId': requestId ?? _newRegistrationRequestId(),
         'payloadFingerprint': fingerprint,
         'guest': {
-          'firstName': guestPrenom,
-          'lastName': guestNom,
+          'firstName': canonicalRegistrationGuestName(guestPrenom),
+          'lastName': canonicalRegistrationGuestName(guestNom),
           if (tariffId != null) 'tariffId': tariffId,
           'selectedSupplementIds':
               supplements.map((supplement) => supplement.id).toList(),

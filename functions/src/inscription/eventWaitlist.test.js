@@ -38,6 +38,7 @@ const {
   guestPricing,
   guestPayloadFingerprint,
   registrationPayloadFingerprint,
+  canonicalGuestName,
   memberRegistrationPrice,
   unregisterFromEvent,
 } = require('./eventWaitlist');
@@ -256,11 +257,19 @@ describe('registerForEvent callable', () => {
       },
     });
 
-    expect(result).toEqual({
+    expect(result).toEqual(expect.objectContaining({
+      version: 1,
       status: 'pending_payment',
       inscriptionId: 'generated-registration',
       guestInscriptionIds: [],
       idempotent: false,
+    }));
+    expect(result.amounts).toEqual({
+      currency: 'EUR',
+      groupTotal: 4,
+      member: { base: 0, supplements: 4, total: 4 },
+      guests: [],
+      nextPayment: { amount: 4, installmentId: 'deposit', installmentLabel: null },
     });
     expect(transactions[0].set).toHaveBeenCalledWith(
       registrationRef,
@@ -347,6 +356,23 @@ describe('registerForEvent callable', () => {
     expect(stored.payment_expires_at.toMillis()).toBe(
       Date.parse('2026-08-15T10:00:00Z'),
     );
+  });
+
+  test('an explicit no-payment event reports zero due despite an informational tariff', async () => {
+    setupRegistrationDb([[]], {
+      payment_required: false,
+      event_tariffs: [{ id: 'member', label: 'Membre', category: 'membre', price: 25 }],
+    }, { clubStatuten: ['Membres'] });
+
+    const result = await registerForEvent({
+      auth: { uid: 'member-1' },
+      data: { clubId: 'calypso', operationId: 'event-1', requestId: validRequestId },
+    });
+
+    expect(result.amounts.groupTotal).toBe(25);
+    expect(result.amounts.nextPayment).toEqual({
+      amount: 0, installmentId: null, installmentLabel: null,
+    });
   });
 
   test('ignores a forged privileged tariff and derives the member rate server-side', async () => {
@@ -507,6 +533,22 @@ describe('registerForEvent callable', () => {
       guest_inscription_ids: ['original-guest-1', 'original-guest-2'],
       registration_status: 'confirmed',
       payload_fingerprint: payloadFingerprint,
+      registration_receipt: {
+        version: 1,
+        status: 'confirmed',
+        inscriptionId: 'original-member',
+        guestInscriptionIds: ['original-guest-1', 'original-guest-2'],
+        amounts: {
+          currency: 'EUR',
+          groupTotal: 95,
+          member: { base: 25, supplements: 0, total: 25 },
+          guests: [
+            { inscriptionId: 'original-guest-1', base: 35, supplements: 0, total: 35 },
+            { inscriptionId: 'original-guest-2', base: 31, supplements: 4, total: 35 },
+          ],
+          nextPayment: { amount: 95, installmentId: null, installmentLabel: null },
+        },
+      },
     };
     const { transactions } = setupRegistrationDb([[]], {}, {}, previousRequest);
 
@@ -516,25 +558,34 @@ describe('registerForEvent callable', () => {
     });
 
     expect(result).toEqual({
+      version: 1,
       status: 'confirmed',
       inscriptionId: 'original-member',
       guestInscriptionIds: ['original-guest-1', 'original-guest-2'],
+      amounts: previousRequest.registration_receipt.amounts,
       idempotent: true,
     });
     expect(transactions[0].set).not.toHaveBeenCalled();
     expect(transactions[0].update).not.toHaveBeenCalled();
   });
 
-  test('rejects a supplied fingerprint that does not match the canonical payload', async () => {
+  test('does not trust a client fingerprint and binds the receipt to the server payload', async () => {
     const { transactions } = setupRegistrationDb([[]]);
-    await expect(registerForEvent({
+    const result = await registerForEvent({
       auth: { uid: 'member-1' },
       data: {
         clubId: 'calypso', operationId: 'event-1', requestId: validRequestId,
         payloadFingerprint: 'forged',
       },
-    })).rejects.toMatchObject({ code: 'invalid-argument' });
-    expect(transactions).toHaveLength(0);
+    });
+    const expectedFingerprint = registrationPayloadFingerprint({
+      clubId: 'calypso', operationId: 'event-1', selectedSupplementIds: [], guests: [],
+    });
+    expect(result.inscriptionId).toBe('generated-registration');
+    expect(transactions[0].set).toHaveBeenCalledWith(
+      expect.objectContaining({ path: expect.stringContaining('registration_requests') }),
+      expect.objectContaining({ payload_fingerprint: expectedFingerprint }),
+    );
   });
 
   test('fails closed when a receipt request id is replayed with a changed group', async () => {
@@ -547,6 +598,18 @@ describe('registerForEvent callable', () => {
       guest_inscription_ids: [],
       registration_status: 'confirmed',
       payload_fingerprint: originalFingerprint,
+      registration_receipt: {
+        version: 1,
+        status: 'confirmed',
+        inscriptionId: 'original-member',
+        guestInscriptionIds: [],
+        amounts: {
+          currency: 'EUR', groupTotal: 25,
+          member: { base: 25, supplements: 0, total: 25 },
+          guests: [],
+          nextPayment: { amount: 25, installmentId: null, installmentLabel: null },
+        },
+      },
     };
     const { transactions } = setupRegistrationDb(
       [[]],
@@ -569,6 +632,105 @@ describe('registerForEvent callable', () => {
     })).rejects.toMatchObject({ code: 'already-exists' });
     expect(transactions[0].set).not.toHaveBeenCalled();
     expect(transactions[0].update).not.toHaveBeenCalled();
+  });
+
+  test('fails closed when an idempotent receipt has no authoritative amounts', async () => {
+    const payloadFingerprint = registrationPayloadFingerprint({
+      clubId: 'calypso', operationId: 'event-1', selectedSupplementIds: [], guests: [],
+    });
+    const previousRequest = {
+      member_id: 'member-1',
+      inscription_id: 'legacy-member',
+      guest_inscription_ids: [],
+      registration_status: 'confirmed',
+      payload_fingerprint: payloadFingerprint,
+    };
+    const { transactions } = setupRegistrationDb([[]], {}, {}, previousRequest);
+
+    await expect(registerForEvent({
+      auth: { uid: 'member-1' },
+      data: { clubId: 'calypso', operationId: 'event-1', requestId: validRequestId },
+    })).rejects.toMatchObject({ code: 'failed-precondition' });
+    expect(transactions[0].set).not.toHaveBeenCalled();
+  });
+
+  test('returns server prices and the aggregated next tranche for member and guests', async () => {
+    setupRegistrationDb([[]], {
+      capacite_max: 3,
+      allow_guests: true,
+      max_guests_per_member: 2,
+      event_tariffs: [
+        {
+          id: 'member', label: 'Membre', category: 'membre', price: 25,
+          installment_amounts: { deposit: 10, balance: 15 },
+        },
+        {
+          id: 'guest', label: 'Invité', price: 35, is_guest_tariff: true,
+          installment_amounts: { deposit: 12, balance: 23 },
+        },
+      ],
+      payment_installments: [
+        { id: 'deposit', label: 'Acompte' },
+        { id: 'balance', label: 'Solde' },
+      ],
+    }, { clubStatuten: ['Membres'] });
+
+    const result = await registerForEvent({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso', operationId: 'event-1', requestId: validRequestId,
+        selectedSupplementIds: ['bottle'],
+        guests: [{
+          firstName: 'Zoë', lastName: 'Dupont', tariffId: 'guest',
+          selectedSupplementIds: ['bottle'],
+        }],
+      },
+    });
+
+    expect(result.amounts).toEqual({
+      currency: 'EUR',
+      groupTotal: 68,
+      member: { base: 25, supplements: 4, total: 29 },
+      guests: [{
+        inscriptionId: 'generated-guest-1', base: 35, supplements: 4, total: 39,
+      }],
+      nextPayment: { amount: 30, installmentId: 'deposit', installmentLabel: 'Acompte' },
+    });
+  });
+
+  test('an idempotent replay returns the exact stored server amounts and tranche', async () => {
+    const first = setupRegistrationDb([[]], {
+      event_tariffs: [{
+        id: 'member', label: 'Membre', category: 'membre', price: 25,
+        installment_amounts: { deposit: 10 },
+      }],
+      payment_installments: [{ id: 'deposit', label: 'Acompte' }],
+    }, { clubStatuten: ['Membres'] });
+    const created = await registerForEvent({
+      auth: { uid: 'member-1' },
+      data: { clubId: 'calypso', operationId: 'event-1', requestId: validRequestId },
+    });
+    const stored = first.transactions[0].set.mock.calls.find(
+      ([ref]) => ref === first.requestRef,
+    )[1];
+    setupRegistrationDb([[]], {}, {}, stored);
+
+    const replay = await registerForEvent({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso', operationId: 'event-1', requestId: validRequestId,
+        // This client hint is deliberately irrelevant to server authority.
+        payloadFingerprint: 'not-authoritative',
+      },
+    });
+
+    expect(replay).toEqual({ ...created, idempotent: true });
+  });
+
+  test('canonical guest names preserve Unicode, normalize ASCII whitespace and reject 81 units', () => {
+    expect(canonicalGuestName('  Zoë\t李\nDupont  ')).toBe('Zoë 李 Dupont');
+    expect(canonicalGuestName('é'.repeat(80))).toHaveLength(80);
+    expect(() => canonicalGuestName('é'.repeat(81))).toThrow('80 caractères maximum');
   });
 });
 
@@ -628,6 +790,20 @@ test('registration payload fingerprint sorts supplements but preserves guest ord
     guests: [{ ...bob, selectedSupplementIds: ['meal', 'air'] }, eve],
   })).toBe(original);
   expect(registrationPayloadFingerprint({ ...common, guests: [eve, bob] })).not.toBe(original);
+});
+
+test('Unicode and whitespace canonicalization has the same cross-language fingerprint', () => {
+  expect(registrationPayloadFingerprint({
+    clubId: 'club-1',
+    operationId: 'event-1',
+    selectedSupplementIds: ['tank', 'meal'],
+    guests: [{
+      firstName: canonicalGuestName('  Zoë\t李 '),
+      lastName: canonicalGuestName(' Van   Dam '),
+      tariffId: 'adult',
+      selectedSupplementIds: ['meal', 'air'],
+    }],
+  })).toBe('c6694e3aadcb411259f36ceb8cad6f9fb8ba5016831091165bb0eff42fea5abe');
 });
 
 describe('addGuestToEvent callable', () => {
