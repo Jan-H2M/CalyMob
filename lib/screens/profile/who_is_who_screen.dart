@@ -209,15 +209,10 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
   Future<List<MemberProfile>> _loadDirectoryWithOwnStatus(
     String currentUserId,
   ) async {
-    final directory = await _profileService.getAllProfiles(_clubId);
-    if (currentUserId.isEmpty) return directory;
-    final ownProfile = await _profileService.getProfile(_clubId, currentUserId);
-    if (ownProfile == null) return directory;
-    final index = directory.indexWhere((member) => member.id == currentUserId);
-    if (index == -1) return [...directory, ownProfile];
-    final result = [...directory];
-    result[index] = ownProfile;
-    return result;
+    return _profileService.getAllProfilesWithOwnStatus(
+      _clubId,
+      currentUserId,
+    );
   }
 
   @override
@@ -1116,12 +1111,21 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
 
   /// Day + month only. Never expose the year in Qui est qui.
   String? _birthdayLabel(MemberProfile member) {
-    if (!member.shareBirthday) return null;
-    final day = member.birthDay ?? member.birthDate?.day;
-    final month = member.birthMonth ?? member.birthDate?.month;
-    if (day == null || month == null || month < 1 || month > 12) return null;
-    return '$day ${_monthNamesFr[month - 1]}';
+    return formatDirectoryBirthday(member, _monthNamesFr);
   }
+}
+
+String? formatDirectoryBirthday(
+  MemberProfile member,
+  List<String> monthNames,
+) {
+  if (!member.shareBirthday) return null;
+  final day = member.birthDay;
+  final month = member.birthMonth;
+  if (day == null || month == null || month < 1 || month > monthNames.length) {
+    return null;
+  }
+  return '$day ${monthNames[month - 1]}';
 }
 
 

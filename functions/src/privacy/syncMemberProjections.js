@@ -118,24 +118,27 @@ const syncMemberProjections = onDocumentWritten(
   },
   async (event) => {
     const { clubId, memberId } = event.params;
-    const clubRef = admin.firestore().collection('clubs').doc(clubId);
+    const db = admin.firestore();
+    const clubRef = db.collection('clubs').doc(clubId);
+    const memberRef = clubRef.collection('members').doc(memberId);
     const directoryRef = clubRef.collection('member_directory').doc(memberId);
     const statusRef = clubRef.collection('member_operational_status').doc(memberId);
-    const after = event.data?.after;
 
-    if (!after?.exists) {
-      const batch = admin.firestore().batch();
-      batch.delete(directoryRef);
-      batch.delete(statusRef);
-      await batch.commit();
-      return;
-    }
+    // Firestore events are delivered at least once and are not ordered. Read
+    // the canonical member again in a transaction so an older trigger can
+    // never restore a stale public birthday after an atomic opt-out.
+    await db.runTransaction(async transaction => {
+      const current = await transaction.get(memberRef);
+      if (!current.exists) {
+        transaction.delete(directoryRef);
+        transaction.delete(statusRef);
+        return;
+      }
 
-    const data = after.data() || {};
-    const batch = admin.firestore().batch();
-    batch.set(directoryRef, buildMemberDirectoryProjection(data));
-    batch.set(statusRef, buildOperationalStatusProjection(data));
-    await batch.commit();
+      const data = current.data() || {};
+      transaction.set(directoryRef, buildMemberDirectoryProjection(data));
+      transaction.set(statusRef, buildOperationalStatusProjection(data));
+    });
   }
 );
 

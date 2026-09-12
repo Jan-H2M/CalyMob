@@ -1,13 +1,30 @@
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import '../models/member_profile.dart';
 
+typedef ProfileCallableInvoker = Future<void> Function(
+  String functionName,
+  Map<String, dynamic> data,
+);
+
 /// Service de gestion des profils membres
 class ProfileService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
+  final FirebaseFirestore _firestore;
+  final FirebaseStorage? _storageOverride;
+  final ProfileCallableInvoker? _callableOverride;
+
+  ProfileService({
+    FirebaseFirestore? firestore,
+    FirebaseStorage? storage,
+    ProfileCallableInvoker? callableInvoker,
+  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+        _storageOverride = storage,
+        _callableOverride = callableInvoker;
+
+  FirebaseStorage get _storage => _storageOverride ?? FirebaseStorage.instance;
 
   /// Récupérer le profil d'un membre
   Future<MemberProfile?> getProfile(String clubId, String userId) async {
@@ -46,6 +63,44 @@ class ProfileService {
       return MemberProfile.fromDirectory(doc);
     } catch (e) {
       debugPrint('❌ Erreur de lecture du répertoire membre: $e');
+      return null;
+    }
+  }
+
+  /// Read the public directory card and join only the separately authorised
+  /// operational status. This deliberately never falls back to the private
+  /// member document, including for the signed-in member's own Who's Who card.
+  Future<MemberProfile?> getDirectoryProfileWithOperationalStatus(
+    String clubId,
+    String userId,
+  ) async {
+    try {
+      final directoryDoc = await _firestore
+          .collection('clubs/$clubId/member_directory')
+          .doc(userId)
+          .get();
+      if (!directoryDoc.exists) return null;
+
+      Map<String, dynamic>? operationalStatus;
+      try {
+        final statusDoc = await _firestore
+            .collection('clubs/$clubId/member_operational_status')
+            .doc(userId)
+            .get();
+        operationalStatus = statusDoc.data();
+      } catch (error) {
+        // The directory projection remains the privacy-safe source if the
+        // auxiliary status cannot be read. Never substitute private fields.
+        debugPrint('ℹ️ Statut opérationnel indisponible: $error');
+      }
+
+      return MemberProfile.fromDirectoryData(
+        directoryDoc.id,
+        directoryDoc.data() ?? const {},
+        operationalStatus: operationalStatus,
+      );
+    } catch (e) {
+      debugPrint('❌ Erreur de lecture du profil annuaire: $e');
       return null;
     }
   }
@@ -255,10 +310,19 @@ class ProfileService {
     required bool shareBirthday,
   }) async {
     try {
-      await _firestore.collection('clubs/$clubId/members').doc(userId).update({
-        'share_birthday': shareBirthday,
-        'updated_at': FieldValue.serverTimestamp(),
-      });
+      final payload = <String, dynamic>{
+        'clubId': clubId,
+        'memberId': userId,
+        'shareBirthday': shareBirthday,
+      };
+      final callableOverride = _callableOverride;
+      if (callableOverride != null) {
+        await callableOverride('updateBirthdaySharing', payload);
+      } else {
+        await FirebaseFunctions.instanceFor(region: 'europe-west1')
+            .httpsCallable('updateBirthdaySharing')
+            .call(payload);
+      }
 
       debugPrint('✅ Préférence partage anniversaire mise à jour');
     } catch (e) {
@@ -417,6 +481,28 @@ class ProfileService {
       debugPrint('❌ Erreur chargement profils: $e');
       return [];
     }
+  }
+
+  /// Directory list enriched with the signed-in member's operational status.
+  /// The member's private profile is never joined into a directory card.
+  Future<List<MemberProfile>> getAllProfilesWithOwnStatus(
+    String clubId,
+    String currentUserId,
+  ) async {
+    final directory = await getAllProfiles(clubId);
+    if (currentUserId.isEmpty) return directory;
+
+    final ownProfile = await getDirectoryProfileWithOperationalStatus(
+      clubId,
+      currentUserId,
+    );
+    if (ownProfile == null) return directory;
+
+    final index = directory.indexWhere((member) => member.id == currentUserId);
+    if (index == -1) return [...directory, ownProfile];
+    final result = [...directory];
+    result[index] = ownProfile;
+    return result;
   }
 
   /// Rechercher des profils par nom

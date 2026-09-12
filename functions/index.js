@@ -295,6 +295,11 @@ const {
 } = require('./src/privacy/syncMemberProjections');
 exports.syncMemberProjections = syncMemberProjections;
 
+const {
+  updateBirthdaySharing,
+} = require('./src/privacy/updateBirthdaySharing');
+exports.updateBirthdaySharing = updateBirthdaySharing;
+
 const { processFormationTaskReminders } = require('./src/training/processFormationTaskReminders');
 exports.processFormationTaskReminders = processFormationTaskReminders;
 
