@@ -3,7 +3,7 @@
  *
  * Scheduled : every day at 04:00 Europe/Brussels.
  *
- * Closes any `piscine_sessions` doc whose current `statut` is `termine`, or
+ * Closes any NEW `piscine_sessions` doc whose current `statut` is `termine`, or
  * whose legacy `status` is still `open`, once its date lies more than 18 hours
  * in the past. CalyCompta writes the French `statut` field; older sessions and
  * the carnet fan-out still use the English `status` field.
@@ -20,6 +20,11 @@
  * window so that even a session that ran late (say, ended at 23:30) is
  * still picked up the next morning rather than waiting a full extra day.
  *
+ * Historical sessions whose `status` is already `closed` are deliberately not
+ * queried or written here, irrespective of `carnet_processing_version`. Their
+ * one-time migration is owned by the guarded backfill script. This separation
+ * prevents the daily schedule from becoming an implicit historical backfill.
+ *
  * Idempotent : doesn't touch sessions whose legacy `status` is already closed.
  *
  * Spec : `CARNET_DE_FORMATION_TECH.md` §8.7 amendment (2026-05-14).
@@ -28,11 +33,13 @@
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const admin = require('firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
+const {
+  CARNET_PROCESSING_VERSION,
+} = require('./poolSessionCarnetBackfill');
 
 const FUNCTION_NAME = 'autoClosePoolSessions';
 const FUNCTION_REGION = 'europe-west1';
 const STALE_THRESHOLD_MS = 18 * 60 * 60 * 1000; // 18h
-const CARNET_PROCESSING_VERSION = 2;
 
 function sessionDateFrom(data, sessionId) {
   const timestampDate = data.date?.toDate?.();
@@ -51,23 +58,13 @@ function sessionDateFrom(data, sessionId) {
 }
 
 function isAutoCloseCandidate(data, sessionId, cutoff) {
+  // Closed is final for this daily path. Missing/stale processing markers are
+  // migration state and must never turn a scheduled close into a backfill.
+  if (data.status === 'closed') return false;
+
   const usesCurrentFinishedState = data.statut === 'termine';
   const usesLegacyOpenState = data.status === 'open';
-  const processingVersion = Number(data.carnet_processing_version || 0);
-  const usesLegacyClosedState =
-    data.status === 'closed' &&
-    processingVersion < CARNET_PROCESSING_VERSION;
-  if (
-    !usesCurrentFinishedState &&
-    !usesLegacyOpenState &&
-    !usesLegacyClosedState
-  ) {
-    return false;
-  }
-
-  if (data.status === 'closed' && processingVersion >= CARNET_PROCESSING_VERSION) {
-    return false;
-  }
+  if (!usesCurrentFinishedState && !usesLegacyOpenState) return false;
 
   const sessionDate = sessionDateFrom(data, sessionId);
   return sessionDate !== null && sessionDate < cutoff;
@@ -76,15 +73,13 @@ function isAutoCloseCandidate(data, sessionId, cutoff) {
 async function loadPendingSessionDocs(sessionsRef) {
   // A session can match both queries. De-duplicate by document ID so one
   // scheduler run can never write the same transition twice.
-  const [legacyOpenSnap, legacyClosedSnap, currentFinishedSnap] = await Promise.all([
+  const [legacyOpenSnap, currentFinishedSnap] = await Promise.all([
     sessionsRef.where('status', '==', 'open').get(),
-    sessionsRef.where('status', '==', 'closed').get(),
     sessionsRef.where('statut', '==', 'termine').get(),
   ]);
   const uniqueDocs = new Map();
   for (const sessionDoc of [
     ...legacyOpenSnap.docs,
-    ...legacyClosedSnap.docs,
     ...currentFinishedSnap.docs,
   ]) {
     uniqueDocs.set(sessionDoc.id, sessionDoc);
@@ -95,7 +90,6 @@ async function loadPendingSessionDocs(sessionsRef) {
 async function closeEligiblePoolSessions(sessionsRef, clubId, cutoff) {
   const sessionDocs = await loadPendingSessionDocs(sessionsRef);
   let closed = 0;
-  let reprocessed = 0;
 
   for (const sessionDoc of sessionDocs) {
     const data = sessionDoc.data();
@@ -105,19 +99,15 @@ async function closeEligiblePoolSessions(sessionsRef, clubId, cutoff) {
       `[${FUNCTION_NAME}] auto-closing ${clubId}/${sessionDoc.id}`
     );
     try {
-      const wasAlreadyClosed = data.status === 'closed';
       const update = {
         status: 'closed',
         carnet_processing_version: CARNET_PROCESSING_VERSION,
+        closedBy: 'auto',
+        closedAt: FieldValue.serverTimestamp(),
+        auto_closed_at: FieldValue.serverTimestamp(),
       };
-      if (!wasAlreadyClosed) {
-        update.closedBy = 'auto';
-        update.closedAt = FieldValue.serverTimestamp();
-        update.auto_closed_at = FieldValue.serverTimestamp();
-      }
       await sessionDoc.ref.update(update);
-      if (wasAlreadyClosed) reprocessed++;
-      else closed++;
+      closed++;
     } catch (err) {
       console.error(
         `[${FUNCTION_NAME}] failed to close ${clubId}/${sessionDoc.id}:`,
@@ -126,7 +116,7 @@ async function closeEligiblePoolSessions(sessionsRef, clubId, cutoff) {
     }
   }
 
-  return { scanned: sessionDocs.length, closed, reprocessed };
+  return { scanned: sessionDocs.length, closed };
 }
 
 const autoClosePoolSessions = onSchedule(
@@ -141,7 +131,6 @@ const autoClosePoolSessions = onSchedule(
     const db = admin.firestore();
     const cutoff = new Date(Date.now() - STALE_THRESHOLD_MS);
     let totalClosed = 0;
-    let totalReprocessed = 0;
     let totalScanned = 0;
 
     const clubsSnap = await db.collection('clubs').get();
@@ -159,12 +148,11 @@ const autoClosePoolSessions = onSchedule(
       );
       totalScanned += result.scanned;
       totalClosed += result.closed;
-      totalReprocessed += result.reprocessed;
     }
 
     console.log(
-      `[${FUNCTION_NAME}] cycle complete: scanned=${totalScanned}, closed=${totalClosed}, ` +
-        `reprocessed=${totalReprocessed} (cutoff=${cutoff.toISOString()})`
+      `[${FUNCTION_NAME}] cycle complete: scanned=${totalScanned}, closed=${totalClosed} ` +
+        `(cutoff=${cutoff.toISOString()})`
     );
   }
 );

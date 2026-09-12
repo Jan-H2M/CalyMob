@@ -13,7 +13,8 @@
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "backfill:pool-carnet-v2": "node scripts/backfill_pool_session_carnet_v2.cjs"
   },
   "dependencies": {
     "axios": "^1.6.0",
