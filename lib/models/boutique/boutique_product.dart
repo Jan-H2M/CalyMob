@@ -9,22 +9,11 @@ enum BoutiqueProductCategory {
   autre,
 }
 
-enum BoutiqueInventoryMode {
-  tracked,
-  preorder,
-}
+enum BoutiqueInventoryMode { tracked, preorder }
 
-enum BoutiqueCustomizationTechnique {
-  embroidery,
-  print,
-}
+enum BoutiqueCustomizationTechnique { embroidery, print }
 
-enum BoutiqueDeliveryMode {
-  digital,
-  poolPickup,
-  post,
-  inPerson,
-}
+enum BoutiqueDeliveryMode { digital, poolPickup, post, inPerson }
 
 class BoutiquePrice {
   final double salePrice;
@@ -145,16 +134,21 @@ class BoutiqueProduct {
       variants: variantsData is List
           ? variantsData
               .whereType<Map>()
-              .map((variant) =>
-                  BoutiqueVariant.fromMap(Map<String, dynamic>.from(variant)))
+              .map(
+                (variant) => BoutiqueVariant.fromMap(
+                  Map<String, dynamic>.from(variant),
+                ),
+              )
               .toList()
           : const [],
       deliveryModes: _deliveryModesFromList(data['deliveryModes']),
-      deliverySurcharges:
-          _deliverySurchargesFromMap(data['deliverySurcharges']),
+      deliverySurcharges: _deliverySurchargesFromMap(
+        data['deliverySurcharges'],
+      ),
       visibility: data['visibility']?.toString() ?? 'draft',
-      personalization:
-          BoutiquePersonalizationConfig.fromMap(data['embroidery']),
+      personalization: BoutiquePersonalizationConfig.fromMap(
+        data['embroidery'],
+      ),
     );
   }
 }
@@ -353,10 +347,12 @@ class BoutiquePersonalizationSelection {
     bool clearClubLogoZone = false,
     bool? nameEnabled,
     String? nameText,
+    bool clearNameText = false,
     String? nameZone,
     bool clearNameZone = false,
     bool? certificationEnabled,
     String? certification,
+    bool clearCertification = false,
     String? certificationZone,
     bool clearCertificationZone = false,
   }) {
@@ -365,10 +361,11 @@ class BoutiquePersonalizationSelection {
       clubLogoZone:
           clearClubLogoZone ? null : clubLogoZone ?? this.clubLogoZone,
       nameEnabled: nameEnabled ?? this.nameEnabled,
-      nameText: nameText ?? this.nameText,
+      nameText: clearNameText ? null : nameText ?? this.nameText,
       nameZone: clearNameZone ? null : nameZone ?? this.nameZone,
       certificationEnabled: certificationEnabled ?? this.certificationEnabled,
-      certification: certification ?? this.certification,
+      certification:
+          clearCertification ? null : certification ?? this.certification,
       certificationZone: clearCertificationZone
           ? null
           : certificationZone ?? this.certificationZone,
@@ -391,9 +388,7 @@ class BoutiquePersonalizationSelection {
     return total;
   }
 
-  Map<String, dynamic> toOrderPayload(
-    BoutiquePersonalizationConfig? config,
-  ) {
+  Map<String, dynamic> toOrderPayload(BoutiquePersonalizationConfig? config) {
     if (config == null) return {};
     final hasLogo = clubLogo && clubLogoZone != null;
     final cleanName = (nameText ?? '').trim();

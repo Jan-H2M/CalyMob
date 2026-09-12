@@ -28,6 +28,7 @@ class _BoutiqueProductDetailScreenState
   late BoutiqueDeliveryMode _selectedDeliveryMode;
   BoutiquePersonalizationSelection _personalization =
       const BoutiquePersonalizationSelection();
+  late final TextEditingController _nameController;
   int _quantity = 1;
 
   @override
@@ -61,6 +62,13 @@ class _BoutiqueProductDetailScreenState
         clubLogoZone: personalization!.clubLogo.zones.first,
       );
     }
+    _nameController = TextEditingController(text: _personalization.nameText);
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
   }
 
   @override
@@ -70,8 +78,9 @@ class _BoutiqueProductDetailScreenState
       symbol: '€',
       decimalDigits: 2,
     );
-    final personalizationSurcharge =
-        _personalization.surcharge(widget.product.personalization);
+    final personalizationSurcharge = _personalization.surcharge(
+      widget.product.personalization,
+    );
     final deliverySurcharge =
         widget.product.deliverySurcharges[_selectedDeliveryMode] ?? 0;
     final unitPrice = widget.product.priceForVariant(_selectedVariant) +
@@ -184,6 +193,7 @@ class _BoutiqueProductDetailScreenState
                           config: widget.product.personalization!,
                           selection: _personalization,
                           articleTotal: orderTotal,
+                          nameController: _nameController,
                           onChanged: (selection) {
                             setState(() => _personalization = selection);
                           },
@@ -221,8 +231,9 @@ class _BoutiqueProductDetailScreenState
                             child: Text(
                               '$_quantity',
                               textAlign: TextAlign.center,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w800),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
                           ),
                           IconButton(
@@ -268,7 +279,8 @@ class _BoutiqueProductDetailScreenState
 
     final config = widget.product.personalization;
     if (config == null) return true;
-    if (_personalization.clubLogo && _personalization.clubLogoZone == null) {
+    if (config.clubLogo.canChoose &&
+        (!_personalization.clubLogo || _personalization.clubLogoZone == null)) {
       return false;
     }
     if (_personalization.hasName && _personalization.nameZone == null) {
@@ -300,8 +312,9 @@ class _BoutiqueProductDetailScreenState
     final rootNavigator = Navigator.of(context, rootNavigator: true);
     final messenger = ScaffoldMessenger.of(context);
     final variant = _selectedVariant;
-    final personalizationPayload =
-        _personalization.toOrderPayload(widget.product.personalization);
+    final personalizationPayload = _personalization.toOrderPayload(
+      widget.product.personalization,
+    );
     final item = BoutiqueCartItem(
       key: _cartKey(
         productId: widget.product.id,
@@ -347,12 +360,6 @@ class _BoutiqueProductDetailScreenState
     await Future<void>.delayed(const Duration(milliseconds: 120));
     if (!context.mounted) return;
     navigator.pop();
-    messenger.showSnackBar(
-      const SnackBar(
-        content: Text('Article ajouté au panier.'),
-        duration: Duration(seconds: 3),
-      ),
-    );
   }
 
   BoutiquePersonalizationSelection _personalizationFromCart(
@@ -361,9 +368,17 @@ class _BoutiqueProductDetailScreenState
     final logo = payload['clubLogo'];
     final name = payload['name'];
     final certification = payload['certification'];
+    final logoConfig = widget.product.personalization?.clubLogo;
+    final logoIsRequired = logoConfig?.canChoose == true;
+    final storedLogoZone = logo is Map ? logo['zone']?.toString() : null;
+    final normalizedLogoZone = logoIsRequired
+        ? (logoConfig!.zones.contains(storedLogoZone)
+            ? storedLogoZone
+            : logoConfig.zones.first)
+        : storedLogoZone;
     return BoutiquePersonalizationSelection(
-      clubLogo: logo is Map && logo['enabled'] == true,
-      clubLogoZone: logo is Map ? logo['zone']?.toString() : null,
+      clubLogo: logoIsRequired || (logo is Map && logo['enabled'] == true),
+      clubLogoZone: normalizedLogoZone,
       nameEnabled:
           name is Map && (name['text']?.toString().trim().isNotEmpty ?? false),
       nameText: name is Map ? name['text']?.toString() : null,
@@ -385,9 +400,7 @@ class _BoutiqueProductDetailScreenState
       barrierColor: Colors.black.withValues(alpha: 0.08),
       transitionDuration: const Duration(milliseconds: 220),
       pageBuilder: (_, __, ___) {
-        return const Center(
-          child: _AddedToCartToast(),
-        );
+        return const Center(child: _AddedToCartToast());
       },
       transitionBuilder: (_, animation, __, child) {
         final curved = CurvedAnimation(
@@ -421,10 +434,7 @@ class _AddedToCartToast extends StatelessWidget {
           gradient: const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF1FC66A),
-              Color(0xFF0A9F72),
-            ],
+            colors: [Color(0xFF1FC66A), Color(0xFF0A9F72)],
           ),
           borderRadius: BorderRadius.circular(32),
           boxShadow: [
@@ -464,12 +474,14 @@ class _PersonalizationSection extends StatelessWidget {
   final BoutiquePersonalizationConfig config;
   final BoutiquePersonalizationSelection selection;
   final double articleTotal;
+  final TextEditingController nameController;
   final ValueChanged<BoutiquePersonalizationSelection> onChanged;
 
   const _PersonalizationSection({
     required this.config,
     required this.selection,
     required this.articleTotal,
+    required this.nameController,
     required this.onChanged,
   });
 
@@ -527,6 +539,7 @@ class _PersonalizationSection extends StatelessWidget {
           const SizedBox(height: 14),
           if (config.clubLogo.canChoose) ...[
             const ListTile(
+              key: Key('boutique-club-logo-required'),
               contentPadding: EdgeInsets.zero,
               leading: Icon(
                 Icons.verified_rounded,
@@ -549,7 +562,9 @@ class _PersonalizationSection extends StatelessWidget {
           if (config.name.canChoose) ...[
             const SizedBox(height: 12),
             _PersonalizationToggle(
+              key: const Key('boutique-name-toggle'),
               label: 'Nom à personnaliser',
+              priceKey: const Key('boutique-name-price'),
               price: selection.hasName
                   ? (config.name.surcharge +
                       config.name.priceForText(
@@ -557,14 +572,21 @@ class _PersonalizationSection extends StatelessWidget {
                       ))
                   : null,
               value: selection.nameEnabled,
-              onChanged: (enabled) => onChanged(selection.copyWith(
-                nameEnabled: enabled,
-                nameText: enabled ? selection.nameText : null,
-                clearNameZone: !enabled,
-              )),
+              onChanged: (enabled) {
+                if (!enabled) nameController.clear();
+                onChanged(
+                  selection.copyWith(
+                    nameEnabled: enabled,
+                    clearNameText: !enabled,
+                    clearNameZone: !enabled,
+                  ),
+                );
+              },
             ),
             if (selection.nameEnabled) ...[
               TextField(
+                key: const Key('boutique-name-field'),
+                controller: nameController,
                 maxLength: config.name.maxLength,
                 decoration: const InputDecoration(
                   labelText: 'Nom à personnaliser',
@@ -584,14 +606,19 @@ class _PersonalizationSection extends StatelessWidget {
                   );
                 },
               ),
-              Row(children: [
-                Text(
+              Row(
+                children: [
+                  Text(
+                    key: const Key('boutique-name-letter-count'),
                     '${(selection.nameText ?? '').trim().length}/${config.name.maxLength ?? '∞'} lettres',
                     style: TextStyle(
-                        color: Colors.grey.shade600,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600)),
-              ]),
+                      color: Colors.grey.shade600,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
             ],
             if (selection.hasName) ...[
               const SizedBox(height: 10),
@@ -607,16 +634,20 @@ class _PersonalizationSection extends StatelessWidget {
           if (config.certification.canChoose) ...[
             const SizedBox(height: 12),
             _PersonalizationToggle(
+              key: const Key('boutique-certification-toggle'),
               label: 'Brevet',
+              priceKey: const Key('boutique-certification-price'),
               price: selection.hasCertification
                   ? config.certification.surcharge
                   : null,
               value: selection.certificationEnabled,
-              onChanged: (enabled) => onChanged(selection.copyWith(
-                certificationEnabled: enabled,
-                certification: enabled ? selection.certification : null,
-                clearCertificationZone: !enabled,
-              )),
+              onChanged: (enabled) => onChanged(
+                selection.copyWith(
+                  certificationEnabled: enabled,
+                  clearCertification: !enabled,
+                  clearCertificationZone: !enabled,
+                ),
+              ),
             ),
             if (selection.certificationEnabled) ...[
               DropdownButtonFormField<String>(
@@ -628,10 +659,8 @@ class _PersonalizationSection extends StatelessWidget {
                 ),
                 items: config.certification.allowedValues
                     .map(
-                      (value) => DropdownMenuItem(
-                        value: value,
-                        child: Text(value),
-                      ),
+                      (value) =>
+                          DropdownMenuItem(value: value, child: Text(value)),
                     )
                     .toList(),
                 onChanged: (value) {
@@ -709,12 +738,15 @@ class _PersonalizationSection extends StatelessWidget {
 
 class _PersonalizationToggle extends StatelessWidget {
   final String label;
+  final Key? priceKey;
   final double? price;
   final bool value;
   final ValueChanged<bool> onChanged;
 
   const _PersonalizationToggle({
+    super.key,
     required this.label,
+    this.priceKey,
     required this.price,
     required this.value,
     required this.onChanged,
@@ -730,11 +762,14 @@ class _PersonalizationToggle extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child:
-              Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
+          child: Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
         ),
         if (price != null) ...[
           Text(
+            key: priceKey,
             '+ ${formatter.format(price)}',
             style: const TextStyle(
               color: AppColors.oranje,
@@ -937,10 +972,7 @@ class _StockLine extends StatelessWidget {
   final BoutiqueVariant? variant;
   final BoutiqueInventoryMode inventoryMode;
 
-  const _StockLine({
-    required this.variant,
-    required this.inventoryMode,
-  });
+  const _StockLine({required this.variant, required this.inventoryMode});
 
   @override
   Widget build(BuildContext context) {
@@ -956,10 +988,7 @@ class _StockLine extends StatelessWidget {
         Expanded(
           child: Text(
             text,
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.w800,
-            ),
+            style: TextStyle(color: color, fontWeight: FontWeight.w800),
           ),
         ),
       ],
