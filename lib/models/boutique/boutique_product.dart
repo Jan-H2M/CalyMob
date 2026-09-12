@@ -260,14 +260,18 @@ class BoutiquePersonalizationOption {
 }
 
 class BoutiqueNameOption extends BoutiquePersonalizationOption {
+  final BoutiqueNamePricingMode pricingMode;
   final double pricePerCharacter;
+  final double fixedPrice;
   final int? maxLength;
 
   const BoutiqueNameOption({
     required super.enabled,
     required super.zones,
     required super.surcharge,
+    required this.pricingMode,
     required this.pricePerCharacter,
+    required this.fixedPrice,
     this.maxLength,
   });
 
@@ -277,13 +281,24 @@ class BoutiqueNameOption extends BoutiquePersonalizationOption {
       enabled: data['enabled'] == true,
       zones: _stringList(data['zones']),
       surcharge: _asDouble(data['surcharge']),
+      pricingMode: data['pricingMode'] == 'fixed'
+          ? BoutiqueNamePricingMode.fixed
+          : BoutiqueNamePricingMode.perCharacter,
       pricePerCharacter: _asDouble(
         data['pricePerCharacter'] ?? data['surcharge'],
       ),
+      fixedPrice: _asDouble(data['fixedPrice']),
       maxLength: _nullableInt(data['maxLength']),
     );
   }
+
+  double priceForText(String text) =>
+      pricingMode == BoutiqueNamePricingMode.fixed
+          ? fixedPrice
+          : text.length * pricePerCharacter;
 }
+
+enum BoutiqueNamePricingMode { perCharacter, fixed }
 
 class BoutiqueCertificationOption extends BoutiquePersonalizationOption {
   final List<String> allowedValues;
@@ -368,8 +383,7 @@ class BoutiquePersonalizationSelection {
     }
     final cleanName = (nameText ?? '').trim();
     if (cleanName.isNotEmpty && nameZone != null) {
-      total += config.name.surcharge;
-      total += cleanName.length * config.name.pricePerCharacter;
+      total += config.name.surcharge + config.name.priceForText(cleanName);
     }
     if (hasCertification && certificationZone != null) {
       total += config.certification.surcharge;
@@ -406,9 +420,13 @@ class BoutiquePersonalizationSelection {
       payload['name'] = {
         'text': cleanName,
         'zone': nameZone,
+        'pricingMode': config.name.pricingMode == BoutiqueNamePricingMode.fixed
+            ? 'fixed'
+            : 'per_character',
         'pricePerCharacter': config.name.pricePerCharacter,
-        'surcharge': config.name.surcharge +
-            cleanName.length * config.name.pricePerCharacter,
+        'fixedPrice': config.name.fixedPrice,
+        'surcharge':
+            config.name.surcharge + config.name.priceForText(cleanName),
       };
     }
     if (hasCertificationPayload) {

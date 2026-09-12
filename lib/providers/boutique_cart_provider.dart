@@ -346,8 +346,7 @@ class BoutiqueCartProvider extends ChangeNotifier {
     final name = personalization['name'];
     final nameText = name is Map ? (name['text']?.toString().trim() ?? '') : '';
     if (nameText.isNotEmpty) {
-      total += config.name.surcharge +
-          nameText.length * config.name.pricePerCharacter;
+      total += config.name.surcharge + config.name.priceForText(nameText);
     }
     final certification = personalization['certification'];
     final certValue = certification is Map

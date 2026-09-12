@@ -552,8 +552,9 @@ class _PersonalizationSection extends StatelessWidget {
               label: 'Nom à personnaliser',
               price: selection.hasName
                   ? (config.name.surcharge +
-                      (selection.nameText ?? '').trim().length *
-                          config.name.pricePerCharacter)
+                      config.name.priceForText(
+                        (selection.nameText ?? '').trim(),
+                      ))
                   : null,
               value: selection.nameEnabled,
               onChanged: (enabled) => onChanged(selection.copyWith(

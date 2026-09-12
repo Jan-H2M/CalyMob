@@ -171,9 +171,20 @@ function computeCustomizations(product, rawValue) {
     const pricePerCharacter = asNumber(
       nameOption.pricePerCharacter !== undefined ? nameOption.pricePerCharacter : nameOption.surcharge
     );
-    const nameSurcharge = asNumber(nameOption.surcharge) + nameText.length * pricePerCharacter;
+    const pricingMode = nameOption.pricingMode === 'fixed' ? 'fixed' : 'per_character';
+    const fixedPrice = asNumber(nameOption.fixedPrice);
+    const nameSurcharge = asNumber(nameOption.surcharge) + (
+      pricingMode === 'fixed' ? fixedPrice : nameText.length * pricePerCharacter
+    );
     surcharge += nameSurcharge;
-    result.name = { text: nameText, zone, pricePerCharacter, surcharge: nameSurcharge };
+    result.name = {
+      text: nameText,
+      zone,
+      pricingMode,
+      pricePerCharacter,
+      fixedPrice,
+      surcharge: nameSurcharge,
+    };
   }
 
   const certOption = config.certification;
