@@ -24,11 +24,13 @@ function sessionDoc(id, data) {
   };
 }
 
-function sessionsRef({ legacy = [], current = [] }) {
+function sessionsRef({ legacy = [], legacyClosed = [], current = [] }) {
   return {
     where: jest.fn((field, operator, value) => {
       expect(operator).toBe('==');
-      const docs = field === 'status' && value === 'open' ? legacy : current;
+      let docs = current;
+      if (field === 'status' && value === 'open') docs = legacy;
+      if (field === 'status' && value === 'closed') docs = legacyClosed;
       return { get: jest.fn().mockResolvedValue({ docs }) };
     }),
   };
@@ -74,6 +76,16 @@ describe('autoClosePoolSessions schema compatibility', () => {
     ).toBe(true);
   });
 
+  test('accepts a legacy closed session once when its processing version is stale', () => {
+    expect(
+      isAutoCloseCandidate(
+        { status: 'closed' },
+        '2026-08-25',
+        cutoff,
+      ),
+    ).toBe(true);
+  });
+
   test('uses a Firestore timestamp before falling back to the session ID', () => {
     const timestampDate = new Date('2026-08-25T20:30:00Z');
     expect(
@@ -90,16 +102,20 @@ describe('autoClosePoolSessions schema compatibility', () => {
       status: 'open',
     });
     const legacyOnly = sessionDoc('2026-08-18', { status: 'open' });
+    const legacyClosedOnly = sessionDoc('2026-08-11', { status: 'closed' });
     const ref = sessionsRef({
       legacy: [duplicate, legacyOnly],
+      legacyClosed: [legacyClosedOnly],
       current: [duplicate],
     });
 
     await expect(loadPendingSessionDocs(ref)).resolves.toEqual([
       duplicate,
       legacyOnly,
+      legacyClosedOnly,
     ]);
     expect(ref.where).toHaveBeenCalledWith('status', '==', 'open');
+    expect(ref.where).toHaveBeenCalledWith('status', '==', 'closed');
     expect(ref.where).toHaveBeenCalledWith('statut', '==', 'termine');
   });
 

@@ -53,13 +53,19 @@ function sessionDateFrom(data, sessionId) {
 function isAutoCloseCandidate(data, sessionId, cutoff) {
   const usesCurrentFinishedState = data.statut === 'termine';
   const usesLegacyOpenState = data.status === 'open';
-  if (!usesCurrentFinishedState && !usesLegacyOpenState) return false;
-
   const processingVersion = Number(data.carnet_processing_version || 0);
-  if (
+  const usesLegacyClosedState =
     data.status === 'closed' &&
-    (!usesCurrentFinishedState || processingVersion >= CARNET_PROCESSING_VERSION)
+    processingVersion < CARNET_PROCESSING_VERSION;
+  if (
+    !usesCurrentFinishedState &&
+    !usesLegacyOpenState &&
+    !usesLegacyClosedState
   ) {
+    return false;
+  }
+
+  if (data.status === 'closed' && processingVersion >= CARNET_PROCESSING_VERSION) {
     return false;
   }
 
@@ -70,13 +76,15 @@ function isAutoCloseCandidate(data, sessionId, cutoff) {
 async function loadPendingSessionDocs(sessionsRef) {
   // A session can match both queries. De-duplicate by document ID so one
   // scheduler run can never write the same transition twice.
-  const [legacyOpenSnap, currentFinishedSnap] = await Promise.all([
+  const [legacyOpenSnap, legacyClosedSnap, currentFinishedSnap] = await Promise.all([
     sessionsRef.where('status', '==', 'open').get(),
+    sessionsRef.where('status', '==', 'closed').get(),
     sessionsRef.where('statut', '==', 'termine').get(),
   ]);
   const uniqueDocs = new Map();
   for (const sessionDoc of [
     ...legacyOpenSnap.docs,
+    ...legacyClosedSnap.docs,
     ...currentFinishedSnap.docs,
   ]) {
     uniqueDocs.set(sessionDoc.id, sessionDoc);

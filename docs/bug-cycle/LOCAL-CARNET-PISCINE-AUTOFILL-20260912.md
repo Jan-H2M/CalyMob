@@ -15,9 +15,11 @@ carnet.
 `autoClosePoolSessions` leest voortaan beide ondersteunde schema's:
 
 - huidig: `statut == termine` en nog niet `status == closed`;
-- legacy: `status == open`.
+- legacy open: `status == open`;
+- legacy gesloten: `status == closed` met een verouderde
+  `carnet_processing_version`, uitsluitend voor de eenmalige herverwerking.
 
-Resultaten uit beide zoekopdrachten worden per sessie gededupliceerd. De bestaande
+Resultaten uit de drie zoekopdrachten worden per sessie gededupliceerd. De bestaande
 18-uursgrens, `status: closed`-overgang en idempotente fan-out naar carnetregels en
 evaluatietaken blijven behouden.
 
@@ -36,10 +38,11 @@ willekeurige IDs gebruiken.
 - Gerichte trigger-test: persoonlijke carnetregel zonder validator, geen foutieve
   evaluatietaak en gebruik van de echte sessiedatum.
 - Bestaande `onPoolSessionClosed`-tests blijven groen.
-- Volledige Functions-suite: 31 suites, 208 tests groen.
+- Volledige Functions-suite: 31 suites, 214 tests groen.
 - `node --check` en `git diff --check` groen.
 
 ## Publicatiegrens
 
-De codewijziging en tests zijn lokaal. Deploy van Cloud Functions en een eventuele
-productiebackfill vereisen afzonderlijke expliciete toestemming en live verificatie.
+Deploy en productiebackfill worden alleen in de veilige volgorde uitgevoerd: eerst
+de trigger `onPoolSessionClosed`, daarna de scheduler `autoClosePoolSessions`, en
+ten slotte een gecontroleerde eenmalige scheduler-run met live verificatie.
