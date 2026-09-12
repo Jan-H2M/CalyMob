@@ -37,14 +37,19 @@ enum _CommunicationFilter {
 }
 
 class CommunicationHubScreen extends StatefulWidget {
-  const CommunicationHubScreen({super.key});
+  final bool initialActionsOnly;
+
+  const CommunicationHubScreen({
+    super.key,
+    this.initialActionsOnly = false,
+  });
 
   @override
   State<CommunicationHubScreen> createState() => _CommunicationHubScreenState();
 }
 
 class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
-  _CommunicationFilter _selectedFilter = _CommunicationFilter.all;
+  late _CommunicationFilter _selectedFilter;
   String _searchQuery = '';
   List<String> _stableRoles = const [];
   bool _stableIncludeAllChannels = false;
@@ -52,6 +57,14 @@ class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
   String? _stableTargetFormationLevel;
   bool _stableFormationActive = false;
   bool _hasStableMemberContext = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedFilter = widget.initialActionsOnly
+        ? _CommunicationFilter.actions
+        : _CommunicationFilter.all;
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -320,6 +320,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       );
       return;
     }
+    if (!request.hasValidDestination) {
+      debugPrint(
+          '⚠️ Notification payload missing destination (type=${request.type}, data=${request.data})');
+      _showNotificationFeedback(
+        'Cette notification ne contient pas de destination valide.',
+      );
+      return;
+    }
     if (!_notificationQueue.enqueue(request)) {
       debugPrint(
           'ℹ️ Duplicate notification tap ignored (type=${request.type})');
@@ -377,11 +385,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (request == null) return;
 
     _notificationDrainInProgress = true;
-    // Mark before pushing: while the destination is on the back stack, a
-    // duplicate OS callback or double tap must not enqueue the same screen.
-    _notificationQueue.markHandled(request);
     try {
-      await _navigateForNotification(request);
+      final handled = await _navigateForNotification(request);
+      // Mark only after the destination was validated and navigation was
+      // attempted. Invalid payloads are therefore not silently acknowledged
+      // before their target has been checked.
+      if (handled) {
+        _notificationQueue.markHandled(request);
+      }
     } finally {
       _notificationDrainInProgress = false;
       if (_notificationQueue.pendingCount > 0) {
@@ -395,14 +406,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   static const Duration _notificationTapTimeout = Duration(seconds: 5);
 
   /// Routes every notification origin through the same normalised request.
-  Future<void> _navigateForNotification(
+  Future<bool> _navigateForNotification(
     NotificationNavigationRequest request,
   ) async {
     final navigator = _navigatorKey.currentState;
     final context = _navigatorKey.currentContext;
     if (navigator == null || context == null) {
       _notificationQueue.putBack(request);
-      return;
+      return false;
     }
     final clubId = request.clubId ?? FirebaseConfig.defaultClubId;
     debugPrint(
@@ -418,7 +429,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
         case NotificationRouteKind.operation:
           final operationId = request.operationId;
-          if (operationId == null) return _showMissingNotificationTarget();
+          if (operationId == null) {
+            _showMissingNotificationTarget();
+            return true;
+          }
           await navigator.push(MaterialPageRoute(
             builder: (_) => OperationDetailScreen(
               operationId: operationId,
@@ -429,7 +443,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
         case NotificationRouteKind.announcement:
           final announcementId = request.announcementId;
-          if (announcementId == null) return _showMissingNotificationTarget();
+          if (announcementId == null) {
+            _showMissingNotificationTarget();
+            return true;
+          }
           final doc = await FirebaseFirestore.instance
               .collection('clubs')
               .doc(clubId)
@@ -437,7 +454,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               .doc(announcementId)
               .get()
               .timeout(_notificationTapTimeout);
-          if (!doc.exists) return _showMissingNotificationTarget();
+          if (!doc.exists) {
+            _showMissingNotificationTarget();
+            return true;
+          }
           await navigator.push(MaterialPageRoute(
             builder: (_) => AnnouncementDetailScreen(
               announcement: Announcement.fromFirestore(doc),
@@ -448,7 +468,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
         case NotificationRouteKind.teamChat:
           final channelId = request.channelId;
-          if (channelId == null) return _showMissingNotificationTarget();
+          if (channelId == null) {
+            _showMissingNotificationTarget();
+            return true;
+          }
           final doc = await FirebaseFirestore.instance
               .collection('clubs')
               .doc(clubId)
@@ -456,7 +479,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               .doc(channelId)
               .get()
               .timeout(_notificationTapTimeout);
-          if (!doc.exists) return _showMissingNotificationTarget();
+          if (!doc.exists) {
+            _showMissingNotificationTarget();
+            return true;
+          }
           await navigator.push(MaterialPageRoute(
             builder: (_) => TeamChatScreen(
               channel: TeamChannel.fromFirestore(doc),
@@ -466,7 +492,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
         case NotificationRouteKind.sessionChat:
           final sessionId = request.sessionId;
-          if (sessionId == null) return _showMissingNotificationTarget();
+          if (sessionId == null) {
+            _showMissingNotificationTarget();
+            return true;
+          }
           final doc = await FirebaseFirestore.instance
               .collection('clubs')
               .doc(clubId)
@@ -474,10 +503,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               .doc(sessionId)
               .get()
               .timeout(_notificationTapTimeout);
-          if (!doc.exists) return _showMissingNotificationTarget();
+          if (!doc.exists) {
+            _showMissingNotificationTarget();
+            return true;
+          }
           final session = PiscineSession.fromFirestore(doc);
-          final groupType = request.data['group_type'];
-          final groupLevel = request.data['group_level'];
+          final groupType = request.groupType;
+          final groupLevel = request.groupLevel;
           var sessionGroupType = SessionGroupType.encadrants;
           var displayName = 'Encadrants';
           if (groupType == 'accueil') {
@@ -501,7 +533,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
         case NotificationRouteKind.sessionDetail:
           final sessionId = request.sessionId;
-          if (sessionId == null) return _showMissingNotificationTarget();
+          if (sessionId == null) {
+            _showMissingNotificationTarget();
+            return true;
+          }
           final doc = await FirebaseFirestore.instance
               .collection('clubs')
               .doc(clubId)
@@ -509,7 +544,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               .doc(sessionId)
               .get()
               .timeout(_notificationTapTimeout);
-          if (!doc.exists) return _showMissingNotificationTarget();
+          if (!doc.exists) {
+            _showMissingNotificationTarget();
+            return true;
+          }
           await navigator.push(MaterialPageRoute(
             builder: (_) => SessionDetailScreen(
               session: PiscineSession.fromFirestore(doc),
@@ -527,13 +565,18 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
         case NotificationRouteKind.communicationInbox:
           await navigator.push(MaterialPageRoute(
-            builder: (_) => const CommunicationHubScreen(),
+            builder: (_) => CommunicationHubScreen(
+              initialActionsOnly: request.prefersActionsInbox,
+            ),
           ));
           break;
 
         case NotificationRouteKind.medicalCertificate:
           final userId = FirebaseAuth.instance.currentUser?.uid;
-          if (userId == null) return _showMissingNotificationTarget();
+          if (userId == null) {
+            _showMissingNotificationTarget();
+            return true;
+          }
           await navigator.push(MaterialPageRoute(
             builder: (_) => MedicalCertificationScreen(userId: userId),
           ));
@@ -541,7 +584,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
         case NotificationRouteKind.logbookConfirmation:
           final confirmationId = request.confirmationId;
-          if (confirmationId == null) return _showMissingNotificationTarget();
+          if (confirmationId == null) {
+            _showMissingNotificationTarget();
+            return true;
+          }
           await navigator.push(MaterialPageRoute(
             builder: (_) => LogbookDiveConfirmationScreen(
               confirmationId: confirmationId,
@@ -576,6 +622,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         'Impossible d’ouvrir cette notification pour le moment.',
       );
     }
+    return true;
   }
 
   Future<void> _openFormationTaskNotification(
