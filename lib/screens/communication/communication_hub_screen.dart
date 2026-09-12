@@ -16,7 +16,9 @@ import '../../services/unread_count_service.dart';
 import '../../utils/club_role_utils.dart';
 import '../../utils/permission_helper.dart';
 import '../../utils/roster_session_label.dart';
+import '../../widgets/communication_filter_semantics.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import '../../widgets/communication_filter_semantics.dart';
 import '../announcements/announcements_screen.dart';
 import '../teams/team_chat_screen.dart';
 import '../training/logbook_dive_confirmation_screen.dart';
@@ -380,32 +382,38 @@ class _CommunicationFilterBar extends StatelessWidget {
           return Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 2.5),
-              child: GestureDetector(
+              child: CommunicationFilterSemantics(
+                label: filter.label,
+                selected: selected,
                 onTap: () => onSelected(filter),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 160),
-                  alignment: Alignment.center,
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  decoration: BoxDecoration(
-                    color: selected
-                        ? AppColors.middenblauw
-                        : const Color(0xFFEEF6FB),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
+                child: GestureDetector(
+                  onTap: () => onSelected(filter),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    decoration: BoxDecoration(
                       color: selected
                           ? AppColors.middenblauw
-                          : const Color(0xFFE0EDF5),
+                          : const Color(0xFFEEF6FB),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: selected
+                            ? AppColors.middenblauw
+                            : const Color(0xFFE0EDF5),
+                      ),
                     ),
-                  ),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(
-                      filter.label,
-                      maxLines: 1,
-                      style: TextStyle(
-                        color: selected ? Colors.white : AppColors.donkerblauw,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        filter.label,
+                        maxLines: 1,
+                        style: TextStyle(
+                          color:
+                              selected ? Colors.white : AppColors.donkerblauw,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
                   ),
@@ -570,20 +578,25 @@ class _CommunicationChatRow extends StatelessWidget {
                     Row(
                       children: [
                         Expanded(
-                          child: Text.rich(
-                            TextSpan(
-                              children: _highlightSpans(
-                                title,
-                                searchQuery,
-                                const TextStyle(
-                                  color: AppColors.donkerblauw,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w900,
+                          child: Semantics(
+                            container: true,
+                            label: title,
+                            excludeSemantics: true,
+                            child: Text.rich(
+                              TextSpan(
+                                children: _highlightSpans(
+                                  title,
+                                  searchQuery,
+                                  const TextStyle(
+                                    color: AppColors.donkerblauw,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w900,
+                                  ),
                                 ),
                               ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         if (tag != null) ...[
