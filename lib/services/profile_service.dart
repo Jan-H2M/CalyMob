@@ -1,8 +1,9 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import '../models/member_profile.dart';
 
 typedef ProfileCallableInvoker = Future<void> Function(
@@ -123,16 +124,30 @@ class ProfileService {
     String userId,
     File photoFile,
   ) async {
+    return uploadProfilePhotoBytes(
+      clubId,
+      userId,
+      await photoFile.readAsBytes(),
+    );
+  }
+
+  /// Upload profile-photo bytes on every Flutter platform, including web.
+  Future<String> uploadProfilePhotoBytes(
+    String clubId,
+    String userId,
+    Uint8List photoBytes,
+  ) async {
     try {
       debugPrint('📤 Upload de la photo de profil...');
 
       // Chemin dans Storage: clubs/{clubId}/members/{userId}/profile.jpg
-      final ref =
-          _storage.ref().child('clubs/$clubId/members/$userId/profile.jpg');
+      final ref = _storage.ref().child(
+            'clubs/$clubId/members/$userId/profile.jpg',
+          );
 
       // Upload avec metadata
-      final uploadTask = await ref.putFile(
-        photoFile,
+      final uploadTask = await ref.putData(
+        photoBytes,
         SettableMetadata(
           contentType: 'image/jpeg',
           customMetadata: {
@@ -161,9 +176,29 @@ class ProfileService {
     required bool consentInternalPhoto,
     bool? consentExternalPhoto,
   }) async {
+    return updateProfilePhotoBytes(
+      clubId,
+      userId,
+      await photoFile.readAsBytes(),
+      consentInternalPhoto: consentInternalPhoto,
+      consentExternalPhoto: consentExternalPhoto,
+    );
+  }
+
+  Future<void> updateProfilePhotoBytes(
+    String clubId,
+    String userId,
+    Uint8List photoBytes, {
+    required bool consentInternalPhoto,
+    bool? consentExternalPhoto,
+  }) async {
     try {
       // 1. Upload la photo
-      final photoUrl = await uploadProfilePhoto(clubId, userId, photoFile);
+      final photoUrl = await uploadProfilePhotoBytes(
+        clubId,
+        userId,
+        photoBytes,
+      );
 
       // 2. Mettre à jour Firestore (utilise set avec merge pour créer si n'existe pas)
       final updateData = <String, dynamic>{
@@ -181,10 +216,10 @@ class ProfileService {
             consentExternalPhoto ? FieldValue.serverTimestamp() : null;
       }
 
-      await _firestore.collection('clubs/$clubId/members').doc(userId).set(
-            updateData,
-            SetOptions(merge: true),
-          );
+      await _firestore
+          .collection('clubs/$clubId/members')
+          .doc(userId)
+          .set(updateData, SetOptions(merge: true));
 
       debugPrint('✅ Profil photo mis à jour');
     } catch (e) {
@@ -197,8 +232,9 @@ class ProfileService {
   Future<void> deleteProfilePhoto(String clubId, String userId) async {
     try {
       // 1. Supprimer de Storage
-      final ref =
-          _storage.ref().child('clubs/$clubId/members/$userId/profile.jpg');
+      final ref = _storage.ref().child(
+            'clubs/$clubId/members/$userId/profile.jpg',
+          );
       await ref.delete();
 
       // 2. Mettre à jour Firestore
@@ -382,14 +418,15 @@ class ProfileService {
     String? country,
   }) async {
     try {
-      final locality = [postcode, city]
-          .whereType<String>()
-          .where((part) => part.trim().isNotEmpty)
-          .join(' ');
-      final compactAddress = [street, locality, country]
-          .whereType<String>()
-          .where((part) => part.trim().isNotEmpty)
-          .join(', ');
+      final locality = [
+        postcode,
+        city,
+      ].whereType<String>().where((part) => part.trim().isNotEmpty).join(' ');
+      final compactAddress = [
+        street,
+        locality,
+        country,
+      ].whereType<String>().where((part) => part.trim().isNotEmpty).join(', ');
 
       await _firestore.collection('clubs/$clubId/members').doc(userId).update({
         'address_street': _emptyToNull(street),
@@ -469,8 +506,9 @@ class ProfileService {
           snapshot.docs.map((doc) => MemberProfile.fromDirectory(doc)).toList();
 
       profiles.sort((a, b) {
-        final lastNameCompare =
-            a.nom.toLowerCase().compareTo(b.nom.toLowerCase());
+        final lastNameCompare = a.nom.toLowerCase().compareTo(
+              b.nom.toLowerCase(),
+            );
         if (lastNameCompare != 0) return lastNameCompare;
         return a.prenom.toLowerCase().compareTo(b.prenom.toLowerCase());
       });
@@ -546,8 +584,9 @@ class ProfileService {
 
       // 1. Supprimer la photo de profil si elle existe
       try {
-        final photoRef =
-            _storage.ref().child('clubs/$clubId/members/$userId/profile.jpg');
+        final photoRef = _storage.ref().child(
+              'clubs/$clubId/members/$userId/profile.jpg',
+            );
         await photoRef.delete();
         debugPrint('✅ Photo profil supprimée');
       } catch (e) {

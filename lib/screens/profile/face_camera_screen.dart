@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -19,6 +20,7 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
   String? _errorMessage;
   File? _capturedPhoto;
   bool _showConfirmation = false;
+  bool _handedOffCapturedPhoto = false;
 
   @override
   void initState() {
@@ -29,6 +31,9 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
   @override
   void dispose() {
     _cameraController?.dispose();
+    if (!_handedOffCapturedPhoto) {
+      _deleteTemporaryPhoto(_capturedPhoto);
+    }
     super.dispose();
   }
 
@@ -102,7 +107,8 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
 
       // Copier dans un dossier permanent temporaire
       final Directory tempDir = await getTemporaryDirectory();
-      final String fileName = 'profile_photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final String fileName =
+          'profile_photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final String newPath = '${tempDir.path}/$fileName';
       final File newImage = await File(image.path).copy(newPath);
 
@@ -121,24 +127,29 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
   /// Confirmer la photo et la retourner
   void _confirmPhoto() {
     if (_capturedPhoto != null && mounted) {
-      Navigator.of(context).pop(_capturedPhoto);
+      _handedOffCapturedPhoto = true;
+      Navigator.of(context).pop(_capturedPhoto!.path);
     }
   }
 
   /// Reprendre une nouvelle photo
   void _retakePhoto() {
+    final discardedPhoto = _capturedPhoto;
     setState(() {
       _capturedPhoto = null;
       _showConfirmation = false;
     });
+    _deleteTemporaryPhoto(discardedPhoto);
+  }
+
+  void _deleteTemporaryPhoto(File? photo) {
+    if (photo == null) return;
+    unawaited(photo.delete().catchError((_) => photo));
   }
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-      ),
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
   }
 
@@ -195,11 +206,7 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
           color: Colors.black,
           child: Column(
             children: [
-              const Icon(
-                Icons.help_outline,
-                color: Colors.orange,
-                size: 32,
-              ),
+              const Icon(Icons.help_outline, color: Colors.orange, size: 32),
               const SizedBox(height: 12),
               const Text(
                 'Est-ce que votre visage est bien visible\ndans le cercle ?',
@@ -213,10 +220,7 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
               const SizedBox(height: 8),
               Text(
                 'Votre photo doit montrer clairement votre visage\npour être reconnu par les autres membres.',
-                style: TextStyle(
-                  color: Colors.grey[400],
-                  fontSize: 14,
-                ),
+                style: TextStyle(color: Colors.grey[400], fontSize: 14),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
@@ -272,11 +276,7 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
-              Icons.error_outline,
-              size: 64,
-              color: Colors.red,
-            ),
+            const Icon(Icons.error_outline, size: 64, color: Colors.red),
             const SizedBox(height: 16),
             Text(
               _errorMessage!,
@@ -331,10 +331,7 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
         ),
 
         // Overlay avec cercle de guidage
-        CustomPaint(
-          size: size,
-          painter: FaceOverlayPainter(),
-        ),
+        CustomPaint(size: size, painter: FaceOverlayPainter()),
 
         // Titre compact en haut (ne couvre pas le cercle)
         Positioned(
@@ -344,7 +341,7 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.75),
+              color: Colors.black.withValues(alpha: 0.75),
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Row(
@@ -377,7 +374,7 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.75),
+              color: Colors.black.withValues(alpha: 0.75),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Column(
@@ -394,10 +391,7 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
                 const SizedBox(height: 6),
                 Text(
                   'Votre photo permet aux membres de vous reconnaître 🤿',
-                  style: TextStyle(
-                    color: Colors.grey[300],
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: Colors.grey[300], fontSize: 12),
                   textAlign: TextAlign.center,
                 ),
               ],
@@ -419,17 +413,12 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: !_isProcessing ? Colors.white : Colors.grey,
-                  border: Border.all(
-                    color: Colors.white,
-                    width: 4,
-                  ),
+                  border: Border.all(color: Colors.white, width: 4),
                 ),
                 child: _isProcessing
                     ? const Padding(
                         padding: EdgeInsets.all(20.0),
-                        child: CircularProgressIndicator(
-                          strokeWidth: 3,
-                        ),
+                        child: CircularProgressIndicator(strokeWidth: 3),
                       )
                     : const Icon(
                         Icons.camera_alt,
@@ -454,7 +443,7 @@ class FaceOverlayPainter extends CustomPainter {
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 4
-      ..color = Colors.white.withOpacity(0.8);
+      ..color = Colors.white.withValues(alpha: 0.8);
 
     // Dessiner un cercle au centre
     final center = Offset(size.width / 2, size.height / 2 - 50);
@@ -463,8 +452,7 @@ class FaceOverlayPainter extends CustomPainter {
     canvas.drawCircle(center, radius, paint);
 
     // Ajouter un overlay sombre autour du cercle
-    final overlayPaint = Paint()
-      ..color = Colors.black.withOpacity(0.5);
+    final overlayPaint = Paint()..color = Colors.black.withValues(alpha: 0.5);
 
     final path = Path()
       ..addRect(Rect.fromLTWH(0, 0, size.width, size.height))
