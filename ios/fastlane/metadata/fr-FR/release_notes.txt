@@ -1,6 +1,1 @@
-Version 1.21.1 – Fiabilité et sécurité
-
-- Les désinscriptions conservent désormais leur historique, le paiement et la transaction associés.
-- Les listes d’attente et les contrôles de paiement sont plus fiables.
-- Les activités annulées restent consultables, sans nouvelle inscription.
-- Améliorations des profils, contacts d’urgence, prêts de matériel et de la stabilité générale.
+Cette mise à jour améliore le centre Actions et évaluations, le carnet et les séances piscine, les inscriptions et listes d’attente, ainsi que la boutique. Elle renforce également la confidentialité des anniversaires, la gestion des photos de profil et la stabilité générale.
