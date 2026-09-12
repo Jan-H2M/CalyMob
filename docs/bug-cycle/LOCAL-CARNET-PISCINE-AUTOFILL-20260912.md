@@ -46,3 +46,60 @@ willekeurige IDs gebruiken.
 Deploy en productiebackfill worden alleen in de veilige volgorde uitgevoerd: eerst
 de trigger `onPoolSessionClosed`, daarna de scheduler `autoClosePoolSessions`, en
 ten slotte een gecontroleerde eenmalige scheduler-run met live verificatie.
+
+## Productie-uitvoering — 12 september 2026
+
+De goedgekeurde Functions-kandidaat `6c5af62f4a6da7ee9de555a8123a935ab67a28cf`
+is in de vereiste volgorde gepubliceerd:
+
+1. `onPoolSessionClosed` werd afzonderlijk gedeployd en daarna live bevestigd als
+   `ACTIVE`, Node.js 22, regio `europe-west1`, op
+   `clubs/{clubId}/piscine_sessions/{sessionId}` updates;
+2. pas daarna werd `autoClosePoolSessions` afzonderlijk gedeployd en live bevestigd
+   als `ACTIVE`, Node.js 22, regio `europe-west1`, met een actieve Scheduler-job om
+   04:00 `Europe/Brussels`;
+3. beide functies rapporteren bronhash
+   `fdf0942b7d1213d05a8b6733aacfb6ebf3ca209a`.
+
+De handmatige scheduler-run is **niet gestart**. De productiebeveiliging weigerde
+de mutatie omdat één run alle historische gesloten sessies met een ontbrekende of
+verouderde verwerkingsversie kan bijwerken en daardoor carnetregels en
+evaluatietaken kan creëren. Hiervoor is nog Jans expliciete bevestiging van precies
+die productiebackfill vereist; er is geen alternatieve of indirecte run geprobeerd.
+
+### Read-only nulmeting vóór de backfill
+
+Inventaris op `2026-09-12T08:58:03.762Z`:
+
+- 55 sessiedocumenten, waarvan 48 historische gesloten/afgeronde sessies in scope;
+- 48 gesloten sessies hebben nog een verouderde verwerkingsversie;
+- 34 trainingskoppelingen met een `groupAssignment` werden gecontroleerd;
+- 10 persoonlijke carnetregels ontbreken;
+- 22 bestaande piscine-carnetregels hebben nog een datum die niet gelijk is aan
+  de gezaghebbende `session.date`;
+- 0 dubbele persoonlijke carnetregels voor dezelfde combinatie lid/sessie;
+- Jans trainingskoppelingen van 25 augustus en 1 september 2026 bestaan, maar
+  hebben vóór de backfill nog geen overeenkomende carnetregel.
+
+De vereiste eindmeting — Jans twee regels zichtbaar, 0 ontbrekende persoonlijke
+carnetregels en 0 verkeerde datums — is dus terecht nog niet als geslaagd gemarkeerd.
+
+## Reflectie
+
+- Oorzaak: de oorspronkelijke scheduler selecteerde alleen legacy `status: open`;
+  de eerste correctie selecteerde daarna nog niet de reeds gesloten documenten
+  waar `carnet_processing_version` ontbreekt.
+- Gemiste controle: tests en review controleerden aanvankelijk geen volledige matrix
+  van open, `statut: termine`, gesloten, ontbrekende versie en actuele versie tegen
+  een productie-inventaris.
+- Preventie: expliciete schemaqueries, versie-2-herverwerking, deduplicatie per
+  sessiedocument, 214 groene Functions-tests en een verplichte read-only voor-/nameting.
+- Overdraagbare regel: een migratieveld dat op historische documenten ontbreekt,
+  vereist een expliciet selectiepad, een idempotente versiemarkering en live
+  inventarisbewijs; lokale tests alleen bewijzen geen productiegedrag.
+- Open grens: na expliciete backfilltoestemming één Scheduler-run uitvoeren en pas
+  afronden wanneer de eindinventaris alle drie de vereiste nul-/zichtbaarheidschecks
+  bevestigt.
+
+De private Calypso-learningreflectie bevestigde hiervoor
+`CALY-LEARN-0006/r1` en `CALY-LEARN-0011/r2`; er was geen nieuwe algemene les nodig.
