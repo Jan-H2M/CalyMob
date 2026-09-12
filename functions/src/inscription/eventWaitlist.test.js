@@ -40,6 +40,7 @@ const {
   registrationPayloadFingerprint,
   canonicalGuestName,
   memberRegistrationPrice,
+  registrationPaymentState,
   unregisterFromEvent,
 } = require('./eventWaitlist');
 
@@ -260,6 +261,8 @@ describe('registerForEvent callable', () => {
     expect(result).toEqual(expect.objectContaining({
       version: 1,
       status: 'pending_payment',
+      paymentRequired: true,
+      paymentDeferred: false,
       inscriptionId: 'generated-registration',
       guestInscriptionIds: [],
       idempotent: false,
@@ -373,6 +376,49 @@ describe('registerForEvent callable', () => {
     expect(result.amounts.nextPayment).toEqual({
       amount: 0, installmentId: null, installmentLabel: null,
     });
+    expect(result).toEqual(expect.objectContaining({
+      paymentRequired: false,
+      paymentDeferred: false,
+    }));
+  });
+
+  test('price_tbd defers payment authoritatively and replay returns the same state', async () => {
+    expect(registrationPaymentState({
+      payment_required: true,
+      price_tbd: true,
+    })).toEqual({ paymentRequired: false, paymentDeferred: true });
+
+    const first = setupRegistrationDb([[]], {
+      price_tbd: true,
+      payment_required: true,
+      event_tariffs: [
+        { id: 'member', label: 'Membre', category: 'membre', price: 25 },
+      ],
+    }, { clubStatuten: ['Membres'] });
+    const created = await registerForEvent({
+      auth: { uid: 'member-1' },
+      data: { clubId: 'calypso', operationId: 'event-1', requestId: validRequestId },
+    });
+
+    expect(created).toEqual(expect.objectContaining({
+      paymentRequired: false,
+      paymentDeferred: true,
+      idempotent: false,
+    }));
+    expect(created.amounts.groupTotal).toBe(25);
+    expect(created.amounts.nextPayment).toEqual({
+      amount: 0, installmentId: null, installmentLabel: null,
+    });
+
+    const stored = first.transactions[0].set.mock.calls.find(
+      ([ref]) => ref === first.requestRef,
+    )[1];
+    setupRegistrationDb([[]], {}, {}, stored);
+    const replay = await registerForEvent({
+      auth: { uid: 'member-1' },
+      data: { clubId: 'calypso', operationId: 'event-1', requestId: validRequestId },
+    });
+    expect(replay).toEqual({ ...created, idempotent: true });
   });
 
   test('ignores a forged privileged tariff and derives the member rate server-side', async () => {
@@ -536,6 +582,8 @@ describe('registerForEvent callable', () => {
       registration_receipt: {
         version: 1,
         status: 'confirmed',
+        paymentRequired: true,
+        paymentDeferred: false,
         inscriptionId: 'original-member',
         guestInscriptionIds: ['original-guest-1', 'original-guest-2'],
         amounts: {
@@ -560,6 +608,8 @@ describe('registerForEvent callable', () => {
     expect(result).toEqual({
       version: 1,
       status: 'confirmed',
+      paymentRequired: true,
+      paymentDeferred: false,
       inscriptionId: 'original-member',
       guestInscriptionIds: ['original-guest-1', 'original-guest-2'],
       amounts: previousRequest.registration_receipt.amounts,
@@ -601,6 +651,8 @@ describe('registerForEvent callable', () => {
       registration_receipt: {
         version: 1,
         status: 'confirmed',
+        paymentRequired: true,
+        paymentDeferred: false,
         inscriptionId: 'original-member',
         guestInscriptionIds: [],
         amounts: {

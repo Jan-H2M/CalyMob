@@ -75,6 +75,8 @@ void main() {
     expect(
       registrationSuccessMessage(const EventRegistrationResult(
         status: 'confirmed',
+        paymentRequired: false,
+        paymentDeferred: false,
         inscriptionId: 'member-1',
         guestInscriptionIds: [],
         idempotent: true,
@@ -89,6 +91,8 @@ void main() {
     expect(
       registrationSuccessMessage(const EventRegistrationResult(
         status: 'pending_payment',
+        paymentRequired: true,
+        paymentDeferred: false,
         inscriptionId: 'member-1',
         guestInscriptionIds: ['guest-1'],
         idempotent: false,
@@ -112,6 +116,8 @@ void main() {
   test('QR and email payment instruction uses only the callable receipt', () {
     const receipt = EventRegistrationResult(
       status: 'pending_payment',
+      paymentRequired: true,
+      paymentDeferred: false,
       inscriptionId: 'server-member-id',
       guestInscriptionIds: ['server-guest-id'],
       idempotent: false,
@@ -135,8 +141,71 @@ void main() {
     final instruction = registrationPaymentInstruction(receipt);
     expect(instruction.participantId, 'server-member-id');
     expect(instruction.amount, 27);
+    expect(instruction.paymentRequired, isTrue);
+    expect(instruction.paymentDeferred, isFalse);
+    expect(instruction.shouldOpenPayment, isTrue);
     expect(instruction.installmentId, 'deposit');
     expect(instruction.installmentLabel, 'Acompte');
+  });
+
+  test('stale local priceTbd never overrides the authoritative receipt', () {
+    final now = DateTime(2026, 8, 13);
+    final staleDeferredClient = Operation(
+      id: 'event-1',
+      type: 'evenement',
+      titre: 'Stale deferred client',
+      montantPrevu: 0,
+      statut: 'ouvert',
+      priceTbd: true,
+      createdAt: now,
+      updatedAt: now,
+    );
+    const payableReceipt = EventRegistrationResult(
+      status: 'pending_payment',
+      paymentRequired: true,
+      paymentDeferred: false,
+      inscriptionId: 'server-member-id',
+      guestInscriptionIds: [],
+      idempotent: false,
+      groupTotal: 20,
+      memberAmount:
+          RegistrationAmountBreakdown(base: 20, supplements: 0, total: 20),
+      guestAmounts: [],
+      nextPayment: RegistrationNextPayment(amount: 20),
+    );
+    expect(staleDeferredClient.priceTbd, isTrue);
+    expect(
+      registrationPaymentInstruction(payableReceipt).shouldOpenPayment,
+      isTrue,
+    );
+
+    final stalePayableClient = Operation(
+      id: 'event-2',
+      type: 'evenement',
+      titre: 'Stale payable client',
+      montantPrevu: 0,
+      statut: 'ouvert',
+      priceTbd: false,
+      createdAt: now,
+      updatedAt: now,
+    );
+    const deferredReceipt = EventRegistrationResult(
+      status: 'confirmed',
+      paymentRequired: false,
+      paymentDeferred: true,
+      inscriptionId: 'server-member-id-2',
+      guestInscriptionIds: [],
+      idempotent: false,
+      groupTotal: 20,
+      memberAmount:
+          RegistrationAmountBreakdown(base: 20, supplements: 0, total: 20),
+      guestAmounts: [],
+      nextPayment: RegistrationNextPayment(amount: 0),
+    );
+    expect(stalePayableClient.priceTbd, isFalse);
+    final instruction = registrationPaymentInstruction(deferredReceipt);
+    expect(instruction.paymentDeferred, isTrue);
+    expect(instruction.shouldOpenPayment, isFalse);
   });
 
   testWidgets('initial free guest registration emits no synthetic tariff id',

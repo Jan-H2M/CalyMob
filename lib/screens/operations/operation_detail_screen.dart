@@ -620,9 +620,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             await _loadUserInscription();
             final payment = registrationPaymentInstruction(registrationResult);
 
-            // If there's a price, show payment options dialog.
-            // Skip when priceTbd — the organiser will bill later.
-            if (payment.amount > 0 && !operation.priceTbd) {
+            if (payment.shouldOpenPayment) {
               await _showPaymentOptionsDialog(
                 operation: operation,
                 amount: payment.amount,
@@ -705,9 +703,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             await _loadUserInscription();
             final payment = registrationPaymentInstruction(registrationResult);
 
-            // If there's a price, show payment options dialog.
-            // Skip when priceTbd — the organiser will bill later.
-            if (payment.amount > 0 && !operation.priceTbd) {
+            if (payment.shouldOpenPayment) {
               await _showPaymentOptionsDialog(
                 operation: operation,
                 amount: payment.amount,
@@ -939,9 +935,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       if (!mounted) return;
       final payment = registrationPaymentInstruction(registrationResult);
 
-      // Payment options dialog with grand total.
-      // (skip when priceTbd — organiser will bill later)
-      if (payment.amount > 0 && !operation.priceTbd) {
+      if (payment.shouldOpenPayment) {
         await _showPaymentOptionsDialog(
           operation: operation,
           amount: payment.amount,
@@ -5729,14 +5723,20 @@ class RegistrationPaymentInstruction {
   const RegistrationPaymentInstruction({
     required this.participantId,
     required this.amount,
+    required this.paymentRequired,
+    required this.paymentDeferred,
     this.installmentId,
     this.installmentLabel,
   });
 
   final String participantId;
   final double amount;
+  final bool paymentRequired;
+  final bool paymentDeferred;
   final String? installmentId;
   final String? installmentLabel;
+
+  bool get shouldOpenPayment => paymentRequired && amount > 0;
 }
 
 /// The only post-registration source used by the dialog, the on-device EPC QR
@@ -5749,6 +5749,8 @@ RegistrationPaymentInstruction registrationPaymentInstruction(
   return RegistrationPaymentInstruction(
     participantId: result.inscriptionId,
     amount: result.nextPayment.amount,
+    paymentRequired: result.paymentRequired,
+    paymentDeferred: result.paymentDeferred,
     installmentId: result.nextPayment.installmentId,
     installmentLabel: result.nextPayment.installmentLabel,
   );

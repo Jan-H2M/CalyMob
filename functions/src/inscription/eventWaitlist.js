@@ -345,6 +345,18 @@ function paymentRequiredForOperation(operation) {
     && operation.event_tariffs.some(tariff => Number(tariff?.price || 0) > 0);
 }
 
+function registrationPaymentState(operation) {
+  const eventuallyRequired = paymentRequiredForOperation(operation);
+  const paymentDeferred = eventuallyRequired && operation.price_tbd === true;
+  return {
+    // This flag means an immediate post-registration payment action is
+    // required. A price_tbd event may still be billed later, but must not make
+    // a stale client open a QR/email flow before the organiser sets a price.
+    paymentRequired: eventuallyRequired && !paymentDeferred,
+    paymentDeferred,
+  };
+}
+
 function assertRegistrationOpen(operation, active, requestedPlaces = 1, now = new Date()) {
   if (operation.statut !== 'ouvert') {
     throw new HttpsError('failed-precondition', 'Les inscriptions sont fermées pour cet événement.');
@@ -433,7 +445,7 @@ function registrationReceipt({
     pricing.tariff,
     pricing.supplementTotal,
   ));
-  const paymentRequired = paymentRequiredForOperation(operation);
+  const { paymentRequired, paymentDeferred } = registrationPaymentState(operation);
   let nextPayment = {
     amount: paymentRequired ? groupTotal : 0,
     installmentId: null,
@@ -462,6 +474,8 @@ function registrationReceipt({
   return {
     version: 1,
     status,
+    paymentRequired,
+    paymentDeferred,
     inscriptionId: registrationId,
     guestInscriptionIds: guestRefs.map(ref => ref.id),
     amounts: {
@@ -477,6 +491,8 @@ function registrationReceipt({
 function storedRegistrationReceipt(value) {
   if (!value || typeof value !== 'object' || value.version !== 1
     || typeof value.status !== 'string' || typeof value.inscriptionId !== 'string'
+    || typeof value.paymentRequired !== 'boolean'
+    || typeof value.paymentDeferred !== 'boolean'
     || !Array.isArray(value.guestInscriptionIds)
     || !value.amounts || typeof value.amounts !== 'object'
     || value.amounts.currency !== 'EUR'
@@ -517,6 +533,8 @@ function storedRegistrationReceipt(value) {
       cents(breakdown.base) + cents(breakdown.supplements) !== cents(breakdown.total)
     ))
     || calculatedGroupTotal !== cents(amounts.groupTotal)
+    || (value.paymentRequired && value.paymentDeferred)
+    || (!value.paymentRequired && cents(amounts.nextPayment.amount) !== 0)
     || (amounts.nextPayment.installmentId !== null
       && typeof amounts.nextPayment.installmentId !== 'string')
     || (amounts.nextPayment.installmentLabel !== null
@@ -1346,6 +1364,7 @@ module.exports = {
   canAddStandaloneGuest,
   canonicalGuestName,
   memberRegistrationPrice,
+  registrationPaymentState,
   guestPayloadFingerprint,
   registrationPayloadFingerprint,
   registrationReceipt,

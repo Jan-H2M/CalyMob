@@ -99,6 +99,8 @@ class RegistrationNextPayment {
 class EventRegistrationResult {
   const EventRegistrationResult({
     required this.status,
+    required this.paymentRequired,
+    required this.paymentDeferred,
     required this.inscriptionId,
     required this.guestInscriptionIds,
     required this.idempotent,
@@ -109,6 +111,8 @@ class EventRegistrationResult {
   });
 
   final String status;
+  final bool paymentRequired;
+  final bool paymentDeferred;
   final String inscriptionId;
   final List<String> guestInscriptionIds;
   final bool idempotent;
@@ -127,7 +131,9 @@ class EventRegistrationResult {
     final guestIdsValue = data['guestInscriptionIds'];
     if (data['version'] != 1 ||
         guestIdsValue is! List ||
-        data['idempotent'] is! bool) {
+        data['idempotent'] is! bool ||
+        data['paymentRequired'] is! bool ||
+        data['paymentDeferred'] is! bool) {
       throw const FormatException('Reçu d’inscription incomplet.');
     }
     final guestInscriptionIds = guestIdsValue.map((value) {
@@ -168,6 +174,13 @@ class EventRegistrationResult {
       throw const FormatException('Total du reçu incohérent.');
     }
     final nextPaymentData = _requiredReceiptMap(amounts, 'nextPayment');
+    final paymentRequired = data['paymentRequired'] as bool;
+    final paymentDeferred = data['paymentDeferred'] as bool;
+    final nextPaymentAmount = _receiptAmount(nextPaymentData['amount']);
+    if ((paymentRequired && paymentDeferred) ||
+        (!paymentRequired && nextPaymentAmount > 0)) {
+      throw const FormatException('État de paiement du reçu incohérent.');
+    }
     final installmentId = _nullableReceiptString(
       nextPaymentData,
       'installmentId',
@@ -178,6 +191,8 @@ class EventRegistrationResult {
     );
     return EventRegistrationResult(
       status: status,
+      paymentRequired: paymentRequired,
+      paymentDeferred: paymentDeferred,
       inscriptionId: inscriptionId,
       guestInscriptionIds: guestInscriptionIds,
       idempotent: data['idempotent'] as bool,
@@ -185,7 +200,7 @@ class EventRegistrationResult {
       memberAmount: member,
       guestAmounts: List.unmodifiable(guests),
       nextPayment: RegistrationNextPayment(
-        amount: _receiptAmount(nextPaymentData['amount']),
+        amount: nextPaymentAmount,
         installmentId: installmentId,
         installmentLabel: installmentLabel,
       ),

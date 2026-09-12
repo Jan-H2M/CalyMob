@@ -17,6 +17,8 @@ void main() {
     double? nextPaymentAmount,
     String? installmentId,
     String? installmentLabel,
+    bool paymentRequired = true,
+    bool paymentDeferred = false,
   }) {
     final ids = List.generate(guestCount, (index) => 'guest-${index + 1}');
     final bases = guestBases ?? List.filled(guestCount, 0);
@@ -36,6 +38,8 @@ void main() {
     return {
       'version': 1,
       'status': 'confirmed',
+      'paymentRequired': paymentRequired,
+      'paymentDeferred': paymentDeferred,
       'inscriptionId': 'inscription-1',
       'guestInscriptionIds': ids,
       'idempotent': false,
@@ -482,6 +486,15 @@ void main() {
     (malformed['amounts'] as Map<String, dynamic>)['groupTotal'] = 99;
     expect(
       () => EventRegistrationResult.fromCallable(malformed),
+      throwsFormatException,
+    );
+
+    final disabledWithAmount = registrationResponse(
+      memberBase: 25,
+      paymentRequired: false,
+    );
+    expect(
+      () => EventRegistrationResult.fromCallable(disabledWithAmount),
       throwsFormatException,
     );
   });
