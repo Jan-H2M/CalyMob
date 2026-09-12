@@ -52,6 +52,44 @@ function groupNumberFrom(rawValue, rawGroupKey) {
   return match ? Number(match[1]) : null;
 }
 
+function cleanHourKey(value) {
+  if (value == null) return null;
+  const normalized = String(value).trim();
+  return normalized || null;
+}
+
+function hourContract(outerHourKey, embeddedValues) {
+  const outer = cleanHourKey(outerHourKey);
+  const embedded = (embeddedValues || []).map(cleanHourKey).filter(Boolean);
+  const uniqueEmbedded = Array.from(new Set(embedded));
+  const embeddedHourKey = uniqueEmbedded[0] || null;
+  return {
+    hourKey: outer || embeddedHourKey,
+    conflict: uniqueEmbedded.length > 1 || Boolean(
+      outer && embeddedHourKey && embeddedHourKey !== outer
+    ),
+  };
+}
+
+function encadrantGroupContract(rawGroup, outerHourKey) {
+  const group = rawGroup && typeof rawGroup === 'object' ? rawGroup : {};
+  const hours = hourContract(outerHourKey, [
+    group.heure,
+    group.hourKey,
+    group.hour_key,
+  ]);
+  return {
+    ...group,
+    heure: hours.hourKey,
+    contractConflict: {
+      ...(group.contractConflict && typeof group.contractConflict === 'object'
+        ? group.contractConflict
+        : {}),
+      hourKey: hours.conflict,
+    },
+  };
+}
+
 /** Normalize both current camelCase and production legacy snake_case input. */
 function selectedGroupContract(rawGroup, completion = {}, hourKey = null) {
   const group = rawGroup && typeof rawGroup === 'object' ? rawGroup : {};
@@ -61,28 +99,16 @@ function selectedGroupContract(rawGroup, completion = {}, hourKey = null) {
   const rawGroupNumber =
     group.groupNumber ?? group.group_number ??
     completion.groupNumber ?? completion.group_number;
-  const cleanHourKey = (value) => {
-    if (value == null) return null;
-    const normalized = String(value).trim();
-    return normalized || null;
-  };
-  const outerHourKey = cleanHourKey(hourKey);
-  const embeddedHourKeys = [
+  const hours = hourContract(hourKey, [
     group.heure,
     group.hourKey,
     completion.heure,
     completion.hourKey,
-  ].map(cleanHourKey).filter(Boolean);
-  const uniqueEmbeddedHourKeys = Array.from(new Set(embeddedHourKeys));
-  const embeddedHourKey = uniqueEmbeddedHourKeys[0] || null;
+  ]);
   // In the v4 shape, the `completion.hours` map key is authoritative. Any
   // contradictory embedded value must fail closed instead of selecting a
   // course from another hour. A flat legacy payload has no outer context and
   // may therefore keep using its embedded hour.
-  const hourKeyConflict = uniqueEmbeddedHourKeys.length > 1 || Boolean(
-    outerHourKey && embeddedHourKey && embeddedHourKey !== outerHourKey
-  );
-  const resolvedHourKey = outerHourKey || embeddedHourKey;
   const level = rawLevel;
   const groupKey = normalizeGroupKey(
     rawGroupKey
@@ -99,15 +125,15 @@ function selectedGroupContract(rawGroup, completion = {}, hourKey = null) {
     level,
     groupNumber,
     groupKey,
-    hourKey: resolvedHourKey,
+    hourKey: hours.hourKey,
     contractPresence: {
       level: Boolean(rawLevel),
       groupNumber: rawGroupNumber != null && String(rawGroupNumber).trim() !== '',
       groupKey: Boolean(rawGroupKey && String(rawGroupKey).trim()),
-      hourKey: Boolean(resolvedHourKey),
+      hourKey: Boolean(hours.hourKey),
     },
     contractConflict: {
-      hourKey: hourKeyConflict,
+      hourKey: hours.conflict,
     },
     monitorIds,
     themeSnapshot:
@@ -180,7 +206,7 @@ const onPoolCheckinCompleted = onDocumentUpdated(
           // the level+group_number+heure match below).
           entry.groups = rawEntry.groups
             .filter((g) => g && typeof g === 'object')
-            .map((g) => ({ ...g, heure: g.heure || hourKey }));
+            .map((g) => encadrantGroupContract(g, hourKey));
           encGroupsRaw.push(...entry.groups);
         } else if (
           rawEntry.role === 'eleve' &&
@@ -202,9 +228,17 @@ const onPoolCheckinCompleted = onDocumentUpdated(
 
       let encadrantReport = null;
       if (encGroupsRaw.length > 0) {
-        const reconciled = await reconcileEncadrantGroups(
-          db, clubId, sessionId, userId, encGroupsRaw
+        const hasHourConflict = encGroupsRaw.some(
+          (group) => group.contractConflict && group.contractConflict.hourKey
         );
+        // Reject the entire encadrant reconciliation before opening a
+        // transaction when any embedded hour contradicts its authoritative
+        // completion.hours map key. This guarantees zero planning writes.
+        const reconciled = hasHourConflict
+          ? encGroupsRaw.map((group) => ({ ...group, matched: false }))
+          : await reconcileEncadrantGroups(
+            db, clubId, sessionId, userId, encGroupsRaw
+          );
         // Substitute the enriched groups back into the per-hour report
         // (reconcile preserves order across the flattened array).
         let idx = 0;
@@ -393,6 +427,13 @@ async function resolveAttendeeRef(db, clubId, sessionId, task) {
  */
 async function reconcileEncadrantGroups(db, clubId, sessionId, memberId, rawGroups) {
   if (!Array.isArray(rawGroups) || rawGroups.length === 0) return [];
+  if (rawGroups.some(
+    (group) => group && group.contractConflict && group.contractConflict.hourKey
+  )) {
+    return rawGroups.map((group) => (
+      group && typeof group === 'object' ? { ...group, matched: false } : group
+    ));
+  }
 
   const sessionRef = db
     .collection('clubs')
@@ -543,6 +584,10 @@ function courseMatchesSelection(course, selection, derivedGroupNumber, hourKey) 
 }
 
 function findPlannedGroup(session, selection) {
+  if (selection && selection.contractConflict &&
+      selection.contractConflict.hourKey) {
+    return null;
+  }
   if (!session || !selection.level) return null;
   const niveaux = session.niveaux || {};
   const levelAssignment = niveaux[selection.level];
@@ -559,9 +604,6 @@ function findPlannedGroup(session, selection) {
       groupKey: Boolean(selection.groupKey),
       hourKey: Boolean(selection.hourKey),
     };
-    if (selection.contractConflict && selection.contractConflict.hourKey) {
-      return null;
-    }
     if (!presence.level || !presence.groupNumber ||
         !presence.groupKey || !presence.hourKey) {
       return null;
@@ -627,6 +669,10 @@ function groupDocumentMatchesSelection(group, selection) {
 }
 
 async function resolveGroupSupervision(db, clubId, sessionId, selection) {
+  if (selection && selection.contractConflict &&
+      selection.contractConflict.hourKey) {
+    return { validatorId: null, monitorIds: [], themeSnapshot: null };
+  }
   const groupKey = normalizeGroupKey(selection.groupKey);
   const normalizedSelection = { ...selection, groupKey };
   const participantMemberId = String(selection.participantMemberId || '').trim();
@@ -714,6 +760,7 @@ module.exports = {
   resolveValidator,
   resolveGroupSupervision,
   selectedGroupContract,
+  encadrantGroupContract,
   findPlannedGroup,
   hasPersistedCourses,
   groupDocumentMatchesSelection,

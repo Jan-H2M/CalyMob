@@ -7,8 +7,12 @@ jest.mock('firebase-admin/firestore', () => ({
   Timestamp: {},
 }));
 
+const admin = require('firebase-admin');
 const {
+  onPoolCheckinCompleted,
   buildAttendeeIdentityPatch,
+  encadrantGroupContract,
+  reconcileEncadrantGroups,
   resolveAttendeeRef,
   resolveGroupSupervision,
   selectedGroupContract,
@@ -367,6 +371,40 @@ describe('onPoolCheckinCompleted selected group supervision', () => {
     });
   });
 
+  test.each([
+    ['first outer versus embedded second', '1ere_heure', 'heure', '2eme_heure'],
+    ['second outer versus embedded first', '2eme_heure', 'hourKey', '1ere_heure'],
+  ])('hour conflict never reaches legacy payload fallback: %s', async (
+    _label,
+    outerHour,
+    embeddedField,
+    embeddedHour,
+  ) => {
+    const selection = selectedGroupContract({
+      level: '1*',
+      groupNumber: 1,
+      groupKey: '1star_groupe1',
+      [embeddedField]: embeddedHour,
+    }, {
+      moniteur_ids: ['payload-must-not-win'],
+    }, outerHour);
+
+    await expect(resolveGroupSupervision(
+      makeSupervisionDb({
+        niveaux: {
+          '1*': { theme: 'Legacy', encadrants: [] },
+        },
+      }),
+      'calypso',
+      'session-a',
+      selection,
+    )).resolves.toEqual({
+      validatorId: null,
+      monitorIds: [],
+      themeSnapshot: null,
+    });
+  });
+
   test('flat legacy completion uses embedded hour without outer context', async () => {
     const selection = selectedGroupContract(null, {
       level: '2*',
@@ -388,6 +426,16 @@ describe('onPoolCheckinCompleted selected group supervision', () => {
       validatorId: 'validator-second-hour',
       monitorIds: ['validator-second-hour'],
       themeSnapshot: 'Deuxième heure',
+    });
+  });
+
+  test('v4 encadrant group keeps outer hour as authoritative context', () => {
+    expect(encadrantGroupContract({
+      level: '2*',
+      group_number: 1,
+    }, '2eme_heure')).toMatchObject({
+      heure: '2eme_heure',
+      contractConflict: { hourKey: false },
     });
   });
 
@@ -541,5 +589,128 @@ describe('onPoolCheckinCompleted selected group supervision', () => {
       monitorIds: [],
       themeSnapshot: null,
     });
+  });
+});
+
+describe('onPoolCheckinCompleted v4 encadrant hour contract', () => {
+  function makeHandlerDb() {
+    const attendeeSet = jest.fn().mockResolvedValue(undefined);
+    const attendeeRef = { id: 'attendee-a', set: attendeeSet };
+    const attendeesRef = { doc: jest.fn(() => attendeeRef) };
+    const sessionRef = {
+      collection: jest.fn((name) => {
+        if (name !== 'attendees') throw new Error(`unexpected collection ${name}`);
+        return attendeesRef;
+      }),
+    };
+    const sessionsRef = { doc: jest.fn(() => sessionRef) };
+    const clubRef = {
+      collection: jest.fn((name) => {
+        if (name !== 'piscine_sessions') {
+          throw new Error(`unexpected collection ${name}`);
+        }
+        return sessionsRef;
+      }),
+    };
+    const clubsRef = { doc: jest.fn(() => clubRef) };
+    const db = {
+      collection: jest.fn((name) => {
+        if (name !== 'clubs') throw new Error(`unexpected collection ${name}`);
+        return clubsRef;
+      }),
+      runTransaction: jest.fn(),
+    };
+    return { db, attendeeSet };
+  }
+
+  function completionEvent(outerHour, embeddedField, embeddedHour) {
+    return {
+      params: { clubId: 'calypso', taskId: 'task-a' },
+      data: {
+        before: { data: () => ({ status: 'pending' }) },
+        after: {
+          data: () => ({
+            type: 'pool_checkin',
+            status: 'done',
+            member_id: 'monitor-a',
+            context: {
+              pool_session_id: 'session-a',
+              attendee_id: 'attendee-a',
+            },
+            completion_data: {
+              outcome: 'encadrant',
+              hours: {
+                [outerHour]: {
+                  activity: 'formation',
+                  role: 'encadrant',
+                  groups: [{
+                    level: '2*',
+                    group_number: 1,
+                    [embeddedField]: embeddedHour,
+                  }],
+                },
+              },
+            },
+          }),
+        },
+      },
+    };
+  }
+
+  test.each([
+    ['first outer versus embedded second', '1ere_heure', 'heure', '2eme_heure'],
+    ['second outer versus embedded first', '2eme_heure', 'hourKey', '1ere_heure'],
+  ])('handler rejects encadrant hour conflict before reconciliation: %s', async (
+    _label,
+    outerHour,
+    embeddedField,
+    embeddedHour,
+  ) => {
+    const { db, attendeeSet } = makeHandlerDb();
+    admin.firestore.mockReturnValue(db);
+
+    await onPoolCheckinCompleted(
+      completionEvent(outerHour, embeddedField, embeddedHour)
+    );
+
+    expect(db.runTransaction).not.toHaveBeenCalled();
+    expect(attendeeSet).toHaveBeenCalledTimes(1);
+    expect(attendeeSet.mock.calls[0][0]).toMatchObject({
+      encadrantReport: {
+        groups: [{
+          heure: outerHour,
+          matched: false,
+          contractConflict: { hourKey: true },
+        }],
+      },
+      hoursReport: {
+        [outerHour]: {
+          role: 'encadrant',
+          groups: [{
+            heure: outerHour,
+            matched: false,
+            contractConflict: { hourKey: true },
+          }],
+        },
+      },
+    });
+  });
+
+  test('reconcile guard performs no transaction for a marked conflict', async () => {
+    const db = { runTransaction: jest.fn() };
+    const rawGroup = encadrantGroupContract({
+      level: '2*',
+      group_number: 1,
+      heure: '2eme_heure',
+    }, '1ere_heure');
+
+    await expect(reconcileEncadrantGroups(
+      db,
+      'calypso',
+      'session-a',
+      'monitor-a',
+      [rawGroup],
+    )).resolves.toEqual([{ ...rawGroup, matched: false }]);
+    expect(db.runTransaction).not.toHaveBeenCalled();
   });
 });
