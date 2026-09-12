@@ -9,18 +9,20 @@ import 'package:image_picker_android/image_picker_android.dart';
 import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 
 import '../config/app_colors.dart';
+import 'profile_photo_media_source.dart';
 import 'profile_photo_temp_cleanup.dart';
 
-typedef ProfileGalleryPathPicker = Future<String?> Function();
+typedef ProfileGalleryPathPicker = Future<ProfilePhotoMediaSource?> Function();
 typedef ProfileSquareCropper = Future<ProfilePhotoCropResult?> Function(
   BuildContext context,
   String sourcePath,
 );
-typedef ProfileTemporaryPathCleaner = Future<void> Function(String path);
 
 class ProfilePhotoCropResult {
   const ProfilePhotoCropResult({required this.path, required this.readAsBytes});
 
+  /// image_cropper output is an app-cache artifact and is always cleaned after
+  /// its bytes have been read.
   final String path;
   final Future<Uint8List> Function() readAsBytes;
 }
@@ -79,19 +81,17 @@ List<PlatformUiSettings> profilePhotoCropperSettings(BuildContext context) {
   ];
 }
 
-/// Owns the picker/cropper boundary so cancellation, plugin errors and
-/// temporary-file cleanup behave identically for gallery and camera input.
+/// Owns the picker/cropper boundary so cancellation and plugin errors always
+/// clean app-owned artifacts while preserving external gallery selections.
 class ProfilePhotoMediaService {
   ProfilePhotoMediaService({
     required ProfileGalleryPathPicker pickGalleryPath,
     required ProfileSquareCropper cropSquare,
     ProfileTemporaryPathCleaner deleteTemporaryPath =
         deleteProfilePhotoTemporaryPath,
-    bool deletePickedGallerySource = true,
   })  : _pickGalleryPath = pickGalleryPath,
         _cropSquare = cropSquare,
-        _deleteTemporaryPath = deleteTemporaryPath,
-        _deletePickedGallerySource = deletePickedGallerySource;
+        _deleteTemporaryPath = deleteTemporaryPath;
 
   factory ProfilePhotoMediaService.system() {
     enableAndroidSystemPhotoPicker();
@@ -106,7 +106,8 @@ class ProfilePhotoMediaService {
           maxHeight: 2048,
           requestFullMetadata: false,
         );
-        return picked?.path;
+        if (picked == null) return null;
+        return ProfilePhotoMediaSource.gallerySelection(picked.path);
       },
       cropSquare: (context, sourcePath) async {
         final cropped = await cropper.cropImage(
@@ -124,41 +125,30 @@ class ProfilePhotoMediaService {
           readAsBytes: cropped.readAsBytes,
         );
       },
-      // Mobile image_picker returns an app-cache copy. Desktop file selectors
-      // may return the user's original path, which must never be deleted.
-      deletePickedGallerySource: !kIsWeb &&
-          (defaultTargetPlatform == TargetPlatform.android ||
-              defaultTargetPlatform == TargetPlatform.iOS),
     );
   }
 
   final ProfileGalleryPathPicker _pickGalleryPath;
   final ProfileSquareCropper _cropSquare;
   final ProfileTemporaryPathCleaner _deleteTemporaryPath;
-  final bool _deletePickedGallerySource;
 
   Future<Uint8List?> pickAndCropGallery(BuildContext context) async {
-    final sourcePath = await _pickGalleryPath();
-    if (sourcePath == null) return null;
+    final source = await _pickGalleryPath();
+    if (source == null) return null;
     if (!context.mounted) {
-      if (_deletePickedGallerySource) await _cleanBestEffort(sourcePath);
+      await discardSource(source);
       return null;
     }
-    return cropPathToBytes(
-      context,
-      sourcePath,
-      deleteSource: _deletePickedGallerySource,
-    );
+    return cropPathToBytes(context, source);
   }
 
   Future<Uint8List?> cropPathToBytes(
     BuildContext context,
-    String sourcePath, {
-    bool deleteSource = true,
-  }) async {
+    ProfilePhotoMediaSource source,
+  ) async {
     String? croppedPath;
     try {
-      final cropped = await _cropSquare(context, sourcePath);
+      final cropped = await _cropSquare(context, source.path);
       if (cropped == null) return null;
       croppedPath = cropped.path;
       final bytes = await cropped.readAsBytes();
@@ -167,10 +157,17 @@ class ProfilePhotoMediaService {
       }
       return bytes;
     } finally {
-      if (deleteSource) await _cleanBestEffort(sourcePath);
-      if (croppedPath != null && croppedPath != sourcePath) {
+      await discardSource(source);
+      if (croppedPath != null && croppedPath != source.path) {
         await _cleanBestEffort(croppedPath);
       }
+    }
+  }
+
+  /// Deletes a source only when its provenance proves that CalyMob owns it.
+  Future<void> discardSource(ProfilePhotoMediaSource source) async {
+    if (source.isAppOwnedTemporary) {
+      await _cleanBestEffort(source.path);
     }
   }
 

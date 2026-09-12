@@ -5,9 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../../services/profile_photo_camera_capture_session.dart';
+
 /// Écran de capture photo avec vérification que le visage est bien positionné
 class FaceCameraScreen extends StatefulWidget {
-  const FaceCameraScreen({super.key});
+  const FaceCameraScreen({super.key, this.captureSession});
+
+  final ProfilePhotoCameraCaptureSession? captureSession;
 
   @override
   State<FaceCameraScreen> createState() => _FaceCameraScreenState();
@@ -20,20 +24,20 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
   String? _errorMessage;
   File? _capturedPhoto;
   bool _showConfirmation = false;
-  bool _handedOffCapturedPhoto = false;
+  late final ProfilePhotoCameraCaptureSession _captureSession;
 
   @override
   void initState() {
     super.initState();
+    _captureSession =
+        widget.captureSession ?? ProfilePhotoCameraCaptureSession();
     _initializeCamera();
   }
 
   @override
   void dispose() {
     _cameraController?.dispose();
-    if (!_handedOffCapturedPhoto) {
-      _deleteTemporaryPhoto(_capturedPhoto);
-    }
+    unawaited(_captureSession.discard());
     super.dispose();
   }
 
@@ -104,47 +108,66 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
 
       // Prendre la photo
       final image = await _cameraController!.takePicture();
+      await _captureSession.beginCapture(image.path);
 
-      // Copier dans un dossier permanent temporaire
+      // Copier dans un dossier temporaire contrôlé par CalyMob. La session
+      // conserve aussi le chemin cache original du plugin caméra.
       final Directory tempDir = await getTemporaryDirectory();
       final String fileName =
           'profile_photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final String newPath = '${tempDir.path}/$fileName';
-      final File newImage = await File(image.path).copy(newPath);
+      await _captureSession.createPreviewCopy(
+        newPath,
+        copyPath: (sourcePath, destinationPath) async {
+          await File(sourcePath).copy(destinationPath);
+        },
+      );
+
+      if (!mounted) {
+        await _captureSession.discard();
+        return;
+      }
 
       // Afficher l'écran de confirmation
       setState(() {
-        _capturedPhoto = newImage;
+        _capturedPhoto = File(newPath);
         _showConfirmation = true;
         _isProcessing = false;
       });
     } catch (e) {
-      _showError('Erreur lors de la capture: $e');
-      setState(() => _isProcessing = false);
+      await _captureSession.discard();
+      if (mounted) {
+        _showError('Erreur lors de la capture: $e');
+        setState(() => _isProcessing = false);
+      }
     }
   }
 
   /// Confirmer la photo et la retourner
-  void _confirmPhoto() {
+  Future<void> _confirmPhoto() async {
     if (_capturedPhoto != null && mounted) {
-      _handedOffCapturedPhoto = true;
-      Navigator.of(context).pop(_capturedPhoto!.path);
+      setState(() => _isProcessing = true);
+      try {
+        final source = await _captureSession.confirm();
+        if (mounted) Navigator.of(context).pop(source);
+      } catch (e) {
+        if (mounted) {
+          _showError('Erreur lors de la confirmation: $e');
+          setState(() => _isProcessing = false);
+        }
+      }
     }
   }
 
   /// Reprendre une nouvelle photo
-  void _retakePhoto() {
-    final discardedPhoto = _capturedPhoto;
+  Future<void> _retakePhoto() async {
     setState(() {
+      _isProcessing = true;
       _capturedPhoto = null;
       _showConfirmation = false;
     });
-    _deleteTemporaryPhoto(discardedPhoto);
-  }
-
-  void _deleteTemporaryPhoto(File? photo) {
-    if (photo == null) return;
-    unawaited(photo.delete().catchError((_) => photo));
+    await _captureSession.discard();
+    if (mounted) setState(() => _isProcessing = false);
   }
 
   void _showError(String message) {
@@ -232,7 +255,7 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
                   // Reprendre
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: _retakePhoto,
+                      onPressed: _isProcessing ? null : _retakePhoto,
                       icon: const Icon(Icons.refresh, color: Colors.white),
                       label: const Text(
                         'Reprendre',
@@ -248,7 +271,7 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
                   // Confirmer
                   Expanded(
                     child: ElevatedButton.icon(
-                      onPressed: _confirmPhoto,
+                      onPressed: _isProcessing ? null : _confirmPhoto,
                       icon: const Icon(Icons.check, color: Colors.white),
                       label: const Text(
                         'Oui, confirmer',

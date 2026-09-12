@@ -19,6 +19,7 @@ import '../../models/member_profile.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/camera_permission_service.dart';
 import '../../services/profile_photo_media_service.dart';
+import '../../services/profile_photo_media_source.dart';
 import '../../services/profile_service.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/photo_consent_dialog.dart';
@@ -503,17 +504,21 @@ class _IdentiteScreenState extends State<IdentiteScreen> {
         final hasPermission =
             await CameraPermissionService.handlePermissionWithDialog(context);
         if (!hasPermission || !mounted) return;
-        final rawPhotoPath = await Navigator.push<String>(
+        final cameraSource = await Navigator.push<ProfilePhotoMediaSource>(
           context,
           MaterialPageRoute(
             builder: (_) => const FaceCameraScreen(),
             fullscreenDialog: true,
           ),
         );
-        if (rawPhotoPath != null && mounted) {
+        if (cameraSource != null) {
+          if (!mounted) {
+            await _photoMediaService.discardSource(cameraSource);
+            return;
+          }
           photoBytes = await _photoMediaService.cropPathToBytes(
             context,
-            rawPhotoPath,
+            cameraSource,
           );
         }
       } else {

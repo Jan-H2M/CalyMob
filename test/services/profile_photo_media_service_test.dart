@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:calymob/services/profile_photo_media_service.dart';
+import 'package:calymob/services/profile_photo_media_source.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_cropper/image_cropper.dart';
@@ -84,12 +85,13 @@ void main() {
     expect(cleaned, isEmpty);
   });
 
-  testWidgets('crop cancellation cleans the selected temporary source', (
+  testWidgets('crop cancellation does not delete the gallery source', (
     tester,
   ) async {
     final cleaned = <String>[];
     final service = ProfilePhotoMediaService(
-      pickGalleryPath: () async => 'raw.jpg',
+      pickGalleryPath: () async =>
+          const ProfilePhotoMediaSource.gallerySelection('raw.jpg'),
       cropSquare: (_, __) async => null,
       deleteTemporaryPath: (path) async => cleaned.add(path),
     );
@@ -100,17 +102,22 @@ void main() {
     );
 
     expect(result, isNull);
-    expect(cleaned, ['raw.jpg']);
+    expect(cleaned, isEmpty);
   });
 
-  testWidgets('selection finishing after navigation cleans without cropping', (
+  testWidgets('late gallery selection is preserved without cropping', (
     tester,
   ) async {
     final pickedPath = Completer<String?>();
     final cleaned = <String>[];
     var cropCalls = 0;
     final service = ProfilePhotoMediaService(
-      pickGalleryPath: () => pickedPath.future,
+      pickGalleryPath: () async {
+        final path = await pickedPath.future;
+        return path == null
+            ? null
+            : ProfilePhotoMediaSource.gallerySelection(path);
+      },
       cropSquare: (_, __) async {
         cropCalls++;
         return null;
@@ -126,15 +133,16 @@ void main() {
 
     expect(await selection, isNull);
     expect(cropCalls, 0);
-    expect(cleaned, ['late.jpg']);
+    expect(cleaned, isEmpty);
   });
 
-  testWidgets('returns cropped bytes and cleans both temporary paths', (
+  testWidgets('returns cropped bytes and only cleans the crop output', (
     tester,
   ) async {
     final cleaned = <String>[];
     final service = ProfilePhotoMediaService(
-      pickGalleryPath: () async => 'raw.jpg',
+      pickGalleryPath: () async =>
+          const ProfilePhotoMediaSource.gallerySelection('raw.jpg'),
       cropSquare: (_, sourcePath) async {
         expect(sourcePath, 'raw.jpg');
         return ProfilePhotoCropResult(
@@ -151,7 +159,7 @@ void main() {
     );
 
     expect(result, Uint8List.fromList([1, 2, 3]));
-    expect(cleaned, ['raw.jpg', 'cropped.jpg']);
+    expect(cleaned, ['cropped.jpg']);
   });
 
   testWidgets('desktop gallery never deletes the user-selected original', (
@@ -159,13 +167,15 @@ void main() {
   ) async {
     final cleaned = <String>[];
     final service = ProfilePhotoMediaService(
-      pickGalleryPath: () async => '/photos/original.jpg',
+      pickGalleryPath: () async =>
+          const ProfilePhotoMediaSource.gallerySelection(
+        '/photos/original.jpg',
+      ),
       cropSquare: (_, __) async => ProfilePhotoCropResult(
         path: '/cache/cropped.jpg',
         readAsBytes: () async => Uint8List.fromList([1]),
       ),
       deleteTemporaryPath: (path) async => cleaned.add(path),
-      deletePickedGallerySource: false,
     );
     await tester.pumpWidget(const MaterialApp(home: SizedBox()));
 
@@ -177,12 +187,13 @@ void main() {
     expect(cleaned, ['/cache/cropped.jpg']);
   });
 
-  testWidgets('propagates crop errors after best-effort cleanup', (
+  testWidgets('propagates gallery crop errors without deleting source', (
     tester,
   ) async {
     final cleaned = <String>[];
     final service = ProfilePhotoMediaService(
-      pickGalleryPath: () async => 'raw.jpg',
+      pickGalleryPath: () async =>
+          const ProfilePhotoMediaSource.gallerySelection('raw.jpg'),
       cropSquare: (_, __) async => throw StateError('crop failed'),
       deleteTemporaryPath: (path) async => cleaned.add(path),
     );
@@ -192,6 +203,108 @@ void main() {
       service.pickAndCropGallery(tester.element(find.byType(SizedBox))),
       throwsStateError,
     );
-    expect(cleaned, ['raw.jpg']);
+    expect(cleaned, isEmpty);
+  });
+
+  testWidgets('camera source and crop output are both cleaned', (tester) async {
+    final cleaned = <String>[];
+    final service = ProfilePhotoMediaService(
+      pickGalleryPath: () async => null,
+      cropSquare: (_, sourcePath) async {
+        expect(sourcePath, '/cache/profile_photo.jpg');
+        return ProfilePhotoCropResult(
+          path: '/cache/cropped.jpg',
+          readAsBytes: () async => Uint8List.fromList([4, 5, 6]),
+        );
+      },
+      deleteTemporaryPath: (path) async => cleaned.add(path),
+    );
+    await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+
+    final result = await service.cropPathToBytes(
+      tester.element(find.byType(SizedBox)),
+      const ProfilePhotoMediaSource.cameraTemporary(
+        '/cache/profile_photo.jpg',
+      ),
+    );
+
+    expect(result, Uint8List.fromList([4, 5, 6]));
+    expect(cleaned, ['/cache/profile_photo.jpg', '/cache/cropped.jpg']);
+  });
+
+  testWidgets('camera source is cleaned after crop cancellation', (
+    tester,
+  ) async {
+    final cleaned = <String>[];
+    final service = ProfilePhotoMediaService(
+      pickGalleryPath: () async => null,
+      cropSquare: (_, __) async => null,
+      deleteTemporaryPath: (path) async => cleaned.add(path),
+    );
+    await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+
+    final result = await service.cropPathToBytes(
+      tester.element(find.byType(SizedBox)),
+      const ProfilePhotoMediaSource.cameraTemporary('/cache/camera.jpg'),
+    );
+
+    expect(result, isNull);
+    expect(cleaned, ['/cache/camera.jpg']);
+  });
+
+  testWidgets('camera source is cleaned when cropper fails', (tester) async {
+    final cleaned = <String>[];
+    final service = ProfilePhotoMediaService(
+      pickGalleryPath: () async => null,
+      cropSquare: (_, __) async => throw StateError('crop failed'),
+      deleteTemporaryPath: (path) async => cleaned.add(path),
+    );
+    await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+
+    await expectLater(
+      service.cropPathToBytes(
+        tester.element(find.byType(SizedBox)),
+        const ProfilePhotoMediaSource.cameraTemporary('/cache/camera.jpg'),
+      ),
+      throwsStateError,
+    );
+    expect(cleaned, ['/cache/camera.jpg']);
+  });
+
+  testWidgets('gallery source survives crop cancellation and errors', (
+    tester,
+  ) async {
+    final cleaned = <String>[];
+    var shouldThrow = false;
+    final service = ProfilePhotoMediaService(
+      pickGalleryPath: () async => null,
+      cropSquare: (_, __) async {
+        if (shouldThrow) throw StateError('crop failed');
+        return null;
+      },
+      deleteTemporaryPath: (path) async => cleaned.add(path),
+    );
+    await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+    const gallery = ProfilePhotoMediaSource.gallerySelection(
+      '/photos/original.jpg',
+    );
+
+    expect(
+      await service.cropPathToBytes(
+        tester.element(find.byType(SizedBox)),
+        gallery,
+      ),
+      isNull,
+    );
+    shouldThrow = true;
+    await expectLater(
+      service.cropPathToBytes(
+        tester.element(find.byType(SizedBox)),
+        gallery,
+      ),
+      throwsStateError,
+    );
+
+    expect(cleaned, isEmpty);
   });
 }
