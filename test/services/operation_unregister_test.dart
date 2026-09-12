@@ -1,3 +1,4 @@
+import 'package:calymob/models/participant_operation.dart';
 import 'package:calymob/services/operation_service.dart';
 import 'package:calymob/providers/operation_provider.dart';
 import 'package:cloud_functions_platform_interface/cloud_functions_platform_interface.dart';
@@ -73,9 +74,12 @@ class _MockFirebaseFunctionsPlatform extends FirebaseFunctionsPlatform {
 }
 
 class _RecordingOperationService extends OperationService {
-  _RecordingOperationService() : super(firestore: FakeFirebaseFirestore());
+  _RecordingOperationService({this.remainingInscription})
+      : super(firestore: FakeFirebaseFirestore());
 
   final calls = <Map<String, dynamic>>[];
+  final ParticipantOperation? remainingInscription;
+  var getUserInscriptionCalls = 0;
 
   @override
   Future<void> unregisterFromOperation({
@@ -92,6 +96,16 @@ class _RecordingOperationService extends OperationService {
       'userId': userId,
       'guestAction': guestAction,
     });
+  }
+
+  @override
+  Future<ParticipantOperation?> getUserInscription({
+    required String clubId,
+    required String operationId,
+    required String userId,
+  }) async {
+    getUserInscriptionCalls++;
+    return remainingInscription;
   }
 }
 
@@ -214,6 +228,37 @@ void main() {
         'guestAction': 'transfer',
       }
     ]);
+    expect(recordingService.getUserInscriptionCalls, 1);
+    expect(provider.isUserRegistered(operationId), isFalse);
+    expect(provider.isUserWaitlisted(operationId), isFalse);
+  });
+
+  test('provider derives its state from a remaining active own inscription',
+      () async {
+    final remaining = ParticipantOperation(
+      id: 'remaining-active-registration',
+      operationId: operationId,
+      membreId: 'member-1',
+      prix: 0,
+      dateInscription: DateTime(2026, 9, 1),
+    );
+    final recordingService = _RecordingOperationService(
+      remainingInscription: remaining,
+    );
+    final provider = OperationProvider(operationService: recordingService);
+
+    final result = await provider.unregisterFromOperation(
+      clubId: clubId,
+      operationId: operationId,
+      inscriptionId: inscriptionId,
+      userId: 'member-1',
+    );
+
+    expect(recordingService.calls.single['inscriptionId'], inscriptionId);
+    expect(recordingService.getUserInscriptionCalls, 1);
+    expect(result?.id, remaining.id);
+    expect(provider.isUserRegistered(operationId), isTrue);
+    expect(provider.isUserWaitlisted(operationId), isFalse);
   });
 
   test('keeps the exact callable error available to the screen', () async {

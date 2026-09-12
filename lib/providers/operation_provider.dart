@@ -239,7 +239,7 @@ class OperationProvider with ChangeNotifier {
   }
 
   /// Se désinscrire d'une opération
-  Future<void> unregisterFromOperation({
+  Future<ParticipantOperation?> unregisterFromOperation({
     required String clubId,
     required String operationId,
     required String inscriptionId,
@@ -259,9 +259,18 @@ class OperationProvider with ChangeNotifier {
         guestAction: guestAction,
       );
 
-      // Mettre à jour cache
-      _userRegistrationStatus[operationId] = false;
-      _userWaitlistStatus[operationId] = false;
+      // Reload the member's current active registration. Historical data can
+      // contain more than one active document, so cancelling one exact ID does
+      // not necessarily mean that the member is no longer registered.
+      final remainingInscription = await _operationService.getUserInscription(
+        clubId: clubId,
+        operationId: operationId,
+        userId: userId,
+      );
+      _userRegistrationStatus[operationId] =
+          remainingInscription != null && !remainingInscription.isWaitlisted;
+      _userWaitlistStatus[operationId] =
+          remainingInscription?.isWaitlisted ?? false;
       if (wasRegistered) {
         final currentCount = _participantCounts[operationId] ?? 1;
         _participantCounts[operationId] =
@@ -272,6 +281,7 @@ class OperationProvider with ChangeNotifier {
       notifyListeners();
 
       debugPrint('✅ Désinscription OK via provider');
+      return remainingInscription;
     } catch (e) {
       _isLoading = false;
       _errorMessage = e.toString().replaceFirst('Exception: ', '');

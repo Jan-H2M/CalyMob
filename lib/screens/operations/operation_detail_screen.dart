@@ -1723,13 +1723,23 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     try {
       // The callable handles the member, linked guests and every FIFO promotion
       // in one Firestore transaction. No client-side partial write may precede it.
-      await operationProvider.unregisterFromOperation(
+      final remainingInscription =
+          await operationProvider.unregisterFromOperation(
         clubId: widget.clubId,
         operationId: widget.operationId,
         inscriptionId: myInscriptionId,
         userId: userId,
         guestAction: guestAction,
       );
+
+      if (mounted) {
+        setState(() {
+          _userInscription = remainingInscription;
+          _selectedExercices = remainingInscription == null
+              ? []
+              : List<String>.from(remainingInscription.exercices);
+        });
+      }
 
       await operationProvider.reloadParticipants(
           widget.clubId, widget.operationId);

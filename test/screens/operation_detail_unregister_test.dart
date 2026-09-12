@@ -49,11 +49,17 @@ class _MockMemberProvider extends Mock implements MemberProvider {
 }
 
 class _MockOperationProvider extends Mock implements OperationProvider {
-  _MockOperationProvider(this._operation);
+  _MockOperationProvider(
+    this._operation, {
+    this.remainingInscriptionAfterUnregister,
+  });
 
   final Operation _operation;
+  final ParticipantOperation? remainingInscriptionAfterUnregister;
   final unregisterCalls = <Map<String, dynamic>>[];
   var reloadCalls = 0;
+  var _isRegistered = true;
+  var _isWaitlisted = false;
 
   @override
   Operation? get selectedOperation => _operation;
@@ -68,10 +74,10 @@ class _MockOperationProvider extends Mock implements OperationProvider {
   int getParticipantCount(String operationId) => 1;
 
   @override
-  bool isUserRegistered(String operationId) => true;
+  bool isUserRegistered(String operationId) => _isRegistered;
 
   @override
-  bool isUserWaitlisted(String operationId) => false;
+  bool isUserWaitlisted(String operationId) => _isWaitlisted;
 
   @override
   Future<void> selectOperation(
@@ -81,7 +87,7 @@ class _MockOperationProvider extends Mock implements OperationProvider {
   ) async {}
 
   @override
-  Future<void> unregisterFromOperation({
+  Future<ParticipantOperation?> unregisterFromOperation({
     required String clubId,
     required String operationId,
     required String inscriptionId,
@@ -95,6 +101,10 @@ class _MockOperationProvider extends Mock implements OperationProvider {
       'userId': userId,
       'guestAction': guestAction,
     });
+    _isRegistered = remainingInscriptionAfterUnregister != null &&
+        !remainingInscriptionAfterUnregister!.isWaitlisted;
+    _isWaitlisted = remainingInscriptionAfterUnregister?.isWaitlisted ?? false;
+    return remainingInscriptionAfterUnregister;
   }
 
   @override
@@ -139,7 +149,8 @@ void main() {
     await initializeDateFormatting('fr_FR');
   });
 
-  testWidgets('loaded inscription id reaches unregister provider exactly once',
+  testWidgets(
+      'exact cancellation reloads and renders a remaining own inscription',
       (tester) async {
     const clubId = 'calypso';
     const operationId = 'event-with-history';
@@ -163,12 +174,22 @@ void main() {
       prix: 0,
       dateInscription: now,
     );
+    final remainingInscription = ParticipantOperation(
+      id: 'remaining-active-registration',
+      operationId: operationId,
+      membreId: memberId,
+      prix: 0,
+      dateInscription: now.subtract(const Duration(days: 1)),
+    );
 
     final user = _MockUser();
     final authProvider = _MockAuthProvider(user);
     final eventMessageProvider = _MockEventMessageProvider();
     final memberProvider = _MockMemberProvider();
-    final operationProvider = _MockOperationProvider(operation);
+    final operationProvider = _MockOperationProvider(
+      operation,
+      remainingInscriptionAfterUnregister: remainingInscription,
+    );
     final operationService = _MockOperationService(loadedInscription);
     final profileService = _MockProfileService();
 
@@ -218,5 +239,14 @@ void main() {
       }
     ]);
     expect(operationProvider.reloadCalls, 1);
+    expect(find.byType(OperationUnregisterButton), findsOneWidget);
+    expect(
+      tester
+          .widget<OperationUnregisterButton>(
+            find.byType(OperationUnregisterButton),
+          )
+          .inscriptionId,
+      remainingInscription.id,
+    );
   });
 }
