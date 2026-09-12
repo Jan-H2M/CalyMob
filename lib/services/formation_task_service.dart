@@ -127,11 +127,31 @@ class FormationTaskService {
   Future<void> correctCompletedObservation(
     String clubId,
     String taskId,
+    String userId,
     Map<String, dynamic> completionData,
   ) async {
-    await _collection(clubId).doc(taskId).update({
-      'completion_data': completionData,
-      'updated_at': FieldValue.serverTimestamp(),
+    final reference = _collection(clubId).doc(taskId);
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(reference);
+      final data = snapshot.data();
+      if (data == null) {
+        throw StateError('Formation task not found: $taskId');
+      }
+      final status = data['status'] as String?;
+      if ((status != 'done' && status != 'completed') ||
+          data['type'] != 'monitor_observation') {
+        throw StateError(
+            'Only completed monitor observations can be corrected');
+      }
+      final currentRevision = data['correction_revision'];
+      final revision = currentRevision is num ? currentRevision.toInt() + 1 : 1;
+      transaction.update(reference, {
+        'completion_data': completionData,
+        'correction_revision': revision,
+        'correction_updated_at': FieldValue.serverTimestamp(),
+        'correction_updated_by': userId,
+        'updated_at': FieldValue.serverTimestamp(),
+      });
     });
   }
 

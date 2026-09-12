@@ -401,6 +401,7 @@ class _MonitorObservationScreenState extends State<MonitorObservationScreen> {
         await _taskService.correctCompletedObservation(
           FirebaseConfig.defaultClubId,
           widget.task.id,
+          userId,
           completionData,
         );
       } else {
