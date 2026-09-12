@@ -11,8 +11,10 @@ import '../../providers/member_provider.dart';
 import '../../providers/operation_provider.dart';
 import '../../providers/event_message_provider.dart';
 import '../../widgets/loading_widget.dart';
+import '../../widgets/exercice_selection_editor.dart';
 import '../../utils/date_formatter.dart';
 import '../../utils/currency_formatter.dart';
+import '../../utils/exercice_selection_policy.dart';
 import '../../utils/tariff_utils.dart';
 import '../../utils/permission_helper.dart';
 import '../../utils/payment_confirmation.dart';
@@ -77,8 +79,19 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   Map<String, Map<String, MemberObservation>> _exerciceObservations =
       {}; // memberId -> exerciceCode -> observation
   List<String> _selectedExercices = [];
+  List<String> _initialSelectedExercices = [];
+  int _exerciceSelectionVersion = 0;
+  int _exercicePersistedRevision = 0;
+  int _exerciceLoadGeneration = 0;
+  final ExerciceSelectionSaveQueue _exerciceSaveQueue =
+      ExerciceSelectionSaveQueue();
   bool _isLoadingExercices = false;
   ParticipantOperation? _userInscription;
+
+  bool get _isCurrentExerciceSnapshotQueued {
+    final queued = _exerciceSaveQueue.lastQueuedSnapshot;
+    return queued != null && sameStringSet(queued, _selectedExercices);
+  }
 
   /// Plan de paiement affiché en accordéon. Replié par défaut (demande Jan
   /// 2026-07-19) : le badge de l'en-tête montre déjà « Payé ✓ » ou
@@ -292,6 +305,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     if (!mounted) return;
     final authProvider = context.read<AuthProvider>();
     final userId = authProvider.currentUser?.uid ?? '';
+    final loadGeneration = ++_exerciceLoadGeneration;
+    final selectionVersion = _exerciceSelectionVersion;
+    final persistedRevision = _exercicePersistedRevision;
 
     final inscription = await _operationService.getUserInscription(
       clubId: widget.clubId,
@@ -299,11 +315,24 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       userId: userId,
     );
 
-    if (mounted) {
+    if (mounted && loadGeneration == _exerciceLoadGeneration) {
+      final exercices = inscription == null
+          ? <String>[]
+          : List<String>.from(inscription.exercices);
+      final resolution = resolveExerciceSelectionRead(
+        remote: exercices,
+        currentInitial: _initialSelectedExercices,
+        currentSelected: _selectedExercices,
+        capturedSelectionVersion: selectionVersion,
+        currentSelectionVersion: _exerciceSelectionVersion,
+        capturedPersistedRevision: persistedRevision,
+        currentPersistedRevision: _exercicePersistedRevision,
+        hasPendingSave: _exerciceSaveQueue.isSaving,
+      );
       setState(() {
         _userInscription = inscription;
-        _selectedExercices =
-            inscription == null ? [] : List<String>.from(inscription.exercices);
+        _initialSelectedExercices = resolution.initial;
+        _selectedExercices = resolution.selected;
       });
     }
   }
@@ -379,24 +408,32 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   Future<void> _saveExercices() async {
     final authProvider = context.read<AuthProvider>();
     final userId = authProvider.currentUser?.uid ?? '';
-
-    try {
-      await _operationService.updateExercices(
+    final task = _exerciceSaveQueue.enqueue(
+      selected: _selectedExercices,
+      writer: (snapshot) => _operationService.updateExercices(
         clubId: widget.clubId,
         operationId: widget.operationId,
         userId: userId,
-        exercices: _selectedExercices,
-      );
+        exercices: snapshot,
+      ),
+    );
+    if (task == null) return;
+    if (mounted) setState(() {});
+
+    try {
+      await task.completion;
 
       if (mounted) {
+        setState(() {
+          _initialSelectedExercices = List<String>.from(task.snapshot);
+          _exercicePersistedRevision++;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Exercices enregistrés'),
+          SnackBar(
+            content: Text(exerciceSelectionSavedMessage(task.snapshot)),
             backgroundColor: Colors.green,
           ),
         );
-        // Refresh participants list
-        _loadOperation();
       }
     } catch (e) {
       if (mounted) {
@@ -406,6 +443,21 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             backgroundColor: Colors.red,
           ),
         );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {});
+        if (_exerciceSaveQueue.isIdle) {
+          try {
+            await context.read<OperationProvider>().reloadParticipants(
+                  widget.clubId,
+                  widget.operationId,
+                );
+            await _loadUserInscription();
+          } catch (e) {
+            debugPrint('Error refreshing exercises after save: $e');
+          }
+        }
       }
     }
   }
@@ -5022,59 +5074,18 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           children: [
             Container(
               color: Colors.white,
-              child: Column(
-                children: [
-                  ..._availableExercices.map((exercice) {
-                    final isSelected = _selectedExercices.contains(exercice.id);
-                    return CheckboxListTile(
-                      value: isSelected,
-                      onChanged: (value) {
-                        setState(() {
-                          if (value == true) {
-                            _selectedExercices.add(exercice.id);
-                          } else {
-                            _selectedExercices.remove(exercice.id);
-                          }
-                        });
-                      },
-                      title: Text(
-                        exercice.code,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: Text(
-                        exercice.description,
-                        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-                      ),
-                      controlAffinity: ListTileControlAffinity.leading,
-                      activeColor: Colors.blue,
-                      dense: true,
-                    );
-                  }),
-                  // Save button inside accordion
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: _selectedExercices.isNotEmpty
-                            ? _saveExercices
-                            : null,
-                        icon: const Icon(Icons.save, size: 18),
-                        label: Text(
-                          _selectedExercices.isEmpty
-                              ? 'Sélectionnez des exercices'
-                              : 'Enregistrer (${_selectedExercices.length})',
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8)),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+              child: ExerciceSelectionEditor(
+                availableExercices: _availableExercices,
+                selectedExercices: _selectedExercices,
+                initialSelectedExercices: _initialSelectedExercices,
+                isCurrentSnapshotQueued: _isCurrentExerciceSnapshotQueued,
+                onSelectionChanged: (selection) {
+                  setState(() {
+                    _exerciceSelectionVersion++;
+                    _selectedExercices = selection;
+                  });
+                },
+                onSave: _saveExercices,
               ),
             ),
           ],
