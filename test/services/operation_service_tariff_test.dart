@@ -8,6 +8,14 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  Map<String, dynamic> registrationResponse({int guestCount = 0}) => {
+        'status': 'confirmed',
+        'inscriptionId': 'inscription-1',
+        'guestInscriptionIds':
+            List.generate(guestCount, (index) => 'guest-${index + 1}'),
+        'idempotent': false,
+      };
+
   test(
     'registration delegates automatic tariff selection to the server',
     () async {
@@ -15,7 +23,10 @@ void main() {
       Map<String, dynamic>? request;
       final service = OperationService(
         firestore: firestore,
-        registerForEventInvoker: (payload) async => request = payload,
+        registerForEventInvoker: (payload) async {
+          request = payload;
+          return registrationResponse();
+        },
       );
       final now = DateTime(2026, 8, 13);
       final operation = Operation(
@@ -49,7 +60,7 @@ void main() {
         email: 'encadrant@example.com',
         clubStatuten: const ['Encadrants'],
       );
-      await service.registerToOperation(
+      final result = await service.registerToOperation(
         clubId: 'club-1',
         operationId: operation.id,
         userId: profile.id,
@@ -63,10 +74,18 @@ void main() {
         'clubId': 'club-1',
         'operationId': 'event-1',
         'requestId': 'request_20260813_member_1',
+        'payloadFingerprint':
+            OperationService.registrationRequestPayloadFingerprint(
+          clubId: 'club-1',
+          operationId: 'event-1',
+        ),
         'selectedSupplementIds': <String>[],
         'guests': <Map<String, dynamic>>[],
         'source': 'calymob',
       });
+      expect(result.status, 'confirmed');
+      expect(result.inscriptionId, 'inscription-1');
+      expect(result.idempotent, isFalse);
       expect(
         (await firestore
                 .collection('clubs/club-1/operations/event-1/inscriptions')
@@ -129,7 +148,10 @@ void main() {
       Map<String, dynamic>? request;
       final service = OperationService(
         firestore: firestore,
-        registerForEventInvoker: (payload) async => request = payload,
+        registerForEventInvoker: (payload) async {
+          request = payload;
+          return registrationResponse();
+        },
       );
       final now = DateTime(2026, 8, 13);
       final operation = Operation(
@@ -166,6 +188,14 @@ void main() {
         'clubId': 'club-1',
         'operationId': 'event-2',
         'requestId': 'request_20260813_member_2',
+        'payloadFingerprint':
+            OperationService.registrationRequestPayloadFingerprint(
+          clubId: 'club-1',
+          operationId: 'event-2',
+          selectedSupplements: [
+            SelectedSupplement(id: 'bottle', name: 'Bouteille', price: 999),
+          ],
+        ),
         'selectedSupplementIds': ['bottle'],
         'guests': <Map<String, dynamic>>[],
         'source': 'calymob',
@@ -182,7 +212,10 @@ void main() {
       Map<String, dynamic>? request;
       final service = OperationService(
         firestore: firestore,
-        registerForEventInvoker: (payload) async => request = payload,
+        registerForEventInvoker: (payload) async {
+          request = payload;
+          return registrationResponse(guestCount: 1);
+        },
       );
 
       final now = DateTime(2026, 8, 13);
@@ -227,6 +260,28 @@ void main() {
         'clubId': 'club-1',
         'operationId': 'event-1',
         'requestId': 'request_20260813_group_1',
+        'payloadFingerprint':
+            OperationService.registrationRequestPayloadFingerprint(
+          clubId: 'club-1',
+          operationId: 'event-1',
+          selectedSupplements: [
+            SelectedSupplement(id: 'bottle', name: 'Bouteille', price: 999),
+          ],
+          guests: [
+            RegistrationGuestRequest(
+              firstName: 'Bob',
+              lastName: 'Guest',
+              tariffId: 'guest-adult',
+              selectedSupplements: [
+                SelectedSupplement(
+                  id: 'guest-bottle',
+                  name: 'Bouteille invité',
+                  price: 888,
+                ),
+              ],
+            ),
+          ],
+        ),
         'selectedSupplementIds': ['bottle'],
         'guests': [
           {
@@ -249,6 +304,36 @@ void main() {
       );
     },
   );
+
+  test('registration fingerprint matches the server canonical contract', () {
+    final fingerprint = OperationService.registrationRequestPayloadFingerprint(
+      clubId: 'club-1',
+      operationId: 'event-1',
+      selectedSupplements: [
+        SelectedSupplement(id: 'tank', name: 'Bloc', price: 5),
+        SelectedSupplement(id: 'meal', name: 'Repas', price: 20),
+      ],
+      guests: [
+        RegistrationGuestRequest(
+          firstName: ' Bob ',
+          lastName: ' Guest ',
+          tariffId: 'adult',
+          selectedSupplements: [
+            SelectedSupplement(id: 'air', name: 'Air', price: 1),
+            SelectedSupplement(id: 'meal', name: 'Repas', price: 20),
+          ],
+        ),
+        const RegistrationGuestRequest(
+          firstName: 'Eve',
+          lastName: 'Guest',
+        ),
+      ],
+    );
+    expect(
+      fingerprint,
+      '7b65c15b49215846b2a1c4f73397db35032d96d4594de41e72dd404e909adbfd',
+    );
+  });
 
   test('post-registration guest append delegates IDs only to the callable',
       () async {

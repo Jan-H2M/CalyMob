@@ -254,6 +254,30 @@ function guestPayloadFingerprint({ clubId, operationId, parentInscriptionId, gue
   return crypto.createHash('sha256').update(canonical).digest('hex');
 }
 
+function registrationPayloadFingerprint({
+  clubId,
+  operationId,
+  selectedSupplementIds,
+  guests,
+}) {
+  const canonical = JSON.stringify({
+    version: 1,
+    clubId,
+    operationId,
+    selectedSupplementIds: [...selectedSupplementIds].sort(),
+    // Guest order is meaningful: it also determines the stable correspondence
+    // with guest_inscription_ids in the receipt. Fields inside each guest are
+    // normalized before this helper is called.
+    guests: guests.map(guest => ({
+      firstName: guest.firstName,
+      lastName: guest.lastName,
+      tariffId: guest.tariffId || null,
+      selectedSupplementIds: [...(guest.selectedSupplementIds || [])].sort(),
+    })),
+  });
+  return crypto.createHash('sha256').update(canonical).digest('hex');
+}
+
 function selectedSupplements(operation, requestedIds) {
   if (requestedIds === undefined || requestedIds === null) return [];
   if (!Array.isArray(requestedIds) || requestedIds.length > 50
@@ -441,6 +465,7 @@ const registerForEvent = onCall({ region: REGION }, async request => {
     clubId,
     operationId,
     requestId: rawRequestId,
+    payloadFingerprint: suppliedPayloadFingerprint = null,
     selectedSupplementIds = [],
     guests: rawGuests = [],
     source = 'calymob',
@@ -452,6 +477,19 @@ const registerForEvent = onCall({ region: REGION }, async request => {
   }
   const requestId = registrationRequestId(rawRequestId);
   const guests = requestedGuests(rawGuests);
+  if (!Array.isArray(selectedSupplementIds)) {
+    throw new HttpsError('invalid-argument', 'Sélection de suppléments invalide.');
+  }
+  const payloadFingerprint = registrationPayloadFingerprint({
+    clubId,
+    operationId,
+    selectedSupplementIds,
+    guests,
+  });
+  if (suppliedPayloadFingerprint !== null
+    && suppliedPayloadFingerprint !== payloadFingerprint) {
+    throw new HttpsError('invalid-argument', 'Empreinte de demande invalide.');
+  }
 
   const member = await requireMember(clubId, uid);
   const memberData = member.data();
@@ -473,6 +511,12 @@ const registerForEvent = onCall({ region: REGION }, async request => {
       const previous = requestSnap.data();
       if (previous.member_id !== uid) {
         throw new HttpsError('permission-denied', 'Cette demande appartient à un autre membre.');
+      }
+      if (previous.payload_fingerprint !== payloadFingerprint) {
+        throw new HttpsError(
+          'already-exists',
+          'Cet identifiant de demande a déjà été utilisé pour une autre inscription.',
+        );
       }
       return {
         status: previous.registration_status,
@@ -595,6 +639,7 @@ const registerForEvent = onCall({ region: REGION }, async request => {
       member_id: uid,
       inscription_id: registrationRef.id,
       guest_inscription_ids: guestRefs.map(ref => ref.id),
+      payload_fingerprint: payloadFingerprint,
       registration_status: registrationStatus,
       created_at: now,
     });
@@ -1147,6 +1192,7 @@ module.exports = {
   canAddStandaloneGuest,
   memberRegistrationPrice,
   guestPayloadFingerprint,
+  registrationPayloadFingerprint,
   guestPricing,
   joinEventWaitlist,
   registerForEvent,

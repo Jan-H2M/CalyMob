@@ -37,6 +37,7 @@ const {
   addGuestToEvent,
   guestPricing,
   guestPayloadFingerprint,
+  registrationPayloadFingerprint,
   memberRegistrationPrice,
   unregisterFromEvent,
 } = require('./eventWaitlist');
@@ -235,6 +236,12 @@ describe('registerForEvent callable', () => {
 
   test('creates one server-priced registration and locks the operation capacity', async () => {
     const { operationRef, registrationRef, transactions } = setupRegistrationDb([[]]);
+    const payloadFingerprint = registrationPayloadFingerprint({
+      clubId: 'calypso',
+      operationId: 'event-1',
+      selectedSupplementIds: ['bottle'],
+      guests: [],
+    });
 
     const result = await registerForEvent({
       auth: { uid: 'member-1' },
@@ -242,6 +249,7 @@ describe('registerForEvent callable', () => {
         clubId: 'calypso',
         operationId: 'event-1',
         requestId: validRequestId,
+        payloadFingerprint,
         selectedSupplementIds: ['bottle'],
         source: 'calymob',
         appVersion: '1.21.1+206',
@@ -272,6 +280,10 @@ describe('registerForEvent callable', () => {
     expect(transactions[0].update).toHaveBeenCalledWith(
       operationRef,
       { registration_capacity_revision: 1 },
+    );
+    expect(transactions[0].set).toHaveBeenCalledWith(
+      expect.objectContaining({ path: expect.stringContaining('registration_requests') }),
+      expect.objectContaining({ payload_fingerprint: payloadFingerprint }),
     );
   });
 
@@ -486,11 +498,15 @@ describe('registerForEvent callable', () => {
   });
 
   test('returns the stored group on an idempotent retry without new writes', async () => {
+    const payloadFingerprint = registrationPayloadFingerprint({
+      clubId: 'calypso', operationId: 'event-1', selectedSupplementIds: [], guests: [],
+    });
     const previousRequest = {
       member_id: 'member-1',
       inscription_id: 'original-member',
       guest_inscription_ids: ['original-guest-1', 'original-guest-2'],
       registration_status: 'confirmed',
+      payload_fingerprint: payloadFingerprint,
     };
     const { transactions } = setupRegistrationDb([[]], {}, {}, previousRequest);
 
@@ -505,6 +521,52 @@ describe('registerForEvent callable', () => {
       guestInscriptionIds: ['original-guest-1', 'original-guest-2'],
       idempotent: true,
     });
+    expect(transactions[0].set).not.toHaveBeenCalled();
+    expect(transactions[0].update).not.toHaveBeenCalled();
+  });
+
+  test('rejects a supplied fingerprint that does not match the canonical payload', async () => {
+    const { transactions } = setupRegistrationDb([[]]);
+    await expect(registerForEvent({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso', operationId: 'event-1', requestId: validRequestId,
+        payloadFingerprint: 'forged',
+      },
+    })).rejects.toMatchObject({ code: 'invalid-argument' });
+    expect(transactions).toHaveLength(0);
+  });
+
+  test('fails closed when a receipt request id is replayed with a changed group', async () => {
+    const originalFingerprint = registrationPayloadFingerprint({
+      clubId: 'calypso', operationId: 'event-1', selectedSupplementIds: [], guests: [],
+    });
+    const previousRequest = {
+      member_id: 'member-1',
+      inscription_id: 'original-member',
+      guest_inscription_ids: [],
+      registration_status: 'confirmed',
+      payload_fingerprint: originalFingerprint,
+    };
+    const { transactions } = setupRegistrationDb(
+      [[]],
+      { allow_guests: true, max_guests_per_member: 1 },
+      {},
+      previousRequest,
+    );
+    const changedGuests = [{
+      firstName: 'Bob', lastName: 'Guest', tariffId: null, selectedSupplementIds: [],
+    }];
+    await expect(registerForEvent({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso', operationId: 'event-1', requestId: validRequestId,
+        guests: changedGuests,
+        payloadFingerprint: registrationPayloadFingerprint({
+          clubId: 'calypso', operationId: 'event-1', selectedSupplementIds: [], guests: changedGuests,
+        }),
+      },
+    })).rejects.toMatchObject({ code: 'already-exists' });
     expect(transactions[0].set).not.toHaveBeenCalled();
     expect(transactions[0].update).not.toHaveBeenCalled();
   });
@@ -542,6 +604,30 @@ test('guest payload fingerprint matches the CalyMob canonical contract', () => {
       selectedSupplementIds: ['tank', 'meal'],
     },
   })).toBe('c22dd83086be920d982cb715caa0ad7662fe409d74755e11d9833ac6a1fd087d');
+});
+
+test('registration payload fingerprint sorts supplements but preserves guest order', () => {
+  const common = {
+    clubId: 'club-1',
+    operationId: 'event-1',
+    selectedSupplementIds: ['tank', 'meal'],
+  };
+  const bob = {
+    firstName: 'Bob', lastName: 'Guest', tariffId: 'adult',
+    selectedSupplementIds: ['air', 'meal'],
+  };
+  const eve = {
+    firstName: 'Eve', lastName: 'Guest', tariffId: null,
+    selectedSupplementIds: [],
+  };
+  const original = registrationPayloadFingerprint({ ...common, guests: [bob, eve] });
+  expect(original).toBe('7b65c15b49215846b2a1c4f73397db35032d96d4594de41e72dd404e909adbfd');
+  expect(registrationPayloadFingerprint({
+    ...common,
+    selectedSupplementIds: ['meal', 'tank'],
+    guests: [{ ...bob, selectedSupplementIds: ['meal', 'air'] }, eve],
+  })).toBe(original);
+  expect(registrationPayloadFingerprint({ ...common, guests: [eve, bob] })).not.toBe(original);
 });
 
 describe('addGuestToEvent callable', () => {

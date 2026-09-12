@@ -190,7 +190,7 @@ class OperationProvider with ChangeNotifier {
   }
 
   /// S'inscrire à une opération
-  Future<void> registerToOperation({
+  Future<EventRegistrationResult> registerToOperation({
     required String clubId,
     required String operationId,
     required String userId,
@@ -200,6 +200,7 @@ class OperationProvider with ChangeNotifier {
     List<SelectedSupplement>? selectedSupplements,
     double? supplementTotal,
     String? requestId,
+    String? payloadFingerprint,
     List<RegistrationGuestRequest> guests = const <RegistrationGuestRequest>[],
   }) async {
     try {
@@ -209,7 +210,7 @@ class OperationProvider with ChangeNotifier {
       final operation = _selectedOperation ??
           _operations.firstWhere((op) => op.id == operationId);
 
-      await _operationService.registerToOperation(
+      final result = await _operationService.registerToOperation(
         clubId: clubId,
         operationId: operationId,
         userId: userId,
@@ -220,18 +221,25 @@ class OperationProvider with ChangeNotifier {
         selectedSupplements: selectedSupplements,
         supplementTotal: supplementTotal,
         requestId: requestId,
+        payloadFingerprint: payloadFingerprint,
         guests: guests,
       );
 
       // Mettre à jour cache
-      _userRegistrationStatus[operationId] = true;
-      _participantCounts[operationId] =
-          (_participantCounts[operationId] ?? 0) + 1 + guests.length;
+      _userRegistrationStatus[operationId] =
+          const {'confirmed', 'pending_payment'}.contains(result.status);
+      if (!result.idempotent) {
+        _participantCounts[operationId] =
+            (_participantCounts[operationId] ?? 0) +
+                1 +
+                result.guestInscriptionIds.length;
+      }
 
       _isLoading = false;
       notifyListeners();
 
       debugPrint('✅ Inscription OK via provider');
+      return result;
     } catch (e) {
       _isLoading = false;
       _errorMessage = e.toString().replaceFirst('Exception: ', '');

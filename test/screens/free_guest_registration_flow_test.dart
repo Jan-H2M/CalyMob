@@ -2,6 +2,7 @@ import 'package:calymob/models/operation.dart';
 import 'package:calymob/screens/operations/add_guest_dialog.dart';
 import 'package:calymob/screens/operations/operation_detail_screen.dart';
 import 'package:calymob/screens/operations/register_with_guests_dialog.dart';
+import 'package:calymob/services/operation_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -52,6 +53,43 @@ void main() {
     expect(identity.requestIdFor('changed-payload'), 'request-2');
     identity.complete();
     expect(identity.requestIdFor('changed-payload'), 'request-3');
+  });
+
+  test(
+      'registration identity keeps timeout retries but rotates for a changed group',
+      () {
+    var sequence = 0;
+    final identity = RegistrationRequestIdentity(
+      requestIdFactory: () => 'request-${++sequence}',
+    );
+    expect(identity.requestIdFor('member-plus-bob'), 'request-1');
+    // Ambiguous transport failure: the screen deliberately does not complete
+    // the identity, so an exact retry receives the original request id.
+    expect(identity.requestIdFor('member-plus-bob'), 'request-1');
+    expect(identity.requestIdFor('member-plus-eve'), 'request-2');
+    identity.complete();
+    expect(identity.requestIdFor('member-plus-eve'), 'request-3');
+  });
+
+  test('registration feedback reflects the callable receipt', () {
+    expect(
+      registrationSuccessMessage(const EventRegistrationResult(
+        status: 'confirmed',
+        inscriptionId: 'member-1',
+        guestInscriptionIds: [],
+        idempotent: true,
+      )),
+      'Inscription déjà enregistrée.',
+    );
+    expect(
+      registrationSuccessMessage(const EventRegistrationResult(
+        status: 'pending_payment',
+        inscriptionId: 'member-1',
+        guestInscriptionIds: ['guest-1'],
+        idempotent: false,
+      )),
+      'Inscription enregistrée — paiement en attente.',
+    );
   });
 
   testWidgets('initial free guest registration emits no synthetic tariff id',

@@ -100,13 +100,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       ExerciceSelectionSaveQueue();
   bool _isLoadingExercices = false;
   ParticipantOperation? _userInscription;
-  String? _pendingRegistrationRequestId;
+  late final RegistrationRequestIdentity _registrationRequestIdentity;
   late final GuestRequestIdentity _guestRequestIdentity;
-
-  String _registrationRequestId() {
-    return _pendingRegistrationRequestId ??=
-        'calymob_${DateTime.now().microsecondsSinceEpoch}_${math.Random.secure().nextInt(0x7fffffff).toRadixString(36)}';
-  }
 
   bool get _isCurrentExerciceSnapshotQueued {
     final queued = _exerciceSaveQueue.lastQueuedSnapshot;
@@ -208,6 +203,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     super.initState();
     _operationService = widget.operationService ?? OperationService();
     _profileService = widget.profileService ?? ProfileService();
+    _registrationRequestIdentity = RegistrationRequestIdentity(
+      requestIdFactory: _operationService.newRegistrationRequestId,
+    );
     _guestRequestIdentity = GuestRequestIdentity(
       requestIdFactory: _operationService.newRegistrationRequestId,
     );
@@ -217,6 +215,47 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         _loadUserProfile();
       }
     });
+  }
+
+  Future<EventRegistrationResult> _registerWithStableIdentity({
+    required OperationProvider operationProvider,
+    required String userId,
+    required String userName,
+    Tariff? selectedTariff,
+    List<SelectedSupplement> selectedSupplements = const <SelectedSupplement>[],
+    double? supplementTotal,
+    List<RegistrationGuestRequest> guests = const <RegistrationGuestRequest>[],
+  }) async {
+    final fingerprint = OperationService.registrationRequestPayloadFingerprint(
+      clubId: widget.clubId,
+      operationId: widget.operationId,
+      selectedSupplements: selectedSupplements,
+      guests: guests,
+    );
+    final requestId = _registrationRequestIdentity.requestIdFor(fingerprint);
+    try {
+      final result = await operationProvider.registerToOperation(
+        clubId: widget.clubId,
+        operationId: widget.operationId,
+        userId: userId,
+        userName: userName,
+        memberProfile: _userProfile,
+        selectedTariff: selectedTariff,
+        selectedSupplements:
+            selectedSupplements.isEmpty ? null : selectedSupplements,
+        supplementTotal: supplementTotal,
+        requestId: requestId,
+        payloadFingerprint: fingerprint,
+        guests: guests,
+      );
+      _registrationRequestIdentity.complete();
+      return result;
+    } catch (error) {
+      if (OperationService.isDefinitiveRegistrationFailure(error)) {
+        _registrationRequestIdentity.complete();
+      }
+      rethrow;
+    }
   }
 
   @override
@@ -565,19 +604,15 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       if (mounted) {
         try {
           // Register first
-          await operationProvider.registerToOperation(
-            clubId: widget.clubId,
-            operationId: widget.operationId,
+          final registrationResult = await _registerWithStableIdentity(
+            operationProvider: operationProvider,
             userId: userId,
             userName: userEmail,
-            memberProfile: _userProfile,
             selectedTariff: selectedTariff,
             selectedSupplements:
                 result['supplements'] as List<SelectedSupplement>,
             supplementTotal: result['supplementTotal'] as double,
-            requestId: _registrationRequestId(),
           );
-          _pendingRegistrationRequestId = null;
 
           // Refresh participant list after registration
           await operationProvider.reloadParticipants(
@@ -606,8 +641,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               );
             } else {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Inscription réussie !'),
+                SnackBar(
+                  content: Text(registrationSuccessMessage(
+                    registrationResult,
+                  )),
                   backgroundColor: Colors.green,
                 ),
               );
@@ -659,16 +696,12 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
       if (confirmed == true && mounted) {
         try {
-          await operationProvider.registerToOperation(
-            clubId: widget.clubId,
-            operationId: widget.operationId,
+          final registrationResult = await _registerWithStableIdentity(
+            operationProvider: operationProvider,
             userId: userId,
             userName: userEmail,
-            memberProfile: _userProfile,
             selectedTariff: selectedTariff,
-            requestId: _registrationRequestId(),
           );
-          _pendingRegistrationRequestId = null;
 
           // Refresh participant list after registration
           await operationProvider.reloadParticipants(
@@ -697,8 +730,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               );
             } else {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Inscription réussie !'),
+                SnackBar(
+                  content: Text(registrationSuccessMessage(
+                    registrationResult,
+                  )),
                   backgroundColor: Colors.green,
                 ),
               );
@@ -898,21 +933,16 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     try {
       // Register the complete group in one transaction. If any guest is
       // invalid or capacity is insufficient, no registration is written.
-      await operationProvider.registerToOperation(
-        clubId: widget.clubId,
-        operationId: widget.operationId,
+      final registrationResult = await _registerWithStableIdentity(
+        operationProvider: operationProvider,
         userId: userId,
         userName: userEmail,
-        memberProfile: _userProfile,
         selectedTariff: selectedTariff,
-        selectedSupplements:
-            selectedSupplements.isNotEmpty ? selectedSupplements : null,
+        selectedSupplements: selectedSupplements,
         supplementTotal:
             selectedSupplements.isNotEmpty ? supplementTotal : null,
-        requestId: _registrationRequestId(),
         guests: guestRequests,
       );
-      _pendingRegistrationRequestId = null;
       await operationProvider.reloadParticipants(
           widget.clubId, widget.operationId);
       if (!mounted) return;
@@ -948,9 +978,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(guestsList.isEmpty
-                ? 'Inscription réussie !'
-                : 'Inscription réussie avec ${guestsList.length} invité${guestsList.length > 1 ? "s" : ""} !'),
+            content: Text(registrationSuccessMessage(
+              registrationResult,
+              guestCount: registrationResult.guestInscriptionIds.length,
+            )),
             backgroundColor: Colors.green,
           ),
         );
@@ -5717,8 +5748,24 @@ bool canAddGuestFromOperationDetail({
 }
 
 @visibleForTesting
-class GuestRequestIdentity {
-  GuestRequestIdentity({required this.requestIdFactory});
+String registrationSuccessMessage(
+  EventRegistrationResult result, {
+  int guestCount = 0,
+}) {
+  if (result.status == 'pending_payment') {
+    return 'Inscription enregistrée — paiement en attente.';
+  }
+  if (guestCount > 0) {
+    return 'Inscription réussie avec $guestCount invité${guestCount > 1 ? "s" : ""} !';
+  }
+  return result.idempotent
+      ? 'Inscription déjà enregistrée.'
+      : 'Inscription réussie !';
+}
+
+@visibleForTesting
+class RegistrationRequestIdentity {
+  RegistrationRequestIdentity({required this.requestIdFactory});
 
   final String Function() requestIdFactory;
   String? _requestId;
@@ -5736,4 +5783,9 @@ class GuestRequestIdentity {
     _requestId = null;
     _payloadFingerprint = null;
   }
+}
+
+@visibleForTesting
+class GuestRequestIdentity extends RegistrationRequestIdentity {
+  GuestRequestIdentity({required super.requestIdFactory});
 }

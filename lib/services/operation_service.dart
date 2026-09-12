@@ -20,7 +20,7 @@ import 'refund_service.dart';
 const int _missingWaitlistDateSortKey = 9007199254740991;
 const int _missingRegistrationDateSortKey = -9007199254740991;
 
-typedef RegisterForEventInvoker = Future<void> Function(
+typedef RegisterForEventInvoker = Future<Map<String, dynamic>> Function(
     Map<String, dynamic> payload);
 typedef AddGuestToEventInvoker = Future<void> Function(
     Map<String, dynamic> payload);
@@ -45,6 +45,32 @@ class RegistrationGuestRequest {
         'selectedSupplementIds':
             selectedSupplements.map((supplement) => supplement.id).toList(),
       };
+}
+
+class EventRegistrationResult {
+  const EventRegistrationResult({
+    required this.status,
+    required this.inscriptionId,
+    required this.guestInscriptionIds,
+    required this.idempotent,
+  });
+
+  final String status;
+  final String inscriptionId;
+  final List<String> guestInscriptionIds;
+  final bool idempotent;
+
+  factory EventRegistrationResult.fromCallable(Object? value) {
+    final data = Map<String, dynamic>.from(value as Map);
+    return EventRegistrationResult(
+      status: data['status'] as String,
+      inscriptionId: data['inscriptionId'] as String,
+      guestInscriptionIds: (data['guestInscriptionIds'] as List? ?? const [])
+          .map((id) => id as String)
+          .toList(growable: false),
+      idempotent: data['idempotent'] == true,
+    );
+  }
 }
 
 class PaymentMethodNotAllowedException implements Exception {
@@ -283,7 +309,7 @@ class OperationService {
 
   /// S'inscrire à une opération
   /// Uses subcollection: clubs/{clubId}/operations/{operationId}/inscriptions
-  Future<void> registerToOperation({
+  Future<EventRegistrationResult> registerToOperation({
     required String clubId,
     required String operationId,
     required String userId,
@@ -294,32 +320,44 @@ class OperationService {
     List<SelectedSupplement>? selectedSupplements,
     double? supplementTotal,
     String? requestId,
+    String? payloadFingerprint,
     List<RegistrationGuestRequest> guests = const <RegistrationGuestRequest>[],
   }) async {
     try {
       final appVersion = await _appVersion();
+      final supplements = selectedSupplements ?? const <SelectedSupplement>[];
+      final fingerprint = payloadFingerprint ??
+          registrationRequestPayloadFingerprint(
+            clubId: clubId,
+            operationId: operationId,
+            selectedSupplements: supplements,
+            guests: guests,
+          );
       final payload = <String, dynamic>{
         'clubId': clubId,
         'operationId': operationId,
         'requestId': requestId ?? _newRegistrationRequestId(),
+        'payloadFingerprint': fingerprint,
         'selectedSupplementIds':
-            (selectedSupplements ?? const <SelectedSupplement>[])
-                .map((supplement) => supplement.id)
-                .toList(),
+            supplements.map((supplement) => supplement.id).toList(),
         'guests': guests.map((guest) => guest.toCallablePayload()).toList(),
         'source': 'calymob',
         if (appVersion != null) 'appVersion': appVersion,
       };
       final registerForEventInvoker = _registerForEventInvoker;
+      Object? response;
       if (registerForEventInvoker != null) {
-        await registerForEventInvoker(payload);
+        response = await registerForEventInvoker(payload);
       } else {
-        await _functions.httpsCallable('registerForEvent').call(payload);
+        response =
+            (await _functions.httpsCallable('registerForEvent').call(payload))
+                .data;
       }
 
       debugPrint(
         '✅ Inscription transactionnelle réussie: $userName → ${operation.titre}',
       );
+      return EventRegistrationResult.fromCallable(response);
     } catch (e) {
       debugPrint('❌ Erreur inscription: $e');
       rethrow;
@@ -332,6 +370,49 @@ class OperationService {
   }
 
   String newRegistrationRequestId() => _newRegistrationRequestId();
+
+  static String registrationRequestPayloadFingerprint({
+    required String clubId,
+    required String operationId,
+    List<SelectedSupplement> selectedSupplements = const <SelectedSupplement>[],
+    List<RegistrationGuestRequest> guests = const <RegistrationGuestRequest>[],
+  }) {
+    final memberSupplementIds =
+        selectedSupplements.map((supplement) => supplement.id).toList()..sort();
+    final canonicalGuests = guests.map((guest) {
+      final guestSupplementIds = guest.selectedSupplements
+          .map((supplement) => supplement.id)
+          .toList()
+        ..sort();
+      return <String, dynamic>{
+        'firstName': guest.firstName.trim(),
+        'lastName': guest.lastName.trim(),
+        'tariffId': guest.tariffId,
+        'selectedSupplementIds': guestSupplementIds,
+      };
+    }).toList(growable: false);
+    final canonical = jsonEncode(<String, dynamic>{
+      'version': 1,
+      'clubId': clubId,
+      'operationId': operationId,
+      'selectedSupplementIds': memberSupplementIds,
+      'guests': canonicalGuests,
+    });
+    return sha256.convert(utf8.encode(canonical)).toString();
+  }
+
+  static bool isDefinitiveRegistrationFailure(Object error) {
+    if (error is! FirebaseFunctionsException) return false;
+    return const {
+      'invalid-argument',
+      'failed-precondition',
+      'permission-denied',
+      'unauthenticated',
+      'not-found',
+      'already-exists',
+      'resource-exhausted',
+    }.contains(error.code);
+  }
 
   static String guestRequestPayloadFingerprint({
     required String clubId,
@@ -358,16 +439,7 @@ class OperationService {
   }
 
   static bool isDefinitiveGuestRegistrationFailure(Object error) {
-    if (error is! FirebaseFunctionsException) return false;
-    return const {
-      'invalid-argument',
-      'failed-precondition',
-      'permission-denied',
-      'unauthenticated',
-      'not-found',
-      'already-exists',
-      'resource-exhausted',
-    }.contains(error.code);
+    return isDefinitiveRegistrationFailure(error);
   }
 
   Future<void> _assertOperationAcceptsRegistration(
