@@ -158,6 +158,358 @@ async function activeCount(transaction, inscriptionsRef) {
   return snapshot.docs.filter(doc => ACTIVE_STATUSES.has(doc.data().registration_status || 'confirmed')).length;
 }
 
+function normalizedFunction(value) {
+  return typeof value === 'string'
+    ? value.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/s$/, '')
+    : '';
+}
+
+function tariffCategory(tariff) {
+  const explicit = normalizedFunction(tariff?.category);
+  if (explicit) return explicit;
+  const label = normalizedFunction(tariff?.label);
+  if (label.includes('encadrant')) return 'encadrant';
+  if (label === 'ca' || label.includes('comite')) return 'ca';
+  if (label.includes('junior')) return 'junior';
+  if (label.includes('etudiant')) return 'etudiant';
+  if (label.includes('non-membre') || label.includes('non membre')) return 'non-membre';
+  if (label.includes('membre')) return 'membre';
+  return label;
+}
+
+function bestMemberFunction(member) {
+  const functions = Array.isArray(member.clubStatuten)
+    ? member.clubStatuten.map(normalizedFunction).filter(Boolean)
+    : [];
+  if (functions.some(value => value.includes('encadrant'))) return 'encadrant';
+  if (functions.some(value => value === 'ca' || value.includes('comite'))) return 'ca';
+  if (functions.some(value => value.includes('membre'))) return 'membre';
+  return functions[0] || normalizedFunction(member.fonction_defaut) || 'membre';
+}
+
+function memberTariff(operation, member, selectedTariffId = null) {
+  const tariffs = Array.isArray(operation.event_tariffs)
+    ? operation.event_tariffs.filter(tariff => tariff && tariff.is_guest_tariff !== true)
+    : [];
+  if (selectedTariffId) {
+    const selected = tariffs.find(tariff => tariff.id === selectedTariffId);
+    if (!selected || selected.self_selectable === false) {
+      throw new HttpsError('invalid-argument', 'Tarif indisponible pour cette inscription.');
+    }
+    return selected;
+  }
+  if (tariffs.length === 0) return null;
+  const preferred = bestMemberFunction(member);
+  const byCategory = category => tariffs.find(
+    tariff => tariffCategory(tariff) === normalizedFunction(category),
+  );
+  return byCategory(preferred) || byCategory('membre') || tariffs[0];
+}
+
+function selectedSupplements(operation, requestedIds) {
+  if (requestedIds === undefined || requestedIds === null) return [];
+  if (!Array.isArray(requestedIds) || requestedIds.length > 50
+    || requestedIds.some(id => typeof id !== 'string' || !id.trim())
+    || new Set(requestedIds).size !== requestedIds.length) {
+    throw new HttpsError('invalid-argument', 'Sélection de suppléments invalide.');
+  }
+  const available = Array.isArray(operation.supplements) ? operation.supplements : [];
+  return requestedIds.map(id => {
+    const supplement = available.find(item => item && item.id === id);
+    if (!supplement || !Number.isFinite(Number(supplement.price)) || Number(supplement.price) < 0) {
+      throw new HttpsError('invalid-argument', 'Supplément indisponible.');
+    }
+    return { id: supplement.id, name: cleanAuditText(supplement.name, '', 160), price: Number(supplement.price) };
+  });
+}
+
+function installmentPayments(operation, tariff, supplementTotal) {
+  if (operation.payment_plan_enabled !== true || !Array.isArray(operation.payment_installments)) return {};
+  const amounts = tariff && typeof tariff.installment_amounts === 'object'
+    ? tariff.installment_amounts : {};
+  const result = {};
+  let extraApplied = supplementTotal <= 0;
+  for (const installment of operation.payment_installments) {
+    if (!installment || typeof installment.id !== 'string' || !installment.id) continue;
+    let amount = Number(amounts[installment.id] || 0);
+    if (!Number.isFinite(amount) || amount < 0) amount = 0;
+    if (!extraApplied && amount > 0) {
+      amount += supplementTotal;
+      extraApplied = true;
+    }
+    result[installment.id] = { status: amount > 0 ? 'unpaid' : 'waived', amount_due: amount };
+  }
+  const firstId = operation.payment_installments.find(item => item && result[item.id])?.id;
+  if (!extraApplied && firstId) {
+    result[firstId] = { status: 'unpaid', amount_due: result[firstId].amount_due + supplementTotal };
+  }
+  return result;
+}
+
+function paymentRequiredForOperation(operation) {
+  if (Object.prototype.hasOwnProperty.call(operation, 'payment_required')) {
+    return operation.payment_required === true;
+  }
+  if (Number(operation.prix_membre || 0) > 0 || Number(operation.prix_non_membre || 0) > 0) {
+    return true;
+  }
+  return Array.isArray(operation.event_tariffs)
+    && operation.event_tariffs.some(tariff => Number(tariff?.price || 0) > 0);
+}
+
+function assertRegistrationOpen(operation, active, now = new Date()) {
+  if (operation.statut !== 'ouvert') {
+    throw new HttpsError('failed-precondition', 'Les inscriptions sont fermées pour cet événement.');
+  }
+  const deadline = effectiveDeadline(operation);
+  if (deadline && now > deadline) {
+    throw new HttpsError('failed-precondition', 'La date limite d’inscription est dépassée.');
+  }
+  const capacity = Number(operation.capacite_max);
+  if (Number.isFinite(capacity) && capacity > 0 && active >= capacity) {
+    throw new HttpsError('resource-exhausted', `Événement complet (${capacity} places).`);
+  }
+}
+
+const registerForEvent = onCall({ region: REGION }, async request => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Authentification requise.');
+  const {
+    clubId,
+    operationId,
+    selectedTariffId = null,
+    selectedSupplementIds = [],
+    source = 'calymob',
+    appVersion = null,
+  } = request.data || {};
+  if (typeof clubId !== 'string' || typeof operationId !== 'string'
+    || !/^[A-Za-z0-9_-]+$/.test(clubId) || !/^[A-Za-z0-9_-]+$/.test(operationId)) {
+    throw new HttpsError('invalid-argument', 'clubId et operationId requis.');
+  }
+  if (selectedTariffId !== null && (typeof selectedTariffId !== 'string' || !selectedTariffId)) {
+    throw new HttpsError('invalid-argument', 'Tarif invalide.');
+  }
+
+  const member = await requireMember(clubId, uid);
+  const memberData = member.data();
+  const { operationRef, inscriptionsRef } = refs(clubId, operationId);
+  // The reference is allocated once, outside the retried transaction, so a
+  // retry cannot create two documents for one logical registration attempt.
+  const registrationRef = inscriptionsRef.doc();
+
+  return admin.firestore().runTransaction(async transaction => {
+    const [operationSnap, inscriptionsSnap] = await Promise.all([
+      transaction.get(operationRef),
+      transaction.get(inscriptionsRef),
+    ]);
+    if (!operationSnap.exists) throw new HttpsError('not-found', 'Événement introuvable.');
+    const duplicate = inscriptionsSnap.docs.find(doc => {
+      const data = doc.data();
+      return data.membre_id === uid && data.registration_status !== 'canceled';
+    });
+    if (duplicate) {
+      throw new HttpsError('already-exists', duplicate.data().registration_status === 'waitlisted'
+        ? 'Vous êtes déjà sur la liste d’attente.' : 'Vous êtes déjà inscrit.');
+    }
+
+    const operation = operationSnap.data();
+    const count = inscriptionsSnap.docs.filter(doc => ACTIVE_STATUSES.has(
+      doc.data().registration_status || 'confirmed',
+    )).length;
+    assertRegistrationOpen(operation, count);
+    const tariff = memberTariff(operation, memberData, selectedTariffId);
+    const supplements = selectedSupplements(operation, selectedSupplementIds);
+    const supplementTotal = supplements.reduce((sum, item) => sum + item.price, 0);
+    const price = tariff ? Number(tariff.price || 0) : Number(operation.prix_membre || 0);
+    if (!Number.isFinite(price) || price < 0) {
+      throw new HttpsError('failed-precondition', 'Tarif de l’événement invalide.');
+    }
+    const now = admin.firestore.Timestamp.now();
+    const paymentRequired = paymentRequiredForOperation(operation);
+    const registrationStatus = paymentRequired
+      && operation.registration_confirmation_policy === 'after_payment'
+      ? 'pending_payment' : 'confirmed';
+    const deadlineDays = Number(operation.payment_deadline_days ?? 3);
+    const paymentExpiresAt = registrationStatus === 'pending_payment'
+      && Number.isInteger(deadlineDays) && deadlineDays > 0
+      ? admin.firestore.Timestamp.fromMillis(now.toMillis() + deadlineDays * 24 * 60 * 60 * 1000)
+      : null;
+
+    transaction.set(registrationRef, {
+      operation_id: operationId,
+      operation_titre: operation.titre || '',
+      membre_id: uid,
+      membre_nom: memberData.nom || memberData.lastName || '',
+      membre_prenom: memberData.prenom || memberData.firstName || '',
+      prix: price,
+      paye: false,
+      date_paiement: null,
+      date_inscription: now,
+      commentaire: null,
+      notes: null,
+      exercices: [],
+      selected_supplements: supplements,
+      supplement_total: supplementTotal,
+      payment_status: paymentRequired ? 'open' : null,
+      registration_status: registrationStatus,
+      payment_expires_at: paymentExpiresAt,
+      transaction_matched: false,
+      transaction_id: null,
+      mode_paiement: null,
+      present: null,
+      present_at: null,
+      present_by: null,
+      present_by_name: null,
+      is_guest: false,
+      added_by: null,
+      added_by_name: null,
+      parent_inscription_id: null,
+      tariff_id: tariff?.id || null,
+      tariff_label: tariff?.label || null,
+      tariff_selected_by: selectedTariffId ? 'member' : null,
+      tariff_validation_status: tariff?.requires_admin_validation === true ? 'pending' : 'accepted',
+      installment_payments: installmentPayments(operation, tariff, supplementTotal),
+      amount_paid: null,
+      edit_history: null,
+      created_at: now,
+      updated_at: now,
+      created_by: uid,
+      created_by_name: actorName(memberData, uid),
+      created_source: cleanAuditText(source, 'calymob', 40),
+      created_app_version: cleanAuditText(appVersion, null, 40),
+      ...actionMetadata({
+        member: memberData,
+        uid,
+        source,
+        appVersion,
+        reason: 'self_registration',
+        action: 'registered',
+        now,
+      }),
+    });
+    // Every successful registration writes the same operation document. This
+    // creates a transaction conflict between concurrent last-place attempts;
+    // the retry then observes the newly committed inscription before counting.
+    transaction.update(operationRef, {
+      registration_capacity_revision: Number(operation.registration_capacity_revision || 0) + 1,
+    });
+    return { status: registrationStatus, inscriptionId: registrationRef.id };
+  });
+});
+
+const registerGuestForEvent = onCall({ region: REGION }, async request => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Authentification requise.');
+  const {
+    clubId,
+    operationId,
+    parentInscriptionId,
+    guestFirstName,
+    guestLastName,
+    tariffId = null,
+    selectedSupplementIds = [],
+    source = 'calymob',
+    appVersion = null,
+  } = request.data || {};
+  if (![clubId, operationId, parentInscriptionId].every(value => (
+    typeof value === 'string' && /^[A-Za-z0-9_-]+$/.test(value)
+  ))) {
+    throw new HttpsError('invalid-argument', 'Références d’inscription invité invalides.');
+  }
+  const firstName = cleanAuditText(guestFirstName, '', 80);
+  const lastName = cleanAuditText(guestLastName, '', 80);
+  if (!firstName || !lastName || (tariffId !== null && (typeof tariffId !== 'string' || !tariffId))) {
+    throw new HttpsError('invalid-argument', 'Nom ou tarif invité invalide.');
+  }
+
+  const member = await requireMember(clubId, uid);
+  const memberData = member.data();
+  const { operationRef, inscriptionsRef } = refs(clubId, operationId);
+  const registrationRef = inscriptionsRef.doc();
+
+  return admin.firestore().runTransaction(async transaction => {
+    const [operationSnap, inscriptionsSnap] = await Promise.all([
+      transaction.get(operationRef),
+      transaction.get(inscriptionsRef),
+    ]);
+    if (!operationSnap.exists) throw new HttpsError('not-found', 'Événement introuvable.');
+    const operation = operationSnap.data();
+    const parent = inscriptionsSnap.docs.find(doc => doc.id === parentInscriptionId);
+    if (!parent || parent.data().membre_id !== uid
+      || !ACTIVE_STATUSES.has(parent.data().registration_status || 'confirmed')) {
+      throw new HttpsError('permission-denied', 'Inscription principale active requise.');
+    }
+    if (operation.allow_guests !== true) {
+      throw new HttpsError('failed-precondition', 'Les invités ne sont pas autorisés.');
+    }
+    const count = inscriptionsSnap.docs.filter(doc => ACTIVE_STATUSES.has(
+      doc.data().registration_status || 'confirmed',
+    )).length;
+    assertRegistrationOpen(operation, count);
+
+    const guestTariffs = Array.isArray(operation.event_tariffs)
+      ? operation.event_tariffs.filter(item => item?.is_guest_tariff === true)
+      : [];
+    const tariff = tariffId
+      ? guestTariffs.find(item => item.id === tariffId)
+      : null;
+    if ((tariffId && !tariff) || (!tariffId && guestTariffs.length > 0)) {
+      throw new HttpsError('invalid-argument', 'Tarif invité indisponible.');
+    }
+    const price = tariff ? Number(tariff.price || 0) : 0;
+    if (!Number.isFinite(price) || price < 0) {
+      throw new HttpsError('failed-precondition', 'Tarif invité invalide.');
+    }
+    const supplements = selectedSupplements(operation, selectedSupplementIds);
+    const supplementTotal = supplements.reduce((sum, item) => sum + item.price, 0);
+    const now = admin.firestore.Timestamp.now();
+    const registrationStatus = parent.data().registration_status || 'confirmed';
+    const paymentRequired = paymentRequiredForOperation(operation);
+
+    transaction.set(registrationRef, {
+      operation_id: operationId,
+      operation_titre: operation.titre || '',
+      membre_id: `guest_${registrationRef.id}`,
+      membre_nom: lastName,
+      membre_prenom: firstName,
+      prix: price,
+      paye: false,
+      registration_status: registrationStatus,
+      payment_status: paymentRequired ? 'open' : null,
+      payment_expires_at: parent.data().payment_expires_at || null,
+      date_inscription: now,
+      is_guest: true,
+      added_by: uid,
+      added_by_name: actorName(memberData, uid),
+      parent_inscription_id: parentInscriptionId,
+      tariff_id: tariff?.id || null,
+      tariff_label: tariff?.label || null,
+      selected_supplements: supplements,
+      supplement_total: supplementTotal,
+      installment_payments: installmentPayments(operation, tariff, supplementTotal),
+      created_at: now,
+      updated_at: now,
+      created_by: uid,
+      created_by_name: actorName(memberData, uid),
+      created_source: cleanAuditText(source, 'calymob', 40),
+      created_app_version: cleanAuditText(appVersion, null, 40),
+      ...actionMetadata({
+        member: memberData,
+        uid,
+        source,
+        appVersion,
+        reason: 'guest_registration',
+        action: 'registered',
+        now,
+      }),
+    });
+    transaction.update(operationRef, {
+      registration_capacity_revision: Number(operation.registration_capacity_revision || 0) + 1,
+    });
+    return { status: registrationStatus, inscriptionId: registrationRef.id };
+  });
+});
+
 const joinEventWaitlist = onCall({ region: REGION }, async request => {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Authentification requise.');
@@ -564,6 +916,8 @@ module.exports = {
   promotionCandidatesAfterWithdrawal,
   canManageWaitlist,
   joinEventWaitlist,
+  registerForEvent,
+  registerGuestForEvent,
   leaveEventWaitlist,
   unregisterFromEvent,
   promoteEventWaitlistEntry,

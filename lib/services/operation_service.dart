@@ -18,6 +18,11 @@ import 'refund_service.dart';
 const int _missingWaitlistDateSortKey = 9007199254740991;
 const int _missingRegistrationDateSortKey = -9007199254740991;
 
+typedef RegisterForEventInvoker = Future<void> Function(
+    Map<String, dynamic> payload);
+typedef RegisterGuestForEventInvoker = Future<void> Function(
+    Map<String, dynamic> payload);
+
 class PaymentMethodNotAllowedException implements Exception {
   const PaymentMethodNotAllowedException();
 
@@ -30,10 +35,18 @@ class PaymentMethodNotAllowedException implements Exception {
 class OperationService {
   final FirebaseFirestore _firestore;
   final FirebaseFunctions? _injectedFunctions;
+  final RegisterForEventInvoker? _registerForEventInvoker;
+  final RegisterGuestForEventInvoker? _registerGuestForEventInvoker;
 
-  OperationService({FirebaseFirestore? firestore, FirebaseFunctions? functions})
-      : _firestore = firestore ?? FirebaseFirestore.instance,
-        _injectedFunctions = functions;
+  OperationService({
+    FirebaseFirestore? firestore,
+    FirebaseFunctions? functions,
+    RegisterForEventInvoker? registerForEventInvoker,
+    RegisterGuestForEventInvoker? registerGuestForEventInvoker,
+  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+        _injectedFunctions = functions,
+        _registerForEventInvoker = registerForEventInvoker,
+        _registerGuestForEventInvoker = registerGuestForEventInvoker;
 
   FirebaseFunctions get _functions =>
       _injectedFunctions ??
@@ -258,108 +271,27 @@ class OperationService {
     double? supplementTotal,
   }) async {
     try {
-      await _assertOperationAcceptsRegistration(clubId, operationId);
-      // Vérifier si déjà inscrit
-      final existing = await getUserInscription(
-        clubId: clubId,
-        operationId: operationId,
-        userId: userId,
-      );
-      if (existing != null) {
-        throw Exception(
-          existing.isWaitlisted
-              ? 'Vous êtes déjà sur la liste d’attente'
-              : 'Vous êtes déjà inscrit à cet événement',
-        );
-      }
-
-      // Vérifier capacité
-      final currentCount = await countParticipants(clubId, operationId);
-      if (operation.capaciteMax != null &&
-          currentCount >= operation.capaciteMax!) {
-        throw Exception('Événement complet (${operation.capaciteMax} places)');
-      }
-
-      // Calculer le prix basé sur la fonction du membre
-      double prix;
-      Tariff? appliedTariff = selectedTariff;
-      if (appliedTariff != null) {
-        prix = appliedTariff.price;
-      } else if (memberProfile != null) {
-        prix = TariffUtils.computeRegistrationPrice(
-          operation: operation,
-          profile: memberProfile,
-        );
-        appliedTariff = _findTariffByPrice(operation, prix);
-        debugPrint(
-          '💰 Prix calculé: $prix€ pour fonction ${TariffUtils.getFunctionLabel(memberProfile)}',
-        );
-      } else {
-        // Fallback si pas de profil
-        prix = operation.prixMembre ?? 0.0;
-        appliedTariff = _findTariffByPrice(operation, prix);
-      }
-
-      // Créer participant - utiliser les champs du profil si disponibles
-      final participant = ParticipantOperation(
-        id: '', // Firestore génère l'ID
-        operationId: operationId,
-        operationTitre: operation.titre,
-        membreId: userId,
-        membreNom: memberProfile?.nom ?? userName,
-        membrePrenom: memberProfile?.prenom,
-        prix: prix,
-        paye: false,
-        paymentStatus: operation.paymentRequired ? 'open' : null,
-        registrationStatus: operation.paymentRequired &&
-                operation.registrationConfirmationPolicy == 'after_payment'
-            ? 'pending_payment'
-            : 'confirmed',
-        paymentExpiresAt: operation.paymentRequired &&
-                operation.registrationConfirmationPolicy == 'after_payment' &&
-                operation.paymentDeadlineDays > 0
-            ? DateTime.now().add(Duration(days: operation.paymentDeadlineDays))
-            : null,
-        dateInscription: DateTime.now(),
-        selectedSupplements: selectedSupplements ?? [],
-        supplementTotal: supplementTotal ?? 0,
-        tariffId: appliedTariff?.id,
-        tariffLabel: appliedTariff?.label,
-        tariffSelectedBy: selectedTariff != null ? 'member' : null,
-        tariffValidationStatus: selectedTariff?.requiresAdminValidation == true
-            ? 'pending'
-            : 'accepted',
-        installmentPayments: _buildInstallmentPayments(
-          operation,
-          appliedTariff,
-          extraAmountOnFirstOpenInstallment: supplementTotal ?? 0,
-        ),
-      );
-
-      // Sauvegarder dans Firestore (subcollection under operation)
-      await _assertOperationAcceptsRegistration(clubId, operationId);
       final appVersion = await _appVersion();
-      await _firestore
-          .collection('clubs/$clubId/operations/$operationId/inscriptions')
-          .add({
-        ...participant.toFirestore(),
-        'created_by': userId,
-        'created_by_name': userName,
-        'created_source': 'calymob',
-        if (appVersion != null) 'created_app_version': appVersion,
-        ..._actionMetadata(
-          action: 'registered',
-          actorId: userId,
-          actorName: userName,
-          source: 'calymob',
-          reason: 'self_registration',
-          appVersion: appVersion,
-        ),
-      });
+      final payload = <String, dynamic>{
+        'clubId': clubId,
+        'operationId': operationId,
+        if (selectedTariff != null) 'selectedTariffId': selectedTariff.id,
+        'selectedSupplementIds':
+            (selectedSupplements ?? const <SelectedSupplement>[])
+                .map((supplement) => supplement.id)
+                .toList(),
+        'source': 'calymob',
+        if (appVersion != null) 'appVersion': appVersion,
+      };
+      final registerForEventInvoker = _registerForEventInvoker;
+      if (registerForEventInvoker != null) {
+        await registerForEventInvoker(payload);
+      } else {
+        await _functions.httpsCallable('registerForEvent').call(payload);
+      }
 
-      final totalPrix = prix + (supplementTotal ?? 0);
       debugPrint(
-        '✅ Inscription réussie: $userName → ${operation.titre} (total: $totalPrix€)',
+        '✅ Inscription transactionnelle réussie: $userName → ${operation.titre}',
       );
     } catch (e) {
       debugPrint('❌ Erreur inscription: $e');
@@ -378,15 +310,6 @@ class OperationService {
     if (!snapshot.exists || snapshot.data()?['statut'] != 'ouvert') {
       throw Exception('Les inscriptions sont fermées pour cet événement');
     }
-  }
-
-  Tariff? _findTariffByPrice(Operation operation, double price) {
-    if (operation.eventTariffs.isEmpty) return null;
-    return operation.eventTariffs.cast<Tariff?>().firstWhere(
-          (t) =>
-              t != null && !t.isGuestTariff && (t.price - price).abs() < 0.01,
-          orElse: () => null,
-        );
   }
 
   Map<String, InstallmentPayment> _buildInstallmentPayments(
@@ -1281,6 +1204,32 @@ class OperationService {
   }) async {
     try {
       final appVersion = await _appVersion();
+      if (parentInscriptionId != null) {
+        final payload = <String, dynamic>{
+          'clubId': clubId,
+          'operationId': operationId,
+          'parentInscriptionId': parentInscriptionId,
+          'guestFirstName': guestPrenom,
+          'guestLastName': guestNom,
+          if (tariffId != null) 'tariffId': tariffId,
+          'selectedSupplementIds':
+              (selectedSupplements ?? const <SelectedSupplement>[])
+                  .map((supplement) => supplement.id)
+                  .toList(),
+          'source': 'calymob',
+          if (appVersion != null) 'appVersion': appVersion,
+        };
+        final registerGuestForEventInvoker = _registerGuestForEventInvoker;
+        if (registerGuestForEventInvoker != null) {
+          await registerGuestForEventInvoker(payload);
+        } else {
+          await _functions.httpsCallable('registerGuestForEvent').call(payload);
+        }
+        debugPrint(
+          '✅ Inscription invité transactionnelle: $guestPrenom $guestNom → $operationTitle',
+        );
+        return;
+      }
       // Generate unique guest ID (timestamp + random suffix to avoid collisions)
       final random =
           (DateTime.now().microsecond * 1000 + DateTime.now().millisecond)

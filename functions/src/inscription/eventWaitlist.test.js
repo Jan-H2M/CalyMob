@@ -9,7 +9,16 @@ jest.mock('firebase-functions/v2/https', () => ({
 }));
 jest.mock('firebase-admin', () => ({
   firestore: Object.assign(jest.fn(), {
-    Timestamp: { now: jest.fn(() => new Date('2026-08-12T10:00:00Z')) },
+    Timestamp: {
+      now: jest.fn(() => ({
+        toDate: () => new Date('2026-08-12T10:00:00Z'),
+        toMillis: () => Date.parse('2026-08-12T10:00:00Z'),
+      })),
+      fromMillis: jest.fn(milliseconds => ({
+        toDate: () => new Date(milliseconds),
+        toMillis: () => milliseconds,
+      })),
+    },
     FieldValue: { serverTimestamp: jest.fn(() => 'server-time') },
   }),
   messaging: jest.fn(),
@@ -24,6 +33,8 @@ const {
   oldestWaitlistEntry,
   promotionCandidateAfterWithdrawal,
   promotionCandidatesAfterWithdrawal,
+  registerForEvent,
+  registerGuestForEvent,
   unregisterFromEvent,
 } = require('./eventWaitlist');
 
@@ -99,6 +110,338 @@ describe('event waitlist policy', () => {
       ['member', 'guest-1', 'guest-2'],
       now,
     ).map(entry => entry.id)).toEqual(['wait-1', 'wait-2', 'wait-3']);
+  });
+});
+
+describe('registerForEvent callable', () => {
+  function makeDoc(id, data) {
+    return { id, ref: { id, path: `inscriptions/${id}` }, data: () => data };
+  }
+
+  function setupRegistrationDb(attempts, operationOverrides = {}) {
+    const registrationRef = { id: 'generated-registration', path: 'inscriptions/generated-registration' };
+    const inscriptionsRef = {
+      path: 'clubs/calypso/operations/event-1/inscriptions',
+      doc: jest.fn(() => registrationRef),
+    };
+    const operationRef = {
+      path: 'clubs/calypso/operations/event-1',
+      collection: jest.fn(name => {
+        if (name === 'inscriptions') return inscriptionsRef;
+        if (name === 'waitlist_audit') return { doc: jest.fn() };
+        throw new Error(`unexpected collection ${name}`);
+      }),
+    };
+    const memberRef = {
+      path: 'clubs/calypso/members/member-1',
+      get: jest.fn(async () => ({
+        exists: true,
+        data: () => ({
+          prenom: 'Alice',
+          nom: 'Encadrant',
+          app_role: 'membre',
+          clubStatuten: ['Encadrants'],
+        }),
+      })),
+    };
+    const operation = {
+      titre: 'Plongée test',
+      statut: 'ouvert',
+      date_debut: new Date('2027-08-14T10:00:00Z'),
+      capacite_max: 1,
+      payment_required: true,
+      registration_confirmation_policy: 'after_payment',
+      payment_deadline_days: 3,
+      event_tariffs: [
+        { id: 'member', label: 'Membre', category: 'membre', price: 25 },
+        {
+          id: 'encadrant', label: 'Encadrant', category: 'encadrant', price: 0,
+          installment_amounts: { deposit: 0 },
+        },
+      ],
+      supplements: [{ id: 'bottle', name: 'Bouteille', price: 4 }],
+      payment_plan_enabled: true,
+      payment_installments: [{ id: 'deposit' }],
+      ...operationOverrides,
+    };
+    if (Object.prototype.hasOwnProperty.call(operationOverrides, 'payment_required')
+      && operationOverrides.payment_required === undefined) {
+      delete operation.payment_required;
+    }
+    const transactions = [];
+    const db = {
+      doc: jest.fn(path => path === operationRef.path ? operationRef : memberRef),
+      runTransaction: jest.fn(async callback => {
+        let result;
+        for (const docs of attempts) {
+          const transaction = {
+            get: jest.fn(async ref => {
+              if (ref === operationRef) return { exists: true, data: () => operation };
+              if (ref === inscriptionsRef) return { docs };
+              throw new Error(`unexpected get ${ref.path}`);
+            }),
+            set: jest.fn(),
+            update: jest.fn(),
+          };
+          transactions.push(transaction);
+          result = await callback(transaction);
+        }
+        return result;
+      }),
+    };
+    admin.firestore.mockReturnValue(db);
+    return { db, operationRef, registrationRef, transactions };
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('creates one server-priced registration and locks the operation capacity', async () => {
+    const { operationRef, registrationRef, transactions } = setupRegistrationDb([[]]);
+
+    const result = await registerForEvent({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso',
+        operationId: 'event-1',
+        selectedSupplementIds: ['bottle'],
+        source: 'calymob',
+        appVersion: '1.21.1+206',
+      },
+    });
+
+    expect(result).toEqual({ status: 'pending_payment', inscriptionId: 'generated-registration' });
+    expect(transactions[0].set).toHaveBeenCalledWith(
+      registrationRef,
+      expect.objectContaining({
+        membre_id: 'member-1',
+        membre_nom: 'Encadrant',
+        membre_prenom: 'Alice',
+        prix: 0,
+        supplement_total: 4,
+        selected_supplements: [{ id: 'bottle', name: 'Bouteille', price: 4 }],
+        tariff_id: 'encadrant',
+        tariff_selected_by: null,
+        registration_status: 'pending_payment',
+        installment_payments: { deposit: { status: 'unpaid', amount_due: 4 } },
+      }),
+    );
+    expect(transactions[0].update).toHaveBeenCalledWith(
+      operationRef,
+      { registration_capacity_revision: 1 },
+    );
+  });
+
+  test('a transaction retry rejects the concurrent loser instead of overbooking', async () => {
+    const newlyCommitted = makeDoc('winner', {
+      membre_id: 'member-2',
+      registration_status: 'confirmed',
+    });
+    const { transactions } = setupRegistrationDb([[], [newlyCommitted]]);
+
+    await expect(registerForEvent({
+      auth: { uid: 'member-1' },
+      data: { clubId: 'calypso', operationId: 'event-1' },
+    })).rejects.toMatchObject({ code: 'resource-exhausted' });
+
+    expect(transactions).toHaveLength(2);
+    expect(transactions[0].set).toHaveBeenCalledTimes(1);
+    expect(transactions[1].set).not.toHaveBeenCalled();
+    expect(transactions[1].update).not.toHaveBeenCalled();
+  });
+
+  test('rejects duplicate active membership and forged supplement identifiers', async () => {
+    setupRegistrationDb([[makeDoc('existing', {
+      membre_id: 'member-1', registration_status: 'waitlisted',
+    })]]);
+    await expect(registerForEvent({
+      auth: { uid: 'member-1' },
+      data: { clubId: 'calypso', operationId: 'event-1' },
+    })).rejects.toMatchObject({ code: 'already-exists' });
+
+    setupRegistrationDb([[]]);
+    await expect(registerForEvent({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso', operationId: 'event-1', selectedSupplementIds: ['forged'],
+      },
+    })).rejects.toMatchObject({ code: 'invalid-argument' });
+  });
+
+  test('preserves legacy paid-event defaults when payment_required is absent', async () => {
+    const { transactions } = setupRegistrationDb([[]], {
+      payment_required: undefined,
+      registration_confirmation_policy: 'after_payment',
+      payment_deadline_days: undefined,
+      event_tariffs: [{ id: 'member', label: 'Membre', category: 'membre', price: 25 }],
+    });
+
+    const result = await registerForEvent({
+      auth: { uid: 'member-1' },
+      data: { clubId: 'calypso', operationId: 'event-1' },
+    });
+
+    expect(result.status).toBe('pending_payment');
+    const stored = transactions[0].set.mock.calls[0][1];
+    expect(stored).toEqual(expect.objectContaining({
+      prix: 25,
+      payment_status: 'open',
+      registration_status: 'pending_payment',
+    }));
+    expect(stored.payment_expires_at.toMillis()).toBe(
+      Date.parse('2026-08-15T10:00:00Z'),
+    );
+  });
+});
+
+describe('registerGuestForEvent callable', () => {
+  function makeDoc(id, data) {
+    return { id, ref: { id, path: `inscriptions/${id}` }, data: () => data };
+  }
+
+  function setupGuestRegistrationDb(inscriptions, operationOverrides = {}) {
+    const registrationRef = { id: 'generated-guest', path: 'inscriptions/generated-guest' };
+    const inscriptionsRef = {
+      path: 'clubs/calypso/operations/event-1/inscriptions',
+      doc: jest.fn(() => registrationRef),
+    };
+    const operationRef = {
+      path: 'clubs/calypso/operations/event-1',
+      collection: jest.fn(name => {
+        if (name === 'inscriptions') return inscriptionsRef;
+        if (name === 'waitlist_audit') return { doc: jest.fn() };
+        throw new Error(`unexpected collection ${name}`);
+      }),
+    };
+    const memberRef = {
+      path: 'clubs/calypso/members/member-1',
+      get: jest.fn(async () => ({
+        exists: true,
+        data: () => ({ prenom: 'Alice', nom: 'Member', app_role: 'membre' }),
+      })),
+    };
+    const operation = {
+      titre: 'Plongée test',
+      statut: 'ouvert',
+      date_debut: new Date('2027-08-14T10:00:00Z'),
+      capacite_max: 3,
+      allow_guests: true,
+      payment_required: true,
+      event_tariffs: [
+        { id: 'member', label: 'Membre', category: 'membre', price: 25 },
+        { id: 'guest-adult', label: 'Invité adulte', price: 35, is_guest_tariff: true },
+      ],
+      supplements: [{ id: 'bottle', name: 'Bouteille', price: 4 }],
+      registration_capacity_revision: 8,
+      ...operationOverrides,
+    };
+    const transaction = {
+      get: jest.fn(async ref => {
+        if (ref === operationRef) return { exists: true, data: () => operation };
+        if (ref === inscriptionsRef) return { docs: inscriptions };
+        throw new Error(`unexpected get ${ref.path}`);
+      }),
+      set: jest.fn(),
+      update: jest.fn(),
+    };
+    admin.firestore.mockReturnValue({
+      doc: jest.fn(path => path === operationRef.path ? operationRef : memberRef),
+      runTransaction: jest.fn(async callback => callback(transaction)),
+    });
+    return { operationRef, registrationRef, transaction };
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('creates a server-priced linked guest and locks event capacity', async () => {
+    const parent = makeDoc('parent', {
+      membre_id: 'member-1',
+      registration_status: 'pending_payment',
+      payment_expires_at: 'parent-expiry',
+    });
+    const { operationRef, registrationRef, transaction } = setupGuestRegistrationDb([parent]);
+
+    const result = await registerGuestForEvent({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso',
+        operationId: 'event-1',
+        parentInscriptionId: 'parent',
+        guestFirstName: 'Bob',
+        guestLastName: 'Guest',
+        tariffId: 'guest-adult',
+        selectedSupplementIds: ['bottle'],
+      },
+    });
+
+    expect(result).toEqual({ status: 'pending_payment', inscriptionId: 'generated-guest' });
+    expect(transaction.set).toHaveBeenCalledWith(registrationRef, expect.objectContaining({
+      membre_id: 'guest_generated-guest',
+      membre_prenom: 'Bob',
+      membre_nom: 'Guest',
+      prix: 35,
+      registration_status: 'pending_payment',
+      parent_inscription_id: 'parent',
+      supplement_total: 4,
+      selected_supplements: [{ id: 'bottle', name: 'Bouteille', price: 4 }],
+    }));
+    expect(transaction.update).toHaveBeenCalledWith(
+      operationRef,
+      { registration_capacity_revision: 9 },
+    );
+  });
+
+  test('rejects a guest when the last place is already occupied', async () => {
+    const parent = makeDoc('parent', {
+      membre_id: 'member-1', registration_status: 'confirmed',
+    });
+    const otherOne = makeDoc('other-1', {
+      membre_id: 'member-2', registration_status: 'confirmed',
+    });
+    const otherTwo = makeDoc('other-2', {
+      membre_id: 'member-3', registration_status: 'pending_payment',
+    });
+    const { transaction } = setupGuestRegistrationDb([parent, otherOne, otherTwo]);
+
+    await expect(registerGuestForEvent({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso', operationId: 'event-1', parentInscriptionId: 'parent',
+        guestFirstName: 'No', guestLastName: 'Place', tariffId: 'guest-adult',
+      },
+    })).rejects.toMatchObject({ code: 'resource-exhausted' });
+
+    expect(transaction.set).not.toHaveBeenCalled();
+    expect(transaction.update).not.toHaveBeenCalled();
+  });
+
+  test('rejects a guest linked to another member or using a member tariff', async () => {
+    const foreignParent = makeDoc('parent', {
+      membre_id: 'member-2', registration_status: 'confirmed',
+    });
+    setupGuestRegistrationDb([foreignParent]);
+    await expect(registerGuestForEvent({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso', operationId: 'event-1', parentInscriptionId: 'parent',
+        guestFirstName: 'Bad', guestLastName: 'Parent', tariffId: 'guest-adult',
+      },
+    })).rejects.toMatchObject({ code: 'permission-denied' });
+
+    const ownParent = makeDoc('parent', {
+      membre_id: 'member-1', registration_status: 'confirmed',
+    });
+    setupGuestRegistrationDb([ownParent]);
+    await expect(registerGuestForEvent({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso', operationId: 'event-1', parentInscriptionId: 'parent',
+        guestFirstName: 'Bad', guestLastName: 'Tariff', tariffId: 'member',
+      },
+    })).rejects.toMatchObject({ code: 'invalid-argument' });
   });
 });
 
