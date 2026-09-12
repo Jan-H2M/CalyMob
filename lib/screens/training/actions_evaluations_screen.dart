@@ -7,10 +7,13 @@ import '../../config/firebase_config.dart';
 import '../../models/formation_task.dart';
 import '../../models/formation_task_roster.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/member_provider.dart';
 import '../../services/formation_task_navigation_service.dart';
 import '../../services/formation_task_service.dart';
+import '../../utils/permission_helper.dart';
 import '../../utils/roster_session_label.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
+import 'historical_qr_scan_screen.dart';
 import 'logbook_dive_confirmation_screen.dart';
 import 'monitor_observation_roster_screen.dart';
 
@@ -71,16 +74,22 @@ class ActionsEvaluationsScreen extends StatefulWidget {
   final bool previewMode;
   final List<PendingLogbookConfirmation> previewConfirmations;
   final List<FormationTask> previewTasks;
+  final List<String> previewClubStatuten;
+  final String? previewPlongeurCode;
   final ValueChanged<PendingLogbookConfirmation>? onOpenConfirmation;
   final ValueChanged<FormationTask>? onOpenTask;
+  final VoidCallback? onOpenHistoricalQr;
 
   const ActionsEvaluationsScreen({
     super.key,
     this.previewMode = false,
     this.previewConfirmations = const [],
     this.previewTasks = const [],
+    this.previewClubStatuten = const [],
+    this.previewPlongeurCode,
     this.onOpenConfirmation,
     this.onOpenTask,
+    this.onOpenHistoricalQr,
   });
 
   @override
@@ -127,6 +136,10 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
         context,
         confirmations: widget.previewConfirmations,
         tasks: widget.previewTasks,
+        canScanHistoricalQr: PermissionHelper.canValidateLifras(
+          clubStatuten: widget.previewClubStatuten,
+          plongeurCode: widget.previewPlongeurCode,
+        ),
       );
     }
 
@@ -138,6 +151,12 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
         body: 'Reconnectez-vous pour retrouver vos actions.',
       );
     }
+
+    final member = context.watch<MemberProvider>();
+    final canScanHistoricalQr = PermissionHelper.canValidateLifras(
+      clubStatuten: member.clubStatuten,
+      plongeurCode: member.plongeurCode,
+    );
 
     final confirmations = FirebaseFirestore.instance
         .collection('clubs')
@@ -180,6 +199,7 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
               context,
               confirmations: pending,
               tasks: taskSnapshot.data!,
+              canScanHistoricalQr: canScanHistoricalQr,
             );
           },
         );
@@ -191,6 +211,7 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
     BuildContext context, {
     required List<PendingLogbookConfirmation> confirmations,
     required List<FormationTask> tasks,
+    required bool canScanHistoricalQr,
   }) {
     final visibleConfirmations = confirmations
         .where((confirmation) => confirmation.matches(_searchQuery))
@@ -209,10 +230,18 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
     final rosters = FormationTaskRoster.aggregate(relevantTasks)
         .where((roster) => _rosterMatchesSearch(roster, _searchQuery))
         .toList(growable: false);
+    final showHistoricalQr = canScanHistoricalQr &&
+        _matchesSearch(_searchQuery, const [
+          'Scanner une carte papier',
+          'Validation',
+          'Contrôler une ancienne carte d’élève',
+          'QR',
+        ]);
 
     if (visibleConfirmations.isEmpty &&
         standaloneTasks.isEmpty &&
-        rosters.isEmpty) {
+        rosters.isEmpty &&
+        !showHistoricalQr) {
       return _StateMessage(
         icon: _searchQuery.trim().isEmpty
             ? Icons.task_alt
@@ -240,6 +269,18 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
               onTap: () => _openConfirmation(context, confirmation),
             ),
           const SizedBox(height: 14),
+        ],
+        if (showHistoricalQr) ...[
+          const _SectionTitle(
+            icon: Icons.qr_code_scanner,
+            title: 'Outils de validation',
+          ),
+          const SizedBox(height: 8),
+          _HistoricalQrScanCard(
+            onTap: () => _openHistoricalQr(context),
+          ),
+          if (standaloneTasks.isNotEmpty || rosters.isNotEmpty)
+            const SizedBox(height: 14),
         ],
         if (standaloneTasks.isNotEmpty || rosters.isNotEmpty) ...[
           const _SectionTitle(
@@ -282,6 +323,15 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
     if (callback != null) return callback(task);
     if (widget.previewMode) return;
     openFormationTask(context, task);
+  }
+
+  void _openHistoricalQr(BuildContext context) {
+    final callback = widget.onOpenHistoricalQr;
+    if (callback != null) return callback();
+    if (widget.previewMode) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const HistoricalQrScanScreen()),
+    );
   }
 }
 
@@ -437,6 +487,25 @@ class _TaskCard extends StatelessWidget {
       subtitle: detail,
       label: task.typeLabel,
       date: task.updatedAt ?? task.createdAt,
+      onTap: onTap,
+    );
+  }
+}
+
+class _HistoricalQrScanCard extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _HistoricalQrScanCard({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return _ActionCard(
+      icon: Icons.qr_code_scanner,
+      iconColor: const Color(0xFF7C3AED),
+      title: 'Scanner une carte papier',
+      subtitle: 'Contrôler une ancienne carte d’élève',
+      label: 'Validation',
+      date: null,
       onTap: onTap,
     );
   }

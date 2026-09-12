@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   testWidgets(
-    'shows only pending confirmation and active training-domain tasks on a narrow screen',
+    'shows every active action source except duplicate buddy tasks on a narrow screen',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(390, 844));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -47,8 +47,8 @@ void main() {
       expect(find.text('Plongée avec Sophie Dubois'), findsOneWidget);
       expect(find.text('validation'), findsOneWidget);
       expect(find.text('buddy duplicate'), findsNothing);
-      expect(find.text('event prep'), findsNothing);
-      expect(find.text('manual reminder'), findsNothing);
+      expect(find.text('event prep'), findsOneWidget);
+      expect(find.text('manual reminder'), findsOneWidget);
       expect(find.text('completed evaluation'), findsNothing);
       await tester.tap(find.text('Plongée avec Sophie Dubois'));
       expect(openedConfirmation?.id, 'confirmation-1');
@@ -56,6 +56,44 @@ void main() {
       expect(openedTask?.id, 'validation');
     },
   );
+
+  testWidgets('shows the paper-card scanner only to a LIFRAS validator', (
+    tester,
+  ) async {
+    var openedScanner = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ActionsEvaluationsScreen(
+          previewMode: true,
+          previewClubStatuten: const ['Encadrants'],
+          previewPlongeurCode: 'MC',
+          onOpenHistoricalQr: () => openedScanner = true,
+        ),
+      ),
+    );
+
+    expect(find.text('Outils de validation'), findsOneWidget);
+    expect(find.text('Scanner une carte papier'), findsOneWidget);
+    await tester.tap(find.text('Scanner une carte papier'));
+    expect(openedScanner, isTrue);
+  });
+
+  testWidgets('hides the paper-card scanner from a non-validator', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ActionsEvaluationsScreen(
+          previewMode: true,
+          previewClubStatuten: ['membre'],
+          previewPlongeurCode: 'MC',
+        ),
+      ),
+    );
+
+    expect(find.text('Scanner une carte papier'), findsNothing);
+    expect(find.text('Tout est à jour'), findsOneWidget);
+  });
 
   testWidgets('search filters both domain sources without showing history', (
     tester,

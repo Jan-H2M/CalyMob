@@ -26,7 +26,7 @@ void main() {
     expect(badgedEntries, equals(['actions']));
   });
 
-  test('generic action badge excludes dedicated buddy confirmations', () {
+  test('action badge excludes buddies but keeps event and manual tasks', () {
     expect(
       parcoursOpenActionCount([
         _task(
@@ -55,7 +55,7 @@ void main() {
           status: FormationTaskStatus.open,
         ),
       ]),
-      1,
+      3,
     );
   });
 }

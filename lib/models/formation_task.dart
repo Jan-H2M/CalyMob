@@ -345,13 +345,10 @@ class FormationTask {
   /// Only durable training-domain work belongs in Actions & evaluations.
   ///
   /// Buddy confirmations are rendered from their individual confirmation
-  /// documents. Event preparation and unknown/manual reminders belong to their
-  /// own domains and must not leak into this focused destination.
+  /// documents. Every other active task needs one durable, actionable home;
+  /// event preparation and manual reminders therefore remain visible here.
   bool get belongsInActionsEvaluations => switch (type) {
-        FormationTaskType.buddyConfirmation ||
-        FormationTaskType.eventPreparation ||
-        FormationTaskType.manualReminder =>
-          false,
+        FormationTaskType.buddyConfirmation => false,
         _ => true,
       };
 

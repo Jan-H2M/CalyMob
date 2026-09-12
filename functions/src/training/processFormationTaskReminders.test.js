@@ -77,10 +77,10 @@ describe('notification deep-link payload', () => {
     });
   });
 
-  test('a digest routes to the Actions tab and never claims one arbitrary task', () => {
+  test('an event/manual digest routes to their shared Actions home', () => {
     expect(buildReminderPayload('calypso', [
-      { id: 'task-1' },
-      { id: 'task-2' },
+      { id: 'event-1', type: 'event_preparation' },
+      { id: 'manual-1', type: 'manual_reminder' },
     ])).toEqual({
       type: 'formation_reminder',
       club_id: 'calypso',
