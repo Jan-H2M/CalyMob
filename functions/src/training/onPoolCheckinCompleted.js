@@ -87,6 +87,12 @@ function encadrantGroupContract(rawGroup, outerHourKey) {
         : {}),
       hourKey: hours.conflict,
     },
+    contractPresence: {
+      ...(group.contractPresence && typeof group.contractPresence === 'object'
+        ? group.contractPresence
+        : {}),
+      outerHourKey: Boolean(cleanHourKey(outerHourKey)),
+    },
   };
 }
 
@@ -488,13 +494,45 @@ async function reconcileEncadrantGroups(db, clubId, sessionId, memberId, rawGrou
         return null;
       };
 
+      const courseIdMatchesV4Contract = (group, hit) => {
+        const hasOuterHour = Boolean(
+          group.contractPresence && group.contractPresence.outerHourKey
+        );
+        // Flat legacy completions do not carry an outer completion.hours key;
+        // retain their historical course-id-only matching semantics.
+        if (!hasOuterHour) return true;
+        if (hit.heure !== group.heure) return false;
+
+        const rawLevel = group.level || group.niveau || null;
+        if (rawLevel && rawLevel !== hit.level) return false;
+
+        const rawGroupNumber = group.groupNumber ?? group.group_number;
+        if (rawGroupNumber != null &&
+            Number(rawGroupNumber) !== hit.groupNumber) {
+          return false;
+        }
+
+        const rawGroupKey = group.groupKey || group.group_key || null;
+        if (rawGroupKey) {
+          const courseGroupKey = normalizeGroupKey(
+            hit.course.groupKey || hit.course.group_key ||
+            canonicalGroupKey(hit.level, hit.groupNumber)
+          );
+          if (normalizeGroupKey(rawGroupKey) !== courseGroupKey) return false;
+        }
+        return true;
+      };
+
       const out = rawGroups.map((g) => {
         if (!g || typeof g !== 'object') return g;
 
         if (g.course_id) {
           const hit = findCourse((c) => c.courseId === g.course_id);
-          if (hit && !hasEncadrant(hit.course)) appendEncadrant(hit.course);
-          return g;
+          if (!hit || !courseIdMatchesV4Contract(g, hit)) {
+            return { ...g, matched: false };
+          }
+          if (!hasEncadrant(hit.course)) appendEncadrant(hit.course);
+          return { ...g, matched: true };
         }
 
         // Manual group — match on level + group_number + heure.

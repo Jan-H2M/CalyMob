@@ -436,6 +436,7 @@ describe('onPoolCheckinCompleted selected group supervision', () => {
     }, '2eme_heure')).toMatchObject({
       heure: '2eme_heure',
       contractConflict: { hourKey: false },
+      contractPresence: { outerHourKey: true },
     });
   });
 
@@ -660,6 +661,7 @@ describe('onPoolCheckinCompleted v4 encadrant hour contract', () => {
   test.each([
     ['first outer versus embedded second', '1ere_heure', 'heure', '2eme_heure'],
     ['second outer versus embedded first', '2eme_heure', 'hourKey', '1ere_heure'],
+    ['snake-case alias conflicts', '1ere_heure', 'hour_key', '2eme_heure'],
   ])('handler rejects encadrant hour conflict before reconciliation: %s', async (
     _label,
     outerHour,
@@ -712,5 +714,138 @@ describe('onPoolCheckinCompleted v4 encadrant hour contract', () => {
       [rawGroup],
     )).resolves.toEqual([{ ...rawGroup, matched: false }]);
     expect(db.runTransaction).not.toHaveBeenCalled();
+  });
+
+  function plannedSession() {
+    return {
+      niveaux: {
+        '2*': {
+          courses_by_hour: {
+            '1ere_heure': [{
+              id: 'course-first',
+              order: 0,
+              encadrants: [],
+            }],
+            '2eme_heure': [{
+              id: 'course-second',
+              order: 0,
+              encadrants: [],
+            }],
+          },
+        },
+      },
+    };
+  }
+
+  function makeReconcileDb(session) {
+    const sessionRef = {};
+    const txUpdate = jest.fn();
+    const transaction = {
+      get: jest.fn(async () => ({ exists: true, data: () => session })),
+      update: txUpdate,
+    };
+    const db = {
+      collection: jest.fn(() => ({
+        doc: jest.fn(() => ({
+          collection: jest.fn(() => ({
+            doc: jest.fn(() => sessionRef),
+          })),
+        })),
+      })),
+      runTransaction: jest.fn(async (callback) => callback(transaction)),
+    };
+    return { db, txUpdate };
+  }
+
+  test.each([
+    [
+      'wrong authoritative hour',
+      '1ere_heure',
+      { course_id: 'course-second', level: '2*', group_number: 1 },
+    ],
+    [
+      'wrong level',
+      '1ere_heure',
+      { course_id: 'course-first', level: '1*', group_number: 1 },
+    ],
+    [
+      'wrong group number',
+      '1ere_heure',
+      { course_id: 'course-first', level: '2*', group_number: 2 },
+    ],
+    [
+      'wrong group key',
+      '1ere_heure',
+      {
+        course_id: 'course-first',
+        level: '2*',
+        group_number: 1,
+        group_key: '2star_groupe2',
+      },
+    ],
+  ])('v4 course_id fails closed for %s without planning write', async (
+    _label,
+    outerHour,
+    rawGroup,
+  ) => {
+    const session = plannedSession();
+    const { db, txUpdate } = makeReconcileDb(session);
+    const group = encadrantGroupContract(rawGroup, outerHour);
+
+    await expect(reconcileEncadrantGroups(
+      db,
+      'calypso',
+      'session-a',
+      'monitor-a',
+      [group],
+    )).resolves.toEqual([{ ...group, matched: false }]);
+    expect(txUpdate).not.toHaveBeenCalled();
+    expect(session.niveaux['2*'].courses_by_hour['1ere_heure'][0].encadrants)
+      .toEqual([]);
+    expect(session.niveaux['2*'].courses_by_hour['2eme_heure'][0].encadrants)
+      .toEqual([]);
+  });
+
+  test('v4 course_id reconciles when outer hour and group contract match', async () => {
+    const session = plannedSession();
+    const { db, txUpdate } = makeReconcileDb(session);
+    const group = encadrantGroupContract({
+      course_id: 'course-first',
+      level: '2*',
+      group_number: 1,
+      group_key: '2star_groupe1',
+    }, '1ere_heure');
+
+    await expect(reconcileEncadrantGroups(
+      db,
+      'calypso',
+      'session-a',
+      'monitor-a',
+      [group],
+    )).resolves.toEqual([{ ...group, matched: true }]);
+    expect(txUpdate).toHaveBeenCalledTimes(1);
+    expect(session.niveaux['2*'].courses_by_hour['1ere_heure'][0].encadrants)
+      .toEqual([{ membre_id: 'monitor-a' }]);
+  });
+
+  test('flat legacy course_id remains compatible without outer hour context', async () => {
+    const session = plannedSession();
+    const { db, txUpdate } = makeReconcileDb(session);
+    const legacyGroup = {
+      course_id: 'course-second',
+      level: '2*',
+      group_number: 1,
+    };
+
+    await expect(reconcileEncadrantGroups(
+      db,
+      'calypso',
+      'session-a',
+      'monitor-a',
+      [legacyGroup],
+    )).resolves.toEqual([{ ...legacyGroup, matched: true }]);
+    expect(txUpdate).toHaveBeenCalledTimes(1);
+    expect(session.niveaux['2*'].courses_by_hour['2eme_heure'][0].encadrants)
+      .toEqual([{ membre_id: 'monitor-a' }]);
   });
 });
