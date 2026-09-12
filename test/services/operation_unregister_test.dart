@@ -1,6 +1,8 @@
+import 'package:calymob/models/operation.dart';
 import 'package:calymob/models/participant_operation.dart';
 import 'package:calymob/services/operation_service.dart';
 import 'package:calymob/providers/operation_provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions_platform_interface/cloud_functions_platform_interface.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -107,6 +109,73 @@ class _RecordingOperationService extends OperationService {
     getUserInscriptionCalls++;
     return remainingInscription;
   }
+
+  @override
+  Future<ParticipantOperation?> getUserInscriptionStrict({
+    required String clubId,
+    required String operationId,
+    required String userId,
+  }) async {
+    getUserInscriptionCalls++;
+    return remainingInscription;
+  }
+}
+
+class _FailingRefreshOperationService extends _RecordingOperationService {
+  _FailingRefreshOperationService(this.initialInscription)
+      : operation = Operation(
+          id: initialInscription.operationId,
+          type: 'evenement',
+          titre: 'Sortie test',
+          montantPrevu: 0,
+          statut: 'ouvert',
+          dateDebut: DateTime(2027, 9, 12),
+          createdAt: DateTime(2026, 9, 12),
+          updatedAt: DateTime(2026, 9, 12),
+        );
+
+  final ParticipantOperation initialInscription;
+  final Operation operation;
+
+  @override
+  Future<Operation?> getOperationById(
+          String clubId, String operationId) async =>
+      operation;
+
+  @override
+  Future<int> countParticipants(String clubId, String operationId) async => 1;
+
+  @override
+  Stream<List<ParticipantOperation>> getParticipantsStream(
+    String clubId,
+    String operationId,
+  ) =>
+      const Stream.empty();
+
+  @override
+  Future<bool> isUserRegistered(
+    String clubId,
+    String operationId,
+    String userId,
+  ) async =>
+      true;
+
+  @override
+  Future<ParticipantOperation?> getUserInscription({
+    required String clubId,
+    required String operationId,
+    required String userId,
+  }) async =>
+      initialInscription;
+
+  @override
+  Future<ParticipantOperation?> getUserInscriptionStrict({
+    required String clubId,
+    required String operationId,
+    required String userId,
+  }) async {
+    throw StateError('refresh failed');
+  }
 }
 
 void main() {
@@ -114,6 +183,7 @@ void main() {
   const operationId = 'croisette-event';
   const inscriptionId = 'pending-payment-inscription';
   late OperationService service;
+  late FakeFirebaseFirestore firestore;
   late List<Map<String, dynamic>> calls;
 
   setUp(() async {
@@ -135,7 +205,8 @@ void main() {
       });
       return {'status': 'canceled'};
     };
-    service = OperationService(firestore: FakeFirebaseFirestore());
+    firestore = FakeFirebaseFirestore();
+    service = OperationService(firestore: firestore);
   });
 
   tearDown(() {
@@ -259,6 +330,144 @@ void main() {
     expect(result?.id, remaining.id);
     expect(provider.isUserRegistered(operationId), isTrue);
     expect(provider.isUserWaitlisted(operationId), isFalse);
+  });
+
+  test('canonical own registration prefers non-waitlisted then newest',
+      () async {
+    final registrations = firestore.collection(
+      'clubs/$clubId/operations/$operationId/inscriptions',
+    );
+    await registrations.doc('active-old').set({
+      'operation_id': operationId,
+      'membre_id': 'member-1',
+      'registration_status': 'confirmed',
+      'date_inscription': Timestamp.fromDate(DateTime(2026, 9, 10)),
+      'prix': 0,
+    });
+    await registrations.doc('active-new').set({
+      'operation_id': operationId,
+      'membre_id': 'member-1',
+      'registration_status': 'pending_payment',
+      'date_inscription': Timestamp.fromDate(DateTime(2026, 9, 11)),
+      'prix': 0,
+    });
+    await registrations.doc('waitlisted-newest').set({
+      'operation_id': operationId,
+      'membre_id': 'member-1',
+      'registration_status': 'waitlisted',
+      'date_inscription': Timestamp.fromDate(DateTime(2026, 9, 12)),
+      'prix': 0,
+    });
+
+    final result = await service.getUserInscriptionStrict(
+      clubId: clubId,
+      operationId: operationId,
+      userId: 'member-1',
+    );
+
+    expect(result?.id, 'active-new');
+  });
+
+  test('canonical own registration uses document id as a stable tie-break',
+      () async {
+    final registrations = firestore.collection(
+      'clubs/$clubId/operations/$operationId/inscriptions',
+    );
+    final date = Timestamp.fromDate(DateTime(2026, 9, 11));
+    for (final id in ['z-registration', 'a-registration', 'm-registration']) {
+      await registrations.doc(id).set({
+        'operation_id': operationId,
+        'membre_id': 'member-1',
+        'registration_status': 'confirmed',
+        'date_inscription': date,
+        'prix': 0,
+      });
+    }
+
+    final result = await service.getUserInscriptionStrict(
+      clubId: clubId,
+      operationId: operationId,
+      userId: 'member-1',
+    );
+
+    expect(result?.id, 'a-registration');
+  });
+
+  test('provider returns the canonical remaining document from three own docs',
+      () async {
+    final registrations = firestore.collection(
+      'clubs/$clubId/operations/$operationId/inscriptions',
+    );
+    await registrations.doc(inscriptionId).set({
+      'operation_id': operationId,
+      'membre_id': 'member-1',
+      'registration_status': 'confirmed',
+      'date_inscription': Timestamp.fromDate(DateTime(2026, 9, 12)),
+      'prix': 0,
+    });
+    await registrations.doc('remaining-active').set({
+      'operation_id': operationId,
+      'membre_id': 'member-1',
+      'registration_status': 'confirmed',
+      'date_inscription': Timestamp.fromDate(DateTime(2026, 9, 10)),
+      'prix': 0,
+    });
+    await registrations.doc('remaining-waitlist').set({
+      'operation_id': operationId,
+      'membre_id': 'member-1',
+      'registration_status': 'waitlisted',
+      'date_inscription': Timestamp.fromDate(DateTime(2026, 9, 11)),
+      'prix': 0,
+    });
+    _MockFirebaseFunctionsPlatform.handler = (_, parameters) async {
+      final data = Map<String, dynamic>.from(parameters as Map);
+      await registrations.doc(data['inscriptionId'] as String).update({
+        'registration_status': 'canceled',
+      });
+      return {'status': 'canceled'};
+    };
+    final provider = OperationProvider(operationService: service);
+
+    final result = await provider.unregisterFromOperation(
+      clubId: clubId,
+      operationId: operationId,
+      inscriptionId: inscriptionId,
+      userId: 'member-1',
+    );
+
+    expect(result?.id, 'remaining-active');
+    expect(provider.isUserRegistered(operationId), isTrue);
+    expect(provider.isUserWaitlisted(operationId), isFalse);
+  });
+
+  test('successful withdrawal with failed refresh preserves registered state',
+      () async {
+    final initial = ParticipantOperation(
+      id: inscriptionId,
+      operationId: operationId,
+      membreId: 'member-1',
+      prix: 0,
+      dateInscription: DateTime(2026, 9, 1),
+    );
+    final recordingService = _FailingRefreshOperationService(initial);
+    final provider = OperationProvider(operationService: recordingService);
+    await provider.selectOperation(clubId, operationId, 'member-1');
+    expect(provider.isUserRegistered(operationId), isTrue);
+
+    await expectLater(
+      provider.unregisterFromOperation(
+        clubId: clubId,
+        operationId: operationId,
+        inscriptionId: inscriptionId,
+        userId: 'member-1',
+      ),
+      throwsStateError,
+    );
+
+    expect(recordingService.calls.single['inscriptionId'], inscriptionId);
+    expect(provider.isUserRegistered(operationId), isTrue);
+    expect(provider.isUserWaitlisted(operationId), isFalse);
+    expect(provider.errorMessage, contains('refresh failed'));
   });
 
   test('keeps the exact callable error available to the screen', () async {

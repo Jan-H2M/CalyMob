@@ -52,10 +52,12 @@ class _MockOperationProvider extends Mock implements OperationProvider {
   _MockOperationProvider(
     this._operation, {
     this.remainingInscriptionAfterUnregister,
+    this.unregisterError,
   });
 
   final Operation _operation;
   final ParticipantOperation? remainingInscriptionAfterUnregister;
+  final Object? unregisterError;
   final unregisterCalls = <Map<String, dynamic>>[];
   var reloadCalls = 0;
   var _isRegistered = true;
@@ -101,6 +103,7 @@ class _MockOperationProvider extends Mock implements OperationProvider {
       'userId': userId,
       'guestAction': guestAction,
     });
+    if (unregisterError != null) throw unregisterError!;
     _isRegistered = remainingInscriptionAfterUnregister != null &&
         !remainingInscriptionAfterUnregister!.isWaitlisted;
     _isWaitlisted = remainingInscriptionAfterUnregister?.isWaitlisted ?? false;
@@ -248,5 +251,85 @@ void main() {
           .inscriptionId,
       remainingInscription.id,
     );
+  });
+
+  testWidgets(
+      'failed strict refresh preserves the visible registration after withdrawal',
+      (tester) async {
+    const clubId = 'calypso';
+    const operationId = 'event-refresh-failure';
+    const memberId = 'member-1';
+    const visibleInscriptionId = 'visible-active-registration';
+    final now = DateTime(2026, 9, 12);
+    final operation = Operation(
+      id: operationId,
+      type: 'evenement',
+      titre: 'Sortie test',
+      montantPrevu: 0,
+      statut: 'ouvert',
+      dateDebut: DateTime(2027, 9, 12),
+      createdAt: now,
+      updatedAt: now,
+    );
+    final loadedInscription = ParticipantOperation(
+      id: visibleInscriptionId,
+      operationId: operationId,
+      membreId: memberId,
+      prix: 0,
+      dateInscription: now,
+    );
+    final operationProvider = _MockOperationProvider(
+      operation,
+      unregisterError: StateError('refresh failed'),
+    );
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(
+            value: _MockAuthProvider(_MockUser()),
+          ),
+          ChangeNotifierProvider<EventMessageProvider>.value(
+            value: _MockEventMessageProvider(),
+          ),
+          ChangeNotifierProvider<MemberProvider>.value(
+            value: _MockMemberProvider(),
+          ),
+          ChangeNotifierProvider<OperationProvider>.value(
+            value: operationProvider,
+          ),
+        ],
+        child: MaterialApp(
+          home: OperationDetailScreen(
+            clubId: clubId,
+            operationId: operationId,
+            operationService: _MockOperationService(loadedInscription),
+            profileService: _MockProfileService(),
+            loadAuxiliaryProfileData: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    await tester.tap(find.byType(OperationUnregisterButton));
+    await tester.pump();
+    await tester.tap(find.text('Se désinscrire'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(operationProvider.unregisterCalls, hasLength(1));
+    expect(find.textContaining('refresh failed'), findsOneWidget);
+    expect(find.byType(OperationUnregisterButton), findsOneWidget);
+    expect(
+      tester
+          .widget<OperationUnregisterButton>(
+            find.byType(OperationUnregisterButton),
+          )
+          .inscriptionId,
+      visibleInscriptionId,
+    );
+    expect(find.text("S'inscrire"), findsNothing);
   });
 }

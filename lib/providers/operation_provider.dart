@@ -262,11 +262,12 @@ class OperationProvider with ChangeNotifier {
       // Reload the member's current active registration. Historical data can
       // contain more than one active document, so cancelling one exact ID does
       // not necessarily mean that the member is no longer registered.
-      final remainingInscription = await _operationService.getUserInscription(
-        clubId: clubId,
-        operationId: operationId,
-        userId: userId,
-      );
+      final remainingInscription = await _operationService
+          .getUserInscriptionStrict(
+            clubId: clubId,
+            operationId: operationId,
+            userId: userId,
+          );
       _userRegistrationStatus[operationId] =
           remainingInscription != null && !remainingInscription.isWaitlisted;
       _userWaitlistStatus[operationId] =

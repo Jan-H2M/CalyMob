@@ -16,6 +16,7 @@ import 'refund_service.dart';
 // Number.MAX_SAFE_INTEGER. It sorts invalid/missing waitlist dates last while
 // remaining exactly representable when this service is compiled with dart2js.
 const int _missingWaitlistDateSortKey = 9007199254740991;
+const int _missingRegistrationDateSortKey = -9007199254740991;
 
 class PaymentMethodNotAllowedException implements Exception {
   const PaymentMethodNotAllowedException();
@@ -781,29 +782,64 @@ class OperationService {
     required String userId,
   }) async {
     try {
-      final snapshot = await _firestore
-          .collection('clubs/$clubId/operations/$operationId/inscriptions')
-          .where('membre_id', isEqualTo: userId)
-          .get();
-
-      if (snapshot.docs.isEmpty) {
-        return null;
-      }
-
-      // Een vervallen/geannuleerde inschrijving mag een nieuwe inschrijving
-      // niet blokkeren. Kies daarom alleen een nog actieve registratie.
-      for (final document in snapshot.docs) {
-        final inscription = ParticipantOperation.fromFirestore(document);
-        if (inscription.registrationStatus != 'canceled') {
-          return inscription;
-        }
-      }
-
-      return null;
+      return await getUserInscriptionStrict(
+        clubId: clubId,
+        operationId: operationId,
+        userId: userId,
+      );
     } catch (e) {
       debugPrint('❌ Erreur récupération inscription: $e');
       return null;
     }
+  }
+
+  /// Strict variant used after a mutation: read failures must remain visible.
+  ///
+  /// Legacy data can contain multiple active documents for one member. The
+  /// canonical document is deterministic: an actual registration wins over a
+  /// waitlist entry, then the newest registration date wins, followed by the
+  /// lexicographically smallest document ID as a stable tie-breaker.
+  Future<ParticipantOperation?> getUserInscriptionStrict({
+    required String clubId,
+    required String operationId,
+    required String userId,
+  }) async {
+    final snapshot = await _firestore
+        .collection('clubs/$clubId/operations/$operationId/inscriptions')
+        .where('membre_id', isEqualTo: userId)
+        .get();
+    final activeDocuments = snapshot.docs
+        .where((document) =>
+            document.data()['registration_status'] != 'canceled')
+        .toList()
+      ..sort(_compareCanonicalUserInscriptions);
+    if (activeDocuments.isEmpty) return null;
+    return ParticipantOperation.fromFirestore(activeDocuments.first);
+  }
+
+  static int _compareCanonicalUserInscriptions(
+    QueryDocumentSnapshot<Map<String, dynamic>> left,
+    QueryDocumentSnapshot<Map<String, dynamic>> right,
+  ) {
+    final leftWaitlisted =
+        left.data()['registration_status'] == 'waitlisted' ? 1 : 0;
+    final rightWaitlisted =
+        right.data()['registration_status'] == 'waitlisted' ? 1 : 0;
+    final byClass = leftWaitlisted.compareTo(rightWaitlisted);
+    if (byClass != 0) return byClass;
+
+    final byDate = _registrationDateSortKey(right.data()).compareTo(
+      _registrationDateSortKey(left.data()),
+    );
+    if (byDate != 0) return byDate;
+    return left.id.compareTo(right.id);
+  }
+
+  static int _registrationDateSortKey(Map<String, dynamic> data) {
+    final value = data['date_inscription'] ?? data['created_at'];
+    if (value is Timestamp) return value.millisecondsSinceEpoch;
+    if (value is DateTime) return value.millisecondsSinceEpoch;
+    return _missingRegistrationDateSortKey;
   }
 
   /// Marquer une inscription comme présent
