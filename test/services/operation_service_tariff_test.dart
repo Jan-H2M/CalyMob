@@ -3,6 +3,7 @@ import 'package:calymob/models/operation.dart';
 import 'package:calymob/models/supplement.dart';
 import 'package:calymob/models/tariff.dart';
 import 'package:calymob/services/operation_service.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -286,5 +287,76 @@ void main() {
     expect(request, isNot(contains('prix')));
     expect((request!['guest'] as Map), isNot(contains('price')));
     expect((request!['guest'] as Map), isNot(contains('supplementTotal')));
+  });
+
+  test('guest append forwards stable request identity and payload fingerprint',
+      () async {
+    final requests = <Map<String, dynamic>>[];
+    final service = OperationService(
+      firestore: FakeFirebaseFirestore(),
+      addGuestToEventInvoker: (payload) async => requests.add(payload),
+    );
+    final supplements = [
+      SelectedSupplement(id: 'meal', name: 'Repas', price: 20),
+      SelectedSupplement(id: 'tank', name: 'Bloc', price: 5),
+    ];
+    final fingerprint = OperationService.guestRequestPayloadFingerprint(
+      clubId: 'club-1',
+      operationId: 'event-1',
+      parentInscriptionId: 'parent-1',
+      guestPrenom: ' Bob ',
+      guestNom: ' Guest ',
+      tariffId: 'guest-adult',
+      selectedSupplements: supplements.reversed.toList(),
+    );
+    expect(
+      fingerprint,
+      'c22dd83086be920d982cb715caa0ad7662fe409d74755e11d9833ac6a1fd087d',
+    );
+    for (var i = 0; i < 2; i++) {
+      await service.createGuestInscription(
+        clubId: 'club-1',
+        operationId: 'event-1',
+        operationTitle: 'Event',
+        guestPrenom: ' Bob ',
+        guestNom: ' Guest ',
+        prix: 999,
+        addedByUserId: 'member-1',
+        addedByUserName: 'Member',
+        parentInscriptionId: 'parent-1',
+        tariffId: 'guest-adult',
+        selectedSupplements: supplements,
+        requestId: 'stable-request',
+        payloadFingerprint: fingerprint,
+      );
+    }
+    expect(requests, hasLength(2));
+    expect(requests[0]['requestId'], 'stable-request');
+    expect(requests[1]['requestId'], 'stable-request');
+    expect(requests[0]['payloadFingerprint'], fingerprint);
+    expect(requests[1]['payloadFingerprint'], fingerprint);
+  });
+
+  test('guest failure classification retains ambiguous transport retries', () {
+    expect(
+      OperationService.isDefinitiveGuestRegistrationFailure(
+        FirebaseFunctionsException(
+            code: 'failed-precondition', message: 'Rejected'),
+      ),
+      isTrue,
+    );
+    expect(
+      OperationService.isDefinitiveGuestRegistrationFailure(
+        FirebaseFunctionsException(
+            code: 'deadline-exceeded', message: 'Timeout'),
+      ),
+      isFalse,
+    );
+    expect(
+      OperationService.isDefinitiveGuestRegistrationFailure(
+        FirebaseFunctionsException(code: 'unavailable', message: 'Offline'),
+      ),
+      isFalse,
+    );
   });
 }

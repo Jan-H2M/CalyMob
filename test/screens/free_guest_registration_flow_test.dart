@@ -10,7 +10,7 @@ void main() {
       () {
     expect(
         canAddGuestFromOperationDetail(
-          privileged: false,
+          staff: false,
           allowGuests: true,
           hasActiveRegistration: true,
           currentCount: 1,
@@ -19,13 +19,39 @@ void main() {
         isTrue);
     expect(
         canAddGuestFromOperationDetail(
-          privileged: false,
+          staff: false,
           allowGuests: true,
           hasActiveRegistration: false,
           currentCount: 0,
           capacity: 3,
         ),
         isFalse);
+  });
+
+  test('event staff guest permission is independent of scanner permission', () {
+    expect(
+      canAddGuestFromOperationDetail(
+        staff: true,
+        allowGuests: false,
+        hasActiveRegistration: false,
+        currentCount: 99,
+        capacity: 1,
+      ),
+      isTrue,
+    );
+  });
+
+  test('guest request identity survives retries and rotates on payload change',
+      () {
+    var sequence = 0;
+    final identity = GuestRequestIdentity(
+      requestIdFactory: () => 'request-${++sequence}',
+    );
+    expect(identity.requestIdFor('same-payload'), 'request-1');
+    expect(identity.requestIdFor('same-payload'), 'request-1');
+    expect(identity.requestIdFor('changed-payload'), 'request-2');
+    identity.complete();
+    expect(identity.requestIdFor('changed-payload'), 'request-3');
   });
 
   testWidgets('initial free guest registration emits no synthetic tariff id',

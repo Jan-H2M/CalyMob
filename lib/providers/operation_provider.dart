@@ -338,6 +338,8 @@ class OperationProvider with ChangeNotifier {
     /// Optional supplements selected by/for this guest.
     List<SelectedSupplement>? selectedSupplements,
     double? supplementTotal,
+    String? requestId,
+    String? payloadFingerprint,
   }) async {
     try {
       _isLoading = true;
@@ -356,6 +358,8 @@ class OperationProvider with ChangeNotifier {
         tariffId: tariffId,
         selectedSupplements: selectedSupplements,
         supplementTotal: supplementTotal,
+        requestId: requestId,
+        payloadFingerprint: payloadFingerprint,
       );
 
       // Mettre à jour cache

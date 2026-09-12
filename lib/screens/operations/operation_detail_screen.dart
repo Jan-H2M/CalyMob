@@ -101,6 +101,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   bool _isLoadingExercices = false;
   ParticipantOperation? _userInscription;
   String? _pendingRegistrationRequestId;
+  late final GuestRequestIdentity _guestRequestIdentity;
 
   String _registrationRequestId() {
     return _pendingRegistrationRequestId ??=
@@ -207,6 +208,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     super.initState();
     _operationService = widget.operationService ?? OperationService();
     _profileService = widget.profileService ?? ProfileService();
+    _guestRequestIdentity = GuestRequestIdentity(
+      requestIdFactory: _operationService.newRegistrationRequestId,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadOperation();
       if (widget.loadAuxiliaryProfileData) {
@@ -1969,19 +1973,15 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     );
   }
 
-  /// Check if current user can scan attendance
-  bool get _canScan {
-    if (_userProfile == null) {
-      debugPrint('🔍 _canScan: profile is null');
-      return false;
+  bool _canAddGuestAsStaff(Operation operation) {
+    if (_isCurrentUserCreator(operation) ||
+        _isCurrentUserResponsable(operation)) {
+      return true;
     }
-    final result = PermissionHelper.canScan(
-      _userProfile!.clubStatuten,
-      fonctionDefaut: _userProfile!.fonctionDefaut,
-    );
-    debugPrint(
-        '🔍 _canScan: clubStatuten=${_userProfile!.clubStatuten}, fonctionDefaut=${_userProfile!.fonctionDefaut}, result=$result');
-    return result;
+    final member = context.read<MemberProvider>();
+    final role = member.appRole?.toLowerCase().trim();
+    if (const {'admin', 'superadmin', 'validateur'}.contains(role)) return true;
+    return PermissionHelper.isEncadrant(member.clubStatuten);
   }
 
   /// Tariffs from the current operation that are marked as guest tariffs
@@ -1995,20 +1995,18 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   /// True when the current user is allowed to add a guest to this operation.
   ///
   /// Two paths:
-  ///  1. Admin / encadrant / organisateur (existing behaviour, gated by
-  ///     [_canScan]). Can always add a guest, free price.
+  ///  1. Admin / encadrant / organisateur. This event-staff permission is
+  ///     deliberately independent from the attendance scanner permission.
   ///  2. Any regular member when the event has opted-in via
-  ///     `allow_guests=true` AND the event has at least one tariff
-  ///     marked `is_guest_tariff=true`. The price is locked to the picked
-  ///     tariff. If the member is also registered, the new guest inscription
-  ///     is linked to the member's parent inscription so payment can be
-  ///     aggregated into a single QR; otherwise the guest is unlinked and
-  ///     pays separately.
+  ///     `allow_guests=true` and the member has an active registration. The
+  ///     server applies the selected guest tariff or the explicit free-event
+  ///     default. The new guest is linked to the member's parent inscription
+  ///     so payment can be aggregated into a single QR.
   bool get _canAddGuest {
     final operation = context.read<OperationProvider>().selectedOperation;
     if (operation == null) return false;
     return canAddGuestFromOperationDetail(
-      privileged: _canScan,
+      staff: _canAddGuestAsStaff(operation),
       allowGuests: operation.allowGuests,
       hasActiveRegistration: _userInscription != null,
       currentCount: context
@@ -2024,39 +2022,55 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   /// When the current user is a regular member (not an admin/encadrant) AND
   /// is themselves already registered, the new guest inscription is linked
   /// to their own inscription via `parent_inscription_id` so the payment QR
-  /// can be aggregated. If the member isn't registered, the guest is added
-  /// unlinked and will pay separately.
+  /// can be aggregated. Event staff use the server-authorized standalone path.
   Future<void> _showAddGuestDialog() async {
+    final operation = context.read<OperationProvider>().selectedOperation;
+    if (operation == null) return;
+    final staffFlow = _canAddGuestAsStaff(operation);
     final tariffs = _guestTariffs;
 
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => AddGuestDialog(
-        availableGuestTariffs: _canScan ? const [] : tariffs,
-        serverPricedFreeGuest: !_canScan && tariffs.isEmpty,
+        availableGuestTariffs: tariffs,
+        availableSupplements: operation.supplements,
+        serverPricedFreeGuest: tariffs.isEmpty,
       ),
     );
 
     if (result != null && mounted) {
       final authProvider = context.read<AuthProvider>();
       final operationProvider = context.read<OperationProvider>();
-      final operation = operationProvider.selectedOperation;
-
-      if (operation == null) return;
+      if (operationProvider.selectedOperation == null) return;
 
       // Member-driven flow: link the new guest to the member's own inscription.
       // Admin/encadrant flow stays unlinked (parentInscriptionId = null) to
       // preserve the existing legacy behaviour.
-      final isMemberDrivenFlow = !_canScan && _userInscription != null;
+      final isMemberDrivenFlow = !staffFlow && _userInscription != null;
       final parentInscriptionId =
           isMemberDrivenFlow ? _userInscription!.id : null;
       final tariffId = result['tariffId'] as String?;
+      final selectedSupplements = (result['selectedSupplements'] as List?)
+              ?.whereType<SelectedSupplement>()
+              .toList() ??
+          const <SelectedSupplement>[];
+      final payloadFingerprint =
+          OperationService.guestRequestPayloadFingerprint(
+        clubId: widget.clubId,
+        operationId: widget.operationId,
+        parentInscriptionId: parentInscriptionId,
+        guestPrenom: result['prenom'] as String,
+        guestNom: result['nom'] as String,
+        tariffId: tariffId,
+        selectedSupplements: selectedSupplements,
+      );
+      final requestId = _guestRequestIdentity.requestIdFor(payloadFingerprint);
 
       try {
         await operationProvider.addGuestToOperation(
           clubId: widget.clubId,
           operationId: widget.operationId,
-          operationTitle: operation.titre ?? 'Événement',
+          operationTitle: operation.titre,
           guestPrenom: result['prenom'] as String,
           guestNom: result['nom'] as String,
           prix: result['prix'] as double,
@@ -2064,7 +2078,13 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           addedByUserName: authProvider.displayName ?? 'Admin',
           parentInscriptionId: parentInscriptionId,
           tariffId: tariffId,
+          selectedSupplements: selectedSupplements,
+          supplementTotal: result['supplementTotal'] as double?,
+          requestId: requestId,
+          payloadFingerprint: payloadFingerprint,
         );
+
+        _guestRequestIdentity.complete();
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -2076,6 +2096,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           );
         }
       } catch (e) {
+        if (OperationService.isDefinitiveGuestRegistrationFailure(e)) {
+          _guestRequestIdentity.complete();
+        }
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -5682,13 +5705,35 @@ class _MemberInfo {
 
 @visibleForTesting
 bool canAddGuestFromOperationDetail({
-  required bool privileged,
+  required bool staff,
   required bool allowGuests,
   required bool hasActiveRegistration,
   required int currentCount,
   int? capacity,
 }) {
-  if (privileged) return true;
+  if (staff) return true;
   if (!allowGuests || !hasActiveRegistration) return false;
   return capacity == null || currentCount < capacity;
+}
+
+@visibleForTesting
+class GuestRequestIdentity {
+  GuestRequestIdentity({required this.requestIdFactory});
+
+  final String Function() requestIdFactory;
+  String? _requestId;
+  String? _payloadFingerprint;
+
+  String requestIdFor(String payloadFingerprint) {
+    if (_payloadFingerprint != payloadFingerprint) {
+      _payloadFingerprint = payloadFingerprint;
+      _requestId = requestIdFactory();
+    }
+    return _requestId!;
+  }
+
+  void complete() {
+    _requestId = null;
+    _payloadFingerprint = null;
+  }
 }

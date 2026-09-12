@@ -36,6 +36,8 @@ const {
   registerForEvent,
   addGuestToEvent,
   guestPricing,
+  guestPayloadFingerprint,
+  memberRegistrationPrice,
   unregisterFromEvent,
 } = require('./eventWaitlist');
 
@@ -508,10 +510,50 @@ describe('registerForEvent callable', () => {
   });
 });
 
+describe('member pricing policy', () => {
+  test('defaults to free only when no member tariff configuration exists', () => {
+    expect(memberRegistrationPrice({}, {}).price).toBe(0);
+    expect(memberRegistrationPrice({ prix_membre: 0 }, {}).price).toBe(0);
+  });
+
+  test.each([undefined, 0])(
+    'fails closed for an unmatched dynamic category with prix_membre=%s',
+    prixMembre => {
+      const operation = {
+        event_tariffs: [{ id: 'student', category: 'etudiant', price: 12 }],
+        ...(prixMembre === undefined ? {} : { prix_membre: prixMembre }),
+      };
+      expect(() => memberRegistrationPrice(operation, {
+        clubStatuten: ['Encadrant'],
+      })).toThrow('Aucun tarif membre');
+    },
+  );
+});
+
+test('guest payload fingerprint matches the CalyMob canonical contract', () => {
+  expect(guestPayloadFingerprint({
+    clubId: 'club-1',
+    operationId: 'event-1',
+    parentInscriptionId: 'parent-1',
+    guest: {
+      firstName: 'Bob',
+      lastName: 'Guest',
+      tariffId: 'guest-adult',
+      selectedSupplementIds: ['tank', 'meal'],
+    },
+  })).toBe('c22dd83086be920d982cb715caa0ad7662fe409d74755e11d9833ac6a1fd087d');
+});
+
 describe('addGuestToEvent callable', () => {
   const requestId = 'append_request_20260812_1';
 
-  function setupAppend({ existingRequest = null, existingGuests = [], capacity = 4 } = {}) {
+  function setupAppend({
+    existingRequest = null,
+    existingGuests = [],
+    capacity = 4,
+    memberData = { prenom: 'Alice', nom: 'Member', app_role: 'membre' },
+    operationOverrides = {},
+  } = {}) {
     const parentRef = { id: 'parent-1', path: 'inscriptions/parent-1' };
     const guestRef = { id: 'new-guest', path: 'inscriptions/new-guest' };
     const requestRef = { id: requestId, path: `registration_requests/${requestId}` };
@@ -546,7 +588,7 @@ describe('addGuestToEvent callable', () => {
       path: 'clubs/calypso/members/member-1',
       get: jest.fn(async () => ({
         exists: true,
-        data: () => ({ prenom: 'Alice', nom: 'Member', app_role: 'membre' }),
+        data: () => memberData,
       })),
     };
     const operation = {
@@ -558,6 +600,7 @@ describe('addGuestToEvent callable', () => {
       max_guests_per_member: 2,
       payment_required: false,
       event_tariffs: [],
+      ...operationOverrides,
     };
     const transaction = {
       get: jest.fn(async (ref) => {
@@ -596,8 +639,68 @@ describe('addGuestToEvent callable', () => {
     }));
     expect(transaction.set).toHaveBeenCalledWith(requestRef, expect.objectContaining({
       member_id: 'member-1', guest_inscription_id: 'new-guest',
+      payload_fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
     }));
     expect(transaction.update).toHaveBeenCalledWith(operationRef, { registration_capacity_revision: 1 });
+  });
+
+  test('rejects reuse of a request id with a changed guest payload', async () => {
+    const fingerprint = guestPayloadFingerprint({
+      clubId: 'calypso',
+      operationId: 'event-1',
+      parentInscriptionId: 'parent-1',
+      guest: {
+        firstName: 'Bob', lastName: 'Guest', selectedSupplementIds: [],
+      },
+    });
+    const { transaction } = setupAppend({ existingRequest: {
+      member_id: 'member-1',
+      parent_inscription_id: 'parent-1',
+      guest_inscription_id: 'old-guest',
+      payload_fingerprint: fingerprint,
+    } });
+    await expect(addGuestToEvent({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso', operationId: 'event-1', parentInscriptionId: 'parent-1',
+        requestId, guest: { firstName: 'Eve', lastName: 'Changed' },
+      },
+    })).rejects.toMatchObject({ code: 'failed-precondition' });
+    expect(transaction.set).not.toHaveBeenCalled();
+  });
+
+  test('lets event staff append a standalone guest through the transaction', async () => {
+    const { transaction, guestRef } = setupAppend({
+      memberData: {
+        prenom: 'Eva', nom: 'Staff', app_role: 'membre',
+        clubStatuten: ['Encadrants'],
+      },
+      operationOverrides: { allow_guests: false },
+    });
+    const result = await addGuestToEvent({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso', operationId: 'event-1', requestId,
+        guest: { firstName: 'Staff', lastName: 'Guest' },
+      },
+    });
+    expect(result).toEqual({ guestInscriptionId: 'new-guest', idempotent: false });
+    expect(transaction.set).toHaveBeenCalledWith(guestRef, expect.objectContaining({
+      parent_inscription_id: null,
+      is_guest: true,
+    }));
+  });
+
+  test('rejects a standalone guest from ordinary members', async () => {
+    const { transaction } = setupAppend();
+    await expect(addGuestToEvent({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso', operationId: 'event-1', requestId,
+        guest: { firstName: 'No', lastName: 'Privilege' },
+      },
+    })).rejects.toMatchObject({ code: 'permission-denied' });
+    expect(transaction.set).not.toHaveBeenCalled();
   });
 
   test('returns the receipt on retry and never stages a second guest', async () => {

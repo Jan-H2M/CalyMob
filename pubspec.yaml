@@ -37,6 +37,7 @@ dependencies:
 
   # HTTP Client
   http: ^1.2.0
+  crypto: ^3.0.7
 
   # Utilities
   url_launcher: ^6.1.14

@@ -1,4 +1,5 @@
 const admin = require('firebase-admin');
+const crypto = require('crypto');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 
 const REGION = 'europe-west1';
@@ -153,6 +154,17 @@ function canManageWaitlist(member, uid, operation) {
     || operation.organisateur_id === uid;
 }
 
+function canAddStandaloneGuest(member, uid, operation) {
+  const functions = [
+    ...(Array.isArray(member.clubStatuten) ? member.clubStatuten : []),
+    member.fonction_defaut,
+  ].map(normalizedFunction).filter(Boolean);
+  return ELEVATED_ROLES.has(normalizedFunction(member.app_role))
+    || operation.organisateur_id === uid
+    || operation.creator_user_id === uid
+    || functions.some(value => value === 'encadrant');
+}
+
 async function activeCount(transaction, inscriptionsRef) {
   const snapshot = await transaction.get(inscriptionsRef);
   return snapshot.docs.filter(doc => ACTIVE_STATUSES.has(doc.data().registration_status || 'confirmed')).length;
@@ -203,6 +215,43 @@ function memberTariff(operation, member) {
   // Eligibility comes exclusively from the server-side member document. A
   // client-provided tariff identifier must never grant a CA/encadrant rate.
   return byCategory(preferred) || byCategory('membre') || null;
+}
+
+function memberRegistrationPrice(operation, member) {
+  const tariffs = Array.isArray(operation.event_tariffs)
+    ? operation.event_tariffs.filter(tariff => tariff && tariff.is_guest_tariff !== true)
+    : [];
+  const tariff = memberTariff(operation, member);
+  if (tariffs.length > 0 && !tariff) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Aucun tarif membre ne correspond à votre catégorie.',
+    );
+  }
+  const rawPrice = tariff
+    ? tariff.price
+    : (Object.prototype.hasOwnProperty.call(operation, 'prix_membre')
+      ? operation.prix_membre
+      : 0);
+  const price = rawPrice === null || rawPrice === '' ? Number.NaN : Number(rawPrice);
+  if (!Number.isFinite(price) || price < 0) {
+    throw new HttpsError('failed-precondition', 'Tarif de l’événement invalide.');
+  }
+  return { tariff, price };
+}
+
+function guestPayloadFingerprint({ clubId, operationId, parentInscriptionId, guest }) {
+  const canonical = JSON.stringify({
+    version: 1,
+    clubId,
+    operationId,
+    parentInscriptionId: parentInscriptionId || null,
+    firstName: guest.firstName,
+    lastName: guest.lastName,
+    tariffId: guest.tariffId || null,
+    selectedSupplementIds: [...(guest.selectedSupplementIds || [])].sort(),
+  });
+  return crypto.createHash('sha256').update(canonical).digest('hex');
 }
 
 function selectedSupplements(operation, requestedIds) {
@@ -453,13 +502,9 @@ const registerForEvent = onCall({ region: REGION }, async request => {
       }
     }
     assertRegistrationOpen(operation, count, 1 + guests.length);
-    const tariff = memberTariff(operation, memberData);
+    const { tariff, price } = memberRegistrationPrice(operation, memberData);
     const supplements = selectedSupplements(operation, selectedSupplementIds);
     const supplementTotal = supplements.reduce((sum, item) => sum + item.price, 0);
-    const price = tariff ? Number(tariff.price || 0) : Number(operation.prix_membre || 0);
-    if (!Number.isFinite(price) || price < 0) {
-      throw new HttpsError('failed-precondition', 'Tarif de l’événement invalide.');
-    }
     const now = admin.firestore.Timestamp.now();
     const paymentRequired = paymentRequiredForOperation(operation);
     const registrationStatus = paymentRequired
@@ -574,23 +619,33 @@ const addGuestToEvent = onCall({ region: REGION }, async request => {
   const {
     clubId,
     operationId,
-    parentInscriptionId,
+    parentInscriptionId: rawParentInscriptionId = null,
     requestId: rawRequestId,
+    payloadFingerprint: suppliedPayloadFingerprint = null,
     guest: rawGuest,
     source = 'calymob',
     appVersion = null,
   } = request.data || {};
   if (typeof clubId !== 'string' || typeof operationId !== 'string'
-    || typeof parentInscriptionId !== 'string' || !parentInscriptionId
+    || (rawParentInscriptionId !== null
+      && (typeof rawParentInscriptionId !== 'string' || !rawParentInscriptionId))
     || !/^[A-Za-z0-9_-]+$/.test(clubId) || !/^[A-Za-z0-9_-]+$/.test(operationId)) {
     throw new HttpsError('invalid-argument', 'Paramètres d’inscription invité invalides.');
   }
+  const parentInscriptionId = rawParentInscriptionId || null;
   const requestId = registrationRequestId(rawRequestId);
   const [guest] = requestedGuests([rawGuest]);
+  const payloadFingerprint = guestPayloadFingerprint({
+    clubId, operationId, parentInscriptionId, guest,
+  });
+  if (suppliedPayloadFingerprint !== null
+    && suppliedPayloadFingerprint !== payloadFingerprint) {
+    throw new HttpsError('invalid-argument', 'Empreinte de demande invité invalide.');
+  }
   const member = await requireMember(clubId, uid);
   const memberData = member.data();
   const { operationRef, inscriptionsRef } = refs(clubId, operationId);
-  const parentRef = inscriptionsRef.doc(parentInscriptionId);
+  const parentRef = parentInscriptionId ? inscriptionsRef.doc(parentInscriptionId) : null;
   const guestRef = inscriptionsRef.doc();
   const requestRef = operationRef.collection('registration_requests').doc(requestId);
 
@@ -598,35 +653,52 @@ const addGuestToEvent = onCall({ region: REGION }, async request => {
     const [operationSnap, inscriptionsSnap, parentSnap, requestSnap] = await Promise.all([
       transaction.get(operationRef),
       transaction.get(inscriptionsRef),
-      transaction.get(parentRef),
+      parentRef ? transaction.get(parentRef) : Promise.resolve(null),
       transaction.get(requestRef),
     ]);
-    if (!operationSnap.exists || !parentSnap.exists) {
+    if (!operationSnap.exists || (parentRef && !parentSnap.exists)) {
       throw new HttpsError('not-found', 'Événement ou inscription principale introuvable.');
     }
     if (requestSnap.exists) {
       const previous = requestSnap.data();
-      if (previous.member_id !== uid || previous.parent_inscription_id !== parentInscriptionId) {
+      if (previous.member_id !== uid
+        || (previous.parent_inscription_id || null) !== parentInscriptionId) {
         throw new HttpsError('permission-denied', 'Cette demande appartient à une autre inscription.');
+      }
+      if (previous.payload_fingerprint
+        && previous.payload_fingerprint !== payloadFingerprint) {
+        throw new HttpsError(
+          'failed-precondition',
+          'Cette demande a déjà été utilisée avec un autre invité.',
+        );
       }
       return { guestInscriptionId: previous.guest_inscription_id, idempotent: true };
     }
-    const parent = parentSnap.data();
-    if (parent.membre_id !== uid || parent.is_guest === true
-      || parent.registration_status === 'canceled' || parent.registration_status === 'waitlisted') {
-      throw new HttpsError('permission-denied', 'Seul le membre inscrit peut ajouter un invité.');
-    }
     const operation = operationSnap.data();
-    if (operation.allow_guests !== true) {
-      throw new HttpsError('failed-precondition', 'Les invités ne sont pas autorisés.');
+    const parent = parentSnap?.data() || null;
+    const standaloneStaffFlow = parent === null;
+    if (standaloneStaffFlow) {
+      if (!canAddStandaloneGuest(memberData, uid, operation)) {
+        throw new HttpsError('permission-denied', 'Ajout invité réservé au staff de l’événement.');
+      }
+    } else {
+      if (parent.membre_id !== uid || parent.is_guest === true
+        || parent.registration_status === 'canceled' || parent.registration_status === 'waitlisted') {
+        throw new HttpsError('permission-denied', 'Seul le membre inscrit peut ajouter un invité.');
+      }
+      if (operation.allow_guests !== true) {
+        throw new HttpsError('failed-precondition', 'Les invités ne sont pas autorisés.');
+      }
     }
     const existingGuests = inscriptionsSnap.docs.filter(doc => {
       const data = doc.data();
-      return data.parent_inscription_id === parentInscriptionId
+      return parentInscriptionId !== null
+        && data.parent_inscription_id === parentInscriptionId
         && data.registration_status !== 'canceled';
     });
     const maxGuests = Number(operation.max_guests_per_member);
-    if (Number.isInteger(maxGuests) && maxGuests >= 0 && existingGuests.length + 1 > maxGuests) {
+    if (!standaloneStaffFlow && Number.isInteger(maxGuests) && maxGuests >= 0
+      && existingGuests.length + 1 > maxGuests) {
       throw new HttpsError('failed-precondition', 'Nombre maximal d’invités atteint.');
     }
     const count = inscriptionsSnap.docs.filter(doc => ACTIVE_STATUSES.has(
@@ -635,7 +707,8 @@ const addGuestToEvent = onCall({ region: REGION }, async request => {
     assertRegistrationOpen(operation, count, 1);
     const pricing = guestPricing(operation, guest);
     const now = admin.firestore.Timestamp.now();
-    const registrationStatus = parent.registration_status;
+    const registrationStatus = parent?.registration_status
+      || registrationStatusAfterPromotion(operation);
     transaction.set(guestRef, guestRegistrationPayload({
       operation,
       operationId,
@@ -644,7 +717,7 @@ const addGuestToEvent = onCall({ region: REGION }, async request => {
       guestRef,
       parentInscriptionId,
       registrationStatus,
-      paymentExpiresAt: parent.payment_expires_at || null,
+      paymentExpiresAt: parent?.payment_expires_at || null,
       member: memberData,
       uid,
       source,
@@ -655,6 +728,7 @@ const addGuestToEvent = onCall({ region: REGION }, async request => {
       member_id: uid,
       parent_inscription_id: parentInscriptionId,
       guest_inscription_id: guestRef.id,
+      payload_fingerprint: payloadFingerprint,
       registration_status: registrationStatus,
       created_at: now,
     });
@@ -1070,6 +1144,9 @@ module.exports = {
   promotionCandidateAfterWithdrawal,
   promotionCandidatesAfterWithdrawal,
   canManageWaitlist,
+  canAddStandaloneGuest,
+  memberRegistrationPrice,
+  guestPayloadFingerprint,
   guestPricing,
   joinEventWaitlist,
   registerForEvent,
