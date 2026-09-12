@@ -32,6 +32,7 @@ const { FieldValue } = require('firebase-admin/firestore');
 const FUNCTION_NAME = 'autoClosePoolSessions';
 const FUNCTION_REGION = 'europe-west1';
 const STALE_THRESHOLD_MS = 18 * 60 * 60 * 1000; // 18h
+const CARNET_PROCESSING_VERSION = 2;
 
 function sessionDateFrom(data, sessionId) {
   const timestampDate = data.date?.toDate?.();
@@ -50,11 +51,17 @@ function sessionDateFrom(data, sessionId) {
 }
 
 function isAutoCloseCandidate(data, sessionId, cutoff) {
-  if (data.status === 'closed') return false;
-
   const usesCurrentFinishedState = data.statut === 'termine';
   const usesLegacyOpenState = data.status === 'open';
   if (!usesCurrentFinishedState && !usesLegacyOpenState) return false;
+
+  const processingVersion = Number(data.carnet_processing_version || 0);
+  if (
+    data.status === 'closed' &&
+    (!usesCurrentFinishedState || processingVersion >= CARNET_PROCESSING_VERSION)
+  ) {
+    return false;
+  }
 
   const sessionDate = sessionDateFrom(data, sessionId);
   return sessionDate !== null && sessionDate < cutoff;
@@ -80,6 +87,7 @@ async function loadPendingSessionDocs(sessionsRef) {
 async function closeEligiblePoolSessions(sessionsRef, clubId, cutoff) {
   const sessionDocs = await loadPendingSessionDocs(sessionsRef);
   let closed = 0;
+  let reprocessed = 0;
 
   for (const sessionDoc of sessionDocs) {
     const data = sessionDoc.data();
@@ -89,13 +97,19 @@ async function closeEligiblePoolSessions(sessionsRef, clubId, cutoff) {
       `[${FUNCTION_NAME}] auto-closing ${clubId}/${sessionDoc.id}`
     );
     try {
-      await sessionDoc.ref.update({
+      const wasAlreadyClosed = data.status === 'closed';
+      const update = {
         status: 'closed',
-        closedBy: 'auto',
-        closedAt: FieldValue.serverTimestamp(),
-        auto_closed_at: FieldValue.serverTimestamp(),
-      });
-      closed++;
+        carnet_processing_version: CARNET_PROCESSING_VERSION,
+      };
+      if (!wasAlreadyClosed) {
+        update.closedBy = 'auto';
+        update.closedAt = FieldValue.serverTimestamp();
+        update.auto_closed_at = FieldValue.serverTimestamp();
+      }
+      await sessionDoc.ref.update(update);
+      if (wasAlreadyClosed) reprocessed++;
+      else closed++;
     } catch (err) {
       console.error(
         `[${FUNCTION_NAME}] failed to close ${clubId}/${sessionDoc.id}:`,
@@ -104,7 +118,7 @@ async function closeEligiblePoolSessions(sessionsRef, clubId, cutoff) {
     }
   }
 
-  return { scanned: sessionDocs.length, closed };
+  return { scanned: sessionDocs.length, closed, reprocessed };
 }
 
 const autoClosePoolSessions = onSchedule(
@@ -119,6 +133,7 @@ const autoClosePoolSessions = onSchedule(
     const db = admin.firestore();
     const cutoff = new Date(Date.now() - STALE_THRESHOLD_MS);
     let totalClosed = 0;
+    let totalReprocessed = 0;
     let totalScanned = 0;
 
     const clubsSnap = await db.collection('clubs').get();
@@ -136,10 +151,12 @@ const autoClosePoolSessions = onSchedule(
       );
       totalScanned += result.scanned;
       totalClosed += result.closed;
+      totalReprocessed += result.reprocessed;
     }
 
     console.log(
-      `[${FUNCTION_NAME}] cycle complete: scanned=${totalScanned}, closed=${totalClosed} (cutoff=${cutoff.toISOString()})`
+      `[${FUNCTION_NAME}] cycle complete: scanned=${totalScanned}, closed=${totalClosed}, ` +
+        `reprocessed=${totalReprocessed} (cutoff=${cutoff.toISOString()})`
     );
   }
 );
@@ -147,6 +164,7 @@ const autoClosePoolSessions = onSchedule(
 module.exports = {
   autoClosePoolSessions,
   closeEligiblePoolSessions,
+  CARNET_PROCESSING_VERSION,
   isAutoCloseCandidate,
   loadPendingSessionDocs,
   sessionDateFrom,

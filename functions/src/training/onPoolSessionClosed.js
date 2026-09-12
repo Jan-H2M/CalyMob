@@ -34,6 +34,17 @@ const FUNCTION_NAME = 'onPoolSessionClosed';
 const FUNCTION_REGION = 'europe-west1';
 // Each attendee writes up to 2 docs → keep below the 500-write batch ceiling.
 const BATCH_OPS_LIMIT = 450;
+const CARNET_PROCESSING_VERSION = 2;
+
+function shouldProcessSessionUpdate(before, after) {
+  if (after.status !== 'closed') return false;
+  if (before.status !== 'closed') return true;
+  const beforeVersion = Number(before.carnet_processing_version || 0);
+  const afterVersion = Number(after.carnet_processing_version || 0);
+  return (
+    afterVersion >= CARNET_PROCESSING_VERSION && afterVersion > beforeVersion
+  );
+}
 
 const onPoolSessionClosed = onDocumentUpdated(
   {
@@ -48,8 +59,7 @@ const onPoolSessionClosed = onDocumentUpdated(
     const after = event.data && event.data.after && event.data.after.data();
     if (!before || !after) return;
 
-    if (before.status === 'closed') return;
-    if (after.status !== 'closed') return;
+    if (!shouldProcessSessionUpdate(before, after)) return;
 
     const dryRun = process.env.DRY_RUN_POOL_CLOSE === 'true';
 
@@ -81,10 +91,11 @@ const onPoolSessionClosed = onDocumentUpdated(
       after.lieu ||
       after.location_name ||
       'Watermael-Boitsfort';
-    const sessionDate = parseSessionDate(sessionId);
+    const sessionDate = parseSessionDate(sessionId, after.date);
 
     let plannedLogbookCreates = 0;
     let plannedTaskCreates = 0;
+    let plannedDateRepairs = 0;
     let skippedExistingLogbook = 0;
     let skippedExistingTask = 0;
     let skippedNoValidator = 0;
@@ -149,14 +160,7 @@ const onPoolSessionClosed = onDocumentUpdated(
       const memberId = att.memberId || att.membre_id || attDoc.id;
       const memberName = att.memberName || att.member_name || 'Membre';
       const ga = att.groupAssignment || null;
-
-      if (!ga || !ga.validatorId) {
-        console.warn(
-          `[${FUNCTION_NAME}] attendee ${memberId} training but no validatorId — skipping`
-        );
-        skippedNoValidator++;
-        continue;
-      }
+      if (!ga) continue;
 
       // Peers in the same group (level + groupNumber), excluding self.
       const peers = (groupPeers.get(peerKey(ga.level, ga.groupNumber)) || [])
@@ -173,21 +177,34 @@ const onPoolSessionClosed = onDocumentUpdated(
         .get();
 
       // ---- Idempotency: existing open monitor_observation task? ----
-      const existingTask = await db
-        .collection('clubs')
-        .doc(clubId)
-        .collection('formation_tasks')
-        .where('type', '==', 'monitor_observation')
-        .where('member_id', '==', memberId)
-        .where('context.pool_session_id', '==', sessionId)
-        .limit(1)
-        .get();
+      const existingTask = ga.validatorId
+        ? await db
+            .collection('clubs')
+            .doc(clubId)
+            .collection('formation_tasks')
+            .where('type', '==', 'monitor_observation')
+            .where('member_id', '==', memberId)
+            .where('context.pool_session_id', '==', sessionId)
+            .limit(1)
+            .get()
+        : null;
 
       let logbookEntryId = existingLogbook.empty
         ? null
         : existingLogbook.docs[0].id;
       if (!existingLogbook.empty) {
         skippedExistingLogbook++;
+        const existingEntry = existingLogbook.docs[0];
+        if (!sameTimestamp(existingEntry.data().date, sessionDate)) {
+          plannedDateRepairs++;
+          if (!dryRun) {
+            batch.update(existingEntry.ref, {
+              date: sessionDate,
+              updated_at: FieldValue.serverTimestamp(),
+            });
+            batchOps++;
+          }
+        }
       } else {
         plannedLogbookCreates++;
         if (!dryRun) {
@@ -209,8 +226,10 @@ const onPoolSessionClosed = onDocumentUpdated(
             source: 'piscine',
             session_id: sessionId,
             theme_snapshot: ga.themeSnapshot || null,
-            validator_id: ga.validatorId,
-            validator_name: monitorNames.get(ga.validatorId) || null,
+            validator_id: ga.validatorId || null,
+            validator_name: ga.validatorId
+              ? monitorNames.get(ga.validatorId) || null
+              : null,
             moniteur_ids: moniteurIds,
             moniteur_names: moniteurNames,
             // Pool-specific snapshot — surfaces in the carnet detail view.
@@ -246,7 +265,13 @@ const onPoolSessionClosed = onDocumentUpdated(
         }
       }
 
-      if (!existingTask.empty) {
+      if (!ga.validatorId) {
+        console.warn(
+          `[${FUNCTION_NAME}] attendee ${memberId} has no validatorId — ` +
+            'personal logbook only'
+        );
+        skippedNoValidator++;
+      } else if (existingTask && !existingTask.empty) {
         skippedExistingTask++;
       } else {
         plannedTaskCreates++;
@@ -307,6 +332,7 @@ const onPoolSessionClosed = onDocumentUpdated(
     console.log(
       `[${FUNCTION_NAME}] session ${sessionId} closed — dryRun=${dryRun} ` +
         `logbook_creates=${plannedLogbookCreates} (skipped_existing=${skippedExistingLogbook}) ` +
+        `date_repairs=${plannedDateRepairs} ` +
         `task_creates=${plannedTaskCreates} (skipped_existing=${skippedExistingTask}) ` +
         `no_validator=${skippedNoValidator}`
     );
@@ -324,8 +350,13 @@ function buildRosterKey(sessionId, groupKey, validatorId) {
   return [sessionId, groupKey || 'unknown-group', validatorId].join('::');
 }
 
-function parseSessionDate(sessionId) {
-  // Calypso pool sessions are keyed by YYYY-MM-DD (Europe/Brussels).
+function parseSessionDate(sessionId, rawDate) {
+  if (rawDate?.toDate?.() instanceof Date) return rawDate;
+  if (rawDate instanceof Date && !Number.isNaN(rawDate.getTime())) {
+    return Timestamp.fromDate(rawDate);
+  }
+
+  // Older Calypso pool sessions were keyed by YYYY-MM-DD.
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(sessionId);
   if (m) {
     const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
@@ -334,10 +365,26 @@ function parseSessionDate(sessionId) {
   return Timestamp.now();
 }
 
+function timestampMillis(value) {
+  if (typeof value?.toMillis === 'function') return value.toMillis();
+  const date = typeof value?.toDate === 'function' ? value.toDate() : value;
+  return date instanceof Date && !Number.isNaN(date.getTime())
+    ? date.getTime()
+    : null;
+}
+
+function sameTimestamp(left, right) {
+  const leftMillis = timestampMillis(left);
+  const rightMillis = timestampMillis(right);
+  return leftMillis !== null && rightMillis !== null && leftMillis === rightMillis;
+}
+
 module.exports = {
   onPoolSessionClosed,
   // Exported for tests
   parseSessionDate,
+  sameTimestamp,
+  shouldProcessSessionUpdate,
   composeTaskTitle,
   buildRosterKey,
 };

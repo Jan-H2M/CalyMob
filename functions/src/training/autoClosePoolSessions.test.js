@@ -7,6 +7,7 @@ jest.mock('firebase-admin/firestore', () => ({
 }));
 
 const {
+  CARNET_PROCESSING_VERSION,
   closeEligiblePoolSessions,
   isAutoCloseCandidate,
   loadPendingSessionDocs,
@@ -55,12 +56,22 @@ describe('autoClosePoolSessions schema compatibility', () => {
   });
 
   test.each([
-    [{ statut: 'termine', status: 'closed' }, '2026-08-25'],
+    [{ statut: 'termine', status: 'closed', carnet_processing_version: 2 }, '2026-08-25'],
     [{ statut: 'publie' }, '2026-08-25'],
     [{ statut: 'termine' }, '2026-09-12'],
     [{ statut: 'termine' }, 'not-a-date'],
   ])('rejects closed, unfinished, recent or undated sessions', (data, id) => {
     expect(isAutoCloseCandidate(data, id, cutoff)).toBe(false);
+  });
+
+  test('accepts a finished closed session once when its processing version is stale', () => {
+    expect(
+      isAutoCloseCandidate(
+        { statut: 'termine', status: 'closed' },
+        '2026-08-25',
+        cutoff,
+      ),
+    ).toBe(true);
   });
 
   test('uses a Firestore timestamp before falling back to the session ID', () => {
@@ -102,14 +113,21 @@ describe('autoClosePoolSessions schema compatibility', () => {
 
     await expect(
       closeEligiblePoolSessions(ref, 'calypso', cutoff),
-    ).resolves.toEqual({ scanned: 2, closed: 1 });
+    ).resolves.toEqual({ scanned: 2, closed: 1, reprocessed: 1 });
     expect(eligible.ref.update).toHaveBeenCalledTimes(1);
     expect(eligible.ref.update).toHaveBeenCalledWith({
       status: 'closed',
+      carnet_processing_version: CARNET_PROCESSING_VERSION,
       closedBy: 'auto',
       closedAt: '__server_timestamp__',
       auto_closed_at: '__server_timestamp__',
     });
-    expect(alreadyClosed.ref.update).not.toHaveBeenCalled();
+    expect(alreadyClosed.ref.update).toHaveBeenCalledTimes(1);
+    expect(alreadyClosed.ref.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'closed',
+        carnet_processing_version: CARNET_PROCESSING_VERSION,
+      }),
+    );
   });
 });
