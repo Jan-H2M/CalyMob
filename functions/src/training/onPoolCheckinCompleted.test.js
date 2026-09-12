@@ -148,6 +148,13 @@ describe('onPoolCheckinCompleted selected group supervision', () => {
               ],
             },
           ],
+          '2eme_heure': [
+            {
+              order: 0,
+              theme: 'Deuxième heure',
+              encadrants: [{ membre_id: 'validator-second-hour' }],
+            },
+          ],
         },
       },
     },
@@ -302,6 +309,85 @@ describe('onPoolCheckinCompleted selected group supervision', () => {
       validatorId: null,
       monitorIds: [],
       themeSnapshot: 'No monitor',
+    });
+  });
+
+  test('v4 uses its outer hour key when no embedded hour is supplied', async () => {
+    const selection = selectedGroupContract({
+      level: '2*',
+      groupNumber: 1,
+      groupKey: '2star_groupe1',
+    }, {}, '2eme_heure');
+
+    expect(selection).toMatchObject({
+      hourKey: '2eme_heure',
+      contractConflict: { hourKey: false },
+    });
+    await expect(resolveGroupSupervision(
+      makeSupervisionDb(session),
+      'calypso',
+      'session-a',
+      selection,
+    )).resolves.toEqual({
+      validatorId: 'validator-second-hour',
+      monitorIds: ['validator-second-hour'],
+      themeSnapshot: 'Deuxième heure',
+    });
+  });
+
+  test.each([
+    ['first outer versus embedded second', '1ere_heure', 'heure', '2eme_heure'],
+    ['second outer versus embedded first', '2eme_heure', 'hourKey', '1ere_heure'],
+  ])('v4 fails closed for %s', async (
+    _label,
+    outerHour,
+    embeddedField,
+    embeddedHour,
+  ) => {
+    const selection = selectedGroupContract({
+      level: '2*',
+      groupNumber: 1,
+      groupKey: '2star_groupe1',
+      [embeddedField]: embeddedHour,
+    }, {}, outerHour);
+
+    expect(selection).toMatchObject({
+      hourKey: outerHour,
+      contractConflict: { hourKey: true },
+    });
+    await expect(resolveGroupSupervision(
+      makeSupervisionDb(session),
+      'calypso',
+      'session-a',
+      selection,
+    )).resolves.toEqual({
+      validatorId: null,
+      monitorIds: [],
+      themeSnapshot: null,
+    });
+  });
+
+  test('flat legacy completion uses embedded hour without outer context', async () => {
+    const selection = selectedGroupContract(null, {
+      level: '2*',
+      group_number: 1,
+      group_key: '2*-1',
+      hourKey: '2eme_heure',
+    });
+
+    expect(selection).toMatchObject({
+      hourKey: '2eme_heure',
+      contractConflict: { hourKey: false },
+    });
+    await expect(resolveGroupSupervision(
+      makeSupervisionDb(session),
+      'calypso',
+      'session-a',
+      selection,
+    )).resolves.toEqual({
+      validatorId: 'validator-second-hour',
+      monitorIds: ['validator-second-hour'],
+      themeSnapshot: 'Deuxième heure',
     });
   });
 

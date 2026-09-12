@@ -61,7 +61,28 @@ function selectedGroupContract(rawGroup, completion = {}, hourKey = null) {
   const rawGroupNumber =
     group.groupNumber ?? group.group_number ??
     completion.groupNumber ?? completion.group_number;
-  const rawHourKey = group.heure || group.hourKey || hourKey || null;
+  const cleanHourKey = (value) => {
+    if (value == null) return null;
+    const normalized = String(value).trim();
+    return normalized || null;
+  };
+  const outerHourKey = cleanHourKey(hourKey);
+  const embeddedHourKeys = [
+    group.heure,
+    group.hourKey,
+    completion.heure,
+    completion.hourKey,
+  ].map(cleanHourKey).filter(Boolean);
+  const uniqueEmbeddedHourKeys = Array.from(new Set(embeddedHourKeys));
+  const embeddedHourKey = uniqueEmbeddedHourKeys[0] || null;
+  // In the v4 shape, the `completion.hours` map key is authoritative. Any
+  // contradictory embedded value must fail closed instead of selecting a
+  // course from another hour. A flat legacy payload has no outer context and
+  // may therefore keep using its embedded hour.
+  const hourKeyConflict = uniqueEmbeddedHourKeys.length > 1 || Boolean(
+    outerHourKey && embeddedHourKey && embeddedHourKey !== outerHourKey
+  );
+  const resolvedHourKey = outerHourKey || embeddedHourKey;
   const level = rawLevel;
   const groupKey = normalizeGroupKey(
     rawGroupKey
@@ -78,12 +99,15 @@ function selectedGroupContract(rawGroup, completion = {}, hourKey = null) {
     level,
     groupNumber,
     groupKey,
-    hourKey: rawHourKey,
+    hourKey: resolvedHourKey,
     contractPresence: {
       level: Boolean(rawLevel),
       groupNumber: rawGroupNumber != null && String(rawGroupNumber).trim() !== '',
       groupKey: Boolean(rawGroupKey && String(rawGroupKey).trim()),
-      hourKey: Boolean(rawHourKey),
+      hourKey: Boolean(resolvedHourKey),
+    },
+    contractConflict: {
+      hourKey: hourKeyConflict,
     },
     monitorIds,
     themeSnapshot:
@@ -535,6 +559,9 @@ function findPlannedGroup(session, selection) {
       groupKey: Boolean(selection.groupKey),
       hourKey: Boolean(selection.hourKey),
     };
+    if (selection.contractConflict && selection.contractConflict.hourKey) {
+      return null;
+    }
     if (!presence.level || !presence.groupNumber ||
         !presence.groupKey || !presence.hourKey) {
       return null;
