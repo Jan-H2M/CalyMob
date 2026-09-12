@@ -10,7 +10,10 @@ import '../services/operation_service.dart';
 
 /// Provider pour l'état des opérations
 class OperationProvider with ChangeNotifier {
-  final OperationService _operationService = OperationService();
+  final OperationService _operationService;
+
+  OperationProvider({OperationService? operationService})
+      : _operationService = operationService ?? OperationService();
 
   // Stream subscriptions for memory management
   StreamSubscription<List<Operation>>? _operationsSubscription;

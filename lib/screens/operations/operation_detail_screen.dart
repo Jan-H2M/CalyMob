@@ -54,10 +54,22 @@ class OperationDetailScreen extends StatefulWidget {
   final String operationId;
   final String clubId;
 
+  @visibleForTesting
+  final OperationService? operationService;
+
+  @visibleForTesting
+  final ProfileService? profileService;
+
+  @visibleForTesting
+  final bool loadAuxiliaryProfileData;
+
   const OperationDetailScreen({
     Key? key,
     required this.operationId,
     required this.clubId,
+    this.operationService,
+    this.profileService,
+    this.loadAuxiliaryProfileData = true,
   }) : super(key: key);
 
   @override
@@ -66,10 +78,10 @@ class OperationDetailScreen extends StatefulWidget {
 
 class _OperationDetailScreenState extends State<OperationDetailScreen>
     with WidgetsBindingObserver {
-  final ProfileService _profileService = ProfileService();
+  late final ProfileService _profileService;
   final LifrasService _lifrasService = LifrasService();
   final DiveLocationService _diveLocationService = DiveLocationService();
-  final OperationService _operationService = OperationService();
+  late final OperationService _operationService;
 
   MemberProfile? _userProfile;
   MemberProfile? _organisateurProfile;
@@ -187,9 +199,13 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   @override
   void initState() {
     super.initState();
+    _operationService = widget.operationService ?? OperationService();
+    _profileService = widget.profileService ?? ProfileService();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadOperation();
-      _loadUserProfile();
+      if (widget.loadAuxiliaryProfileData) {
+        _loadUserProfile();
+      }
     });
   }
 
@@ -1627,27 +1643,39 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     }
   }
 
-  Future<void> _handleUnregister() async {
+  void _showMissingInscriptionError() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Inscription introuvable. Actualisez l’événement puis réessayez.',
+        ),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+
+  Future<void> _handleLoadedInscriptionUnregister() async {
+    final inscriptionId = _userInscription?.id;
+    if (inscriptionId == null || inscriptionId.trim().isEmpty) {
+      _showMissingInscriptionError();
+      return;
+    }
+    await _handleUnregister(inscriptionId);
+  }
+
+  Future<void> _handleUnregister(String myInscriptionId) async {
     final authProvider = context.read<AuthProvider>();
     final operationProvider = context.read<OperationProvider>();
     final operation = operationProvider.selectedOperation;
     final userId = authProvider.currentUser?.uid ?? '';
 
-    // Find guests this user brought along
-    final myInscriptionId = _userInscription?.id;
-    if (myInscriptionId == null || myInscriptionId.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Inscription introuvable. Actualisez l’événement puis réessayez.',
-            ),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+    if (myInscriptionId.trim().isEmpty) {
+      _showMissingInscriptionError();
       return;
     }
+
+    // Find guests this user brought along
     final allParticipants = operationProvider.selectedOperationParticipants;
     final myGuests = allParticipants
         .where((p) => p.isGuest && p.parentInscriptionId == myInscriptionId)
@@ -4671,7 +4699,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             width: double.infinity,
             height: 50,
             child: OutlinedButton.icon(
-              onPressed: _handleUnregister,
+              onPressed: _handleLoadedInscriptionUnregister,
               icon: const Icon(Icons.close),
               label: const Text('Quitter la liste d’attente'),
             ),
@@ -4741,7 +4769,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               Expanded(
                 child: OperationUnregisterButton(
                   deadlinePassed: deadlinePassed,
+                  inscriptionId: userInscription?.id,
                   onPressed: _handleUnregister,
+                  onMissingInscription: _showMissingInscriptionError,
                 ),
               ),
             ],

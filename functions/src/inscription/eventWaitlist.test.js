@@ -335,6 +335,42 @@ describe('unregisterFromEvent callable', () => {
     expect(patch).not.toHaveProperty('transaction_id');
   });
 
+  test('cancels only the exact visible registration when the member has two active records', async () => {
+    const memberId = 'member-1';
+    const historicalId = 'historical-registration';
+    const visibleId = 'visible-active-registration';
+    const docs = [
+      makeDoc(historicalId, {
+        membre_id: memberId,
+        registration_status: 'confirmed',
+        date_inscription: new Date('2026-01-01T10:00:00Z'),
+      }),
+      makeDoc(visibleId, {
+        membre_id: memberId,
+        registration_status: 'confirmed',
+        date_inscription: new Date('2026-09-01T10:00:00Z'),
+      }),
+    ];
+    const { db } = setupDb([docs]);
+
+    const result = await unregisterFromEvent({
+      auth: { uid: memberId },
+      data: {
+        clubId: 'calypso',
+        operationId: 'event-1',
+        inscriptionId: visibleId,
+        source: 'calymob',
+      },
+    });
+
+    expect(result.status).toBe('canceled');
+    const canceledIds = db.transactions[0].update.mock.calls
+      .filter(([, update]) => update.registration_status === 'canceled')
+      .map(([ref]) => ref.id);
+    expect(canceledIds).toEqual([visibleId]);
+    expect(canceledIds).not.toContain(historicalId);
+  });
+
   test('blocks a member from cancelling somebody else', async () => {
     const docs = [makeDoc('other', { membre_id: 'member-2', registration_status: 'confirmed' })];
     setupDb([docs]);

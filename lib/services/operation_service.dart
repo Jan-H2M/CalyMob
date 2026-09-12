@@ -432,7 +432,7 @@ class OperationService {
     required String userId,
     String? guestAction,
   }) async {
-    if (inscriptionId.isEmpty) {
+    if (inscriptionId.trim().isEmpty) {
       throw ArgumentError.value(
         inscriptionId,
         'inscriptionId',

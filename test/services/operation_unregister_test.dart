@@ -1,4 +1,5 @@
 import 'package:calymob/services/operation_service.dart';
+import 'package:calymob/providers/operation_provider.dart';
 import 'package:cloud_functions_platform_interface/cloud_functions_platform_interface.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -68,6 +69,29 @@ class _MockFirebaseFunctionsPlatform extends FirebaseFunctionsPlatform {
     required String region,
   }) {
     return _MockFirebaseFunctionsPlatform(app: app, region: region);
+  }
+}
+
+class _RecordingOperationService extends OperationService {
+  _RecordingOperationService() : super(firestore: FakeFirebaseFirestore());
+
+  final calls = <Map<String, dynamic>>[];
+
+  @override
+  Future<void> unregisterFromOperation({
+    required String clubId,
+    required String operationId,
+    required String inscriptionId,
+    required String userId,
+    String? guestAction,
+  }) async {
+    calls.add({
+      'clubId': clubId,
+      'operationId': operationId,
+      'inscriptionId': inscriptionId,
+      'userId': userId,
+      'guestAction': guestAction,
+    });
   }
 }
 
@@ -152,6 +176,44 @@ void main() {
       throwsArgumentError,
     );
     expect(calls, isEmpty);
+  });
+
+  test('fails closed before the callable when inscription id is whitespace',
+      () async {
+    await expectLater(
+      service.unregisterFromOperation(
+        clubId: clubId,
+        operationId: operationId,
+        inscriptionId: '   ',
+        userId: 'member-1',
+      ),
+      throwsArgumentError,
+    );
+    expect(calls, isEmpty);
+  });
+
+  test('provider forwards the exact inscription id once to the service',
+      () async {
+    final recordingService = _RecordingOperationService();
+    final provider = OperationProvider(operationService: recordingService);
+
+    await provider.unregisterFromOperation(
+      clubId: clubId,
+      operationId: operationId,
+      inscriptionId: inscriptionId,
+      userId: 'member-1',
+      guestAction: 'transfer',
+    );
+
+    expect(recordingService.calls, [
+      {
+        'clubId': clubId,
+        'operationId': operationId,
+        'inscriptionId': inscriptionId,
+        'userId': 'member-1',
+        'guestAction': 'transfer',
+      }
+    ]);
   });
 
   test('keeps the exact callable error available to the screen', () async {
