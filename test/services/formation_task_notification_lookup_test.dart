@@ -1,4 +1,6 @@
+import 'package:calymob/models/formation_task.dart';
 import 'package:calymob/services/formation_task_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -49,5 +51,42 @@ void main() {
         .fetchAssignedTask(clubId, 'task-1', 'monitor-1');
 
     expect(task, isNull);
+  });
+
+  test('history includes all states for only the current assignee', () async {
+    final firestore = FakeFirebaseFirestore();
+    final collection = firestore.collection('clubs/$clubId/formation_tasks');
+    for (final entry in const {
+      'open': 'open',
+      'done': 'done',
+      'dismissed': 'dismissed',
+      'expired': 'expired',
+    }.entries) {
+      await collection.doc(entry.key).set({
+        ...taskData(assignee: 'monitor-1'),
+        'status': entry.value,
+        'updated_at': Timestamp.fromDate(
+          DateTime.utc(2026, 9, entry.key.length),
+        ),
+      });
+    }
+    await collection.doc('other-user').set({
+      ...taskData(assignee: 'monitor-2'),
+      'status': 'done',
+    });
+
+    final tasks = await FormationTaskService(firestore: firestore)
+        .streamUserHistory(clubId, 'monitor-1')
+        .first;
+
+    expect(tasks, hasLength(4));
+    expect(tasks.map((task) => task.status).toSet(), {
+      FormationTaskStatus.open,
+      FormationTaskStatus.done,
+      FormationTaskStatus.dismissed,
+      FormationTaskStatus.expired,
+    });
+    expect(tasks.any((task) => task.currentAssigneeId == 'monitor-2'), isFalse);
+    expect(tasks.first.id, 'dismissed');
   });
 }

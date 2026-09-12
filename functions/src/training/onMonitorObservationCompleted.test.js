@@ -9,6 +9,7 @@ jest.mock('firebase-admin/firestore', () => ({
 
 const {
   buildObservationCanonicalKey,
+  completionDataChanged,
   firstNonBlank,
   handleMonitorObservationCompleted,
   isAlreadyExistsError,
@@ -72,6 +73,23 @@ describe('monitor observation completion helpers', () => {
     expect(isAlreadyExistsError({ code: 'already-exists' })).toBe(true);
   });
 
+  test('distinguishes a correction from an unrelated done task update', () => {
+    const before = {
+      completion_data: { verdict: 'acquis', comment: 'Initial' },
+    };
+    expect(completionDataChanged(before, { ...before })).toBe(false);
+    expect(
+      completionDataChanged(before, {
+        completion_data: { comment: 'Initial', verdict: 'acquis' },
+      }),
+    ).toBe(false);
+    expect(
+      completionDataChanged(before, {
+        completion_data: { verdict: 'a_revoir', comment: 'Corrigé' },
+      }),
+    ).toBe(true);
+  });
+
   test('completed absent task exits before any observation write', async () => {
     const event = {
       params: { clubId: 'calypso', taskId: 'legacy-duplicate' },
@@ -90,6 +108,107 @@ describe('monitor observation completion helpers', () => {
     const db = {
       collection: () => {
         throw new Error('Firestore must not be touched for absence');
+      },
+    };
+
+    await expect(
+      handleMonitorObservationCompleted(event, db),
+    ).resolves.toBeUndefined();
+  });
+
+  test('done-to-done correction updates the deterministic observation', async () => {
+    const set = jest.fn().mockResolvedValue(undefined);
+    const get = jest.fn().mockResolvedValue({ exists: true });
+    const observationRef = {};
+    const memberObservations = {
+      doc: jest.fn().mockReturnValue(observationRef),
+    };
+    const clubRef = {
+      collection: jest.fn((name) => {
+        if (name === 'member_observations') return memberObservations;
+        throw new Error(`Unexpected collection ${name}`);
+      }),
+    };
+    const db = {
+      collection: jest.fn().mockReturnValue({
+        doc: jest.fn().mockReturnValue(clubRef),
+      }),
+      runTransaction: jest.fn(async (callback) => callback({ get, set })),
+    };
+    const event = {
+      params: { clubId: 'calypso', taskId: 'observation-task' },
+      data: {
+        before: {
+          data: () => ({
+            status: 'done',
+            completion_data: { verdict: 'acquis', comment: 'Initial' },
+          }),
+        },
+        after: {
+          data: () => ({
+            type: 'monitor_observation',
+            status: 'done',
+            member_id: 'member-a',
+            member_name: 'Alice',
+            completed_by: 'monitor-a',
+            context: {
+              pool_session_id: 'session-a',
+              group_key: 'group-a',
+              theme_snapshot: 'Apnée',
+            },
+            completion_data: {
+              verdict: 'a_revoir',
+              comment: 'Corrigé',
+              observer_id: 'monitor-a',
+            },
+          }),
+        },
+      },
+    };
+
+    await handleMonitorObservationCompleted(event, db);
+
+    expect(memberObservations.doc).toHaveBeenCalledWith(
+      observationDocumentId(
+        buildObservationCanonicalKey({
+          clubId: 'calypso',
+          poolSessionId: 'session-a',
+          groupKey: 'group-a',
+          memberId: 'member-a',
+        }),
+      ),
+    );
+    expect(get).toHaveBeenCalledWith(observationRef);
+    expect(set).toHaveBeenCalledWith(
+      observationRef,
+      expect.objectContaining({
+        result: 'a_revoir',
+        comment: 'Corrigé',
+        corrected_at: '__server_timestamp__',
+      }),
+      { merge: true },
+    );
+    expect(set.mock.calls[0][1]).not.toHaveProperty('created_at');
+  });
+
+  test('unchanged done task update never touches Firestore', async () => {
+    const completion = { verdict: 'acquis' };
+    const event = {
+      params: { clubId: 'calypso', taskId: 'observation-task' },
+      data: {
+        before: { data: () => ({ status: 'done', completion_data: completion }) },
+        after: {
+          data: () => ({
+            type: 'monitor_observation',
+            status: 'done',
+            completion_data: completion,
+          }),
+        },
+      },
+    };
+    const db = {
+      collection: () => {
+        throw new Error('Firestore must not be touched');
       },
     };
 

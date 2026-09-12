@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
+import '../../models/actions_evaluations_view_model.dart';
 import '../../models/formation_task.dart';
 import '../../models/formation_task_roster.dart';
 import '../../providers/auth_provider.dart';
@@ -17,66 +18,13 @@ import 'historical_qr_scan_screen.dart';
 import 'logbook_dive_confirmation_screen.dart';
 import 'monitor_observation_roster_screen.dart';
 
-/// Durable action data shown in [ActionsEvaluationsScreen].
-///
-/// The screen deliberately reads the domain collections directly. Push delivery
-/// and notification history are only signals; neither is the source of truth.
-class PendingLogbookConfirmation {
-  final String id;
-  final String sourceMemberName;
-  final String locationName;
-  final String matchType;
-  final DateTime? createdAt;
-
-  const PendingLogbookConfirmation({
-    required this.id,
-    required this.sourceMemberName,
-    required this.locationName,
-    required this.matchType,
-    this.createdAt,
-  });
-
-  factory PendingLogbookConfirmation.fromFirestore(
-    QueryDocumentSnapshot<Map<String, dynamic>> document,
-  ) {
-    final data = document.data();
-    final dive = Map<String, dynamic>.from(
-      (data['dive_snapshot'] as Map?) ?? const {},
-    );
-    final createdAt = data['created_at'];
-    return PendingLogbookConfirmation(
-      id: document.id,
-      sourceMemberName:
-          (data['source_member_name'] as String?)?.trim().isNotEmpty == true
-              ? (data['source_member_name'] as String).trim()
-              : 'Un membre',
-      locationName:
-          (dive['location_name'] as String?)?.trim().isNotEmpty == true
-              ? (dive['location_name'] as String).trim()
-              : 'Plongée',
-      matchType: data['match_type'] as String? ?? 'none',
-      createdAt: createdAt is Timestamp ? createdAt.toDate() : null,
-    );
-  }
-
-  bool matches(String query) => _matchesSearch(query, [
-        sourceMemberName,
-        locationName,
-        'Carnet',
-        'plongée',
-        'confirmer',
-        'importer',
-        'ignorer',
-      ]);
-}
-
 class ActionsEvaluationsScreen extends StatefulWidget {
   final bool previewMode;
-  final List<PendingLogbookConfirmation> previewConfirmations;
+  final List<LogbookConfirmationAction> previewConfirmations;
   final List<FormationTask> previewTasks;
   final List<String> previewClubStatuten;
   final String? previewPlongeurCode;
-  final ValueChanged<PendingLogbookConfirmation>? onOpenConfirmation;
+  final ValueChanged<LogbookConfirmationAction>? onOpenConfirmation;
   final ValueChanged<FormationTask>? onOpenTask;
   final VoidCallback? onOpenHistoricalQr;
 
@@ -101,6 +49,7 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
   FormationTaskService? _taskService;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  ActionsEvaluationsSegment _segment = ActionsEvaluationsSegment.todo;
 
   @override
   void dispose() {
@@ -119,8 +68,10 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
             children: [
               _Header(
                 controller: _searchController,
+                segment: _segment,
                 onSearchChanged: (value) =>
                     setState(() => _searchQuery = value),
+                onSegmentChanged: (value) => setState(() => _segment = value),
               ),
               Expanded(child: _buildBody(context)),
             ],
@@ -163,7 +114,6 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
         .doc(FirebaseConfig.defaultClubId)
         .collection('logbook_dive_confirmations')
         .where('target_member_id', isEqualTo: userId)
-        .where('status', isEqualTo: 'pending')
         .snapshots();
 
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -177,7 +127,7 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
           );
         }
         return StreamBuilder<List<FormationTask>>(
-          stream: (_taskService ??= FormationTaskService()).streamUserInbox(
+          stream: (_taskService ??= FormationTaskService()).streamUserHistory(
             FirebaseConfig.defaultClubId,
             userId,
           ),
@@ -192,12 +142,12 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
             if (!confirmationSnapshot.hasData || !taskSnapshot.hasData) {
               return const Center(child: CircularProgressIndicator());
             }
-            final pending = confirmationSnapshot.data!.docs
-                .map(PendingLogbookConfirmation.fromFirestore)
+            final confirmations = confirmationSnapshot.data!.docs
+                .map(LogbookConfirmationAction.fromFirestore)
                 .toList(growable: false);
             return _buildContent(
               context,
-              confirmations: pending,
+              confirmations: confirmations,
               tasks: taskSnapshot.data!,
               canScanHistoricalQr: canScanHistoricalQr,
             );
@@ -209,29 +159,22 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
 
   Widget _buildContent(
     BuildContext context, {
-    required List<PendingLogbookConfirmation> confirmations,
+    required List<LogbookConfirmationAction> confirmations,
     required List<FormationTask> tasks,
     required bool canScanHistoricalQr,
   }) {
-    final visibleConfirmations = confirmations
-        .where((confirmation) => confirmation.matches(_searchQuery))
-        .toList()
-      ..sort((a, b) => _compareNewest(a.createdAt, b.createdAt));
-    final relevantTasks = tasks
-        .where((task) => task.belongsInActionsEvaluations && !task.isClosed)
-        .toList(growable: false);
-    final standaloneTasks = relevantTasks
-        .where(
-          (task) =>
-              task.type != FormationTaskType.monitorObservation &&
-              _taskMatchesSearch(task, _searchQuery),
-        )
-        .toList(growable: false);
-    final rosters = FormationTaskRoster.aggregate(relevantTasks)
-        .where((roster) => _rosterMatchesSearch(roster, _searchQuery))
-        .toList(growable: false);
+    final viewModel = ActionsEvaluationsViewModel.build(
+      confirmations: confirmations,
+      tasks: tasks,
+      segment: _segment,
+      searchQuery: _searchQuery,
+    );
+    final visibleConfirmations = viewModel.confirmations;
+    final standaloneTasks = viewModel.standaloneTasks;
+    final rosters = viewModel.rosters;
     final showHistoricalQr = canScanHistoricalQr &&
-        _matchesSearch(_searchQuery, const [
+        _segment != ActionsEvaluationsSegment.done &&
+        matchesActionsSearch(_searchQuery, const [
           'Scanner une carte papier',
           'Validation',
           'Contrôler une ancienne carte d’élève',
@@ -246,10 +189,22 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
         icon: _searchQuery.trim().isEmpty
             ? Icons.task_alt
             : Icons.search_off_rounded,
-        title:
-            _searchQuery.trim().isEmpty ? 'Tout est à jour' : 'Aucun résultat',
+        title: _searchQuery.trim().isEmpty
+            ? switch (_segment) {
+                ActionsEvaluationsSegment.todo => 'Tout est à jour',
+                ActionsEvaluationsSegment.done => 'Aucun historique',
+                ActionsEvaluationsSegment.all => 'Aucune action',
+              }
+            : 'Aucun résultat',
         body: _searchQuery.trim().isEmpty
-            ? 'Aucune action ou évaluation n’attend votre intervention.'
+            ? switch (_segment) {
+                ActionsEvaluationsSegment.todo =>
+                  'Aucune action ou évaluation n’attend votre intervention.',
+                ActionsEvaluationsSegment.done =>
+                  'Aucune action terminée n’est encore disponible.',
+                ActionsEvaluationsSegment.all =>
+                  'Aucune action ou évaluation n’est disponible.',
+              }
             : 'Essayez un autre terme de recherche.',
       );
     }
@@ -258,9 +213,11 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
         if (visibleConfirmations.isNotEmpty) ...[
-          const _SectionTitle(
+          _SectionTitle(
             icon: Icons.scuba_diving_outlined,
-            title: 'Plongées à confirmer',
+            title: _segment == ActionsEvaluationsSegment.todo
+                ? 'Plongées à confirmer'
+                : 'Confirmations de plongée',
           ),
           const SizedBox(height: 8),
           for (final confirmation in visibleConfirmations)
@@ -305,7 +262,7 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
 
   void _openConfirmation(
     BuildContext context,
-    PendingLogbookConfirmation confirmation,
+    LogbookConfirmationAction confirmation,
   ) {
     final callback = widget.onOpenConfirmation;
     if (callback != null) return callback(confirmation);
@@ -337,9 +294,16 @@ class _ActionsEvaluationsScreenState extends State<ActionsEvaluationsScreen> {
 
 class _Header extends StatelessWidget {
   final TextEditingController controller;
+  final ActionsEvaluationsSegment segment;
   final ValueChanged<String> onSearchChanged;
+  final ValueChanged<ActionsEvaluationsSegment> onSegmentChanged;
 
-  const _Header({required this.controller, required this.onSearchChanged});
+  const _Header({
+    required this.controller,
+    required this.segment,
+    required this.onSearchChanged,
+    required this.onSegmentChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -375,7 +339,7 @@ class _Header extends StatelessWidget {
                     ),
                     SizedBox(height: 2),
                     Text(
-                      'Vos tâches actives, conservées dans le carnet',
+                      'Vos actions actives et leur historique',
                       style: TextStyle(
                         color: Color(0xD9FFFFFF),
                         fontSize: 12.5,
@@ -386,6 +350,42 @@ class _Header extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<ActionsEvaluationsSegment>(
+              segments: [
+                for (final value in ActionsEvaluationsSegment.values)
+                  ButtonSegment(
+                    value: value,
+                    label: Text(
+                      value.label,
+                      key: ValueKey('actions-segment-${value.name}'),
+                    ),
+                  ),
+              ],
+              selected: {segment},
+              onSelectionChanged: (selection) {
+                if (selection.isNotEmpty) onSegmentChanged(selection.single);
+              },
+              showSelectedIcon: false,
+              style: ButtonStyle(
+                backgroundColor: WidgetStateProperty.resolveWith(
+                  (states) => states.contains(WidgetState.selected)
+                      ? Colors.white
+                      : Colors.white.withValues(alpha: 0.12),
+                ),
+                foregroundColor: WidgetStateProperty.resolveWith(
+                  (states) => states.contains(WidgetState.selected)
+                      ? AppColors.donkerblauw
+                      : Colors.white,
+                ),
+                textStyle: const WidgetStatePropertyAll(
+                  TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ),
           ),
           const SizedBox(height: 10),
           TextField(
@@ -440,7 +440,7 @@ class _SectionTitle extends StatelessWidget {
 }
 
 class _ConfirmationCard extends StatelessWidget {
-  final PendingLogbookConfirmation confirmation;
+  final LogbookConfirmationAction confirmation;
   final VoidCallback onTap;
 
   const _ConfirmationCard({required this.confirmation, required this.onTap});
@@ -456,9 +456,11 @@ class _ConfirmationCard extends StatelessWidget {
       icon: icon,
       iconColor: const Color(0xFF7C3AED),
       title: 'Plongée avec ${confirmation.sourceMemberName}',
-      subtitle: '${confirmation.locationName} · confirmer, importer ou ignorer',
-      label: 'Carnet',
-      date: confirmation.createdAt,
+      subtitle: confirmation.isActionable
+          ? '${confirmation.locationName} · confirmer, importer ou ignorer'
+          : '${confirmation.locationName} · ${confirmation.statusLabel}',
+      label: confirmation.statusLabel,
+      date: confirmation.activityAt,
       onTap: onTap,
     );
   }
@@ -478,7 +480,7 @@ class _TaskCard extends StatelessWidget {
       if (task.context.operationTitle?.trim().isNotEmpty == true)
         task.context.operationTitle!.trim(),
       if (task.description?.trim().isNotEmpty == true) task.description!.trim(),
-      _statusLabel(task.status),
+      formationTaskStatusLabel(task.status),
     ].join(' · ');
     return _ActionCard(
       text: task.glyph,
@@ -486,7 +488,7 @@ class _TaskCard extends StatelessWidget {
       title: task.title,
       subtitle: detail,
       label: task.typeLabel,
-      date: task.updatedAt ?? task.createdAt,
+      date: taskActivityAt(task),
       onTap: onTap,
     );
   }
@@ -569,7 +571,7 @@ class _RosterCardState extends State<_RosterCard> {
       title: title,
       subtitle: details,
       label: 'Évaluation groupée',
-      date: _latestRosterDate(roster),
+      date: rosterActivityAt(roster),
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => MonitorObservationRosterScreen(roster: roster),
@@ -744,24 +746,6 @@ class _StateMessage extends StatelessWidget {
   }
 }
 
-int _compareNewest(DateTime? a, DateTime? b) {
-  if (a == null && b == null) return 0;
-  if (a == null) return 1;
-  if (b == null) return -1;
-  return b.compareTo(a);
-}
-
-DateTime? _latestRosterDate(FormationTaskRoster roster) {
-  DateTime? latest;
-  for (final task in roster.members.expand((member) => member.tasks)) {
-    final value = task.updatedAt ?? task.createdAt;
-    if (value != null && (latest == null || value.isAfter(latest))) {
-      latest = value;
-    }
-  }
-  return latest;
-}
-
 String _shortDate(DateTime value) {
   final now = DateTime.now();
   if (now.year == value.year &&
@@ -772,13 +756,6 @@ String _shortDate(DateTime value) {
   return '${value.day.toString().padLeft(2, '0')}/${value.month.toString().padLeft(2, '0')}';
 }
 
-String _statusLabel(FormationTaskStatus status) => switch (status) {
-      FormationTaskStatus.snoozed => 'Reportée',
-      FormationTaskStatus.waitingForOther => 'En attente',
-      FormationTaskStatus.blocked => 'Bloquée',
-      _ => 'À traiter',
-    };
-
 Color _taskColor(FormationTask task) => switch (task.type) {
       FormationTaskType.poolCheckin ||
       FormationTaskType.logbookCompletion =>
@@ -787,43 +764,3 @@ Color _taskColor(FormationTask task) => switch (task.type) {
       FormationTaskType.claimRejected => const Color(0xFFC2410C),
       _ => const Color(0xFF047857),
     };
-
-bool _taskMatchesSearch(FormationTask task, String query) =>
-    _matchesSearch(query, [
-      task.title,
-      task.description,
-      task.typeLabel,
-      task.memberName,
-      task.currentAssigneeName,
-      task.context.operationTitle,
-      task.context.targetGroupLevel,
-    ]);
-
-bool _rosterMatchesSearch(FormationTaskRoster roster, String query) =>
-    _matchesSearch(query, [
-      'Évaluer le groupe',
-      'Évaluation groupée',
-      roster.level,
-      roster.theme,
-      ...roster.members.map((member) => member.displayName),
-    ]);
-
-bool _matchesSearch(String query, Iterable<String?> values) {
-  final needle = _normalize(query);
-  if (needle.isEmpty) return true;
-  return values
-      .where((value) => value?.trim().isNotEmpty == true)
-      .map((value) => _normalize(value!))
-      .any((value) => value.contains(needle));
-}
-
-String _normalize(String value) => value
-    .trim()
-    .toLowerCase()
-    .replaceAll(RegExp(r'[àáâãäå]'), 'a')
-    .replaceAll('ç', 'c')
-    .replaceAll(RegExp(r'[èéêë]'), 'e')
-    .replaceAll(RegExp(r'[ìíîï]'), 'i')
-    .replaceAll(RegExp(r'[òóôõö]'), 'o')
-    .replaceAll(RegExp(r'[ùúûü]'), 'u')
-    .replaceAll(RegExp(r'\s+'), ' ');

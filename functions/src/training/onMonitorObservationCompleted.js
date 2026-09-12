@@ -3,11 +3,11 @@
  *
  * Trigger : onDocumentUpdated `clubs/{clubId}/formation_tasks/{taskId}`
  *
- * When a `monitor_observation` task transitions from any non-done state
- * to `done`, materialise the verdict into a permanent
- * `member_observations` record. Without this, the verdict only lives in
- * `task.completion_data` and is invisible to the student's progression
- * view — which is exactly the audit blocker #2 from 2026-05-14.
+ * When a `monitor_observation` task transitions to `done`, materialise the
+ * verdict into a permanent `member_observations` record. A later explicit
+ * correction of `completion_data` updates that same deterministic record.
+ * Without this, the verdict only lives in the task and is invisible to the
+ * student's progression view.
  *
  * Today the form captures ONE theme-level verdict (acquis / en_progres /
  * a_revoir) — not a per-LIFRAS-code breakdown. So this CF writes ONE
@@ -51,10 +51,13 @@ async function handleMonitorObservationCompleted(event, db) {
     const after = event.data && event.data.after && event.data.after.data();
     if (!before || !after) return;
 
-    // Only react to monitor_observation completions
+    // React to the initial completion and to an explicit correction of a
+    // completed task. Delivery retries and unrelated done→done updates remain
+    // no-ops when completion_data did not change.
     if (after.type !== 'monitor_observation') return;
-    if (before.status === 'done' || before.status === 'completed') return;
     if (after.status !== 'done' && after.status !== 'completed') return;
+    const wasDone = before.status === 'done' || before.status === 'completed';
+    if (wasDone && !completionDataChanged(before, after)) return;
 
     const completion = after.completion_data || {};
     const attendanceStatus = normaliseAttendanceStatus(
@@ -150,24 +153,59 @@ async function handleMonitorObservationCompleted(event, db) {
       contextDate: Timestamp.now(),
       groupKey,
       comment: completion.comment || '',
-      created_at: FieldValue.serverTimestamp(),
       created_by: 'system',
       source: 'monitor_observation_form',
     };
 
-    try {
-      await observationRef.create(payload);
-    } catch (error) {
-      if (!isAlreadyExistsError(error)) throw error;
-      // A duplicate legacy task for the same logical member/session/group
-      // must not overwrite the first evaluator decision. Keep provenance only.
-      await observationRef.update({
+    if (wasDone) {
+      // A correction deliberately replaces only mutable outcome fields on the
+      // same deterministic observation. Original context/creation timestamps
+      // remain untouched so a correction cannot rewrite when the evaluation
+      // happened.
+      const correctionPayload = {
         source_task_ids: FieldValue.arrayUnion(taskId),
+        exerciceCode: themeSnapshot || groupKey || 'pool_session',
+        exerciceDescription: themeSnapshot || '',
+        result: normalisedResult,
+        observerId: payload.observerId,
+        observerName: payload.observerName,
+        contextTitle: themeSnapshot || '',
+        comment: completion.comment || '',
+        corrected_at: FieldValue.serverTimestamp(),
+        updated_at: FieldValue.serverTimestamp(),
+      };
+      await db.runTransaction(async (transaction) => {
+        const existing = await transaction.get(observationRef);
+        transaction.set(
+          observationRef,
+          existing.exists
+            ? correctionPayload
+            : {
+                ...payload,
+                ...correctionPayload,
+                created_at: FieldValue.serverTimestamp(),
+              },
+          { merge: true },
+        );
       });
-      console.log(
-        `[${FUNCTION_NAME}] logical observation ${canonicalKey} already exists — linked duplicate task ${taskId}`,
-      );
-      return;
+    } else {
+      try {
+        await observationRef.create({
+          ...payload,
+          created_at: FieldValue.serverTimestamp(),
+        });
+      } catch (error) {
+        if (!isAlreadyExistsError(error)) throw error;
+        // A duplicate legacy task for the same logical member/session/group
+        // must not overwrite the first evaluator decision. Keep provenance only.
+        await observationRef.update({
+          source_task_ids: FieldValue.arrayUnion(taskId),
+        });
+        console.log(
+          `[${FUNCTION_NAME}] logical observation ${canonicalKey} already exists — linked duplicate task ${taskId}`,
+        );
+        return;
+      }
     }
     const logbookEntryId = firstNonBlank(
       completion.logbook_entry_id,
@@ -215,6 +253,24 @@ function firstNonBlank(...values) {
     if (normalized) return normalized;
   }
   return '';
+}
+
+function completionDataChanged(before, after) {
+  return JSON.stringify(canonicalJsonValue(before.completion_data || {})) !==
+    JSON.stringify(canonicalJsonValue(after.completion_data || {}));
+}
+
+function canonicalJsonValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalJsonValue);
+  if (value && typeof value === 'object') {
+    return Object.keys(value)
+      .sort()
+      .reduce((result, key) => {
+        result[key] = canonicalJsonValue(value[key]);
+        return result;
+      }, {});
+  }
+  return value;
 }
 
 function isAlreadyExistsError(error) {
@@ -285,6 +341,7 @@ module.exports = {
   handleMonitorObservationCompleted,
   normaliseVerdict,
   normaliseAttendanceStatus,
+  completionDataChanged,
   firstNonBlank,
   isAlreadyExistsError,
   buildObservationCanonicalKey,

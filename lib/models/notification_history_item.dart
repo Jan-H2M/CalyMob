@@ -23,21 +23,13 @@ class NotificationHistoryItem {
 
   bool get isRead => readAt != null;
 
-  /// Delivery records for actions stay available for audit, but they are not
-  /// communications and therefore do not belong in the Communication history.
-  bool get belongsInCommunicationHistory =>
-      category.trim().toLowerCase() != 'action' &&
-      !_actionNotificationTypes.contains(type);
-
-  static const _actionNotificationTypes = {
-    'piscine_task_assigned',
-    'exercice_declared',
-    'exercice_digest',
-    'formation_reminder',
-    'claim_rejected',
-    'logbook_dive_confirmation',
-    'logbook_dive_confirmation_result',
-  };
+  /// Keep every delivery record until each legacy action notification can be
+  /// proven to have a durable, readable domain document. Some digests/results
+  /// have no task id and sender-side confirmation results are not in the
+  /// recipient Actions stream. Hiding them here would silently erase history.
+  /// Ordinary communications remain unchanged; this is a loss-prevention
+  /// fallback and can be narrowed when every legacy producer is migrated.
+  bool get belongsInCommunicationHistory => true;
 
   factory NotificationHistoryItem.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> document,

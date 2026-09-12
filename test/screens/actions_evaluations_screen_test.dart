@@ -1,3 +1,4 @@
+import 'package:calymob/models/actions_evaluations_view_model.dart';
 import 'package:calymob/models/formation_task.dart';
 import 'package:calymob/screens/training/actions_evaluations_screen.dart';
 import 'package:flutter/material.dart';
@@ -5,11 +6,11 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   testWidgets(
-    'shows every active action source except duplicate buddy tasks on a narrow screen',
+    'todo shows every active source except duplicate buddy tasks',
     (tester) async {
-      await tester.binding.setSurfaceSize(const Size(390, 844));
+      await tester.binding.setSurfaceSize(const Size(390, 1100));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      PendingLogbookConfirmation? openedConfirmation;
+      LogbookConfirmationAction? openedConfirmation;
       FormationTask? openedTask;
 
       await tester.pumpWidget(
@@ -17,11 +18,18 @@ void main() {
           home: ActionsEvaluationsScreen(
             previewMode: true,
             previewConfirmations: const [
-              PendingLogbookConfirmation(
+              LogbookConfirmationAction(
                 id: 'confirmation-1',
                 sourceMemberName: 'Sophie Dubois',
                 locationName: 'Nemo 33',
                 matchType: 'similar',
+              ),
+              LogbookConfirmationAction(
+                id: 'answered-1',
+                sourceMemberName: 'Louise Martin',
+                locationName: 'Zilvermeer',
+                matchType: 'identical',
+                status: 'declined',
               ),
             ],
             previewTasks: [
@@ -45,6 +53,7 @@ void main() {
       expect(find.text('Actions & évaluations'), findsOneWidget);
       expect(find.text('Plongées à confirmer'), findsOneWidget);
       expect(find.text('Plongée avec Sophie Dubois'), findsOneWidget);
+      expect(find.text('Plongée avec Louise Martin'), findsNothing);
       expect(find.text('validation'), findsOneWidget);
       expect(find.text('buddy duplicate'), findsNothing);
       expect(find.text('event prep'), findsOneWidget);
@@ -57,7 +66,82 @@ void main() {
     },
   );
 
-  testWidgets('shows the paper-card scanner only to a LIFRAS validator', (
+  testWidgets('done history exposes answered confirmations and closed states', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(430, 1300));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    FormationTask? openedTask;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ActionsEvaluationsScreen(
+          previewMode: true,
+          previewClubStatuten: const ['Encadrants'],
+          previewPlongeurCode: 'MC',
+          previewConfirmations: const [
+            LogbookConfirmationAction(
+              id: 'pending',
+              sourceMemberName: 'Pending Person',
+              locationName: 'Nemo',
+              matchType: 'none',
+            ),
+            LogbookConfirmationAction(
+              id: 'declined',
+              sourceMemberName: 'Declined Person',
+              locationName: 'Vodelee',
+              matchType: 'none',
+              status: 'declined',
+            ),
+            LogbookConfirmationAction(
+              id: 'copied',
+              sourceMemberName: 'Copied Person',
+              locationName: 'Zeeland',
+              matchType: 'none',
+              status: 'confirmed_copied',
+            ),
+          ],
+          previewTasks: [
+            _task('active task', FormationTaskType.manualReminder),
+            _task(
+              'done evaluation',
+              FormationTaskType.monitorObservation,
+              status: FormationTaskStatus.done,
+            ),
+            _task(
+              'dismissed evaluation',
+              FormationTaskType.monitorObservation,
+              status: FormationTaskStatus.dismissed,
+            ),
+            _task(
+              'expired evaluation',
+              FormationTaskType.monitorObservation,
+              status: FormationTaskStatus.expired,
+            ),
+          ],
+          onOpenTask: (value) => openedTask = value,
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('actions-segment-done')));
+    await tester.pump();
+
+    expect(find.text('Plongée avec Pending Person'), findsNothing);
+    expect(find.text('Plongée avec Declined Person'), findsOneWidget);
+    expect(find.text('Refusée'), findsOneWidget);
+    expect(find.text('Plongée avec Copied Person'), findsOneWidget);
+    expect(find.text('Confirmée et copiée'), findsOneWidget);
+    expect(find.text('active task'), findsNothing);
+    expect(find.text('done evaluation'), findsOneWidget);
+    expect(find.text('dismissed evaluation'), findsOneWidget);
+    expect(find.text('expired evaluation'), findsOneWidget);
+    expect(find.text('Scanner une carte papier'), findsNothing);
+
+    await tester.tap(find.text('done evaluation'));
+    expect(openedTask?.status, FormationTaskStatus.done);
+  });
+
+  testWidgets('scanner is gated and appears only in todo and all', (
     tester,
   ) async {
     var openedScanner = false;
@@ -72,13 +156,20 @@ void main() {
       ),
     );
 
-    expect(find.text('Outils de validation'), findsOneWidget);
     expect(find.text('Scanner une carte papier'), findsOneWidget);
     await tester.tap(find.text('Scanner une carte papier'));
     expect(openedScanner, isTrue);
+
+    await tester.tap(find.byKey(const ValueKey('actions-segment-done')));
+    await tester.pump();
+    expect(find.text('Scanner une carte papier'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('actions-segment-all')));
+    await tester.pump();
+    expect(find.text('Scanner une carte papier'), findsOneWidget);
   });
 
-  testWidgets('hides the paper-card scanner from a non-validator', (
+  testWidgets('scanner remains hidden from non-validator in every segment', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -93,9 +184,12 @@ void main() {
 
     expect(find.text('Scanner une carte papier'), findsNothing);
     expect(find.text('Tout est à jour'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('actions-segment-all')));
+    await tester.pump();
+    expect(find.text('Scanner une carte papier'), findsNothing);
   });
 
-  testWidgets('search filters both domain sources without showing history', (
+  testWidgets('search filters done history by status and member', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -103,29 +197,36 @@ void main() {
         home: ActionsEvaluationsScreen(
           previewMode: true,
           previewConfirmations: const [
-            PendingLogbookConfirmation(
+            LogbookConfirmationAction(
               id: 'confirmation-1',
               sourceMemberName: 'Sophie Dubois',
               locationName: 'Nemo 33',
               matchType: 'identical',
+              status: 'declined',
             ),
           ],
           previewTasks: [
-            _task('Valider le carnet de Marc', FormationTaskType.exerciseClaim),
+            _task(
+              'Valider le carnet de Marc',
+              FormationTaskType.exerciseClaim,
+              status: FormationTaskStatus.done,
+            ),
           ],
         ),
       ),
     );
+    await tester.tap(find.byKey(const ValueKey('actions-segment-done')));
+    await tester.pump();
 
     await tester.enterText(find.byType(TextField), 'marc');
     await tester.pump();
-
     expect(find.text('Plongée avec Sophie Dubois'), findsNothing);
     expect(find.text('Valider le carnet de Marc'), findsOneWidget);
 
-    await tester.enterText(find.byType(TextField), 'introuvable');
+    await tester.enterText(find.byType(TextField), 'refusee');
     await tester.pump();
-    expect(find.text('Aucun résultat'), findsOneWidget);
+    expect(find.text('Plongée avec Sophie Dubois'), findsOneWidget);
+    expect(find.text('Valider le carnet de Marc'), findsNothing);
   });
 }
 

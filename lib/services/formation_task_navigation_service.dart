@@ -24,7 +24,7 @@ import 'formation_task_service.dart';
 /// notifications. Keeping it here prevents notification deep links from
 /// drifting away from the routes users get when tapping the same inbox card.
 void openFormationTask(BuildContext context, FormationTask task) {
-  if (task.type == FormationTaskType.eventPreparation) {
+  if (task.type == FormationTaskType.eventPreparation && !task.isClosed) {
     unawaited(_openEventPreparationTask(context, task));
     return;
   }
@@ -36,6 +36,9 @@ void openFormationTask(BuildContext context, FormationTask task) {
 /// Exposed for focused route-contract tests without starting Firestore-backed
 /// screen state. [openFormationTask] remains the only navigation entry point.
 Widget formationTaskDestination(FormationTask task) {
+  if (task.isClosed && task.type != FormationTaskType.monitorObservation) {
+    return FormationTaskDetailScreen(task: task);
+  }
   switch (task.type) {
     case FormationTaskType.poolCheckin:
       return PoolCheckinScreen(task: task);
