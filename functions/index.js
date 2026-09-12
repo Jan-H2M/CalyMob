@@ -235,7 +235,6 @@ exports.createInscriptionRefund = require('./src/inscription/createRefundClaim')
 const eventWaitlist = require('./src/inscription/eventWaitlist');
 exports.joinEventWaitlist = eventWaitlist.joinEventWaitlist;
 exports.registerForEvent = eventWaitlist.registerForEvent;
-exports.registerGuestForEvent = eventWaitlist.registerGuestForEvent;
 exports.leaveEventWaitlist = eventWaitlist.leaveEventWaitlist;
 exports.unregisterFromEvent = eventWaitlist.unregisterFromEvent;
 exports.promoteEventWaitlistEntry = eventWaitlist.promoteEventWaitlistEntry;

@@ -783,47 +783,15 @@ service cloud.firestore {
         match /inscriptions/{inscriptionId} {
           allow read: if isMember(clubId);
 
-          // Create: three legitimate paths
-          //   1. Member registers themselves (membre_id == own uid).
-          //      Blocked after the effective deadline — only admins via
-          //      valid session can still register late.
-          //   2. Admin with valid session registers anyone (incl. externals)
-          //      — bypasses the deadline (admin override).
-          //   3. Member adds a guest to THEIR OWN inscription from CalyMob,
-          //      provided the event opted-in via allow_guests=true. Also
-          //      blocked after the effective deadline.
+          // Capacity-sensitive self/guest registration is only allowed through
+          // registerForEvent (Admin SDK transaction). This deliberately makes
+          // old direct-write clients fail closed during a mixed-version rollout
+          // instead of racing the transactional capacity lock. Administrators
+          // keep the existing manual-registration path with a valid session.
           allow create: if isMember(clubId)
             && get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)).data.get('statut', '') != 'annule'
-            && (
-              (
-                request.resource.data.membre_id == request.auth.uid
-                && request.resource.data.get('paye', false) == false
-                && request.resource.data.get('transaction_id', null) == null
-                && request.resource.data.get('transaction_matched', false) == false
-                && request.time <= effectiveDeadline(
-                  get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)).data
-                )
-              ) ||
-              (hasValidSession(clubId) && isAdmin(clubId)) ||
-              (
-                // Use .get(field, default) on guest-only fields so the rule
-                // matches the delete rule's style and doesn't trip the same
-                // missing-field denial we hit on `categorie`.
-                request.resource.data.get('is_guest', false) == true
-                && request.resource.data.get('added_by', '') == request.auth.uid
-                && request.resource.data.get('parent_inscription_id', null) != null
-                && request.resource.data.get('paye', false) == false
-                && request.resource.data.get('transaction_id', null) == null
-                && request.resource.data.get('transaction_matched', false) == false
-                && get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId))
-                     .data.get('allow_guests', false) == true
-                && get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)/inscriptions/$(request.resource.data.parent_inscription_id))
-                     .data.membre_id == request.auth.uid
-                && request.time <= effectiveDeadline(
-                  get(/databases/$(database)/documents/clubs/$(clubId)/operations/$(operationId)).data
-                )
-              )
-            );
+            && hasValidSession(clubId)
+            && isAdmin(clubId);
 
           // Registration documents are accounting and audit records. They may
           // never be hard-deleted by a web/mobile client. Withdrawals go through
@@ -883,6 +851,11 @@ service cloud.firestore {
             );
           }
 
+        }
+
+        // Private idempotency receipts used only by the callable transaction.
+        match /registration_requests/{requestId} {
+          allow read, write: if false;
         }
 
         // COM-062 — Registration audit log. This is a sibling of inscriptions,

@@ -20,8 +20,28 @@ const int _missingRegistrationDateSortKey = -9007199254740991;
 
 typedef RegisterForEventInvoker = Future<void> Function(
     Map<String, dynamic> payload);
-typedef RegisterGuestForEventInvoker = Future<void> Function(
-    Map<String, dynamic> payload);
+
+class RegistrationGuestRequest {
+  const RegistrationGuestRequest({
+    required this.firstName,
+    required this.lastName,
+    this.tariffId,
+    this.selectedSupplements = const <SelectedSupplement>[],
+  });
+
+  final String firstName;
+  final String lastName;
+  final String? tariffId;
+  final List<SelectedSupplement> selectedSupplements;
+
+  Map<String, dynamic> toCallablePayload() => {
+        'firstName': firstName,
+        'lastName': lastName,
+        if (tariffId != null) 'tariffId': tariffId,
+        'selectedSupplementIds':
+            selectedSupplements.map((supplement) => supplement.id).toList(),
+      };
+}
 
 class PaymentMethodNotAllowedException implements Exception {
   const PaymentMethodNotAllowedException();
@@ -36,17 +56,14 @@ class OperationService {
   final FirebaseFirestore _firestore;
   final FirebaseFunctions? _injectedFunctions;
   final RegisterForEventInvoker? _registerForEventInvoker;
-  final RegisterGuestForEventInvoker? _registerGuestForEventInvoker;
 
   OperationService({
     FirebaseFirestore? firestore,
     FirebaseFunctions? functions,
     RegisterForEventInvoker? registerForEventInvoker,
-    RegisterGuestForEventInvoker? registerGuestForEventInvoker,
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
         _injectedFunctions = functions,
-        _registerForEventInvoker = registerForEventInvoker,
-        _registerGuestForEventInvoker = registerGuestForEventInvoker;
+        _registerForEventInvoker = registerForEventInvoker;
 
   FirebaseFunctions get _functions =>
       _injectedFunctions ??
@@ -269,17 +286,20 @@ class OperationService {
     Tariff? selectedTariff,
     List<SelectedSupplement>? selectedSupplements,
     double? supplementTotal,
+    String? requestId,
+    List<RegistrationGuestRequest> guests = const <RegistrationGuestRequest>[],
   }) async {
     try {
       final appVersion = await _appVersion();
       final payload = <String, dynamic>{
         'clubId': clubId,
         'operationId': operationId,
-        if (selectedTariff != null) 'selectedTariffId': selectedTariff.id,
+        'requestId': requestId ?? _newRegistrationRequestId(),
         'selectedSupplementIds':
             (selectedSupplements ?? const <SelectedSupplement>[])
                 .map((supplement) => supplement.id)
                 .toList(),
+        'guests': guests.map((guest) => guest.toCallablePayload()).toList(),
         'source': 'calymob',
         if (appVersion != null) 'appVersion': appVersion,
       };
@@ -297,6 +317,11 @@ class OperationService {
       debugPrint('❌ Erreur inscription: $e');
       rethrow;
     }
+  }
+
+  String _newRegistrationRequestId() {
+    final random = Random.secure().nextInt(0x7fffffff).toRadixString(36);
+    return 'calymob_${DateTime.now().microsecondsSinceEpoch}_$random';
   }
 
   Future<void> _assertOperationAcceptsRegistration(
@@ -1174,9 +1199,7 @@ class OperationService {
   ///
   /// Used by:
   ///  - admins/encadrants from the legacy flow (no parent — guest stands alone)
-  ///  - members from the new "allow_guests" flow (parentInscriptionId set —
-  ///    guest is linked to the inviting member's own inscription so payment
-  ///    can be aggregated into a single QR)
+  /// Member-driven guests are created atomically by [registerToOperation].
   Future<void> createGuestInscription({
     required String clubId,
     required String operationId,
@@ -1205,30 +1228,9 @@ class OperationService {
     try {
       final appVersion = await _appVersion();
       if (parentInscriptionId != null) {
-        final payload = <String, dynamic>{
-          'clubId': clubId,
-          'operationId': operationId,
-          'parentInscriptionId': parentInscriptionId,
-          'guestFirstName': guestPrenom,
-          'guestLastName': guestNom,
-          if (tariffId != null) 'tariffId': tariffId,
-          'selectedSupplementIds':
-              (selectedSupplements ?? const <SelectedSupplement>[])
-                  .map((supplement) => supplement.id)
-                  .toList(),
-          'source': 'calymob',
-          if (appVersion != null) 'appVersion': appVersion,
-        };
-        final registerGuestForEventInvoker = _registerGuestForEventInvoker;
-        if (registerGuestForEventInvoker != null) {
-          await registerGuestForEventInvoker(payload);
-        } else {
-          await _functions.httpsCallable('registerGuestForEvent').call(payload);
-        }
-        debugPrint(
-          '✅ Inscription invité transactionnelle: $guestPrenom $guestNom → $operationTitle',
+        throw StateError(
+          'Les invités liés doivent être inscrits avec le membre dans une seule demande.',
         );
-        return;
       }
       // Generate unique guest ID (timestamp + random suffix to avoid collisions)
       final random =

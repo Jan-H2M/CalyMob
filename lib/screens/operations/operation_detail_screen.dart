@@ -100,6 +100,12 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       ExerciceSelectionSaveQueue();
   bool _isLoadingExercices = false;
   ParticipantOperation? _userInscription;
+  String? _pendingRegistrationRequestId;
+
+  String _registrationRequestId() {
+    return _pendingRegistrationRequestId ??=
+        'calymob_${DateTime.now().microsecondsSinceEpoch}_${math.Random.secure().nextInt(0x7fffffff).toRadixString(36)}';
+  }
 
   bool get _isCurrentExerciceSnapshotQueued {
     final queued = _exerciceSaveQueue.lastQueuedSnapshot;
@@ -565,7 +571,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             selectedSupplements:
                 result['supplements'] as List<SelectedSupplement>,
             supplementTotal: result['supplementTotal'] as double,
+            requestId: _registrationRequestId(),
           );
+          _pendingRegistrationRequestId = null;
 
           // Refresh participant list after registration
           await operationProvider.reloadParticipants(
@@ -654,7 +662,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             userName: userEmail,
             memberProfile: _userProfile,
             selectedTariff: selectedTariff,
+            requestId: _registrationRequestId(),
           );
+          _pendingRegistrationRequestId = null;
 
           // Refresh participant list after registration
           await operationProvider.reloadParticipants(
@@ -822,11 +832,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   /// Shows [RegisterWithGuestsDialog] which lets the member register
   /// themselves and optionally add one or more guests in a single
   /// dialog. On submit:
-  ///   1. Register the member (parent inscription).
-  ///   2. Add each guest with parent_inscription_id linked to the
-  ///      member's inscription so the cloud function aggregates them
-  ///      into one QR.
-  ///   3. Show the payment options dialog with the grand total. The
+  ///   1. Register the member and every guest atomically.
+  ///   2. Show the payment options dialog with the grand total. The
   ///      Cloud Function `aggregatePaymentForInscription` recomputes
   ///      the server-side total as a safety net.
   Future<void> _handleRegisterWithGuestsFlow({
@@ -872,9 +879,21 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         (result['supplements'] as List).cast<SelectedSupplement>();
     final supplementTotal = result['supplementTotal'] as double;
     final guestsList = (result['guests'] as List).cast<Map<String, dynamic>>();
+    final guestRequests = guestsList.map((guest) {
+      final supplements =
+          (guest['supplements'] as List?)?.cast<SelectedSupplement>() ??
+              const <SelectedSupplement>[];
+      return RegistrationGuestRequest(
+        firstName: guest['prenom'] as String,
+        lastName: guest['nom'] as String,
+        tariffId: guest['tariffId'] as String?,
+        selectedSupplements: supplements,
+      );
+    }).toList();
 
     try {
-      // 1. Register the member themselves
+      // Register the complete group in one transaction. If any guest is
+      // invalid or capacity is insufficient, no registration is written.
       await operationProvider.registerToOperation(
         clubId: widget.clubId,
         operationId: widget.operationId,
@@ -886,7 +905,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             selectedSupplements.isNotEmpty ? selectedSupplements : null,
         supplementTotal:
             selectedSupplements.isNotEmpty ? supplementTotal : null,
+        requestId: _registrationRequestId(),
+        guests: guestRequests,
       );
+      _pendingRegistrationRequestId = null;
       await operationProvider.reloadParticipants(
           widget.clubId, widget.operationId);
       if (!mounted) return;
@@ -895,41 +917,16 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-                "Inscription faite mais impossible de récupérer la référence pour les invités"),
+                "Inscription faite mais impossible de récupérer la référence de paiement"),
             backgroundColor: Colors.orange,
           ),
         );
         return;
       }
 
-      // 2. Add each guest, linked to the member's parent inscription.
-      final authProvider = context.read<AuthProvider>();
-      for (final g in guestsList) {
-        final guestSupps =
-            (g['supplements'] as List?)?.cast<SelectedSupplement>() ??
-                const <SelectedSupplement>[];
-        final guestSuppTotal = (g['supplementTotal'] as num?)?.toDouble();
-        await operationProvider.addGuestToOperation(
-          clubId: widget.clubId,
-          operationId: widget.operationId,
-          operationTitle: operation.titre,
-          guestPrenom: g['prenom'] as String,
-          guestNom: g['nom'] as String,
-          prix: g['prix'] as double,
-          addedByUserId: authProvider.currentUser?.uid ?? userId,
-          addedByUserName: displayName,
-          parentInscriptionId: _userInscription!.id,
-          tariffId: g['tariffId'] as String?,
-          selectedSupplements: guestSupps.isNotEmpty ? guestSupps : null,
-          supplementTotal: (guestSuppTotal != null && guestSuppTotal > 0)
-              ? guestSuppTotal
-              : null,
-        );
-      }
-
       if (!mounted) return;
 
-      // 3. Payment options dialog with grand total.
+      // Payment options dialog with grand total.
       // (skip when priceTbd — organiser will bill later)
       if (operation.paymentRequired && totalPrice > 0 && !operation.priceTbd) {
         final openInstallment =

@@ -14,6 +14,7 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:integration": "jest --testMatch='**/*.integration.test.ts'",
+    "test:rules:event-registration": "node scripts/test-event-registration-rules.cjs",
     "setup:test-users": "node scripts/setup-test-users.js",
     "emulators": "firebase emulators:start",
     "emulators:export": "firebase emulators:export ./emulator-data"
@@ -78,6 +79,7 @@
   },
   "devDependencies": {
     "@faker-js/faker": "^10.1.0",
+    "@firebase/rules-unit-testing": "^3.0.4",
     "@testing-library/jest-dom": "^6.1.5",
     "@testing-library/react": "^14.1.2",
     "@testing-library/user-event": "^14.5.1",

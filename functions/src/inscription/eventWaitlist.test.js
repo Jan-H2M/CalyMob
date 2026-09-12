@@ -34,7 +34,6 @@ const {
   promotionCandidateAfterWithdrawal,
   promotionCandidatesAfterWithdrawal,
   registerForEvent,
-  registerGuestForEvent,
   unregisterFromEvent,
 } = require('./eventWaitlist');
 
@@ -114,20 +113,39 @@ describe('event waitlist policy', () => {
 });
 
 describe('registerForEvent callable', () => {
+  const validRequestId = 'request_20260812_member_1';
+
   function makeDoc(id, data) {
     return { id, ref: { id, path: `inscriptions/${id}` }, data: () => data };
   }
 
-  function setupRegistrationDb(attempts, operationOverrides = {}) {
-    const registrationRef = { id: 'generated-registration', path: 'inscriptions/generated-registration' };
+  function setupRegistrationDb(
+    attempts,
+    operationOverrides = {},
+    memberOverrides = {},
+    previousRequest = null,
+  ) {
+    const registrationRefs = [
+      { id: 'generated-registration', path: 'inscriptions/generated-registration' },
+      { id: 'generated-guest-1', path: 'inscriptions/generated-guest-1' },
+      { id: 'generated-guest-2', path: 'inscriptions/generated-guest-2' },
+    ];
+    let nextRegistrationRef = 0;
     const inscriptionsRef = {
       path: 'clubs/calypso/operations/event-1/inscriptions',
-      doc: jest.fn(() => registrationRef),
+      doc: jest.fn(() => registrationRefs[nextRegistrationRef++]),
+    };
+    const requestRef = {
+      id: validRequestId,
+      path: `clubs/calypso/operations/event-1/registration_requests/${validRequestId}`,
     };
     const operationRef = {
       path: 'clubs/calypso/operations/event-1',
       collection: jest.fn(name => {
         if (name === 'inscriptions') return inscriptionsRef;
+        if (name === 'registration_requests') {
+          return { doc: jest.fn(() => requestRef) };
+        }
         if (name === 'waitlist_audit') return { doc: jest.fn() };
         throw new Error(`unexpected collection ${name}`);
       }),
@@ -141,6 +159,7 @@ describe('registerForEvent callable', () => {
           nom: 'Encadrant',
           app_role: 'membre',
           clubStatuten: ['Encadrants'],
+          ...memberOverrides,
         }),
       })),
     };
@@ -178,6 +197,12 @@ describe('registerForEvent callable', () => {
             get: jest.fn(async ref => {
               if (ref === operationRef) return { exists: true, data: () => operation };
               if (ref === inscriptionsRef) return { docs };
+              if (ref === requestRef) {
+                return {
+                  exists: previousRequest !== null,
+                  data: () => previousRequest,
+                };
+              }
               throw new Error(`unexpected get ${ref.path}`);
             }),
             set: jest.fn(),
@@ -190,7 +215,14 @@ describe('registerForEvent callable', () => {
       }),
     };
     admin.firestore.mockReturnValue(db);
-    return { db, operationRef, registrationRef, transactions };
+    return {
+      db,
+      operationRef,
+      registrationRef: registrationRefs[0],
+      guestRefs: registrationRefs.slice(1),
+      requestRef,
+      transactions,
+    };
   }
 
   beforeEach(() => {
@@ -205,13 +237,19 @@ describe('registerForEvent callable', () => {
       data: {
         clubId: 'calypso',
         operationId: 'event-1',
+        requestId: validRequestId,
         selectedSupplementIds: ['bottle'],
         source: 'calymob',
         appVersion: '1.21.1+206',
       },
     });
 
-    expect(result).toEqual({ status: 'pending_payment', inscriptionId: 'generated-registration' });
+    expect(result).toEqual({
+      status: 'pending_payment',
+      inscriptionId: 'generated-registration',
+      guestInscriptionIds: [],
+      idempotent: false,
+    });
     expect(transactions[0].set).toHaveBeenCalledWith(
       registrationRef,
       expect.objectContaining({
@@ -242,11 +280,11 @@ describe('registerForEvent callable', () => {
 
     await expect(registerForEvent({
       auth: { uid: 'member-1' },
-      data: { clubId: 'calypso', operationId: 'event-1' },
+      data: { clubId: 'calypso', operationId: 'event-1', requestId: validRequestId },
     })).rejects.toMatchObject({ code: 'resource-exhausted' });
 
     expect(transactions).toHaveLength(2);
-    expect(transactions[0].set).toHaveBeenCalledTimes(1);
+    expect(transactions[0].set).toHaveBeenCalledTimes(2);
     expect(transactions[1].set).not.toHaveBeenCalled();
     expect(transactions[1].update).not.toHaveBeenCalled();
   });
@@ -257,14 +295,15 @@ describe('registerForEvent callable', () => {
     })]]);
     await expect(registerForEvent({
       auth: { uid: 'member-1' },
-      data: { clubId: 'calypso', operationId: 'event-1' },
+      data: { clubId: 'calypso', operationId: 'event-1', requestId: validRequestId },
     })).rejects.toMatchObject({ code: 'already-exists' });
 
     setupRegistrationDb([[]]);
     await expect(registerForEvent({
       auth: { uid: 'member-1' },
       data: {
-        clubId: 'calypso', operationId: 'event-1', selectedSupplementIds: ['forged'],
+        clubId: 'calypso', operationId: 'event-1', requestId: validRequestId,
+        selectedSupplementIds: ['forged'],
       },
     })).rejects.toMatchObject({ code: 'invalid-argument' });
   });
@@ -279,7 +318,7 @@ describe('registerForEvent callable', () => {
 
     const result = await registerForEvent({
       auth: { uid: 'member-1' },
-      data: { clubId: 'calypso', operationId: 'event-1' },
+      data: { clubId: 'calypso', operationId: 'event-1', requestId: validRequestId },
     });
 
     expect(result.status).toBe('pending_payment');
@@ -293,155 +332,166 @@ describe('registerForEvent callable', () => {
       Date.parse('2026-08-15T10:00:00Z'),
     );
   });
-});
 
-describe('registerGuestForEvent callable', () => {
-  function makeDoc(id, data) {
-    return { id, ref: { id, path: `inscriptions/${id}` }, data: () => data };
-  }
+  test('ignores a forged privileged tariff and derives the member rate server-side', async () => {
+    const { registrationRef, transactions } = setupRegistrationDb(
+      [[]],
+      {},
+      { clubStatuten: ['Membres'], nom: 'Ordinaire' },
+    );
 
-  function setupGuestRegistrationDb(inscriptions, operationOverrides = {}) {
-    const registrationRef = { id: 'generated-guest', path: 'inscriptions/generated-guest' };
-    const inscriptionsRef = {
-      path: 'clubs/calypso/operations/event-1/inscriptions',
-      doc: jest.fn(() => registrationRef),
-    };
-    const operationRef = {
-      path: 'clubs/calypso/operations/event-1',
-      collection: jest.fn(name => {
-        if (name === 'inscriptions') return inscriptionsRef;
-        if (name === 'waitlist_audit') return { doc: jest.fn() };
-        throw new Error(`unexpected collection ${name}`);
-      }),
-    };
-    const memberRef = {
-      path: 'clubs/calypso/members/member-1',
-      get: jest.fn(async () => ({
-        exists: true,
-        data: () => ({ prenom: 'Alice', nom: 'Member', app_role: 'membre' }),
-      })),
-    };
-    const operation = {
-      titre: 'Plongée test',
-      statut: 'ouvert',
-      date_debut: new Date('2027-08-14T10:00:00Z'),
-      capacite_max: 3,
-      allow_guests: true,
-      payment_required: true,
-      event_tariffs: [
-        { id: 'member', label: 'Membre', category: 'membre', price: 25 },
-        { id: 'guest-adult', label: 'Invité adulte', price: 35, is_guest_tariff: true },
-      ],
-      supplements: [{ id: 'bottle', name: 'Bouteille', price: 4 }],
-      registration_capacity_revision: 8,
-      ...operationOverrides,
-    };
-    const transaction = {
-      get: jest.fn(async ref => {
-        if (ref === operationRef) return { exists: true, data: () => operation };
-        if (ref === inscriptionsRef) return { docs: inscriptions };
-        throw new Error(`unexpected get ${ref.path}`);
-      }),
-      set: jest.fn(),
-      update: jest.fn(),
-    };
-    admin.firestore.mockReturnValue({
-      doc: jest.fn(path => path === operationRef.path ? operationRef : memberRef),
-      runTransaction: jest.fn(async callback => callback(transaction)),
-    });
-    return { operationRef, registrationRef, transaction };
-  }
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
-  test('creates a server-priced linked guest and locks event capacity', async () => {
-    const parent = makeDoc('parent', {
-      membre_id: 'member-1',
-      registration_status: 'pending_payment',
-      payment_expires_at: 'parent-expiry',
-    });
-    const { operationRef, registrationRef, transaction } = setupGuestRegistrationDb([parent]);
-
-    const result = await registerGuestForEvent({
+    await registerForEvent({
       auth: { uid: 'member-1' },
       data: {
         clubId: 'calypso',
         operationId: 'event-1',
-        parentInscriptionId: 'parent',
-        guestFirstName: 'Bob',
-        guestLastName: 'Guest',
-        tariffId: 'guest-adult',
-        selectedSupplementIds: ['bottle'],
+        requestId: validRequestId,
+        selectedTariffId: 'encadrant',
       },
     });
 
-    expect(result).toEqual({ status: 'pending_payment', inscriptionId: 'generated-guest' });
-    expect(transaction.set).toHaveBeenCalledWith(registrationRef, expect.objectContaining({
-      membre_id: 'guest_generated-guest',
-      membre_prenom: 'Bob',
-      membre_nom: 'Guest',
-      prix: 35,
-      registration_status: 'pending_payment',
-      parent_inscription_id: 'parent',
-      supplement_total: 4,
-      selected_supplements: [{ id: 'bottle', name: 'Bouteille', price: 4 }],
-    }));
-    expect(transaction.update).toHaveBeenCalledWith(
-      operationRef,
-      { registration_capacity_revision: 9 },
+    expect(transactions[0].set).toHaveBeenCalledWith(
+      registrationRef,
+      expect.objectContaining({ prix: 25, tariff_id: 'member', tariff_selected_by: null }),
     );
   });
 
-  test('rejects a guest when the last place is already occupied', async () => {
-    const parent = makeDoc('parent', {
-      membre_id: 'member-1', registration_status: 'confirmed',
-    });
-    const otherOne = makeDoc('other-1', {
-      membre_id: 'member-2', registration_status: 'confirmed',
-    });
-    const otherTwo = makeDoc('other-2', {
-      membre_id: 'member-3', registration_status: 'pending_payment',
-    });
-    const { transaction } = setupGuestRegistrationDb([parent, otherOne, otherTwo]);
+  test('creates member and all guests atomically with server pricing', async () => {
+    const { registrationRef, guestRefs, requestRef, transactions } = setupRegistrationDb(
+      [[]],
+      {
+        capacite_max: 3,
+        allow_guests: true,
+        max_guests_per_member: 2,
+        event_tariffs: [
+          { id: 'member', label: 'Membre', category: 'membre', price: 25 },
+          { id: 'guest-adult', label: 'Invité adulte', price: 35, is_guest_tariff: true },
+        ],
+      },
+      { clubStatuten: ['Membres'] },
+    );
 
-    await expect(registerGuestForEvent({
+    const result = await registerForEvent({
       auth: { uid: 'member-1' },
       data: {
-        clubId: 'calypso', operationId: 'event-1', parentInscriptionId: 'parent',
-        guestFirstName: 'No', guestLastName: 'Place', tariffId: 'guest-adult',
+        clubId: 'calypso',
+        operationId: 'event-1',
+        requestId: validRequestId,
+        guests: [
+          { firstName: 'Bob', lastName: 'Guest', tariffId: 'guest-adult' },
+          {
+            firstName: 'Eve', lastName: 'Guest', tariffId: 'guest-adult',
+            selectedSupplementIds: ['bottle'],
+          },
+        ],
+      },
+    });
+
+    expect(result.guestInscriptionIds).toEqual(['generated-guest-1', 'generated-guest-2']);
+    expect(transactions[0].set).toHaveBeenCalledWith(registrationRef, expect.any(Object));
+    expect(transactions[0].set).toHaveBeenCalledWith(
+      guestRefs[0],
+      expect.objectContaining({
+        prix: 35,
+        parent_inscription_id: 'generated-registration',
+        membre_id: 'guest_generated-guest-1',
+      }),
+    );
+    expect(transactions[0].set).toHaveBeenCalledWith(
+      guestRefs[1],
+      expect.objectContaining({ prix: 35, supplement_total: 4 }),
+    );
+    expect(transactions[0].set).toHaveBeenCalledWith(
+      requestRef,
+      expect.objectContaining({
+        member_id: 'member-1',
+        inscription_id: 'generated-registration',
+        guest_inscription_ids: ['generated-guest-1', 'generated-guest-2'],
+      }),
+    );
+  });
+
+  test('rejects the complete group before writing when remaining capacity is insufficient', async () => {
+    const legacy = makeDoc('legacy-direct-client', {
+      membre_id: 'legacy-member',
+      registration_status: 'confirmed',
+    });
+    const { transactions } = setupRegistrationDb(
+      [[legacy]],
+      {
+        capacite_max: 2,
+        allow_guests: true,
+        max_guests_per_member: 1,
+        event_tariffs: [
+          { id: 'member', label: 'Membre', category: 'membre', price: 25 },
+          { id: 'guest', label: 'Invité', price: 35, is_guest_tariff: true },
+        ],
+      },
+    );
+
+    await expect(registerForEvent({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso', operationId: 'event-1', requestId: validRequestId,
+        guests: [{ firstName: 'No', lastName: 'Room', tariffId: 'guest' }],
       },
     })).rejects.toMatchObject({ code: 'resource-exhausted' });
 
-    expect(transaction.set).not.toHaveBeenCalled();
-    expect(transaction.update).not.toHaveBeenCalled();
+    expect(transactions[0].set).not.toHaveBeenCalled();
+    expect(transactions[0].update).not.toHaveBeenCalled();
   });
 
-  test('rejects a guest linked to another member or using a member tariff', async () => {
-    const foreignParent = makeDoc('parent', {
-      membre_id: 'member-2', registration_status: 'confirmed',
-    });
-    setupGuestRegistrationDb([foreignParent]);
-    await expect(registerGuestForEvent({
-      auth: { uid: 'member-1' },
-      data: {
-        clubId: 'calypso', operationId: 'event-1', parentInscriptionId: 'parent',
-        guestFirstName: 'Bad', guestLastName: 'Parent', tariffId: 'guest-adult',
+  test('rejects every group write when a later guest contains a forged tariff', async () => {
+    const { transactions } = setupRegistrationDb(
+      [[]],
+      {
+        capacite_max: 4,
+        allow_guests: true,
+        max_guests_per_member: 3,
+        event_tariffs: [
+          { id: 'member', label: 'Membre', category: 'membre', price: 25 },
+          { id: 'guest', label: 'Invité', price: 35, is_guest_tariff: true },
+        ],
       },
-    })).rejects.toMatchObject({ code: 'permission-denied' });
+    );
 
-    const ownParent = makeDoc('parent', {
-      membre_id: 'member-1', registration_status: 'confirmed',
-    });
-    setupGuestRegistrationDb([ownParent]);
-    await expect(registerGuestForEvent({
+    await expect(registerForEvent({
       auth: { uid: 'member-1' },
       data: {
-        clubId: 'calypso', operationId: 'event-1', parentInscriptionId: 'parent',
-        guestFirstName: 'Bad', guestLastName: 'Tariff', tariffId: 'member',
+        clubId: 'calypso', operationId: 'event-1', requestId: validRequestId,
+        guests: [
+          { firstName: 'Valid', lastName: 'Guest', tariffId: 'guest' },
+          { firstName: 'Forged', lastName: 'Guest', tariffId: 'member' },
+        ],
       },
     })).rejects.toMatchObject({ code: 'invalid-argument' });
+
+    expect(transactions[0].set).not.toHaveBeenCalled();
+    expect(transactions[0].update).not.toHaveBeenCalled();
+  });
+
+  test('returns the stored group on an idempotent retry without new writes', async () => {
+    const previousRequest = {
+      member_id: 'member-1',
+      inscription_id: 'original-member',
+      guest_inscription_ids: ['original-guest-1', 'original-guest-2'],
+      registration_status: 'confirmed',
+    };
+    const { transactions } = setupRegistrationDb([[]], {}, {}, previousRequest);
+
+    const result = await registerForEvent({
+      auth: { uid: 'member-1' },
+      data: { clubId: 'calypso', operationId: 'event-1', requestId: validRequestId },
+    });
+
+    expect(result).toEqual({
+      status: 'confirmed',
+      inscriptionId: 'original-member',
+      guestInscriptionIds: ['original-guest-1', 'original-guest-2'],
+      idempotent: true,
+    });
+    expect(transactions[0].set).not.toHaveBeenCalled();
+    expect(transactions[0].update).not.toHaveBeenCalled();
   });
 });
 

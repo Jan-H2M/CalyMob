@@ -199,6 +199,8 @@ class OperationProvider with ChangeNotifier {
     Tariff? selectedTariff,
     List<SelectedSupplement>? selectedSupplements,
     double? supplementTotal,
+    String? requestId,
+    List<RegistrationGuestRequest> guests = const <RegistrationGuestRequest>[],
   }) async {
     try {
       _isLoading = true;
@@ -217,12 +219,14 @@ class OperationProvider with ChangeNotifier {
         selectedTariff: selectedTariff,
         selectedSupplements: selectedSupplements,
         supplementTotal: supplementTotal,
+        requestId: requestId,
+        guests: guests,
       );
 
       // Mettre à jour cache
       _userRegistrationStatus[operationId] = true;
       _participantCounts[operationId] =
-          (_participantCounts[operationId] ?? 0) + 1;
+          (_participantCounts[operationId] ?? 0) + 1 + guests.length;
 
       _isLoading = false;
       notifyListeners();

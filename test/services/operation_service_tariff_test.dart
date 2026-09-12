@@ -55,12 +55,15 @@ void main() {
         userName: profile.email,
         operation: operation,
         memberProfile: profile,
+        requestId: 'request_20260813_member_1',
       );
 
       expect(request, {
         'clubId': 'club-1',
         'operationId': 'event-1',
+        'requestId': 'request_20260813_member_1',
         'selectedSupplementIds': <String>[],
+        'guests': <Map<String, dynamic>>[],
         'source': 'calymob',
       });
       expect(
@@ -155,13 +158,15 @@ void main() {
           SelectedSupplement(id: 'bottle', name: 'Bouteille', price: 999),
         ],
         supplementTotal: 999,
+        requestId: 'request_20260813_member_2',
       );
 
       expect(request, {
         'clubId': 'club-1',
         'operationId': 'event-2',
-        'selectedTariffId': 'member',
+        'requestId': 'request_20260813_member_2',
         'selectedSupplementIds': ['bottle'],
+        'guests': <Map<String, dynamic>>[],
         'source': 'calymob',
       });
       expect(request, isNot(containsPair('price', 25)));
@@ -170,40 +175,66 @@ void main() {
   );
 
   test(
-    'linked guest registration sends identifiers, never client-authored prices',
+    'member and guests use one idempotent request without client-authored prices',
     () async {
       final firestore = FakeFirebaseFirestore();
       Map<String, dynamic>? request;
       final service = OperationService(
         firestore: firestore,
-        registerGuestForEventInvoker: (payload) async => request = payload,
+        registerForEventInvoker: (payload) async => request = payload,
       );
 
-      await service.createGuestInscription(
+      final now = DateTime(2026, 8, 13);
+      final operation = Operation(
+        id: 'event-1',
+        type: 'evenement',
+        titre: 'Plongée club',
+        montantPrevu: 0,
+        statut: 'ouvert',
+        createdAt: now,
+        updatedAt: now,
+      );
+
+      await service.registerToOperation(
         clubId: 'club-1',
         operationId: 'event-1',
-        operationTitle: 'Plongée club',
-        guestPrenom: 'Bob',
-        guestNom: 'Guest',
-        prix: 999,
-        addedByUserId: 'member-1',
-        addedByUserName: 'Alice Member',
-        parentInscriptionId: 'parent-1',
-        tariffId: 'guest-adult',
+        userId: 'member-1',
+        userName: 'Alice Member',
+        operation: operation,
+        requestId: 'request_20260813_group_1',
         selectedSupplements: [
           SelectedSupplement(id: 'bottle', name: 'Bouteille', price: 999),
         ],
         supplementTotal: 999,
+        guests: [
+          RegistrationGuestRequest(
+            firstName: 'Bob',
+            lastName: 'Guest',
+            tariffId: 'guest-adult',
+            selectedSupplements: [
+              SelectedSupplement(
+                id: 'guest-bottle',
+                name: 'Bouteille invité',
+                price: 888,
+              ),
+            ],
+          ),
+        ],
       );
 
       expect(request, {
         'clubId': 'club-1',
         'operationId': 'event-1',
-        'parentInscriptionId': 'parent-1',
-        'guestFirstName': 'Bob',
-        'guestLastName': 'Guest',
-        'tariffId': 'guest-adult',
+        'requestId': 'request_20260813_group_1',
         'selectedSupplementIds': ['bottle'],
+        'guests': [
+          {
+            'firstName': 'Bob',
+            'lastName': 'Guest',
+            'tariffId': 'guest-adult',
+            'selectedSupplementIds': ['guest-bottle'],
+          },
+        ],
         'source': 'calymob',
       });
       expect(request, isNot(containsPair('price', 999)));
