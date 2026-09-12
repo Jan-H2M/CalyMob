@@ -51,6 +51,7 @@ ExerciceSelectionReadResolution resolveExerciceSelectionRead({
   required int currentSelectionVersion,
   required int capturedPersistedRevision,
   required int currentPersistedRevision,
+  required bool wasDirtyAtReadStart,
   required bool hasPendingSave,
 }) {
   if (hasPendingSave || capturedPersistedRevision != currentPersistedRevision) {
@@ -62,11 +63,18 @@ ExerciceSelectionReadResolution resolveExerciceSelectionRead({
 
   return ExerciceSelectionReadResolution(
     initial: List<String>.from(remote),
-    selected: capturedSelectionVersion == currentSelectionVersion
+    selected: !wasDirtyAtReadStart &&
+            capturedSelectionVersion == currentSelectionVersion
         ? List<String>.from(remote)
         : List<String>.from(currentSelected),
   );
 }
+
+bool shouldRefreshExerciceSelectionAfterSave({
+  required bool saveSucceeded,
+  required bool isQueueIdle,
+}) =>
+    saveSucceeded && isQueueIdle;
 
 typedef ExerciceSnapshotWriter = Future<void> Function(List<String> snapshot);
 

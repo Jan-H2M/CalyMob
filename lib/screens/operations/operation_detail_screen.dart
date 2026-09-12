@@ -308,6 +308,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     final loadGeneration = ++_exerciceLoadGeneration;
     final selectionVersion = _exerciceSelectionVersion;
     final persistedRevision = _exercicePersistedRevision;
+    final wasDirtyAtReadStart = hasExerciceSelectionChanges(
+      initial: _initialSelectedExercices,
+      selected: _selectedExercices,
+    );
 
     final inscription = await _operationService.getUserInscription(
       clubId: widget.clubId,
@@ -327,6 +331,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
         currentSelectionVersion: _exerciceSelectionVersion,
         capturedPersistedRevision: persistedRevision,
         currentPersistedRevision: _exercicePersistedRevision,
+        wasDirtyAtReadStart: wasDirtyAtReadStart,
         hasPendingSave: _exerciceSaveQueue.isSaving,
       );
       setState(() {
@@ -419,9 +424,11 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     );
     if (task == null) return;
     if (mounted) setState(() {});
+    var saveSucceeded = false;
 
     try {
       await task.completion;
+      saveSucceeded = true;
 
       if (mounted) {
         setState(() {
@@ -447,7 +454,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     } finally {
       if (mounted) {
         setState(() {});
-        if (_exerciceSaveQueue.isIdle) {
+        if (shouldRefreshExerciceSelectionAfterSave(
+          saveSucceeded: saveSucceeded,
+          isQueueIdle: _exerciceSaveQueue.isIdle,
+        )) {
           try {
             await context.read<OperationProvider>().reloadParticipants(
                   widget.clubId,

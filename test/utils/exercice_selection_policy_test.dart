@@ -38,6 +38,7 @@ void main() {
       currentSelectionVersion: 4,
       capturedPersistedRevision: 0,
       currentPersistedRevision: 0,
+      wasDirtyAtReadStart: false,
       hasPendingSave: false,
     );
 
@@ -54,6 +55,7 @@ void main() {
       currentSelectionVersion: 3,
       capturedPersistedRevision: 1,
       currentPersistedRevision: 2,
+      wasDirtyAtReadStart: false,
       hasPendingSave: false,
     );
 
@@ -70,11 +72,91 @@ void main() {
       currentSelectionVersion: 4,
       capturedPersistedRevision: 1,
       currentPersistedRevision: 1,
+      wasDirtyAtReadStart: true,
       hasPendingSave: true,
     );
 
     expect(resolution.initial, ['old']);
     expect(resolution.selected, ['queued']);
+  });
+
+  test('read preserves a selection that was already dirty when it began', () {
+    final resolution = resolveExerciceSelectionRead(
+      remote: const ['remote'],
+      currentInitial: const ['old-baseline'],
+      currentSelected: const ['local-edit'],
+      capturedSelectionVersion: 4,
+      currentSelectionVersion: 4,
+      capturedPersistedRevision: 1,
+      currentPersistedRevision: 1,
+      wasDirtyAtReadStart: true,
+      hasPendingSave: false,
+    );
+
+    expect(resolution.initial, ['remote']);
+    expect(resolution.selected, ['local-edit']);
+  });
+
+  test('failed final save never authorizes a refresh', () async {
+    final queue = ExerciceSelectionSaveQueue();
+    final task = queue.enqueue(
+      selected: const ['local-edit'],
+      writer: (_) async => throw StateError('network error'),
+    )!;
+    var saveSucceeded = false;
+
+    try {
+      await task.completion;
+      saveSucceeded = true;
+    } on StateError {
+      // Mirrors the screen: show the error and keep the local dirty state.
+    }
+
+    expect(queue.isIdle, isTrue);
+    expect(
+      shouldRefreshExerciceSelectionAfterSave(
+        saveSucceeded: saveSucceeded,
+        isQueueIdle: queue.isIdle,
+      ),
+      isFalse,
+    );
+  });
+
+  test('edit during pending save stays dirty without a second enqueue',
+      () async {
+    final queue = ExerciceSelectionSaveQueue();
+    final write = Completer<void>();
+    final task = queue.enqueue(
+      selected: const ['queued'],
+      writer: (_) => write.future,
+    )!;
+
+    await Future<void>.delayed(Duration.zero);
+    final resolution = resolveExerciceSelectionRead(
+      remote: const ['remote-old'],
+      currentInitial: const ['baseline'],
+      currentSelected: const ['edited-after-enqueue'],
+      capturedSelectionVersion: 5,
+      currentSelectionVersion: 6,
+      capturedPersistedRevision: 2,
+      currentPersistedRevision: 2,
+      wasDirtyAtReadStart: true,
+      hasPendingSave: queue.isSaving,
+    );
+
+    expect(task.snapshot, ['queued']);
+    expect(resolution.initial, ['baseline']);
+    expect(resolution.selected, ['edited-after-enqueue']);
+
+    write.complete();
+    await task.completion;
+    expect(
+      hasExerciceSelectionChanges(
+        initial: task.snapshot,
+        selected: resolution.selected,
+      ),
+      isTrue,
+    );
   });
 
   test('save queue serializes changed snapshots in request order', () async {
