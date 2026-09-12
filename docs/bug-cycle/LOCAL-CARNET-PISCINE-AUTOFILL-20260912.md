@@ -25,6 +25,10 @@ dat al `status == closed` heeft, wordt door de scheduler altijd geweigerd, ook a
 scheduler nooit stilzwijgend een historische backfill uitvoeren. De bestaande
 18-uursgrens, `status: closed`-overgang en idempotente fan-out naar carnetregels en
 evaluatietaken blijven behouden.
+Elke kandidaat wordt onmiddellijk vóór de close-update opnieuw gelezen in een
+Firestore-transactie. Als iemand de sessie intussen manueel sloot of de status
+wijzigde, schrijft de scheduler helemaal niets: geen versie, geen metadata en dus
+geen nieuwe fan-outtrigger.
 
 De historische versie-2-verwerking is afgesplitst naar het expliciete script
 `functions/scripts/backfill_pool_session_carnet_v2.cjs`:
@@ -32,9 +36,12 @@ De historische versie-2-verwerking is afgesplitst naar het expliciete script
 - zonder `--apply` is het altijd een read-only preview;
 - preview zonder allowlist toont alle gesloten sessies met
   `carnet_processing_version < 2`;
-- schrijven vereist zowel `--apply` als minstens één exacte `--session=<id>`;
-- een onbekend, gewijzigd of intussen verwerkt allowlist-ID weigert de hele run
-  vóór de eerste write;
+- schrijven vereist zowel `--apply` als minstens één exacte
+  `--session=<id>:<preview_fingerprint>` uit de voorafgaande preview;
+- de SHA-256-previewfingerprint bindt het ID aan de volledige canonieke
+  sessiesnapshot, inclusief datum, status en aanwezigheids-/trainingscontext;
+- een onbekend, gewijzigd of intussen verwerkt document weigert de hele run vóór
+  de eerste write, ook wanneer het document formeel nog altijd kandidaat is;
 - bij apply wordt de volledige allowlist nogmaals in één Firestore-transactie
   gecontroleerd. Alleen de versiemarkering wordt verhoogd; die expliciete update
   activeert vervolgens de bestaande idempotente `onPoolSessionClosed`-fan-out.
@@ -52,12 +59,14 @@ willekeurige IDs gebruiken.
 - Gerichte Jest-test: actuele en legacy status, reeds gesloten, recent, ongeldige
   datum, Firestore Timestamp, deduplicatie en exacte close-update.
 - Backfilltests: gesloten/version<2-selectie, standaard dry-run zonder writes,
-  verplichte apply-allowlist, onbekende IDs, transactionele hercontrole en exacte
-  allowlist-write.
+  verplichte previewfingerprint, onbekende IDs, gewijzigde kandidaatpayload,
+  transactionele hercontrole en exacte allowlist-write.
+- Gecontroleerde race-test: een manuele close tussen schedulerquery en
+  transactionele re-read blijft volledig onaangeraakt.
 - Gerichte trigger-test: persoonlijke carnetregel zonder validator, geen foutieve
   evaluatietaak en gebruik van de echte sessiedatum.
 - Bestaande `onPoolSessionClosed`-tests blijven groen.
-- Volledige Functions-suite: 33 suites, 227 tests groen.
+- Volledige Functions-suite: 33 suites, 232 tests groen.
 - `node --check` en `git diff --check` groen.
 
 ## Publicatiegrens
@@ -124,10 +133,13 @@ cd functions
 npm run backfill:pool-carnet-v2 -- --club=calypso
 ```
 
-Een beperkte preview kan met één of meer `--session=<id>`-argumenten. Een apply is
-alleen technisch mogelijk met de combinatie `--apply --session=<id>` en blijft een
-productiewrite waarvoor aparte toestemming, een gecontroleerde allowlist en een
-nameting vereist zijn.
+Een beperkte preview kan met één of meer `--session=<id>`-argumenten. De preview
+toont per document een `preview_fingerprint`. Een apply is alleen technisch
+mogelijk met de combinatie
+`--apply --session=<id>:<preview_fingerprint>` en blijft een productiewrite
+waarvoor aparte toestemming, een gecontroleerde allowlist en een nameting vereist
+zijn. Iedere payloadwijziging sinds de preview maakt de fingerprint ongeldig en
+weigert de volledige transactie.
 
 De vereiste eindmeting — Jans twee regels zichtbaar, 0 ontbrekende persoonlijke
 carnetregels en 0 verkeerde datums — is dus terecht nog niet als geslaagd gemarkeerd.

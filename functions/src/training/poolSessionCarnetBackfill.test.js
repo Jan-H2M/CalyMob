@@ -7,6 +7,7 @@ const {
   CARNET_PROCESSING_VERSION,
   isHistoricalCarnetBackfillCandidate,
   runHistoricalCarnetBackfill,
+  sessionFingerprint,
 } = require('./poolSessionCarnetBackfill');
 
 function sessionDoc(id, data, freshData = data) {
@@ -85,7 +86,7 @@ describe('historical piscine carnet v2 backfill', () => {
     const { db } = setupDb([]);
     await expect(runHistoricalCarnetBackfill({
       db, clubId: 'calypso', apply: true,
-    })).rejects.toThrow('explicit --session allowlist');
+    })).rejects.toThrow('preview-bound --session=<id>:<fingerprint>');
     expect(db.runTransaction).not.toHaveBeenCalled();
   });
 
@@ -96,7 +97,10 @@ describe('historical piscine carnet v2 backfill', () => {
       db,
       clubId: 'calypso',
       apply: true,
-      allowlist: ['stale-a', 'not-in-preview'],
+      allowlist: [
+        `stale-a:${sessionFingerprint(stale)}`,
+        `not-in-preview:${'a'.repeat(64)}`,
+      ],
     })).rejects.toThrow('no longer candidates: not-in-preview');
     expect(db.runTransaction).not.toHaveBeenCalled();
     expect(transaction.update).not.toHaveBeenCalled();
@@ -111,7 +115,7 @@ describe('historical piscine carnet v2 backfill', () => {
       db,
       clubId: 'calypso',
       apply: true,
-      allowlist: ['stale-a'],
+      allowlist: [`stale-a:${sessionFingerprint(selected)}`],
     })).resolves.toEqual(expect.objectContaining({
       mode: 'apply', candidateCount: 2, selectedCount: 1, appliedCount: 1,
     }));
@@ -134,8 +138,86 @@ describe('historical piscine carnet v2 backfill', () => {
       db,
       clubId: 'calypso',
       apply: true,
-      allowlist: ['stale-a'],
+      allowlist: [`stale-a:${sessionFingerprint(changed)}`],
     })).rejects.toThrow('changed after preview: stale-a');
     expect(transaction.update).not.toHaveBeenCalled();
+  });
+
+  test('refuses apply when an allowlist id is not bound to its preview', async () => {
+    const stale = sessionDoc('stale-a', { status: 'closed' });
+    const { db, transaction } = setupDb([stale]);
+
+    await expect(runHistoricalCarnetBackfill({
+      db,
+      clubId: 'calypso',
+      apply: true,
+      allowlist: ['stale-a'],
+    })).rejects.toThrow('missing preview fingerprint for: stale-a');
+    expect(db.runTransaction).not.toHaveBeenCalled();
+    expect(transaction.update).not.toHaveBeenCalled();
+  });
+
+  test('refuses a stale preview fingerprint before starting a transaction', async () => {
+    const stale = sessionDoc('stale-a', { status: 'closed' });
+    const { db, transaction } = setupDb([stale]);
+
+    await expect(runHistoricalCarnetBackfill({
+      db,
+      clubId: 'calypso',
+      apply: true,
+      allowlist: [`stale-a:${'a'.repeat(64)}`],
+    })).rejects.toThrow('preview fingerprint mismatch for: stale-a');
+    expect(db.runTransaction).not.toHaveBeenCalled();
+    expect(transaction.update).not.toHaveBeenCalled();
+  });
+
+  test('refuses a same-candidate payload change after preview before any write', async () => {
+    const previewData = {
+      status: 'closed',
+      statut: 'termine',
+      date: new Date('2026-08-25T20:30:00Z'),
+      presences: [{ member_id: 'member-a', present: true }],
+    };
+    const changed = sessionDoc(
+      'stale-a',
+      previewData,
+      {
+        ...previewData,
+        date: new Date('2026-09-01T20:30:00Z'),
+        presences: [{ member_id: 'member-b', present: true }],
+      },
+    );
+    const { db, transaction } = setupDb([changed]);
+
+    await expect(runHistoricalCarnetBackfill({
+      db,
+      clubId: 'calypso',
+      apply: true,
+      allowlist: [`stale-a:${sessionFingerprint(changed)}`],
+    })).rejects.toThrow('changed after preview: stale-a');
+    expect(transaction.update).not.toHaveBeenCalled();
+  });
+
+  test('preview fingerprint is deterministic and covers attendance context', () => {
+    const first = sessionDoc('stale-a', {
+      status: 'closed',
+      nested: { z: 1, a: 2 },
+      members: ['a', 'b'],
+    });
+    const reordered = sessionDoc('stale-a', {
+      members: ['a', 'b'],
+      nested: { a: 2, z: 1 },
+      status: 'closed',
+    });
+    const changedAttendance = sessionDoc('stale-a', {
+      members: ['a', 'c'],
+      nested: { a: 2, z: 1 },
+      status: 'closed',
+    });
+
+    expect(sessionFingerprint(first)).toBe(sessionFingerprint(reordered));
+    expect(sessionFingerprint(first)).not.toBe(
+      sessionFingerprint(changedAttendance),
+    );
   });
 });

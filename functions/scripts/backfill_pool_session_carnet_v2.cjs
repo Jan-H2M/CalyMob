@@ -4,12 +4,12 @@
  * Historical piscine carnet v2 backfill.
  *
  * Default is always DRY-RUN. Applying writes requires BOTH `--apply` and one
- * or more explicit `--session=<document-id>` allowlist entries.
+ * or more preview-bound `--session=<document-id>:<preview_fingerprint>` entries.
  *
  * Usage (from functions/):
  *   npm run backfill:pool-carnet-v2 -- --club=calypso
  *   npm run backfill:pool-carnet-v2 -- --club=calypso --session=<id>
- *   npm run backfill:pool-carnet-v2 -- --club=calypso --apply --session=<id>
+ *   npm run backfill:pool-carnet-v2 -- --club=calypso --apply --session=<id>:<fingerprint>
  */
 
 const fs = require('fs');
@@ -57,7 +57,8 @@ function printUsage() {
     '  npm run backfill:pool-carnet-v2 -- --club=calypso --session=<id>',
     '',
     'Apply only an explicit allowlist:',
-    '  npm run backfill:pool-carnet-v2 -- --club=calypso --apply --session=<id>',
+    '  Copy preview_fingerprint from the immediately preceding dry-run:',
+    '  npm run backfill:pool-carnet-v2 -- --club=calypso --apply --session=<id>:<preview_fingerprint>',
   ].join('\n'));
 }
 

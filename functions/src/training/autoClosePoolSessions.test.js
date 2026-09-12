@@ -16,11 +16,30 @@ const {
 
 const cutoff = new Date('2026-09-12T00:00:00.000Z');
 
-function sessionDoc(id, data) {
+function sessionDoc(id, data, freshData = data) {
+  const ref = { id };
   return {
     id,
     data: () => data,
-    ref: { update: jest.fn().mockResolvedValue(undefined) },
+    ref,
+    freshSnapshot: {
+      id,
+      ref,
+      exists: freshData !== null,
+      data: () => freshData,
+    },
+  };
+}
+
+function transactionDb(docs) {
+  const transaction = {
+    get: jest.fn(async (ref) =>
+      docs.find((doc) => doc.id === ref.id).freshSnapshot),
+    update: jest.fn(),
+  };
+  return {
+    db: { runTransaction: jest.fn((callback) => callback(transaction)) },
+    transaction,
   };
 }
 
@@ -121,18 +140,35 @@ describe('autoClosePoolSessions schema compatibility', () => {
       statut: 'termine', status: 'closed', carnet_processing_version: 1,
     });
     const ref = sessionsRef({ current: [eligible, alreadyClosed] });
+    const { db, transaction } = transactionDb([eligible, alreadyClosed]);
 
     await expect(
-      closeEligiblePoolSessions(ref, 'calypso', cutoff),
+      closeEligiblePoolSessions(db, ref, 'calypso', cutoff),
     ).resolves.toEqual({ scanned: 2, closed: 1 });
-    expect(eligible.ref.update).toHaveBeenCalledTimes(1);
-    expect(eligible.ref.update).toHaveBeenCalledWith({
+    expect(transaction.update).toHaveBeenCalledTimes(1);
+    expect(transaction.update).toHaveBeenCalledWith(eligible.ref, {
       status: 'closed',
       carnet_processing_version: CARNET_PROCESSING_VERSION,
       closedBy: 'auto',
       closedAt: '__server_timestamp__',
       auto_closed_at: '__server_timestamp__',
     });
-    expect(alreadyClosed.ref.update).not.toHaveBeenCalled();
+  });
+
+  test('skips a session closed manually after the query without stamping it', async () => {
+    const raced = sessionDoc(
+      '2026-08-25',
+      { statut: 'termine', status: 'open' },
+      { statut: 'termine', status: 'closed', closedBy: 'manual' },
+    );
+    const ref = sessionsRef({ legacy: [raced], current: [raced] });
+    const { db, transaction } = transactionDb([raced]);
+
+    await expect(
+      closeEligiblePoolSessions(db, ref, 'calypso', cutoff),
+    ).resolves.toEqual({ scanned: 1, closed: 0 });
+    expect(db.runTransaction).toHaveBeenCalledTimes(1);
+    expect(transaction.get).toHaveBeenCalledWith(raced.ref);
+    expect(transaction.update).not.toHaveBeenCalled();
   });
 });

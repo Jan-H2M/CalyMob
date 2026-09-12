@@ -87,27 +87,48 @@ async function loadPendingSessionDocs(sessionsRef) {
   return [...uniqueDocs.values()];
 }
 
-async function closeEligiblePoolSessions(sessionsRef, clubId, cutoff) {
+async function closeEligiblePoolSessions(db, sessionsRef, clubId, cutoff) {
   const sessionDocs = await loadPendingSessionDocs(sessionsRef);
   let closed = 0;
 
   for (const sessionDoc of sessionDocs) {
-    const data = sessionDoc.data();
-    if (!isAutoCloseCandidate(data, sessionDoc.id, cutoff)) continue;
+    if (!isAutoCloseCandidate(sessionDoc.data(), sessionDoc.id, cutoff)) {
+      continue;
+    }
 
-    console.log(
-      `[${FUNCTION_NAME}] auto-closing ${clubId}/${sessionDoc.id}`
-    );
     try {
-      const update = {
-        status: 'closed',
-        carnet_processing_version: CARNET_PROCESSING_VERSION,
-        closedBy: 'auto',
-        closedAt: FieldValue.serverTimestamp(),
-        auto_closed_at: FieldValue.serverTimestamp(),
-      };
-      await sessionDoc.ref.update(update);
-      closed++;
+      const didClose = await db.runTransaction(async (transaction) => {
+        // The query result is only a candidate list. A manual close can race
+        // the scheduler, so eligibility must be checked again in the same
+        // transaction that performs the transition. Firestore retries this
+        // callback if the document changes after this read.
+        const freshSnapshot = await transaction.get(sessionDoc.ref);
+        if (
+          !freshSnapshot.exists ||
+          !isAutoCloseCandidate(
+            freshSnapshot.data(),
+            sessionDoc.id,
+            cutoff,
+          )
+        ) {
+          return false;
+        }
+
+        transaction.update(sessionDoc.ref, {
+          status: 'closed',
+          carnet_processing_version: CARNET_PROCESSING_VERSION,
+          closedBy: 'auto',
+          closedAt: FieldValue.serverTimestamp(),
+          auto_closed_at: FieldValue.serverTimestamp(),
+        });
+        return true;
+      });
+      if (didClose) {
+        console.log(
+          `[${FUNCTION_NAME}] auto-closed ${clubId}/${sessionDoc.id}`
+        );
+        closed++;
+      }
     } catch (err) {
       console.error(
         `[${FUNCTION_NAME}] failed to close ${clubId}/${sessionDoc.id}:`,
@@ -142,6 +163,7 @@ const autoClosePoolSessions = onSchedule(
         .doc(clubId)
         .collection('piscine_sessions');
       const result = await closeEligiblePoolSessions(
+        db,
         sessionsRef,
         clubId,
         cutoff

@@ -14,13 +14,16 @@ describe('backfill_pool_session_carnet_v2 CLI guard', () => {
     expect(parseArgs([
       '--club=calypso',
       '--apply',
-      '--session=session-a',
+      `--session=session-a:${'a'.repeat(64)}`,
       '--session',
-      'session-b',
+      `session-b:${'b'.repeat(64)}`,
     ])).toEqual({
       apply: true,
       clubId: 'calypso',
-      allowlist: ['session-a', 'session-b'],
+      allowlist: [
+        `session-a:${'a'.repeat(64)}`,
+        `session-b:${'b'.repeat(64)}`,
+      ],
       help: false,
     });
   });
