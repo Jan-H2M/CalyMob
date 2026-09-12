@@ -25,11 +25,13 @@ import '../../models/tariff.dart';
 class AddGuestDialog extends StatefulWidget {
   final List<Tariff> availableGuestTariffs;
   final List<Supplement> availableSupplements;
+  final bool serverPricedFreeGuest;
 
   const AddGuestDialog({
     super.key,
     this.availableGuestTariffs = const [],
     this.availableSupplements = const [],
+    this.serverPricedFreeGuest = false,
   });
 
   @override
@@ -93,6 +95,9 @@ class _AddGuestDialogState extends State<AddGuestDialog> {
       if (_selectedTariff == null) return;
       prix = _selectedTariff!.price;
       tariffId = _selectedTariff!.id;
+    } else if (widget.serverPricedFreeGuest) {
+      prix = 0;
+      tariffId = null;
     } else {
       // Legacy admin flow: free-typed price, no tariff link.
       prix = double.tryParse(_prixController.text.replaceAll(',', '.')) ?? 0.0;
@@ -367,12 +372,15 @@ class _AddGuestDialogState extends State<AddGuestDialog> {
                           ),
                         ),
                         const SizedBox(width: 14),
-                        const Text(
-                          'Ajouter un invité',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                        const Expanded(
+                          child: Text(
+                            'Ajouter un invité',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                       ],
@@ -415,12 +423,13 @@ class _AddGuestDialogState extends State<AddGuestDialog> {
                       ),
                       decoration: _buildInputDecoration('Nom'),
                       maxLength: 50,
-                      textInputAction: _hasGuestTariffs
-                          ? TextInputAction.done
-                          : TextInputAction.next,
+                      textInputAction:
+                          _hasGuestTariffs || widget.serverPricedFreeGuest
+                              ? TextInputAction.done
+                              : TextInputAction.next,
                       textCapitalization: TextCapitalization.words,
                       onFieldSubmitted: (_) {
-                        if (_hasGuestTariffs) {
+                        if (_hasGuestTariffs || widget.serverPricedFreeGuest) {
                           _submit();
                         } else {
                           FocusScope.of(context).requestFocus(_prixFocusNode);
@@ -438,6 +447,28 @@ class _AddGuestDialogState extends State<AddGuestDialog> {
                     // Tariff selector OR free-price field
                     if (_hasGuestTariffs)
                       _buildTariffSection()
+                    else if (widget.serverPricedFreeGuest)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 18, vertical: 14),
+                        decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14)),
+                        child: const Row(children: [
+                          Icon(Icons.local_offer_outlined,
+                              color: AppColors.donkerblauw),
+                          SizedBox(width: 10),
+                          Expanded(
+                              child: Text('Invité gratuit',
+                                  style: TextStyle(
+                                      color: AppColors.donkerblauw,
+                                      fontWeight: FontWeight.w600))),
+                          Text('0,00 €',
+                              style: TextStyle(
+                                  color: AppColors.donkerblauw,
+                                  fontWeight: FontWeight.w600)),
+                        ]),
+                      )
                     else
                       TextFormField(
                         controller: _prixController,
@@ -458,8 +489,7 @@ class _AddGuestDialogState extends State<AddGuestDialog> {
                         keyboardType: const TextInputType.numberWithOptions(
                             decimal: true),
                         inputFormatters: [
-                          FilteringTextInputFormatter.allow(
-                              RegExp(r'[\d.,]')),
+                          FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
                         ],
                         textInputAction: TextInputAction.done,
                         onFieldSubmitted: (_) => _submit(),
@@ -489,8 +519,7 @@ class _AddGuestDialogState extends State<AddGuestDialog> {
                             onPressed: () => Navigator.of(context).pop(),
                             style: TextButton.styleFrom(
                               foregroundColor: Colors.white70,
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 14),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 side: BorderSide(
@@ -523,8 +552,7 @@ class _AddGuestDialogState extends State<AddGuestDialog> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.oranje,
                               foregroundColor: Colors.white,
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 14),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),

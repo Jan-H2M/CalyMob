@@ -20,6 +20,8 @@ const int _missingRegistrationDateSortKey = -9007199254740991;
 
 typedef RegisterForEventInvoker = Future<void> Function(
     Map<String, dynamic> payload);
+typedef AddGuestToEventInvoker = Future<void> Function(
+    Map<String, dynamic> payload);
 
 class RegistrationGuestRequest {
   const RegistrationGuestRequest({
@@ -56,14 +58,17 @@ class OperationService {
   final FirebaseFirestore _firestore;
   final FirebaseFunctions? _injectedFunctions;
   final RegisterForEventInvoker? _registerForEventInvoker;
+  final AddGuestToEventInvoker? _addGuestToEventInvoker;
 
   OperationService({
     FirebaseFirestore? firestore,
     FirebaseFunctions? functions,
     RegisterForEventInvoker? registerForEventInvoker,
+    AddGuestToEventInvoker? addGuestToEventInvoker,
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
         _injectedFunctions = functions,
-        _registerForEventInvoker = registerForEventInvoker;
+        _registerForEventInvoker = registerForEventInvoker,
+        _addGuestToEventInvoker = addGuestToEventInvoker;
 
   FirebaseFunctions get _functions =>
       _injectedFunctions ??
@@ -1228,9 +1233,30 @@ class OperationService {
     try {
       final appVersion = await _appVersion();
       if (parentInscriptionId != null) {
-        throw StateError(
-          'Les invités liés doivent être inscrits avec le membre dans une seule demande.',
-        );
+        final payload = <String, dynamic>{
+          'clubId': clubId,
+          'operationId': operationId,
+          'parentInscriptionId': parentInscriptionId,
+          'requestId': _newRegistrationRequestId(),
+          'guest': {
+            'firstName': guestPrenom,
+            'lastName': guestNom,
+            if (tariffId != null) 'tariffId': tariffId,
+            'selectedSupplementIds':
+                (selectedSupplements ?? const <SelectedSupplement>[])
+                    .map((supplement) => supplement.id)
+                    .toList(),
+          },
+          'source': 'calymob',
+          if (appVersion != null) 'appVersion': appVersion,
+        };
+        final invoker = _addGuestToEventInvoker;
+        if (invoker != null) {
+          await invoker(payload);
+        } else {
+          await _functions.httpsCallable('addGuestToEvent').call(payload);
+        }
+        return;
       }
       // Generate unique guest ID (timestamp + random suffix to avoid collisions)
       final random =

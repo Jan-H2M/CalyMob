@@ -43,9 +43,11 @@ class _GuestEntry {
   String prenom;
   String nom;
   Tariff tariff;
+
   /// Per-guest supplement selections. Same supplements list as the
   /// inviting member sees, but each guest picks independently.
   final Map<String, SelectedSupplement> selectedSupplements;
+
   /// Whether the supplements panel is expanded for this guest.
   bool supplementsExpanded;
 
@@ -55,7 +57,8 @@ class _GuestEntry {
     required this.tariff,
     Map<String, SelectedSupplement>? selectedSupplements,
     this.supplementsExpanded = false,
-  }) : selectedSupplements = selectedSupplements ?? <String, SelectedSupplement>{};
+  }) : selectedSupplements =
+            selectedSupplements ?? <String, SelectedSupplement>{};
 
   double get supplementTotal {
     double total = 0;
@@ -103,8 +106,9 @@ class _RegisterWithGuestsDialogState extends State<RegisterWithGuestsDialog> {
     isGuestTariff: true,
   );
 
-  Tariff get _defaultGuestTariff =>
-      widget.guestTariffs.isNotEmpty ? widget.guestTariffs.first : _freeGuestTariff;
+  Tariff get _defaultGuestTariff => widget.guestTariffs.isNotEmpty
+      ? widget.guestTariffs.first
+      : _freeGuestTariff;
 
   void _addGuest() {
     setState(() {
@@ -141,7 +145,7 @@ class _RegisterWithGuestsDialogState extends State<RegisterWithGuestsDialog> {
               'prenom': g.prenom.trim(),
               'nom': g.nom.trim(),
               'prix': g.tariff.price,
-              'tariffId': g.tariff.id,
+              'tariffId': widget.guestTariffs.isEmpty ? null : g.tariff.id,
               'supplements': g.selectedSupplements.values.toList(),
               'supplementTotal': g.supplementTotal,
             })
@@ -260,8 +264,7 @@ class _RegisterWithGuestsDialogState extends State<RegisterWithGuestsDialog> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  if (_guests.isEmpty)
-                    _emptyGuestsHint(),
+                  if (_guests.isEmpty) _emptyGuestsHint(),
                   for (int i = 0; i < _guests.length; i++) ...[
                     _buildGuestCard(i),
                     const SizedBox(height: 8),
@@ -388,9 +391,7 @@ class _RegisterWithGuestsDialogState extends State<RegisterWithGuestsDialog> {
           child: Row(
             children: [
               Icon(
-                selected
-                    ? Icons.check_box
-                    : Icons.check_box_outline_blank,
+                selected ? Icons.check_box : Icons.check_box_outline_blank,
                 color: selected ? AppColors.middenblauw : Colors.grey,
                 size: 20,
               ),
@@ -527,8 +528,7 @@ class _RegisterWithGuestsDialogState extends State<RegisterWithGuestsDialog> {
             },
             borderRadius: BorderRadius.circular(8),
             child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               child: Row(
                 children: [
                   Icon(
@@ -546,9 +546,8 @@ class _RegisterWithGuestsDialogState extends State<RegisterWithGuestsDialog> {
                           : 'Ajouter des suppléments (optionnel)',
                       style: TextStyle(
                         fontSize: 12.5,
-                        fontWeight: hasSelection
-                            ? FontWeight.w600
-                            : FontWeight.w500,
+                        fontWeight:
+                            hasSelection ? FontWeight.w600 : FontWeight.w500,
                         color: AppColors.donkerblauw.withOpacity(0.85),
                       ),
                     ),
@@ -602,26 +601,20 @@ class _RegisterWithGuestsDialogState extends State<RegisterWithGuestsDialog> {
         },
         borderRadius: BorderRadius.circular(8),
         child: Container(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: BoxDecoration(
             border: Border.all(
-              color: selected
-                  ? AppColors.oranje
-                  : Colors.grey.withOpacity(0.25),
+              color:
+                  selected ? AppColors.oranje : Colors.grey.withOpacity(0.25),
               width: selected ? 1.2 : 1,
             ),
             borderRadius: BorderRadius.circular(8),
-            color: selected
-                ? AppColors.oranje.withOpacity(0.06)
-                : Colors.white,
+            color: selected ? AppColors.oranje.withOpacity(0.06) : Colors.white,
           ),
           child: Row(
             children: [
               Icon(
-                selected
-                    ? Icons.check_box
-                    : Icons.check_box_outline_blank,
+                selected ? Icons.check_box : Icons.check_box_outline_blank,
                 color: selected ? AppColors.oranje : Colors.grey,
                 size: 18,
               ),
@@ -736,8 +729,7 @@ class _RegisterWithGuestsDialogState extends State<RegisterWithGuestsDialog> {
       isDense: true,
       filled: true,
       fillColor: Colors.white,
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
         borderSide: BorderSide(color: AppColors.oranje.withOpacity(0.4)),

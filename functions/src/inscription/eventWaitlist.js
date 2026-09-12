@@ -306,10 +306,12 @@ function guestPricing(operation, guest) {
   const guestTariffs = Array.isArray(operation.event_tariffs)
     ? operation.event_tariffs.filter(item => item?.is_guest_tariff === true)
     : [];
-  const tariff = guest.tariffId
-    ? guestTariffs.find(item => item.id === guest.tariffId)
+  const requestedTariffId = guestTariffs.length === 0 && guest.tariffId === 'free'
+    ? null : guest.tariffId;
+  const tariff = requestedTariffId
+    ? guestTariffs.find(item => item.id === requestedTariffId)
     : null;
-  if ((guest.tariffId && !tariff) || (!guest.tariffId && guestTariffs.length > 0)) {
+  if ((requestedTariffId && !tariff) || (!requestedTariffId && guestTariffs.length > 0)) {
     throw new HttpsError('invalid-argument', 'Tarif invité indisponible.');
   }
   const price = tariff ? Number(tariff.price || 0) : 0;
@@ -322,6 +324,64 @@ function guestPricing(operation, guest) {
     price,
     supplements,
     supplementTotal: supplements.reduce((sum, item) => sum + item.price, 0),
+  };
+}
+
+function guestRegistrationPayload({
+  operation,
+  operationId,
+  guest,
+  pricing,
+  guestRef,
+  parentInscriptionId,
+  registrationStatus,
+  paymentExpiresAt,
+  member,
+  uid,
+  source,
+  appVersion,
+  now,
+}) {
+  return {
+    operation_id: operationId,
+    operation_titre: operation.titre || '',
+    membre_id: `guest_${guestRef.id}`,
+    membre_nom: guest.lastName,
+    membre_prenom: guest.firstName,
+    prix: pricing.price,
+    paye: false,
+    registration_status: registrationStatus,
+    payment_status: paymentRequiredForOperation(operation) ? 'open' : null,
+    payment_expires_at: paymentExpiresAt || null,
+    date_inscription: now,
+    is_guest: true,
+    added_by: uid,
+    added_by_name: actorName(member, uid),
+    parent_inscription_id: parentInscriptionId,
+    tariff_id: pricing.tariff?.id || null,
+    tariff_label: pricing.tariff?.label || null,
+    selected_supplements: pricing.supplements,
+    supplement_total: pricing.supplementTotal,
+    installment_payments: installmentPayments(
+      operation,
+      pricing.tariff,
+      pricing.supplementTotal,
+    ),
+    created_at: now,
+    updated_at: now,
+    created_by: uid,
+    created_by_name: actorName(member, uid),
+    created_source: cleanAuditText(source, 'calymob', 40),
+    created_app_version: cleanAuditText(appVersion, null, 40),
+    ...actionMetadata({
+      member,
+      uid,
+      source,
+      appVersion,
+      reason: 'guest_registration',
+      action: 'registered',
+      now,
+    }),
   };
 }
 
@@ -470,47 +530,21 @@ const registerForEvent = onCall({ region: REGION }, async request => {
     guestRefs.forEach((guestRef, index) => {
       const guest = guests[index];
       const pricing = guestPricings[index];
-      transaction.set(guestRef, {
-        operation_id: operationId,
-        operation_titre: operation.titre || '',
-        membre_id: `guest_${guestRef.id}`,
-        membre_nom: guest.lastName,
-        membre_prenom: guest.firstName,
-        prix: pricing.price,
-        paye: false,
-        registration_status: registrationStatus,
-        payment_status: paymentRequired ? 'open' : null,
-        payment_expires_at: paymentExpiresAt,
-        date_inscription: now,
-        is_guest: true,
-        added_by: uid,
-        added_by_name: actorName(memberData, uid),
-        parent_inscription_id: registrationRef.id,
-        tariff_id: pricing.tariff?.id || null,
-        tariff_label: pricing.tariff?.label || null,
-        selected_supplements: pricing.supplements,
-        supplement_total: pricing.supplementTotal,
-        installment_payments: installmentPayments(
-          operation,
-          pricing.tariff,
-          pricing.supplementTotal,
-        ),
-        created_at: now,
-        updated_at: now,
-        created_by: uid,
-        created_by_name: actorName(memberData, uid),
-        created_source: cleanAuditText(source, 'calymob', 40),
-        created_app_version: cleanAuditText(appVersion, null, 40),
-        ...actionMetadata({
-          member: memberData,
-          uid,
-          source,
-          appVersion,
-          reason: 'guest_registration',
-          action: 'registered',
-          now,
-        }),
-      });
+      transaction.set(guestRef, guestRegistrationPayload({
+        operation,
+        operationId,
+        guest,
+        pricing,
+        guestRef,
+        parentInscriptionId: registrationRef.id,
+        registrationStatus,
+        paymentExpiresAt,
+        member: memberData,
+        uid,
+        source,
+        appVersion,
+        now,
+      }));
     });
     transaction.set(requestRef, {
       member_id: uid,
@@ -531,6 +565,103 @@ const registerForEvent = onCall({ region: REGION }, async request => {
       guestInscriptionIds: guestRefs.map(ref => ref.id),
       idempotent: false,
     };
+  });
+});
+
+const addGuestToEvent = onCall({ region: REGION }, async request => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Authentification requise.');
+  const {
+    clubId,
+    operationId,
+    parentInscriptionId,
+    requestId: rawRequestId,
+    guest: rawGuest,
+    source = 'calymob',
+    appVersion = null,
+  } = request.data || {};
+  if (typeof clubId !== 'string' || typeof operationId !== 'string'
+    || typeof parentInscriptionId !== 'string' || !parentInscriptionId
+    || !/^[A-Za-z0-9_-]+$/.test(clubId) || !/^[A-Za-z0-9_-]+$/.test(operationId)) {
+    throw new HttpsError('invalid-argument', 'Paramètres d’inscription invité invalides.');
+  }
+  const requestId = registrationRequestId(rawRequestId);
+  const [guest] = requestedGuests([rawGuest]);
+  const member = await requireMember(clubId, uid);
+  const memberData = member.data();
+  const { operationRef, inscriptionsRef } = refs(clubId, operationId);
+  const parentRef = inscriptionsRef.doc(parentInscriptionId);
+  const guestRef = inscriptionsRef.doc();
+  const requestRef = operationRef.collection('registration_requests').doc(requestId);
+
+  return admin.firestore().runTransaction(async transaction => {
+    const [operationSnap, inscriptionsSnap, parentSnap, requestSnap] = await Promise.all([
+      transaction.get(operationRef),
+      transaction.get(inscriptionsRef),
+      transaction.get(parentRef),
+      transaction.get(requestRef),
+    ]);
+    if (!operationSnap.exists || !parentSnap.exists) {
+      throw new HttpsError('not-found', 'Événement ou inscription principale introuvable.');
+    }
+    if (requestSnap.exists) {
+      const previous = requestSnap.data();
+      if (previous.member_id !== uid || previous.parent_inscription_id !== parentInscriptionId) {
+        throw new HttpsError('permission-denied', 'Cette demande appartient à une autre inscription.');
+      }
+      return { guestInscriptionId: previous.guest_inscription_id, idempotent: true };
+    }
+    const parent = parentSnap.data();
+    if (parent.membre_id !== uid || parent.is_guest === true
+      || parent.registration_status === 'canceled' || parent.registration_status === 'waitlisted') {
+      throw new HttpsError('permission-denied', 'Seul le membre inscrit peut ajouter un invité.');
+    }
+    const operation = operationSnap.data();
+    if (operation.allow_guests !== true) {
+      throw new HttpsError('failed-precondition', 'Les invités ne sont pas autorisés.');
+    }
+    const existingGuests = inscriptionsSnap.docs.filter(doc => {
+      const data = doc.data();
+      return data.parent_inscription_id === parentInscriptionId
+        && data.registration_status !== 'canceled';
+    });
+    const maxGuests = Number(operation.max_guests_per_member);
+    if (Number.isInteger(maxGuests) && maxGuests >= 0 && existingGuests.length + 1 > maxGuests) {
+      throw new HttpsError('failed-precondition', 'Nombre maximal d’invités atteint.');
+    }
+    const count = inscriptionsSnap.docs.filter(doc => ACTIVE_STATUSES.has(
+      doc.data().registration_status || 'confirmed',
+    )).length;
+    assertRegistrationOpen(operation, count, 1);
+    const pricing = guestPricing(operation, guest);
+    const now = admin.firestore.Timestamp.now();
+    const registrationStatus = parent.registration_status;
+    transaction.set(guestRef, guestRegistrationPayload({
+      operation,
+      operationId,
+      guest,
+      pricing,
+      guestRef,
+      parentInscriptionId,
+      registrationStatus,
+      paymentExpiresAt: parent.payment_expires_at || null,
+      member: memberData,
+      uid,
+      source,
+      appVersion,
+      now,
+    }));
+    transaction.set(requestRef, {
+      member_id: uid,
+      parent_inscription_id: parentInscriptionId,
+      guest_inscription_id: guestRef.id,
+      registration_status: registrationStatus,
+      created_at: now,
+    });
+    transaction.update(operationRef, {
+      registration_capacity_revision: Number(operation.registration_capacity_revision || 0) + 1,
+    });
+    return { guestInscriptionId: guestRef.id, idempotent: false };
   });
 });
 
@@ -939,8 +1070,10 @@ module.exports = {
   promotionCandidateAfterWithdrawal,
   promotionCandidatesAfterWithdrawal,
   canManageWaitlist,
+  guestPricing,
   joinEventWaitlist,
   registerForEvent,
+  addGuestToEvent,
   leaveEventWaitlist,
   unregisterFromEvent,
   promoteEventWaitlistEntry,

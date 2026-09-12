@@ -34,6 +34,8 @@ const {
   promotionCandidateAfterWithdrawal,
   promotionCandidatesAfterWithdrawal,
   registerForEvent,
+  addGuestToEvent,
+  guestPricing,
   unregisterFromEvent,
 } = require('./eventWaitlist');
 
@@ -411,6 +413,17 @@ describe('registerForEvent callable', () => {
     );
   });
 
+  test('accepts the dialog free token only when the server has no guest tariff', () => {
+    expect(guestPricing({ event_tariffs: [] }, {
+      firstName: 'Free', lastName: 'Guest', tariffId: 'free', selectedSupplementIds: [],
+    })).toEqual({ tariff: null, price: 0, supplements: [], supplementTotal: 0 });
+    expect(() => guestPricing({
+      event_tariffs: [{ id: 'paid-guest', is_guest_tariff: true, price: 12 }],
+    }, {
+      firstName: 'Forged', lastName: 'Free', tariffId: 'free', selectedSupplementIds: [],
+    })).toThrow('Tarif invité indisponible.');
+  });
+
   test('rejects the complete group before writing when remaining capacity is insufficient', async () => {
     const legacy = makeDoc('legacy-direct-client', {
       membre_id: 'legacy-member',
@@ -492,6 +505,131 @@ describe('registerForEvent callable', () => {
     });
     expect(transactions[0].set).not.toHaveBeenCalled();
     expect(transactions[0].update).not.toHaveBeenCalled();
+  });
+});
+
+describe('addGuestToEvent callable', () => {
+  const requestId = 'append_request_20260812_1';
+
+  function setupAppend({ existingRequest = null, existingGuests = [], capacity = 4 } = {}) {
+    const parentRef = { id: 'parent-1', path: 'inscriptions/parent-1' };
+    const guestRef = { id: 'new-guest', path: 'inscriptions/new-guest' };
+    const requestRef = { id: requestId, path: `registration_requests/${requestId}` };
+    const docs = [
+      { id: 'parent-1', ref: parentRef, data: () => ({ membre_id: 'member-1', registration_status: 'confirmed' }) },
+      ...existingGuests.map((id) => ({
+        id,
+        ref: { id, path: `inscriptions/${id}` },
+        data: () => ({ parent_inscription_id: 'parent-1', registration_status: 'confirmed', is_guest: true }),
+      })),
+    ];
+    let generated = false;
+    const inscriptionsRef = {
+      path: 'clubs/calypso/operations/event-1/inscriptions',
+      doc: jest.fn((id) => {
+        if (id === 'parent-1') return parentRef;
+        if (id) return { id, path: `inscriptions/${id}` };
+        generated = true;
+        return guestRef;
+      }),
+    };
+    const operationRef = {
+      path: 'clubs/calypso/operations/event-1',
+      collection: jest.fn((name) => {
+        if (name === 'inscriptions') return inscriptionsRef;
+        if (name === 'registration_requests') return { doc: () => requestRef };
+        if (name === 'waitlist_audit') return { doc: jest.fn() };
+        throw new Error(`unexpected collection ${name}`);
+      }),
+    };
+    const memberRef = {
+      path: 'clubs/calypso/members/member-1',
+      get: jest.fn(async () => ({
+        exists: true,
+        data: () => ({ prenom: 'Alice', nom: 'Member', app_role: 'membre' }),
+      })),
+    };
+    const operation = {
+      titre: 'Free event',
+      statut: 'ouvert',
+      date_debut: new Date('2027-08-14T10:00:00Z'),
+      capacite_max: capacity,
+      allow_guests: true,
+      max_guests_per_member: 2,
+      payment_required: false,
+      event_tariffs: [],
+    };
+    const transaction = {
+      get: jest.fn(async (ref) => {
+        if (ref === operationRef) return { exists: true, data: () => operation };
+        if (ref === inscriptionsRef) return { docs };
+        if (ref === parentRef) return { exists: true, data: () => docs[0].data() };
+        if (ref === requestRef) return { exists: existingRequest !== null, data: () => existingRequest };
+        throw new Error(`unexpected get ${ref.path}`);
+      }),
+      set: jest.fn(),
+      update: jest.fn(),
+    };
+    admin.firestore.mockReturnValue({
+      doc: jest.fn((path) => path === operationRef.path ? operationRef : memberRef),
+      runTransaction: jest.fn(async (callback) => callback(transaction)),
+    });
+    return { transaction, operationRef, guestRef, requestRef, generated: () => generated };
+  }
+
+  beforeEach(() => jest.clearAllMocks());
+
+  test('appends a free guest atomically to the authenticated active parent', async () => {
+    const { transaction, operationRef, guestRef, requestRef } = setupAppend();
+    const result = await addGuestToEvent({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso', operationId: 'event-1', parentInscriptionId: 'parent-1',
+        requestId,
+        guest: { firstName: 'Bob', lastName: 'Guest', tariffId: 'free' },
+      },
+    });
+    expect(result).toEqual({ guestInscriptionId: 'new-guest', idempotent: false });
+    expect(transaction.set).toHaveBeenCalledWith(guestRef, expect.objectContaining({
+      parent_inscription_id: 'parent-1', prix: 0, tariff_id: null,
+      registration_status: 'confirmed', payment_status: null,
+    }));
+    expect(transaction.set).toHaveBeenCalledWith(requestRef, expect.objectContaining({
+      member_id: 'member-1', guest_inscription_id: 'new-guest',
+    }));
+    expect(transaction.update).toHaveBeenCalledWith(operationRef, { registration_capacity_revision: 1 });
+  });
+
+  test('returns the receipt on retry and never stages a second guest', async () => {
+    const { transaction } = setupAppend({ existingRequest: {
+      member_id: 'member-1', parent_inscription_id: 'parent-1', guest_inscription_id: 'old-guest',
+    } });
+    const result = await addGuestToEvent({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso', operationId: 'event-1', parentInscriptionId: 'parent-1',
+        requestId, guest: { firstName: 'Bob', lastName: 'Guest' },
+      },
+    });
+    expect(result).toEqual({ guestInscriptionId: 'old-guest', idempotent: true });
+    expect(transaction.set).not.toHaveBeenCalled();
+    expect(transaction.update).not.toHaveBeenCalled();
+  });
+
+  test('rejects capacity and max-guest violations before any write', async () => {
+    let setup = setupAppend({ capacity: 1 });
+    await expect(addGuestToEvent({
+      auth: { uid: 'member-1' },
+      data: { clubId: 'calypso', operationId: 'event-1', parentInscriptionId: 'parent-1', requestId, guest: { firstName: 'No', lastName: 'Room' } },
+    })).rejects.toMatchObject({ code: 'resource-exhausted' });
+    expect(setup.transaction.set).not.toHaveBeenCalled();
+
+    setup = setupAppend({ existingGuests: ['guest-1', 'guest-2'] });
+    await expect(addGuestToEvent({
+      auth: { uid: 'member-1' },
+      data: { clubId: 'calypso', operationId: 'event-1', parentInscriptionId: 'parent-1', requestId, guest: { firstName: 'Too', lastName: 'Many' } },
+    })).rejects.toMatchObject({ code: 'failed-precondition' });
+    expect(setup.transaction.set).not.toHaveBeenCalled();
   });
 });
 

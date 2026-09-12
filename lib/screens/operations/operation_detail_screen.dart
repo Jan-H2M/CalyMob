@@ -2005,20 +2005,18 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   ///     aggregated into a single QR; otherwise the guest is unlinked and
   ///     pays separately.
   bool get _canAddGuest {
-    if (_canScan) return true;
     final operation = context.read<OperationProvider>().selectedOperation;
     if (operation == null) return false;
-    if (!operation.allowGuests) return false;
-    if (_guestTariffs.isEmpty) return false;
-    // Capacity check: don't allow more guests when the event is at capacity
-    if (operation.capaciteMax != null) {
-      final currentCount = context
+    return canAddGuestFromOperationDetail(
+      privileged: _canScan,
+      allowGuests: operation.allowGuests,
+      hasActiveRegistration: _userInscription != null,
+      currentCount: context
           .read<OperationProvider>()
           .selectedOperationParticipants
-          .length;
-      if (currentCount >= operation.capaciteMax!) return false;
-    }
-    return true;
+          .length,
+      capacity: operation.capaciteMax,
+    );
   }
 
   /// Show dialog to add a guest to this operation.
@@ -2035,6 +2033,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       context: context,
       builder: (context) => AddGuestDialog(
         availableGuestTariffs: _canScan ? const [] : tariffs,
+        serverPricedFreeGuest: !_canScan && tariffs.isEmpty,
       ),
     );
 
@@ -5679,4 +5678,17 @@ class _MemberInfo {
     this.plongeurCode,
     this.consentInternalPhoto = false,
   });
+}
+
+@visibleForTesting
+bool canAddGuestFromOperationDetail({
+  required bool privileged,
+  required bool allowGuests,
+  required bool hasActiveRegistration,
+  required int currentCount,
+  int? capacity,
+}) {
+  if (privileged) return true;
+  if (!allowGuests || !hasActiveRegistration) return false;
+  return capacity == null || currentCount < capacity;
 }

@@ -248,4 +248,43 @@ void main() {
       );
     },
   );
+
+  test('post-registration guest append delegates IDs only to the callable',
+      () async {
+    final firestore = FakeFirebaseFirestore();
+    Map<String, dynamic>? request;
+    final service = OperationService(
+      firestore: firestore,
+      addGuestToEventInvoker: (payload) async => request = payload,
+    );
+
+    await service.createGuestInscription(
+      clubId: 'club-1',
+      operationId: 'event-1',
+      operationTitle: 'Free event',
+      guestPrenom: 'Bob',
+      guestNom: 'Guest',
+      prix: 999,
+      addedByUserId: 'member-1',
+      addedByUserName: 'Alice Member',
+      parentInscriptionId: 'parent-1',
+      selectedSupplements: [
+        SelectedSupplement(id: 'meal', name: 'Repas', price: 999),
+      ],
+      supplementTotal: 999,
+    );
+
+    expect(request, containsPair('clubId', 'club-1'));
+    expect(request, containsPair('operationId', 'event-1'));
+    expect(request, containsPair('parentInscriptionId', 'parent-1'));
+    expect(request!['requestId'], startsWith('calymob_'));
+    expect(request!['guest'], {
+      'firstName': 'Bob',
+      'lastName': 'Guest',
+      'selectedSupplementIds': ['meal'],
+    });
+    expect(request, isNot(contains('prix')));
+    expect((request!['guest'] as Map), isNot(contains('price')));
+    expect((request!['guest'] as Map), isNot(contains('supplementTotal')));
+  });
 }
