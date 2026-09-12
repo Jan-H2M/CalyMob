@@ -107,7 +107,7 @@ describe('unregisterFromEvent callable', () => {
     return { id, ref: { id, path: `inscriptions/${id}` }, data: () => data };
   }
 
-  function setupDb(attemptDocs, actorRole = 'membre') {
+  function setupDb(attemptDocs, actorRole = 'membre', operationOverrides = {}) {
     const notifications = [];
     const operationRef = {
       path: 'clubs/calypso/operations/event-1',
@@ -158,6 +158,7 @@ describe('unregisterFromEvent callable', () => {
                     titre: 'Plongée test',
                     organisateur_id: 'organizer',
                     organisateur_nom: 'Orga',
+                    ...operationOverrides,
                   }),
                 };
               }
@@ -190,6 +191,22 @@ describe('unregisterFromEvent callable', () => {
     expect(admin.firestore).not.toHaveBeenCalled();
   });
 
+  test.each([
+    ['missing', {}],
+    ['null', { inscriptionId: null }],
+    ['empty', { inscriptionId: '' }],
+    ['whitespace', { inscriptionId: '   ' }],
+  ])('rejects a %s inscription id before touching Firestore', async (_label, data) => {
+    await expect(unregisterFromEvent({
+      auth: { uid: 'member-1' },
+      data: { clubId: 'calypso', operationId: 'event-1', ...data },
+    })).rejects.toMatchObject({
+      code: 'invalid-argument',
+      message: 'inscriptionId requis.',
+    });
+    expect(admin.firestore).not.toHaveBeenCalled();
+  });
+
   test('soft-cancels member and guests atomically and promotes every freed place FIFO', async () => {
     const docs = [
       makeDoc('member', { membre_id: 'member-1', registration_status: 'confirmed' }),
@@ -206,6 +223,7 @@ describe('unregisterFromEvent callable', () => {
       data: {
         clubId: 'calypso',
         operationId: 'event-1',
+        inscriptionId: 'member',
         guestAction: 'delete',
         source: 'calymob',
         appVersion: '1.21.0+204',
@@ -257,7 +275,7 @@ describe('unregisterFromEvent callable', () => {
 
     const result = await unregisterFromEvent({
       auth: { uid: 'member-1' },
-      data: { clubId: 'calypso', operationId: 'event-1' },
+      data: { clubId: 'calypso', operationId: 'event-1', inscriptionId: 'member' },
     });
 
     expect(result.promoted).toEqual([]);
@@ -276,7 +294,12 @@ describe('unregisterFromEvent callable', () => {
 
     const result = await unregisterFromEvent({
       auth: { uid: 'member-1' },
-      data: { clubId: 'calypso', operationId: 'event-1', guestAction: 'transfer' },
+      data: {
+        clubId: 'calypso',
+        operationId: 'event-1',
+        inscriptionId: 'member',
+        guestAction: 'transfer',
+      },
     });
 
     expect(result.promoted).toEqual(['wait-1']);
@@ -309,7 +332,9 @@ describe('unregisterFromEvent callable', () => {
         transaction_id: 'transaction-1',
       }),
     ];
-    const { db } = setupDb([docs], 'admin');
+    const { db } = setupDb([docs], 'admin', {
+      registration_deadline: new Date('2026-08-11T10:00:00Z'),
+    });
 
     const result = await unregisterFromEvent({
       auth: { uid: 'admin-1' },
@@ -333,6 +358,92 @@ describe('unregisterFromEvent callable', () => {
     }));
     expect(patch).not.toHaveProperty('paye');
     expect(patch).not.toHaveProperty('transaction_id');
+  });
+
+  test('blocks a member after the explicit registration deadline', async () => {
+    const docs = [makeDoc('member', {
+      membre_id: 'member-1',
+      registration_status: 'confirmed',
+    })];
+    setupDb([docs], 'membre', {
+      registration_deadline: new Date('2026-08-12T09:59:59Z'),
+    });
+
+    await expect(unregisterFromEvent({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso',
+        operationId: 'event-1',
+        inscriptionId: 'member',
+      },
+    })).rejects.toMatchObject({
+      code: 'failed-precondition',
+      message: 'La date limite de désinscription est dépassée. Contactez l’organisateur.',
+    });
+  });
+
+  test('blocks a member after the date-based fallback deadline', async () => {
+    const docs = [makeDoc('member', {
+      membre_id: 'member-1',
+      registration_status: 'confirmed',
+    })];
+    setupDb([docs], 'membre', {
+      date_debut: new Date('2026-08-13T09:00:00Z'),
+    });
+
+    await expect(unregisterFromEvent({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso',
+        operationId: 'event-1',
+        inscriptionId: 'member',
+      },
+    })).rejects.toMatchObject({ code: 'failed-precondition' });
+  });
+
+  test('blocks a member-owned guest after the deadline', async () => {
+    const docs = [makeDoc('guest', {
+      is_guest: true,
+      added_by: 'member-1',
+      registration_status: 'confirmed',
+    })];
+    setupDb([docs], 'membre', {
+      registration_deadline: new Date('2026-08-11T10:00:00Z'),
+    });
+
+    await expect(unregisterFromEvent({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso',
+        operationId: 'event-1',
+        inscriptionId: 'guest',
+      },
+    })).rejects.toMatchObject({ code: 'failed-precondition' });
+  });
+
+  test('lets a waitlisted member leave after the deadline', async () => {
+    const docs = [makeDoc('waitlisted-member', {
+      membre_id: 'member-1',
+      registration_status: 'waitlisted',
+    })];
+    const { db } = setupDb([docs], 'membre', {
+      registration_deadline: new Date('2026-08-11T10:00:00Z'),
+    });
+
+    const result = await unregisterFromEvent({
+      auth: { uid: 'member-1' },
+      data: {
+        clubId: 'calypso',
+        operationId: 'event-1',
+        inscriptionId: 'waitlisted-member',
+      },
+    });
+
+    expect(result).toEqual({ status: 'canceled', promoted: [] });
+    expect(db.transactions[0].update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'waitlisted-member' }),
+      expect.objectContaining({ registration_status: 'canceled' }),
+    );
   });
 
   test('cancels only the exact visible registration when the member has two active records', async () => {

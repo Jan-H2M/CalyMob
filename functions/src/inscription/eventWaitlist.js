@@ -278,13 +278,16 @@ const unregisterFromEvent = onCall({ region: REGION }, async request => {
   const {
     clubId,
     operationId,
-    inscriptionId = null,
+    inscriptionId,
     guestAction = null,
     source = 'calymob',
     appVersion = null,
     reason = null,
   } = request.data || {};
   if (!clubId || !operationId) throw new HttpsError('invalid-argument', 'clubId et operationId requis.');
+  if (typeof inscriptionId !== 'string' || inscriptionId.trim().length === 0) {
+    throw new HttpsError('invalid-argument', 'inscriptionId requis.');
+  }
   if (![null, 'delete', 'transfer'].includes(guestAction)) {
     throw new HttpsError('invalid-argument', 'Gestion des invités invalide.');
   }
@@ -301,7 +304,7 @@ const unregisterFromEvent = onCall({ region: REGION }, async request => {
     const ownEntry = inscriptionsSnap.docs.find(doc => {
       const data = doc.data();
       if (data.registration_status === 'canceled') return false;
-      return inscriptionId ? doc.id === inscriptionId : data.membre_id === uid;
+      return doc.id === inscriptionId;
     });
     if (!ownEntry) throw new HttpsError('not-found', 'Inscription introuvable.');
 
@@ -316,6 +319,13 @@ const unregisterFromEvent = onCall({ region: REGION }, async request => {
     const operation = operationSnap.data();
     const wasWaitlisted = ownData.registration_status === 'waitlisted';
     const now = admin.firestore.Timestamp.now();
+    const deadline = effectiveDeadline(operation);
+    if (!isElevated && !wasWaitlisted && deadline && asDate(now) > deadline) {
+      throw new HttpsError(
+        'failed-precondition',
+        'La date limite de désinscription est dépassée. Contactez l’organisateur.',
+      );
+    }
     const guests = inscriptionsSnap.docs.filter(doc => (
       doc.data().parent_inscription_id === ownEntry.id
       && doc.data().registration_status !== 'canceled'

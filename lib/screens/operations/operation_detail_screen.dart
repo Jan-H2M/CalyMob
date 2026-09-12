@@ -4764,8 +4764,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               ],
 
               // "Se désinscrire" button — disabled after deadline. The
-              // Firestore rule blocks the delete anyway; greying out the
-              // button mirrors that and avoids a confusing error toast.
+              // callable enforces the same deadline server-side; greying out
+              // the button avoids a predictable error toast.
               Expanded(
                 child: OperationUnregisterButton(
                   deadlinePassed: deadlinePassed,

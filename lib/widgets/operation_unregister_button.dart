@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 /// Member-facing event withdrawal action.
 ///
-/// The deadline remains a UI guard only; the callable keeps enforcing the
-/// authoritative registration and permission checks.
+/// The button mirrors the authoritative deadline, registration and permission
+/// checks enforced by the callable.
 class OperationUnregisterButton extends StatelessWidget {
   const OperationUnregisterButton({
     super.key,
