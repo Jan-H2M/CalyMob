@@ -9,9 +9,8 @@ import '../../models/formation_task.dart';
 import '../../providers/member_provider.dart';
 import '../../services/formation_task_service.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
-import '../communication/communication_hub_screen.dart';
 import '../exercises/member_exercises_screen.dart';
-import 'logbook_dive_confirmation_screen.dart';
+import 'actions_evaluations_screen.dart';
 import 'historical_claims_screen.dart';
 import 'mon_carnet_screen.dart';
 import '../formation/my_declarations_screen.dart';
@@ -22,7 +21,7 @@ const _parcoursSecondaryText = Color(0xFF5F6B7A);
 @visibleForTesting
 int parcoursOpenActionCount(Iterable<FormationTask> tasks) {
   return tasks
-      .where((task) => task.belongsInGenericActions && !task.isClosed)
+      .where((task) => task.belongsInActionsEvaluations && !task.isClosed)
       .length;
 }
 
@@ -53,14 +52,6 @@ const parcoursHubEntryDefinitions = <ParcoursHubEntryDefinition>[
     subtitle: 'Consulter vos plongées et ajouter une nouvelle entrée.',
     icon: Icons.menu_book_outlined,
     color: AppColors.middenblauw,
-  ),
-  ParcoursHubEntryDefinition(
-    key: 'confirmations',
-    title: 'Plongées à confirmer',
-    subtitle: 'Valider les plongées qui attendent votre confirmation.',
-    icon: Icons.verified_outlined,
-    color: Colors.teal,
-    badge: true,
   ),
   ParcoursHubEntryDefinition(
     key: 'exercises',
@@ -128,17 +119,14 @@ class ParcoursHubScreen extends StatelessWidget {
                       onTap: () =>
                           _open(context, parcoursHubEntryDefinitions[0]),
                     ),
-                    _ParcoursCard(
-                      definition: parcoursHubEntryDefinitions[1],
-                      countStream: userId == null
-                          ? null
-                          : _pendingConfirmationsCountStream(userId),
-                      onTap: () =>
-                          _open(context, parcoursHubEntryDefinitions[1]),
-                    ),
                     const SizedBox(height: 12),
                     const _SectionTitle('Formation'),
                     const SizedBox(height: 12),
+                    _ParcoursCard(
+                      definition: parcoursHubEntryDefinitions[1],
+                      onTap: () =>
+                          _open(context, parcoursHubEntryDefinitions[1]),
+                    ),
                     _ParcoursCard(
                       definition: parcoursHubEntryDefinitions[2],
                       onTap: () =>
@@ -146,29 +134,24 @@ class ParcoursHubScreen extends StatelessWidget {
                     ),
                     _ParcoursCard(
                       definition: parcoursHubEntryDefinitions[3],
+                      badge: userId == null
+                          ? null
+                          : _ActionsEvaluationsBadge(userId: userId),
                       onTap: () =>
                           _open(context, parcoursHubEntryDefinitions[3]),
-                    ),
-                    _ParcoursCard(
-                      definition: parcoursHubEntryDefinitions[4],
-                      countStream: userId == null
-                          ? null
-                          : _openActionCountStream(userId),
-                      onTap: () =>
-                          _open(context, parcoursHubEntryDefinitions[4]),
                     ),
                     const SizedBox(height: 12),
                     const _SectionTitle('Historique'),
                     const SizedBox(height: 12),
                     _ParcoursCard(
+                      definition: parcoursHubEntryDefinitions[4],
+                      onTap: () =>
+                          _open(context, parcoursHubEntryDefinitions[4]),
+                    ),
+                    _ParcoursCard(
                       definition: parcoursHubEntryDefinitions[5],
                       onTap: () =>
                           _open(context, parcoursHubEntryDefinitions[5]),
-                    ),
-                    _ParcoursCard(
-                      definition: parcoursHubEntryDefinitions[6],
-                      onTap: () =>
-                          _open(context, parcoursHubEntryDefinitions[6]),
                     ),
                   ],
                 ),
@@ -180,36 +163,12 @@ class ParcoursHubScreen extends StatelessWidget {
     );
   }
 
-  Stream<int> _pendingConfirmationsCountStream(String userId) {
-    return FirebaseFirestore.instance
-        .collection('clubs')
-        .doc(FirebaseConfig.defaultClubId)
-        .collection('logbook_dive_confirmations')
-        .where('target_member_id', isEqualTo: userId)
-        .where('status', isEqualTo: 'pending')
-        .snapshots()
-        .map((snapshot) => snapshot.docs.length);
-  }
-
-  Stream<int> _openActionCountStream(String userId) {
-    return FormationTaskService()
-        .streamUserInbox(FirebaseConfig.defaultClubId, userId)
-        .map(parcoursOpenActionCount);
-  }
-
   void _open(BuildContext context, ParcoursHubEntryDefinition definition) {
     final navigator = Navigator.of(context);
     switch (definition.key) {
       case 'carnet':
         navigator.push(
           MaterialPageRoute(builder: (_) => const MonCarnetScreen()),
-        );
-        return;
-      case 'confirmations':
-        navigator.push(
-          MaterialPageRoute(
-            builder: (_) => const LogbookDiveConfirmationsInboxScreen(),
-          ),
         );
         return;
       case 'exercises':
@@ -231,8 +190,7 @@ class ParcoursHubScreen extends StatelessWidget {
       case 'actions':
         navigator.push(
           MaterialPageRoute(
-            builder: (_) =>
-                const CommunicationHubScreen(initialActionsOnly: true),
+            builder: (_) => const ActionsEvaluationsScreen(),
           ),
         );
         return;
@@ -362,12 +320,12 @@ class _ParcoursCard extends StatelessWidget {
   const _ParcoursCard({
     required this.definition,
     required this.onTap,
-    this.countStream,
+    this.badge,
   });
 
   final ParcoursHubEntryDefinition definition;
   final VoidCallback onTap;
-  final Stream<int>? countStream;
+  final Widget? badge;
 
   @override
   Widget build(BuildContext context) {
@@ -423,7 +381,7 @@ class _ParcoursCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 10),
-                if (countStream != null) _Badge(stream: countStream!),
+                if (badge != null) badge!,
                 const SizedBox(width: 8),
                 const Icon(Icons.chevron_right, color: _parcoursSecondaryText),
               ],
@@ -435,36 +393,51 @@ class _ParcoursCard extends StatelessWidget {
   }
 }
 
-class _Badge extends StatelessWidget {
-  const _Badge({required this.stream});
+class _ActionsEvaluationsBadge extends StatelessWidget {
+  final String userId;
 
-  final Stream<int> stream;
+  const _ActionsEvaluationsBadge({required this.userId});
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<int>(
-      stream: stream,
-      builder: (context, snapshot) {
-        final count = snapshot.data ?? 0;
-        if (count <= 0) return const SizedBox.shrink();
-        return Container(
-          constraints: const BoxConstraints(minWidth: 30),
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-          decoration: BoxDecoration(
-            color: AppColors.warning.withValues(alpha: 0.20),
-            borderRadius: BorderRadius.circular(99),
-          ),
-          child: Text(
-            count > 99 ? '99+' : '$count',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: AppColors.donkerblauw,
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
+    final confirmationStream = FirebaseFirestore.instance
+        .collection('clubs')
+        .doc(FirebaseConfig.defaultClubId)
+        .collection('logbook_dive_confirmations')
+        .where('target_member_id', isEqualTo: userId)
+        .where('status', isEqualTo: 'pending')
+        .snapshots();
+    final taskStream = FormationTaskService()
+        .streamUserInbox(FirebaseConfig.defaultClubId, userId);
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: confirmationStream,
+      builder: (context, confirmationSnapshot) =>
+          StreamBuilder<List<FormationTask>>(
+        stream: taskStream,
+        builder: (context, taskSnapshot) {
+          final count = (confirmationSnapshot.data?.docs.length ?? 0) +
+              parcoursOpenActionCount(taskSnapshot.data ?? const []);
+          if (count <= 0) return const SizedBox.shrink();
+          return Container(
+            constraints: const BoxConstraints(minWidth: 30),
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.warning.withValues(alpha: 0.20),
+              borderRadius: BorderRadius.circular(99),
             ),
-          ),
-        );
-      },
+            child: Text(
+              count > 99 ? '99+' : '$count',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: AppColors.donkerblauw,
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }

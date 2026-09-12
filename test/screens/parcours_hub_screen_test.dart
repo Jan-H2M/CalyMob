@@ -8,7 +8,6 @@ void main() {
       parcoursHubEntryDefinitions.map((entry) => entry.title).toList(),
       equals([
         'Mon carnet',
-        'Plongées à confirmer',
         'Mes exercices',
         'Mes demandes',
         'Actions & évaluations',
@@ -24,7 +23,7 @@ void main() {
         .map((entry) => entry.key)
         .toList();
 
-    expect(badgedEntries, equals(['confirmations', 'actions']));
+    expect(badgedEntries, equals(['actions']));
   });
 
   test('generic action badge excludes dedicated buddy confirmations', () {
@@ -42,8 +41,18 @@ void main() {
         ),
         _task(
           id: 'done',
-          type: FormationTaskType.manualReminder,
+          type: FormationTaskType.monitorValidation,
           status: FormationTaskStatus.done,
+        ),
+        _task(
+          id: 'event',
+          type: FormationTaskType.eventPreparation,
+          status: FormationTaskStatus.open,
+        ),
+        _task(
+          id: 'manual',
+          type: FormationTaskType.manualReminder,
+          status: FormationTaskStatus.open,
         ),
       ]),
       1,

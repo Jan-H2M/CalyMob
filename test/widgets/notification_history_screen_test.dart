@@ -27,18 +27,15 @@ void main() {
     );
 
     expect(find.text('Non lues  3'), findsOneWidget);
-    expect(find.text('Une action vous attend'), findsOneWidget);
+    expect(find.text('Une action vous attend'), findsNothing);
 
     await tester.tap(find.text('Non lues  3'));
     await tester.pump();
-    expect(find.text('Une action vous attend'), findsNothing);
-
-    await tester.tap(find.text('Toutes'));
-    await tester.pump();
-    await tester.tap(find.text('Une action vous attend'));
+    expect(find.text('Information du club'), findsOneWidget);
+    await tester.tap(find.text('Nouveau message dans Équipe encadrants'));
     await tester.pump();
 
-    expect(openedPayload?['type'], 'formation_reminder');
-    expect(openedPayload?['target_tab'], 'actions');
+    expect(openedPayload?['type'], 'team_message');
+    expect(openedPayload?['channel_id'], 'preview');
   });
 }

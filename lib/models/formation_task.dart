@@ -342,10 +342,18 @@ class FormationTask {
     return original == null || original.isEmpty ? null : original;
   }
 
-  /// Buddy dive confirmations have their own dedicated inbox and must not be
-  /// repeated in the generic Actions list.
-  bool get belongsInGenericActions =>
-      type != FormationTaskType.buddyConfirmation;
+  /// Only durable training-domain work belongs in Actions & evaluations.
+  ///
+  /// Buddy confirmations are rendered from their individual confirmation
+  /// documents. Event preparation and unknown/manual reminders belong to their
+  /// own domains and must not leak into this focused destination.
+  bool get belongsInActionsEvaluations => switch (type) {
+        FormationTaskType.buddyConfirmation ||
+        FormationTaskType.eventPreparation ||
+        FormationTaskType.manualReminder =>
+          false,
+        _ => true,
+      };
 
   bool get isClosed =>
       status == FormationTaskStatus.done ||

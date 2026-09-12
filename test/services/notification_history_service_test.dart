@@ -25,6 +25,14 @@ void main() {
       'created_at': Timestamp.fromDate(DateTime.utc(2026, 9, 11, 9)),
       'read': false,
     });
+    await collection.doc('action').set({
+      'title': 'Action à traiter',
+      'body': 'Validez une plongée.',
+      'type': 'logbook_dive_confirmation',
+      'category': 'Action',
+      'created_at': Timestamp.fromDate(DateTime.utc(2026, 9, 12, 10)),
+      'read': false,
+    });
 
     final service = NotificationHistoryService(firestore: firestore);
     final items =
@@ -36,6 +44,26 @@ void main() {
     expect(items.first.isRead, isFalse);
     expect(items.last.payload['announcement_id'], 'announcement-1');
     expect(items.last.isRead, isTrue);
+  });
+
+  test('filters legacy action types even when their category is malformed',
+      () async {
+    final firestore = FakeFirebaseFirestore();
+    final collection =
+        firestore.collection('clubs/calypso/members/member-1/notifications');
+    await collection.doc('action').set({
+      'title': 'Rappel',
+      'body': 'Une action vous attend.',
+      'type': 'formation_reminder',
+      'category': 'Notification',
+      'created_at': Timestamp.now(),
+    });
+
+    final items = await NotificationHistoryService(firestore: firestore)
+        .watch(clubId: 'calypso', memberId: 'member-1')
+        .first;
+
+    expect(items, isEmpty);
   });
 
   test('marks only the selected history item as read', () async {

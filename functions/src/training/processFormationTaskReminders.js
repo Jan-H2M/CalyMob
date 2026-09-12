@@ -264,9 +264,9 @@ function buildReminderPayload(clubId, dueTasks) {
     task_count: String(dueTasks.length),
     deeplink: singleTaskId
       ? `formation_task:${singleTaskId}`
-      : 'communication:actions',
+      : 'actions:evaluations',
     ...(singleTaskId ? { formation_task_id: String(singleTaskId) } : {}),
-    ...(singleTaskId ? {} : { target_tab: 'actions' }),
+    ...(singleTaskId ? {} : { target_tab: 'actions_evaluations' }),
     click_action: 'FLUTTER_NOTIFICATION_CLICK',
   };
 }

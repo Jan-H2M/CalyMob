@@ -47,12 +47,12 @@ import 'screens/auth/login_screen.dart';
 import 'screens/auth/reset_password_screen.dart';
 import 'screens/operations/operation_detail_screen.dart';
 import 'screens/announcements/announcement_detail_screen.dart';
-import 'screens/communication/communication_hub_screen.dart';
 import 'screens/teams/team_chat_screen.dart';
 import 'screens/piscine/session_chat_screen.dart';
 import 'screens/piscine/session_detail_screen.dart';
 import 'screens/profile/medical_certification_screen.dart';
 import 'screens/training/logbook_dive_confirmation_screen.dart';
+import 'screens/training/actions_evaluations_screen.dart';
 import 'screens/training/historical_validation_screen.dart';
 import 'screens/exercises/validate_exercise_screen.dart';
 
@@ -571,11 +571,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           await _openExerciseDeclarationNotification(request, clubId);
           break;
 
-        case NotificationRouteKind.communicationInbox:
+        case NotificationRouteKind.actionsEvaluations:
           await navigator.push(MaterialPageRoute(
-            builder: (_) => CommunicationHubScreen(
-              initialActionsOnly: request.prefersActionsInbox,
-            ),
+            builder: (_) => const ActionsEvaluationsScreen(),
           ));
           break;
 

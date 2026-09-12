@@ -35,7 +35,7 @@ enum NotificationRouteKind {
   sessionDetail,
   exerciseDeclaration,
   formationTask,
-  communicationInbox,
+  actionsEvaluations,
   medicalCertificate,
   logbookConfirmation,
   birthday,
@@ -114,19 +114,28 @@ class NotificationNavigationRequest {
     return null;
   }
 
-  bool get prefersActionsInbox {
+  bool get prefersActionsEvaluations {
     final tab = targetTab;
-    if (tab == 'actions' || tab == 'formation_actions') {
+    if (tab == 'actions' ||
+        tab == 'formation_actions' ||
+        tab == 'actions_evaluations') {
       return true;
     }
     final link = deeplink;
-    if (link == 'communication:actions' || link == 'actions') {
+    if (link == 'communication:actions' ||
+        link == 'actions' ||
+        link == 'actions:evaluations') {
       return true;
     }
     return type == 'formation_reminder' && formationTaskId == null;
   }
 
   NotificationRouteKind get routeKind {
+    // Keep historical `communication:actions` payloads working, but route them
+    // to the dedicated domain inbox rather than back into Communication.
+    if (formationTaskId == null && prefersActionsEvaluations) {
+      return NotificationRouteKind.actionsEvaluations;
+    }
     switch (type) {
       case 'event_message':
       case 'new_operation':
@@ -145,15 +154,15 @@ class NotificationNavigationRequest {
       case 'exercice_declared':
         return NotificationRouteKind.exerciseDeclaration;
       case 'exercice_digest':
-        return NotificationRouteKind.communicationInbox;
+        return NotificationRouteKind.actionsEvaluations;
       case 'formation_reminder':
         return formationTaskId != null && (taskCount == null || taskCount == 1)
             ? NotificationRouteKind.formationTask
-            : NotificationRouteKind.communicationInbox;
+            : NotificationRouteKind.actionsEvaluations;
       case 'claim_rejected':
         return formationTaskId != null
             ? NotificationRouteKind.formationTask
-            : NotificationRouteKind.communicationInbox;
+            : NotificationRouteKind.actionsEvaluations;
       case 'medical_certificate':
         return NotificationRouteKind.medicalCertificate;
       case 'logbook_dive_confirmation':
@@ -192,7 +201,7 @@ class NotificationNavigationRequest {
       case NotificationRouteKind.formationTask:
         return formationTaskId != null;
       case NotificationRouteKind.birthday:
-      case NotificationRouteKind.communicationInbox:
+      case NotificationRouteKind.actionsEvaluations:
       case NotificationRouteKind.medicalCertificate:
         return true;
       case NotificationRouteKind.unsupported:

@@ -29,6 +29,7 @@ class NotificationHistoryService {
         .map(
           (snapshot) => snapshot.docs
               .map(NotificationHistoryItem.fromFirestore)
+              .where((item) => item.belongsInCommunicationHistory)
               .toList(growable: false),
         );
   }

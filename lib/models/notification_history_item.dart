@@ -23,6 +23,22 @@ class NotificationHistoryItem {
 
   bool get isRead => readAt != null;
 
+  /// Delivery records for actions stay available for audit, but they are not
+  /// communications and therefore do not belong in the Communication history.
+  bool get belongsInCommunicationHistory =>
+      category.trim().toLowerCase() != 'action' &&
+      !_actionNotificationTypes.contains(type);
+
+  static const _actionNotificationTypes = {
+    'piscine_task_assigned',
+    'exercice_declared',
+    'exercice_digest',
+    'formation_reminder',
+    'claim_rejected',
+    'logbook_dive_confirmation',
+    'logbook_dive_confirmation_result',
+  };
+
   factory NotificationHistoryItem.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> document,
   ) {

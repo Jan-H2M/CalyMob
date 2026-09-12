@@ -85,8 +85,8 @@ describe('notification deep-link payload', () => {
       type: 'formation_reminder',
       club_id: 'calypso',
       task_count: '2',
-      deeplink: 'communication:actions',
-      target_tab: 'actions',
+      deeplink: 'actions:evaluations',
+      target_tab: 'actions_evaluations',
       click_action: 'FLUTTER_NOTIFICATION_CLICK',
     });
   });
