@@ -284,4 +284,135 @@ describe('COM-085 transactional confirmation decisions', () => {
     expect(db.docs.get(counterPath).next).toBe(55);
     expect(db.docs.has(entryPath(deterministicCopyEntryId(id)))).toBe(false);
   });
+
+  test('copy ignores a persisted piscine exact match and creates one real dive', async () => {
+    const id = 'pool-is-not-a-dive';
+    const poolId = 'pool-exact';
+    const copyId = deterministicCopyEntryId(id);
+    const db = new FakeFirestore({
+      [confirmationPath(id)]: {
+        ...confirmation(),
+        matched_entry_id: poolId,
+        match_type: 'identical',
+      },
+      [memberPath]: { first_name: 'Test' },
+      [counterPath]: { next: 56 },
+      [entryPath(poolId)]: {
+        member_id: member,
+        source: 'piscine',
+        dive_number: 999,
+        date: new Date('2026-08-01T10:00:00Z'),
+        location_name: 'Vodelée',
+        depth_max_meters: 20,
+        duration_minutes: 40,
+      },
+    });
+
+    const result = await handleRespondToLogbookDiveConfirmation(
+      request(id, 'confirm_copy'),
+      { db, notify: async () => {} }
+    );
+
+    expect(result).toEqual({
+      status: 'confirmed_copied',
+      copiedEntryId: copyId,
+      matchedEntryId: null,
+      diveNumber: 56,
+    });
+    expect(db.docs.get(counterPath).next).toBe(57);
+    expect(db.docs.get(entryPath(poolId))).toMatchObject({
+      source: 'piscine',
+      dive_number: 999,
+    });
+    expect(db.docs.get(entryPath(copyId))).toMatchObject({
+      member_id: member,
+      source: 'shared_logbook',
+      dive_number: 56,
+    });
+    expect(db.docs.get(confirmationPath(id))).toMatchObject({
+      copied_entry_id: copyId,
+      matched_entry_id: null,
+    });
+  });
+
+  test('copy retry metadata never retains a stale piscine match', async () => {
+    const id = 'existing-copy-with-stale-pool';
+    const copyId = deterministicCopyEntryId(id);
+    const db = new FakeFirestore({
+      [confirmationPath(id)]: {
+        ...confirmation(),
+        matched_entry_id: 'pool-exact',
+      },
+      [memberPath]: { first_name: 'Test' },
+      [counterPath]: { next: 57 },
+      [entryPath('pool-exact')]: {
+        member_id: member,
+        source: 'piscine',
+        date: new Date('2026-08-01T10:00:00Z'),
+      },
+      [entryPath(copyId)]: {
+        member_id: member,
+        source: 'shared_logbook',
+        logbook_confirmation_id: id,
+        dive_number: 56,
+      },
+    });
+
+    const result = await handleRespondToLogbookDiveConfirmation(
+      request(id, 'confirm_copy'),
+      { db, notify: async () => {} }
+    );
+
+    expect(result).toMatchObject({
+      status: 'confirmed_copied',
+      copiedEntryId: copyId,
+      matchedEntryId: null,
+      diveNumber: 56,
+    });
+    expect(db.docs.get(counterPath).next).toBe(57);
+    expect(db.docs.get(confirmationPath(id))).toMatchObject({
+      matched_entry_id: null,
+    });
+  });
+
+  test.each([
+    'confirm_existing_identical',
+    'confirm_merge_notes',
+    'confirm_keep_existing',
+    'confirm_replace_existing',
+  ])('%s rejects an explicit piscine artifact target', async (action) => {
+    const id = `reject-pool-${action}`;
+    const poolId = 'pool-target';
+    const db = new FakeFirestore({
+      [confirmationPath(id)]: {
+        ...confirmation(),
+        matched_entry_id: poolId,
+      },
+      [memberPath]: { first_name: 'Test' },
+      [entryPath(poolId)]: {
+        member_id: member,
+        source: 'piscine',
+        date: new Date('2026-08-01T10:00:00Z'),
+        location_name: 'Vodelée',
+        depth_max_meters: 20,
+        duration_minutes: 40,
+      },
+    });
+
+    await expect(handleRespondToLogbookDiveConfirmation(
+      {
+        ...request(id, action),
+        data: {
+          ...request(id, action).data,
+          matchedEntryId: poolId,
+        },
+      },
+      { db, notify: async () => {} }
+    )).rejects.toMatchObject({ code: 'failed-precondition' });
+
+    expect(db.docs.get(confirmationPath(id)).status).toBe('pending');
+    expect(db.docs.get(entryPath(poolId))).not.toHaveProperty(
+      'logbook_confirmation_id'
+    );
+  });
 });

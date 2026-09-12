@@ -136,6 +136,62 @@ describeWithEmulator('COM-085 Firestore emulator transactions', () => {
     expect((await counterRef.get()).data().next).toBe(82);
   });
 
+  test('copy excludes a stale piscine exact match from the real transaction', async () => {
+    const confirmationId = 'copy-after-piscine-match';
+    const poolRef = entries.doc('pool-exact');
+    await Promise.all([
+      db.collection('clubs').doc(clubId).collection('members').doc(memberId)
+        .set({ first_name: 'Test', last_name: 'Diver' }),
+      counterRef.set({ next: 82 }),
+      poolRef.set({
+        member_id: memberId,
+        source: 'piscine',
+        date: admin.firestore.Timestamp.fromDate(new Date('2026-08-01T10:00:00Z')),
+        location_name: 'Vodelée',
+        depth_max_meters: 20,
+        duration_minutes: 40,
+      }),
+      confirmations.doc(confirmationId).set({
+        target_member_id: memberId,
+        target_member_name: 'Test Diver',
+        source_member_id: 'source-member',
+        source_member_name: 'Source Diver',
+        source_entry_id: 'source-entry',
+        status: 'pending',
+        matched_entry_id: poolRef.id,
+        match_type: 'identical',
+        dive_snapshot: {
+          date: admin.firestore.Timestamp.fromDate(new Date('2026-08-01T10:00:00Z')),
+          location_name: 'Vodelée',
+          depth_max_meters: 20,
+          duration_minutes: 40,
+        },
+      }),
+    ]);
+
+    const result = await handleRespondToLogbookDiveConfirmation({
+      auth: { uid: memberId },
+      data: { clubId, confirmationId, action: 'confirm_copy' },
+    }, { db, notify: async () => {} });
+
+    expect(result).toMatchObject({
+      status: 'confirmed_copied',
+      matchedEntryId: null,
+      diveNumber: 82,
+    });
+    expect((await poolRef.get()).data().dive_number).toBeUndefined();
+    expect((await entries.doc(deterministicCopyEntryId(confirmationId)).get()).data())
+      .toMatchObject({
+        source: 'shared_logbook',
+        dive_number: 82,
+      });
+    expect((await confirmations.doc(confirmationId).get()).data())
+      .toMatchObject({
+        copied_entry_id: deterministicCopyEntryId(confirmationId),
+        matched_entry_id: null,
+      });
+  });
+
   test.each(['decline', 'confirm_no_import'])(
     '%s leaves the counter unchanged',
     async (action) => {

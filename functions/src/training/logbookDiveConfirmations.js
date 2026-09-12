@@ -489,6 +489,10 @@ function compareDive(snapshot = {}, entry = {}) {
   };
 }
 
+function isPiscineLogbookEntry(entry) {
+  return entry?.source === 'piscine';
+}
+
 function findExistingMatchInDocs(docs, snapshot) {
   const day = asDate(snapshot.date);
   if (!day) return { matchType: 'none', differences: [], entryId: null };
@@ -498,6 +502,9 @@ function findExistingMatchInDocs(docs, snapshot) {
   let best = { matchType: 'none', differences: [], entryId: null };
   for (const doc of docs) {
     const entry = doc.data();
+    // Piscine attendance is displayed alongside dives, but is not a dive that
+    // can satisfy or receive a buddy logbook confirmation.
+    if (isPiscineLogbookEntry(entry)) continue;
     const entryDate = asDate(entry.date);
     if (!entryDate || entryDate < start || entryDate >= end) continue;
 
@@ -945,11 +952,20 @@ async function handleRespondToLogbookDiveConfirmation(request, options = {}) {
       if (existingSnap.data().member_id !== uid) {
         throw new HttpsError('permission-denied', 'Cette plongée ne t’appartient pas');
       }
+      if (isPiscineLogbookEntry(existingSnap.data())) {
+        throw new HttpsError(
+          'failed-precondition',
+          'Une séance piscine ne peut pas servir de plongée du carnet'
+        );
+      }
     }
 
     if (action === 'decline') {
       status = 'declined';
     } else if (createsLogbookEntryForConfirmationAction(action)) {
+      // confirm_copy never retains a match selected by an older matcher. It
+      // either uses the deterministic copy or a fresh, non-piscine match.
+      finalMatchedEntryId = null;
       if (deterministicSnap.exists) {
         const deterministicData = deterministicSnap.data();
         if (
@@ -980,8 +996,8 @@ async function handleRespondToLogbookDiveConfirmation(request, options = {}) {
         status = 'confirmed_copied';
       } else {
         const liveMatch = findExistingMatchInDocs(memberEntriesSnap.docs, snapshot);
+        finalMatchedEntryId = liveMatch.entryId || null;
         if (liveMatch.entryId) {
-          finalMatchedEntryId = liveMatch.entryId;
           status = liveMatch.matchType === 'identical'
             ? 'confirmed_existing_identical'
             : 'confirmed_existing_different';
@@ -1015,6 +1031,17 @@ async function handleRespondToLogbookDiveConfirmation(request, options = {}) {
         }
       }
     } else if (action === 'confirm_existing_identical') {
+      if (finalMatchedEntryId) {
+        const requestedMatch = memberEntriesSnap.docs.find(
+          (doc) => doc.id === finalMatchedEntryId
+        );
+        if (requestedMatch && isPiscineLogbookEntry(requestedMatch.data())) {
+          throw new HttpsError(
+            'failed-precondition',
+            'Une séance piscine ne peut pas confirmer une plongée du carnet'
+          );
+        }
+      }
       if (!finalMatchedEntryId) {
         finalMatchedEntryId = findExistingMatchInDocs(
           memberEntriesSnap.docs,

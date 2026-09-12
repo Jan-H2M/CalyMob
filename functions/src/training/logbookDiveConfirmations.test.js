@@ -31,6 +31,7 @@ const {
   sanitizeSnapshotForTarget,
   buildCopyPayload,
   buildReplaceUpdate,
+  findExistingMatchInDocs,
 } = require('./logbookDiveConfirmations');
 
 describe('COM-055 duplicate and shared-note handling', () => {
@@ -47,6 +48,58 @@ describe('COM-055 duplicate and shared-note handling', () => {
   test('does not duplicate observations already present', () => {
     expect(mergeSharedNotes('Vu un hippocampe.', 'vu un hippocampe'))
       .toBe('Vu un hippocampe.');
+  });
+});
+
+describe('COM-085 eligible existing-dive matching', () => {
+  const snapshot = {
+    date: new Date('2026-08-01T10:00:00Z'),
+    location_name: 'Vodelée',
+    depth_max_meters: 20,
+    duration_minutes: 40,
+  };
+  const doc = (id, data) => ({ id, data: () => data });
+  const matchingEntry = (overrides = {}) => ({
+    member_id: 'member-1',
+    source: 'manual',
+    ...snapshot,
+    ...overrides,
+  });
+
+  test('ignores a piscine exact match and keeps an eligible similar match', () => {
+    const result = findExistingMatchInDocs([
+      doc('pool-exact', matchingEntry({ source: 'piscine' })),
+      doc('real-similar', matchingEntry({ depth_max_meters: 22 })),
+    ], snapshot);
+
+    expect(result).toMatchObject({
+      matchType: 'similar',
+      entryId: 'real-similar',
+    });
+  });
+
+  test('ignores a piscine similar match and still finds an eligible exact match', () => {
+    const result = findExistingMatchInDocs([
+      doc('pool-similar', matchingEntry({ source: 'piscine', duration_minutes: 45 })),
+      doc('real-exact', matchingEntry()),
+    ], snapshot);
+
+    expect(result).toMatchObject({
+      matchType: 'identical',
+      entryId: 'real-exact',
+    });
+  });
+
+  test('returns no match when only a piscine exact match exists', () => {
+    const result = findExistingMatchInDocs([
+      doc('pool-exact', matchingEntry({ source: 'piscine' })),
+    ], snapshot);
+
+    expect(result).toEqual({
+      matchType: 'none',
+      differences: [],
+      entryId: null,
+    });
   });
 });
 
