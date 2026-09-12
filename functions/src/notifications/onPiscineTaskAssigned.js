@@ -11,6 +11,7 @@
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const { collectTokensAndMembers, sendNotificationsWithBadge } = require('../utils/badge-helper');
+const { persistNotificationHistory } = require('../utils/notificationHistory');
 
 /**
  * Extract all assigned members and their tasks from a piscine session document
@@ -254,6 +255,15 @@ exports.onPiscineTaskAssigned = onDocumentUpdated(
             tokens: memberTokens,
             ...payload,
           });
+
+          if (result.successCount > 0) {
+            await persistNotificationHistory(
+              clubId,
+              memberId,
+              payload,
+              'Action',
+            );
+          }
 
           totalSuccess += result.successCount;
           totalFailure += result.failureCount;

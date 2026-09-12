@@ -10,6 +10,7 @@
 const admin = require('firebase-admin');
 const { FIRESTORE_BATCH_LIMIT } = require('./constants');
 const { memberDisplayName } = require('./memberName');
+const { persistNotificationHistory } = require('./notificationHistory');
 
 /**
  * Increment de unread counter voor een lijst van ontvangers
@@ -237,6 +238,15 @@ async function sendNotificationsWithBadge(clubId, memberTokenGroups, basePayload
 
           totalSuccess += result.successCount;
           totalFailure += result.failureCount;
+
+          if (result.successCount > 0) {
+            await persistNotificationHistory(
+              clubId,
+              memberId,
+              basePayload,
+              category,
+            );
+          }
 
           // Verwijder ongeldige tokens
           result.responses.forEach((response, index) => {

@@ -2,6 +2,28 @@ import 'package:calymob/services/notification_navigation_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('history dispatcher forwards the stored payload', () {
+    Map<String, dynamic>? received;
+    final dispatcher = NotificationHistoryNavigationDispatcher.instance;
+    dispatcher.handler = (data) => received = data;
+
+    final opened = dispatcher.open({
+      'type': 'announcement',
+      'announcement_id': 'announcement-1',
+    });
+
+    expect(opened, isTrue);
+    expect(received?['announcement_id'], 'announcement-1');
+    dispatcher.handler = null;
+  });
+
+  test('history dispatcher fails safely without an app navigator', () {
+    final dispatcher = NotificationHistoryNavigationDispatcher.instance;
+    dispatcher.handler = null;
+
+    expect(dispatcher.open({'type': 'announcement'}), isFalse);
+  });
+
   NotificationNavigationRequest request(
     Map<String, dynamic> data, {
     NotificationTapOrigin origin = NotificationTapOrigin.background,
@@ -38,7 +60,8 @@ void main() {
       expect(value.routeKind, NotificationRouteKind.formationTask);
     });
 
-    test('multi-task reminder opens the Actions inbox, never an arbitrary task', () {
+    test('multi-task reminder opens the Actions inbox, never an arbitrary task',
+        () {
       final value = request({
         'type': 'formation_reminder',
         'task_count': '3',

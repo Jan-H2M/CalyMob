@@ -13,6 +13,7 @@
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const { getBadgeCount } = require('../utils/badge-helper');
+const { persistNotificationHistory } = require('../utils/notificationHistory');
 
 /**
  * Format date to French locale string
@@ -146,6 +147,15 @@ exports.onMedicalCertStatusChange = onDocumentUpdated(
         tokens,
         ...payload,
       });
+
+      if (result.successCount > 0) {
+        await persistNotificationHistory(
+          clubId,
+          memberId,
+          payload,
+          'Médical',
+        );
+      }
 
       console.log(`✅ [onMedicalCertStatusChange] Sent: ${result.successCount} success, ${result.failureCount} failures`);
 

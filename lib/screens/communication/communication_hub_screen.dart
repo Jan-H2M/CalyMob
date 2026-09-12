@@ -18,7 +18,7 @@ import '../../utils/permission_helper.dart';
 import '../../utils/roster_session_label.dart';
 import '../../widgets/communication_filter_semantics.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
-import 'notification_history_preview_screen.dart';
+import 'notification_history_screen.dart';
 import '../announcements/announcements_screen.dart';
 import '../home/landing_screen.dart';
 import '../teams/team_chat_screen.dart';
@@ -110,12 +110,9 @@ class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
             children: [
               _CommunicationHeader(
                 searchQuery: _searchQuery,
-                onNotificationsTap: const bool.fromEnvironment('COM136_PREVIEW')
-                    ? () => setState(
-                          () => _selectedFilter =
-                              _CommunicationFilter.notifications,
-                        )
-                    : null,
+                onNotificationsTap: () => setState(
+                  () => _selectedFilter = _CommunicationFilter.notifications,
+                ),
                 onSearchChanged: (value) {
                   setState(() {
                     _searchQuery = value;
@@ -180,7 +177,14 @@ class _CommunicationInboxList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (selectedFilter == _CommunicationFilter.notifications) {
-      return const NotificationHistoryPreviewContent();
+      final memberId = context.read<AuthProvider>().currentUser?.uid;
+      if (memberId == null) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      return NotificationHistoryContent(
+        clubId: FirebaseConfig.defaultClubId,
+        memberId: memberId,
+      );
     }
 
     return ListView(
@@ -400,11 +404,7 @@ class _CommunicationFilterBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final filters = _CommunicationFilter.values
-        .where((filter) =>
-            const bool.fromEnvironment('COM136_PREVIEW') ||
-            filter != _CommunicationFilter.notifications)
-        .toList();
+    const filters = _CommunicationFilter.values;
 
     return Container(
       height: 54,

@@ -1,5 +1,26 @@
 import 'dart:collection';
 
+typedef NotificationHistoryOpenHandler = void Function(
+  Map<String, dynamic> data,
+);
+
+/// Bridges an in-app history tap to the same queue used by OS push taps.
+class NotificationHistoryNavigationDispatcher {
+  NotificationHistoryNavigationDispatcher._();
+
+  static final NotificationHistoryNavigationDispatcher instance =
+      NotificationHistoryNavigationDispatcher._();
+
+  NotificationHistoryOpenHandler? handler;
+
+  bool open(Map<String, dynamic> data) {
+    final currentHandler = handler;
+    if (currentHandler == null) return false;
+    currentHandler(data);
+    return true;
+  }
+}
+
 /// Where a notification interaction originated.
 ///
 /// All entry points use the same parser and queue so foreground, background
@@ -197,8 +218,7 @@ class NotificationNavigationRequest {
     // therefore fall back to the originating document ID in the data payload.
     final transportMessageId = _clean(messageId);
     if (transportMessageId != null) return 'message:$transportMessageId';
-    final payloadMessageId =
-        _firstValue(const ['message_id', 'messageId']);
+    final payloadMessageId = _firstValue(const ['message_id', 'messageId']);
     if (payloadMessageId != null) {
       return 'payload-message:${type ?? 'unknown'}|${clubId ?? ''}|$objectId|$payloadMessageId';
     }

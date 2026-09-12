@@ -1054,6 +1054,24 @@ service cloud.firestore {
         // Admins can update and delete members
         allow update, delete: if isAdmin(clubId) && hasValidSession(clubId);
 
+        // COM-136 — Personal push notification history. Records are written
+        // only by trusted Cloud Functions. A member can read their own history
+        // and may only change the read marker.
+        match /notifications/{notificationId} {
+          allow read: if isAuthenticated()
+            && request.auth.uid == memberId
+            && exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(memberId))
+            && hasValidSession(clubId);
+          allow create, delete: if false;
+          allow update: if isAuthenticated()
+            && request.auth.uid == memberId
+            && exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(memberId))
+            && hasValidSession(clubId)
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['read', 'read_at'])
+            && request.resource.data.read == true;
+        }
+
         // Exercices validés par membre (suivi des formations LIFRAS)
         //
         // Workflow (per 2026-04-21):
