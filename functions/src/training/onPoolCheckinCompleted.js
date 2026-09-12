@@ -55,13 +55,19 @@ function groupNumberFrom(rawValue, rawGroupKey) {
 /** Normalize both current camelCase and production legacy snake_case input. */
 function selectedGroupContract(rawGroup, completion = {}, hourKey = null) {
   const group = rawGroup && typeof rawGroup === 'object' ? rawGroup : {};
-  const level = group.level || completion.level || null;
+  const rawLevel = group.level || completion.level || null;
+  const rawGroupKey =
+    group.groupKey || group.group_key || completion.groupKey || completion.group_key;
+  const rawGroupNumber =
+    group.groupNumber ?? group.group_number ??
+    completion.groupNumber ?? completion.group_number;
+  const rawHourKey = group.heure || group.hourKey || hourKey || null;
+  const level = rawLevel;
   const groupKey = normalizeGroupKey(
-    group.groupKey || group.group_key || completion.groupKey || completion.group_key
+    rawGroupKey
   );
   const groupNumber = groupNumberFrom(
-    group.groupNumber ?? group.group_number ??
-      completion.groupNumber ?? completion.group_number,
+    rawGroupNumber,
     groupKey
   );
   const monitorIds = normalizedMonitorIds(
@@ -72,7 +78,13 @@ function selectedGroupContract(rawGroup, completion = {}, hourKey = null) {
     level,
     groupNumber,
     groupKey,
-    hourKey: group.heure || group.hourKey || hourKey || null,
+    hourKey: rawHourKey,
+    contractPresence: {
+      level: Boolean(rawLevel),
+      groupNumber: rawGroupNumber != null && String(rawGroupNumber).trim() !== '',
+      groupKey: Boolean(rawGroupKey && String(rawGroupKey).trim()),
+      hourKey: Boolean(rawHourKey),
+    },
     monitorIds,
     themeSnapshot:
       group.themeSnapshot || group.theme_snapshot || group.theme ||
@@ -190,7 +202,7 @@ const onPoolCheckinCompleted = onDocumentUpdated(
           db,
           clubId,
           sessionId,
-          firstEleveGroup
+          { ...firstEleveGroup, participantMemberId: userId }
         );
         groupAssignment = {
           level: firstEleveGroup.level,
@@ -263,7 +275,7 @@ const onPoolCheckinCompleted = onDocumentUpdated(
         db,
         clubId,
         sessionId,
-        selectedGroup
+        { ...selectedGroup, participantMemberId: userId }
       );
       groupAssignment = {
         level: selectedGroup.level,
@@ -477,6 +489,35 @@ function memberIdsFromEncadrants(encadrants) {
   ));
 }
 
+function canonicalGroupKey(level, groupNumber) {
+  if (!level || !groupNumber) return null;
+  return normalizeGroupKey(`${level}-${groupNumber}`);
+}
+
+function hasPersistedCourses(session) {
+  const niveaux = session && session.niveaux;
+  if (!niveaux || typeof niveaux !== 'object') return false;
+  return Object.values(niveaux).some((assignment) =>
+    assignment && typeof assignment === 'object' &&
+    (Object.prototype.hasOwnProperty.call(assignment, 'courses_by_hour') ||
+      Object.prototype.hasOwnProperty.call(assignment, 'coursesByHour'))
+  );
+}
+
+function courseMatchesSelection(course, selection, derivedGroupNumber, hourKey) {
+  if (derivedGroupNumber !== selection.groupNumber) return false;
+  const courseLevel = course.level || course.niveau || null;
+  if (courseLevel && courseLevel !== selection.level) return false;
+  const courseHour = course.heure || course.hourKey || course.hour_key || null;
+  if (courseHour && courseHour !== hourKey) return false;
+  const rawCourseNumber = course.groupNumber ?? course.group_number;
+  if (rawCourseNumber != null && Number(rawCourseNumber) !== selection.groupNumber) {
+    return false;
+  }
+  const courseGroupKey = normalizeGroupKey(course.groupKey || course.group_key);
+  return !courseGroupKey || courseGroupKey === selection.groupKey;
+}
+
 function findPlannedGroup(session, selection) {
   if (!session || !selection.level) return null;
   const niveaux = session.niveaux || {};
@@ -486,82 +527,133 @@ function findPlannedGroup(session, selection) {
     levelAssignment.courses_by_hour || levelAssignment.coursesByHour;
 
   if (coursesByHour && typeof coursesByHour === 'object') {
-    // A numbered group must match that exact 1-based course. Never fall back
-    // to courses[0], which would silently assign group 2 to group 1's monitor.
-    if (!selection.groupNumber) return null;
-    const hours = selection.hourKey
-      ? [selection.hourKey]
-      : Object.keys(coursesByHour).sort();
-    for (const hourKey of hours) {
-      const courses = coursesByHour[hourKey];
-      if (!Array.isArray(courses)) continue;
-      for (let index = 0; index < courses.length; index++) {
-        const course = courses[index];
-        if (!course || typeof course !== 'object') continue;
-        const number = typeof course.order === 'number' ? course.order + 1 : index + 1;
-        if (number !== selection.groupNumber) continue;
-        return {
-          monitorIds: memberIdsFromEncadrants(course.encadrants),
-          themeSnapshot: course.theme || null,
-        };
+    // Current planning is unambiguous only with the complete selected-group
+    // contract. Never search another hour or infer a group from a supplied key.
+    const presence = selection.contractPresence || {
+      level: Boolean(selection.level),
+      groupNumber: Boolean(selection.groupNumber),
+      groupKey: Boolean(selection.groupKey),
+      hourKey: Boolean(selection.hourKey),
+    };
+    if (!presence.level || !presence.groupNumber ||
+        !presence.groupKey || !presence.hourKey) {
+      return null;
+    }
+    if (selection.groupKey !== canonicalGroupKey(
+      selection.level,
+      selection.groupNumber
+    )) {
+      return null;
+    }
+    const courses = coursesByHour[selection.hourKey];
+    if (!Array.isArray(courses)) return null;
+    for (let index = 0; index < courses.length; index++) {
+      const course = courses[index];
+      if (!course || typeof course !== 'object') continue;
+      const number = typeof course.order === 'number' ? course.order + 1 : index + 1;
+      if (number !== selection.groupNumber) continue;
+      if (!courseMatchesSelection(course, selection, number, selection.hourKey)) {
+        return null;
       }
+      return {
+        schema: 'modern',
+        monitorIds: memberIdsFromEncadrants(course.encadrants),
+        themeSnapshot: course.theme || null,
+      };
     }
     return null;
   }
 
-  // Production legacy sessions store one unnumbered group per level.
+  // A payload fallback is safe only when the entire persisted session proves
+  // it uses the old one-unnumbered-group-per-level shape. Mixed/current
+  // sessions are never treated as legacy merely because one level is missing.
+  if (hasPersistedCourses(session)) return null;
+  const hasLegacyShape =
+    Object.prototype.hasOwnProperty.call(levelAssignment, 'encadrants') ||
+    Object.prototype.hasOwnProperty.call(levelAssignment, 'theme') ||
+    Object.prototype.hasOwnProperty.call(levelAssignment, 'theme_1ere_heure') ||
+    Object.prototype.hasOwnProperty.call(levelAssignment, 'theme_2eme_heure');
+  if (!hasLegacyShape) return null;
   if (selection.groupNumber != null && selection.groupNumber !== 1) return null;
+  const expectedGroupKey = canonicalGroupKey(selection.level, 1);
+  if (selection.groupKey && selection.groupKey !== expectedGroupKey) return null;
   return {
+    schema: 'legacy-single-group',
     monitorIds: memberIdsFromEncadrants(levelAssignment.encadrants),
     themeSnapshot: levelAssignment.theme || null,
   };
 }
 
+function groupDocumentMatchesSelection(group, selection) {
+  if (!group || typeof group !== 'object') return false;
+  const groupLevel = group.level || group.niveau || null;
+  if (groupLevel && groupLevel !== selection.level) return false;
+  const groupNumber = group.groupNumber ?? group.group_number;
+  if (groupNumber != null && Number(groupNumber) !== selection.groupNumber) {
+    return false;
+  }
+  const groupKey = normalizeGroupKey(group.groupKey || group.group_key);
+  if (groupKey && groupKey !== selection.groupKey) return false;
+  const hourKey = group.heure || group.hourKey || group.hour_key || null;
+  if (hourKey && hourKey !== selection.hourKey) return false;
+  return true;
+}
+
 async function resolveGroupSupervision(db, clubId, sessionId, selection) {
   const groupKey = normalizeGroupKey(selection.groupKey);
+  const normalizedSelection = { ...selection, groupKey };
+  const participantMemberId = String(selection.participantMemberId || '').trim();
+
+  let plannedGroup = null;
+  const sessionRef = db
+    .collection('clubs')
+    .doc(clubId)
+    .collection('piscine_sessions')
+    .doc(sessionId);
+  try {
+    const sessionSnap = await sessionRef.get();
+    if (sessionSnap.exists) {
+      plannedGroup = findPlannedGroup(sessionSnap.data(), normalizedSelection);
+    }
+  } catch (err) {
+    console.warn(`[${FUNCTION_NAME}] could not read session for group resolve: ${err.message}`);
+  }
+
+  if (!plannedGroup) {
+    return { validatorId: null, monitorIds: [], themeSnapshot: null };
+  }
+
   let explicitValidatorId = null;
   if (groupKey) {
-    // NOTE: groups/ est vide en prod (audit 2026-07-07) — chemin dormant.
-    // On le garde pour le jour où des docs groups/{groupKey} existeront.
+    // Dormant today, but an explicit group override may only augment a group
+    // already proven to match the persisted session plan. Conflicting group
+    // metadata is ignored rather than letting a key select another group.
     try {
-      const groupSnap = await db
-        .collection('clubs')
-        .doc(clubId)
-        .collection('piscine_sessions')
-        .doc(sessionId)
-        .collection('groups')
-        .doc(groupKey)
-        .get();
-      if (groupSnap.exists) {
-        const g = groupSnap.data();
-        explicitValidatorId = g.supervisorId || g.validatorId || null;
+      const groupSnap = await sessionRef.collection('groups').doc(groupKey).get();
+      if (groupSnap.exists && groupDocumentMatchesSelection(
+        groupSnap.data(),
+        normalizedSelection
+      )) {
+        const group = groupSnap.data();
+        explicitValidatorId = normalizedMonitorIds([
+          group.supervisorId || group.validatorId,
+        ])[0] || null;
       }
     } catch (err) {
       console.warn(`[${FUNCTION_NAME}] could not read groups/${groupKey}: ${err.message}`);
     }
   }
 
-  let plannedGroup = null;
-  if (selection.level) {
-    try {
-      const sessionSnap = await db
-        .collection('clubs')
-        .doc(clubId)
-        .collection('piscine_sessions')
-        .doc(sessionId)
-        .get();
-      if (sessionSnap.exists) {
-        plannedGroup = findPlannedGroup(sessionSnap.data(), selection);
-      }
-    } catch (err) {
-      console.warn(`[${FUNCTION_NAME}] could not read session for level resolve: ${err.message}`);
-    }
-  }
-
-  const plannedMonitorIds = plannedGroup && plannedGroup.monitorIds || [];
+  const withoutParticipant = (ids) => normalizedMonitorIds(ids)
+    .filter((id) => !participantMemberId || id !== participantMemberId);
+  const plannedMonitorIds = withoutParticipant(plannedGroup.monitorIds);
+  const payloadMonitorIds = plannedGroup.schema === 'legacy-single-group'
+    ? withoutParticipant(selection.monitorIds)
+    : [];
   const monitorIds = plannedMonitorIds.length > 0
     ? plannedMonitorIds
-    : normalizedMonitorIds(selection.monitorIds);
+    : payloadMonitorIds;
+  if (explicitValidatorId === participantMemberId) explicitValidatorId = null;
   return {
     validatorId: explicitValidatorId || monitorIds[0] || null,
     monitorIds,
@@ -596,6 +688,8 @@ module.exports = {
   resolveGroupSupervision,
   selectedGroupContract,
   findPlannedGroup,
+  hasPersistedCourses,
+  groupDocumentMatchesSelection,
   reconcileEncadrantGroups,
   buildAttendeeIdentityPatch,
   resolveAttendeeRef,
