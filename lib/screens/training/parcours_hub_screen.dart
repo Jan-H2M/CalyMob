@@ -20,6 +20,13 @@ import 'stats_screen.dart';
 const _parcoursSecondaryText = Color(0xFF5F6B7A);
 
 @visibleForTesting
+int parcoursOpenActionCount(Iterable<FormationTask> tasks) {
+  return tasks
+      .where((task) => task.belongsInGenericActions && !task.isClosed)
+      .length;
+}
+
+@visibleForTesting
 class ParcoursHubEntryDefinition {
   const ParcoursHubEntryDefinition({
     required this.key,
@@ -187,14 +194,7 @@ class ParcoursHubScreen extends StatelessWidget {
   Stream<int> _openActionCountStream(String userId) {
     return FormationTaskService()
         .streamUserInbox(FirebaseConfig.defaultClubId, userId)
-        .map(
-          (tasks) => tasks.where((task) {
-            final isClosed = task.status == FormationTaskStatus.done ||
-                task.status == FormationTaskStatus.dismissed ||
-                task.status == FormationTaskStatus.expired;
-            return !isClosed;
-          }).length,
-        );
+        .map(parcoursOpenActionCount);
   }
 
   void _open(BuildContext context, ParcoursHubEntryDefinition definition) {

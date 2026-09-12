@@ -950,6 +950,8 @@ class _ActionsCalypsoInboxSectionState
           return _FormationTaskStreamError(error: snapshot.error);
         }
         final tasks = snapshot.data ?? const <FormationTask>[];
+        final genericActionTasks =
+            tasks.where((task) => task.belongsInGenericActions).toList();
         final rows = <Widget>[];
 
         if (canScanHistoricalQr &&
@@ -964,7 +966,7 @@ class _ActionsCalypsoInboxSectionState
         }
 
         rows.addAll(
-          tasks
+          genericActionTasks
               .where(
                 (task) =>
                     task.type != FormationTaskType.monitorObservation &&
@@ -977,7 +979,8 @@ class _ActionsCalypsoInboxSectionState
                 ),
               ),
         );
-        for (final roster in FormationTaskRoster.aggregate(tasks)) {
+        for (final roster
+            in FormationTaskRoster.aggregate(genericActionTasks)) {
           final isLegacy = roster.key.startsWith('legacy::');
           if (isLegacy) {
             final task = roster.members.single.primaryTask;

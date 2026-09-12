@@ -73,13 +73,15 @@ nog niet in een storeversie zaten.
   volgt bij de gezamenlijke mobiele release.
 
 
-### Nog niet geïntegreerd — COM-084
+### Wacht op gezamenlijke store-release — COM-084
 
-- `codex/bug-COM-084-parcours-hub`: centrale mobiele `Parcours`-hub voor
+- Centrale mobiele `Parcours`-hub voor
   carnet, open duikbevestigingen, oefeningen, aanvragen, acties/evaluaties,
   statistieken en papieren-kaartovername. `Mon carnet` wordt daardoor opnieuw
   een zuiver logboekscherm zonder losse header-shortcuts.
-- Gevalideerd met gerichte Flutter-analyse en `parcours_hub_screen_test.dart`.
+- Op 12 september 2026 opnieuw geïntegreerd op de actuele mobiele `main` en
+  gevalideerd met gerichte Flutter-analyse, de Parcours-test en de omliggende
+  oefeningen-/formation-/communicatietests.
   Geen backenddeploy, version bump, build, upload, store-inzending of
   Firestore-appversiewijziging.
 - Dossier: `docs/bug-cycle/COM-084-parcours-hub.md`.
