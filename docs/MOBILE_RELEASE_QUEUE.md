@@ -81,6 +81,11 @@ nog niet in een storeversie zaten.
 - Op 12 september 2026 opnieuw geïntegreerd op de actuele mobiele `main` en
   gevalideerd met gerichte Flutter-analyse, de Parcours-test en de omliggende
   oefeningen-/formation-/communicatietests.
+- De volledige aanvraag- en beoordelingsflow is toegevoegd: eigen
+  zwembad/duikcontext, server-gevalideerde monitor, duurzame resultaten en
+  correctiehistoriek. Twee nieuwe Functions-callables moeten vóór de mobiele
+  release worden gedeployd: `requestExerciseEvaluation` en
+  `decideExerciseEvaluation`.
   Geen backenddeploy, version bump, build, upload, store-inzending of
   Firestore-appversiewijziging.
 - Dossier: `docs/bug-cycle/COM-084-parcours-hub.md`.

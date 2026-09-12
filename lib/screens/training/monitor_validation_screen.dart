@@ -18,6 +18,7 @@ import '../../config/firebase_config.dart';
 import '../../models/formation_task.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
+import '../../services/exercise_claim_service.dart';
 import '../../services/formation_task_service.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 
@@ -40,6 +41,10 @@ class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
 
   bool get _isExternalProof =>
       widget.task.type == FormationTaskType.externalProofReview;
+  bool get _isStudentEvaluation =>
+      _claim?['request_kind'] == 'student_evaluation';
+  bool get _isRevision =>
+      _isStudentEvaluation && (_claim?['decision'] as Map?)?.isNotEmpty == true;
 
   @override
   void initState() {
@@ -68,6 +73,7 @@ class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
         .get();
     setState(() {
       _claim = snap.data();
+      _comment.text = snap.data()?['decision']?['comment']?.toString() ?? '';
       _loading = false;
     });
   }
@@ -119,7 +125,9 @@ class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
                         icon: const Icon(Icons.check_circle),
                         label: Text(_isExternalProof
                             ? 'Accepter la preuve'
-                            : 'Confirmer comme acquis'),
+                            : _isRevision
+                                ? 'Corriger : acquis'
+                                : 'Confirmer comme acquis'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF4CAF50),
                           foregroundColor: Colors.white,
@@ -197,7 +205,9 @@ class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
                 Text(
                   _isExternalProof
                       ? 'Contrôle de preuve'
-                      : 'Validation à confirmer',
+                      : _isRevision
+                          ? 'Corriger mon évaluation'
+                          : 'Validation à confirmer',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 20,
@@ -207,7 +217,9 @@ class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
                 Text(
                   _isExternalProof
                       ? 'Vérifie la pièce jointe avant de décider'
-                      : 'Tu es désigné·e comme validateur',
+                      : _isRevision
+                          ? 'Le nouvel avis remplace durablement le précédent'
+                          : 'Tu es désigné·e comme validateur',
                   style: const TextStyle(color: Colors.white70, fontSize: 12),
                 ),
               ],
@@ -619,6 +631,31 @@ class _MonitorValidationScreenState extends State<MonitorValidationScreen> {
 
       final decidedByName =
           '${memberProvider.prenom ?? ''} ${memberProvider.nom ?? ''}'.trim();
+
+      if (_isStudentEvaluation) {
+        await ExerciseClaimService().decideEvaluation(
+          clubId: clubId,
+          claimId: claimId,
+          result: newStatus,
+          comment: _comment.text,
+          rejectionReason: extraDecision?['rejected_reason']?.toString(),
+        );
+        if (mounted) {
+          final label = newStatus == 'accepted'
+              ? 'Acquis ✓'
+              : newStatus == 'corrected'
+                  ? 'En progrès'
+                  : 'Refusé';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content:
+                  Text(_isRevision ? 'Évaluation corrigée : $label' : label),
+            ),
+          );
+          Navigator.of(context).pop();
+        }
+        return;
+      }
 
       final decision = <String, dynamic>{
         'decided_by': userId,

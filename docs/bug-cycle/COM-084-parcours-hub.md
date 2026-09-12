@@ -5,7 +5,8 @@
 - Ticket: COM-084 (`BKw6Mf52Ox5ZTBYuae0o`)
 - Analyse-revisie goedgekeurd door Jan: `b4280422-0ecd-48f8-9b4c-f1b76c3ac0f5`
 - Werkbranch: `codex/bug-COM-084-parcours-hub`
-- Scope: CalyMob, geen backenddeploy, geen storebuild, geen app-versie-publicatie
+- Scope: CalyMob en bijbehorende training-callables; geen deploy,
+  storebuild of app-versie-publicatie in deze branch
 
 ## Probleem
 
@@ -33,17 +34,40 @@ opleidingstaken en evaluaties.
 - `CommunicationHubScreen` kan nu optioneel rechtstreeks openen op de filter
   `Actions`, zodat de Parcours-hub niet eerst alle communicatie toont.
 
+## Volledige evaluatieworkflow
+
+- Een leerling kan vanuit `Mes exercices` een evaluatie aanvragen met één
+  oefening, een eigen zwembad- of duikregel uit het carnet en een bevoegde
+  MC/MF/MN-monitor met Encadrantstatus.
+- `requestExerciseEvaluation` controleert die keuzes server-side en maakt de
+  claim en monitortaak atomisch met een deterministische identiteit. Dubbel
+  tikken en transactionele retries maken geen dubbele aanvragen.
+- `decideExerciseEvaluation` bewaart `acquis`, `en_progres` of `a_revoir` in
+  een officiële observatie. Dezelfde monitor kan via de tab `Fait` zijn eigen
+  historische beslissing corrigeren; elke wijziging verhoogt de revisie en
+  actualiseert dezelfde observatie.
+- Evaluatietaken volgen het beperkte schema van drie herinneringen (dag 3, 8
+  en 12) en escaleren pas op dag 14.
+- Buddybevestigingen gebruiken één deterministische aggregatietaak per lid.
+  Gelijktijdige triggers kunnen daardoor geen dubbele open taak meer maken;
+  oudere toevallige dubbels worden afgesloten en blijven als historiek staan.
+
 ## Validatie
 
 - `flutter analyze --no-fatal-infos --no-fatal-warnings lib/screens/training/parcours_hub_screen.dart lib/screens/home/landing_screen.dart lib/screens/communication/communication_hub_screen.dart lib/screens/training/mon_carnet_screen.dart test/screens/parcours_hub_screen_test.dart`
 - `flutter test test/screens/parcours_hub_screen_test.dart`
+- `flutter test --no-pub test/screens/parcours_hub_screen_test.dart test/screens/actions_evaluations_screen_test.dart test/screens/evaluation_request_screen_test.dart test/services/exercise_claim_evaluation_test.dart`
+- `jest src/training/evaluationRequests.test.js src/training/onBuddyConfirmationTask.test.js src/training/processFormationTaskReminders.test.js --runInBand`
+- volledige Functions- en Flutter-regressies
 
-Beide controles slagen in de tijdelijke worktree.
+Alle vermelde controles slagen in de tijdelijke worktree.
 
 ## Release-opmerking
 
-Deze wijziging staat in de mobiele releasewachtrij. Er is geen version bump,
-geen Android/iOS build, geen upload naar stores en geen Firestore
+Deze wijziging staat in de mobiele releasewachtrij. Publicatie vereist eerst de
+twee nieuwe callables (`requestExerciseEvaluation` en
+`decideExerciseEvaluation`), daarna de bijbehorende CalyMob-versie. Er is geen
+deploy, version bump, Android/iOS build, upload naar stores of Firestore
 `app_version`-wijziging uitgevoerd.
 
 ## Integratiecontrole — 12 september 2026

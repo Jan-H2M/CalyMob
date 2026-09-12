@@ -1922,8 +1922,9 @@ service cloud.firestore {
     // Student declares; assigned monitor (or encadrant/admin) decides.
     // Student can create their own claim and edit it while draft/submitted.
     // The assigned monitor can update the claim once it routes to them.
-    // The official record (member_observations) is written by Cloud Function
-    // onClaimAccepted — never directly by the client.
+    // The official record (member_observations) is written by Cloud Functions
+    // onClaimAccepted / decideExerciseEvaluation — never directly by the
+    // student client.
     match /clubs/{clubId}/exercise_claims/{claimId} {
       allow read: if isMember(clubId) && (
            resource.data.member_id == request.auth.uid
@@ -1934,7 +1935,10 @@ service cloud.firestore {
 
       allow create: if isMember(clubId)
         && request.resource.data.member_id == request.auth.uid
-        && request.resource.data.declared_by == request.auth.uid;
+        && request.resource.data.declared_by == request.auth.uid
+        // Alleen de COM-084 callable mag een server-gecontroleerde aanvraag
+        // markeren. Admin SDK writes omzeilen deze clientregel.
+        && request.resource.data.get('server_verified', false) == false;
 
       // WP-02 — la raison de refus (decision.*) n'est modifiable que par le
       // validateur assigné (monitor_id) ou un admin/encadrant. L'élève ne peut
@@ -1942,8 +1946,19 @@ service cloud.firestore {
       // deux transitions autorisées après un refus (re-soumettre / abandonner),
       // sans toucher à la décision du moniteur.
       allow update: if isMember(clubId) && (
+        // Server-gecontroleerde evaluatieaanvragen lopen voor beslissingen en
+        // correcties uitsluitend via decideExerciseEvaluation. De leerling
+        // mag alleen zijn vrije toelichting aanpassen zolang ze ingediend is.
+        (resource.data.get('server_verified', false) == true
+          && resource.data.member_id == request.auth.uid
+          && resource.data.status == 'submitted'
+          && request.resource.data.get('server_verified', false) == true
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['declaration_notes', 'updated_at']))
+        || (resource.data.get('server_verified', false) == false && (
            (resource.data.member_id == request.auth.uid
-            && resource.data.status in ['draft', 'submitted'])
+            && resource.data.status in ['draft', 'submitted']
+            && request.resource.data.get('server_verified', false) == false)
         // Re-soumission : rejected → submitted, retry_count +1 exact, decision inchangée.
         || (resource.data.member_id == request.auth.uid
             && resource.data.status == 'rejected'
@@ -1963,6 +1978,7 @@ service cloud.firestore {
         || resource.data.monitor_id == request.auth.uid
         || isAdmin(clubId)
         || isEncadrantForClub(clubId)
+        ))
       );
 
       allow delete: if isAdmin(clubId);

@@ -228,6 +228,32 @@ void main() {
     expect(find.text('Plongée avec Sophie Dubois'), findsOneWidget);
     expect(find.text('Valider le carnet de Marc'), findsNothing);
   });
+
+  testWidgets('completed evaluations remain reachable for monitor correction', (
+    tester,
+  ) async {
+    FormationTask? openedTask;
+    await tester.pumpWidget(MaterialApp(
+      home: ActionsEvaluationsScreen(
+        previewMode: true,
+        previewTasks: [
+          _task(
+            'Évaluation historique P2.DP',
+            FormationTaskType.monitorValidation,
+            status: FormationTaskStatus.done,
+          ),
+        ],
+        onOpenTask: (task) => openedTask = task,
+      ),
+    ));
+
+    expect(find.text('Évaluation historique P2.DP'), findsNothing);
+    await tester.tap(find.text('Fait'));
+    await tester.pump();
+    expect(find.text('Évaluation historique P2.DP'), findsOneWidget);
+    await tester.tap(find.text('Évaluation historique P2.DP'));
+    expect(openedTask?.status, FormationTaskStatus.done);
+  });
 }
 
 FormationTask _task(

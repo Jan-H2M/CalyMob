@@ -320,6 +320,15 @@ exports.onClaimAccepted = onClaimAccepted;
 const { onClaimSubmitted } = require('./src/training/onClaimSubmitted');
 exports.onClaimSubmitted = onClaimSubmitted;
 
+// COM-084 — student-selected evaluation request and durable monitor decision.
+// Both callables validate ownership and monitor eligibility server-side.
+const {
+  requestExerciseEvaluation,
+  decideExerciseEvaluation,
+} = require('./src/training/evaluationRequests');
+exports.requestExerciseEvaluation = requestExerciseEvaluation;
+exports.decideExerciseEvaluation = decideExerciseEvaluation;
+
 // WP-02 (chaîne de refus S1) — un refus n'est plus silencieux : onClaimRejected
 // crée une tâche 'claim_rejected' chez l'élève (raison + push immédiat) et
 // résout la tâche de validation parente ; onClaimResubmitted recrée une tâche

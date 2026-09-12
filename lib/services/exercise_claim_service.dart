@@ -9,6 +9,15 @@
 /// a member only ever has a handful of draft claims at once.
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+
+typedef EvaluationRequestInvoker = Future<Map<String, dynamic>> Function(
+  Map<String, dynamic> payload,
+);
+
+typedef EvaluationDecisionInvoker = Future<Map<String, dynamic>> Function(
+  Map<String, dynamic> payload,
+);
 
 class ExerciseClaimDraft {
   final String id;
@@ -26,9 +35,23 @@ class ExerciseClaimDraft {
 
 class ExerciseClaimService {
   final FirebaseFirestore _db;
+  final FirebaseFunctions? _injectedFunctions;
+  final EvaluationRequestInvoker? _evaluationRequestInvoker;
+  final EvaluationDecisionInvoker? _evaluationDecisionInvoker;
 
-  ExerciseClaimService({FirebaseFirestore? firestore})
-      : _db = firestore ?? FirebaseFirestore.instance;
+  ExerciseClaimService({
+    FirebaseFirestore? firestore,
+    FirebaseFunctions? functions,
+    EvaluationRequestInvoker? evaluationRequestInvoker,
+    EvaluationDecisionInvoker? evaluationDecisionInvoker,
+  })  : _db = firestore ?? FirebaseFirestore.instance,
+        _injectedFunctions = functions,
+        _evaluationRequestInvoker = evaluationRequestInvoker,
+        _evaluationDecisionInvoker = evaluationDecisionInvoker;
+
+  FirebaseFunctions get _functions =>
+      _injectedFunctions ??
+      FirebaseFunctions.instanceFor(region: 'europe-west1');
 
   CollectionReference<Map<String, dynamic>> _col(String clubId) =>
       _db.collection('clubs').doc(clubId).collection('exercise_claims');
@@ -154,5 +177,69 @@ class ExerciseClaimService {
       'updated_at': FieldValue.serverTimestamp(),
     });
     return ref.id;
+  }
+
+  /// Creates one durable student-initiated evaluation request.
+  ///
+  /// The document id is derived from the complete business identity of the
+  /// request. A double tap, offline retry or resumed submit therefore returns
+  /// the same claim instead of creating a second monitor task.
+  Future<String> createEvaluationRequest({
+    required String clubId,
+    required String exerciseId,
+    required String contextType,
+    required String contextEntryId,
+    required String monitorId,
+    String? notes,
+  }) async {
+    if (contextType != 'pool' && contextType != 'dive') {
+      throw ArgumentError.value(contextType, 'contextType');
+    }
+    final payload = <String, dynamic>{
+      'clubId': clubId,
+      'exerciseId': exerciseId,
+      'contextType': contextType,
+      'contextEntryId': contextEntryId,
+      'monitorId': monitorId,
+      if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+    };
+    final result = _evaluationRequestInvoker != null
+        ? await _evaluationRequestInvoker!(payload)
+        : Map<String, dynamic>.from(
+            (await _functions
+                    .httpsCallable('requestExerciseEvaluation')
+                    .call(payload))
+                .data as Map,
+          );
+    final claimId = result['claimId']?.toString();
+    if (claimId == null || claimId.isEmpty) {
+      throw StateError('La demande n’a pas renvoyé de référence.');
+    }
+    return claimId;
+  }
+
+  Future<Map<String, dynamic>> decideEvaluation({
+    required String clubId,
+    required String claimId,
+    required String result,
+    String? comment,
+    String? rejectionReason,
+  }) async {
+    final payload = <String, dynamic>{
+      'clubId': clubId,
+      'claimId': claimId,
+      'result': result,
+      if (comment != null && comment.trim().isNotEmpty)
+        'comment': comment.trim(),
+      if (rejectionReason != null && rejectionReason.trim().isNotEmpty)
+        'rejectionReason': rejectionReason.trim(),
+    };
+    if (_evaluationDecisionInvoker != null) {
+      return _evaluationDecisionInvoker!(payload);
+    }
+    return Map<String, dynamic>.from(
+      (await _functions.httpsCallable('decideExerciseEvaluation').call(payload))
+          .data as Map,
+    );
   }
 }

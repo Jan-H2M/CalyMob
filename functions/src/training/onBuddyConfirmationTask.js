@@ -94,19 +94,30 @@ async function handleBuddyConfirmationTask(event) {
     const t = d.data();
     return t.type === 'buddy_confirmation' && t.status === 'open';
   });
+  // A stable id makes concurrent confirmation triggers converge on the same
+  // aggregate task. The previous auto-id flow could create two open tasks when
+  // two buddies answered at nearly the same time.
+  const aggregateTaskId = `buddy_confirmation_${memberId}`;
+  const aggregateTaskRef = clubRef
+    .collection('formation_tasks')
+    .doc(aggregateTaskId);
 
   if (pendingCount > 0) {
-    if (openBuddyTasks.length === 0) {
-      // Create a single aggregated task.
-      const taskRef = clubRef.collection('formation_tasks').doc();
-      await taskRef.set({
+    const newTitle =
+      pendingCount === 1
+        ? 'Une plongée à confirmer'
+        : `${pendingCount} plongées à confirmer`;
+    const deterministicTask = openBuddyTasks.find(
+      task => task.id === aggregateTaskId,
+    );
+    if (!deterministicTask) {
+      // Create/reopen the deterministic aggregate. Concurrent invocations use
+      // the same document and therefore cannot create duplicate open tasks.
+      await aggregateTaskRef.set({
         type: 'buddy_confirmation',
         status: 'open',
         priority: 'normal',
-        title:
-          pendingCount === 1
-            ? 'Une plongée à confirmer'
-            : `${pendingCount} plongées à confirmer`,
+        title: newTitle,
         member_id: memberId,
         member_name: memberName,
         current_assignee_id: memberId,
@@ -122,32 +133,29 @@ async function handleBuddyConfirmationTask(event) {
         updated_at: FieldValue.serverTimestamp(),
       });
       console.log(
-        `[${FUNCTION_NAME}] created buddy_confirmation task ${taskRef.id} for ${memberId} (pending=${pendingCount})`,
+        `[${FUNCTION_NAME}] created buddy_confirmation task ${aggregateTaskId} for ${memberId} (pending=${pendingCount})`,
       );
     } else {
-      // Keep a single task; refresh its count/title if it changed.
-      const primary = openBuddyTasks[0];
-      const cur = primary.data();
-      const newTitle =
-        pendingCount === 1
-          ? 'Une plongée à confirmer'
-          : `${pendingCount} plongées à confirmer`;
-      if ((cur.context && cur.context.pending_count) !== pendingCount) {
-        await primary.ref.update({
+      const current = deterministicTask.data();
+      if ((current.context && current.context.pending_count) !== pendingCount) {
+        await aggregateTaskRef.update({
           title: newTitle,
           'context.pending_count': pendingCount,
           updated_at: FieldValue.serverTimestamp(),
         });
       }
-      // Resolve any accidental duplicates.
-      for (let i = 1; i < openBuddyTasks.length; i++) {
-        await openBuddyTasks[i].ref.update({
-          status: 'done',
-          completed_at: FieldValue.serverTimestamp(),
-          completed_by: 'system',
-          updated_at: FieldValue.serverTimestamp(),
-        });
-      }
+    }
+    // Resolve every legacy/random open task. This also cleans up duplicates
+    // left by older deployed versions while preserving their history.
+    for (const task of openBuddyTasks) {
+      if (task.id === aggregateTaskId) continue;
+      await task.ref.update({
+        status: 'done',
+        completed_at: FieldValue.serverTimestamp(),
+        completed_by: 'system',
+        completed_reason: 'superseded_by_deterministic_aggregate',
+        updated_at: FieldValue.serverTimestamp(),
+      });
     }
   } else {
     // No more pending → resolve open buddy_confirmation task(s).

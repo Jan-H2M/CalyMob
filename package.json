@@ -15,6 +15,7 @@
     "test:coverage": "jest --coverage",
     "test:integration": "jest --testMatch='**/*.integration.test.ts'",
     "test:rules:event-registration": "JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" firebase emulators:exec --project calymob-event-registration-rules --only firestore \"node scripts/test-event-registration-rules.cjs\"",
+    "test:rules:evaluation": "JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" firebase emulators:exec --project calymob-com084-evaluation-rules --only firestore \"node scripts/test-evaluation-rules.cjs\"",
     "setup:test-users": "node scripts/setup-test-users.js",
     "emulators": "firebase emulators:start",
     "emulators:export": "firebase emulators:export ./emulator-data"
