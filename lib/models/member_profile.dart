@@ -186,6 +186,7 @@ class MemberProfile {
     Map<String, dynamic> data, {
     Map<String, dynamic>? operationalStatus,
   }) {
+    final sharesBirthday = data['share_birthday'] != false;
     return MemberProfile(
       id: id,
       nom: memberLastName(data) ?? '',
@@ -200,10 +201,13 @@ class MemberProfile {
       consentInternalPhoto: data['consent_internal_photo'] == true,
       shareEmail: data['share_email'] == true,
       sharePhone: data['share_phone'] == true,
-      shareBirthday: data['share_birthday'] != false,
+      shareBirthday: sharesBirthday,
       phoneNumber: _stringOrNull(data['phone_number']),
-      birthMonth: _intOrNull(data['birth_month']),
-      birthDay: _intOrNull(data['birth_day']),
+      // Enforce the explicit opt-out at the client boundary too. This avoids
+      // exposing stale projected values while an older directory document is
+      // waiting to be refreshed by syncMemberProjections.
+      birthMonth: sharesBirthday ? _intOrNull(data['birth_month']) : null,
+      birthDay: sharesBirthday ? _intOrNull(data['birth_day']) : null,
       memberStatus: resolveMemberStatus(data),
       membershipCategoryCode: _stringOrNull(
         operationalStatus?['membership_category_code'] ??

@@ -1116,6 +1116,7 @@ class _WhoIsWhoScreenState extends State<WhoIsWhoScreen>
 
   /// Day + month only. Never expose the year in Qui est qui.
   String? _birthdayLabel(MemberProfile member) {
+    if (!member.shareBirthday) return null;
     final day = member.birthDay ?? member.birthDate?.day;
     final month = member.birthMonth ?? member.birthDate?.month;
     if (day == null || month == null || month < 1 || month > 12) return null;

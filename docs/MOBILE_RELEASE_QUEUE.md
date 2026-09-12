@@ -72,7 +72,6 @@ nog niet in een storeversie zaten.
 - Commit `3abc0bc`; nog niet gemerged of uitgebracht. Visuele controle op toestel
   volgt bij de gezamenlijke mobiele release.
 
-
 ### Wacht op gezamenlijke store-release — COM-084
 
 - Centrale mobiele `Parcours`-hub voor
@@ -86,17 +85,18 @@ nog niet in een storeversie zaten.
   Firestore-appversiewijziging.
 - Dossier: `docs/bug-cycle/COM-084-parcours-hub.md`.
 
-### Nog niet geïntegreerd — COM-075
+### Geïntegreerd op `main` — COM-075
 
-- `codex/bug-COM-075-birthday-sharing`: leden kunnen het delen van hun
-  verjaardagsdag en -maand en de verjaardagsmelding uitschakelen. Een ontbrekend
-  veld blijft achterwaarts compatibel actief; er is geen bulkmigratie.
-- Gevalideerd met 173 Cloud Function-tests, 488 geslaagde Fluttertests (1
-  emulator-test overgeslagen) en een groene analyzer op de gewijzigde
-  Dart-bestanden. Onafhankelijke code-/tekstcontrole
-  en visuele controle volgen in de gezamenlijke mobiele releasevoorbereiding.
-- Commit `bd70ba0`; nog niet gemerged, geen function-deploy, version bump, build,
-  upload, store-inzending of Firestore-appversiewijziging.
+- Leden kunnen het delen van hun verjaardagsdag en -maand en de
+  verjaardagsmelding uitschakelen. Een ontbrekend veld blijft achterwaarts
+  compatibel actief; er is geen bulkmigratie.
+- De oorspronkelijke implementatie is via PR #58 op `main` geïntegreerd. De
+  huidige verificatie voegt een extra mobiele afscherming toe: ook een tijdelijk
+  verouderde directoryprojectie met `share_birthday: false` mag geen verjaardag
+  tonen in Who’s Who.
+- De function-, model-, Firestore-regel- en webbuildcontroles zijn opnieuw
+  uitgevoerd. Publicatie van de bijgewerkte Cloud Functions en Firestore-regels,
+  een version bump, storebuild en store-inzending blijven afzonderlijke stappen.
 
 Basisversie: `1.17.0+194`
 
