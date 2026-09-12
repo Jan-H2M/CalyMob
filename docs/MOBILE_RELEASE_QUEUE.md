@@ -105,10 +105,11 @@ Android:
 1. Bouw een ondertekende release-AAB van exact **1.22.0+207**.
 2. Bevestig `compileSdk`/`targetSdk` minimaal API 35; de huidige kandidaat gebruikt
    36 en voldoet dus pas na een geslaagde echte Android-compile.
-3. Test op een echt API-35-toestel of -emulator: profiel → foto kiezen/camera →
-   croppen → bevestigen, plus annuleren en opnieuw proberen. Controleer dat de
-   uCrop-knoppen niet onder de statusbalk vallen en geen brede fotopermissie wordt
-   gevraagd.
+3. Test verplicht op een echt fysiek API-35-toestel: profiel → foto
+   kiezen/camera → croppen → bevestigen, plus annuleren en opnieuw proberen.
+   Controleer dat de uCrop-knoppen niet onder de statusbalk vallen en geen brede
+   fotopermissie wordt gevraagd. Een emulatorrun mag aanvullend bewijs leveren,
+   maar vervangt deze fysieke-toestelpoort niet.
 4. Controleer signing, package `club.caly.calymob`, versionCode 207 en de Play
    pre-launchresultaten vóór productiepromotie.
 
@@ -124,7 +125,19 @@ iOS:
 Een eerder geslaagde losse APK-build is ondersteunend bewijs, maar vervangt deze
 release-AAB-, signing- en echte-toestelpoorten niet.
 
-### 4. Client publiceren vóór de restrictieve regels
+### 4. Additieve regels vóór de clients
+
+Deploy uitsluitend de onafhankelijk goedgekeurde additieve CalyCompta-regels uit
+commit `e788c2b`: de Actions-correctieregel en de COM-084
+`server_verified`-claimregels. Deze fase blokkeert geen bestaande clientflow.
+Verifieer de additieve emulator-matrix onmiddellijk na de deploy.
+
+De restrictieve COM-075/COM-076-regels uit commit `5cb2eff` horen nadrukkelijk
+niet in deze fase. Die kandidaat blijft bovendien geblokkeerd totdat de
+CalyCompta-webclient de verjaardagscallable gebruikt, de admin-omweg gesloten is
+en de gerepareerde commit opnieuw onafhankelijk is goedgekeurd.
+
+### 5. Client publiceren vóór de restrictieve regels
 
 1. Upload en publiceer **1.22.0+207** in beide stores volgens de goedgekeurde
    gefaseerde store-uitrol.
@@ -136,12 +149,14 @@ release-AAB-, signing- en echte-toestelpoorten niet.
    clients mogen niet meer rechtstreeks kunnen registreren wanneer de nieuwe
    Firestore-regels actief worden.
 
-### 5. Firestore-regels na clientadoptie en in onderhoudsvenster
+### 6. Restrictieve regels na afzonderlijke rolloutgate
 
 1. Zet nieuwe eventregistraties kort in onderhoudsmodus en laat lopende oude
    schrijfacties uitdoven.
 2. Controleer capaciteit en openstaande inschrijvingen.
-3. Deploy de geïntegreerde regels; deze release wijzigt geen indexes:
+3. Deploy pas na afzonderlijke COM-075/COM-076-goedkeuring de restrictieve
+   privacy-, inschrijvings- en receiptregels uit de gerepareerde opvolger van
+   `5cb2eff`; deze release wijzigt geen indexes:
 
 ```bash
 firebase deploy --project calycompta --only firestore:rules
@@ -158,7 +173,7 @@ npm run test:rules:event-registration
    gast toevoegen, wachtlijst en exact uitschrijven. Open registraties pas daarna
    opnieuw.
 
-### 6. Scheduler en backfill blijven buiten deze release
+### 7. Scheduler en backfill blijven buiten deze release
 
 - `firebase-schedule-autoClosePoolSessions-europe-west1` blijft **PAUSED**.
 - Geen handmatige scheduler-run.
