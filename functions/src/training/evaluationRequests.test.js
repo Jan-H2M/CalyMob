@@ -19,6 +19,7 @@ const {
   evaluationIdentity,
   isEligibleMonitor,
   observationResult,
+  canonicalClaimIdentity,
 } = require('./evaluationRequests');
 
 function ref(path) {
@@ -94,6 +95,10 @@ describe('evaluation request policy', () => {
     expect(observationResult('rejected')).toBe('a_revoir');
     expect(isEligibleMonitor(eligibleMonitor)).toBe(true);
     expect(isEligibleMonitor({ ...eligibleMonitor, plongeur_code: 'AM' })).toBe(false);
+    expect(isEligibleMonitor({ ...eligibleMonitor, plongeur_code: 'MF' })).toBe(true);
+    expect(isEligibleMonitor({ ...eligibleMonitor, plongeur_code: 'MN' })).toBe(true);
+    expect(isEligibleMonitor({ ...eligibleMonitor, clubStatuten: ['Membres'] })).toBe(false);
+    expect(isEligibleMonitor({ app_role: 'admin', plongeur_code: 'P3' })).toBe(false);
   });
 
   test('creates the authoritative claim and review task atomically', async () => {
@@ -159,12 +164,42 @@ describe('evaluation request policy', () => {
     const identity = evaluationIdentity({
       memberId: 'student', exerciseId: 'exercise-1', contextEntryId: 'entry-1', monitorId: 'monitor',
     });
+    const claimId = `evaluation_${identity}`;
+    const taskId = `evaluation_review_${identity}`;
+    const canonical = canonicalClaimIdentity({
+      memberId: 'student',
+      exerciseId: 'exercise-1',
+      contextType: 'pool',
+      contextEntryId: 'entry-1',
+      monitorId: 'monitor',
+      taskId,
+      entry: { member_id: 'student', source: 'piscine' },
+    });
     const { transaction } = setupDb({
       [`${club}/members/student`]: { prenom: 'Sam' },
       [`${club}/members/monitor`]: eligibleMonitor,
       [`${club}/exercices_lifras/exercise-1`]: { code: 'P2.DP' },
       [`${club}/student_logbook_entries/entry-1`]: { member_id: 'student', source: 'piscine' },
-      [`${club}/exercise_claims/evaluation_${identity}`]: { status: 'submitted' },
+      [`${club}/exercise_claims/${claimId}`]: {
+        ...canonical,
+        status: 'submitted',
+        member_name: 'Sam',
+        monitor_name: 'Marie Moniteur',
+        exercise_code: 'P2.DP',
+        exercise_label: 'Direction',
+      },
+      [`${club}/formation_tasks/${taskId}`]: {
+        type: 'monitor_validation',
+        status: 'open',
+        member_id: 'student',
+        current_assignee_id: 'monitor',
+        current_assignee_type: 'monitor',
+        context: {
+          exercise_claim_id: claimId,
+          logbook_entry_id: 'entry-1',
+          pool_session_id: 'entry-1',
+        },
+      },
     });
     const result = await requestExerciseEvaluation({
       auth: { uid: 'student' },
@@ -174,7 +209,144 @@ describe('evaluation request policy', () => {
       },
     });
     expect(result.idempotent).toBe(true);
+    expect(result.taskRepaired).toBe(false);
     expect(transaction.set).not.toHaveBeenCalled();
+  });
+
+  test('rejects a deterministic claim collision with forged canonical fields', async () => {
+    const identity = evaluationIdentity({
+      memberId: 'student', exerciseId: 'exercise-1', contextEntryId: 'entry-1', monitorId: 'monitor',
+    });
+    const { transaction } = setupDb({
+      [`${club}/members/student`]: { prenom: 'Sam' },
+      [`${club}/members/monitor`]: eligibleMonitor,
+      [`${club}/exercices_lifras/exercise-1`]: { code: 'P2.DP' },
+      [`${club}/student_logbook_entries/entry-1`]: { member_id: 'student', source: 'piscine' },
+      [`${club}/exercise_claims/evaluation_${identity}`]: {
+        member_id: 'attacker', server_verified: false,
+      },
+    });
+    await expect(requestExerciseEvaluation({
+      auth: { uid: 'student' },
+      data: {
+        clubId: 'calypso', exerciseId: 'exercise-1', contextEntryId: 'entry-1',
+        contextType: 'pool', monitorId: 'monitor',
+      },
+    })).rejects.toMatchObject({ code: 'already-exists' });
+    expect(transaction.set).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['missing', null],
+    ['corrupt', {
+      type: 'monitor_validation', member_id: 'other', current_assignee_id: 'attacker',
+      context: { exercise_claim_id: 'wrong', logbook_entry_id: 'wrong' },
+    }],
+  ])('atomically repairs a %s review task for a valid claim', async (_label, taskData) => {
+    const identity = evaluationIdentity({
+      memberId: 'student', exerciseId: 'exercise-1', contextEntryId: 'entry-1', monitorId: 'monitor',
+    });
+    const claimId = `evaluation_${identity}`;
+    const taskId = `evaluation_review_${identity}`;
+    const entry = { member_id: 'student', source: 'piscine' };
+    const canonical = canonicalClaimIdentity({
+      memberId: 'student', exerciseId: 'exercise-1', contextType: 'pool',
+      contextEntryId: 'entry-1', monitorId: 'monitor', taskId, entry,
+    });
+    const documents = {
+      [`${club}/members/student`]: { prenom: 'Sam' },
+      [`${club}/members/monitor`]: eligibleMonitor,
+      [`${club}/exercices_lifras/exercise-1`]: { code: 'P2.DP' },
+      [`${club}/student_logbook_entries/entry-1`]: entry,
+      [`${club}/exercise_claims/${claimId}`]: {
+        ...canonical,
+        status: 'submitted',
+        member_name: 'Sam',
+        monitor_name: 'Marie Moniteur',
+        exercise_code: 'P2.DP',
+        exercise_label: 'Direction',
+      },
+      ...(taskData ? { [`${club}/formation_tasks/${taskId}`]: taskData } : {}),
+    };
+    const { transaction } = setupDb(documents);
+    const result = await requestExerciseEvaluation({
+      auth: { uid: 'student' },
+      data: {
+        clubId: 'calypso', exerciseId: 'exercise-1', contextEntryId: 'entry-1',
+        contextType: 'pool', monitorId: 'monitor',
+      },
+    });
+    expect(result).toMatchObject({ idempotent: true, taskRepaired: true });
+    expect(transaction.set).toHaveBeenCalledTimes(1);
+    expect(transaction.set).toHaveBeenCalledWith(
+      expect.objectContaining({ path: `${club}/formation_tasks/${taskId}` }),
+      expect.objectContaining({
+        type: 'monitor_validation', member_id: 'student',
+        current_assignee_id: 'monitor', status: 'open',
+      }),
+    );
+  });
+
+  test('forbids requesting an evaluation from oneself', async () => {
+    const { transaction } = setupDb({
+      [`${club}/members/student`]: eligibleMonitor,
+      [`${club}/exercices_lifras/exercise-1`]: { code: 'P2.DP' },
+      [`${club}/student_logbook_entries/entry-1`]: { member_id: 'student', source: 'piscine' },
+    });
+    await expect(requestExerciseEvaluation({
+      auth: { uid: 'student' },
+      data: {
+        clubId: 'calypso', exerciseId: 'exercise-1', contextEntryId: 'entry-1',
+        contextType: 'pool', monitorId: 'student',
+      },
+    })).rejects.toMatchObject({ code: 'failed-precondition' });
+    expect(transaction.set).not.toHaveBeenCalled();
+  });
+
+  test('repairs a missing task as done when the valid claim was already decided', async () => {
+    const identity = evaluationIdentity({
+      memberId: 'student', exerciseId: 'exercise-1', contextEntryId: 'entry-1', monitorId: 'monitor',
+    });
+    const claimId = `evaluation_${identity}`;
+    const taskId = `evaluation_review_${identity}`;
+    const entry = { member_id: 'student', source: 'manual', operation_id: 'dive-1' };
+    const canonical = canonicalClaimIdentity({
+      memberId: 'student', exerciseId: 'exercise-1', contextType: 'dive',
+      contextEntryId: 'entry-1', monitorId: 'monitor', taskId, entry,
+    });
+    const { transaction } = setupDb({
+      [`${club}/members/student`]: { prenom: 'Sam' },
+      [`${club}/members/monitor`]: eligibleMonitor,
+      [`${club}/exercices_lifras/exercise-1`]: { code: 'P2.DP' },
+      [`${club}/student_logbook_entries/entry-1`]: entry,
+      [`${club}/exercise_claims/${claimId}`]: {
+        ...canonical,
+        status: 'accepted',
+        member_name: 'Sam',
+        monitor_name: 'Marie Moniteur',
+        exercise_code: 'P2.DP',
+        exercise_label: 'Direction',
+        decision: {
+          decided_by: 'monitor', revision: 1,
+          resulting_observation_id: 'observation-1', decided_at: 'decision-time',
+        },
+      },
+    });
+    const result = await requestExerciseEvaluation({
+      auth: { uid: 'student' },
+      data: {
+        clubId: 'calypso', exerciseId: 'exercise-1', contextEntryId: 'entry-1',
+        contextType: 'dive', monitorId: 'monitor',
+      },
+    });
+    expect(result).toMatchObject({ idempotent: true, taskRepaired: true });
+    expect(transaction.set).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        status: 'done', completed_by: 'monitor',
+        completion_data: expect.objectContaining({ observation_id: 'observation-1' }),
+      }),
+    );
   });
 });
 
@@ -230,6 +402,38 @@ describe('durable monitor decision and correction', () => {
     });
     await expect(decideExerciseEvaluation({
       auth: { uid: 'other-monitor' },
+      data: { clubId: 'calypso', claimId: 'evaluation_claim', result: 'accepted' },
+    })).rejects.toMatchObject({ code: 'permission-denied' });
+    expect(transaction.set).not.toHaveBeenCalled();
+    expect(transaction.update).not.toHaveBeenCalled();
+  });
+
+  test('an assigned admin without MC/MF/MN plus Encadrant cannot decide', async () => {
+    const { transaction } = setupDb({
+      [`${club}/members/admin`]: { app_role: 'admin', plongeur_code: 'P3', clubStatuten: [] },
+      [`${club}/exercise_claims/evaluation_claim`]: {
+        request_kind: 'student_evaluation', server_verified: true,
+        monitor_id: 'admin', member_id: 'student',
+      },
+    });
+    await expect(decideExerciseEvaluation({
+      auth: { uid: 'admin' },
+      data: { clubId: 'calypso', claimId: 'evaluation_claim', result: 'accepted' },
+    })).rejects.toMatchObject({ code: 'permission-denied' });
+    expect(transaction.set).not.toHaveBeenCalled();
+    expect(transaction.update).not.toHaveBeenCalled();
+  });
+
+  test('rejects a legacy server-verified self-evaluation at decision time', async () => {
+    const { transaction } = setupDb({
+      [`${club}/members/monitor`]: eligibleMonitor,
+      [`${club}/exercise_claims/evaluation_claim`]: {
+        request_kind: 'student_evaluation', server_verified: true,
+        monitor_id: 'monitor', member_id: 'monitor',
+      },
+    });
+    await expect(decideExerciseEvaluation({
+      auth: { uid: 'monitor' },
       data: { clubId: 'calypso', claimId: 'evaluation_claim', result: 'accepted' },
     })).rejects.toMatchObject({ code: 'permission-denied' });
     expect(transaction.set).not.toHaveBeenCalled();

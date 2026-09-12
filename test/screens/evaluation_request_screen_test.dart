@@ -3,6 +3,46 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test(
+      'client monitor contract matches MC/MF/MN plus Encadrant and excludes self',
+      () {
+    for (final code in const ['MC', 'MF', 'MN']) {
+      expect(
+        isEligibleEvaluationMonitor({
+          'id': 'monitor-$code',
+          'plongeur_code': code,
+          'clubStatuten': ['Encadrants'],
+        }, studentId: 'student'),
+        isTrue,
+      );
+    }
+    expect(
+      isEligibleEvaluationMonitor({
+        'id': 'admin',
+        'app_role': 'admin',
+        'plongeur_code': 'P3',
+        'clubStatuten': const [],
+      }, studentId: 'student'),
+      isFalse,
+    );
+    expect(
+      isEligibleEvaluationMonitor({
+        'id': 'monitor',
+        'plongeur_code': 'MC',
+        'clubStatuten': ['Membres'],
+      }, studentId: 'student'),
+      isFalse,
+    );
+    expect(
+      isEligibleEvaluationMonitor({
+        'id': 'student',
+        'plongeur_code': 'MN',
+        'clubStatuten': ['Encadrants'],
+      }, studentId: 'student'),
+      isFalse,
+    );
+  });
+
   testWidgets('student chooses exercise, own context and monitor before submit',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(390, 844));

@@ -16,6 +16,9 @@ const {
   isDueForReminder,
   buildReminderPayload,
   buildReminderNotification,
+  reminderRecipientId,
+  groupTasksByReminderRecipient,
+  processDueTaskReminders,
 } = require('./processFormationTaskReminders');
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -111,5 +114,159 @@ describe('notification wording', () => {
       body: "Ouvre l'onglet Actions pour les retrouver",
     });
     expect(notification.title).not.toContain('2');
+  });
+});
+
+describe('authoritative reminder recipients', () => {
+  test('monitor validations route to the current assignee while student tasks stay with the member', () => {
+    const docs = [
+      {
+        id: 'monitor-task',
+        ref: { id: 'monitor-task' },
+        data: () => ({
+          type: 'monitor_validation',
+          member_id: 'student-1',
+          current_assignee_id: 'monitor-1',
+        }),
+      },
+      {
+        id: 'student-task',
+        ref: { id: 'student-task' },
+        data: () => ({
+          type: 'buddy_confirmation',
+          member_id: 'student-1',
+          current_assignee_id: 'someone-else',
+        }),
+      },
+      {
+        id: 'second-monitor-task',
+        ref: { id: 'second-monitor-task' },
+        data: () => ({
+          type: 'monitor_validation',
+          member_id: 'student-2',
+          current_assignee_id: 'monitor-1',
+        }),
+      },
+    ];
+
+    const grouped = groupTasksByReminderRecipient(docs);
+    expect([...grouped.keys()]).toEqual(['monitor-1', 'student-1']);
+    expect(grouped.get('monitor-1').map(t => t.id)).toEqual([
+      'monitor-task',
+      'second-monitor-task',
+    ]);
+    expect(grouped.get('student-1').map(t => t.id)).toEqual(['student-task']);
+    expect(reminderRecipientId({
+      type: 'monitor_validation', member_id: 'student', current_assignee_id: '',
+    })).toBe('');
+  });
+
+  test('tokens, history and daily stamp all use the authoritative mixed recipients', async () => {
+    const monitorRef = {
+      get: jest.fn(async () => ({
+        exists: true,
+        data: () => ({ fcm_tokens: ['monitor-token'] }),
+      })),
+      update: jest.fn(async () => undefined),
+    };
+    const studentRef = {
+      get: jest.fn(async () => ({
+        exists: true,
+        data: () => ({ fcm_tokens: ['student-token'] }),
+      })),
+      update: jest.fn(async () => undefined),
+    };
+    const db = {
+      collection: jest.fn(() => ({
+        doc: () => ({
+          collection: () => ({
+            doc: id => (id === 'monitor-1' ? monitorRef : studentRef),
+          }),
+        }),
+      })),
+    };
+    const monitorTaskRef = { update: jest.fn(async () => undefined) };
+    const studentTaskRef = { update: jest.fn(async () => undefined) };
+    const taskDocs = [
+      {
+        id: 'monitor-task',
+        ref: monitorTaskRef,
+        data: () => ({
+          type: 'monitor_validation', member_id: 'student-1',
+          current_assignee_id: 'monitor-1',
+          title: 'Évaluer Sam',
+          created_at: { toMillis: () => now - 4 * DAY },
+          notification_state: { reminder_count: 0 },
+        }),
+      },
+      {
+        id: 'student-task',
+        ref: studentTaskRef,
+        data: () => ({
+          type: 'buddy_confirmation', member_id: 'student-1',
+          current_assignee_id: 'student-1',
+          title: 'Confirmer la plongée',
+          created_at: { toMillis: () => now - DAY },
+          notification_state: { reminder_count: 0 },
+        }),
+      },
+    ];
+    const messaging = {
+      sendEachForMulticast: jest.fn(async () => ({ successCount: 1 })),
+    };
+    const persistHistory = jest.fn(async () => undefined);
+
+    await expect(processDueTaskReminders({
+      db, clubId: 'calypso', taskDocs, now, messaging, persistHistory,
+    })).resolves.toEqual({ sent: 2 });
+
+    expect(messaging.sendEachForMulticast.mock.calls.map(([payload]) => payload.tokens))
+      .toEqual([['monitor-token'], ['student-token']]);
+    expect(persistHistory.mock.calls.map(call => call[1]))
+      .toEqual(['monitor-1', 'student-1']);
+    expect(monitorRef.update).toHaveBeenCalledWith({ last_formation_push_at: 'ts' });
+    expect(studentRef.update).toHaveBeenCalledWith({ last_formation_push_at: 'ts' });
+    expect(monitorTaskRef.update).toHaveBeenCalled();
+    expect(studentTaskRef.update).toHaveBeenCalled();
+  });
+
+  test('the monitor daily cap cannot consume or inspect the student cap', async () => {
+    const monitorRef = {
+      get: jest.fn(async () => ({
+        exists: true,
+        data: () => ({
+          fcm_tokens: ['monitor-token'],
+          last_formation_push_at: { toMillis: () => now - 60 * 60 * 1000 },
+        }),
+      })),
+      update: jest.fn(async () => undefined),
+    };
+    const taskRef = { update: jest.fn(async () => undefined) };
+    const db = {
+      collection: () => ({
+        doc: () => ({ collection: () => ({ doc: () => monitorRef }) }),
+      }),
+    };
+    const messaging = { sendEachForMulticast: jest.fn() };
+    const taskDocs = [{
+      id: 'monitor-task',
+      ref: taskRef,
+      data: () => ({
+        type: 'monitor_validation', member_id: 'student-1',
+        current_assignee_id: 'monitor-1',
+        created_at: { toMillis: () => now - 4 * DAY },
+        notification_state: { reminder_count: 0 },
+      }),
+    }];
+
+    await processDueTaskReminders({
+      db, clubId: 'calypso', taskDocs, now, messaging,
+      persistHistory: jest.fn(),
+    });
+    expect(monitorRef.get).toHaveBeenCalledTimes(1);
+    expect(messaging.sendEachForMulticast).not.toHaveBeenCalled();
+    expect(taskRef.update).toHaveBeenCalledWith(expect.objectContaining({
+      'notification_state.last_reminder_at': 'ts',
+    }));
   });
 });

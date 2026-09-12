@@ -32,9 +32,19 @@ function match(data, f) {
 }
 
 class FS {
-  constructor() { this.store = new Map(); this.auto = 0; }
+  constructor() { this.store = new Map(); this.auto = 0; this.txQueue = Promise.resolve(); }
   _m(p) { if (!this.store.has(p)) this.store.set(p, new Map()); return this.store.get(p); }
   collection(p) { return new Coll(this, p); }
+  runTransaction(callback) {
+    const execute = () => callback({
+      get: target => target.get(),
+      set: (target, data, options) => target.set(data, options),
+      update: (target, data) => target.update(data),
+    });
+    const result = this.txQueue.then(execute, execute);
+    this.txQueue = result.then(() => undefined, () => undefined);
+    return result;
+  }
 }
 class Coll {
   constructor(fs, p) { this.fs = fs; this.p = p; }
@@ -138,5 +148,31 @@ describe('handleBuddyConfirmationTask', () => {
     });
     await handleBuddyConfirmationTask(event('confirmed_copied'));
     expect(buddyTasks()[0].status).toBe('done');
+  });
+
+  it('serializes a 1→0 transition and cannot reopen from a stale pending count', async () => {
+    await seedConf('c1', 'pending');
+    await handleBuddyConfirmationTask(event('pending'));
+    await new Ref(mockDb, CONF, 'c1').update({ status: 'confirmed_copied' });
+    await Promise.all([
+      handleBuddyConfirmationTask(event('confirmed_copied')),
+      handleBuddyConfirmationTask(event('confirmed_copied')),
+    ]);
+    expect(openBuddyTasks()).toHaveLength(0);
+    expect(mockDb._m(TASKS).get(`buddy_confirmation_${MEMBER}`).status).toBe('done');
+  });
+
+  it('serializes a 2→1 transition and preserves the exact remaining count', async () => {
+    await seedConf('c1', 'pending');
+    await seedConf('c2', 'pending');
+    await handleBuddyConfirmationTask(event('pending'));
+    await new Ref(mockDb, CONF, 'c1').update({ status: 'confirmed_copied' });
+    await Promise.all([
+      handleBuddyConfirmationTask(event('confirmed_copied')),
+      handleBuddyConfirmationTask(event('pending')),
+    ]);
+    expect(openBuddyTasks()).toHaveLength(1);
+    expect(openBuddyTasks()[0].context.pending_count).toBe(1);
+    expect(openBuddyTasks()[0].title).toBe('Une plongée à confirmer');
   });
 });

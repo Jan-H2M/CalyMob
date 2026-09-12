@@ -12,6 +12,21 @@ import '../../widgets/ocean/ocean_gradient_background.dart';
 
 enum EvaluationEnvironment { pool, openWater }
 
+@visibleForTesting
+bool isEligibleEvaluationMonitor(
+  Map<String, dynamic> member, {
+  required String studentId,
+}) {
+  final id = member['id']?.toString() ?? '';
+  final code = member['plongeur_code']?.toString().toUpperCase();
+  final statuses = (member['clubStatuten'] as List? ?? const [])
+      .map((value) => value.toString().toLowerCase());
+  return id.isNotEmpty &&
+      id != studentId &&
+      const ['MC', 'MF', 'MN'].contains(code) &&
+      statuses.any(const ['encadrant', 'encadrants', 'e'].contains);
+}
+
 class EvaluationReferenceOption {
   const EvaluationReferenceOption({
     required this.id,
@@ -164,13 +179,7 @@ class _EvaluationRequestScreenState extends State<EvaluationRequestScreen> {
             .toList()
           ..sort((a, b) => b.date.compareTo(a.date));
         _monitors = monitors
-            .where((m) {
-              final code = m['plongeur_code']?.toString().toUpperCase();
-              final statuses = (m['clubStatuten'] as List? ?? const [])
-                  .map((value) => value.toString().toLowerCase());
-              return const ['MC', 'MF', 'MN'].contains(code) &&
-                  statuses.any(const ['encadrant', 'encadrants', 'e'].contains);
-            })
+            .where((m) => isEligibleEvaluationMonitor(m, studentId: userId))
             .map((m) => EvaluationMonitorOption(
                   id: m['id'].toString(),
                   name: m['displayName'].toString(),

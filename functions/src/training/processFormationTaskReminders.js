@@ -56,6 +56,105 @@ function daysSinceCreated(task, nowMs) {
 // eslint-disable-next-line no-unused-vars
 const POOL_CHECKIN_REMINDER_CAP_PER_SESSION = 1;
 
+function reminderRecipientId(task) {
+  if (task.type === 'monitor_validation') {
+    return typeof task.current_assignee_id === 'string'
+      ? task.current_assignee_id.trim()
+      : '';
+  }
+  return typeof task.member_id === 'string' ? task.member_id.trim() : '';
+}
+
+function groupTasksByReminderRecipient(taskDocs) {
+  const tasksByRecipient = new Map();
+  for (const taskDoc of taskDocs) {
+    const task = taskDoc.data();
+    const recipientId = reminderRecipientId(task);
+    if (!recipientId) continue;
+    if (!tasksByRecipient.has(recipientId)) tasksByRecipient.set(recipientId, []);
+    tasksByRecipient.get(recipientId).push({ id: taskDoc.id, ref: taskDoc.ref, ...task });
+  }
+  return tasksByRecipient;
+}
+
+async function processDueTaskReminders({
+  db,
+  clubId,
+  taskDocs,
+  now,
+  messaging = admin.messaging(),
+  persistHistory = persistNotificationHistory,
+}) {
+  let sent = 0;
+  const tasksByMember = groupTasksByReminderRecipient(taskDocs);
+  for (const [memberId, tasks] of tasksByMember.entries()) {
+    const dueTasks = tasks.filter((task) => isDueForReminder(task, now));
+    if (dueTasks.length === 0) continue;
+
+    const memberRef = db
+      .collection('clubs')
+      .doc(clubId)
+      .collection('members')
+      .doc(memberId);
+    const memberSnap = await memberRef.get();
+    if (!memberSnap.exists) continue;
+    const member = memberSnap.data();
+    const { isCarnetTaskType } = require('./carnetPreference');
+    const dueForPush = member.uses_carnet === false
+      ? dueTasks.filter((task) => !isCarnetTaskType(task.type))
+      : dueTasks;
+    if (dueForPush.length === 0) {
+      await bumpTasksWithoutPush(db, dueTasks);
+      continue;
+    }
+
+    const lastPushAt = member.last_formation_push_at?.toMillis?.() || 0;
+    if (now - lastPushAt < MIN_PUSH_PER_MEMBER_MS) {
+      await bumpTasksWithoutPush(db, dueTasks);
+      continue;
+    }
+    const pushNotification = buildReminderNotification(dueForPush);
+    const tokens = collectFcmTokens(member);
+    if (tokens.length === 0) {
+      await bumpTasksWithoutPush(db, dueTasks);
+      continue;
+    }
+
+    try {
+      const result = await messaging.sendEachForMulticast({
+        tokens,
+        notification: pushNotification,
+        data: buildReminderPayload(clubId, dueForPush),
+        android: { priority: 'high' },
+        apns: { payload: { aps: { sound: 'default' } } },
+      });
+      if (result.successCount > 0) {
+        sent += 1;
+        await persistHistory(
+          clubId,
+          memberId,
+          {
+            notification: pushNotification,
+            data: buildReminderPayload(clubId, dueForPush),
+          },
+          'Action',
+        );
+      }
+      console.log(
+        `[${FUNCTION_NAME}] sent push to ${memberId} for ${dueForPush.length} task(s)`,
+      );
+    } catch (err) {
+      console.error(`[${FUNCTION_NAME}] FCM error for ${memberId}:`, err.message);
+    }
+
+    await memberRef.update({
+      last_formation_push_at: FieldValue.serverTimestamp(),
+    });
+    await bumpTasksAfterPush(db, dueTasks);
+  }
+  return { sent };
+}
+
 const processFormationTaskReminders = onSchedule(
   {
     region: FUNCTION_REGION,
@@ -86,98 +185,13 @@ const processFormationTaskReminders = onSchedule(
         .where('status', '==', 'open')
         .get();
 
-      const tasksByMember = new Map();
-      for (const taskDoc of openTasksSnap.docs) {
-        const task = taskDoc.data();
-        const memberId = task.member_id;
-        if (!memberId) continue;
-        if (!tasksByMember.has(memberId)) tasksByMember.set(memberId, []);
-        tasksByMember.get(memberId).push({ id: taskDoc.id, ref: taskDoc.ref, ...task });
-      }
-
-      for (const [memberId, tasks] of tasksByMember.entries()) {
-        // Tasks needing a reminder this cycle.
-        const dueTasks = tasks.filter((t) => isDueForReminder(t, now));
-        if (dueTasks.length === 0) continue;
-
-        // Per-member daily cap.
-        const memberSnap = await db
-          .collection('clubs')
-          .doc(clubId)
-          .collection('members')
-          .doc(memberId)
-          .get();
-        if (!memberSnap.exists) continue;
-        const member = memberSnap.data();
-        const { isCarnetTaskType } = require('./carnetPreference');
-        const dueForPush = member.uses_carnet === false
-          ? dueTasks.filter((t) => !isCarnetTaskType(t.type))
-          : dueTasks;
-        if (dueForPush.length === 0) {
-          await bumpTasksWithoutPush(db, dueTasks);
-          continue;
-        }
-
-        const lastPushAt = (member.last_formation_push_at?.toMillis?.()) || 0;
-        if (now - lastPushAt < MIN_PUSH_PER_MEMBER_MS) {
-          // Skip push for this member, but still bump reminder_count on
-          // due tasks so they don't immediately retry next cycle.
-          await bumpTasksWithoutPush(db, dueTasks);
-          continue;
-        }
-
-        // Send a single push covering reminders due in this cycle. For a
-        // multi-task reminder, do not title the push with dueForPush.length:
-        // the app opens the full visible Actions inbox, which can contain
-        // older open tasks that were not due for a reminder in this pass.
-        const pushNotification = buildReminderNotification(dueForPush);
-
-        const tokens = collectFcmTokens(member);
-        if (tokens.length === 0) {
-          // No device, still bump so we don't loop.
-          await bumpTasksWithoutPush(db, dueTasks);
-          continue;
-        }
-
-        try {
-          const result = await admin.messaging().sendEachForMulticast({
-            tokens,
-            notification: pushNotification,
-            data: buildReminderPayload(clubId, dueForPush),
-            android: { priority: 'high' },
-            apns: { payload: { aps: { sound: 'default' } } },
-          });
-          if (result.successCount > 0) {
-            totalSent += 1;
-            await persistNotificationHistory(
-              clubId,
-              memberId,
-              {
-                notification: pushNotification,
-                data: buildReminderPayload(clubId, dueForPush),
-              },
-              'Action',
-            );
-          }
-          console.log(
-            `[${FUNCTION_NAME}] sent push to ${memberId} for ${dueForPush.length} task(s)`
-          );
-        } catch (err) {
-          console.error(`[${FUNCTION_NAME}] FCM error for ${memberId}:`, err.message);
-        }
-
-        // Stamp the member doc and the tasks.
-        await db
-          .collection('clubs')
-          .doc(clubId)
-          .collection('members')
-          .doc(memberId)
-          .update({
-            last_formation_push_at: FieldValue.serverTimestamp(),
-          });
-
-        await bumpTasksAfterPush(db, dueTasks);
-      }
+      const reminderResult = await processDueTaskReminders({
+        db,
+        clubId,
+        taskDocs: openTasksSnap.docs,
+        now,
+      });
+      totalSent += reminderResult.sent;
 
       // ---- Pass 2 : escalation digest ----
       const ancientSnap = await db
@@ -331,4 +345,7 @@ module.exports = {
   isDueForReminder,
   buildReminderPayload,
   buildReminderNotification,
+  reminderRecipientId,
+  groupTasksByReminderRecipient,
+  processDueTaskReminders,
 };

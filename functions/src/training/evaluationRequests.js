@@ -33,13 +33,111 @@ function memberName(member, fallback = 'Membre') {
 }
 
 function isEligibleMonitor(member) {
-  const role = String(member.app_role || '').toLowerCase();
-  if (role === 'admin' || role === 'superadmin') return true;
   const code = String(member.plongeur_code || '').toUpperCase();
   const statuses = Array.isArray(member.clubStatuten)
     ? member.clubStatuten.map(value => String(value).toLowerCase())
     : [];
   return MONITOR_CODES.has(code) && statuses.some(value => ENCADRANT_STATUTES.has(value));
+}
+
+function canonicalClaimIdentity({
+  memberId,
+  exerciseId,
+  contextType,
+  contextEntryId,
+  monitorId,
+  taskId,
+  entry,
+}) {
+  const isPoolEntry = entry.source === 'piscine';
+  return {
+    member_id: memberId,
+    declared_by: memberId,
+    declared_by_member: true,
+    exercise_id: exerciseId,
+    request_kind: 'student_evaluation',
+    validation_mode: 'calypso_monitor',
+    server_verified: true,
+    context_type: contextType,
+    context_entry_id: contextEntryId,
+    logbook_entry_id: contextEntryId,
+    monitor_id: monitorId,
+    review_task_id: taskId,
+    pool_session_id: isPoolEntry
+      ? String(entry.session_id || contextEntryId)
+      : null,
+    operation_id: !isPoolEntry && entry.operation_id
+      ? String(entry.operation_id)
+      : null,
+  };
+}
+
+function claimMatchesCanonicalIdentity(claim, canonical) {
+  return Object.entries(canonical).every(([field, expected]) =>
+    (claim[field] ?? null) === expected);
+}
+
+function taskMatchesCanonicalIdentity(task, { claimId, claim, taskId }) {
+  const context = task && typeof task.context === 'object' ? task.context : {};
+  const expectedStatus = VALID_RESULTS.has(String(claim.status || ''))
+    ? 'done'
+    : 'open';
+  return task?.type === 'monitor_validation'
+    && task?.status === expectedStatus
+    && task?.member_id === claim.member_id
+    && task?.current_assignee_id === claim.monitor_id
+    && task?.current_assignee_type === 'monitor'
+    && context.exercise_claim_id === claimId
+    && context.logbook_entry_id === claim.context_entry_id
+    && (context.pool_session_id ?? null) === (claim.pool_session_id ?? null)
+    && (context.operation_id ?? null) === (claim.operation_id ?? null)
+    && claim.review_task_id === taskId;
+}
+
+function buildEvaluationTask({ claimId, taskId, claim, now, existingTask = null }) {
+  const decided = VALID_RESULTS.has(String(claim.status || ''));
+  const task = {
+    type: 'monitor_validation',
+    status: decided ? 'done' : 'open',
+    priority: 'normal',
+    title: `Évaluer ${claim.exercise_code} · ${claim.member_name}`,
+    member_id: claim.member_id,
+    member_name: claim.member_name,
+    current_assignee_id: claim.monitor_id,
+    current_assignee_name: claim.monitor_name,
+    current_assignee_type: 'monitor',
+    context: {
+      exercise_claim_id: claimId,
+      exercise_code: claim.exercise_code,
+      exercise_label: claim.exercise_label,
+      logbook_entry_id: claim.context_entry_id,
+      ...(claim.pool_session_id ? { pool_session_id: claim.pool_session_id } : {}),
+      ...(claim.operation_id ? { operation_id: claim.operation_id } : {}),
+    },
+    available_actions: decided
+      ? []
+      : [{ key: 'open', label: 'Évaluer', target_screen: 'monitor_validation' }],
+    notification_state: existingTask?.notification_state || { reminder_count: 0 },
+    created_by: 'system',
+    created_by_name: 'requestExerciseEvaluation',
+    created_at: existingTask?.created_at || claim.created_at || now,
+    updated_at: now,
+  };
+  if (decided) {
+    task.completed_at = existingTask?.completed_at || claim.decision?.decided_at || now;
+    task.completed_by = claim.decision?.decided_by || claim.monitor_id;
+    task.completion_data = {
+      decision: claim.status,
+      claim_id: claimId,
+      ...(claim.decision?.resulting_observation_id
+        ? { observation_id: claim.decision.resulting_observation_id }
+        : {}),
+      ...(claim.decision?.revision
+        ? { revision: claim.decision.revision }
+        : {}),
+    };
+  }
+  return task;
 }
 
 function evaluationIdentity({ memberId, exerciseId, contextEntryId, monitorId }) {
@@ -86,19 +184,23 @@ const requestExerciseEvaluation = onCall({ region: REGION }, async request => {
   const taskRef = clubRef.collection('formation_tasks').doc(`evaluation_review_${identity}`);
 
   return db.runTransaction(async transaction => {
-    const [memberSnap, monitorSnap, exerciseSnap, entrySnap, claimSnap] =
+    const [memberSnap, monitorSnap, exerciseSnap, entrySnap, claimSnap, taskSnap] =
       await Promise.all([
         transaction.get(memberRef),
         transaction.get(monitorRef),
         transaction.get(exerciseRef),
         transaction.get(entryRef),
         transaction.get(claimRef),
+        transaction.get(taskRef),
       ]);
     if (!memberSnap.exists) {
       throw new HttpsError('permission-denied', 'Membre du club requis.');
     }
     if (!monitorSnap.exists || !isEligibleMonitor(monitorSnap.data())) {
       throw new HttpsError('failed-precondition', 'Le validateur choisi n’est pas habilité.');
+    }
+    if (monitorId === uid) {
+      throw new HttpsError('failed-precondition', 'Une auto-évaluation n’est pas autorisée.');
     }
     if (!exerciseSnap.exists) {
       throw new HttpsError('not-found', 'Exercice introuvable.');
@@ -111,8 +213,44 @@ const requestExerciseEvaluation = onCall({ region: REGION }, async request => {
     if ((contextType === 'pool') !== isPoolEntry) {
       throw new HttpsError('invalid-argument', 'Le type de contexte ne correspond pas au carnet.');
     }
+    const canonicalIdentity = canonicalClaimIdentity({
+      memberId: uid,
+      exerciseId,
+      contextType,
+      contextEntryId,
+      monitorId,
+      taskId: taskRef.id,
+      entry,
+    });
     if (claimSnap.exists) {
-      return { claimId: claimRef.id, taskId: taskRef.id, idempotent: true };
+      const existingClaim = claimSnap.data();
+      if (!claimMatchesCanonicalIdentity(existingClaim, canonicalIdentity)) {
+        throw new HttpsError(
+          'already-exists',
+          'Cette identité d’évaluation correspond déjà à une autre demande.',
+        );
+      }
+      if (!taskSnap.exists || !taskMatchesCanonicalIdentity(
+        taskSnap.data(),
+        { claimId: claimRef.id, claim: existingClaim, taskId: taskRef.id },
+      )) {
+        transaction.set(taskRef, buildEvaluationTask({
+          claimId: claimRef.id,
+          taskId: taskRef.id,
+          claim: existingClaim,
+          now: FieldValue.serverTimestamp(),
+          existingTask: taskSnap.exists ? taskSnap.data() : null,
+        }));
+      }
+      return {
+        claimId: claimRef.id,
+        taskId: taskRef.id,
+        idempotent: true,
+        taskRepaired: !taskSnap.exists || !taskMatchesCanonicalIdentity(
+          taskSnap.data(),
+          { claimId: claimRef.id, claim: existingClaim, taskId: taskRef.id },
+        ),
+      };
     }
 
     const exercise = exerciseSnap.data();
@@ -120,62 +258,25 @@ const requestExerciseEvaluation = onCall({ region: REGION }, async request => {
     const monitor = monitorSnap.data();
     const now = FieldValue.serverTimestamp();
     const claim = {
-      member_id: uid,
+      ...canonicalIdentity,
       member_name: memberName(member, uid),
-      declared_by: uid,
-      declared_by_member: true,
-      exercise_id: exerciseId,
       exercise_code: String(exercise.code || exerciseId),
       exercise_label: String(exercise.description || exercise.label || ''),
       status: 'submitted',
-      validation_mode: 'calypso_monitor',
-      request_kind: 'student_evaluation',
-      server_verified: true,
-      context_type: contextType,
-      context_entry_id: contextEntryId,
-      logbook_entry_id: contextEntryId,
       context_date: entry.date || now,
       context_title: String(entry.location_name || entry.operation_title || 'Carnet'),
-      ...(isPoolEntry
-        ? { pool_session_id: String(entry.session_id || contextEntryId) }
-        : entry.operation_id
-          ? { operation_id: String(entry.operation_id) }
-          : {}),
-      monitor_id: monitorId,
       monitor_name: memberName(monitor, monitorId),
       ...(notes ? { declaration_notes: notes } : {}),
-      review_task_id: taskRef.id,
       created_at: now,
       updated_at: now,
     };
     transaction.set(claimRef, claim);
-    transaction.set(taskRef, {
-      type: 'monitor_validation',
-      status: 'open',
-      priority: 'normal',
-      title: `Évaluer ${claim.exercise_code} · ${claim.member_name}`,
-      member_id: uid,
-      member_name: claim.member_name,
-      current_assignee_id: monitorId,
-      current_assignee_name: claim.monitor_name,
-      current_assignee_type: 'monitor',
-      context: {
-        exercise_claim_id: claimRef.id,
-        exercise_code: claim.exercise_code,
-        exercise_label: claim.exercise_label,
-        logbook_entry_id: contextEntryId,
-        ...(claim.pool_session_id ? { pool_session_id: claim.pool_session_id } : {}),
-        ...(claim.operation_id ? { operation_id: claim.operation_id } : {}),
-      },
-      available_actions: [
-        { key: 'open', label: 'Évaluer', target_screen: 'monitor_validation' },
-      ],
-      notification_state: { reminder_count: 0 },
-      created_by: 'system',
-      created_by_name: 'requestExerciseEvaluation',
-      created_at: now,
-      updated_at: now,
-    });
+    transaction.set(taskRef, buildEvaluationTask({
+      claimId: claimRef.id,
+      taskId: taskRef.id,
+      claim,
+      now,
+    }));
     return { claimId: claimRef.id, taskId: taskRef.id, idempotent: false };
   });
 });
@@ -215,7 +316,7 @@ const decideExerciseEvaluation = onCall({ region: REGION }, async request => {
     if (!claimSnap.exists) throw new HttpsError('not-found', 'Demande introuvable.');
     const claim = claimSnap.data();
     if (claim.request_kind !== 'student_evaluation' || claim.server_verified !== true
-      || claim.monitor_id !== uid) {
+      || claim.monitor_id !== uid || claim.member_id === uid) {
       throw new HttpsError('permission-denied', 'Cette évaluation ne t’est pas attribuée.');
     }
     if (!monitorSnap.exists || !isEligibleMonitor(monitorSnap.data())) {
@@ -308,4 +409,8 @@ module.exports = {
   evaluationIdentity,
   isEligibleMonitor,
   observationResult,
+  canonicalClaimIdentity,
+  claimMatchesCanonicalIdentity,
+  taskMatchesCanonicalIdentity,
+  buildEvaluationTask,
 };
