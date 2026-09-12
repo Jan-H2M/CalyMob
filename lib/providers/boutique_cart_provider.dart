@@ -44,13 +44,15 @@ class BoutiqueCartItem {
   bool get hasPersonalization => personalization.isNotEmpty;
 
   BoutiqueCartItem copyWith({
+    String? key,
     int? qty,
     double? unitPrice,
     double? deliverySurcharge,
     String? productName,
+    Map<String, dynamic>? personalization,
   }) {
     return BoutiqueCartItem(
-      key: key,
+      key: key ?? this.key,
       productId: productId,
       productName: productName ?? this.productName,
       imageUrl: imageUrl,
@@ -62,7 +64,7 @@ class BoutiqueCartItem {
       qty: qty ?? this.qty,
       unitPrice: unitPrice ?? this.unitPrice,
       deliverySurcharge: deliverySurcharge ?? this.deliverySurcharge,
-      personalization: personalization,
+      personalization: personalization ?? this.personalization,
     );
   }
 
@@ -84,9 +86,7 @@ class BoutiqueCartItem {
     };
   }
 
-  Map<String, dynamic> toOrderPayload({
-    Map<String, dynamic>? deliveryAddress,
-  }) {
+  Map<String, dynamic> toOrderPayload({Map<String, dynamic>? deliveryAddress}) {
     return {
       'productId': productId,
       'variantId': variantId,
@@ -165,12 +165,14 @@ class BoutiqueCartProvider extends ChangeNotifier {
   final List<BoutiqueCartItem> _items = [];
   bool _loaded = false;
 
-  BoutiqueCartProvider() {
+  BoutiqueCartProvider({Stream<User?>? authStateChanges}) {
     _load();
     // Fix audit 2026-07-19 (H1): mandje leegmaken zodra de gebruiker uitlogt —
     // het is toestel-lokaal en mag niet overerven naar een volgende gebruiker.
     // (AuthProvider.logout wist ook de SharedPreferences-keys als vangnet.)
-    FirebaseAuth.instance.authStateChanges().listen((user) {
+    (authStateChanges ?? FirebaseAuth.instance.authStateChanges()).listen((
+      user,
+    ) {
       if (user == null && _items.isNotEmpty) {
         clear();
       }
@@ -232,13 +234,16 @@ class BoutiqueCartProvider extends ChangeNotifier {
   /// Replaces one cart line after its size, delivery mode or personalization
   /// was edited. If the new configuration already exists, quantities merge.
   Future<void> replaceItem(
-      String originalKey, BoutiqueCartItem replacement) async {
+    String originalKey,
+    BoutiqueCartItem replacement,
+  ) async {
     final originalIndex = _items.indexWhere((item) => item.key == originalKey);
     if (originalIndex < 0) return;
 
     _items.removeAt(originalIndex);
-    final matchingIndex =
-        _items.indexWhere((item) => item.key == replacement.key);
+    final matchingIndex = _items.indexWhere(
+      (item) => item.key == replacement.key,
+    );
     if (matchingIndex >= 0) {
       final matching = _items[matchingIndex];
       _items[matchingIndex] = matching.copyWith(
@@ -275,7 +280,7 @@ class BoutiqueCartProvider extends ChangeNotifier {
 
     var removed = 0;
     var repriced = 0;
-    final validated = <BoutiqueCartItem>[];
+    final validated = <String, BoutiqueCartItem>{};
 
     for (final item in _items) {
       final product = productsById[item.productId];
@@ -295,33 +300,52 @@ class BoutiqueCartProvider extends ChangeNotifier {
         continue;
       }
 
+      final normalizedPersonalization = normalizeBoutiqueCartPersonalization(
+        product,
+        item.personalization,
+      );
       final newUnitPrice = product.priceForVariant(variant) +
-          _personalizationSurcharge(product, item.personalization);
+          _personalizationSurcharge(product, normalizedPersonalization);
       double newDeliverySurcharge = 0;
       for (final entry in product.deliverySurcharges.entries) {
-        if (entry.key.name == item.deliveryMode) {
+        if (boutiqueDeliveryModeWireValue(entry.key) == item.deliveryMode) {
           newDeliverySurcharge = entry.value;
           break;
         }
       }
 
-      if ((newUnitPrice - item.unitPrice).abs() > 0.004 ||
-          (newDeliverySurcharge - item.deliverySurcharge).abs() > 0.004) {
+      final newKey = boutiqueCartKey(
+        productId: item.productId,
+        variantId: item.variantId,
+        deliveryMode: item.deliveryMode,
+        personalization: normalizedPersonalization,
+      );
+      final matching = validated[newKey];
+      final changed = (newUnitPrice - item.unitPrice).abs() > 0.004 ||
+          (newDeliverySurcharge - item.deliverySurcharge).abs() > 0.004 ||
+          item.productName != product.name ||
+          item.key != newKey ||
+          !_sameJson(item.personalization, normalizedPersonalization) ||
+          matching != null;
+      if (changed) {
         repriced += 1;
-        validated.add(item.copyWith(
-          unitPrice: newUnitPrice,
-          deliverySurcharge: newDeliverySurcharge,
-          productName: product.name,
-        ));
-      } else {
-        validated.add(item);
       }
+      final normalizedItem = item.copyWith(
+        key: newKey,
+        unitPrice: newUnitPrice,
+        deliverySurcharge: newDeliverySurcharge,
+        productName: product.name,
+        personalization: normalizedPersonalization,
+      );
+      validated[newKey] = matching == null
+          ? normalizedItem
+          : matching.copyWith(qty: matching.qty + normalizedItem.qty);
     }
 
     if (removed > 0 || repriced > 0) {
       _items
         ..clear()
-        ..addAll(validated);
+        ..addAll(validated.values);
       await _persist();
       notifyListeners();
     }
@@ -401,4 +425,114 @@ class BoutiqueCartProvider extends ChangeNotifier {
     final encoded = jsonEncode(_items.map((item) => item.toJson()).toList());
     await prefs.setString(_storageKey, encoded);
   }
+}
+
+/// Stable identity for a cart line. Revalidation deliberately rebuilds legacy
+/// keys after canonicalizing required personalizations.
+String boutiqueCartKey({
+  required String productId,
+  required String variantId,
+  required String deliveryMode,
+  required Map<String, dynamic> personalization,
+}) {
+  return '$productId|$variantId|$deliveryMode|${jsonEncode(_canonicalJsonValue(personalization))}';
+}
+
+/// Rebuilds the persisted personalization from the current catalogue config.
+/// A configured club logo is mandatory: old/malformed cart lines therefore get
+/// a valid current zone and surcharge before checkout.
+@visibleForTesting
+Map<String, dynamic> normalizeBoutiqueCartPersonalization(
+  BoutiqueProduct product,
+  Map<String, dynamic> raw,
+) {
+  final config = product.personalization;
+  if (config == null) return const {};
+
+  final result = <String, dynamic>{
+    'technique': config.technique.name,
+    'baseType': config.baseType,
+  };
+  var surcharge = 0.0;
+
+  if (config.clubLogo.canChoose) {
+    final stored = raw['clubLogo'];
+    final storedZone = stored is Map ? stored['zone']?.toString() : null;
+    final zone = config.clubLogo.zones.contains(storedZone)
+        ? storedZone!
+        : config.clubLogo.zones.first;
+    result['clubLogo'] = {
+      'enabled': true,
+      'zone': zone,
+      'surcharge': config.clubLogo.surcharge,
+    };
+    surcharge += config.clubLogo.surcharge;
+  }
+
+  final storedName = raw['name'];
+  final nameText =
+      storedName is Map ? (storedName['text']?.toString().trim() ?? '') : '';
+  if (config.name.canChoose && nameText.isNotEmpty) {
+    final storedZone =
+        storedName is Map ? storedName['zone']?.toString() : null;
+    final zone = config.name.zones.contains(storedZone)
+        ? storedZone!
+        : config.name.zones.first;
+    final nameSurcharge =
+        config.name.surcharge + config.name.priceForText(nameText);
+    result['name'] = {
+      'text': nameText,
+      'zone': zone,
+      'pricingMode': config.name.pricingMode == BoutiqueNamePricingMode.fixed
+          ? 'fixed'
+          : 'per_character',
+      'pricePerCharacter': config.name.pricePerCharacter,
+      'fixedPrice': config.name.fixedPrice,
+      'surcharge': nameSurcharge,
+    };
+    surcharge += nameSurcharge;
+  }
+
+  final storedCertification = raw['certification'];
+  final certification = storedCertification is Map
+      ? (storedCertification['value']?.toString().trim() ?? '')
+      : '';
+  if (config.certification.canChoose && certification.isNotEmpty) {
+    final storedZone = storedCertification is Map
+        ? storedCertification['zone']?.toString()
+        : null;
+    final zone = config.certification.zones.contains(storedZone)
+        ? storedZone!
+        : config.certification.zones.first;
+    result['certification'] = {
+      'value': certification,
+      'zone': zone,
+      'surcharge': config.certification.surcharge,
+    };
+    surcharge += config.certification.surcharge;
+  }
+
+  if (result.length == 2) return const {};
+  result['surcharge'] = surcharge;
+  return result;
+}
+
+bool _sameJson(Object? left, Object? right) =>
+    jsonEncode(_canonicalJsonValue(left)) ==
+    jsonEncode(_canonicalJsonValue(right));
+
+dynamic _canonicalJsonValue(dynamic value) {
+  if (value is Map) {
+    final entries = value.entries.toList()
+      ..sort(
+          (left, right) => left.key.toString().compareTo(right.key.toString()));
+    return <String, dynamic>{
+      for (final entry in entries)
+        entry.key.toString(): _canonicalJsonValue(entry.value),
+    };
+  }
+  if (value is List) {
+    return value.map(_canonicalJsonValue).toList(growable: false);
+  }
+  return value;
 }

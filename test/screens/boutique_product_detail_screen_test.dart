@@ -156,6 +156,56 @@ void main() {
     },
   );
 
+  testWidgets('fixed name price shown in the card ignores letter count', (
+    tester,
+  ) async {
+    await _pumpProduct(tester, cart: cart, product: _product());
+    final nameSwitch = find.descendant(
+      of: find.byKey(const Key('boutique-name-toggle')),
+      matching: find.byType(Switch),
+    );
+    await tester.ensureVisible(nameSwitch);
+    await tester.pump();
+    await tester.tap(nameSwitch);
+    await tester.pump();
+    final nameField = find.byKey(const Key('boutique-name-field'));
+    await tester.enterText(nameField, 'A');
+    await tester.pump();
+    final priceFinder = find.byKey(const Key('boutique-name-price'));
+    final oneLetterPrice = tester.widget<Text>(priceFinder).data;
+
+    await tester.enterText(nameField, 'ABCDEFGHIJK');
+    await tester.pump();
+
+    expect(tester.widget<Text>(priceFinder).data, oneLetterPrice);
+    expect(find.text('11/12 lettres'), findsOneWidget);
+  });
+
+  for (final width in [320.0, 375.0]) {
+    testWidgets('personalization card has no overflow at ${width.toInt()}px', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(Size(width, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _pumpProduct(tester, cart: cart, product: _product());
+      final nameSwitch = find.descendant(
+        of: find.byKey(const Key('boutique-name-toggle')),
+        matching: find.byType(Switch),
+      );
+      await tester.ensureVisible(nameSwitch);
+      await tester.pump();
+      await tester.tap(nameSwitch);
+      await tester.pump();
+      await tester.enterText(
+        find.byKey(const Key('boutique-name-field')),
+        'ABCDEFGHIJK',
+      );
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets(
     'add flow returns without SnackBar and leaves host action clickable',
     (tester) async {
@@ -306,7 +356,9 @@ BoutiqueProduct _product({bool personalization = true}) {
               enabled: true,
               zones: ['chest_right'],
               surcharge: 1,
+              pricingMode: BoutiqueNamePricingMode.fixed,
               pricePerCharacter: 0.5,
+              fixedPrice: 4,
               maxLength: 12,
             ),
             certification: BoutiqueCertificationOption(

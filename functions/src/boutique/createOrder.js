@@ -117,11 +117,6 @@ function sanitizeBuyer(inputBuyer, authUid) {
 // surcharge wordt volledig genegeerd — die was manipuleerbaar en gleed door de
 // exacte-bedrag-match heen. Ongeldige zones/waarden → INVALID_INPUT.
 function computeCustomizations(product, rawValue) {
-  if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) {
-    return { customizations: null, surcharge: 0 };
-  }
-
-  const raw = JSON.parse(JSON.stringify(rawValue));
   const config = product && typeof product.embroidery === 'object' && product.embroidery !== null
     ? product.embroidery
     : null;
@@ -129,6 +124,9 @@ function computeCustomizations(product, rawValue) {
     // Product kent geen personalisatie → client-aanvraag defensief negeren.
     return { customizations: null, surcharge: 0 };
   }
+  const raw = rawValue && typeof rawValue === 'object' && !Array.isArray(rawValue)
+    ? JSON.parse(JSON.stringify(rawValue))
+    : {};
 
   const asNumber = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0);
   const zonesOf = (option) => (option && Array.isArray(option.zones) ? option.zones.map(String) : []);
@@ -141,11 +139,13 @@ function computeCustomizations(product, rawValue) {
 
   const logoOption = config.clubLogo;
   const rawLogo = raw.clubLogo;
-  if (rawLogo && rawLogo.enabled === true && logoOption && logoOption.enabled === true) {
-    const zone = typeof rawLogo.zone === 'string' ? rawLogo.zone : '';
-    if (!zonesOf(logoOption).includes(zone)) {
-      throw buildInvalidInputError('INVALID_INPUT', { customization: 'clubLogo.zone', zone });
-    }
+  const logoZones = zonesOf(logoOption);
+  // A configured club logo is part of the product, not an optional buyer
+  // choice. Canonicalize old/malformed/malicious payloads to the current
+  // default zone and always charge the catalogue surcharge.
+  if (logoOption && logoOption.enabled === true && logoZones.length > 0) {
+    const requestedZone = rawLogo && typeof rawLogo.zone === 'string' ? rawLogo.zone : '';
+    const zone = logoZones.includes(requestedZone) ? requestedZone : logoZones[0];
     const logoSurcharge = asNumber(logoOption.surcharge);
     surcharge += logoSurcharge;
     result.clubLogo = { enabled: true, zone, surcharge: logoSurcharge };
@@ -221,6 +221,10 @@ function extractOrderCounter(orderNumber, year) {
   const match = String(orderNumber || '').match(new RegExp(`^BTQ-${year}-(\\d{4,})$`));
   return match ? Number(match[1]) : 0;
 }
+
+// Pure helper exported for contract regression tests. The callable itself is
+// still exported through functions/index.js only.
+exports.computeCustomizations = computeCustomizations;
 
 async function resolveClubBankSettings(clubRef) {
   const [bankSnap, generalSnap, clubInfoSnap] = await Promise.all([

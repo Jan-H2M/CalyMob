@@ -20,7 +20,9 @@ void main() {
       enabled: true,
       zones: ['chest_right'],
       surcharge: 1,
+      pricingMode: BoutiqueNamePricingMode.fixed,
       pricePerCharacter: 0.5,
+      fixedPrice: 4,
       maxLength: 12,
     ),
     certification: BoutiqueCertificationOption(
@@ -66,5 +68,41 @@ void main() {
     });
     expect(payload, isNot(contains('name')));
     expect(payload, isNot(contains('certification')));
+  });
+
+  test('fixed name price is invariant for one or many letters', () {
+    const one = BoutiquePersonalizationSelection(
+      clubLogo: true,
+      clubLogoZone: 'chest_left',
+      nameEnabled: true,
+      nameText: 'A',
+      nameZone: 'chest_right',
+    );
+    const many = BoutiquePersonalizationSelection(
+      clubLogo: true,
+      clubLogoZone: 'chest_left',
+      nameEnabled: true,
+      nameText: 'ABCDEFGHIJK',
+      nameZone: 'chest_right',
+    );
+
+    expect(one.surcharge(config), 7);
+    expect(many.surcharge(config), 7);
+    expect(one.toOrderPayload(config)['name']['pricingMode'], 'fixed');
+    expect(one.toOrderPayload(config)['name']['fixedPrice'], 4);
+  });
+
+  test('legacy per-character name pricing remains length based', () {
+    const legacyName = BoutiqueNameOption(
+      enabled: true,
+      zones: ['chest_right'],
+      surcharge: 1,
+      pricingMode: BoutiqueNamePricingMode.perCharacter,
+      pricePerCharacter: 0.5,
+      fixedPrice: 0,
+    );
+
+    expect(legacyName.priceForText('A'), 0.5);
+    expect(legacyName.priceForText('ABCD'), 2);
   });
 }

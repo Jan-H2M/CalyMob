@@ -245,17 +245,28 @@ class _BoutiqueProductDetailScreenState
                         ],
                       ),
                       const SizedBox(height: 10),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed: _canPrepareOrder
-                              ? () => _saveToCart(context, unitPrice)
-                              : null,
-                          icon: const Icon(Icons.shopping_bag_outlined),
-                          label: Text(
-                            '${widget.editingItem == null ? 'Ajouter au panier' : 'Mettre à jour le panier'} · ${formatter.format(orderTotal)}',
-                          ),
-                        ),
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final compact = constraints.maxWidth < 300;
+                          final action = widget.editingItem == null
+                              ? (compact ? 'Ajouter' : 'Ajouter au panier')
+                              : (compact
+                                  ? 'Mettre à jour'
+                                  : 'Mettre à jour le panier');
+                          return SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              onPressed: _canPrepareOrder
+                                  ? () => _saveToCart(context, unitPrice)
+                                  : null,
+                              icon: const Icon(Icons.shopping_bag_outlined),
+                              label: Text(
+                                '$action · ${formatter.format(orderTotal)}',
+                                maxLines: 1,
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -316,10 +327,10 @@ class _BoutiqueProductDetailScreenState
       widget.product.personalization,
     );
     final item = BoutiqueCartItem(
-      key: _cartKey(
+      key: boutiqueCartKey(
         productId: widget.product.id,
         variantId: variant?.id ?? 'standard',
-        deliveryMode: _selectedDeliveryMode,
+        deliveryMode: boutiqueDeliveryModeWireValue(_selectedDeliveryMode),
         personalization: personalizationPayload,
       ),
       productId: widget.product.id,
@@ -652,6 +663,7 @@ class _PersonalizationSection extends StatelessWidget {
             if (selection.certificationEnabled) ...[
               DropdownButtonFormField<String>(
                 initialValue: selection.certification,
+                isExpanded: true,
                 decoration: InputDecoration(
                   labelText:
                       'Brevet (${formatter.format(config.certification.surcharge)})',
@@ -896,6 +908,7 @@ class _ZoneDropdown extends StatelessWidget {
   Widget build(BuildContext context) {
     return DropdownButtonFormField<String>(
       initialValue: value,
+      isExpanded: true,
       decoration: InputDecoration(
         labelText: label,
         border: const OutlineInputBorder(),
@@ -904,7 +917,11 @@ class _ZoneDropdown extends StatelessWidget {
           .map(
             (zone) => DropdownMenuItem(
               value: zone,
-              child: Text(boutiqueZoneLabel(zone)),
+              child: Text(
+                boutiqueZoneLabel(zone),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           )
           .toList(),
@@ -1029,13 +1046,4 @@ String? _resolveProductImageUrl(String imageUrl) {
     return 'https://caly.club$trimmed';
   }
   return null;
-}
-
-String _cartKey({
-  required String productId,
-  required String variantId,
-  required BoutiqueDeliveryMode deliveryMode,
-  required Map<String, dynamic> personalization,
-}) {
-  return '$productId|$variantId|${boutiqueDeliveryModeWireValue(deliveryMode)}|${personalization.toString()}';
 }
