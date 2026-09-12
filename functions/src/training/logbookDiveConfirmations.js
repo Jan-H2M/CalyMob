@@ -37,9 +37,22 @@ const {
 } = require('../utils/badge-helper');
 const { memberDisplayName: resolveMemberDisplayName } = require('../utils/memberName');
 const { usesCarnet } = require('./carnetPreference');
+const {
+  counterPatch,
+  diveNumberAllocationPatch,
+  memberCounterRef,
+  memberEntriesQuery,
+  planDiveNumberAllocation,
+  positiveDiveNumber,
+} = require('./assignDiveNumber');
 
 const FUNCTION_REGION = 'europe-west1';
 const CONFIRMATIONS = 'logbook_dive_confirmations';
+const LOGBOOK_ENTRY_CREATING_CONFIRMATION_ACTIONS = new Set(['confirm_copy']);
+
+function createsLogbookEntryForConfirmationAction(action) {
+  return LOGBOOK_ENTRY_CREATING_CONFIRMATION_ACTIONS.has(action);
+}
 
 // WP-28 — counters shared by the whole palanquée (conditions / profile).
 // Everything else in `counters` is personal per diver. `deco` is shared —
@@ -476,21 +489,22 @@ function compareDive(snapshot = {}, entry = {}) {
   };
 }
 
-async function findExistingMatch(db, clubId, targetMemberId, snapshot) {
+function isPiscineLogbookEntry(entry) {
+  return entry?.source === 'piscine';
+}
+
+function findExistingMatchInDocs(docs, snapshot) {
   const day = asDate(snapshot.date);
   if (!day) return { matchType: 'none', differences: [], entryId: null };
 
   const start = new Date(day.getFullYear(), day.getMonth(), day.getDate());
   const end = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1);
-  const snap = await db
-    .collection('clubs').doc(clubId)
-    .collection('student_logbook_entries')
-    .where('member_id', '==', targetMemberId)
-    .get();
-
   let best = { matchType: 'none', differences: [], entryId: null };
-  for (const doc of snap.docs) {
+  for (const doc of docs) {
     const entry = doc.data();
+    // Piscine attendance is displayed alongside dives, but is not a dive that
+    // can satisfy or receive a buddy logbook confirmation.
+    if (isPiscineLogbookEntry(entry)) continue;
     const entryDate = asDate(entry.date);
     if (!entryDate || entryDate < start || entryDate >= end) continue;
 
@@ -503,6 +517,11 @@ async function findExistingMatch(db, clubId, targetMemberId, snapshot) {
     }
   }
   return best;
+}
+
+async function findExistingMatch(db, clubId, targetMemberId, snapshot) {
+  const snap = await memberEntriesQuery(db, clubId, targetMemberId).get();
+  return findExistingMatchInDocs(snap.docs, snapshot);
 }
 
 function confirmationBody(snapshot = {}) {
@@ -826,55 +845,69 @@ const onLogbookDiveBuddiesChanged = onDocumentWritten(
   }
 );
 
-const respondToLogbookDiveConfirmation = onCall(
-  {
-    region: FUNCTION_REGION,
-    timeoutSeconds: 60,
-    memory: '256MiB',
-  },
-  async (request) => {
-    const uid = request.auth?.uid;
-    if (!uid) throw new HttpsError('unauthenticated', 'Authentification requise');
+const CONFIRMATION_ACTIONS = new Set([
+  'confirm_copy',
+  'confirm_existing_identical',
+  'confirm_merge_notes',
+  'confirm_keep_existing',
+  'confirm_replace_existing',
+  'confirm_no_import',
+  'decline',
+]);
 
-    const clubId =
-      typeof request.data?.clubId === 'string' && request.data.clubId.trim()
-        ? request.data.clubId.trim()
-        : 'calypso';
-    const confirmationId = String(request.data?.confirmationId || '').trim();
-    const action = String(request.data?.action || '').trim();
-    const matchedEntryId = String(request.data?.matchedEntryId || '').trim();
-    if (!confirmationId) throw new HttpsError('invalid-argument', 'confirmationId manquant');
+function confirmationResult(confirmation = {}) {
+  return {
+    status: confirmation.status,
+    copiedEntryId: confirmation.copied_entry_id || null,
+    matchedEntryId: confirmation.matched_entry_id || null,
+    diveNumber: positiveDiveNumber(confirmation.copied_dive_number),
+  };
+}
 
-    const allowed = new Set([
-      'confirm_copy',
-      'confirm_existing_identical',
-      'confirm_merge_notes',
-      'confirm_keep_existing',
-      'confirm_replace_existing',
-      'confirm_no_import',
-      'decline',
-    ]);
-    if (!allowed.has(action)) throw new HttpsError('invalid-argument', 'Action invalide');
+function deterministicCopyEntryId(confirmationId) {
+  return `confirmation-${confirmationId}`;
+}
 
-    const db = admin.firestore();
-    const ref = db.collection('clubs').doc(clubId).collection(CONFIRMATIONS).doc(confirmationId);
-    const snap = await ref.get();
-    if (!snap.exists) throw new HttpsError('not-found', 'Confirmation introuvable');
-    const confirmation = snap.data();
+async function handleRespondToLogbookDiveConfirmation(request, options = {}) {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Authentification requise');
 
+  const clubId =
+    typeof request.data?.clubId === 'string' && request.data.clubId.trim()
+      ? request.data.clubId.trim()
+      : 'calypso';
+  const confirmationId = String(request.data?.confirmationId || '').trim();
+  const action = String(request.data?.action || '').trim();
+  const requestedMatchedEntryId = String(request.data?.matchedEntryId || '').trim();
+  if (!confirmationId) throw new HttpsError('invalid-argument', 'confirmationId manquant');
+  if (!CONFIRMATION_ACTIONS.has(action)) {
+    throw new HttpsError('invalid-argument', 'Action invalide');
+  }
+
+  const db = options.db || admin.firestore();
+  const confirmations = db.collection('clubs').doc(clubId).collection(CONFIRMATIONS);
+  const entries = db.collection('clubs').doc(clubId).collection('student_logbook_entries');
+  const members = db.collection('clubs').doc(clubId).collection('members');
+  const confirmationRef = confirmations.doc(confirmationId);
+
+  const outcome = await db.runTransaction(async (tx) => {
+    const confirmationSnap = await tx.get(confirmationRef);
+    if (!confirmationSnap.exists) {
+      throw new HttpsError('not-found', 'Confirmation introuvable');
+    }
+    const confirmation = confirmationSnap.data();
     if (confirmation.target_member_id !== uid) {
       throw new HttpsError('permission-denied', 'Seul le membre concerné peut répondre');
     }
     if (confirmation.status !== 'pending') {
       return {
-        status: confirmation.status,
-        copiedEntryId: confirmation.copied_entry_id || null,
-        matchedEntryId: confirmation.matched_entry_id || null,
+        ...confirmationResult(confirmation),
+        committed: false,
+        confirmation,
       };
     }
 
     const targetName = confirmation.target_member_name || '';
-    // WP-28 — sanitize old-style snapshots at answer time (remap + strip).
     const snapshot = sanitizeSnapshotForTarget(
       confirmation.dive_snapshot || {},
       uid,
@@ -882,63 +915,151 @@ const respondToLogbookDiveConfirmation = onCall(
       confirmation.source_member_id,
       confirmation.source_member_name || 'Un membre'
     );
-
-    // WP-28 — the copy carries the member's REAL display name, not the
-    // informal spelling the author typed in their binôme chip.
-    const respondentSnap = await db
-      .collection('clubs').doc(clubId)
-      .collection('members').doc(uid).get();
+    const respondentSnap = await tx.get(members.doc(uid));
     const respondentName = respondentSnap.exists
       ? memberDisplayName(respondentSnap.data())
       : targetName;
 
     let status = 'declined';
     let copiedEntryId = null;
-    let finalMatchedEntryId = matchedEntryId || confirmation.matched_entry_id || null;
+    let diveNumber = null;
+    let finalMatchedEntryId =
+      requestedMatchedEntryId || confirmation.matched_entry_id || null;
+    let existingSnap = null;
+    let memberEntriesSnap = null;
+    let counterSnap = null;
+    let deterministicSnap = null;
+    const deterministicRef = entries.doc(deterministicCopyEntryId(confirmationId));
 
-    if (action === 'decline') {
-      status = 'declined';
-    } else if (action === 'confirm_copy') {
-      // Recheck immediately before writing. A matching entry can have been
-      // added after the request was created, or an older request can carry an
-      // incomplete match result. Never create a second carnet entry then.
-      const liveMatch = await findExistingMatch(db, clubId, uid, snapshot);
-      if (liveMatch.entryId) {
-        finalMatchedEntryId = liveMatch.entryId;
-        status = liveMatch.matchType === 'identical'
-          ? 'confirmed_existing_identical'
-          : 'confirmed_existing_different';
-      } else {
-        const entryRef = db.collection('clubs').doc(clubId).collection('student_logbook_entries').doc();
-        await entryRef.set(buildCopyPayload(
-          snapshot,
-          uid,
-          respondentName,
-          confirmationId,
-          confirmation.source_member_id,
-          confirmation.source_entry_id
-        ));
-        copiedEntryId = entryRef.id;
-        status = 'confirmed_copied';
-      }
+    if (createsLogbookEntryForConfirmationAction(action)) {
+      [memberEntriesSnap, counterSnap, deterministicSnap] = await Promise.all([
+        tx.get(memberEntriesQuery(db, clubId, uid)),
+        tx.get(memberCounterRef(db, clubId, uid)),
+        tx.get(deterministicRef),
+      ]);
     } else if (action === 'confirm_existing_identical') {
+      memberEntriesSnap = await tx.get(memberEntriesQuery(db, clubId, uid));
+    }
+
+    if (['confirm_merge_notes', 'confirm_keep_existing', 'confirm_replace_existing'].includes(action)) {
       if (!finalMatchedEntryId) {
-        const match = await findExistingMatch(db, clubId, uid, snapshot);
-        finalMatchedEntryId = match.entryId;
+        throw new HttpsError('invalid-argument', 'matchedEntryId manquant');
       }
-      status = 'confirmed_existing_identical';
-    } else if (action === 'confirm_merge_notes') {
-      if (!finalMatchedEntryId) throw new HttpsError('invalid-argument', 'matchedEntryId manquant');
-      const existingRef = db.collection('clubs').doc(clubId)
-        .collection('student_logbook_entries').doc(finalMatchedEntryId);
-      const existingSnap = await existingRef.get();
+      existingSnap = await tx.get(entries.doc(finalMatchedEntryId));
       if (!existingSnap.exists) {
         throw new HttpsError('not-found', 'Plongée existante introuvable');
       }
       if (existingSnap.data().member_id !== uid) {
         throw new HttpsError('permission-denied', 'Cette plongée ne t’appartient pas');
       }
-      await existingRef.update({
+      if (isPiscineLogbookEntry(existingSnap.data())) {
+        throw new HttpsError(
+          'failed-precondition',
+          'Une séance piscine ne peut pas servir de plongée du carnet'
+        );
+      }
+    }
+
+    if (action === 'decline') {
+      status = 'declined';
+    } else if (createsLogbookEntryForConfirmationAction(action)) {
+      // confirm_copy never retains a match selected by an older matcher. It
+      // either uses the deterministic copy or a fresh, non-piscine match.
+      finalMatchedEntryId = null;
+      if (deterministicSnap.exists) {
+        const deterministicData = deterministicSnap.data();
+        if (
+          deterministicData.member_id !== uid
+          || deterministicData.logbook_confirmation_id !== confirmationId
+        ) {
+          throw new HttpsError('already-exists', 'Identifiant de copie déjà utilisé');
+        }
+        copiedEntryId = deterministicRef.id;
+        diveNumber = positiveDiveNumber(deterministicData.dive_number);
+        if (diveNumber == null) {
+          const allocation = planDiveNumberAllocation({
+            counterNext: counterSnap.exists ? counterSnap.data().next : null,
+            entryDocs: memberEntriesSnap.docs,
+            excludedEntryId: deterministicRef.id,
+          });
+          diveNumber = allocation.assigned;
+          tx.set(
+            memberCounterRef(db, clubId, uid),
+            counterPatch(allocation.next),
+            { merge: true }
+          );
+          tx.update(
+            deterministicRef,
+            diveNumberAllocationPatch(diveNumber, 'respondToLogbookDiveConfirmation')
+          );
+        }
+        status = 'confirmed_copied';
+      } else {
+        const liveMatch = findExistingMatchInDocs(memberEntriesSnap.docs, snapshot);
+        finalMatchedEntryId = liveMatch.entryId || null;
+        if (liveMatch.entryId) {
+          status = liveMatch.matchType === 'identical'
+            ? 'confirmed_existing_identical'
+            : 'confirmed_existing_different';
+        } else {
+          const allocation = planDiveNumberAllocation({
+            counterNext: counterSnap.exists ? counterSnap.data().next : null,
+            entryDocs: memberEntriesSnap.docs,
+          });
+          diveNumber = allocation.assigned;
+          tx.set(
+            memberCounterRef(db, clubId, uid),
+            counterPatch(allocation.next),
+            { merge: true }
+          );
+          tx.create(deterministicRef, {
+            ...buildCopyPayload(
+              snapshot,
+              uid,
+              respondentName,
+              confirmationId,
+              confirmation.source_member_id,
+              confirmation.source_entry_id
+            ),
+            ...diveNumberAllocationPatch(
+              diveNumber,
+              'respondToLogbookDiveConfirmation'
+            ),
+          });
+          copiedEntryId = deterministicRef.id;
+          status = 'confirmed_copied';
+        }
+      }
+    } else if (action === 'confirm_existing_identical') {
+      if (finalMatchedEntryId) {
+        const requestedMatch = memberEntriesSnap.docs.find(
+          (doc) => doc.id === finalMatchedEntryId
+        );
+        if (requestedMatch && isPiscineLogbookEntry(requestedMatch.data())) {
+          throw new HttpsError(
+            'failed-precondition',
+            'Une séance piscine ne peut pas confirmer une plongée du carnet'
+          );
+        }
+      }
+      if (!finalMatchedEntryId) {
+        finalMatchedEntryId = findExistingMatchInDocs(
+          memberEntriesSnap.docs,
+          snapshot
+        ).entryId;
+      }
+      if (!finalMatchedEntryId) {
+        throw new HttpsError('not-found', 'Plongée existante introuvable');
+      }
+      const matchDoc = memberEntriesSnap.docs.find(
+        (doc) => doc.id === finalMatchedEntryId
+      );
+      if (!matchDoc || matchDoc.data().member_id !== uid) {
+        throw new HttpsError('permission-denied', 'Cette plongée ne t’appartient pas');
+      }
+      status = 'confirmed_existing_identical';
+    } else if (action === 'confirm_merge_notes') {
+      tx.update(existingSnap.ref, {
         notes: mergeSharedNotes(existingSnap.data().notes, snapshot.notes),
         validation_status: 'buddy_confirmed',
         shared_from_member_id: confirmation.source_member_id,
@@ -952,17 +1073,7 @@ const respondToLogbookDiveConfirmation = onCall(
     } else if (action === 'confirm_no_import') {
       status = 'confirmed_no_import';
     } else if (action === 'confirm_replace_existing') {
-      if (!finalMatchedEntryId) throw new HttpsError('invalid-argument', 'matchedEntryId manquant');
-      const existingRef = db.collection('clubs').doc(clubId)
-        .collection('student_logbook_entries').doc(finalMatchedEntryId);
-      const existingSnap = await existingRef.get();
-      if (!existingSnap.exists) {
-        throw new HttpsError('not-found', 'Plongée existante introuvable');
-      }
-      if (existingSnap.data().member_id !== uid) {
-        throw new HttpsError('permission-denied', 'Cette plongée ne t’appartient pas');
-      }
-      await existingRef.update(buildReplaceUpdate(
+      tx.update(existingSnap.ref, buildReplaceUpdate(
         snapshot,
         existingSnap.data(),
         confirmationId,
@@ -972,14 +1083,26 @@ const respondToLogbookDiveConfirmation = onCall(
       status = 'confirmed_existing_different';
     }
 
-    await ref.update({
+    tx.update(confirmationRef, {
       status,
       copied_entry_id: copiedEntryId,
+      copied_dive_number: diveNumber,
       matched_entry_id: finalMatchedEntryId,
       responded_at: FieldValue.serverTimestamp(),
       updated_at: FieldValue.serverTimestamp(),
     });
+    return {
+      status,
+      copiedEntryId,
+      matchedEntryId: finalMatchedEntryId,
+      diveNumber,
+      committed: true,
+      confirmation,
+      respondentName,
+    };
+  });
 
+  if (outcome.committed) {
     const labels = {
       confirmed_copied: 'confirmée et copiée dans son carnet',
       confirmed_existing_identical: 'confirmée : une plongée identique existait déjà',
@@ -988,22 +1111,37 @@ const respondToLogbookDiveConfirmation = onCall(
       confirmed_no_import: 'confirmée sans import',
       declined: 'refusée',
     };
-    await sendMemberNotification(
+    const notify = options.notify || sendMemberNotification;
+    await notify(
       clubId,
-      confirmation.source_member_id,
+      outcome.confirmation.source_member_id,
       uid,
-      `${respondentName || 'Un membre'} a répondu à ta plongée`,
-      `${respondentName || 'Un membre'} a ${labels[status] || status} la plongée.`,
+      `${outcome.respondentName || 'Un membre'} a répondu à ta plongée`,
+      `${outcome.respondentName || 'Un membre'} a ${labels[outcome.status] || outcome.status} la plongée.`,
       {
         type: 'logbook_dive_confirmation_result',
         club_id: clubId,
         confirmation_id: confirmationId,
-        source_entry_id: confirmation.source_entry_id,
+        source_entry_id: outcome.confirmation.source_entry_id,
       }
     );
-
-    return { status, copiedEntryId, matchedEntryId: finalMatchedEntryId };
   }
+
+  return {
+    status: outcome.status,
+    copiedEntryId: outcome.copiedEntryId,
+    matchedEntryId: outcome.matchedEntryId,
+    diveNumber: outcome.diveNumber,
+  };
+}
+
+const respondToLogbookDiveConfirmation = onCall(
+  {
+    region: FUNCTION_REGION,
+    timeoutSeconds: 60,
+    memory: '256MiB',
+  },
+  handleRespondToLogbookDiveConfirmation
 );
 
 module.exports = {
@@ -1027,4 +1165,9 @@ module.exports = {
   buildCopyPayload,
   buildReplaceUpdate,
   compareDive,
+  findExistingMatchInDocs,
+  confirmationResult,
+  deterministicCopyEntryId,
+  createsLogbookEntryForConfirmationAction,
+  handleRespondToLogbookDiveConfirmation,
 };

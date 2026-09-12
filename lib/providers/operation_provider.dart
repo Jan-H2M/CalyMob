@@ -10,7 +10,10 @@ import '../services/operation_service.dart';
 
 /// Provider pour l'état des opérations
 class OperationProvider with ChangeNotifier {
-  final OperationService _operationService = OperationService();
+  final OperationService _operationService;
+
+  OperationProvider({OperationService? operationService})
+      : _operationService = operationService ?? OperationService();
 
   // Stream subscriptions for memory management
   StreamSubscription<List<Operation>>? _operationsSubscription;
@@ -187,7 +190,7 @@ class OperationProvider with ChangeNotifier {
   }
 
   /// S'inscrire à une opération
-  Future<void> registerToOperation({
+  Future<EventRegistrationResult> registerToOperation({
     required String clubId,
     required String operationId,
     required String userId,
@@ -196,6 +199,9 @@ class OperationProvider with ChangeNotifier {
     Tariff? selectedTariff,
     List<SelectedSupplement>? selectedSupplements,
     double? supplementTotal,
+    String? requestId,
+    String? payloadFingerprint,
+    List<RegistrationGuestRequest> guests = const <RegistrationGuestRequest>[],
   }) async {
     try {
       _isLoading = true;
@@ -204,7 +210,7 @@ class OperationProvider with ChangeNotifier {
       final operation = _selectedOperation ??
           _operations.firstWhere((op) => op.id == operationId);
 
-      await _operationService.registerToOperation(
+      final result = await _operationService.registerToOperation(
         clubId: clubId,
         operationId: operationId,
         userId: userId,
@@ -214,17 +220,26 @@ class OperationProvider with ChangeNotifier {
         selectedTariff: selectedTariff,
         selectedSupplements: selectedSupplements,
         supplementTotal: supplementTotal,
+        requestId: requestId,
+        payloadFingerprint: payloadFingerprint,
+        guests: guests,
       );
 
       // Mettre à jour cache
-      _userRegistrationStatus[operationId] = true;
-      _participantCounts[operationId] =
-          (_participantCounts[operationId] ?? 0) + 1;
+      _userRegistrationStatus[operationId] =
+          const {'confirmed', 'pending_payment'}.contains(result.status);
+      if (!result.idempotent) {
+        _participantCounts[operationId] =
+            (_participantCounts[operationId] ?? 0) +
+                1 +
+                result.guestInscriptionIds.length;
+      }
 
       _isLoading = false;
       notifyListeners();
 
       debugPrint('✅ Inscription OK via provider');
+      return result;
     } catch (e) {
       _isLoading = false;
       _errorMessage = e.toString().replaceFirst('Exception: ', '');
@@ -236,9 +251,10 @@ class OperationProvider with ChangeNotifier {
   }
 
   /// Se désinscrire d'une opération
-  Future<void> unregisterFromOperation({
+  Future<ParticipantOperation?> unregisterFromOperation({
     required String clubId,
     required String operationId,
+    required String inscriptionId,
     required String userId,
     String? guestAction,
   }) async {
@@ -250,13 +266,24 @@ class OperationProvider with ChangeNotifier {
       await _operationService.unregisterFromOperation(
         clubId: clubId,
         operationId: operationId,
+        inscriptionId: inscriptionId,
         userId: userId,
         guestAction: guestAction,
       );
 
-      // Mettre à jour cache
-      _userRegistrationStatus[operationId] = false;
-      _userWaitlistStatus[operationId] = false;
+      // Reload the member's current active registration. Historical data can
+      // contain more than one active document, so cancelling one exact ID does
+      // not necessarily mean that the member is no longer registered.
+      final remainingInscription = await _operationService
+          .getUserInscriptionStrict(
+            clubId: clubId,
+            operationId: operationId,
+            userId: userId,
+          );
+      _userRegistrationStatus[operationId] =
+          remainingInscription != null && !remainingInscription.isWaitlisted;
+      _userWaitlistStatus[operationId] =
+          remainingInscription?.isWaitlisted ?? false;
       if (wasRegistered) {
         final currentCount = _participantCounts[operationId] ?? 1;
         _participantCounts[operationId] =
@@ -267,6 +294,7 @@ class OperationProvider with ChangeNotifier {
       notifyListeners();
 
       debugPrint('✅ Désinscription OK via provider');
+      return remainingInscription;
     } catch (e) {
       _isLoading = false;
       _errorMessage = e.toString().replaceFirst('Exception: ', '');
@@ -318,6 +346,8 @@ class OperationProvider with ChangeNotifier {
     /// Optional supplements selected by/for this guest.
     List<SelectedSupplement>? selectedSupplements,
     double? supplementTotal,
+    String? requestId,
+    String? payloadFingerprint,
   }) async {
     try {
       _isLoading = true;
@@ -336,6 +366,8 @@ class OperationProvider with ChangeNotifier {
         tariffId: tariffId,
         selectedSupplements: selectedSupplements,
         supplementTotal: supplementTotal,
+        requestId: requestId,
+        payloadFingerprint: payloadFingerprint,
       );
 
       // Mettre à jour cache

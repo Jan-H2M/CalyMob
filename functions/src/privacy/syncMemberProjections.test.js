@@ -1,6 +1,7 @@
 jest.mock('firebase-admin/firestore', () => ({
   FieldValue: { serverTimestamp: () => '__SERVER_TIMESTAMP__' },
 }));
+jest.mock('firebase-admin', () => ({ firestore: jest.fn() }));
 jest.mock('firebase-functions/v2/firestore', () => ({
   onDocumentWritten: (_options, handler) => handler,
 }));
@@ -9,7 +10,9 @@ const {
   buildMemberDirectoryProjection,
   buildOperationalStatusProjection,
   birthdayParts,
+  syncMemberProjections,
 } = require('./syncMemberProjections');
+const admin = require('firebase-admin');
 
 describe('member privacy projections', () => {
   test('directory only includes consented contact and photo fields', () => {
@@ -124,4 +127,64 @@ describe('member privacy projections', () => {
     });
     expect(projected.member_status).toBe('inactive');
   });
+
+  test('a delayed pre-opt-out trigger re-reads private false and stays revoked',
+    async () => {
+      const memberRef = { path: 'clubs/calypso/members/member-1' };
+      const directoryRef = { path: 'clubs/calypso/member_directory/member-1' };
+      const statusRef = {
+        path: 'clubs/calypso/member_operational_status/member-1',
+      };
+      const refs = new Map([
+        [memberRef.path, memberRef],
+        [directoryRef.path, directoryRef],
+        [statusRef.path, statusRef],
+      ]);
+      const ref = path => refs.get(path) || {
+        path,
+        collection: name => ref(`${path}/${name}`),
+        doc: id => ref(`${path}/${id}`),
+      };
+      const transaction = {
+        get: jest.fn(async requestedRef => {
+          expect(requestedRef.path).toBe(memberRef.path);
+          return {
+            exists: true,
+            data: () => ({
+              first_name: 'Alice',
+              birth_date: new Date('1991-07-06T22:00:00.000Z'),
+              share_birthday: false,
+            }),
+          };
+        }),
+        set: jest.fn(),
+        delete: jest.fn(),
+      };
+      const db = {
+        collection: name => ref(name),
+        runTransaction: jest.fn(async callback => callback(transaction)),
+      };
+      admin.firestore.mockReturnValue(db);
+
+      await syncMemberProjections({
+        params: { clubId: 'calypso', memberId: 'member-1' },
+        // Simulate the stale event that originally opted in. The handler must
+        // ignore this payload and project the current private false above.
+        data: {
+          after: {
+            exists: true,
+            data: () => ({ share_birthday: true }),
+          },
+        },
+      });
+
+      const directoryWrite = transaction.set.mock.calls
+        .find(([documentRef]) => documentRef.path === directoryRef.path);
+      expect(directoryWrite[1]).toMatchObject({
+        share_birthday: false,
+        birth_month: null,
+        birth_day: null,
+      });
+      expect(transaction.delete).not.toHaveBeenCalled();
+    });
 });

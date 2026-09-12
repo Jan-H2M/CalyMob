@@ -1,7 +1,7 @@
 name: calymob
 description: Calypso DC Mobile Application
 publish_to: 'none'
-version: 1.21.1+206
+version: 1.22.0+207
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -37,6 +37,7 @@ dependencies:
 
   # HTTP Client
   http: ^1.2.0
+  crypto: ^3.0.7
 
   # Utilities
   url_launcher: ^6.1.14
@@ -45,6 +46,8 @@ dependencies:
   shared_preferences: ^2.2.2
   path_provider: ^2.1.1
   image_picker: ^1.0.4
+  image_picker_android: ^0.8.13+10
+  image_picker_platform_interface: ^2.11.1
   image_cropper: ^8.0.2
   file_picker: ^8.0.0
   path: ^1.9.0

@@ -45,33 +45,44 @@ async function handleBuddyConfirmationTask(event) {
 
   const clubRef = db.collection('clubs').doc(clubId);
 
-  // ---- Count pending confirmations for this member (2-field indexed query) --
-  const pendingSnap = await clubRef
-    .collection('logbook_dive_confirmations')
+  const confirmationsRef = clubRef.collection('logbook_dive_confirmations');
+  const tasksRef = clubRef.collection('formation_tasks');
+  const aggregateTaskId = `buddy_confirmation_${memberId}`;
+  const aggregateTaskRef = tasksRef.doc(aggregateTaskId);
+  const pendingQuery = confirmationsRef
     .where('target_member_id', '==', memberId)
-    .where('status', '==', 'pending')
-    .get();
-  const pendingCount = pendingSnap.size;
+    .where('status', '==', 'pending');
+  const tasksQuery = tasksRef.where('current_assignee_id', '==', memberId);
 
-  const memberSnap = await clubRef.collection('members').doc(memberId).get();
-  if (memberSnap.exists && !usesCarnet(memberSnap.data())) {
-    for (const doc of pendingSnap.docs) {
-      await doc.ref.update({
-        status: 'confirmed_no_import',
-        auto_accepted: true,
-        auto_accepted_reason: 'carnet_opt_out',
-        responded_at: FieldValue.serverTimestamp(),
-        updated_at: FieldValue.serverTimestamp(),
-      });
-    }
-    const leftoverTasks = await clubRef
-      .collection('formation_tasks')
-      .where('current_assignee_id', '==', memberId)
-      .get();
-    for (const d of leftoverTasks.docs) {
-      const t = d.data();
-      if (t.type === 'buddy_confirmation' && t.status === 'open') {
-        await d.ref.update({
+  // The pending-count read and aggregate write are one serializable unit.
+  // Every invocation also reads the deterministic aggregate document, so two
+  // overlapping 1→0 / 2→1 transitions conflict and retry against fresh data.
+  await db.runTransaction(async transaction => {
+    const [pendingSnap, memberSnap, tasksSnap, aggregateSnap] = await Promise.all([
+      transaction.get(pendingQuery),
+      transaction.get(clubRef.collection('members').doc(memberId)),
+      transaction.get(tasksQuery),
+      transaction.get(aggregateTaskRef),
+    ]);
+    const taskDocsById = new Map(tasksSnap.docs.map(doc => [doc.id, doc]));
+    if (aggregateSnap.exists) taskDocsById.set(aggregateSnap.id, aggregateSnap);
+    const openBuddyTasks = [...taskDocsById.values()].filter((doc) => {
+      const task = doc.data();
+      return task.type === 'buddy_confirmation' && task.status === 'open';
+    });
+
+    if (memberSnap.exists && !usesCarnet(memberSnap.data())) {
+      for (const doc of pendingSnap.docs) {
+        transaction.update(doc.ref, {
+          status: 'confirmed_no_import',
+          auto_accepted: true,
+          auto_accepted_reason: 'carnet_opt_out',
+          responded_at: FieldValue.serverTimestamp(),
+          updated_at: FieldValue.serverTimestamp(),
+        });
+      }
+      for (const doc of openBuddyTasks) {
+        transaction.update(doc.ref, {
           status: 'done',
           completed_at: FieldValue.serverTimestamp(),
           completed_by: 'system',
@@ -79,34 +90,20 @@ async function handleBuddyConfirmationTask(event) {
           updated_at: FieldValue.serverTimestamp(),
         });
       }
+      return;
     }
-    return;
-  }
 
-  // ---- Find existing OPEN buddy_confirmation task(s) for the member ---------
-  // Query on current_assignee_id (auto-indexed) + filter type/status in memory
-  // to avoid requiring a new composite index.
-  const tasksSnap = await clubRef
-    .collection('formation_tasks')
-    .where('current_assignee_id', '==', memberId)
-    .get();
-  const openBuddyTasks = tasksSnap.docs.filter((d) => {
-    const t = d.data();
-    return t.type === 'buddy_confirmation' && t.status === 'open';
-  });
-
-  if (pendingCount > 0) {
-    if (openBuddyTasks.length === 0) {
-      // Create a single aggregated task.
-      const taskRef = clubRef.collection('formation_tasks').doc();
-      await taskRef.set({
+    const pendingCount = pendingSnap.size;
+    if (pendingCount > 0) {
+      const newTitle = pendingCount === 1
+        ? 'Une plongée à confirmer'
+        : `${pendingCount} plongées à confirmer`;
+      const currentAggregate = aggregateSnap.exists ? aggregateSnap.data() : null;
+      transaction.set(aggregateTaskRef, {
         type: 'buddy_confirmation',
         status: 'open',
         priority: 'normal',
-        title:
-          pendingCount === 1
-            ? 'Une plongée à confirmer'
-            : `${pendingCount} plongées à confirmer`,
+        title: newTitle,
         member_id: memberId,
         member_name: memberName,
         current_assignee_id: memberId,
@@ -115,44 +112,32 @@ async function handleBuddyConfirmationTask(event) {
         available_actions: [
           { key: 'open', label: 'Voir', target_screen: 'buddy_confirm' },
         ],
-        notification_state: { reminder_count: 0 },
+        notification_state: currentAggregate?.status === 'open'
+          ? (currentAggregate.notification_state || { reminder_count: 0 })
+          : { reminder_count: 0 },
         created_by: 'system',
         created_by_name: FUNCTION_NAME,
-        created_at: FieldValue.serverTimestamp(),
+        created_at: currentAggregate?.created_at || FieldValue.serverTimestamp(),
         updated_at: FieldValue.serverTimestamp(),
-      });
-      console.log(
-        `[${FUNCTION_NAME}] created buddy_confirmation task ${taskRef.id} for ${memberId} (pending=${pendingCount})`,
-      );
-    } else {
-      // Keep a single task; refresh its count/title if it changed.
-      const primary = openBuddyTasks[0];
-      const cur = primary.data();
-      const newTitle =
-        pendingCount === 1
-          ? 'Une plongée à confirmer'
-          : `${pendingCount} plongées à confirmer`;
-      if ((cur.context && cur.context.pending_count) !== pendingCount) {
-        await primary.ref.update({
-          title: newTitle,
-          'context.pending_count': pendingCount,
-          updated_at: FieldValue.serverTimestamp(),
-        });
-      }
-      // Resolve any accidental duplicates.
-      for (let i = 1; i < openBuddyTasks.length; i++) {
-        await openBuddyTasks[i].ref.update({
+      }, { merge: false });
+      for (const task of openBuddyTasks) {
+        if (task.id === aggregateTaskId) continue;
+        transaction.update(task.ref, {
           status: 'done',
           completed_at: FieldValue.serverTimestamp(),
           completed_by: 'system',
+          completed_reason: 'superseded_by_deterministic_aggregate',
           updated_at: FieldValue.serverTimestamp(),
         });
       }
+      console.log(
+        `[${FUNCTION_NAME}] reconciled buddy_confirmation ${aggregateTaskId} for ${memberId} (pending=${pendingCount})`,
+      );
+      return;
     }
-  } else {
-    // No more pending → resolve open buddy_confirmation task(s).
-    for (const d of openBuddyTasks) {
-      await d.ref.update({
+
+    for (const doc of openBuddyTasks) {
+      transaction.update(doc.ref, {
         status: 'done',
         completed_at: FieldValue.serverTimestamp(),
         completed_by: memberId,
@@ -164,7 +149,7 @@ async function handleBuddyConfirmationTask(event) {
         `[${FUNCTION_NAME}] resolved ${openBuddyTasks.length} buddy_confirmation task(s) for ${memberId} (no pending left)`,
       );
     }
-  }
+  });
 }
 
 const onBuddyConfirmationTask = onDocumentWritten(

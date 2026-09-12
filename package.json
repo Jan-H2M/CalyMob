@@ -14,6 +14,8 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:integration": "jest --testMatch='**/*.integration.test.ts'",
+    "test:rules:event-registration": "JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" firebase emulators:exec --project calymob-event-registration-rules --only firestore \"node scripts/test-event-registration-rules.cjs\"",
+    "test:rules:evaluation": "JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" firebase emulators:exec --project calymob-com084-evaluation-rules --only firestore \"node scripts/test-evaluation-rules.cjs\"",
     "setup:test-users": "node scripts/setup-test-users.js",
     "emulators": "firebase emulators:start",
     "emulators:export": "firebase emulators:export ./emulator-data"
@@ -78,6 +80,7 @@
   },
   "devDependencies": {
     "@faker-js/faker": "^10.1.0",
+    "@firebase/rules-unit-testing": "^3.0.4",
     "@testing-library/jest-dom": "^6.1.5",
     "@testing-library/react": "^14.1.2",
     "@testing-library/user-event": "^14.5.1",

@@ -342,6 +342,21 @@ class FormationTask {
     return original == null || original.isEmpty ? null : original;
   }
 
+  /// Only durable training-domain work belongs in Actions & evaluations.
+  ///
+  /// Buddy confirmations are rendered from their individual confirmation
+  /// documents. Every other active task needs one durable, actionable home;
+  /// event preparation and manual reminders therefore remain visible here.
+  bool get belongsInActionsEvaluations => switch (type) {
+        FormationTaskType.buddyConfirmation => false,
+        _ => true,
+      };
+
+  bool get isClosed =>
+      status == FormationTaskStatus.done ||
+      status == FormationTaskStatus.dismissed ||
+      status == FormationTaskStatus.expired;
+
   static FormationTaskType _parseType(String? s) {
     switch (s) {
       case 'pool_checkin':

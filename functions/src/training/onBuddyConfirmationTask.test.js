@@ -32,9 +32,19 @@ function match(data, f) {
 }
 
 class FS {
-  constructor() { this.store = new Map(); this.auto = 0; }
+  constructor() { this.store = new Map(); this.auto = 0; this.txQueue = Promise.resolve(); }
   _m(p) { if (!this.store.has(p)) this.store.set(p, new Map()); return this.store.get(p); }
   collection(p) { return new Coll(this, p); }
+  runTransaction(callback) {
+    const execute = () => callback({
+      get: target => target.get(),
+      set: (target, data, options) => target.set(data, options),
+      update: (target, data) => target.update(data),
+    });
+    const result = this.txQueue.then(execute, execute);
+    this.txQueue = result.then(() => undefined, () => undefined);
+    return result;
+  }
 }
 class Coll {
   constructor(fs, p) { this.fs = fs; this.p = p; }
@@ -75,6 +85,7 @@ const TASKS = `clubs/${CLUB}/formation_tasks`;
 
 const tasks = () => [...mockDb._m(TASKS).values()];
 const buddyTasks = () => tasks().filter((t) => t.type === 'buddy_confirmation');
+const openBuddyTasks = () => buddyTasks().filter((t) => t.status === 'open');
 
 async function seedConf(id, status) {
   await new Ref(mockDb, CONF, id).set({
@@ -104,6 +115,7 @@ describe('handleBuddyConfirmationTask', () => {
     expect(buddyTasks()[0].title).toMatch(/2 plongées/);
     expect(buddyTasks()[0].current_assignee_id).toBe(MEMBER);
     expect(buddyTasks()[0].context.pending_count).toBe(2);
+    expect(mockDb._m(TASKS).has(`buddy_confirmation_${MEMBER}`)).toBe(true);
   });
 
   it('does not create a second task if one is already open (updates count)', async () => {
@@ -113,9 +125,19 @@ describe('handleBuddyConfirmationTask', () => {
       current_assignee_id: MEMBER, context: { pending_count: 5 },
     });
     await handleBuddyConfirmationTask(event('pending'));
-    const open = buddyTasks().filter((t) => t.status === 'open');
-    expect(open).toHaveLength(1);
-    expect(open[0].context.pending_count).toBe(1);
+    expect(openBuddyTasks()).toHaveLength(1);
+    expect(openBuddyTasks()[0].context.pending_count).toBe(1);
+    expect(mockDb._m(TASKS).get('t1').status).toBe('done');
+  });
+
+  it('concurrent invocations converge on the deterministic aggregate id', async () => {
+    await seedConf('c1', 'pending');
+    await Promise.all([
+      handleBuddyConfirmationTask(event('pending')),
+      handleBuddyConfirmationTask(event('pending')),
+    ]);
+    expect(openBuddyTasks()).toHaveLength(1);
+    expect(mockDb._m(TASKS).has(`buddy_confirmation_${MEMBER}`)).toBe(true);
   });
 
   it('resolves the open task when no confirmations remain pending', async () => {
@@ -126,5 +148,31 @@ describe('handleBuddyConfirmationTask', () => {
     });
     await handleBuddyConfirmationTask(event('confirmed_copied'));
     expect(buddyTasks()[0].status).toBe('done');
+  });
+
+  it('serializes a 1→0 transition and cannot reopen from a stale pending count', async () => {
+    await seedConf('c1', 'pending');
+    await handleBuddyConfirmationTask(event('pending'));
+    await new Ref(mockDb, CONF, 'c1').update({ status: 'confirmed_copied' });
+    await Promise.all([
+      handleBuddyConfirmationTask(event('confirmed_copied')),
+      handleBuddyConfirmationTask(event('confirmed_copied')),
+    ]);
+    expect(openBuddyTasks()).toHaveLength(0);
+    expect(mockDb._m(TASKS).get(`buddy_confirmation_${MEMBER}`).status).toBe('done');
+  });
+
+  it('serializes a 2→1 transition and preserves the exact remaining count', async () => {
+    await seedConf('c1', 'pending');
+    await seedConf('c2', 'pending');
+    await handleBuddyConfirmationTask(event('pending'));
+    await new Ref(mockDb, CONF, 'c1').update({ status: 'confirmed_copied' });
+    await Promise.all([
+      handleBuddyConfirmationTask(event('confirmed_copied')),
+      handleBuddyConfirmationTask(event('pending')),
+    ]);
+    expect(openBuddyTasks()).toHaveLength(1);
+    expect(openBuddyTasks()[0].context.pending_count).toBe(1);
+    expect(openBuddyTasks()[0].title).toBe('Une plongée à confirmer');
   });
 });

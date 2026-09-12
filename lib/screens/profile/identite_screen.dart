@@ -8,26 +8,31 @@
 /// consentements photo.
 
 import 'dart:async';
-import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:image_cropper/image_cropper.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../models/member_profile.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/camera_permission_service.dart';
+import '../../services/profile_photo_media_service.dart';
+import '../../services/profile_photo_media_source.dart';
 import '../../services/profile_service.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/photo_consent_dialog.dart';
-import 'face_camera_screen.dart' if (dart.library.html) 'face_camera_screen_stub.dart';
+import 'face_camera_screen.dart'
+    if (dart.library.html) 'face_camera_screen_stub.dart';
 import 'mes_brevets_screen.dart';
 
-enum _PhotoSource { camera, gallery }
+enum ProfilePhotoSource { camera, gallery }
 
 class IdentiteScreen extends StatefulWidget {
-  const IdentiteScreen({super.key});
+  const IdentiteScreen({super.key, this.photoMediaService});
+
+  final ProfilePhotoMediaService? photoMediaService;
 
   @override
   State<IdentiteScreen> createState() => _IdentiteScreenState();
@@ -36,6 +41,8 @@ class IdentiteScreen extends StatefulWidget {
 class _IdentiteScreenState extends State<IdentiteScreen> {
   final String _clubId = 'calypso';
   final ProfileService _profileService = ProfileService();
+  late final ProfilePhotoMediaService _photoMediaService =
+      widget.photoMediaService ?? ProfilePhotoMediaService.system();
   bool _isLoading = false;
 
   @override
@@ -48,8 +55,7 @@ class _IdentiteScreenState extends State<IdentiteScreen> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title:
-            const Text('Identité', style: TextStyle(color: Colors.white)),
+        title: const Text('Identité', style: TextStyle(color: Colors.white)),
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
@@ -113,13 +119,16 @@ class _IdentiteScreenState extends State<IdentiteScreen> {
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: ListTile(
-        leading: const Icon(Icons.workspace_premium, color: AppColors.middenblauw),
+        leading: const Icon(
+          Icons.workspace_premium,
+          color: AppColors.middenblauw,
+        ),
         title: const Text('Mes brevets'),
         subtitle: const Text('Historique et dates d\'homologation'),
         trailing: const Icon(Icons.chevron_right),
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const MesBrevetsScreen()),
-        ),
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const MesBrevetsScreen())),
       ),
     );
   }
@@ -178,8 +187,11 @@ class _IdentiteScreenState extends State<IdentiteScreen> {
                         color: AppColors.middenblauw,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.camera_alt,
-                          color: Colors.white, size: 20),
+                      child: const Icon(
+                        Icons.camera_alt,
+                        color: Colors.white,
+                        size: 20,
+                      ),
                     ),
                   ),
                 ],
@@ -189,9 +201,9 @@ class _IdentiteScreenState extends State<IdentiteScreen> {
             TextButton.icon(
               onPressed: _addOrChangePhoto,
               icon: Icon(profile.hasPhoto ? Icons.edit : Icons.add_a_photo),
-              label: Text(profile.hasPhoto
-                  ? 'Changer la photo'
-                  : 'Ajouter une photo'),
+              label: Text(
+                profile.hasPhoto ? 'Changer la photo' : 'Ajouter une photo',
+              ),
             ),
           ],
         ),
@@ -278,24 +290,25 @@ class _IdentiteScreenState extends State<IdentiteScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label,
-                  style:
-                      const TextStyle(fontSize: 12, color: Colors.grey)),
+              Text(
+                label,
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
               const SizedBox(height: 2),
               Text(
                 value,
                 style: TextStyle(
                   fontSize: 16,
-                  fontStyle:
-                      valueIsMuted ? FontStyle.italic : FontStyle.normal,
+                  fontStyle: valueIsMuted ? FontStyle.italic : FontStyle.normal,
                   color: valueIsMuted ? Colors.grey : null,
                 ),
               ),
               if (hint != null) ...[
                 const SizedBox(height: 2),
-                Text(hint,
-                    style: TextStyle(
-                        fontSize: 11, color: Colors.grey.shade500)),
+                Text(
+                  hint,
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                ),
               ],
             ],
           ),
@@ -326,8 +339,11 @@ class _IdentiteScreenState extends State<IdentiteScreen> {
                 const Spacer(),
                 IconButton(
                   onPressed: () => _editConsents(profile),
-                  icon: const Icon(Icons.edit,
-                      size: 20, color: AppColors.middenblauw),
+                  icon: const Icon(
+                    Icons.edit,
+                    size: 20,
+                    color: AppColors.middenblauw,
+                  ),
                   tooltip: 'Modifier',
                 ),
               ],
@@ -357,19 +373,26 @@ class _IdentiteScreenState extends State<IdentiteScreen> {
   }) {
     return Row(
       children: [
-        Icon(on ? Icons.check_circle : Icons.cancel,
-            color: on ? Colors.green : Colors.red),
+        Icon(
+          on ? Icons.check_circle : Icons.cancel,
+          color: on ? Colors.green : Colors.red,
+        ),
         const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label,
-                  style: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w600)),
-              Text(sub,
-                  style:
-                      TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Text(
+                sub,
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
             ],
           ),
         ),
@@ -411,7 +434,10 @@ class _IdentiteScreenState extends State<IdentiteScreen> {
       setState(() => _isLoading = true);
       final userId = context.read<AuthProvider>().currentUser?.uid ?? '';
       await _profileService.updatePhoneNumber(
-          _clubId, userId, result.isEmpty ? null : result);
+        _clubId,
+        userId,
+        result.isEmpty ? null : result,
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -423,9 +449,7 @@ class _IdentiteScreenState extends State<IdentiteScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('❌ Erreur: $e'),
-              backgroundColor: Colors.red),
+          SnackBar(content: Text('❌ Erreur: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -462,9 +486,7 @@ class _IdentiteScreenState extends State<IdentiteScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('❌ Erreur: $e'),
-              backgroundColor: Colors.red),
+          SnackBar(content: Text('❌ Erreur: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -477,37 +499,32 @@ class _IdentiteScreenState extends State<IdentiteScreen> {
       final source = await _pickPhotoSource();
       if (source == null || !mounted) return;
 
-      File? rawPhotoFile;
-      if (source == _PhotoSource.camera) {
+      Uint8List? photoBytes;
+      if (source == ProfilePhotoSource.camera) {
         final hasPermission =
             await CameraPermissionService.handlePermissionWithDialog(context);
         if (!hasPermission || !mounted) return;
-        rawPhotoFile = await Navigator.push<File>(
+        final cameraSource = await Navigator.push<ProfilePhotoMediaSource>(
           context,
           MaterialPageRoute(
             builder: (_) => const FaceCameraScreen(),
             fullscreenDialog: true,
           ),
         );
+        if (cameraSource != null) {
+          if (!mounted) {
+            await _photoMediaService.discardSource(cameraSource);
+            return;
+          }
+          photoBytes = await _photoMediaService.cropPathToBytes(
+            context,
+            cameraSource,
+          );
+        }
       } else {
-        final picker = ImagePicker();
-        final picked = await picker.pickImage(
-          source: ImageSource.gallery,
-          imageQuality: 90,
-          maxWidth: 2048,
-          maxHeight: 2048,
-        );
-        if (picked != null) rawPhotoFile = File(picked.path);
+        photoBytes = await _photoMediaService.pickAndCropGallery(context);
       }
-      if (rawPhotoFile == null || !mounted) return;
-
-      final photoFile = await _cropToProfileSquare(rawPhotoFile);
-      if (photoFile == null || !mounted) {
-        try {
-          await rawPhotoFile.delete();
-        } catch (_) {}
-        return;
-      }
+      if (photoBytes == null || !mounted) return;
 
       final userId = context.read<AuthProvider>().currentUser?.uid ?? '';
       final currentProfile = await _profileService.getProfile(_clubId, userId);
@@ -518,38 +535,24 @@ class _IdentiteScreenState extends State<IdentiteScreen> {
         context: context,
         barrierDismissible: false,
         builder: (ctx) => PhotoConsentDialog(
-          initialInternalConsent:
-              currentProfile?.consentInternalPhoto ?? false,
-          initialExternalConsent:
-              currentProfile?.consentExternalPhoto ?? false,
+          initialInternalConsent: currentProfile?.consentInternalPhoto ?? false,
+          initialExternalConsent: currentProfile?.consentExternalPhoto ?? false,
           isFirstPhoto: isFirstPhoto,
         ),
       );
 
       if (consentResult == null || !mounted) {
-        try {
-          await rawPhotoFile.delete();
-        } catch (_) {}
-        try {
-          await photoFile.delete();
-        } catch (_) {}
         return;
       }
 
       setState(() => _isLoading = true);
-      await _profileService.updateProfilePhoto(
+      await _profileService.updateProfilePhotoBytes(
         _clubId,
         userId,
-        photoFile,
+        photoBytes,
         consentInternalPhoto: consentResult.internalConsent,
         consentExternalPhoto: consentResult.externalConsent,
       );
-      try {
-        await rawPhotoFile.delete();
-      } catch (_) {}
-      try {
-        await photoFile.delete();
-      } catch (_) {}
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -562,10 +565,7 @@ class _IdentiteScreenState extends State<IdentiteScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Erreur: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('❌ Erreur: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -573,78 +573,61 @@ class _IdentiteScreenState extends State<IdentiteScreen> {
     }
   }
 
-  Future<_PhotoSource?> _pickPhotoSource() {
-    return showModalBottomSheet<_PhotoSource>(
+  Future<ProfilePhotoSource?> _pickPhotoSource() {
+    return showModalBottomSheet<ProfilePhotoSource>(
       context: context,
       showDragHandle: true,
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 4, 20, 12),
-                child: Text(
-                  'Photo de profil',
-                  style:
-                      TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-              ),
-              ListTile(
-                leading: const Icon(Icons.camera_alt_outlined,
-                    color: AppColors.primary),
-                title: const Text('Prendre une photo'),
-                subtitle:
-                    const Text('Utiliser la caméra avec guidage du visage'),
-                onTap: () => Navigator.pop(ctx, _PhotoSource.camera),
-              ),
-              ListTile(
-                leading: const Icon(Icons.photo_library_outlined,
-                    color: AppColors.primary),
-                title: const Text('Choisir depuis la galerie'),
-                subtitle: const Text('Importer une photo existante'),
-                onTap: () => Navigator.pop(ctx, _PhotoSource.gallery),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Annuler'),
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
+      builder: (_) => const ProfilePhotoSourceSheet(
+        cameraAvailable: !kIsWeb,
+      ),
     );
   }
+}
 
-  Future<File?> _cropToProfileSquare(File source) async {
-    final cropped = await ImageCropper().cropImage(
-      sourcePath: source.path,
-      compressFormat: ImageCompressFormat.jpg,
-      compressQuality: 90,
-      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-      uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: 'Recadrer la photo',
-          toolbarColor: AppColors.primary,
-          toolbarWidgetColor: Colors.white,
-          activeControlsWidgetColor: AppColors.primary,
-          initAspectRatio: CropAspectRatioPreset.square,
-          lockAspectRatio: true,
-          hideBottomControls: false,
-        ),
-        IOSUiSettings(
-          title: 'Recadrer la photo',
-          doneButtonTitle: 'Terminer',
-          cancelButtonTitle: 'Annuler',
-          aspectRatioLockEnabled: true,
-          resetAspectRatioEnabled: false,
-          rotateButtonsHidden: false,
-          cropStyle: CropStyle.circle,
-        ),
-      ],
+class ProfilePhotoSourceSheet extends StatelessWidget {
+  const ProfilePhotoSourceSheet({super.key, required this.cameraAvailable});
+
+  final bool cameraAvailable;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 4, 20, 12),
+            child: Text(
+              'Photo de profil',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ),
+          if (cameraAvailable)
+            ListTile(
+              leading: const Icon(
+                Icons.camera_alt_outlined,
+                color: AppColors.primary,
+              ),
+              title: const Text('Prendre une photo'),
+              subtitle: const Text('Utiliser la caméra avec guidage du visage'),
+              onTap: () => Navigator.pop(context, ProfilePhotoSource.camera),
+            ),
+          ListTile(
+            leading: const Icon(
+              Icons.photo_library_outlined,
+              color: AppColors.primary,
+            ),
+            title: const Text('Choisir depuis la galerie'),
+            subtitle: const Text('Importer une photo existante'),
+            onTap: () => Navigator.pop(context, ProfilePhotoSource.gallery),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler'),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
     );
-    if (cropped == null) return null;
-    return File(cropped.path);
   }
 }

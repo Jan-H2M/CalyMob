@@ -7,6 +7,22 @@ import '../../config/firebase_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/exercise_claim_service.dart';
 
+@visibleForTesting
+String declarationStatusGroup(Object? status) {
+  if (status == 'accepted') return 'validated';
+  if (status == 'corrected') return 'progress';
+  if (status == 'rejected') return 'refused';
+  if (const [
+    'draft',
+    'submitted',
+    'waiting_monitor',
+    'waiting_external_review',
+  ].contains(status)) {
+    return 'pending';
+  }
+  return 'other';
+}
+
 /// WP-16 (S5) — « Mes déclarations ».
 ///
 /// L'élève voit l'état de TOUTES ses déclarations d'exercices (claims), hors
@@ -45,8 +61,6 @@ class _MyDeclarationsScreenState extends State<MyDeclarationsScreen> {
     });
   }
 
-  static const _pending = ['draft', 'submitted', 'waiting_monitor', 'waiting_external_review'];
-
   DateTime? _date(dynamic v) {
     if (v is Timestamp) return v.toDate();
     if (v is String) return DateTime.tryParse(v);
@@ -61,9 +75,18 @@ class _MyDeclarationsScreenState extends State<MyDeclarationsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final pending = _claims.where((c) => _pending.contains(c['status'])).toList();
-    final validated = _claims.where((c) => c['status'] == 'accepted').toList();
-    final refused = _claims.where((c) => c['status'] == 'rejected').toList();
+    final pending = _claims
+        .where((c) => declarationStatusGroup(c['status']) == 'pending')
+        .toList();
+    final progress = _claims
+        .where((c) => declarationStatusGroup(c['status']) == 'progress')
+        .toList();
+    final validated = _claims
+        .where((c) => declarationStatusGroup(c['status']) == 'validated')
+        .toList();
+    final refused = _claims
+        .where((c) => declarationStatusGroup(c['status']) == 'refused')
+        .toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -84,17 +107,30 @@ class _MyDeclarationsScreenState extends State<MyDeclarationsScreen> {
               : ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
-                    _group('⏳ En attente (${pending.length})', pending, Colors.amber, (c) {
+                    _group('⏳ En attente (${pending.length})', pending,
+                        Colors.amber, (c) {
                       final monitor = (c['monitor_name'] ?? '').toString();
                       final days = _daysSince(c['created_at']);
                       final who = monitor.isNotEmpty ? 'chez $monitor ' : '';
                       return 'En attente ${who}depuis $days j';
                     }),
-                    _group('✓ Validées (${validated.length})', validated, Colors.green, (c) {
-                      final d = _date(c['decision']?['decided_at'] ?? c['updated_at']);
+                    _group('◐ En progrès (${progress.length})', progress,
+                        Colors.orange, (c) {
+                      final comment =
+                          (c['decision']?['comment'] ?? '').toString().trim();
+                      return comment.isEmpty
+                          ? 'Le moniteur demande encore du travail'
+                          : comment;
+                    }),
+                    _group('✓ Validées (${validated.length})', validated,
+                        Colors.green, (c) {
+                      final d = _date(
+                          c['decision']?['decided_at'] ?? c['updated_at']);
                       return d != null ? 'Validé le ${_fmt(d)}' : 'Validé';
                     }),
-                    _group('✗ Refusées (${refused.length})', refused, Colors.red, (c) {
+                    _group(
+                        '✗ Refusées (${refused.length})', refused, Colors.red,
+                        (c) {
                       final reason = (c['decision']?['rejected_reason'] ??
                               c['decision']?['comment'] ??
                               '')
@@ -122,7 +158,9 @@ class _MyDeclarationsScreenState extends State<MyDeclarationsScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)],
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -130,23 +168,30 @@ class _MyDeclarationsScreenState extends State<MyDeclarationsScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 6),
             child: Text(title,
-                style: TextStyle(
+                style: const TextStyle(
                     fontWeight: FontWeight.w800, color: AppColors.donkerblauw)),
           ),
           if (claims.isEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-              child: Text('Aucune', style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
+              child: Text('Aucune',
+                  style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
             )
           else
             ...claims.map((c) {
-              final code = (c['exercise_code'] ?? c['exercise_id'] ?? '?').toString();
+              final code =
+                  (c['exercise_code'] ?? c['exercise_id'] ?? '?').toString();
               return ListTile(
                 dense: true,
-                leading: Container(width: 8, height: 8,
-                    decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-                title: Text(code, style: const TextStyle(fontWeight: FontWeight.w700)),
-                subtitle: Text(subtitle(c), style: const TextStyle(fontSize: 12)),
+                leading: Container(
+                    width: 8,
+                    height: 8,
+                    decoration:
+                        BoxDecoration(color: color, shape: BoxShape.circle)),
+                title: Text(code,
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
+                subtitle:
+                    Text(subtitle(c), style: const TextStyle(fontSize: 12)),
               );
             }),
         ],

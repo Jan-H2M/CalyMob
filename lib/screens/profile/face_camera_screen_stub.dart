@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 
 /// Stub version of FaceCameraScreen for web platform

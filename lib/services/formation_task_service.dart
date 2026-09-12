@@ -32,6 +32,32 @@ class FormationTaskService {
             snap.docs.map((doc) => FormationTask.fromFirestore(doc)).toList());
   }
 
+  /// Real-time durable task history for the assignee.
+  ///
+  /// Filtering and ordering happen client-side so this query needs only the
+  /// built-in single-field index. It intentionally includes closed states;
+  /// notification delivery records are not a substitute for domain history.
+  Stream<List<FormationTask>> streamUserHistory(String clubId, String userId) {
+    return _collection(clubId)
+        .where('current_assignee_id', isEqualTo: userId)
+        .snapshots()
+        .map((snap) {
+      final tasks = snap.docs
+          .map((doc) => FormationTask.fromFirestore(doc))
+          .toList(growable: false);
+      return tasks.toList()
+        ..sort((a, b) {
+          final aDate = a.completedAt ?? a.updatedAt ?? a.createdAt;
+          final bDate = b.completedAt ?? b.updatedAt ?? b.createdAt;
+          if (aDate == null && bDate == null) return a.id.compareTo(b.id);
+          if (aDate == null) return 1;
+          if (bDate == null) return -1;
+          final byDate = bDate.compareTo(aDate);
+          return byDate == 0 ? a.id.compareTo(b.id) : byDate;
+        });
+    });
+  }
+
   /// One-shot fetch — used for splash screens or testing.
   Future<List<FormationTask>> fetchUserInbox(
       String clubId, String userId) async {
@@ -94,6 +120,39 @@ class FormationTaskService {
       payload['completion_data'] = completionData;
     }
     await _collection(clubId).doc(taskId).update(payload);
+  }
+
+  /// Corrects the outcome of a completed monitor observation without
+  /// rewriting its original completion timestamp or actor.
+  Future<void> correctCompletedObservation(
+    String clubId,
+    String taskId,
+    String userId,
+    Map<String, dynamic> completionData,
+  ) async {
+    final reference = _collection(clubId).doc(taskId);
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(reference);
+      final data = snapshot.data();
+      if (data == null) {
+        throw StateError('Formation task not found: $taskId');
+      }
+      final status = data['status'] as String?;
+      if ((status != 'done' && status != 'completed') ||
+          data['type'] != 'monitor_observation') {
+        throw StateError(
+            'Only completed monitor observations can be corrected');
+      }
+      final currentRevision = data['correction_revision'];
+      final revision = currentRevision is num ? currentRevision.toInt() + 1 : 1;
+      transaction.update(reference, {
+        'completion_data': completionData,
+        'correction_revision': revision,
+        'correction_updated_at': FieldValue.serverTimestamp(),
+        'correction_updated_by': userId,
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+    });
   }
 
   Future<void> snooze(

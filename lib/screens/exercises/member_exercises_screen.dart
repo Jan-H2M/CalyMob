@@ -13,6 +13,7 @@ import '../../utils/plongeur_utils.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../training/historical_claims_screen.dart';
 import '../training/external_proof_capture_screen.dart';
+import '../training/evaluation_request_screen.dart';
 import 'validate_exercise_screen.dart';
 
 /// Écran affichant les exercices LIFRAS d'un membre.
@@ -339,6 +340,8 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
                 progress: progressFraction,
               ),
               const SizedBox(height: 12),
+              _buildEvaluationRequestCard(),
+              const SizedBox(height: 12),
               _buildHistoricalRepriseCard(),
               const SizedBox(height: 20),
 
@@ -553,6 +556,48 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildEvaluationRequestCard() {
+    return Material(
+      color: AppColors.oranje,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => _openEvaluationRequest(),
+        child: const Padding(
+          padding: EdgeInsets.all(16),
+          child: Row(children: [
+            Icon(Icons.fact_check_outlined, color: Colors.white, size: 30),
+            SizedBox(width: 12),
+            Expanded(
+                child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Demander une évaluation',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16)),
+                SizedBox(height: 3),
+                Text('Choisis l’exercice, le contexte et le moniteur.',
+                    style: TextStyle(color: Colors.white)),
+              ],
+            )),
+            Icon(Icons.chevron_right, color: Colors.white),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openEvaluationRequest([ExerciceLIFRAS? selected]) async {
+    await Navigator.of(context).push<bool>(MaterialPageRoute(
+      builder: (_) => EvaluationRequestScreen(
+        exercises: _catalog.map(EvaluationExerciseOption.fromExercise).toList(),
+        initialExerciseId: selected?.id,
+      ),
+    ));
   }
 
   Widget _buildSection({
@@ -795,6 +840,7 @@ class _MemberExercisesScreenState extends State<MemberExercisesScreen> {
       exercice: exercice,
       isValidated: false,
       hintTag: isPending ? 'demande envoyée' : null,
+      onTap: isPending ? null : () => _openEvaluationRequest(exercice),
     );
   }
 

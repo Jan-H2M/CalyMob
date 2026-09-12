@@ -234,6 +234,8 @@ exports.createInscriptionRefund = require('./src/inscription/createRefundClaim')
 // Transactional event waitlist lifecycle (join, leave, organizer promotion).
 const eventWaitlist = require('./src/inscription/eventWaitlist');
 exports.joinEventWaitlist = eventWaitlist.joinEventWaitlist;
+exports.registerForEvent = eventWaitlist.registerForEvent;
+exports.addGuestToEvent = eventWaitlist.addGuestToEvent;
 exports.leaveEventWaitlist = eventWaitlist.leaveEventWaitlist;
 exports.unregisterFromEvent = eventWaitlist.unregisterFromEvent;
 exports.promoteEventWaitlistEntry = eventWaitlist.promoteEventWaitlistEntry;
@@ -295,6 +297,11 @@ const {
 } = require('./src/privacy/syncMemberProjections');
 exports.syncMemberProjections = syncMemberProjections;
 
+const {
+  updateBirthdaySharing,
+} = require('./src/privacy/updateBirthdaySharing');
+exports.updateBirthdaySharing = updateBirthdaySharing;
+
 const { processFormationTaskReminders } = require('./src/training/processFormationTaskReminders');
 exports.processFormationTaskReminders = processFormationTaskReminders;
 
@@ -312,6 +319,15 @@ exports.onClaimAccepted = onClaimAccepted;
 // palanquée chef, club admin pool in order.
 const { onClaimSubmitted } = require('./src/training/onClaimSubmitted');
 exports.onClaimSubmitted = onClaimSubmitted;
+
+// COM-084 — student-selected evaluation request and durable monitor decision.
+// Both callables validate ownership and monitor eligibility server-side.
+const {
+  requestExerciseEvaluation,
+  decideExerciseEvaluation,
+} = require('./src/training/evaluationRequests');
+exports.requestExerciseEvaluation = requestExerciseEvaluation;
+exports.decideExerciseEvaluation = decideExerciseEvaluation;
 
 // WP-02 (chaîne de refus S1) — un refus n'est plus silencieux : onClaimRejected
 // crée une tâche 'claim_rejected' chez l'élève (raison + push immédiat) et

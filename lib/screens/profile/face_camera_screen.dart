@@ -1,12 +1,17 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../../services/profile_photo_camera_capture_session.dart';
+
 /// Écran de capture photo avec vérification que le visage est bien positionné
 class FaceCameraScreen extends StatefulWidget {
-  const FaceCameraScreen({super.key});
+  const FaceCameraScreen({super.key, this.captureSession});
+
+  final ProfilePhotoCameraCaptureSession? captureSession;
 
   @override
   State<FaceCameraScreen> createState() => _FaceCameraScreenState();
@@ -19,16 +24,20 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
   String? _errorMessage;
   File? _capturedPhoto;
   bool _showConfirmation = false;
+  late final ProfilePhotoCameraCaptureSession _captureSession;
 
   @override
   void initState() {
     super.initState();
+    _captureSession =
+        widget.captureSession ?? ProfilePhotoCameraCaptureSession();
     _initializeCamera();
   }
 
   @override
   void dispose() {
     _cameraController?.dispose();
+    unawaited(_captureSession.discard());
     super.dispose();
   }
 
@@ -99,46 +108,71 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
 
       // Prendre la photo
       final image = await _cameraController!.takePicture();
+      await _captureSession.beginCapture(image.path);
 
-      // Copier dans un dossier permanent temporaire
+      // Copier dans un dossier temporaire contrôlé par CalyMob. La session
+      // conserve aussi le chemin cache original du plugin caméra.
       final Directory tempDir = await getTemporaryDirectory();
-      final String fileName = 'profile_photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final String fileName =
+          'profile_photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final String newPath = '${tempDir.path}/$fileName';
-      final File newImage = await File(image.path).copy(newPath);
+      await _captureSession.createPreviewCopy(
+        newPath,
+        copyPath: (sourcePath, destinationPath) async {
+          await File(sourcePath).copy(destinationPath);
+        },
+      );
+
+      if (!mounted) {
+        await _captureSession.discard();
+        return;
+      }
 
       // Afficher l'écran de confirmation
       setState(() {
-        _capturedPhoto = newImage;
+        _capturedPhoto = File(newPath);
         _showConfirmation = true;
         _isProcessing = false;
       });
     } catch (e) {
-      _showError('Erreur lors de la capture: $e');
-      setState(() => _isProcessing = false);
+      await _captureSession.discard();
+      if (mounted) {
+        _showError('Erreur lors de la capture: $e');
+        setState(() => _isProcessing = false);
+      }
     }
   }
 
   /// Confirmer la photo et la retourner
-  void _confirmPhoto() {
+  Future<void> _confirmPhoto() async {
     if (_capturedPhoto != null && mounted) {
-      Navigator.of(context).pop(_capturedPhoto);
+      setState(() => _isProcessing = true);
+      try {
+        final source = await _captureSession.confirm();
+        if (mounted) Navigator.of(context).pop(source);
+      } catch (e) {
+        if (mounted) {
+          _showError('Erreur lors de la confirmation: $e');
+          setState(() => _isProcessing = false);
+        }
+      }
     }
   }
 
   /// Reprendre une nouvelle photo
-  void _retakePhoto() {
+  Future<void> _retakePhoto() async {
     setState(() {
+      _isProcessing = true;
       _capturedPhoto = null;
       _showConfirmation = false;
     });
+    await _captureSession.discard();
+    if (mounted) setState(() => _isProcessing = false);
   }
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-      ),
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
   }
 
@@ -195,11 +229,7 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
           color: Colors.black,
           child: Column(
             children: [
-              const Icon(
-                Icons.help_outline,
-                color: Colors.orange,
-                size: 32,
-              ),
+              const Icon(Icons.help_outline, color: Colors.orange, size: 32),
               const SizedBox(height: 12),
               const Text(
                 'Est-ce que votre visage est bien visible\ndans le cercle ?',
@@ -213,10 +243,7 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
               const SizedBox(height: 8),
               Text(
                 'Votre photo doit montrer clairement votre visage\npour être reconnu par les autres membres.',
-                style: TextStyle(
-                  color: Colors.grey[400],
-                  fontSize: 14,
-                ),
+                style: TextStyle(color: Colors.grey[400], fontSize: 14),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
@@ -228,7 +255,7 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
                   // Reprendre
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: _retakePhoto,
+                      onPressed: _isProcessing ? null : _retakePhoto,
                       icon: const Icon(Icons.refresh, color: Colors.white),
                       label: const Text(
                         'Reprendre',
@@ -244,7 +271,7 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
                   // Confirmer
                   Expanded(
                     child: ElevatedButton.icon(
-                      onPressed: _confirmPhoto,
+                      onPressed: _isProcessing ? null : _confirmPhoto,
                       icon: const Icon(Icons.check, color: Colors.white),
                       label: const Text(
                         'Oui, confirmer',
@@ -272,11 +299,7 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
-              Icons.error_outline,
-              size: 64,
-              color: Colors.red,
-            ),
+            const Icon(Icons.error_outline, size: 64, color: Colors.red),
             const SizedBox(height: 16),
             Text(
               _errorMessage!,
@@ -331,10 +354,7 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
         ),
 
         // Overlay avec cercle de guidage
-        CustomPaint(
-          size: size,
-          painter: FaceOverlayPainter(),
-        ),
+        CustomPaint(size: size, painter: FaceOverlayPainter()),
 
         // Titre compact en haut (ne couvre pas le cercle)
         Positioned(
@@ -344,7 +364,7 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.75),
+              color: Colors.black.withValues(alpha: 0.75),
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Row(
@@ -377,7 +397,7 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.75),
+              color: Colors.black.withValues(alpha: 0.75),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Column(
@@ -394,10 +414,7 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
                 const SizedBox(height: 6),
                 Text(
                   'Votre photo permet aux membres de vous reconnaître 🤿',
-                  style: TextStyle(
-                    color: Colors.grey[300],
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: Colors.grey[300], fontSize: 12),
                   textAlign: TextAlign.center,
                 ),
               ],
@@ -419,17 +436,12 @@ class _FaceCameraScreenState extends State<FaceCameraScreen> {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: !_isProcessing ? Colors.white : Colors.grey,
-                  border: Border.all(
-                    color: Colors.white,
-                    width: 4,
-                  ),
+                  border: Border.all(color: Colors.white, width: 4),
                 ),
                 child: _isProcessing
                     ? const Padding(
                         padding: EdgeInsets.all(20.0),
-                        child: CircularProgressIndicator(
-                          strokeWidth: 3,
-                        ),
+                        child: CircularProgressIndicator(strokeWidth: 3),
                       )
                     : const Icon(
                         Icons.camera_alt,
@@ -454,7 +466,7 @@ class FaceOverlayPainter extends CustomPainter {
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 4
-      ..color = Colors.white.withOpacity(0.8);
+      ..color = Colors.white.withValues(alpha: 0.8);
 
     // Dessiner un cercle au centre
     final center = Offset(size.width / 2, size.height / 2 - 50);
@@ -463,8 +475,7 @@ class FaceOverlayPainter extends CustomPainter {
     canvas.drawCircle(center, radius, paint);
 
     // Ajouter un overlay sombre autour du cercle
-    final overlayPaint = Paint()
-      ..color = Colors.black.withOpacity(0.5);
+    final overlayPaint = Paint()..color = Colors.black.withValues(alpha: 0.5);
 
     final path = Path()
       ..addRect(Rect.fromLTWH(0, 0, size.width, size.height))

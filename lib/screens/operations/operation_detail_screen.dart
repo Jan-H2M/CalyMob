@@ -11,8 +11,10 @@ import '../../providers/member_provider.dart';
 import '../../providers/operation_provider.dart';
 import '../../providers/event_message_provider.dart';
 import '../../widgets/loading_widget.dart';
+import '../../widgets/exercice_selection_editor.dart';
 import '../../utils/date_formatter.dart';
 import '../../utils/currency_formatter.dart';
+import '../../utils/exercice_selection_policy.dart';
 import '../../utils/tariff_utils.dart';
 import '../../utils/permission_helper.dart';
 import '../../utils/payment_confirmation.dart';
@@ -32,6 +34,7 @@ import '../../models/supplement.dart';
 import '../../widgets/participant_payment_card.dart';
 import '../../widgets/scanner_modal_sheet.dart';
 import '../../widgets/documents_accordion.dart';
+import '../../widgets/operation_unregister_button.dart';
 import 'add_guest_dialog.dart';
 import 'edit_my_inscription_dialog.dart';
 import 'register_with_guests_dialog.dart';
@@ -51,10 +54,22 @@ class OperationDetailScreen extends StatefulWidget {
   final String operationId;
   final String clubId;
 
+  @visibleForTesting
+  final OperationService? operationService;
+
+  @visibleForTesting
+  final ProfileService? profileService;
+
+  @visibleForTesting
+  final bool loadAuxiliaryProfileData;
+
   const OperationDetailScreen({
     Key? key,
     required this.operationId,
     required this.clubId,
+    this.operationService,
+    this.profileService,
+    this.loadAuxiliaryProfileData = true,
   }) : super(key: key);
 
   @override
@@ -63,10 +78,10 @@ class OperationDetailScreen extends StatefulWidget {
 
 class _OperationDetailScreenState extends State<OperationDetailScreen>
     with WidgetsBindingObserver {
-  final ProfileService _profileService = ProfileService();
+  late final ProfileService _profileService;
   final LifrasService _lifrasService = LifrasService();
   final DiveLocationService _diveLocationService = DiveLocationService();
-  final OperationService _operationService = OperationService();
+  late final OperationService _operationService;
 
   MemberProfile? _userProfile;
   MemberProfile? _organisateurProfile;
@@ -77,8 +92,21 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   Map<String, Map<String, MemberObservation>> _exerciceObservations =
       {}; // memberId -> exerciceCode -> observation
   List<String> _selectedExercices = [];
+  List<String> _initialSelectedExercices = [];
+  int _exerciceSelectionVersion = 0;
+  int _exercicePersistedRevision = 0;
+  int _exerciceLoadGeneration = 0;
+  final ExerciceSelectionSaveQueue _exerciceSaveQueue =
+      ExerciceSelectionSaveQueue();
   bool _isLoadingExercices = false;
   ParticipantOperation? _userInscription;
+  late final RegistrationRequestIdentity _registrationRequestIdentity;
+  late final GuestRequestIdentity _guestRequestIdentity;
+
+  bool get _isCurrentExerciceSnapshotQueued {
+    final queued = _exerciceSaveQueue.lastQueuedSnapshot;
+    return queued != null && sameStringSet(queued, _selectedExercices);
+  }
 
   /// Plan de paiement affiché en accordéon. Replié par défaut (demande Jan
   /// 2026-07-19) : le badge de l'en-tête montre déjà « Payé ✓ » ou
@@ -173,10 +201,61 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   @override
   void initState() {
     super.initState();
+    _operationService = widget.operationService ?? OperationService();
+    _profileService = widget.profileService ?? ProfileService();
+    _registrationRequestIdentity = RegistrationRequestIdentity(
+      requestIdFactory: _operationService.newRegistrationRequestId,
+    );
+    _guestRequestIdentity = GuestRequestIdentity(
+      requestIdFactory: _operationService.newRegistrationRequestId,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadOperation();
-      _loadUserProfile();
+      if (widget.loadAuxiliaryProfileData) {
+        _loadUserProfile();
+      }
     });
+  }
+
+  Future<EventRegistrationResult> _registerWithStableIdentity({
+    required OperationProvider operationProvider,
+    required String userId,
+    required String userName,
+    Tariff? selectedTariff,
+    List<SelectedSupplement> selectedSupplements = const <SelectedSupplement>[],
+    double? supplementTotal,
+    List<RegistrationGuestRequest> guests = const <RegistrationGuestRequest>[],
+  }) async {
+    final fingerprint = OperationService.registrationRequestPayloadFingerprint(
+      clubId: widget.clubId,
+      operationId: widget.operationId,
+      selectedSupplements: selectedSupplements,
+      guests: guests,
+    );
+    final requestId = _registrationRequestIdentity.requestIdFor(fingerprint);
+    try {
+      final result = await operationProvider.registerToOperation(
+        clubId: widget.clubId,
+        operationId: widget.operationId,
+        userId: userId,
+        userName: userName,
+        memberProfile: _userProfile,
+        selectedTariff: selectedTariff,
+        selectedSupplements:
+            selectedSupplements.isEmpty ? null : selectedSupplements,
+        supplementTotal: supplementTotal,
+        requestId: requestId,
+        payloadFingerprint: fingerprint,
+        guests: guests,
+      );
+      _registrationRequestIdentity.complete();
+      return result;
+    } catch (error) {
+      if (OperationService.isDefinitiveRegistrationFailure(error)) {
+        _registrationRequestIdentity.complete();
+      }
+      rethrow;
+    }
   }
 
   @override
@@ -292,6 +371,13 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     if (!mounted) return;
     final authProvider = context.read<AuthProvider>();
     final userId = authProvider.currentUser?.uid ?? '';
+    final loadGeneration = ++_exerciceLoadGeneration;
+    final selectionVersion = _exerciceSelectionVersion;
+    final persistedRevision = _exercicePersistedRevision;
+    final wasDirtyAtReadStart = hasExerciceSelectionChanges(
+      initial: _initialSelectedExercices,
+      selected: _selectedExercices,
+    );
 
     final inscription = await _operationService.getUserInscription(
       clubId: widget.clubId,
@@ -299,11 +385,25 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
       userId: userId,
     );
 
-    if (mounted) {
+    if (mounted && loadGeneration == _exerciceLoadGeneration) {
+      final exercices = inscription == null
+          ? <String>[]
+          : List<String>.from(inscription.exercices);
+      final resolution = resolveExerciceSelectionRead(
+        remote: exercices,
+        currentInitial: _initialSelectedExercices,
+        currentSelected: _selectedExercices,
+        capturedSelectionVersion: selectionVersion,
+        currentSelectionVersion: _exerciceSelectionVersion,
+        capturedPersistedRevision: persistedRevision,
+        currentPersistedRevision: _exercicePersistedRevision,
+        wasDirtyAtReadStart: wasDirtyAtReadStart,
+        hasPendingSave: _exerciceSaveQueue.isSaving,
+      );
       setState(() {
         _userInscription = inscription;
-        _selectedExercices =
-            inscription == null ? [] : List<String>.from(inscription.exercices);
+        _initialSelectedExercices = resolution.initial;
+        _selectedExercices = resolution.selected;
       });
     }
   }
@@ -379,24 +479,34 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   Future<void> _saveExercices() async {
     final authProvider = context.read<AuthProvider>();
     final userId = authProvider.currentUser?.uid ?? '';
-
-    try {
-      await _operationService.updateExercices(
+    final task = _exerciceSaveQueue.enqueue(
+      selected: _selectedExercices,
+      writer: (snapshot) => _operationService.updateExercices(
         clubId: widget.clubId,
         operationId: widget.operationId,
         userId: userId,
-        exercices: _selectedExercices,
-      );
+        exercices: snapshot,
+      ),
+    );
+    if (task == null) return;
+    if (mounted) setState(() {});
+    var saveSucceeded = false;
+
+    try {
+      await task.completion;
+      saveSucceeded = true;
 
       if (mounted) {
+        setState(() {
+          _initialSelectedExercices = List<String>.from(task.snapshot);
+          _exercicePersistedRevision++;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Exercices enregistrés'),
+          SnackBar(
+            content: Text(exerciceSelectionSavedMessage(task.snapshot)),
             backgroundColor: Colors.green,
           ),
         );
-        // Refresh participants list
-        _loadOperation();
       }
     } catch (e) {
       if (mounted) {
@@ -406,6 +516,24 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             backgroundColor: Colors.red,
           ),
         );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {});
+        if (shouldRefreshExerciceSelectionAfterSave(
+          saveSucceeded: saveSucceeded,
+          isQueueIdle: _exerciceSaveQueue.isIdle,
+        )) {
+          try {
+            await context.read<OperationProvider>().reloadParticipants(
+                  widget.clubId,
+                  widget.operationId,
+                );
+            await _loadUserInscription();
+          } catch (e) {
+            debugPrint('Error refreshing exercises after save: $e');
+          }
+        }
       }
     }
   }
@@ -471,17 +599,13 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
       if (result == null) return; // User cancelled
 
-      final totalPrice = basePrice + (result['supplementTotal'] as double);
-
       if (mounted) {
         try {
           // Register first
-          await operationProvider.registerToOperation(
-            clubId: widget.clubId,
-            operationId: widget.operationId,
+          final registrationResult = await _registerWithStableIdentity(
+            operationProvider: operationProvider,
             userId: userId,
             userName: userEmail,
-            memberProfile: _userProfile,
             selectedTariff: selectedTariff,
             selectedSupplements:
                 result['supplements'] as List<SelectedSupplement>,
@@ -494,29 +618,25 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
           if (mounted) {
             await _loadUserInscription();
+            final payment = registrationPaymentInstruction(registrationResult);
 
-            // If there's a price, show payment options dialog.
-            // Skip when priceTbd — the organiser will bill later.
-            if (operation.paymentRequired &&
-                totalPrice > 0 &&
-                !operation.priceTbd &&
-                _userInscription != null) {
-              final openInstallment =
-                  _firstOpenInstallment(operation, _userInscription);
+            if (payment.shouldOpenPayment) {
               await _showPaymentOptionsDialog(
                 operation: operation,
-                amount: openInstallment?.aggregatedAmount ?? totalPrice,
-                participantId: _userInscription!.id,
+                amount: payment.amount,
+                participantId: payment.participantId,
                 memberEmail: userEmail,
                 memberFirstName: memberProvider.prenom ?? '',
                 memberLastName: memberProvider.nom ?? '',
-                installmentId: openInstallment?.id,
-                installmentLabel: openInstallment?.label,
+                installmentId: payment.installmentId,
+                installmentLabel: payment.installmentLabel,
               );
             } else {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Inscription réussie !'),
+                SnackBar(
+                  content: Text(registrationSuccessMessage(
+                    registrationResult,
+                  )),
                   backgroundColor: Colors.green,
                 ),
               );
@@ -568,12 +688,10 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
       if (confirmed == true && mounted) {
         try {
-          await operationProvider.registerToOperation(
-            clubId: widget.clubId,
-            operationId: widget.operationId,
+          final registrationResult = await _registerWithStableIdentity(
+            operationProvider: operationProvider,
             userId: userId,
             userName: userEmail,
-            memberProfile: _userProfile,
             selectedTariff: selectedTariff,
           );
 
@@ -583,29 +701,25 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
           if (mounted) {
             await _loadUserInscription();
+            final payment = registrationPaymentInstruction(registrationResult);
 
-            // If there's a price, show payment options dialog.
-            // Skip when priceTbd — the organiser will bill later.
-            if (operation.paymentRequired &&
-                basePrice > 0 &&
-                !operation.priceTbd &&
-                _userInscription != null) {
-              final openInstallment =
-                  _firstOpenInstallment(operation, _userInscription);
+            if (payment.shouldOpenPayment) {
               await _showPaymentOptionsDialog(
                 operation: operation,
-                amount: openInstallment?.aggregatedAmount ?? basePrice,
-                participantId: _userInscription!.id,
+                amount: payment.amount,
+                participantId: payment.participantId,
                 memberEmail: userEmail,
                 memberFirstName: memberProvider.prenom ?? '',
                 memberLastName: memberProvider.nom ?? '',
-                installmentId: openInstallment?.id,
-                installmentLabel: openInstallment?.label,
+                installmentId: payment.installmentId,
+                installmentLabel: payment.installmentLabel,
               );
             } else {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Inscription réussie !'),
+                SnackBar(
+                  content: Text(registrationSuccessMessage(
+                    registrationResult,
+                  )),
                   backgroundColor: Colors.green,
                 ),
               );
@@ -743,11 +857,8 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   /// Shows [RegisterWithGuestsDialog] which lets the member register
   /// themselves and optionally add one or more guests in a single
   /// dialog. On submit:
-  ///   1. Register the member (parent inscription).
-  ///   2. Add each guest with parent_inscription_id linked to the
-  ///      member's inscription so the cloud function aggregates them
-  ///      into one QR.
-  ///   3. Show the payment options dialog with the grand total. The
+  ///   1. Register the member and every guest atomically.
+  ///   2. Show the payment options dialog with the grand total. The
   ///      Cloud Function `aggregatePaymentForInscription` recomputes
   ///      the server-side total as a safety net.
   Future<void> _handleRegisterWithGuestsFlow({
@@ -788,89 +899,60 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
 
     if (result == null || !mounted) return;
 
-    final totalPrice = result['totalPrice'] as double;
     final selectedSupplements =
         (result['supplements'] as List).cast<SelectedSupplement>();
     final supplementTotal = result['supplementTotal'] as double;
     final guestsList = (result['guests'] as List).cast<Map<String, dynamic>>();
+    final guestRequests = guestsList.map((guest) {
+      final supplements =
+          (guest['supplements'] as List?)?.cast<SelectedSupplement>() ??
+              const <SelectedSupplement>[];
+      return RegistrationGuestRequest(
+        firstName: guest['prenom'] as String,
+        lastName: guest['nom'] as String,
+        tariffId: guest['tariffId'] as String?,
+        selectedSupplements: supplements,
+      );
+    }).toList();
 
     try {
-      // 1. Register the member themselves
-      await operationProvider.registerToOperation(
-        clubId: widget.clubId,
-        operationId: widget.operationId,
+      // Register the complete group in one transaction. If any guest is
+      // invalid or capacity is insufficient, no registration is written.
+      final registrationResult = await _registerWithStableIdentity(
+        operationProvider: operationProvider,
         userId: userId,
         userName: userEmail,
-        memberProfile: _userProfile,
         selectedTariff: selectedTariff,
-        selectedSupplements:
-            selectedSupplements.isNotEmpty ? selectedSupplements : null,
+        selectedSupplements: selectedSupplements,
         supplementTotal:
             selectedSupplements.isNotEmpty ? supplementTotal : null,
+        guests: guestRequests,
       );
       await operationProvider.reloadParticipants(
           widget.clubId, widget.operationId);
       if (!mounted) return;
       await _loadUserInscription();
-      if (_userInscription == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                "Inscription faite mais impossible de récupérer la référence pour les invités"),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-
-      // 2. Add each guest, linked to the member's parent inscription.
-      final authProvider = context.read<AuthProvider>();
-      for (final g in guestsList) {
-        final guestSupps =
-            (g['supplements'] as List?)?.cast<SelectedSupplement>() ??
-                const <SelectedSupplement>[];
-        final guestSuppTotal = (g['supplementTotal'] as num?)?.toDouble();
-        await operationProvider.addGuestToOperation(
-          clubId: widget.clubId,
-          operationId: widget.operationId,
-          operationTitle: operation.titre,
-          guestPrenom: g['prenom'] as String,
-          guestNom: g['nom'] as String,
-          prix: g['prix'] as double,
-          addedByUserId: authProvider.currentUser?.uid ?? userId,
-          addedByUserName: displayName,
-          parentInscriptionId: _userInscription!.id,
-          tariffId: g['tariffId'] as String?,
-          selectedSupplements: guestSupps.isNotEmpty ? guestSupps : null,
-          supplementTotal: (guestSuppTotal != null && guestSuppTotal > 0)
-              ? guestSuppTotal
-              : null,
-        );
-      }
-
       if (!mounted) return;
+      final payment = registrationPaymentInstruction(registrationResult);
 
-      // 3. Payment options dialog with grand total.
-      // (skip when priceTbd — organiser will bill later)
-      if (operation.paymentRequired && totalPrice > 0 && !operation.priceTbd) {
-        final openInstallment =
-            _firstOpenInstallment(operation, _userInscription);
+      if (payment.shouldOpenPayment) {
         await _showPaymentOptionsDialog(
           operation: operation,
-          amount: openInstallment?.aggregatedAmount ?? totalPrice,
-          participantId: _userInscription!.id,
+          amount: payment.amount,
+          participantId: payment.participantId,
           memberEmail: userEmail,
           memberFirstName: prenom,
           memberLastName: nom,
-          installmentId: openInstallment?.id,
-          installmentLabel: openInstallment?.label,
+          installmentId: payment.installmentId,
+          installmentLabel: payment.installmentLabel,
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(guestsList.isEmpty
-                ? 'Inscription réussie !'
-                : 'Inscription réussie avec ${guestsList.length} invité${guestsList.length > 1 ? "s" : ""} !'),
+            content: Text(registrationSuccessMessage(
+              registrationResult,
+              guestCount: registrationResult.guestInscriptionIds.length,
+            )),
             backgroundColor: Colors.green,
           ),
         );
@@ -1564,20 +1646,43 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     }
   }
 
-  Future<void> _handleUnregister() async {
+  void _showMissingInscriptionError() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Inscription introuvable. Actualisez l’événement puis réessayez.',
+        ),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+
+  Future<void> _handleLoadedInscriptionUnregister() async {
+    final inscriptionId = _userInscription?.id;
+    if (inscriptionId == null || inscriptionId.trim().isEmpty) {
+      _showMissingInscriptionError();
+      return;
+    }
+    await _handleUnregister(inscriptionId);
+  }
+
+  Future<void> _handleUnregister(String myInscriptionId) async {
     final authProvider = context.read<AuthProvider>();
     final operationProvider = context.read<OperationProvider>();
     final operation = operationProvider.selectedOperation;
     final userId = authProvider.currentUser?.uid ?? '';
 
+    if (myInscriptionId.trim().isEmpty) {
+      _showMissingInscriptionError();
+      return;
+    }
+
     // Find guests this user brought along
-    final myInscriptionId = _userInscription?.id;
     final allParticipants = operationProvider.selectedOperationParticipants;
-    final myGuests = (myInscriptionId != null)
-        ? allParticipants
-            .where((p) => p.isGuest && p.parentInscriptionId == myInscriptionId)
-            .toList()
-        : <ParticipantOperation>[];
+    final myGuests = allParticipants
+        .where((p) => p.isGuest && p.parentInscriptionId == myInscriptionId)
+        .toList();
 
     // Decide flow based on whether the member has guests + an organisateur
     String? guestAction; // null=cancel, 'delete', 'transfer'
@@ -1621,12 +1726,23 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     try {
       // The callable handles the member, linked guests and every FIFO promotion
       // in one Firestore transaction. No client-side partial write may precede it.
-      await operationProvider.unregisterFromOperation(
+      final remainingInscription =
+          await operationProvider.unregisterFromOperation(
         clubId: widget.clubId,
         operationId: widget.operationId,
+        inscriptionId: myInscriptionId,
         userId: userId,
         guestAction: guestAction,
       );
+
+      if (mounted) {
+        setState(() {
+          _userInscription = remainingInscription;
+          _selectedExercices = remainingInscription == null
+              ? []
+              : List<String>.from(remainingInscription.exercices);
+        });
+      }
 
       await operationProvider.reloadParticipants(
           widget.clubId, widget.operationId);
@@ -1859,19 +1975,15 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
     );
   }
 
-  /// Check if current user can scan attendance
-  bool get _canScan {
-    if (_userProfile == null) {
-      debugPrint('🔍 _canScan: profile is null');
-      return false;
+  bool _canAddGuestAsStaff(Operation operation) {
+    if (_isCurrentUserCreator(operation) ||
+        _isCurrentUserResponsable(operation)) {
+      return true;
     }
-    final result = PermissionHelper.canScan(
-      _userProfile!.clubStatuten,
-      fonctionDefaut: _userProfile!.fonctionDefaut,
-    );
-    debugPrint(
-        '🔍 _canScan: clubStatuten=${_userProfile!.clubStatuten}, fonctionDefaut=${_userProfile!.fonctionDefaut}, result=$result');
-    return result;
+    final member = context.read<MemberProvider>();
+    final role = member.appRole?.toLowerCase().trim();
+    if (const {'admin', 'superadmin', 'validateur'}.contains(role)) return true;
+    return PermissionHelper.isEncadrant(member.clubStatuten);
   }
 
   /// Tariffs from the current operation that are marked as guest tariffs
@@ -1885,30 +1997,26 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   /// True when the current user is allowed to add a guest to this operation.
   ///
   /// Two paths:
-  ///  1. Admin / encadrant / organisateur (existing behaviour, gated by
-  ///     [_canScan]). Can always add a guest, free price.
+  ///  1. Admin / encadrant / organisateur. This event-staff permission is
+  ///     deliberately independent from the attendance scanner permission.
   ///  2. Any regular member when the event has opted-in via
-  ///     `allow_guests=true` AND the event has at least one tariff
-  ///     marked `is_guest_tariff=true`. The price is locked to the picked
-  ///     tariff. If the member is also registered, the new guest inscription
-  ///     is linked to the member's parent inscription so payment can be
-  ///     aggregated into a single QR; otherwise the guest is unlinked and
-  ///     pays separately.
+  ///     `allow_guests=true` and the member has an active registration. The
+  ///     server applies the selected guest tariff or the explicit free-event
+  ///     default. The new guest is linked to the member's parent inscription
+  ///     so payment can be aggregated into a single QR.
   bool get _canAddGuest {
-    if (_canScan) return true;
     final operation = context.read<OperationProvider>().selectedOperation;
     if (operation == null) return false;
-    if (!operation.allowGuests) return false;
-    if (_guestTariffs.isEmpty) return false;
-    // Capacity check: don't allow more guests when the event is at capacity
-    if (operation.capaciteMax != null) {
-      final currentCount = context
+    return canAddGuestFromOperationDetail(
+      staff: _canAddGuestAsStaff(operation),
+      allowGuests: operation.allowGuests,
+      hasActiveRegistration: _userInscription != null,
+      currentCount: context
           .read<OperationProvider>()
           .selectedOperationParticipants
-          .length;
-      if (currentCount >= operation.capaciteMax!) return false;
-    }
-    return true;
+          .length,
+      capacity: operation.capaciteMax,
+    );
   }
 
   /// Show dialog to add a guest to this operation.
@@ -1916,38 +2024,55 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
   /// When the current user is a regular member (not an admin/encadrant) AND
   /// is themselves already registered, the new guest inscription is linked
   /// to their own inscription via `parent_inscription_id` so the payment QR
-  /// can be aggregated. If the member isn't registered, the guest is added
-  /// unlinked and will pay separately.
+  /// can be aggregated. Event staff use the server-authorized standalone path.
   Future<void> _showAddGuestDialog() async {
+    final operation = context.read<OperationProvider>().selectedOperation;
+    if (operation == null) return;
+    final staffFlow = _canAddGuestAsStaff(operation);
     final tariffs = _guestTariffs;
 
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => AddGuestDialog(
-        availableGuestTariffs: _canScan ? const [] : tariffs,
+        availableGuestTariffs: tariffs,
+        availableSupplements: operation.supplements,
+        serverPricedFreeGuest: tariffs.isEmpty,
       ),
     );
 
     if (result != null && mounted) {
       final authProvider = context.read<AuthProvider>();
       final operationProvider = context.read<OperationProvider>();
-      final operation = operationProvider.selectedOperation;
-
-      if (operation == null) return;
+      if (operationProvider.selectedOperation == null) return;
 
       // Member-driven flow: link the new guest to the member's own inscription.
       // Admin/encadrant flow stays unlinked (parentInscriptionId = null) to
       // preserve the existing legacy behaviour.
-      final isMemberDrivenFlow = !_canScan && _userInscription != null;
+      final isMemberDrivenFlow = !staffFlow && _userInscription != null;
       final parentInscriptionId =
           isMemberDrivenFlow ? _userInscription!.id : null;
       final tariffId = result['tariffId'] as String?;
+      final selectedSupplements = (result['selectedSupplements'] as List?)
+              ?.whereType<SelectedSupplement>()
+              .toList() ??
+          const <SelectedSupplement>[];
+      final payloadFingerprint =
+          OperationService.guestRequestPayloadFingerprint(
+        clubId: widget.clubId,
+        operationId: widget.operationId,
+        parentInscriptionId: parentInscriptionId,
+        guestPrenom: result['prenom'] as String,
+        guestNom: result['nom'] as String,
+        tariffId: tariffId,
+        selectedSupplements: selectedSupplements,
+      );
+      final requestId = _guestRequestIdentity.requestIdFor(payloadFingerprint);
 
       try {
         await operationProvider.addGuestToOperation(
           clubId: widget.clubId,
           operationId: widget.operationId,
-          operationTitle: operation.titre ?? 'Événement',
+          operationTitle: operation.titre,
           guestPrenom: result['prenom'] as String,
           guestNom: result['nom'] as String,
           prix: result['prix'] as double,
@@ -1955,7 +2080,13 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           addedByUserName: authProvider.displayName ?? 'Admin',
           parentInscriptionId: parentInscriptionId,
           tariffId: tariffId,
+          selectedSupplements: selectedSupplements,
+          supplementTotal: result['supplementTotal'] as double?,
+          requestId: requestId,
+          payloadFingerprint: payloadFingerprint,
         );
+
+        _guestRequestIdentity.complete();
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1967,6 +2098,9 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           );
         }
       } catch (e) {
+        if (OperationService.isDefinitiveGuestRegistrationFailure(e)) {
+          _guestRequestIdentity.complete();
+        }
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -4596,7 +4730,7 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
             width: double.infinity,
             height: 50,
             child: OutlinedButton.icon(
-              onPressed: _handleUnregister,
+              onPressed: _handleLoadedInscriptionUnregister,
               icon: const Icon(Icons.close),
               label: const Text('Quitter la liste d’attente'),
             ),
@@ -4661,32 +4795,14 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
               ],
 
               // "Se désinscrire" button — disabled after deadline. The
-              // Firestore rule blocks the delete anyway; greying out the
-              // button mirrors that and avoids a confusing error toast.
+              // callable enforces the same deadline server-side; greying out
+              // the button avoids a predictable error toast.
               Expanded(
-                child: SizedBox(
-                  height: 50,
-                  child: ElevatedButton.icon(
-                    onPressed: deadlinePassed ? null : _handleUnregister,
-                    icon: const Icon(Icons.cancel, color: Colors.white),
-                    label: const FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        'Annuler',
-                        style: TextStyle(fontSize: 16, color: Colors.white),
-                      ),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      disabledBackgroundColor: Colors.grey.shade400,
-                      disabledForegroundColor: Colors.white70,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      elevation: 8,
-                      shadowColor: Colors.red.withOpacity(0.5),
-                    ),
-                  ),
+                child: OperationUnregisterButton(
+                  deadlinePassed: deadlinePassed,
+                  inscriptionId: userInscription?.id,
+                  onPressed: _handleUnregister,
+                  onMissingInscription: _showMissingInscriptionError,
                 ),
               ),
             ],
@@ -5022,59 +5138,18 @@ class _OperationDetailScreenState extends State<OperationDetailScreen>
           children: [
             Container(
               color: Colors.white,
-              child: Column(
-                children: [
-                  ..._availableExercices.map((exercice) {
-                    final isSelected = _selectedExercices.contains(exercice.id);
-                    return CheckboxListTile(
-                      value: isSelected,
-                      onChanged: (value) {
-                        setState(() {
-                          if (value == true) {
-                            _selectedExercices.add(exercice.id);
-                          } else {
-                            _selectedExercices.remove(exercice.id);
-                          }
-                        });
-                      },
-                      title: Text(
-                        exercice.code,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: Text(
-                        exercice.description,
-                        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-                      ),
-                      controlAffinity: ListTileControlAffinity.leading,
-                      activeColor: Colors.blue,
-                      dense: true,
-                    );
-                  }),
-                  // Save button inside accordion
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: _selectedExercices.isNotEmpty
-                            ? _saveExercices
-                            : null,
-                        icon: const Icon(Icons.save, size: 18),
-                        label: Text(
-                          _selectedExercices.isEmpty
-                              ? 'Sélectionnez des exercices'
-                              : 'Enregistrer (${_selectedExercices.length})',
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8)),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+              child: ExerciceSelectionEditor(
+                availableExercices: _availableExercices,
+                selectedExercices: _selectedExercices,
+                initialSelectedExercices: _initialSelectedExercices,
+                isCurrentSnapshotQueued: _isCurrentExerciceSnapshotQueued,
+                onSelectionChanged: (selection) {
+                  setState(() {
+                    _exerciceSelectionVersion++;
+                    _selectedExercices = selection;
+                  });
+                },
+                onSave: _saveExercices,
               ),
             ),
           ],
@@ -5628,4 +5703,98 @@ class _MemberInfo {
     this.plongeurCode,
     this.consentInternalPhoto = false,
   });
+}
+
+@visibleForTesting
+bool canAddGuestFromOperationDetail({
+  required bool staff,
+  required bool allowGuests,
+  required bool hasActiveRegistration,
+  required int currentCount,
+  int? capacity,
+}) {
+  if (staff) return true;
+  if (!allowGuests || !hasActiveRegistration) return false;
+  return capacity == null || currentCount < capacity;
+}
+
+@visibleForTesting
+class RegistrationPaymentInstruction {
+  const RegistrationPaymentInstruction({
+    required this.participantId,
+    required this.amount,
+    required this.paymentRequired,
+    required this.paymentDeferred,
+    this.installmentId,
+    this.installmentLabel,
+  });
+
+  final String participantId;
+  final double amount;
+  final bool paymentRequired;
+  final bool paymentDeferred;
+  final String? installmentId;
+  final String? installmentLabel;
+
+  bool get shouldOpenPayment => paymentRequired && amount > 0;
+}
+
+/// The only post-registration source used by the dialog, the on-device EPC QR
+/// and the email flow. In particular, no pre-submit tariff estimate or freshly
+/// reloaded participant document is allowed to replace this callable receipt.
+@visibleForTesting
+RegistrationPaymentInstruction registrationPaymentInstruction(
+  EventRegistrationResult result,
+) {
+  return RegistrationPaymentInstruction(
+    participantId: result.inscriptionId,
+    amount: result.nextPayment.amount,
+    paymentRequired: result.paymentRequired,
+    paymentDeferred: result.paymentDeferred,
+    installmentId: result.nextPayment.installmentId,
+    installmentLabel: result.nextPayment.installmentLabel,
+  );
+}
+
+@visibleForTesting
+String registrationSuccessMessage(
+  EventRegistrationResult result, {
+  int guestCount = 0,
+}) {
+  if (result.status == 'pending_payment') {
+    return 'Inscription enregistrée — paiement en attente.';
+  }
+  if (guestCount > 0) {
+    return 'Inscription réussie avec $guestCount invité${guestCount > 1 ? "s" : ""} !';
+  }
+  return result.idempotent
+      ? 'Inscription déjà enregistrée.'
+      : 'Inscription réussie !';
+}
+
+@visibleForTesting
+class RegistrationRequestIdentity {
+  RegistrationRequestIdentity({required this.requestIdFactory});
+
+  final String Function() requestIdFactory;
+  String? _requestId;
+  String? _payloadFingerprint;
+
+  String requestIdFor(String payloadFingerprint) {
+    if (_payloadFingerprint != payloadFingerprint) {
+      _payloadFingerprint = payloadFingerprint;
+      _requestId = requestIdFactory();
+    }
+    return _requestId!;
+  }
+
+  void complete() {
+    _requestId = null;
+    _payloadFingerprint = null;
+  }
+}
+
+@visibleForTesting
+class GuestRequestIdentity extends RegistrationRequestIdentity {
+  GuestRequestIdentity({required super.requestIdFactory});
 }

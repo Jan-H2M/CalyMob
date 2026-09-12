@@ -16,4 +16,7 @@
     <style name="NormalTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:windowBackground">?android:colorBackground</item>
     </style>
+
+    <!-- Dedicated native theme required by image_cropper/uCrop. -->
+    <style name="Ucrop.CropTheme" parent="Theme.AppCompat.Light.NoActionBar" />
 </resources>

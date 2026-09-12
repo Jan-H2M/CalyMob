@@ -474,10 +474,9 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
   Future<void> _unregisterPiscineAttendee(PiscineAttendee attendee) async {
     if (!mounted) return;
 
-    // Snapshot pour undo
-    final snapshotData = attendee.toMap();
+    PiscineAttendeeRemovalSnapshot? removalSnapshot;
     try {
-      await _piscineService.removeAttendee(
+      removalSnapshot = await _piscineService.removeAttendee(
         clubId: widget.clubId,
         sessionId: widget.operationId,
         attendeeId: attendee.id,
@@ -504,11 +503,10 @@ class _ScannerModalSheetState extends State<ScannerModalSheet>
             textColor: Colors.white,
             onPressed: () async {
               try {
-                await _piscineService.restoreAttendee(
+                await _piscineService.restoreRemovedAttendee(
                   clubId: widget.clubId,
                   sessionId: widget.operationId,
-                  attendeeId: attendee.id,
-                  data: snapshotData,
+                  snapshot: removalSnapshot!,
                 );
               } catch (e) {
                 if (mounted) _showErrorToast('Impossible d\'annuler: $e');

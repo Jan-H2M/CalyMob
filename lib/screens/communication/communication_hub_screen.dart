@@ -1,37 +1,26 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../config/firebase_config.dart';
-import '../../models/formation_task.dart';
-import '../../models/formation_task_roster.dart';
 import '../../models/team_channel.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/member_provider.dart';
 import '../../providers/unread_count_provider.dart';
-import '../../services/formation_task_service.dart';
-import '../../services/formation_task_navigation_service.dart';
 import '../../services/team_channel_service.dart';
 import '../../services/unread_count_service.dart';
 import '../../utils/club_role_utils.dart';
-import '../../utils/permission_helper.dart';
-import '../../utils/roster_session_label.dart';
 import '../../widgets/communication_filter_semantics.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import 'notification_history_screen.dart';
 import '../announcements/announcements_screen.dart';
 import '../home/landing_screen.dart';
 import '../teams/team_chat_screen.dart';
-import '../training/logbook_dive_confirmation_screen.dart';
-import '../training/historical_qr_scan_screen.dart';
-import '../training/monitor_observation_roster_screen.dart';
 
 enum _CommunicationFilter {
   all('Tout', Icons.forum_outlined),
   unread('Non lus', Icons.mark_chat_unread_outlined),
   notifications('Notif.', Icons.notifications_none_rounded),
   announcements('Annonces', Icons.campaign_outlined),
-  actions('Actions', Icons.flag_outlined),
   teams('Équipes', Icons.groups_outlined);
 
   final String label;
@@ -41,12 +30,7 @@ enum _CommunicationFilter {
 }
 
 class CommunicationHubScreen extends StatefulWidget {
-  final bool initialActionsOnly;
-
-  const CommunicationHubScreen({
-    super.key,
-    this.initialActionsOnly = false,
-  });
+  const CommunicationHubScreen({super.key});
 
   @override
   State<CommunicationHubScreen> createState() => _CommunicationHubScreenState();
@@ -65,9 +49,7 @@ class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
   @override
   void initState() {
     super.initState();
-    _selectedFilter = widget.initialActionsOnly
-        ? _CommunicationFilter.actions
-        : _CommunicationFilter.all;
+    _selectedFilter = _CommunicationFilter.all;
   }
 
   @override
@@ -204,13 +186,6 @@ class _CommunicationInboxList extends StatelessWidget {
             unreadCount: announcementUnreadCount,
             searchQuery: searchQuery,
           ),
-        if (_shows(_CommunicationFilter.actions))
-          _LogbookConfirmationsInboxSection(searchQuery: searchQuery),
-        if (_shows(_CommunicationFilter.actions))
-          _ActionsCalypsoInboxSection(
-            filter: selectedFilter,
-            searchQuery: searchQuery,
-          ),
         if (_shows(_CommunicationFilter.teams))
           _TeamChannelsInboxSection(
             filter: selectedFilter,
@@ -313,7 +288,7 @@ class _CommunicationHeaderState extends State<_CommunicationHeader> {
                     ),
                     SizedBox(height: 2),
                     Text(
-                      'Messages, annonces et actions',
+                      'Messages et annonces du club',
                       style: TextStyle(
                         color: Color(0xD9FFFFFF),
                         fontSize: 12.5,
@@ -469,68 +444,36 @@ class _CommunicationFilterBar extends StatelessWidget {
 }
 
 class _CommunicationAvatar extends StatelessWidget {
-  final IconData? icon;
-  final String? text;
+  final IconData icon;
   final List<Color> colors;
-  final bool online;
 
   const _CommunicationAvatar({
-    this.icon,
-    this.text,
+    required this.icon,
     required this.colors,
-    this.online = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Container(
-          width: 46,
-          height: 46,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: colors,
-            ),
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: colors.last.withValues(alpha: 0.20),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          alignment: Alignment.center,
-          child: icon != null
-              ? Icon(icon, color: Colors.white, size: 22)
-              : Text(
-                  text ?? '',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
+    return Container(
+      width: 46,
+      height: 46,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: colors,
         ),
-        if (online)
-          Positioned(
-            right: 0,
-            bottom: 1,
-            child: Container(
-              width: 13,
-              height: 13,
-              decoration: BoxDecoration(
-                color: const Color(0xFF25D366),
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 2),
-              ),
-            ),
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: colors.last.withValues(alpha: 0.20),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
-      ],
+        ],
+      ),
+      alignment: Alignment.center,
+      child: Icon(icon, color: Colors.white, size: 22),
     );
   }
 }
@@ -798,432 +741,6 @@ class _AnnouncementChatRow extends StatelessWidget {
   }
 }
 
-class _LogbookConfirmationsInboxSection extends StatelessWidget {
-  final String searchQuery;
-
-  const _LogbookConfirmationsInboxSection({required this.searchQuery});
-
-  @override
-  Widget build(BuildContext context) {
-    final userId = context.watch<AuthProvider>().currentUser?.uid;
-    if (userId == null) return const SizedBox.shrink();
-
-    const clubId = FirebaseConfig.defaultClubId;
-    final stream = FirebaseFirestore.instance
-        .collection('clubs')
-        .doc(clubId)
-        .collection('logbook_dive_confirmations')
-        .where('target_member_id', isEqualTo: userId)
-        .where('status', isEqualTo: 'pending')
-        .snapshots();
-
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: stream,
-      builder: (context, snapshot) {
-        final docs = [...(snapshot.data?.docs ?? const [])];
-        if (docs.isEmpty) return const SizedBox.shrink();
-        final visibleDocs = docs.where((doc) {
-          final data = doc.data();
-          final snapshot =
-              Map<String, dynamic>.from((data['dive_snapshot'] as Map?) ?? {});
-          final sourceName = data['source_member_name'] as String?;
-          final location = snapshot['location_name'] as String?;
-          return _matchesSearch(searchQuery, [
-            'Plongée avec ${sourceName ?? 'Un membre'}',
-            'Carnet',
-            location,
-            'confirmer',
-            'importer',
-            'ignorer',
-          ]);
-        }).toList();
-        if (visibleDocs.isEmpty) return const SizedBox.shrink();
-
-        visibleDocs.sort((a, b) {
-          final aTs = a.data()['created_at'];
-          final bTs = b.data()['created_at'];
-          if (aTs is Timestamp && bTs is Timestamp) return bTs.compareTo(aTs);
-          return 0;
-        });
-
-        return Column(
-          children: visibleDocs
-              .map(
-                (doc) => _LogbookConfirmationChatRow(
-                  confirmationId: doc.id,
-                  data: doc.data(),
-                  searchQuery: searchQuery,
-                ),
-              )
-              .toList(),
-        );
-      },
-    );
-  }
-}
-
-class _LogbookConfirmationChatRow extends StatelessWidget {
-  final String confirmationId;
-  final Map<String, dynamic> data;
-  final String searchQuery;
-
-  const _LogbookConfirmationChatRow({
-    required this.confirmationId,
-    required this.data,
-    required this.searchQuery,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final snapshot =
-        Map<String, dynamic>.from((data['dive_snapshot'] as Map?) ?? {});
-    final sourceName = data['source_member_name'] as String? ?? 'Un membre';
-    final location = (snapshot['location_name'] as String?) ?? 'Plongée';
-    final matchType = data['match_type'] as String? ?? 'none';
-
-    return _CommunicationChatRow(
-      avatar: _CommunicationAvatar(
-        icon: matchType == 'identical'
-            ? Icons.verified_outlined
-            : matchType == 'similar'
-                ? Icons.compare_arrows
-                : Icons.scuba_diving_outlined,
-        colors: const [Color(0xFFB875F2), Color(0xFF7C3AED)],
-        online: true,
-      ),
-      title: 'Plongée avec $sourceName',
-      sender: 'Carnet',
-      preview: '$location · confirmer, importer ou ignorer',
-      timeLabel: _formatShortTime(_timestampToDateTime(data['created_at'])),
-      unreadCount: 1,
-      searchQuery: searchQuery,
-      tag: 'Action',
-      tagColor: const Color(0xFF0F6D36),
-      onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => LogbookDiveConfirmationScreen(
-              confirmationId: confirmationId,
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _ActionsCalypsoInboxSection extends StatefulWidget {
-  final _CommunicationFilter filter;
-  final String searchQuery;
-
-  const _ActionsCalypsoInboxSection({
-    required this.filter,
-    required this.searchQuery,
-  });
-
-  @override
-  State<_ActionsCalypsoInboxSection> createState() =>
-      _ActionsCalypsoInboxSectionState();
-}
-
-class _ActionsCalypsoInboxSectionState
-    extends State<_ActionsCalypsoInboxSection> {
-  final FormationTaskService _service = FormationTaskService();
-
-  @override
-  Widget build(BuildContext context) {
-    final authProvider = context.watch<AuthProvider>();
-    final memberProvider = context.watch<MemberProvider>();
-    final userId = authProvider.currentUser?.uid;
-    if (userId == null) return const SizedBox.shrink();
-
-    final canScanHistoricalQr = PermissionHelper.canValidateLifras(
-      clubStatuten: memberProvider.clubStatuten,
-      plongeurCode: memberProvider.plongeurCode,
-    );
-    const clubId = FirebaseConfig.defaultClubId;
-
-    return StreamBuilder<List<FormationTask>>(
-      stream: _service.streamUserInbox(clubId, userId),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return _FormationTaskStreamError(error: snapshot.error);
-        }
-        final tasks = snapshot.data ?? const <FormationTask>[];
-        final rows = <Widget>[];
-
-        if (canScanHistoricalQr &&
-            widget.filter != _CommunicationFilter.unread &&
-            _matchesSearch(widget.searchQuery, const [
-              'Scanner une carte papier',
-              'Validation',
-              'Contrôle une ancienne carte d’élève',
-              'QR',
-            ])) {
-          rows.add(_HistoricalQrScanChatRow(searchQuery: widget.searchQuery));
-        }
-
-        rows.addAll(
-          tasks
-              .where(
-                (task) =>
-                    task.type != FormationTaskType.monitorObservation &&
-                    _formationTaskMatchesSearch(task, widget.searchQuery),
-              )
-              .map(
-                (task) => _FormationTaskChatRow(
-                  task: task,
-                  searchQuery: widget.searchQuery,
-                ),
-              ),
-        );
-        for (final roster in FormationTaskRoster.aggregate(tasks)) {
-          final isLegacy = roster.key.startsWith('legacy::');
-          if (isLegacy) {
-            final task = roster.members.single.primaryTask;
-            if (_formationTaskMatchesSearch(task, widget.searchQuery)) {
-              rows.add(
-                _FormationTaskChatRow(
-                  task: task,
-                  searchQuery: widget.searchQuery,
-                ),
-              );
-            }
-          } else if (_rosterMatchesSearch(roster, widget.searchQuery)) {
-            rows.add(
-              _MonitorObservationRosterChatRow(
-                roster: roster,
-                searchQuery: widget.searchQuery,
-              ),
-            );
-          }
-        }
-
-        if (widget.filter == _CommunicationFilter.unread && rows.isEmpty) {
-          return const SizedBox.shrink();
-        }
-
-        return Column(children: rows);
-      },
-    );
-  }
-}
-
-class _FormationTaskStreamError extends StatelessWidget {
-  final Object? error;
-
-  const _FormationTaskStreamError({required this.error});
-
-  @override
-  Widget build(BuildContext context) {
-    return _CommunicationChatRow(
-      avatar: const _CommunicationAvatar(
-        icon: Icons.sync_problem,
-        colors: [Color(0xFFFAB7B9), Color(0xFFE5484D)],
-      ),
-      title: 'Actions temporairement indisponibles',
-      sender: 'Synchronisation',
-      preview: 'La liste n’a pas pu être chargée. Réessaie dans un instant.',
-      timeLabel: '',
-      unreadCount: 0,
-      searchQuery: '',
-      tag: 'Erreur',
-      tagColor: const Color(0xFFE5484D),
-      onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur de synchronisation : $error')),
-      ),
-    );
-  }
-}
-
-class _HistoricalQrScanChatRow extends StatelessWidget {
-  final String searchQuery;
-
-  const _HistoricalQrScanChatRow({required this.searchQuery});
-
-  @override
-  Widget build(BuildContext context) {
-    return _CommunicationChatRow(
-      avatar: const _CommunicationAvatar(
-        icon: Icons.qr_code_scanner,
-        colors: [Color(0xFFD8B4FE), Color(0xFF7C3AED)],
-        online: true,
-      ),
-      title: 'Scanner une carte papier',
-      sender: 'Validation',
-      preview: 'Contrôle une ancienne carte d’élève',
-      timeLabel: '11:08',
-      unreadCount: 1,
-      searchQuery: searchQuery,
-      tag: 'Action',
-      tagColor: const Color(0xFF0F6D36),
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const HistoricalQrScanScreen()),
-      ),
-    );
-  }
-}
-
-class _FormationTaskChatRow extends StatelessWidget {
-  final FormationTask task;
-  final String searchQuery;
-
-  const _FormationTaskChatRow({
-    required this.task,
-    required this.searchQuery,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // WP-05 : pour une tâche de confirmation binôme, le badge reflète le nombre
-    // de plongées réellement en attente de confirmation (pas un simple « 1 »).
-    if (task.type == FormationTaskType.buddyConfirmation) {
-      final userId = context.watch<AuthProvider>().currentUser?.uid;
-      if (userId != null) {
-        const clubId = FirebaseConfig.defaultClubId;
-        final stream = FirebaseFirestore.instance
-            .collection('clubs')
-            .doc(clubId)
-            .collection('logbook_dive_confirmations')
-            .where('target_member_id', isEqualTo: userId)
-            .where('status', isEqualTo: 'pending')
-            .snapshots();
-        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: stream,
-          builder: (context, snap) {
-            final count = snap.data?.docs.length ?? 0;
-            return _row(context, unreadCount: count > 0 ? count : 1);
-          },
-        );
-      }
-    }
-    return _row(context, unreadCount: 1);
-  }
-
-  Widget _row(BuildContext context, {required int unreadCount}) {
-    return _CommunicationChatRow(
-      avatar: _CommunicationAvatar(
-        text: task.glyph,
-        colors: _formationTaskGradient(task),
-        online: task.status == FormationTaskStatus.open,
-      ),
-      title: task.title,
-      sender: task.typeLabel,
-      preview: _formationTaskSubtitle(task).isEmpty
-          ? _formationTaskStatusLabel(task)
-          : _formationTaskSubtitle(task),
-      timeLabel: _formatShortTime(task.updatedAt ?? task.createdAt),
-      unreadCount: unreadCount,
-      searchQuery: searchQuery,
-      tag: 'Action',
-      tagColor: const Color(0xFF0F6D36),
-      onTap: () => openFormationTask(context, task),
-    );
-  }
-}
-
-class _MonitorObservationRosterChatRow extends StatefulWidget {
-  final FormationTaskRoster roster;
-  final String searchQuery;
-
-  const _MonitorObservationRosterChatRow({
-    required this.roster,
-    required this.searchQuery,
-  });
-
-  @override
-  State<_MonitorObservationRosterChatRow> createState() =>
-      _MonitorObservationRosterChatRowState();
-}
-
-class _MonitorObservationRosterChatRowState
-    extends State<_MonitorObservationRosterChatRow> {
-  String _sessionLabel = unknownRosterSessionDateLabel;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSessionLabel();
-  }
-
-  @override
-  void didUpdateWidget(_MonitorObservationRosterChatRow oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.roster.sessionId != widget.roster.sessionId) {
-      _sessionLabel = unknownRosterSessionDateLabel;
-      _loadSessionLabel();
-    }
-  }
-
-  Future<void> _loadSessionLabel() async {
-    final sessionId = widget.roster.sessionId.trim();
-    if (sessionId.isEmpty) return;
-    try {
-      final session = await FirebaseFirestore.instance
-          .collection('clubs')
-          .doc(FirebaseConfig.defaultClubId)
-          .collection('piscine_sessions')
-          .doc(sessionId)
-          .get();
-      if (!mounted || !session.exists) return;
-      final data = session.data() ?? const <String, dynamic>{};
-      final rawDate = data['date'];
-      setState(() {
-        _sessionLabel = formatRosterSessionLabel(
-          rawDate is Timestamp ? rawDate.toDate() : null,
-        );
-      });
-    } catch (_) {
-      // The neutral label remains visible; technical IDs are never exposed.
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final roster = widget.roster;
-    final level = roster.level?.trim();
-    final title = level == null || level.isEmpty
-        ? 'Évaluer le groupe'
-        : 'Évaluer le groupe $level';
-    final details = <String>[
-      _sessionLabel,
-      if (level != null && level.isNotEmpty) 'Niveau $level',
-      _readableRosterGroup(roster.groupKey),
-      '${roster.members.length} élève(s)',
-    ].where((value) => value.isNotEmpty).join(' · ');
-    return _CommunicationChatRow(
-      avatar: const _CommunicationAvatar(
-        icon: Icons.groups_2_outlined,
-        colors: [Color(0xFF34D399), Color(0xFF047857)],
-        online: true,
-      ),
-      title: title,
-      sender: 'Évaluation groupée',
-      preview: details,
-      timeLabel: _formatShortTime(
-        roster.members
-            .expand((member) => member.tasks)
-            .map((task) => task.updatedAt ?? task.createdAt)
-            .whereType<DateTime>()
-            .fold<DateTime?>(
-              null,
-              (latest, value) =>
-                  latest == null || value.isAfter(latest) ? value : latest,
-            ),
-      ),
-      unreadCount: roster.members.length,
-      searchQuery: widget.searchQuery,
-      tag: 'Action',
-      tagColor: const Color(0xFF0F6D36),
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => MonitorObservationRosterScreen(roster: roster),
-        ),
-      ),
-    );
-  }
-}
-
 class _TeamChannelsInboxSection extends StatefulWidget {
   final _CommunicationFilter filter;
   final String searchQuery;
@@ -1343,19 +860,6 @@ class _TeamChannelChatRow extends StatelessWidget {
   }
 }
 
-String _formatShortTime(DateTime? date) {
-  final value = date ?? DateTime.now();
-  final hour = value.hour.toString().padLeft(2, '0');
-  final minute = value.minute.toString().padLeft(2, '0');
-  return '$hour:$minute';
-}
-
-DateTime? _timestampToDateTime(dynamic value) {
-  if (value is Timestamp) return value.toDate();
-  if (value is DateTime) return value;
-  return null;
-}
-
 bool _matchesSearch(String query, Iterable<String?> values) {
   final needle = _normalizeSearch(query);
   if (needle.isEmpty) return true;
@@ -1459,40 +963,6 @@ String _foldSearchChar(String char) {
   return lower;
 }
 
-bool _formationTaskMatchesSearch(FormationTask task, String query) {
-  return _matchesSearch(query, [
-    task.title,
-    task.description,
-    task.typeLabel,
-    _formationTaskSubtitle(task),
-    _formationTaskStatusLabel(task),
-    task.memberName,
-    task.currentAssigneeName,
-    task.context.operationTitle,
-    task.context.targetGroupLevel,
-  ]);
-}
-
-bool _rosterMatchesSearch(FormationTaskRoster roster, String query) {
-  return _matchesSearch(query, [
-    'Évaluer le groupe',
-    'Évaluation groupée',
-    roster.sessionId,
-    roster.groupKey,
-    roster.level,
-    roster.theme,
-    ...roster.members.map((member) => member.displayName),
-  ]);
-}
-
-String _readableRosterGroup(String value) {
-  if (value.isEmpty) return 'Groupe non renseigné';
-  return value
-      .replaceAll('star', '★')
-      .replaceAll('_groupe', ' · Groupe ')
-      .replaceAll('_', ' ');
-}
-
 bool _teamChannelMatchesSearch(TeamChannel channel, String query) {
   return _matchesSearch(query, [
     channel.name,
@@ -1500,48 +970,6 @@ bool _teamChannelMatchesSearch(TeamChannel channel, String query) {
     channel.type.displayName,
     channel.type.description,
   ]);
-}
-
-String _formationTaskSubtitle(FormationTask task) {
-  final parts = <String>[];
-  if (task.context.targetGroupLevel != null) {
-    parts.add(task.context.targetGroupLevel!);
-  }
-  if (task.context.operationTitle != null) {
-    parts.add(task.context.operationTitle!);
-  }
-  if (task.status == FormationTaskStatus.blocked) parts.add('bloquée');
-  if (task.status == FormationTaskStatus.snoozed) parts.add('reportée');
-  return parts.join(' · ');
-}
-
-String _formationTaskStatusLabel(FormationTask task) {
-  if (task.status == FormationTaskStatus.blocked) return 'Bloquée';
-  if (task.status == FormationTaskStatus.snoozed) return 'Reportée';
-  return 'À traiter';
-}
-
-List<Color> _formationTaskGradient(FormationTask task) {
-  if (task.status == FormationTaskStatus.blocked) {
-    return [const Color(0xFFFAB7B9), const Color(0xFFE5484D)];
-  }
-  if (task.status == FormationTaskStatus.snoozed) {
-    return [const Color(0xFFCBD5E1), const Color(0xFF94A3B8)];
-  }
-  switch (task.type) {
-    case FormationTaskType.poolCheckin:
-    case FormationTaskType.logbookCompletion:
-      return [const Color(0xFF6BCBE8), const Color(0xFF006DB6)];
-    case FormationTaskType.exerciseClaim:
-    case FormationTaskType.monitorValidation:
-      return [const Color(0xFFB8E2BC), const Color(0xFF4CAF50)];
-    case FormationTaskType.historicalValidation:
-      return [const Color(0xFFD8B4FE), const Color(0xFF7C3AED)];
-    case FormationTaskType.externalProofReview:
-      return [const Color(0xFFFCD9A6), const Color(0xFFF6921E)];
-    default:
-      return [const Color(0xFF94A3B8), const Color(0xFF475569)];
-  }
 }
 
 Color _teamChannelAccentColor(TeamChannelType type) {

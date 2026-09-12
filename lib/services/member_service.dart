@@ -108,6 +108,8 @@ class MemberService {
           'prenom': memberFirstName(data) ?? '',
           'displayName': memberDisplayName(data),
           'plongeur_code': data['plongeur_code'] ?? '',
+          'clubStatuten':
+              List<String>.from(data['clubStatuten'] as List? ?? const []),
         };
       }).toList();
 

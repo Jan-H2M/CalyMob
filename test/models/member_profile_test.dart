@@ -219,5 +219,24 @@ void main() {
       expect(profile.birthMonth, 7);
       expect(profile.birthDay, 7);
     });
+
+    test('drops stale directory birthday parts after an explicit opt-out', () {
+      final profile = MemberProfile.fromDirectoryData(
+        'private-member',
+        {
+          'first_name': 'Private',
+          'last_name': 'Member',
+          'share_birthday': false,
+          // A legacy projection may still contain these fields until the
+          // backend refreshes it. The client must not expose them meanwhile.
+          'birth_month': 7,
+          'birth_day': 7,
+        },
+      );
+
+      expect(profile.shareBirthday, isFalse);
+      expect(profile.birthMonth, isNull);
+      expect(profile.birthDay, isNull);
+    });
   });
 }

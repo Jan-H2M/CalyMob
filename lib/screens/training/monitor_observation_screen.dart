@@ -1,6 +1,6 @@
 /// Carnet de Formation — post-pool monitor observation.
 ///
-/// Opens from the Communication action inbox for `monitor_observation` tasks.
+/// Opens from Actions & evaluations for `monitor_observation` tasks.
 /// Saving marks the task as done with `completion_data`; the
 /// `onMonitorObservationCompleted` Cloud Function materialises the permanent
 /// member_observations record.
@@ -17,8 +17,13 @@ import '../../widgets/ocean/ocean_gradient_background.dart';
 
 class MonitorObservationScreen extends StatefulWidget {
   final FormationTask task;
+  final FormationTaskService? taskService;
 
-  const MonitorObservationScreen({super.key, required this.task});
+  const MonitorObservationScreen({
+    super.key,
+    required this.task,
+    this.taskService,
+  });
 
   @override
   State<MonitorObservationScreen> createState() =>
@@ -26,10 +31,30 @@ class MonitorObservationScreen extends StatefulWidget {
 }
 
 class _MonitorObservationScreenState extends State<MonitorObservationScreen> {
-  final FormationTaskService _taskService = FormationTaskService();
+  late final FormationTaskService _taskService;
   final TextEditingController _comment = TextEditingController();
   String? _verdict;
   bool _submitting = false;
+
+  bool get _isCorrection => widget.task.status == FormationTaskStatus.done;
+
+  bool get _canEdit =>
+      !widget.task.isClosed ||
+      (_isCorrection &&
+          widget.task.completionData['attendance_status'] != 'absent');
+
+  @override
+  void initState() {
+    super.initState();
+    _taskService = widget.taskService ?? FormationTaskService();
+    if (_isCorrection) {
+      final verdict = widget.task.completionData['verdict']?.toString();
+      if (const {'acquis', 'en_progres', 'a_revoir'}.contains(verdict)) {
+        _verdict = verdict;
+      }
+      _comment.text = widget.task.completionData['comment']?.toString() ?? '';
+    }
+  }
 
   @override
   void dispose() {
@@ -59,11 +84,20 @@ class _MonitorObservationScreenState extends State<MonitorObservationScreen> {
                   children: [
                     _contextCard(theme),
                     const SizedBox(height: 14),
-                    _sectionTitle('TON VERDICT'),
-                    _verdictGrid(),
-                    const SizedBox(height: 14),
-                    _sectionTitle('COMMENTAIRE PEDAGOGIQUE'),
-                    _commentBox(),
+                    if (_canEdit) ...[
+                      if (_isCorrection) ...[
+                        _historyNotice(),
+                        const SizedBox(height: 14),
+                      ],
+                      _sectionTitle(
+                        _isCorrection ? 'CORRIGER LE VERDICT' : 'TON VERDICT',
+                      ),
+                      _verdictGrid(),
+                      const SizedBox(height: 14),
+                      _sectionTitle('COMMENTAIRE PEDAGOGIQUE'),
+                      _commentBox(),
+                    ] else
+                      _closedNotice(),
                   ],
                 ),
               ),
@@ -82,38 +116,43 @@ class _MonitorObservationScreenState extends State<MonitorObservationScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                ElevatedButton.icon(
-                  onPressed:
-                      _submitting || _verdict == null ? null : _saveObservation,
-                  icon: _submitting
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.check_circle),
-                  label: Text(_submitting
-                      ? 'Enregistrement...'
-                      : 'Enregistrer l\'évaluation'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0EA5E9),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                if (_canEdit) ...[
+                  ElevatedButton.icon(
+                    onPressed: _submitting || _verdict == null
+                        ? null
+                        : _saveObservation,
+                    icon: _submitting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.check_circle),
+                    label: Text(_submitting
+                        ? 'Enregistrement...'
+                        : _isCorrection
+                            ? 'Corriger l\'évaluation'
+                            : 'Enregistrer l\'évaluation'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0EA5E9),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      minimumSize: const Size.fromHeight(48),
                     ),
-                    minimumSize: const Size.fromHeight(48),
                   ),
-                ),
-                const SizedBox(height: 8),
+                  const SizedBox(height: 8),
+                ],
                 TextButton(
                   onPressed: _submitting ? null : () => Navigator.pop(context),
-                  child: const Text(
-                    'Plus tard',
-                    style: TextStyle(color: Colors.white),
+                  child: Text(
+                    _canEdit && !_isCorrection ? 'Plus tard' : 'Fermer',
+                    style: const TextStyle(color: Colors.white),
                   ),
                 ),
               ],
@@ -209,6 +248,41 @@ class _MonitorObservationScreenState extends State<MonitorObservationScreen> {
       ),
     );
   }
+
+  Widget _historyNotice() => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.96),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: const Text(
+          'Évaluation enregistrée. Une correction met aussi à jour '
+          'l’observation durable du carnet.',
+          style: TextStyle(
+            color: AppColors.donkerblauw,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
+
+  Widget _closedNotice() => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.96),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Text(
+          widget.task.status == FormationTaskStatus.expired
+              ? 'Cette évaluation a expiré et reste disponible en lecture.'
+              : 'Cette évaluation a été classée sans suite.',
+          style: const TextStyle(
+            color: AppColors.donkerblauw,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
 
   Widget _verdictGrid() {
     return Column(
@@ -311,26 +385,41 @@ class _MonitorObservationScreenState extends State<MonitorObservationScreen> {
       final observerName =
           '${memberProvider.prenom ?? ''} ${memberProvider.nom ?? ''}'.trim();
 
-      await _taskService.markDone(
-        FirebaseConfig.defaultClubId,
-        widget.task.id,
-        userId,
-        completionData: {
-          'verdict': verdict,
-          'pool_session_id': widget.task.context.poolSessionId,
-          'group_key': widget.task.context.groupKey ??
-              widget.task.context.targetGroupLevel,
-          'theme_snapshot': widget.task.context.themeSnapshot,
-          'member_id': widget.task.memberId,
-          'observer_id': userId,
-          'observer_name': observerName,
-          if (_comment.text.trim().isNotEmpty) 'comment': _comment.text.trim(),
-        },
-      );
+      final completionData = <String, dynamic>{
+        ...widget.task.completionData,
+        'verdict': verdict,
+        'pool_session_id': widget.task.context.poolSessionId,
+        'group_key': widget.task.context.groupKey ??
+            widget.task.context.targetGroupLevel,
+        'theme_snapshot': widget.task.context.themeSnapshot,
+        'member_id': widget.task.memberId,
+        'observer_id': userId,
+        'observer_name': observerName,
+        'comment': _comment.text.trim(),
+      };
+      if (_isCorrection) {
+        await _taskService.correctCompletedObservation(
+          FirebaseConfig.defaultClubId,
+          widget.task.id,
+          userId,
+          completionData,
+        );
+      } else {
+        await _taskService.markDone(
+          FirebaseConfig.defaultClubId,
+          widget.task.id,
+          userId,
+          completionData: completionData,
+        );
+      }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Évaluation enregistrée')),
+        SnackBar(
+          content: Text(
+            _isCorrection ? 'Évaluation corrigée' : 'Évaluation enregistrée',
+          ),
+        ),
       );
       Navigator.of(context).pop();
     } catch (e) {

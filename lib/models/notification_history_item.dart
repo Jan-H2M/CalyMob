@@ -23,6 +23,14 @@ class NotificationHistoryItem {
 
   bool get isRead => readAt != null;
 
+  /// Keep every delivery record until each legacy action notification can be
+  /// proven to have a durable, readable domain document. Some digests/results
+  /// have no task id and sender-side confirmation results are not in the
+  /// recipient Actions stream. Hiding them here would silently erase history.
+  /// Ordinary communications remain unchanged; this is a loss-prevention
+  /// fallback and can be narrowed when every legacy producer is migrated.
+  bool get belongsInCommunicationHistory => true;
+
   factory NotificationHistoryItem.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> document,
   ) {

@@ -31,6 +31,8 @@ class _FormationTaskDetailScreenState extends State<FormationTaskDetailScreen> {
   final TextEditingController _reaction = TextEditingController();
   bool _submitting = false;
 
+  bool get _isHistory => widget.task.isClosed;
+
   @override
   void dispose() {
     _reaction.dispose();
@@ -97,52 +99,92 @@ class _FormationTaskDetailScreenState extends State<FormationTaskDetailScreen> {
                               'Cette action ne contient pas de détail supplémentaire.',
                               style: TextStyle(color: AppColors.donkerblauw),
                             ),
+                          if (_isHistory) ...[
+                            const SizedBox(height: 14),
+                            const Divider(),
+                            Text(
+                              _historyStatusLabel(widget.task.status),
+                              style: const TextStyle(
+                                color: AppColors.donkerblauw,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            if (widget.task.completionData['reaction_text']
+                                    ?.toString()
+                                    .trim()
+                                    .isNotEmpty ==
+                                true) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                widget.task.completionData['reaction_text']
+                                    .toString()
+                                    .trim(),
+                                style: const TextStyle(
+                                  color: AppColors.donkerblauw,
+                                  height: 1.35,
+                                ),
+                              ),
+                            ],
+                          ],
                         ],
                       ),
                     ),
-                    const SizedBox(height: 14),
-                    TextField(
-                      controller: _reaction,
-                      maxLines: 3,
-                      decoration: InputDecoration(
-                        filled: true,
-                        fillColor: Colors.white,
-                        hintText: 'Ajouter une réponse (optionnel)',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide.none,
+                    if (!_isHistory) ...[
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: _reaction,
+                        maxLines: 3,
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: Colors.white,
+                          hintText: 'Ajouter une réponse (optionnel)',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 18),
-                    ElevatedButton.icon(
-                      onPressed: _submitting ? null : _complete,
-                      icon: const Icon(Icons.check_circle_outline),
-                      label: const Text('Fait'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF16834B),
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size.fromHeight(48),
+                      const SizedBox(height: 18),
+                      ElevatedButton.icon(
+                        onPressed: _submitting ? null : _complete,
+                        icon: const Icon(Icons.check_circle_outline),
+                        label: const Text('Fait'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF16834B),
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size.fromHeight(48),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    OutlinedButton.icon(
-                      onPressed: _submitting ? null : _snooze,
-                      icon: const Icon(Icons.schedule),
-                      label: const Text('Plus tard (24 h)'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: const BorderSide(color: Colors.white70),
-                        minimumSize: const Size.fromHeight(46),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: _submitting ? null : _snooze,
+                        icon: const Icon(Icons.schedule),
+                        label: const Text('Plus tard (24 h)'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white70),
+                          minimumSize: const Size.fromHeight(46),
+                        ),
                       ),
-                    ),
-                    TextButton(
-                      onPressed: _submitting ? null : _dismiss,
-                      child: const Text(
-                        'Pas concerné',
-                        style: TextStyle(color: Colors.white70),
+                      TextButton(
+                        onPressed: _submitting ? null : _dismiss,
+                        child: const Text(
+                          'Pas concerné',
+                          style: TextStyle(color: Colors.white70),
+                        ),
                       ),
-                    ),
+                    ] else ...[
+                      const SizedBox(height: 12),
+                      OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white70),
+                          minimumSize: const Size.fromHeight(46),
+                        ),
+                        child: const Text('Fermer'),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -165,9 +207,12 @@ class _FormationTaskDetailScreenState extends State<FormationTaskDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Action CalyMob',
-                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                  Text(
+                    _isHistory ? 'Historique CalyMob' : 'Action CalyMob',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                    ),
                   ),
                   Text(
                     widget.task.title,
@@ -229,3 +274,10 @@ class _FormationTaskDetailScreenState extends State<FormationTaskDetailScreen> {
     }
   }
 }
+
+String _historyStatusLabel(FormationTaskStatus status) => switch (status) {
+      FormationTaskStatus.done => 'Action terminée',
+      FormationTaskStatus.dismissed => 'Action classée sans suite',
+      FormationTaskStatus.expired => 'Action expirée',
+      _ => 'Action active',
+    };

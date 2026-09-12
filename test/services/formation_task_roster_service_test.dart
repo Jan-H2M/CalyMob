@@ -1,4 +1,5 @@
 import 'package:calymob/services/formation_task_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -103,5 +104,78 @@ void main() {
         .data()!['completion_data'] as Map;
     expect(completion['attendance_status'], 'absent');
     expect(completion.containsKey('verdict'), isFalse);
+  });
+
+  test('corrects a done observation without rewriting completion audit',
+      () async {
+    final firestore = FakeFirebaseFirestore();
+    final reference = firestore
+        .collection('clubs')
+        .doc('club')
+        .collection('formation_tasks')
+        .doc('task-a');
+    final completedAt = Timestamp.fromDate(DateTime.utc(2026, 9, 10, 20));
+    await reference.set({
+      'type': 'monitor_observation',
+      'status': 'done',
+      'completed_at': completedAt,
+      'completed_by': 'validator',
+      'completion_data': {'verdict': 'acquis', 'comment': 'Initial'},
+    });
+
+    await FormationTaskService(firestore: firestore)
+        .correctCompletedObservation('club', 'task-a', 'corrector', {
+      'verdict': 'a_revoir',
+      'comment': '',
+    });
+
+    final data = (await reference.get()).data()!;
+    expect(data['status'], 'done');
+    expect(data['completed_at'], completedAt);
+    expect(data['completed_by'], 'validator');
+    expect(data['completion_data'], {
+      'verdict': 'a_revoir',
+      'comment': '',
+    });
+    expect(data['correction_revision'], 1);
+    expect(data['correction_updated_by'], 'corrector');
+    expect(data['correction_updated_at'], isA<Timestamp>());
+    expect(data['updated_at'], isA<Timestamp>());
+
+    await FormationTaskService(firestore: firestore)
+        .correctCompletedObservation('club', 'task-a', 'second-corrector', {
+      'verdict': 'en_progres',
+      'comment': 'Newest',
+    });
+    final correctedAgain = (await reference.get()).data()!;
+    expect(correctedAgain['correction_revision'], 2);
+    expect(correctedAgain['correction_updated_by'], 'second-corrector');
+    expect(correctedAgain['completed_at'], completedAt);
+    expect(correctedAgain['completed_by'], 'validator');
+  });
+
+  test('rejects correction of a non-observation or unfinished task', () async {
+    final firestore = FakeFirebaseFirestore();
+    final collection =
+        firestore.collection('clubs').doc('club').collection('formation_tasks');
+    await collection.doc('open').set({
+      'type': 'monitor_observation',
+      'status': 'open',
+    });
+    await collection.doc('wrong-type').set({
+      'type': 'manual_reminder',
+      'status': 'done',
+    });
+    final service = FormationTaskService(firestore: firestore);
+
+    await expectLater(
+      service.correctCompletedObservation('club', 'open', 'corrector', {}),
+      throwsStateError,
+    );
+    await expectLater(
+      service
+          .correctCompletedObservation('club', 'wrong-type', 'corrector', {}),
+      throwsStateError,
+    );
   });
 }

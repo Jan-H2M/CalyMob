@@ -40,6 +40,7 @@ import '../../services/exercise_claim_service.dart';
 import '../../widgets/combi_picker_field.dart';
 import '../../widgets/dive_location_picker.dart';
 import '../../utils/dive_number_policy.dart';
+import '../../widgets/dive_number_provisional_notice.dart';
 import '../../widgets/logbook_dive_form.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
 import '../../widgets/tank_picker_field.dart';
@@ -3207,14 +3208,9 @@ class _LogbookEntryScreenState extends State<LogbookEntryScreen> {
               ),
             ],
           ),
-          if (_diveNumberIsAutomaticSuggestion)
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
-              child: Text(
-                automaticDiveNumberNotice,
-                style: TextStyle(fontSize: 12, color: AppColors.donkerblauw),
-              ),
-            ),
+          DiveNumberProvisionalNotice(
+            visible: _diveNumberIsAutomaticSuggestion,
+          ),
           const Divider(height: 16),
           Row(
             children: [

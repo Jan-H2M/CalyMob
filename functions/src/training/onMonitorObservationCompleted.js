@@ -3,11 +3,11 @@
  *
  * Trigger : onDocumentUpdated `clubs/{clubId}/formation_tasks/{taskId}`
  *
- * When a `monitor_observation` task transitions from any non-done state
- * to `done`, materialise the verdict into a permanent
- * `member_observations` record. Without this, the verdict only lives in
- * `task.completion_data` and is invisible to the student's progression
- * view — which is exactly the audit blocker #2 from 2026-05-14.
+ * When a `monitor_observation` task transitions to `done`, materialise the
+ * verdict into a permanent `member_observations` record. A later explicit
+ * correction of `completion_data` updates that same deterministic record.
+ * Without this, the verdict only lives in the task and is invisible to the
+ * student's progression view.
  *
  * Today the form captures ONE theme-level verdict (acquis / en_progres /
  * a_revoir) — not a per-LIFRAS-code breakdown. So this CF writes ONE
@@ -46,160 +46,270 @@ const onMonitorObservationCompleted = onDocumentUpdated(
 );
 
 async function handleMonitorObservationCompleted(event, db) {
-    const { clubId, taskId } = event.params;
-    const before = event.data && event.data.before && event.data.before.data();
-    const after = event.data && event.data.after && event.data.after.data();
-    if (!before || !after) return;
+  const { clubId, taskId } = event.params;
+  const before = event.data && event.data.before && event.data.before.data();
+  const after = event.data && event.data.after && event.data.after.data();
+  if (!before || !after) return;
 
-    // Only react to monitor_observation completions
-    if (after.type !== 'monitor_observation') return;
-    if (before.status === 'done' || before.status === 'completed') return;
-    if (after.status !== 'done' && after.status !== 'completed') return;
+  if (after.type !== 'monitor_observation') return;
+  if (!isDone(after.status)) return;
+  const wasDone = isDone(before.status);
+  if (wasDone && !materializationChanged(before, after)) return;
 
-    const completion = after.completion_data || {};
-    const attendanceStatus = normaliseAttendanceStatus(
-      completion.attendance_status,
-    );
-    if (attendanceStatus === 'absent') {
-      console.log(
-        `[${FUNCTION_NAME}] task ${taskId} completed as absent — no observation`,
-      );
-      return;
-    }
-    const verdict = String(completion.verdict || '').toLowerCase();
-    if (!verdict) {
-      console.warn(
-        `[${FUNCTION_NAME}] task ${taskId} completed without a verdict — skipping`,
-      );
-      return;
-    }
-    // Normalise to the values onObservationAcquis recognises.
-    const normalisedResult = normaliseVerdict(verdict);
-    if (!normalisedResult) {
-      console.warn(
-        `[${FUNCTION_NAME}] task ${taskId} unknown verdict "${verdict}" — skipping`,
-      );
-      return;
+  const clubRef = db.collection('clubs').doc(clubId);
+  const taskRef = clubRef.collection('formation_tasks').doc(taskId);
+  const outcome = await db.runTransaction(async (transaction) => {
+    // Every trigger delivery is compared with the current source document in
+    // the same transaction that materialises both durable destinations. If a
+    // newer correction has landed, Firestore retries this read and the stale
+    // event performs no observation or logbook write.
+    const currentSnapshot = await transaction.get(taskRef);
+    if (!currentSnapshot.exists) return { status: 'missing-task' };
+    const current = currentSnapshot.data();
+    if (!materializationStateMatches(after, current)) {
+      return { status: 'stale' };
     }
 
-    const memberId = after.member_id || completion.member_id;
-    if (!memberId) {
-      console.warn(
-        `[${FUNCTION_NAME}] task ${taskId} has no member_id — skipping`,
-      );
-      return;
-    }
+    const materialization = buildMaterialization({ clubId, taskId, task: current });
+    if (materialization.status !== 'ready') return materialization;
 
-    const clubRef = db.collection('clubs').doc(clubId);
-
-    // ---- Idempotency ------------------------------------------------------
-    const poolSessionId =
-      (after.context && after.context.pool_session_id) ||
-      completion.pool_session_id ||
-      null;
-    const groupKey =
-      (after.context && after.context.group_key) ||
-      completion.group_key ||
-      null;
-    const canonicalKey = buildObservationCanonicalKey({
-      clubId,
-      poolSessionId,
-      groupKey,
-      memberId,
-    });
-
-    // ---- Build observation doc -------------------------------------------
-    // A validator correction stored in completion_data takes precedence over
-    // the immutable planning snapshot kept in context.
-    const themeSnapshot = firstNonBlank(
-      completion.theme_snapshot,
-      after.context && after.context.theme_snapshot,
-    );
-    const level = (after.context && after.context.level) || null;
-
-    // Theme-level verdict. We tag the category 'pool_theme' so that
-    // `onObservationAcquis` (which only fans out `exercice_lifras`)
-    // ignores it. The exercices_valides credit chain will fire only when
-    // the form is extended to capture per-code verdicts.
     const observationRef = clubRef
       .collection('member_observations')
-      .doc(observationDocumentId(canonicalKey));
-    const payload = {
-      task_id: taskId,
-      source_task_ids: FieldValue.arrayUnion(taskId),
-      canonical_key: canonicalKey,
-      memberId,
-      memberName: after.member_name || '',
-      category: 'pool_theme',
-      exerciceCode: themeSnapshot || groupKey || 'pool_session',
-      exerciceDescription: themeSnapshot || '',
-      memberNiveau: level || '',
-      result: normalisedResult,
-      observerId:
-        completion.observer_id ||
-        after.completed_by ||
-        after.last_action_by ||
-        '',
-      observerName:
-        completion.observer_name ||
-        after.completed_by_name ||
-        '',
-      contextType: 'piscine',
-      contextId: poolSessionId,
-      contextTitle: themeSnapshot || '',
-      contextDate: Timestamp.now(),
-      groupKey,
-      comment: completion.comment || '',
-      created_at: FieldValue.serverTimestamp(),
-      created_by: 'system',
-      source: 'monitor_observation_form',
-    };
-
-    try {
-      await observationRef.create(payload);
-    } catch (error) {
-      if (!isAlreadyExistsError(error)) throw error;
-      // A duplicate legacy task for the same logical member/session/group
-      // must not overwrite the first evaluator decision. Keep provenance only.
-      await observationRef.update({
-        source_task_ids: FieldValue.arrayUnion(taskId),
-      });
-      console.log(
-        `[${FUNCTION_NAME}] logical observation ${canonicalKey} already exists — linked duplicate task ${taskId}`,
-      );
-      return;
-    }
-    const logbookEntryId = firstNonBlank(
-      completion.logbook_entry_id,
-      after.context && after.context.logbook_entry_id,
-    );
-    if (logbookEntryId) {
-      try {
-        await clubRef
+      .doc(observationDocumentId(materialization.canonicalKey));
+    const logbookRef = materialization.logbookEntryId
+      ? clubRef
           .collection('student_logbook_entries')
-          .doc(logbookEntryId)
-          .update({
-            monitor_evaluation: {
-              result: normalisedResult,
-              comment: completion.comment || '',
-              theme_snapshot: themeSnapshot || null,
-              observer_id: payload.observerId,
-              observer_name: payload.observerName,
-              observation_id: observationRef.id,
-              evaluated_at: FieldValue.serverTimestamp(),
-            },
-            updated_at: FieldValue.serverTimestamp(),
-          });
-      } catch (error) {
-        console.warn(
-          `[${FUNCTION_NAME}] observation saved but logbook link ${logbookEntryId} failed: ${error.message}`,
+          .doc(materialization.logbookEntryId)
+      : null;
+
+    // Firestore transactions require all reads before writes.
+    const observationSnapshot = await transaction.get(observationRef);
+    const logbookSnapshot = logbookRef
+      ? await transaction.get(logbookRef)
+      : null;
+    const observation = observationSnapshot.exists
+      ? observationSnapshot.data()
+      : null;
+
+    // The initial completion of a legacy duplicate task must never overwrite
+    // the first evaluator decision for the same logical observation.
+    if (!wasDone && observation &&
+        observation.materialization_marker !== materialization.marker) {
+      const sourceTaskIds = Array.isArray(observation.source_task_ids)
+        ? observation.source_task_ids
+        : [];
+      if (!sourceTaskIds.includes(taskId)) {
+        transaction.set(
+          observationRef,
+          { source_task_ids: FieldValue.arrayUnion(taskId) },
+          { merge: true },
         );
       }
+      return {
+        status: 'duplicate-linked',
+        canonicalKey: materialization.canonicalKey,
+      };
     }
+
+    if (!observation ||
+        observation.materialization_marker !== materialization.marker) {
+      const observationPayload = buildObservationPayload({
+        taskId,
+        task: current,
+        materialization,
+      });
+      transaction.set(
+        observationRef,
+        observation
+          ? buildObservationCorrectionPayload(observationPayload)
+          : {
+              ...observationPayload,
+              created_at: FieldValue.serverTimestamp(),
+            },
+        { merge: true },
+      );
+    }
+
+    if (logbookRef && logbookSnapshot.exists) {
+      const logbook = logbookSnapshot.data() || {};
+      const existingEvaluation = logbook.monitor_evaluation || {};
+      if (existingEvaluation.materialization_marker !== materialization.marker) {
+        transaction.update(logbookRef, {
+          monitor_evaluation: {
+            result: materialization.result,
+            comment: materialization.completion.comment || '',
+            theme_snapshot: materialization.themeSnapshot || null,
+            observer_id: materialization.observerId,
+            observer_name: materialization.observerName,
+            observation_id: observationRef.id,
+            correction_revision: materialization.revision,
+            materialization_marker: materialization.marker,
+            evaluated_at: FieldValue.serverTimestamp(),
+          },
+          updated_at: FieldValue.serverTimestamp(),
+        });
+      }
+    }
+
+    return {
+      status: 'materialized',
+      observationId: observationRef.id,
+      memberId: materialization.memberId,
+      result: materialization.result,
+      themeSnapshot: materialization.themeSnapshot,
+    };
+  });
+
+  if (outcome.status === 'absent') {
     console.log(
-      `[${FUNCTION_NAME}] task ${taskId} → observation ${observationRef.id} ` +
-        `member=${memberId} verdict=${normalisedResult} theme="${themeSnapshot}"`,
+      `[${FUNCTION_NAME}] task ${taskId} completed as absent — no observation`,
     );
+  } else if (outcome.status === 'missing-verdict') {
+    console.warn(
+      `[${FUNCTION_NAME}] task ${taskId} completed without a valid verdict — skipping`,
+    );
+  } else if (outcome.status === 'missing-member') {
+    console.warn(`[${FUNCTION_NAME}] task ${taskId} has no member_id — skipping`);
+  } else if (outcome.status === 'materialized') {
+    console.log(
+      `[${FUNCTION_NAME}] task ${taskId} → observation ${outcome.observationId} ` +
+        `member=${outcome.memberId} verdict=${outcome.result} ` +
+        `theme="${outcome.themeSnapshot}"`,
+    );
+  }
+}
+
+function isDone(status) {
+  return status === 'done' || status === 'completed';
+}
+
+function normaliseCorrectionRevision(value) {
+  return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+
+function materializationChanged(before, after) {
+  return completionDataChanged(before, after) ||
+    normaliseCorrectionRevision(before.correction_revision) !==
+      normaliseCorrectionRevision(after.correction_revision);
+}
+
+function materializationStateMatches(eventAfter, current) {
+  return JSON.stringify(materializationState(eventAfter)) ===
+    JSON.stringify(materializationState(current));
+}
+
+function materializationState(task) {
+  return canonicalJsonValue({
+    type: task.type || null,
+    status: task.status || null,
+    member_id: task.member_id || null,
+    member_name: task.member_name || null,
+    completed_by: task.completed_by || null,
+    completed_by_name: task.completed_by_name || null,
+    last_action_by: task.last_action_by || null,
+    context: task.context || {},
+    completion_data: task.completion_data || {},
+    correction_revision: normaliseCorrectionRevision(task.correction_revision),
+  });
+}
+
+function buildMaterialization({ clubId, taskId, task }) {
+  const completion = task.completion_data || {};
+  if (normaliseAttendanceStatus(completion.attendance_status) === 'absent') {
+    return { status: 'absent' };
+  }
+  const result = normaliseVerdict(String(completion.verdict || '').toLowerCase());
+  if (!result) return { status: 'missing-verdict' };
+  const memberId = task.member_id || completion.member_id;
+  if (!memberId) return { status: 'missing-member' };
+
+  const poolSessionId =
+    (task.context && task.context.pool_session_id) ||
+    completion.pool_session_id ||
+    null;
+  const groupKey =
+    (task.context && task.context.group_key) || completion.group_key || null;
+  const themeSnapshot = firstNonBlank(
+    completion.theme_snapshot,
+    task.context && task.context.theme_snapshot,
+  );
+  const revision = normaliseCorrectionRevision(task.correction_revision);
+  const canonicalKey = buildObservationCanonicalKey({
+    clubId,
+    poolSessionId,
+    groupKey,
+    memberId,
+  });
+  const marker = crypto
+    .createHash('sha256')
+    .update(JSON.stringify({ taskId, state: materializationState(task) }))
+    .digest('hex');
+
+  return {
+    status: 'ready',
+    canonicalKey,
+    marker,
+    revision,
+    completion,
+    memberId,
+    poolSessionId,
+    groupKey,
+    themeSnapshot,
+    level: (task.context && task.context.level) || null,
+    result,
+    observerId:
+      completion.observer_id || task.completed_by || task.last_action_by || '',
+    observerName: completion.observer_name || task.completed_by_name || '',
+    logbookEntryId: firstNonBlank(
+      completion.logbook_entry_id,
+      task.context && task.context.logbook_entry_id,
+    ),
+  };
+}
+
+function buildObservationPayload({ taskId, task, materialization }) {
+  return {
+    task_id: taskId,
+    source_task_ids: FieldValue.arrayUnion(taskId),
+    canonical_key: materialization.canonicalKey,
+    materialization_marker: materialization.marker,
+    correction_revision: materialization.revision,
+    memberId: materialization.memberId,
+    memberName: task.member_name || '',
+    category: 'pool_theme',
+    exerciceCode:
+      materialization.themeSnapshot || materialization.groupKey || 'pool_session',
+    exerciceDescription: materialization.themeSnapshot || '',
+    memberNiveau: materialization.level || '',
+    result: materialization.result,
+    observerId: materialization.observerId,
+    observerName: materialization.observerName,
+    contextType: 'piscine',
+    contextId: materialization.poolSessionId,
+    contextTitle: materialization.themeSnapshot || '',
+    contextDate: Timestamp.now(),
+    groupKey: materialization.groupKey,
+    comment: materialization.completion.comment || '',
+    created_by: 'system',
+    source: 'monitor_observation_form',
+  };
+}
+
+function buildObservationCorrectionPayload(payload) {
+  return {
+    source_task_ids: payload.source_task_ids,
+    materialization_marker: payload.materialization_marker,
+    correction_revision: payload.correction_revision,
+    exerciceCode: payload.exerciceCode,
+    exerciceDescription: payload.exerciceDescription,
+    result: payload.result,
+    observerId: payload.observerId,
+    observerName: payload.observerName,
+    contextTitle: payload.contextTitle,
+    comment: payload.comment,
+    corrected_at: FieldValue.serverTimestamp(),
+    updated_at: FieldValue.serverTimestamp(),
+  };
 }
 
 function normaliseAttendanceStatus(status) {
@@ -217,14 +327,22 @@ function firstNonBlank(...values) {
   return '';
 }
 
-function isAlreadyExistsError(error) {
-  return (
-    error &&
-    (error.code === 6 ||
-      error.code === '6' ||
-      error.code === 'already-exists' ||
-      error.code === 'ALREADY_EXISTS')
-  );
+function completionDataChanged(before, after) {
+  return JSON.stringify(canonicalJsonValue(before.completion_data || {})) !==
+    JSON.stringify(canonicalJsonValue(after.completion_data || {}));
+}
+
+function canonicalJsonValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalJsonValue);
+  if (value && typeof value === 'object') {
+    return Object.keys(value)
+      .sort()
+      .reduce((result, key) => {
+        result[key] = canonicalJsonValue(value[key]);
+        return result;
+      }, {});
+  }
+  return value;
 }
 
 function buildObservationCanonicalKey({
@@ -285,8 +403,8 @@ module.exports = {
   handleMonitorObservationCompleted,
   normaliseVerdict,
   normaliseAttendanceStatus,
+  completionDataChanged,
   firstNonBlank,
-  isAlreadyExistsError,
   buildObservationCanonicalKey,
   observationDocumentId,
 };

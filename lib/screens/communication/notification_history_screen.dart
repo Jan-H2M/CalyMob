@@ -192,19 +192,6 @@ class _NotificationHistoryContentState
         category: 'Annonce',
         payload: const {'type': 'announcement', 'announcement_id': 'preview'},
       ),
-      NotificationHistoryItem(
-        id: 'preview-action',
-        title: 'Une action vous attend',
-        body: 'Votre déclaration d’exercice doit être complétée.',
-        createdAt: now.subtract(const Duration(days: 1, hours: 4)),
-        readAt: now.subtract(const Duration(hours: 3)),
-        type: 'formation_reminder',
-        category: 'Action',
-        payload: const {
-          'type': 'formation_reminder',
-          'target_tab': 'actions',
-        },
-      ),
     ];
   }
 }

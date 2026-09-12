@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 15 enforces edge-to-edge for target SDK 35+. Keep uCrop's
+         native toolbar (cancel/confirm) outside the system status bar. -->
+    <style name="Ucrop.CropTheme" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+    </style>
+</resources>

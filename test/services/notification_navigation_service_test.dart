@@ -46,7 +46,7 @@ void main() {
 
       expect(value.formationTaskId, 'task-123');
       expect(value.routeKind, NotificationRouteKind.formationTask);
-      expect(value.prefersActionsInbox, isFalse);
+      expect(value.prefersActionsEvaluations, isFalse);
     });
 
     test('explicit task id works without the legacy deeplink field', () {
@@ -70,8 +70,8 @@ void main() {
       });
 
       expect(value.formationTaskId, isNull);
-      expect(value.routeKind, NotificationRouteKind.communicationInbox);
-      expect(value.prefersActionsInbox, isTrue);
+      expect(value.routeKind, NotificationRouteKind.actionsEvaluations);
+      expect(value.prefersActionsEvaluations, isTrue);
     });
 
     test('legacy multi-task reminder also lands on Actions', () {
@@ -82,8 +82,8 @@ void main() {
       });
 
       expect(value.formationTaskId, isNull);
-      expect(value.routeKind, NotificationRouteKind.communicationInbox);
-      expect(value.prefersActionsInbox, isTrue);
+      expect(value.routeKind, NotificationRouteKind.actionsEvaluations);
+      expect(value.prefersActionsEvaluations, isTrue);
     });
 
     test('claim rejection opens the exact retry task', () {
@@ -137,7 +137,7 @@ void main() {
       'session_message': NotificationRouteKind.sessionChat,
       'piscine_task_assigned': NotificationRouteKind.sessionDetail,
       'session_reminder': NotificationRouteKind.sessionDetail,
-      'exercice_digest': NotificationRouteKind.communicationInbox,
+      'exercice_digest': NotificationRouteKind.actionsEvaluations,
       'medical_certificate': NotificationRouteKind.medicalCertificate,
       'logbook_dive_confirmation': NotificationRouteKind.logbookConfirmation,
       'logbook_dive_confirmation_result':
