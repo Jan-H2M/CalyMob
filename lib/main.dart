@@ -229,6 +229,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _setupDeepLinkListener();
     _setupNotificationTapHandlers();
+    NotificationHistoryNavigationDispatcher.instance.handler = (data) {
+      _enqueueNotificationRequest(
+        NotificationNavigationRequest.fromData(
+          data,
+          origin: NotificationTapOrigin.foreground,
+        ),
+      );
+    };
     // Connecter le callback pour les taps sur notifications locales (foreground)
     _notificationService.onLocalNotificationTap = _handleLocalNotificationTap;
     // Mettre à jour le badge au démarrage avec le nombre réel de non-lus
@@ -748,6 +756,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    NotificationHistoryNavigationDispatcher.instance.handler = null;
     WidgetsBinding.instance.removeObserver(this);
     _notificationOpenedSubscription?.cancel();
     _notificationAuthProvider?.removeListener(_scheduleNotificationDrain);

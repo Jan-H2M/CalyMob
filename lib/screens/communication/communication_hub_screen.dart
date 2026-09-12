@@ -18,8 +18,9 @@ import '../../utils/permission_helper.dart';
 import '../../utils/roster_session_label.dart';
 import '../../widgets/communication_filter_semantics.dart';
 import '../../widgets/ocean/ocean_gradient_background.dart';
-import '../../widgets/communication_filter_semantics.dart';
+import 'notification_history_screen.dart';
 import '../announcements/announcements_screen.dart';
+import '../home/landing_screen.dart';
 import '../teams/team_chat_screen.dart';
 import '../training/logbook_dive_confirmation_screen.dart';
 import '../training/historical_qr_scan_screen.dart';
@@ -28,6 +29,7 @@ import '../training/monitor_observation_roster_screen.dart';
 enum _CommunicationFilter {
   all('Tout', Icons.forum_outlined),
   unread('Non lus', Icons.mark_chat_unread_outlined),
+  notifications('Notif.', Icons.notifications_none_rounded),
   announcements('Annonces', Icons.campaign_outlined),
   actions('Actions', Icons.flag_outlined),
   teams('Équipes', Icons.groups_outlined);
@@ -108,6 +110,9 @@ class _CommunicationHubScreenState extends State<CommunicationHubScreen> {
             children: [
               _CommunicationHeader(
                 searchQuery: _searchQuery,
+                onNotificationsTap: () => setState(
+                  () => _selectedFilter = _CommunicationFilter.notifications,
+                ),
                 onSearchChanged: (value) {
                   setState(() {
                     _searchQuery = value;
@@ -171,8 +176,19 @@ class _CommunicationInboxList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (selectedFilter == _CommunicationFilter.notifications) {
+      final memberId = context.read<AuthProvider>().currentUser?.uid;
+      if (memberId == null) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      return NotificationHistoryContent(
+        clubId: FirebaseConfig.defaultClubId,
+        memberId: memberId,
+      );
+    }
+
     return ListView(
-      padding: EdgeInsets.zero,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 32),
       children: [
         if (_shows(_CommunicationFilter.announcements) &&
             (selectedFilter != _CommunicationFilter.unread ||
@@ -214,10 +230,12 @@ class _CommunicationInboxList extends StatelessWidget {
 class _CommunicationHeader extends StatefulWidget {
   final String searchQuery;
   final ValueChanged<String> onSearchChanged;
+  final VoidCallback? onNotificationsTap;
 
   const _CommunicationHeader({
     required this.searchQuery,
     required this.onSearchChanged,
+    this.onNotificationsTap,
   });
 
   @override
@@ -268,7 +286,18 @@ class _CommunicationHeaderState extends State<_CommunicationHeader> {
               IconButton(
                 icon:
                     const Icon(Icons.arrow_back, color: Colors.white, size: 28),
-                onPressed: () => Navigator.pop(context),
+                tooltip: 'Retour',
+                onPressed: () {
+                  final navigator = Navigator.of(context);
+                  if (navigator.canPop()) {
+                    navigator.pop();
+                    return;
+                  }
+
+                  navigator.pushReplacement(
+                    MaterialPageRoute(builder: (_) => const LandingScreen()),
+                  );
+                },
               ),
               const Expanded(
                 child: Column(
@@ -294,6 +323,16 @@ class _CommunicationHeaderState extends State<_CommunicationHeader> {
                   ],
                 ),
               ),
+              if (widget.onNotificationsTap != null)
+                IconButton(
+                  tooltip: 'Historique des notifications',
+                  onPressed: widget.onNotificationsTap,
+                  icon: const Icon(
+                    Icons.notifications_none_rounded,
+                    color: Colors.white,
+                    size: 27,
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 10),
@@ -365,6 +404,8 @@ class _CommunicationFilterBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const filters = _CommunicationFilter.values;
+
     return Container(
       height: 54,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -377,7 +418,7 @@ class _CommunicationFilterBar extends StatelessWidget {
         ),
       ),
       child: Row(
-        children: _CommunicationFilter.values.map((filter) {
+        children: filters.map((filter) {
           final selected = selectedFilter == filter;
           return Expanded(
             child: Padding(
@@ -552,127 +593,144 @@ class _CommunicationChatRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 68),
-          padding: const EdgeInsets.fromLTRB(14, 8, 12, 8),
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                color: AppColors.donkerblauw.withValues(alpha: 0.08),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 88),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: unreadCount > 0
+                    ? const Color(0xFFB8DCF2)
+                    : const Color(0xFFE4EDF3),
+                width: unreadCount > 0 ? 1.5 : 1,
               ),
             ),
-          ),
-          child: Row(
-            children: [
-              avatar,
-              const SizedBox(width: 11),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Semantics(
-                            container: true,
-                            label: title,
-                            excludeSemantics: true,
-                            child: Text.rich(
-                              TextSpan(
-                                children: _highlightSpans(
-                                  title,
-                                  searchQuery,
-                                  const TextStyle(
-                                    color: AppColors.donkerblauw,
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w900,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                avatar,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Semantics(
+                              container: true,
+                              label: title,
+                              excludeSemantics: true,
+                              child: Text.rich(
+                                TextSpan(
+                                  children: _highlightSpans(
+                                    title,
+                                    searchQuery,
+                                    TextStyle(
+                                      color: AppColors.donkerblauw,
+                                      fontSize: 14,
+                                      fontWeight: unreadCount > 0
+                                          ? FontWeight.w900
+                                          : FontWeight.w700,
+                                    ),
                                   ),
                                 ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
+                          if (unreadCount > 0) ...[
+                            const SizedBox(width: 8),
+                            const _UnreadDot(),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text.rich(
+                        TextSpan(
+                          children: [
+                            ..._highlightSpans(
+                              '$sender: ',
+                              searchQuery,
+                              const TextStyle(
+                                color: Color(0xFF3B4F68),
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            ..._highlightSpans(
+                              preview,
+                              searchQuery,
+                              const TextStyle(
+                                color: Color(0xFF506982),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ),
-                        if (tag != null) ...[
-                          const SizedBox(width: 6),
-                          Flexible(
-                            flex: 0,
-                            child: _CommunicationTag(
-                              label: tag!,
-                              color: tagColor,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text.rich(
-                      TextSpan(
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12.5, height: 1.25),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
                         children: [
-                          ..._highlightSpans(
-                            '$sender: ',
-                            searchQuery,
-                            const TextStyle(
-                              color: Color(0xFF3B4F68),
-                              fontWeight: FontWeight.w800,
+                          Text(
+                            timeLabel,
+                            style: const TextStyle(
+                              color: Color(0xFF7890A4),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
-                          ..._highlightSpans(
-                            preview,
-                            searchQuery,
-                            const TextStyle(
-                              color: Color(0xFF64748B),
-                              fontWeight: FontWeight.w600,
-                            ),
+                          const Spacer(),
+                          if (tag != null) ...[
+                            _CommunicationTag(label: tag!, color: tagColor),
+                            const SizedBox(width: 6),
+                          ],
+                          if (unreadCount > 1) ...[
+                            _UnreadBadge(count: unreadCount),
+                            const SizedBox(width: 4),
+                          ],
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            color: tagColor,
+                            size: 18,
                           ),
                         ],
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12.5),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    timeLabel,
-                    style: const TextStyle(
-                      color: Color(0xFF7A8AA0),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                    ),
+                    ],
                   ),
-                  const SizedBox(height: 7),
-                  if (unreadCount > 0)
-                    _UnreadBadge(count: unreadCount)
-                  else
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFC9D5E2),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                ],
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+class _UnreadDot extends StatelessWidget {
+  const _UnreadDot();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 9,
+        height: 9,
+        decoration: const BoxDecoration(
+          color: Color(0xFFE54B55),
+          shape: BoxShape.circle,
+        ),
+      );
 }
 
 class _UnreadBadge extends StatelessWidget {

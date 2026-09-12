@@ -9,6 +9,7 @@
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const admin = require('firebase-admin');
 const { getBadgeCount, filterByPreference } = require('../utils/badge-helper');
+const { persistNotificationHistory } = require('../utils/notificationHistory');
 
 /**
  * Scheduled function to send session reminders (Gen2)
@@ -226,6 +227,15 @@ exports.sessionReminder = onSchedule(
                     tokens: memberTokens,
                     ...payload,
                   });
+
+                  if (result.successCount > 0) {
+                    await persistNotificationHistory(
+                      clubId,
+                      memberId,
+                      payload,
+                      'Activité',
+                    );
+                  }
 
                   totalNotifications += result.successCount;
 

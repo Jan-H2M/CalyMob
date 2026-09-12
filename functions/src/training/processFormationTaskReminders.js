@@ -22,6 +22,7 @@ const { onSchedule } = require('firebase-functions/v2/scheduler');
 const admin = require('firebase-admin');
 const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 const { resolveChefEcole } = require('../utils/resolveChefEcole');
+const { persistNotificationHistory } = require('../utils/notificationHistory');
 
 const FUNCTION_NAME = 'processFormationTaskReminders';
 const FUNCTION_REGION = 'europe-west1';
@@ -139,14 +140,25 @@ const processFormationTaskReminders = onSchedule(
         }
 
         try {
-          await admin.messaging().sendEachForMulticast({
+          const result = await admin.messaging().sendEachForMulticast({
             tokens,
             notification: pushNotification,
             data: buildReminderPayload(clubId, dueForPush),
             android: { priority: 'high' },
             apns: { payload: { aps: { sound: 'default' } } },
           });
-          totalSent += 1;
+          if (result.successCount > 0) {
+            totalSent += 1;
+            await persistNotificationHistory(
+              clubId,
+              memberId,
+              {
+                notification: pushNotification,
+                data: buildReminderPayload(clubId, dueForPush),
+              },
+              'Action',
+            );
+          }
           console.log(
             `[${FUNCTION_NAME}] sent push to ${memberId} for ${dueForPush.length} task(s)`
           );
