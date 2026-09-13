@@ -132,6 +132,7 @@ class MessagesScreen extends StatelessWidget {
 
           // Filtrer seulement les événements
           if (data['type'] != 'evenement') continue;
+          if (data['statut'] == 'supprime') continue;
 
           userOperations.add(Operation.fromFirestore(operationDoc));
         } catch (e) {
