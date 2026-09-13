@@ -10,6 +10,7 @@ const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const { incrementUnreadCounts, collectTokensAndMembers, sendNotificationsWithBadge, filterByPreference } = require('../utils/badge-helper');
 const { EVENT_EXPIRY_GRACE_DAYS } = require('../utils/constants');
+const { isEligibleEventMessageRegistration, shouldNotifyForOperation } = require('./eventMessageAudience');
 
 function stripMarkdown(text) {
   // Strip light markdown markers (**bold**, *italic*) for push notification bodies
@@ -70,6 +71,10 @@ exports.onNewEventMessage = onDocumentCreated(
       }
 
       const operation = operationDoc.data();
+      if (!shouldNotifyForOperation(operation)) {
+        console.log(`Operation ${operationId} is removed, skipping notification`);
+        return null;
+      }
       const eventTitle = operation.titre || operation.title || 'Événement';
 
       // Check of event verlopen is (date_fin + grace period)
@@ -104,6 +109,7 @@ exports.onNewEventMessage = onDocumentCreated(
       const participantIds = new Set();
       inscriptionsSnapshot.docs.forEach(doc => {
         const data = doc.data();
+        if (!isEligibleEventMessageRegistration(data)) return;
         const membreId = data.membre_id;
         if (membreId) participantIds.add(membreId);
       });

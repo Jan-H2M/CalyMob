@@ -56,6 +56,7 @@ describe('event waitlist policy', () => {
   test('blocks disabled, cancelled and started events', () => {
     expect(waitlistReason({ ...base, allow_waitlist: false }, 2, now)).toBeNull();
     expect(waitlistReason({ ...base, statut: 'annule' }, 2, now)).toBeNull();
+    expect(waitlistReason({ ...base, statut: 'supprime' }, 2, now)).toBeNull();
     expect(waitlistReason({ ...base, date_debut: new Date('2026-08-12T09:00:00Z') }, 2, now)).toBeNull();
   });
   test('promotion preserves payment confirmation policy', () => {

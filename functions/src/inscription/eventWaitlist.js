@@ -78,7 +78,7 @@ function effectiveDeadline(operation) {
 
 function waitlistReason(operation, activeCount, now = new Date()) {
   const start = asDate(operation.date_debut);
-  if (operation.statut === 'annule') return null;
+  if (operation.statut === 'annule' || operation.statut === 'supprime') return null;
   if (!start || now >= start) return null;
   if (operation.allow_waitlist !== true) return null;
   const capacity = Number(operation.capacite_max);
@@ -117,7 +117,7 @@ function oldestWaitlistEntry(docs) {
 
 function promotionCandidatesAfterWithdrawal(operation, docs, withdrawnIds, now = new Date()) {
   const start = asDate(operation.date_debut);
-  if (operation.allow_waitlist !== true || operation.statut === 'annule' || (start && now >= start)) {
+  if (operation.allow_waitlist !== true || ['annule', 'supprime'].includes(operation.statut) || (start && now >= start)) {
     return [];
   }
   const capacity = Number(operation.capacite_max);
@@ -1313,7 +1313,7 @@ const promoteEventWaitlistEntry = onCall({ region: REGION }, async request => {
       throw new HttpsError('permission-denied', 'Réservé à l’organisateur ou aux administrateurs.');
     }
     if (entrySnap.data().registration_status !== 'waitlisted') throw new HttpsError('failed-precondition', 'Cette entrée n’est plus en attente.');
-    if (operation.statut === 'annule' || (asDate(operation.date_debut) && new Date() >= asDate(operation.date_debut))) {
+    if (['annule', 'supprime'].includes(operation.statut) || (asDate(operation.date_debut) && new Date() >= asDate(operation.date_debut))) {
       throw new HttpsError('failed-precondition', 'Cet événement ne peut plus accepter d’inscriptions.');
     }
     const count = await activeCount(transaction, inscriptionsRef);
