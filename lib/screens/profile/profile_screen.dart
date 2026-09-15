@@ -43,6 +43,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final roles = ClubRoleUtils.normalizeRoles(memberProvider.clubStatuten);
     final out = <String>[];
     if (roles.contains('encadrant')) out.add('encadrant');
+    // COM-139: a pool-only supervisor must reach the same pool availability
+    // flow without inheriting career/formation permissions.
+    if (roles.contains('encadrant_piscine')) out.add('encadrant');
     if (roles.contains('accueil')) out.add('accueil');
     if (roles.contains('gonflage')) out.add('gonflage');
     if (roles.contains('encadrant')) out.add('theorie');
@@ -52,6 +55,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _hasPiscineRole(MemberProvider memberProvider) {
     final roles = ClubRoleUtils.normalizeRoles(memberProvider.clubStatuten);
     return roles.contains('encadrant') ||
+        roles.contains('encadrant_piscine') ||
         roles.contains('accueil') ||
         roles.contains('gonflage');
   }
