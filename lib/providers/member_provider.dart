@@ -69,11 +69,18 @@ class MemberProvider with ChangeNotifier {
     );
   }
 
-  /// Check if user is an encadrant (also matches 'Encadrants' plural form)
+  /// Career encadrant only. Pool supervision is a distinct function.
   bool get isEncadrant =>
       hasClubFunction('encadrant') ||
       hasClubFunction('Encadrants') ||
-      clubStatuten.any((s) => s.toLowerCase().startsWith('encadrant'));
+      hasClubFunction('E') ||
+      hasClubFunction('Encadrant Carrière');
+
+  /// Dedicated pool function, including the former Piscine label during rename.
+  bool get isEncadrantPiscine =>
+      hasClubFunction('piscine') ||
+      hasClubFunction('P') ||
+      hasClubFunction('Encadrant Piscine');
 
   /// Check if user is an organisateur (matches lowercase/uppercase name + single-letter code)
   bool get isOrganisateur =>

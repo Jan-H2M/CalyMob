@@ -44,6 +44,17 @@ void main() {
       expect(availableTypes, contains(TeamChannelType.formationAM));
     });
 
+    test('pool encadrants do not inherit career team and formation channels',
+        () {
+      final availableTypes = ClubRoleUtils.getVisibleTeamChannelTypes(
+        ['Encadrant Piscine'],
+      );
+
+      expect(availableTypes, [TeamChannelType.general]);
+      expect(availableTypes, isNot(contains(TeamChannelType.encadrants)));
+      expect(availableTypes, isNot(contains(TeamChannelType.formation1)));
+    });
+
     test('includeAllChannels exposes every type for admins with BS', () {
       final availableTypes = ClubRoleUtils.getVisibleTeamChannelTypes(
         const ['BS'],
