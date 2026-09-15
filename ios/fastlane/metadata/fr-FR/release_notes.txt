@@ -1,1 +1,2 @@
-Cette mise à jour améliore le centre Actions et évaluations, le carnet et les séances piscine, les inscriptions et listes d’attente, ainsi que la boutique. Elle renforce également la confidentialité des anniversaires, la gestion des photos de profil et la stabilité générale.
+Séparation entre Encadrant Carrière et Encadrant Piscine.
+Amélioration des droits pour le planning piscine, les disponibilités et les canaux d’équipe.
