@@ -18,7 +18,12 @@ const {
   selectedGroupContract,
 } = require('./onPoolCheckinCompleted');
 
-function makeDb({ memberIdDocs = [], legacyMemberIdDocs = [] } = {}) {
+function makeDb({
+  memberIdDocs = [],
+  legacyMemberIdDocs = [],
+  attendeeDocs = [],
+  queryError = null,
+} = {}) {
   const queries = [];
   const makeRef = (id) => ({
     id: String(id),
@@ -35,12 +40,20 @@ function makeDb({ memberIdDocs = [], legacyMemberIdDocs = [] } = {}) {
       return {
         limit: () => ({
           get: async () => {
+            if (queryError) throw queryError;
             const docs = docsFor(field);
             return { empty: docs.length === 0, docs };
           },
         }),
       };
     },
+    get: async () => ({
+      docs: attendeeDocs.map(({ id, data = {} }) => ({
+        id,
+        ref: makeRef(id),
+        data: () => data,
+      })),
+    }),
   };
   const db = {
     collection: () => ({
@@ -103,6 +116,29 @@ describe('onPoolCheckinCompleted attendee identity', () => {
       member_id: 'member-a', context: {},
     });
     expect(ref.id).toBe('member-a');
+  });
+
+  test('scans only the session attendees when an indexed member lookup fails', async () => {
+    const failedPrecondition = Object.assign(
+      new Error('The query requires a COLLECTION_ASC index'),
+      { code: 9 },
+    );
+    const { db, queries } = makeDb({
+      queryError: failedPrecondition,
+      attendeeDocs: [
+        { id: 'other-attendee', data: { memberId: 'someone-else' } },
+        { id: 'legacy-french', data: { membre_id: 'member-a' } },
+      ],
+    });
+
+    const ref = await resolveAttendeeRef(db, 'calypso', 'session-a', {
+      member_id: 'member-a', context: {},
+    });
+
+    expect(ref.id).toBe('legacy-french');
+    expect(queries).toEqual([
+      { field: 'memberId', op: '==', value: 'member-a' },
+    ]);
   });
 });
 

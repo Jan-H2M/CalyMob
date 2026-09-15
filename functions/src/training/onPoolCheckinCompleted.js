@@ -399,17 +399,37 @@ async function resolveAttendeeRef(db, clubId, sessionId, task) {
 
   const memberId = task && task.member_id;
   if (memberId) {
-    const byMemberId = await attendeesRef
-      .where('memberId', '==', memberId)
-      .limit(1)
-      .get();
-    if (!byMemberId.empty) return byMemberId.docs[0].ref;
+    try {
+      const byMemberId = await attendeesRef
+        .where('memberId', '==', memberId)
+        .limit(1)
+        .get();
+      if (!byMemberId.empty) return byMemberId.docs[0].ref;
 
-    const byLegacyMemberId = await attendeesRef
-      .where('membre_id', '==', memberId)
-      .limit(1)
-      .get();
-    if (!byLegacyMemberId.empty) return byLegacyMemberId.docs[0].ref;
+      const byLegacyMemberId = await attendeesRef
+        .where('membre_id', '==', memberId)
+        .limit(1)
+        .get();
+      if (!byLegacyMemberId.empty) return byLegacyMemberId.docs[0].ref;
+    } catch (error) {
+      // An attendee field index can be temporarily unavailable while an index
+      // is building or after an index configuration change. This flow only
+      // needs attendees from this one session, so a direct collection scan is
+      // safe and avoids losing the completion update to a failed precondition.
+      console.warn(
+        `[${FUNCTION_NAME}] attendee member lookup failed; scanning session attendees instead`,
+        error
+      );
+      const allAttendees = await attendeesRef.get();
+      const expectedMemberId = String(memberId);
+      const matchingAttendee = allAttendees.docs.find((doc) => {
+        const data = doc.data() || {};
+        return String(doc.id) === expectedMemberId ||
+          String(data.memberId || '') === expectedMemberId ||
+          String(data.membre_id || '') === expectedMemberId;
+      });
+      if (matchingAttendee) return matchingAttendee.ref;
+    }
 
     return attendeesRef.doc(String(memberId));
   }
