@@ -44,6 +44,9 @@ class PermissionHelper {
     'accueil',
     'encadrant',
     'encadrants', // plural form used in database
+    'encadrant carrière',
+    'piscine',
+    'encadrant piscine',
     'president',
     'président',
     'secretaire',
@@ -59,9 +62,8 @@ class PermissionHelper {
   static bool isAdmin(List<String> clubStatuten) {
     if (clubStatuten.isEmpty) return false;
 
-    final normalizedStatuten = clubStatuten
-        .map((s) => s.toLowerCase().trim())
-        .toList();
+    final normalizedStatuten =
+        clubStatuten.map((s) => s.toLowerCase().trim()).toList();
 
     return adminStatutes.any(
       (adminStatut) => normalizedStatuten.contains(adminStatut.toLowerCase()),
@@ -95,7 +97,9 @@ class PermissionHelper {
   static bool canScan(List<String> clubStatuten, {String? fonctionDefaut}) {
     final List<String> rolesToCheck = List<String>.from(clubStatuten);
 
-    if (rolesToCheck.isEmpty && fonctionDefaut != null && fonctionDefaut.isNotEmpty) {
+    if (rolesToCheck.isEmpty &&
+        fonctionDefaut != null &&
+        fonctionDefaut.isNotEmpty) {
       rolesToCheck.add(fonctionDefaut);
     }
 
@@ -103,9 +107,8 @@ class PermissionHelper {
       return false;
     }
 
-    final normalizedStatuten = rolesToCheck
-        .map((s) => s.toLowerCase().trim())
-        .toList();
+    final normalizedStatuten =
+        rolesToCheck.map((s) => s.toLowerCase().trim()).toList();
 
     return scannerRoles.any(
       (role) => normalizedStatuten.contains(role.toLowerCase()),
@@ -125,7 +128,19 @@ class PermissionHelper {
   /// reste sous canValidateLifras().
   static bool isEncadrant(List<String> clubStatuten) {
     final normalized = clubStatuten.map((s) => s.toLowerCase().trim()).toList();
-    return normalized.contains('encadrant') || normalized.contains('encadrants');
+    return normalized.contains('encadrant') ||
+        normalized.contains('encadrants') ||
+        normalized.contains('e') ||
+        normalized.contains('encadrant carrière');
+  }
+
+  /// Dedicated pool function. It is intentionally not a substitute for career
+  /// authority such as LIFRAS validation or career-event supervision.
+  static bool isEncadrantPiscine(List<String> clubStatuten) {
+    final normalized = clubStatuten.map((s) => s.toLowerCase().trim()).toList();
+    return normalized.contains('piscine') ||
+        normalized.contains('p') ||
+        normalized.contains('encadrant piscine');
   }
 
   /// Access gate for emergency contacts shared through Who's Who.
@@ -133,9 +148,7 @@ class PermissionHelper {
   static bool canViewEmergencyContacts(List<String> clubStatuten) {
     if (isAdmin(clubStatuten)) return true;
     final normalized = clubStatuten.map((s) => s.toLowerCase().trim()).toList();
-    return normalized.contains('encadrant') ||
-        normalized.contains('encadrants') ||
-        normalized.contains('e') ||
+    return isEncadrant(clubStatuten) ||
         normalized.contains('ca') ||
         normalized.contains('comite') ||
         normalized.contains('comité');
@@ -149,8 +162,7 @@ class PermissionHelper {
     required String? plongeurCode,
   }) {
     if (isAdmin(clubStatuten)) return true;
-    final normalized = clubStatuten.map((s) => s.toLowerCase().trim()).toList();
-    final hasEncadrant = normalized.contains('encadrant') || normalized.contains('encadrants');
+    final hasEncadrant = isEncadrant(clubStatuten);
     return hasEncadrant && isMoniteur(plongeurCode);
   }
 }

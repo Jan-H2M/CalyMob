@@ -3,11 +3,25 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('PermissionHelper.canViewEmergencyContacts', () {
+    test('keeps pool function separate from career/LIFRAS authority', () {
+      const poolOnly = ['Encadrant Piscine'];
+      expect(PermissionHelper.isEncadrant(poolOnly), isFalse);
+      expect(PermissionHelper.isEncadrantPiscine(poolOnly), isTrue);
+      expect(
+        PermissionHelper.canValidateLifras(
+          clubStatuten: poolOnly,
+          plongeurCode: 'MC',
+        ),
+        isFalse,
+      );
+    });
+
     test('allows encadrants, E role, CA and committee roles', () {
       for (final roles in <List<String>>[
         ['Encadrant'],
         ['encadrants'],
         ['E'],
+        ['Encadrant Carrière'],
         ['CA'],
         ['comite'],
         ['Comité'],

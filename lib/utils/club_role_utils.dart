@@ -13,8 +13,17 @@ class ClubRoleUtils {
         normalized.add('member');
       } else if (role == 'ca') {
         normalized.add('ca');
-      } else if (role == 'e' || role == 'encadrant' || role == 'encadrants') {
+        // Career and pool encadrants deliberately normalize to different values:
+        // the former shares career team/formation access; the latter must not.
+      } else if (role == 'e' ||
+          role == 'encadrant' ||
+          role == 'encadrants' ||
+          role == 'encadrant carrière') {
         normalized.add('encadrant');
+      } else if (role == 'p' ||
+          role == 'piscine' ||
+          role == 'encadrant piscine') {
+        normalized.add('encadrant_piscine');
       } else if (role == 'a' || role == 'accueil') {
         normalized.add('accueil');
       } else if (role == 'g' || role == 'gonflage') {
