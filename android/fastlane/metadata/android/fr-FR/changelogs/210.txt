@@ -1,0 +1,2 @@
+Séparation entre Encadrant Carrière et Encadrant Piscine.
+Amélioration des droits pour le planning piscine, les disponibilités et les canaux d’équipe.
