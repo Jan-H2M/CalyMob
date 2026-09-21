@@ -34,6 +34,17 @@ void main() {
       }
     });
 
+    test(
+      'official encadrants and explicit assistants are in the pool group',
+      () {
+        expect(PermissionHelper.isEncadrantPiscine(['Encadrants']), isTrue);
+        expect(
+          PermissionHelper.isEncadrantPiscine(['Encadrants et assistants']),
+          isTrue,
+        );
+      },
+    );
+
     test('denies ordinary members and unrelated operational roles', () {
       for (final roles in <List<String>>[
         [],

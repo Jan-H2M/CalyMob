@@ -47,6 +47,7 @@ class PermissionHelper {
     'encadrant carrière',
     'piscine',
     'encadrant piscine',
+    'encadrants et assistants',
     'president',
     'président',
     'secretaire',
@@ -62,8 +63,9 @@ class PermissionHelper {
   static bool isAdmin(List<String> clubStatuten) {
     if (clubStatuten.isEmpty) return false;
 
-    final normalizedStatuten =
-        clubStatuten.map((s) => s.toLowerCase().trim()).toList();
+    final normalizedStatuten = clubStatuten
+        .map((s) => s.toLowerCase().trim())
+        .toList();
 
     return adminStatutes.any(
       (adminStatut) => normalizedStatuten.contains(adminStatut.toLowerCase()),
@@ -107,8 +109,9 @@ class PermissionHelper {
       return false;
     }
 
-    final normalizedStatuten =
-        rolesToCheck.map((s) => s.toLowerCase().trim()).toList();
+    final normalizedStatuten = rolesToCheck
+        .map((s) => s.toLowerCase().trim())
+        .toList();
 
     return scannerRoles.any(
       (role) => normalizedStatuten.contains(role.toLowerCase()),
@@ -134,13 +137,15 @@ class PermissionHelper {
         normalized.contains('encadrant carrière');
   }
 
-  /// Dedicated pool function. It is intentionally not a substitute for career
-  /// authority such as LIFRAS validation or career-event supervision.
+  /// Pool group: explicit assistants plus every official encadrant. It is not
+  /// a substitute for career authority such as LIFRAS validation.
   static bool isEncadrantPiscine(List<String> clubStatuten) {
     final normalized = clubStatuten.map((s) => s.toLowerCase().trim()).toList();
-    return normalized.contains('piscine') ||
+    return isEncadrant(clubStatuten) ||
+        normalized.contains('piscine') ||
         normalized.contains('p') ||
-        normalized.contains('encadrant piscine');
+        normalized.contains('encadrant piscine') ||
+        normalized.contains('encadrants et assistants');
   }
 
   /// Access gate for emergency contacts shared through Who's Who.

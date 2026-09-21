@@ -22,7 +22,8 @@ class ClubRoleUtils {
         normalized.add('encadrant');
       } else if (role == 'p' ||
           role == 'piscine' ||
-          role == 'encadrant piscine') {
+          role == 'encadrant piscine' ||
+          role == 'encadrants et assistants') {
         normalized.add('encadrant_piscine');
       } else if (role == 'a' || role == 'accueil') {
         normalized.add('accueil');
