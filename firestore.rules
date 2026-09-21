@@ -89,7 +89,10 @@ service cloud.firestore {
       return isAdmin(clubId) || (
         isMember(clubId) &&
         ('clubStatuten' in userData) &&
-        userData.clubStatuten.hasAny(['encadrant', 'Encadrant', 'encadrants', 'Encadrants', 'E'])
+        userData.clubStatuten.hasAny([
+          'encadrant', 'Encadrant', 'encadrants', 'Encadrants', 'E',
+          'encadrant carrière', 'Encadrant Carrière'
+        ])
       );
     }
 

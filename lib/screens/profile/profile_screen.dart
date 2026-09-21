@@ -40,16 +40,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // ---------------- Role helpers (Mes accès gating) ----------------
 
   List<String> _piscineRoles(MemberProvider memberProvider) {
-    final roles = ClubRoleUtils.normalizeRoles(memberProvider.clubStatuten);
-    final out = <String>[];
-    if (roles.contains('encadrant')) out.add('encadrant');
-    // COM-139: a pool-only supervisor must reach the same pool availability
-    // flow without inheriting career/formation permissions.
-    if (roles.contains('encadrant_piscine')) out.add('encadrant');
-    if (roles.contains('accueil')) out.add('accueil');
-    if (roles.contains('gonflage')) out.add('gonflage');
-    if (roles.contains('encadrant')) out.add('theorie');
-    return out;
+    return ClubRoleUtils.piscineAvailabilityRoles(memberProvider.clubStatuten);
   }
 
   bool _hasPiscineRole(MemberProvider memberProvider) {
@@ -230,8 +221,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           _divider(),
                           StreamBuilder<MedicalCertification?>(
-                            stream: _certService
-                                .watchCurrentCertification(_clubId, userId),
+                            stream: _certService.watchCurrentCertification(
+                                _clubId, userId),
                             builder: (context, certSnap) {
                               final cert = certSnap.data;
                               return _TileRow(

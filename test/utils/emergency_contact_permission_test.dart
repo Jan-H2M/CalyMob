@@ -1,4 +1,5 @@
 import 'package:calymob/utils/permission_helper.dart';
+import 'package:calymob/utils/club_role_utils.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -44,6 +45,22 @@ void main() {
         );
       },
     );
+
+    test(
+        'explicit assistants can provide theory availability without LIFRAS rights',
+        () {
+      const roles = ['Encadrants et assistants'];
+      expect(
+          ClubRoleUtils.piscineAvailabilityRoles(roles), contains('theorie'));
+      expect(PermissionHelper.isEncadrant(roles), isFalse);
+      expect(
+        PermissionHelper.canValidateLifras(
+          clubStatuten: roles,
+          plongeurCode: 'MC',
+        ),
+        isFalse,
+      );
+    });
 
     test('denies ordinary members and unrelated operational roles', () {
       for (final roles in <List<String>>[

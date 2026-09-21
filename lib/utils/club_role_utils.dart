@@ -39,6 +39,21 @@ class ClubRoleUtils {
     return normalized;
   }
 
+  /// Availability roles shown in the pool profile. Pool assistants and
+  /// official Encadrants share the same pool and theory availability roster;
+  /// only the latter retain career/LIFRAS permissions elsewhere.
+  static List<String> piscineAvailabilityRoles(List<String> roles) {
+    final normalized = normalizeRoles(roles);
+    final out = <String>[];
+    if (normalized.contains('encadrant') ||
+        normalized.contains('encadrant_piscine')) {
+      out.addAll(['encadrant', 'theorie']);
+    }
+    if (normalized.contains('accueil')) out.add('accueil');
+    if (normalized.contains('gonflage')) out.add('gonflage');
+    return out;
+  }
+
   static bool hasAdminAccess(List<String> roles, {String? appRole}) {
     final normalizedAppRole = appRole?.trim().toLowerCase();
     return normalizedAppRole == 'admin' ||
