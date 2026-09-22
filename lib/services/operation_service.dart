@@ -27,6 +27,11 @@ typedef AddGuestToEventInvoker = Future<void> Function(
 
 const int registrationGuestNameMaxLength = 80;
 
+@visibleForTesting
+bool isOperationVisibleInCalyMob(Operation operation) {
+  return operation.statut != 'supprime';
+}
+
 String canonicalRegistrationGuestName(String value) {
   final canonical = value
       .replaceAll(RegExp(r'[ \t\r\n\f]+'), ' ')
@@ -400,7 +405,13 @@ class OperationService {
         return null;
       }
 
-      return Operation.fromFirestore(doc);
+      final operation = Operation.fromFirestore(doc);
+      if (!isOperationVisibleInCalyMob(operation)) {
+        debugPrint('⚠️ Opération supprimée de CalyMob: $operationId');
+        return null;
+      }
+
+      return operation;
     } catch (e) {
       debugPrint('❌ Erreur chargement opération: $e');
       return null;
@@ -1024,8 +1035,7 @@ class OperationService {
         .where('membre_id', isEqualTo: userId)
         .get();
     final activeDocuments = snapshot.docs
-        .where((document) =>
-            document.data()['registration_status'] != 'canceled')
+        .where((document) => document.data()['registration_status'] != 'canceled')
         .toList()
       ..sort(_compareCanonicalUserInscriptions);
     if (activeDocuments.isEmpty) return null;
@@ -1566,6 +1576,7 @@ class OperationService {
           if (!operationDoc.exists) continue;
 
           final operation = Operation.fromFirestore(operationDoc);
+          if (!isOperationVisibleInCalyMob(operation)) continue;
 
           registrations.add(
             UserEventRegistration(
@@ -1812,6 +1823,7 @@ class OperationService {
           if (!operationDoc.exists) continue;
 
           final operation = Operation.fromFirestore(operationDoc);
+          if (!isOperationVisibleInCalyMob(operation)) continue;
 
           registrations.add(
             UserEventRegistration(
