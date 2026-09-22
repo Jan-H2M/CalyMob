@@ -65,7 +65,8 @@ service cloud.firestore {
 
     // Encadrants, piscine-editors, and admins can manage piscine planning,
     // session themes, session plannings and attendee reassignments.
-    // Accepts both the E-badge (Encadrant) and the P-badge (Piscine).
+    // Official Encadrants and the Encadrants et assistants group can manage
+    // planning. Older P/Piscine labels stay accepted during the rename.
     function isPiscineFormationEditor(clubId) {
       let userData = getUserData(clubId);
       return isAdmin(clubId) || (
@@ -73,7 +74,10 @@ service cloud.firestore {
         ('clubStatuten' in userData) &&
         userData.clubStatuten.hasAny([
           'encadrant', 'Encadrant', 'encadrants', 'Encadrants', 'E',
-          'piscine', 'Piscine', 'P'
+          'encadrant carrière', 'Encadrant Carrière',
+          'piscine', 'Piscine', 'P',
+          'Encadrants et assistants', 'encadrants et assistants',
+          'Encadrant Piscine', 'encadrant piscine'
         ])
       );
     }
@@ -85,7 +89,10 @@ service cloud.firestore {
       return isAdmin(clubId) || (
         isMember(clubId) &&
         ('clubStatuten' in userData) &&
-        userData.clubStatuten.hasAny(['encadrant', 'Encadrant', 'encadrants', 'Encadrants', 'E'])
+        userData.clubStatuten.hasAny([
+          'encadrant', 'Encadrant', 'encadrants', 'Encadrants', 'E',
+          'encadrant carrière', 'Encadrant Carrière'
+        ])
       );
     }
 

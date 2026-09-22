@@ -13,8 +13,18 @@ class ClubRoleUtils {
         normalized.add('member');
       } else if (role == 'ca') {
         normalized.add('ca');
-      } else if (role == 'e' || role == 'encadrant' || role == 'encadrants') {
+        // Career and pool encadrants deliberately normalize to different values:
+        // the former shares career team/formation access; the latter must not.
+      } else if (role == 'e' ||
+          role == 'encadrant' ||
+          role == 'encadrants' ||
+          role == 'encadrant carrière') {
         normalized.add('encadrant');
+      } else if (role == 'p' ||
+          role == 'piscine' ||
+          role == 'encadrant piscine' ||
+          role == 'encadrants et assistants') {
+        normalized.add('encadrant_piscine');
       } else if (role == 'a' || role == 'accueil') {
         normalized.add('accueil');
       } else if (role == 'g' || role == 'gonflage') {
@@ -27,6 +37,21 @@ class ClubRoleUtils {
     }
 
     return normalized;
+  }
+
+  /// Availability roles shown in the pool profile. Pool assistants and
+  /// official Encadrants share the same pool and theory availability roster;
+  /// only the latter retain career/LIFRAS permissions elsewhere.
+  static List<String> piscineAvailabilityRoles(List<String> roles) {
+    final normalized = normalizeRoles(roles);
+    final out = <String>[];
+    if (normalized.contains('encadrant') ||
+        normalized.contains('encadrant_piscine')) {
+      out.addAll(['encadrant', 'theorie']);
+    }
+    if (normalized.contains('accueil')) out.add('accueil');
+    if (normalized.contains('gonflage')) out.add('gonflage');
+    return out;
   }
 
   static bool hasAdminAccess(List<String> roles, {String? appRole}) {

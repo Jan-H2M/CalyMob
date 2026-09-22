@@ -64,16 +64,23 @@ class MemberProvider with ChangeNotifier {
 
   /// Check if user has a specific club function
   bool hasClubFunction(String function) {
-    return clubStatuten.any(
-      (s) => s.toLowerCase() == function.toLowerCase(),
-    );
+    return clubStatuten.any((s) => s.toLowerCase() == function.toLowerCase());
   }
 
-  /// Check if user is an encadrant (also matches 'Encadrants' plural form)
+  /// Official Encadrant function. The former career label remains readable.
   bool get isEncadrant =>
       hasClubFunction('encadrant') ||
       hasClubFunction('Encadrants') ||
-      clubStatuten.any((s) => s.toLowerCase().startsWith('encadrant'));
+      hasClubFunction('E') ||
+      hasClubFunction('Encadrant Carrière');
+
+  /// Encadrants et assistants: official encadrants plus explicit assistants.
+  bool get isEncadrantPiscine =>
+      hasClubFunction('piscine') ||
+      hasClubFunction('P') ||
+      hasClubFunction('Encadrants et assistants') ||
+      hasClubFunction('Encadrant Piscine') || // legacy
+      isEncadrant;
 
   /// Check if user is an organisateur (matches lowercase/uppercase name + single-letter code)
   bool get isOrganisateur =>
