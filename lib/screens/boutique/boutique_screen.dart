@@ -585,7 +585,7 @@ class _ProductCard extends StatelessWidget {
                         )
                       : Image.network(
                           imageUrl,
-                          fit: BoxFit.cover,
+                          fit: BoxFit.contain,
                           errorBuilder: (_, __, ___) => const Icon(
                             Icons.shopping_bag_outlined,
                             color: AppColors.middenblauw,
