@@ -90,23 +90,59 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                     ),
                   ),
                   const SizedBox(height: 22),
-                  if (showSection('commandes')) ...[
+                  if (showSection('produits')) ...[
                     _BoutiqueHomeCard(
-                      icon: Icons.receipt_long_outlined,
-                      title: 'Mes commandes',
-                      subtitle:
-                          'Suivre les commandes et retrouver les paiements.',
+                      icon: Icons.storefront_outlined,
+                      title: 'Produits',
+                      subtitle: 'Parcourir le catalogue Boutique.',
+                      emphasized: true,
                       onTap: () {
                         Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => const MesCommandesScreen(),
+                            builder: (_) => const BoutiqueProductsScreen(),
                           ),
                         );
                       },
                     ),
                     const SizedBox(height: 12),
                   ],
-                  if (showSection('panier'))
+                  if (showSection('cotisation')) ...[
+                    _BoutiqueHomeCard(
+                      icon: Icons.card_membership_outlined,
+                      title: 'Ma cotisation',
+                      subtitle: 'Consulter et payer votre cotisation membre.',
+                      emphasized: true,
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const MaCotisationScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (showMaterialLoans) ...[
+                    _BoutiqueHomeCard(
+                      icon: Icons.assignment_return_outlined,
+                      title: canOpenReturns
+                          ? 'Prêts de matériel'
+                          : 'Mon matériel emprunté',
+                      subtitle: canOpenReturns
+                          ? 'Créer un prêt, enregistrer la remise et suivre les retours.'
+                          : 'Consultez le matériel emprunté et sa date de retour.',
+                      emphasized: true,
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const MaterialReturnsScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 22),
+                  ],
+                  if (showSection('panier')) ...[
                     Consumer<BoutiqueCartProvider>(
                       builder: (context, cart, _) {
                         final subtitle = cart.isEmpty
@@ -127,62 +163,22 @@ class _BoutiqueScreenState extends State<BoutiqueScreen> {
                         );
                       },
                     ),
-                  if (showSection('panier')) const SizedBox(height: 12),
-                  if (showSection('produits'))
-                    _BoutiqueHomeCard(
-                      icon: Icons.storefront_outlined,
-                      title: 'Produits',
-                      subtitle: 'Parcourir le catalogue Boutique.',
-                      emphasized: true,
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const BoutiqueProductsScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                  const SizedBox(height: 26),
-                  Container(
-                    height: 1,
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    color: Colors.white.withValues(alpha: 0.42),
-                  ),
-                  const SizedBox(height: 22),
-                  if (showSection('cotisation'))
-                    _BoutiqueHomeCard(
-                      icon: Icons.card_membership_outlined,
-                      title: 'Ma cotisation',
-                      subtitle: 'Consulter et payer votre cotisation membre.',
-                      emphasized: true,
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const MaCotisationScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                  if (showMaterialLoans) ...[
                     const SizedBox(height: 12),
+                  ],
+                  if (showSection('commandes'))
                     _BoutiqueHomeCard(
-                      icon: Icons.assignment_return_outlined,
-                      title: canOpenReturns
-                          ? 'Prêts de matériel'
-                          : 'Mon matériel emprunté',
-                      subtitle: canOpenReturns
-                          ? 'Créer un prêt, enregistrer la remise et suivre les retours.'
-                          : 'Consultez le matériel emprunté et sa date de retour.',
-                      emphasized: true,
+                      icon: Icons.receipt_long_outlined,
+                      title: 'Mes commandes',
+                      subtitle:
+                          'Suivre les commandes et retrouver les paiements.',
                       onTap: () {
                         Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => const MaterialReturnsScreen(),
+                            builder: (_) => const MesCommandesScreen(),
                           ),
                         );
                       },
                     ),
-                  ],
                 ],
               );
             },
@@ -206,7 +202,8 @@ class BoutiqueProductsScreen extends StatefulWidget {
 
 class _BoutiqueProductsScreenState extends State<BoutiqueProductsScreen> {
   final BoutiqueService _service = BoutiqueService();
-  BoutiqueProductCategory? _selectedCategory;
+  BoutiqueProductCategory? _selectedCategory =
+      BoutiqueProductCategory.vetements;
 
   @override
   Widget build(BuildContext context) {
