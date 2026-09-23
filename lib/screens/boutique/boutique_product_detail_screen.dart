@@ -967,7 +967,7 @@ class _ProductImages extends StatelessWidget {
               borderRadius: BorderRadius.circular(18),
               child: Image.network(
                 networkImages[index],
-                fit: BoxFit.cover,
+                fit: BoxFit.contain,
                 errorBuilder: (_, __, ___) => Container(
                   color: Colors.white.withValues(alpha: 0.92),
                   child: const Icon(
