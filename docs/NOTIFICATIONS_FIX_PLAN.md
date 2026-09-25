@@ -90,6 +90,9 @@ const unreadCount = messages.filter(msg => {
 
 ## 🎯 Doel-architectuur (TL;DR)
 
+> **SUPERSEDED (2026-09-25) by unread cursor v1 — see the addendum below.**
+> The counter-based plan remains preserved as historical context only.
+
 1. **Cloud Functions zijn de single source of truth voor `unread_counts.total`** (via `FieldValue.increment(1)`).
 2. **Client schrijft per-field met dot-notation, nooit een hele map.** Client schrijft `total` niet meer.
 3. **Token lifecycle is strict:** ophalen bij login, opslaan met `app_version`, verwijderen bij logout, force-refresh bij version mismatch.
@@ -336,3 +339,23 @@ Na alle fixes:
 * [Incrementing Values Atomically with Cloud Firestore — Firebase blog](https://firebase.blog/posts/2019/03/increment-server-side-cloud-firestore/)
 * [app_badge_plus pub.dev](https://pub.dev/packages/app_badge_plus) — Android badge support is launcher-afhankelijk.
 * [Lifecycle of FCM device tokens — Medium](https://medium.com/@chunilalkukreja/lifecycle-of-fcm-device-tokens-61681bb6fbcf)
+
+---
+
+## Addendum — cursor-v1 implementation direction (2026-09-25)
+
+Do not extend this plan's counter resets, `read_by` updates, or
+`LocalReadTracker` baseline strategy. Cursor v1 persists member-owned
+`read_state` documents with `serverTimestamp`, using one section write for
+*Tout marquer comme lu* and one scoped write on a conversation acknowledgement.
+The effective scoped cursor is `max(global, scope)`. Cursor-derived counts—not
+`unread_counts`—will drive landing tiles, the app icon, and the Functions' exact
+APNs payload (including zero). This avoids client/server counter races,
+per-message array writes, and reinstall/device-local state loss.
+
+Feature flag defaults are `unreadCursorV1Enabled: false` and
+`unreadCursorV1Mode: 'off'`; old-app `unread_counts` writes coexist but are
+ignored by the new model until a minimum-version cutover. Phase 1 only provides
+inert models/rules/indexes/tests, is on `feat/unread-cursor-v1-phase1`, and is
+not deployed. Product decisions and the Phases 2–7 ticket plan are recorded in
+`../../outputs/calymob-unread-definitive-plan_2026-09-24.md` in the parent repo.

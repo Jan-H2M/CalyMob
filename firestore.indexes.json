@@ -1,6 +1,20 @@
 {
   "indexes": [
     {
+      "collectionGroup": "announcements",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "visibility",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "last_activity_at",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "inscriptions",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
