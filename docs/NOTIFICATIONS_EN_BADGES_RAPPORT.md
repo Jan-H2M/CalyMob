@@ -9,6 +9,10 @@ Scope: push-notificaties (iOS + Android) en het systeem achter de rode ongelezen
 
 ## 1. Samenvatting in één paragraaf
 
+> **SUPERSEDED (2026-09-25) by unread cursor v1 — see the addendum below.**
+> The historical LocalReadTracker/unread_counts analysis remains preserved as
+> evidence for the replacement design.
+
 CalyMob gebruikt **Firebase Cloud Messaging (FCM)** voor push-notificaties, aangestuurd door **12 Cloud Functions (Gen 2, Node 20, regio `europe-west1`)** die reageren op Firestore-schrijfacties. De rode bolletjes (badges) zitten op twee plaatsen tegelijk: **server-side** in een `unread_counts` map op elk member-document, en **client-side** via een **`LocalReadTracker`** die per conversatie een `lastRead` timestamp bijhoudt in `SharedPreferences`. De client herberekent elke 60 seconden de tellers uit Firestore `count()` queries, schrijft ze terug naar het member-document (om APNs-badges correct te houden) en zet het app-icoon-badge via het `app_badge_plus` pakket. Het systeem werkt, maar bevat **vijf reële bugs** en **drie architecturele risico’s** die hieronder uitvoerig worden behandeld.
 
 ---
@@ -574,3 +578,26 @@ In `notification_service.dart` → `setupForegroundNotifications()` wordt `_hand
 ---
 
 *Einde rapport. Bestanden en regelnummers verwijzen naar de working tree op 8 april 2026.*
+
+---
+
+## Addendum — unread cursor v1 replaces the historical badge model (2026-09-25)
+
+The new source of truth is server-owned `read_state` cursor documents at
+`clubs/{clubId}/members/{uid}/read_state`, written with `serverTimestamp`.
+Announcements use one cursor; event conversations, team channels, and session
+chats use `max(global cursor, scoped cursor)`. This removes the device-only
+LocalReadTracker baseline, per-message `read_by` write amplification, and
+increment/decrement `unread_counts` races. Functions will derive the same
+canonical total as the tiles and send the exact APNs badge, explicitly including
+zero.
+
+Jan confirmed: icon = Événements + Communication; Communication = announcements
++ team + session; Événements = event messages; event unread expires at
+`date_fin + 7` Europe/Brussels calendar days. Tile opening is not mark-all;
+conversation opening acknowledges only that scope and each section has *Tout
+marquer comme lu*. All non-soft-deleted announcements are visible to all members.
+Old clients coexist temporarily and their `unread_counts` writes are ignored by
+cursor v1 until the minimum-version cutover. The feature flag defaults OFF in
+`settings/feature_flags`; Phase 1 is local only, not deployed. See the parent
+repo plan: `../../outputs/calymob-unread-definitive-plan_2026-09-24.md`.

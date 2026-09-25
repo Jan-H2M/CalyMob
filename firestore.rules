@@ -416,6 +416,9 @@ service cloud.firestore {
         // AI API keys: admin only
         // Google Mail, email config, automated jobs: admin + session
         // Other settings (bilan_codes, app_version, etc.): member check required
+        // `feature_flags` includes unreadCursorV1Enabled / unreadCursorV1Mode.
+        // Members may read it; existing admin+session-only write rule below keeps
+        // the rollout switch server/admin controlled.
         allow read: if settingId in ['security', 'permissions', 'ai_api_keys', 'compatibility']
           ? (settingId == 'security' || settingId == 'permissions' || settingId == 'compatibility' ? isMember(clubId) : isAdmin(clubId))
           : settingId in ['google_mail', 'email_config']
@@ -1035,6 +1038,107 @@ service cloud.firestore {
 
         // Admins can update and delete members
         allow update, delete: if isAdmin(clubId) && hasValidSession(clubId);
+
+        // Unread cursor v1. These documents are intentionally self-owned only:
+        // administrators do not receive an exception here. Server-side migration
+        // and support tools use the Admin SDK and therefore do not require a
+        // client-rule exception. All timestamps must be server timestamps
+        // (request.time), which prevents device-clock cursors and guarantees
+        // monotonic acknowledgement writes.
+        match /read_state/{sectionId} {
+          allow read: if isMember(clubId) && request.auth.uid == memberId;
+
+          allow create: if isMember(clubId)
+            && request.auth.uid == memberId
+            && (
+              (
+                sectionId == 'announcements'
+                && request.resource.data.keys().hasAll([
+                  'schema_version', 'last_seen_at', 'updated_at'
+                ])
+                && request.resource.data.keys().hasOnly([
+                  'schema_version', 'last_seen_at', 'updated_at'
+                ])
+                && request.resource.data.schema_version == 1
+                && request.resource.data.last_seen_at == request.time
+                && request.resource.data.updated_at == request.time
+              ) || (
+                sectionId in ['events', 'teams', 'sessions']
+                && request.resource.data.keys().hasAll([
+                  'schema_version', 'global_last_seen_at', 'updated_at'
+                ])
+                && request.resource.data.keys().hasOnly([
+                  'schema_version', 'global_last_seen_at', 'updated_at'
+                ])
+                && request.resource.data.schema_version == 1
+                && request.resource.data.global_last_seen_at == request.time
+                && request.resource.data.updated_at == request.time
+              )
+            );
+
+          allow update: if isMember(clubId)
+            && request.auth.uid == memberId
+            && (
+              (
+                sectionId == 'announcements'
+                && request.resource.data.keys().hasAll([
+                  'schema_version', 'last_seen_at', 'updated_at'
+                ])
+                && request.resource.data.keys().hasOnly([
+                  'schema_version', 'last_seen_at', 'updated_at'
+                ])
+                && request.resource.data.schema_version == 1
+                && request.resource.data.last_seen_at == request.time
+                && request.resource.data.updated_at == request.time
+                && request.resource.data.last_seen_at >= resource.data.last_seen_at
+              ) || (
+                sectionId in ['events', 'teams', 'sessions']
+                && request.resource.data.keys().hasAll([
+                  'schema_version', 'global_last_seen_at', 'updated_at'
+                ])
+                && request.resource.data.keys().hasOnly([
+                  'schema_version', 'global_last_seen_at', 'updated_at'
+                ])
+                && request.resource.data.schema_version == 1
+                && request.resource.data.global_last_seen_at == request.time
+                && request.resource.data.updated_at == request.time
+                && request.resource.data.global_last_seen_at >= resource.data.global_last_seen_at
+              )
+            );
+
+          allow delete: if false;
+
+          match /{scopeCollection}/{scopeId} {
+            allow read: if isMember(clubId) && request.auth.uid == memberId;
+
+            allow create: if isMember(clubId)
+              && request.auth.uid == memberId
+              && (
+                (sectionId == 'events' && scopeCollection == 'conversations') ||
+                (sectionId == 'teams' && scopeCollection == 'channels') ||
+                (sectionId == 'sessions' && scopeCollection == 'chats')
+              )
+              && request.resource.data.keys().hasAll(['last_seen_at', 'updated_at'])
+              && request.resource.data.keys().hasOnly(['last_seen_at', 'updated_at'])
+              && request.resource.data.last_seen_at == request.time
+              && request.resource.data.updated_at == request.time;
+
+            allow update: if isMember(clubId)
+              && request.auth.uid == memberId
+              && (
+                (sectionId == 'events' && scopeCollection == 'conversations') ||
+                (sectionId == 'teams' && scopeCollection == 'channels') ||
+                (sectionId == 'sessions' && scopeCollection == 'chats')
+              )
+              && request.resource.data.keys().hasAll(['last_seen_at', 'updated_at'])
+              && request.resource.data.keys().hasOnly(['last_seen_at', 'updated_at'])
+              && request.resource.data.last_seen_at == request.time
+              && request.resource.data.updated_at == request.time
+              && request.resource.data.last_seen_at >= resource.data.last_seen_at;
+
+            allow delete: if false;
+          }
+        }
 
         // COM-136 — Personal push notification history. Records are written
         // only by trusted Cloud Functions. A member can read their own history

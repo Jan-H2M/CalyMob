@@ -967,6 +967,10 @@ Dit zijn de Firebase/APNs limieten die in de code-basis zelf NIET zichtbaar zijn
 
 ### 11.2 Onze design choices, expliciet gemaakt
 
+> **SUPERSEDED (2026-09-25) by unread cursor v1 — see §15.** The historical
+> LocalReadTracker/unread_counts choices below are retained as incident context;
+> they are not the architecture for new unread work.
+
 Een paar architectuurkeuzes lijken raar als je ze niet kent. Hier de rationale:
 
 1. **`FirebaseAppDelegateProxyEnabled = false` op iOS.** We willen volledige controle over `apnsToken` (nodig voor sandbox/production switching, deep link routing). Manual hook in `AppDelegate.swift` is verplicht.
@@ -1105,3 +1109,39 @@ Dit master document is een consolidatie van de volgende bestaande docs in `CalyM
 4. **Build & release** via `./scripts/build_release.sh --bump patch` zodra alles op `develop` getest is.
 
 *Einde master document. Bestanden en regelnummers verwijzen naar de working tree op 8 april 2026 (CalyMob 1.4.2+124).*
+
+---
+
+## 15. Unread cursor v1 (confirmed 2026-09-25)
+
+The definitive replacement is a server-owned cursor document per member under
+`clubs/{clubId}/members/{uid}/read_state`. `announcements` stores one
+`last_seen_at`; `events`, `teams`, and `sessions` store a section-wide
+`global_last_seen_at` plus scoped `conversations`, `channels`, and `chats`
+subdocuments. Every acknowledgement uses Firestore `serverTimestamp`; a scoped
+effective cursor is `max(global, scope)`. This is one write per acknowledgement,
+not a write to every message.
+
+**Why this supersedes the historical model.** `LocalReadTracker` is per device,
+does not survive reinstall coherently, and uses a device-clock baseline. The old
+per-message `read_by` arrays cause write amplification and require broad message
+write rules. Mutable `unread_counts` increment/decrement counters race with
+client resyncs. Cursor-derived counts become the single source for both landing
+tiles and the app icon; Functions calculate and send the exact APNs badge,
+including explicit zero.
+
+**Confirmed product rules.** The icon is `Événements + Communication`;
+Communication is announcements + team + session messages and Événements is event
+messages. Event messages expire at `date_fin + 7` calendar days in
+Europe/Brussels. Opening a tile does not mark a whole section read; opening an
+individual conversation does, and each section gets an explicit *Tout marquer
+comme lu*. All non-soft-deleted announcements are visible to every member.
+Released old apps may keep writing legacy `unread_counts`, but that map is
+ignored by cursor v1 until a minimum-version cutover.
+
+**Phase status.** Phase 1 supplies inert schema models, self-only Firestore
+rules, the announcement index and emulator tests on
+`feat/unread-cursor-v1-phase1`; it is not deployed. The rollout flag lives in
+`clubs/{clubId}/settings/feature_flags` as `unreadCursorV1Enabled: false` and
+`unreadCursorV1Mode: 'off' | 'shadow' | 'on'`. Phases 2–7 remain planned in
+`../../outputs/calymob-unread-definitive-plan_2026-09-24.md` (parent Calypso repo).
