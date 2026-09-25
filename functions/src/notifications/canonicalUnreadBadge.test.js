@@ -56,6 +56,22 @@ describe('document-level canonical unread matrix', () => {
     expect((await count(base)).events).toBe(0);
   });
   test('team counts visible general channel but not hidden CA channel', async () => expect((await count({ 'clubs/c/team_channels/general': { type: 'general' }, 'clubs/c/team_channels/general/messages/a': { created_at: ts('2026-03-02T00:00:00Z') }, 'clubs/c/team_channels/ca': { type: 'ca' }, 'clubs/c/team_channels/ca/messages/a': { created_at: ts('2026-03-02T00:00:00Z') } })).teams).toBe(1));
+  test('team counts a visible fallback channel whose parent document is absent', async () => {
+    const result = await count({ 'clubs/c/team_channels/general/messages/a': { created_at: ts('2026-03-02T00:00:00Z') } });
+    expect(result.teams).toBe(1);
+  });
+  test('formation access matches Flutter explicit and plongeur-code targets without formation_active', async () => {
+    const explicit = await count({
+      'clubs/c/members/m': { target_formation_level: '2*', formation_active: false },
+      'clubs/c/team_channels/formation_2_etoiles/messages/a': { created_at: ts('2026-03-02T00:00:00Z') },
+    });
+    const derived = await count({
+      'clubs/c/members/m': { plongeur_code: 'P1', formation_active: false },
+      'clubs/c/team_channels/formation_2_etoiles/messages/a': { created_at: ts('2026-03-02T00:00:00Z') },
+    });
+    expect(explicit.teams).toBe(1);
+    expect(derived.teams).toBe(1);
+  });
   test('published accueil session counts while non-published does not', async () => expect((await count({ 'clubs/c/piscine_sessions/p': { statut: 'publie' }, 'clubs/c/piscine_sessions/p/messages/a': { group_type: 'accueil', created_at: ts('2026-03-02T00:00:00Z') }, 'clubs/c/piscine_sessions/d': { statut: 'brouillon' }, 'clubs/c/piscine_sessions/d/messages/a': { group_type: 'accueil', created_at: ts('2026-03-02T00:00:00Z') } }, { roles: ['Accueil'] })).sessions).toBe(1));
   test('niveau scope cursor excludes messages before its cursor', async () => expect((await count({ 'clubs/c/piscine_sessions/p': { statut: 'publie', niveaux: { P2: true } }, 'clubs/c/piscine_sessions/p/messages/a': { group_type: 'niveau', group_level: 'P2', created_at: ts('2026-03-02T00:00:00Z') }, 'clubs/c/piscine_sessions/p/messages/b': { group_type: 'niveau', group_level: 'P2', created_at: ts('2026-03-05T00:00:00Z') }, 'clubs/c/members/m/read_state/sessions/chats/p__niveau__P2': { last_seen_at: ts('2026-03-04T00:00:00Z') } }, { roles: ['Encadrant'] })).sessions).toBe(1));
 });

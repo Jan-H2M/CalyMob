@@ -23,6 +23,7 @@ function desiredAnnouncementFields(before = {}, after = {}) {
 }
 
 async function maintainAnnouncementFields({ db, clubId, announcementId, before, after }) {
+  if (!after) return { skipped: 'announcement_deleted' };
   const updates = desiredAnnouncementFields(before, after);
   if (!updates) return { skipped: 'already_normalized' };
   await db.collection('clubs').doc(clubId).collection('announcements').doc(announcementId).update(updates);
@@ -49,7 +50,7 @@ const onAnnouncementWritten = onDocumentWritten(
   { document: 'clubs/{clubId}/announcements/{announcementId}', region: 'europe-west1' },
   async (event) => maintainAnnouncementFields({
     db: admin.firestore(), clubId: event.params.clubId, announcementId: event.params.announcementId,
-    before: event.data.before.data() || {}, after: event.data.after.data() || {},
+    before: event.data.before.data() || {}, after: event.data.after.exists ? event.data.after.data() || {} : null,
   }),
 );
 

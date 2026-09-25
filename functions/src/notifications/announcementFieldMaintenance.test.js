@@ -24,4 +24,10 @@ describe('announcement cursor-v1 field maintenance', () => {
     await expect(maintainAnnouncementFields({ db, clubId: 'c', announcementId: 'a', before: {}, after: { visibility: 'published', created_at: ts(10), last_activity_at: ts(10) } })).resolves.toEqual({ skipped: 'already_normalized' });
     expect(update).not.toHaveBeenCalled();
   });
+  test('hard delete and missing announcement are safe no-ops', async () => {
+    const update = jest.fn();
+    const db = { collection: () => ({ doc: () => ({ collection: () => ({ doc: () => ({ update }) }) }) }) };
+    await expect(maintainAnnouncementFields({ db, clubId: 'c', announcementId: 'gone', before: { created_at: ts(10) }, after: null })).resolves.toEqual({ skipped: 'announcement_deleted' });
+    expect(update).not.toHaveBeenCalled();
+  });
 });
