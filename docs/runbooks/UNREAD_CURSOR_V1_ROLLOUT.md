@@ -1,6 +1,8 @@
 # Unread cursor v1 rollout runbook
 
-Status: written in Phase 6; **do not execute without Jan's explicit approval**.
+Status: Part 1 executed on 2026-09-25 with Jan's explicit approval; the cursor
+feature remains disabled/off. Do not advance the flag or deploy rules without a
+separate rollout approval.
 
 ## Preconditions and approvals
 
@@ -15,10 +17,12 @@ the shared mode remains shadow.
 1. From the reviewed CalyMob checkout, after Jan approves each command:
 
    ```sh
-   firebase deploy --only firestore:rules --project <project>
+   # Do not deploy CalyMob/firestore.rules. CalyCompta is the source of truth;
+   # deploy its reviewed rules only at the shadow gate after comparing them to
+   # the retained live-rules backup (CalyCompta PR #96).
    firebase deploy --only firestore:indexes --project <project>
    firebase firestore:indexes --project <project> # Console must show READY
-   firebase deploy --only functions:onAnnouncementWritten,functions:onNewAnnouncementReply,functions:onReadStateWritten,functions:onReadStateScopeWritten,functions:onNewAnnouncement,functions:onNewEventMessage,functions:onNewTeamMessage,functions:onNewSessionMessage --project <project>
+   firebase deploy --only functions:onAnnouncementWritten,functions:onNewAnnouncementReply,functions:onReadStateWritten,functions:onReadStateScopeWritten,functions:onNewAnnouncement,functions:onNewEventMessage,functions:onNewTeamMessage,functions:onNewSessionMessage,functions:onNewOperation --project <project>
    ```
 2. Deploy Functions with flag document
    `clubs/calypso/settings/feature_flags` set to
@@ -70,3 +74,25 @@ backup through a separately reviewed Admin script—never manually by bulk UI.
 
 `firebase deploy`, any real-project migration command, production flag write,
 store build/upload/release, minimum-version change, restore, and legacy cleanup.
+
+## Execution log 2026-09-25
+
+- CalyMob Firestore rules were **not** deployed. CalyCompta remains the source
+  of truth; [CalyCompta PR #96](https://github.com/Jan-H2M/CalyCompta/pull/96)
+  is reserved for the shadow gate after comparison with the retained live
+  ruleset backup.
+- Firestore index deployment was additive: **67 → 68** indexes, preserving two
+  field overrides. The new `announcements` composite index
+  (`visibility ASC`, `last_activity_at ASC`) is CREATING.
+- Nine Functions from CalyMob commit `0886b17` were deployed in
+  `europe-west1` on Node.js 22: the three `document.v1.written` maintenance /
+  reconciliation triggers and six `document.v1.created` notification triggers,
+  including `onNewOperation`.
+- `clubs/calypso/settings/feature_flags` remains
+  `unreadCursorV1Enabled: false`, `unreadCursorV1Mode: "off"`; the pilot list
+  contains Jan's UID `nvDVlhglO1eGXPBVRd7NbJ2Uevn2` only.
+- Migration applied and verified: 27 announcement normalizations and 364 root
+  cursors for 91 active members. Backups are retained at
+  `../outputs/unread-v1-rollout-2026-09-25-backups/`.
+- iOS release preparation targets **1.23.0+213**. IPA build status: pending;
+  TestFlight upload is pending Jan's external release-manifest approval.

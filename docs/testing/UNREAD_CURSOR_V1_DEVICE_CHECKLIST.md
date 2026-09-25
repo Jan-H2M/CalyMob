@@ -1,7 +1,8 @@
 # Unread cursor v1 — device checklist
 
-Status: Phase-6 test protocol only. Do not change a production flag while using
-this document.
+Status: Phase-6 device protocol. Phase-7 Part 1 prerequisites were deployed on
+2026-09-25, but the production cursor flag remains disabled/off; do not change
+it while using this document without Jan's separate approval.
 
 ## Prerequisites
 
@@ -49,3 +50,8 @@ this document.
 | Date | Project/club | Device + OS | Build | Flag mode | Scenario | Result / logs / defect |
 | --- | --- | --- | --- | --- | --- | --- |
 | | | | | | | |
+
+Rollout note (2026-09-25): 27 announcement documents and 364 cursor roots for
+91 active members were migrated and verified. The iOS 1.23.0+213 IPA is pending
+local build; TestFlight upload and any shadow/pilot activation remain gated by
+Jan's release-manifest approval.
